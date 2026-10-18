@@ -326,7 +326,11 @@ see [Testing on the laptop](vboot.md#testing-on-the-laptop).
     power resource of the firmware, with nouveau or with no driver
     bound to it; NVIDIA's own driver does that only for Turing and newer
     GPUs, so with the 470 driver of this Kepler GPU it stays powered
-    ([Power at idle](#power-at-idle)). *Hardware* also has the
+    ([Power at idle](#power-at-idle)). Under it, from v1.3.7, *NVIDIA
+    GPU link tuning*: what the firmware programs on the PCIe link to the
+    GPU before it trains, *AFE and 8 GT/s presets* (the default), *AFE*
+    alone or *Off*, the hardware defaults as up to v1.3.6 ([The link to
+    the NVIDIA GPU](#the-link-to-the-nvidia-gpu)). *Hardware* also has the
     graphics aperture and, with the native RAM init (`nri`), the graphics
     stolen memory (DVMT), the ExpressCard and Thunderbolt ports and the
     radios;
@@ -465,6 +469,35 @@ Things that keep the power up on the W541:
 - `snd_hda_intel` with `power_save` 0 never powers the codecs down, so
   the HD audio controller `00:1b.0` stays in D0; the package still
   reaches PC6.
+
+## The link to the NVIDIA GPU
+
+The GPU sits on the PCIe port of the processor for graphics (PEG,
+`00:01.0`), 16 lanes at 2.5, 5 or 8 GT/s: nouveau changes the speed with
+the performance level (`pstate`), up to 8 GT/s. With `mrc.bin` the port
+is hidden from it, so that the integrated GPU stays the primary one, and
+`mrc.bin` then leaves the analog front-end (AFE) of the port as it comes
+out of reset; the native RAM init did not program it either. From v1.3.7
+the firmware programs Intel's AFE settings and Intel's 8 GT/s presets
+before the link trains, as *Hardware* → *NVIDIA GPU link tuning* says.
+`tools/peg-report.py` shows the link from both ends: speed and width,
+the phases of the 8 GT/s equalization, the presets and the AFE settings
+of the port, and the errors each end recorded:
+
+```sh
+echo on | sudo tee /sys/bus/pci/devices/0000:00:01.0/power/control /sys/bus/pci/devices/0000:01:00.0/power/control
+sudo python3 tools/peg-report.py --clear     # the report, then the errors cleared
+# ... a load on the GPU at its highest pstate ...
+sudo python3 tools/peg-report.py
+sudo cbmem -1 | grep PEG                     # the link as the firmware left it
+```
+
+`on` keeps the GPU powered during the test: the report does not read a
+device in D3cold, which the reading would wake. `auto` again afterwards,
+or a reboot, lets Linux power it down. Under load the link should be at
+8 GT/s x16, with the equalization complete and no errors. To compare the
+settings, repeat the test with each: whatever the link does, the setup
+stays reachable, as the integrated GPU drives the screen.
 
 ## Diagnosing a hang
 

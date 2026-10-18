@@ -120,7 +120,7 @@ Inside coreboot:
   | *Energy Saver* | battery charge thresholds (OS controlled, 100%, 80%, 60%), Intel SpeedStep, Turbo Boost, C-states, CPU PL1/PL2 limits, cooling policy (active or passive), USB always on, power-on after power failure |
   | *Security* | BIOS Lock (flash writable only by the firmware, off by default), Firmware protection (the read-only part locked at every boot, on by default), memory cleared at power-on, Intel VT-x, VT-d, Intel ME, supervisor password (asked for before the setup menu opens) |
   | *Keyboard* | Fn/Ctrl swap, F1-F12 or special keys, sticky Fn, keyboard backlight, TrackPoint, touchpad |
-  | *Hardware* | NVIDIA GPU, graphics stolen memory (native RAM init only: `mrc.bin` reserves a fixed 32 MiB) and aperture, ExpressCard and Thunderbolt ports, Wi-Fi, Bluetooth, WWAN |
+  | *Hardware* | NVIDIA GPU and the tuning of its PCIe link, graphics stolen memory (native RAM init only: `mrc.bin` reserves a fixed 32 MiB) and aperture, ExpressCard and Thunderbolt ports, Wi-Fi, Bluetooth, WWAN |
 
   Settings live in UEFI variables in the `SMMSTORE` flash region and apply
   at the next boot. XMP memory profiles are not supported: the memory runs
@@ -244,7 +244,7 @@ the first time (30-60 minutes, then reused), builds each variant and runs
 ```sh
 tools/build.sh --variant mrc                  # one variant
 tools/build.sh --version v1.0.0-local         # version string and file names
-tools/build.sh --with test-peg-afe roms       # plus a patch from patches/optional/
+tools/build.sh --with NAME roms               # plus patches/optional/NAME.patch
 tools/build.sh smoke                          # after roms: the payload in QEMU
 tools/build.sh update-test                    # capsule updates with vboot A/B in QEMU
 tools/build.sh repro                          # after roms: built again, compared bit by bit

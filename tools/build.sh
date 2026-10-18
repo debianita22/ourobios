@@ -309,7 +309,7 @@ defconfig_kept() {
 	return "${miss}"
 }
 
-# Il nome della variante $1 con le patch opzionali: mrc, mrc+test-peg-afe
+# Il nome della variante $1 con le patch opzionali: mrc, mrc+NOME
 flavour() {
 	local f="$1" w
 	for w in "${WITH[@]}"; do f+="+${w}"; done

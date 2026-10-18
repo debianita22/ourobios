@@ -36,6 +36,7 @@ for upstream review (one change each, with the reasoning in the message).
 | 0074 | `_S3D` on the devices and `_RMV` on the WWAN and ExpressCard slots, as the OEM firmware: D3 in S3 said explicitly (the OS assumed it), the two slots hot-pluggable |
 | 0075 | `IPXE_EFI_IMAGE`: the iPXE EFI image to build, `ipxe.efi` with every driver (the only choice before) or one driver's (`intel.efi` here, a third of the size) |
 | 0076 | `EDK2_ENABLE_CSMWRAP`: a `csmwrap.efi` built separately (`EDK2_CSMWRAP_FILE`) into the EDK2 payload, as `EDK2_ENABLE_IPXE` does with iPXE, with `-D CSMWRAP=TRUE` and the name of the boot option for the edk2 tree |
+| 0078-0080 | the PCIe link to the NVIDIA GPU, which nothing programmed with the PEG port hidden from `mrc.bin` or with the native RAM init: Intel's AFE settings for the PEG port (`peg_dmi_recipe()`, which only the DMI used) and Intel's 8 GT/s presets (root port preset 8, GPU preset 7, hint 2, as Intel's FSP documents them for its later CPUs) programmed before the link trains, which DEFER_OC holds until then; the link reported in the coreboot log; the dGPU powered up with the 100 ms + 100 ms of the PCIe specifications (10 + 50 before); *Hardware* → *NVIDIA GPU link tuning* (*Off*, *AFE*, *AFE and 8 GT/s presets*, the default) to compare them. Until v1.3.6 the AFE part was the optional `test-peg-afe` |
 | 0077 | *General* → *Boot* in the setup: *Network boot (iPXE)* and *Legacy boot (CSMWrap)*, each shown only when built in, both on by default; coreboot does not read them, the payload's boot manager does (`edk2/0022`, `edk2/0023`) |
 | 0065 | vboot A/B: the payload can boot the other RW slot (`SMMSTORE_CMD_VBOOT_TRY_OTHER`: *try next* that slot, two tries, `RW_MRC_CACHE` erased, as after an update) until it sends `SMMSTORE_CMD_VBOOT_LOCK` before a boot option or an OS starts; ramstage sends the lock on S3 resume, when the payload does not run. The handler applies the rules of the setup itself, for the code that runs before the lock (`Driver####`, `SysPrep####`, option ROMs): the release in the other slot (`COREBOOT_EXTRA_VERSION` of its `revision` file) of the same variant, not below `CONFIG_DRIVERS_EFI_MAIN_FW_LSV`. For the *Firmware Update* page of the setup (`edk2/0020`) |
 | 0063 | Haswell VT-d: `SPCAPCTRL` set in the remapping engine for the devices other than the IGD also with the IGD present. Without it the engine reports 2 MiB and 1 GiB pages (`dmar1: ... cap d2008c20660462`, the same either way) but rejects them: with `intel_iommu=on` Linux mapped SATA reads with them and got `fault reason 0x0c non-zero reserved fields in PTE`, and btrfs found blocks of zeros. Tested on the W541: 21 faults without, none with |
@@ -93,9 +94,8 @@ a clean tree to the pinned commit but leaves a modified one alone.
 NAME` applies them after the series and adds `+NAME` to the version and the
 file names; `tools/verify-rom.sh --release` rejects such an image.
 
-| Patch | What | Status |
-|---|---|---|
-| `test-peg-afe` | programs the PEG PHY (AFE) recipe when neither MRC nor the native RAM init does, to compare dGPU link speed and AER errors | test: runs on every boot, whatever the NVIDIA GPU setting |
+None at the moment: the last one, `test-peg-afe` (the AFE of the PEG port),
+became part of patch 0078 in v1.3.7.
 
 ## The next read-only part
 

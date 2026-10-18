@@ -5,6 +5,30 @@ GitHub include its section; release candidates take the section of the
 version they lead to. For the releases before v1.3.0, see their notes on
 the [releases page](https://github.com/debianita22/ourobios/releases).
 
+## v1.3.7
+
+- The PCIe link to the NVIDIA GPU (patches 0078-0080). With `mrc.bin` the
+  graphics port of the processor (PEG, `00:01.0`) is hidden from it, so
+  that the integrated GPU stays the primary one, and `mrc.bin` then leaves
+  the port as it comes out of reset; the native RAM init did not program
+  it either. Measured on a W541 with v1.3.6: 75 of the 107 fields of
+  Intel's analog front-end (AFE) settings for the port at their hardware
+  defaults, the 8 GT/s presets at 0 on all 16 lanes, phase 3 of the 8 GT/s
+  equalization not done. The firmware now programs Intel's AFE settings
+  and Intel's 8 GT/s presets (root port preset 8, GPU preset 7 with hint
+  2, the defaults Intel's FSP documents for the PCIe ports of its later
+  CPUs) before the link trains. *Hardware* → *NVIDIA GPU link tuning*,
+  shown while *NVIDIA discrete GPU* is on, chooses *AFE and 8 GT/s
+  presets* (the default), *AFE* alone or *Off* (as up to v1.3.6), to
+  compare them with the same image. The coreboot log reports the link
+  (`cbmem -1 | grep PEG`), and `tools/peg-report.py` shows it from Linux
+  with the errors of both ends ([docs/flashing.md](docs/flashing.md#the-link-to-the-nvidia-gpu)).
+  The optional patch `test-peg-afe`, the AFE part alone, is gone.
+- The firmware powers the GPU up with 100 ms from its power to the end of
+  its reset and 100 ms after it, as the PCIe specifications want and as
+  the ACPI power resource already did (10 and 50 ms before): 140 ms more
+  at a boot that powers it up.
+
 ## v1.3.6
 
 - coreboot and EDK2 moved to their upstream of October 2026 (coreboot
