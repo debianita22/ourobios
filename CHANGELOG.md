@@ -31,8 +31,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   shows the link from Linux with the errors of both ends
   ([docs/flashing.md](docs/flashing.md#the-link-to-the-nvidia-gpu)).
   When Linux powers the GPU off and on again (runtime PM), the ACPI
-  power resource equalizes the link again the same way (patch 0084). The
-  optional patch `test-peg-afe`, the AFE part alone, is gone.
+  power resource equalizes the link again the same way (patch 0084).
+  Verified on a W541 with v1.3.7-rc2 (`mrc`): the GPU reports a full
+  swing of 60, the link comes up at 8 GT/s x16 with all three
+  equalization phases done, and no error is recorded on either end at
+  8 GT/s, after 20 reclock cycles of nouveau, after a power-off and on of
+  the GPU by Linux, or after a suspend and resume. The optional patch
+  `test-peg-afe`, the AFE part alone, is gone.
 - The firmware powers the GPU up with 100 ms from its power to the end of
   its reset and 100 ms after it, as the PCIe specifications want and as
   the ACPI power resource already did (10 and 50 ms before): 140 ms more
