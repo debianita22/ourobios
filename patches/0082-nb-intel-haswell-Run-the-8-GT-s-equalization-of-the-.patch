@@ -1,0 +1,366 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 18 Oct 2026 20:40:16 +0200
+Subject: [PATCH] nb/intel/haswell: Run the 8 GT/s equalization of the
+ reference code
+
+With the AFE and the presets of northbridge_setup_peg() the link of a
+ThinkPad W541 to its NVIDIA GPU equalizes for 8 GT/s without phase 3
+(LnkSta2: phase 1+ 2+ 3-). Its OEM firmware (GNET94WW) does more, in the
+PEG initialization of Intel's System Agent reference code (SaInitPeim),
+which this follows step by step, with one port of 16 lanes:
+
+- before the training, bits 15 and 1 of PEG10 register 0xdd8;
+- once the link is in L0 with VC0 negotiated, and the device on it,
+  read on a temporary bus 1, can run at 8 GT/s: the full swing (FS) of
+  the device, read from lane 0 through PEG10 register 0x814, and the
+  coefficients of the transmitter preset asked of the device for that
+  FS, written to each lane through the same register, from the preset
+  ratios of the PCI Express 3.0 specification rounded half up as the
+  reference code does;
+- then Perform Equalization in Link Control 3 and Retrain Link, up to
+  100 ms for the equalization and L0;
+- then bits 15 and 14 of 0xdd8, with or without a device.
+
+Neither register is documented: the values and the order are those of
+the reference code. It skips this before Haswell stepping B0, and so
+does coreboot; with PEG11 or PEG12 it also reads lanes 8 and 12, which
+this does not do. The coefficients are left alone, unlike in the
+reference code, when the FS read is below the 12 that the specification
+allows for a reduced swing.
+
+The first part runs in northbridge_setup_peg(), the rest after
+mb_late_romstage_setup(), by which time a mainboard that powers the
+device has done so. It is the new default of the peg_link_tuning
+option, PEG_TUNING_EQUALIZATION. The ramstage report adds 0xdd8.
+
+TEST=Built for Lenovo ThinkPad W541, mrc.bin and native RAM init.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/northbridge/intel/haswell/early_peg.c     | 187 ++++++++++++++++++
+ src/northbridge/intel/haswell/haswell.h       |   8 +-
+ src/northbridge/intel/haswell/pcie.c          |   4 +-
+ .../intel/haswell/registers/pcie_graphics.h   |  14 ++
+ src/northbridge/intel/haswell/romstage.c      |   4 +
+ 5 files changed, 213 insertions(+), 4 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/early_peg.c b/src/northbridge/intel/haswell/early_peg.c
+index 7218dcb5..ac1cd6be 100644
+--- a/src/northbridge/intel/haswell/early_peg.c
++++ b/src/northbridge/intel/haswell/early_peg.c
+@@ -2,16 +2,22 @@
+ 
+ #include <commonlib/helpers.h>
+ #include <console/console.h>
++#include <cpu/intel/haswell/haswell.h>
++#include <delay.h>
+ #include <device/pci_def.h>
+ #include <device/pci_ops.h>
+ #include <northbridge/intel/haswell/chip.h>
+ #include <northbridge/intel/haswell/haswell.h>
+ #include <option.h>
+ #include <static.h>
++#include <timer.h>
+ #include <types.h>
+ 
+ static bool peg_hidden[MAX_PEG_FUNC];
+ 
++/* peg_tune() set up the 8 GT/s equalization, northbridge_peg_equalize() runs it */
++static bool peg_equalization_armed;
++
+ static u32 deven_for_peg(const u8 func)
+ {
+ 	switch (func) {
+@@ -78,6 +84,49 @@ static bool peg_left_to_coreboot(void)
+ 	return CONFIG(USE_NATIVE_RAMINIT) || CONFIG(HASWELL_HIDE_PEG_FROM_MRC);
+ }
+ 
++/*
++ * The 8 GT/s equalization of the System Agent reference code, as the OEM
++ * firmware of the ThinkPad W541 (GNET94WW) runs it with one port of 16 lanes:
++ * bits of PEG_EQ_DD8 before the training; once the link is up with a device
++ * capable of 8 GT/s, the full swing (FS) of that device read from lane 0 and
++ * the coefficients of its transmitter preset for that FS written to each lane
++ * of the PHY; then a new equalization and more bits of PEG_EQ_DD8. With PEG11
++ * or PEG12 the reference code also reads lanes 8 and 12: not done here.
++ */
++#define  PEG_DD8_BEFORE_TRAINING	((1 << 15) | (1 << 1))
++#define  PEG_DD8_AFTER_EQUALIZATION	((1 << 15) | (1 << 14))
++
++#define  PHY_LANE(x)			((x) << 19)
++#define  PHY_READ_FS			0x02840000
++#define  PHY_FS(v)			(((v) >> 6) & 0x3f)
++#define  PHY_WRITE_COEFFICIENTS		(1 << 18)
++#define  PHY_COEFFICIENTS(pre, cur, post)	((cur) << 12 | (pre) << 6 | (post))
++
++/* Secondary PCI Express capability: Link Control 3 */
++#define SEC_PCIE_LINK_CTL3		0x04
++#define  LINK_CTL3_PERFORM_EQ		(1 << 0)
++
++/* The processors the reference code runs it on: Haswell from stepping B0 */
++static bool peg_equalization_supported(void)
++{
++	switch (cpu_family_model()) {
++	case HASWELL_FAMILY_TRAD:
++		return cpu_stepping() >= 2;
++	case CRYSTALWELL_FAMILY:
++		return true;
++	default:
++		return false;
++	}
++}
++
++static bool peg_equalization_wanted(const u32 deven, const unsigned int tuning)
++{
++	const u32 peg_ports = DEVEN_D1F0EN | DEVEN_D1F1EN | DEVEN_D1F2EN;
++
++	return tuning >= PEG_TUNING_EQUALIZATION && peg_left_to_coreboot() &&
++	       (deven & peg_ports) == DEVEN_D1F0EN && peg_equalization_supported();
++}
++
+ static u8 peg_link_state(const pci_devfn_t dev)
+ {
+ 	return pci_read_config8(dev, PEG_LINK_STATE) & 0xf;
+@@ -153,6 +202,11 @@ static void peg_tune(const u32 deven, const unsigned int tuning)
+ 		if (deven & deven_for_peg(func))
+ 			peg_set_gen3_presets(PEG_DEV(func), func);
+ 	}
++
++	if (peg_equalization_wanted(deven, tuning)) {
++		pci_or_config32(PEG_DEV(0), PEG_EQ_DD8, PEG_DD8_BEFORE_TRAINING);
++		peg_equalization_armed = true;
++	}
+ }
+ 
+ static void start_peg2_link_training(const u8 func)
+@@ -213,3 +267,136 @@ void northbridge_unhide_peg(void)
+ 
+ 	pci_write_config32(HOST_BRIDGE, DEVEN, deven);
+ }
++
++/* L0 and VC0 negotiated, which the reference code waits for after the training */
++static bool peg_wait_link_up(const pci_devfn_t dev, const unsigned int ms)
++{
++	struct stopwatch sw;
++
++	stopwatch_init_msecs_expire(&sw, ms);
++	do {
++		if (peg_link_state(dev) == PEG_LINK_L0 &&
++		    !(pci_read_config16(dev, PEG_VC0RSTS) & PEG_VC0RSTS_VC0NP))
++			return true;
++		mdelay(1);
++	} while (!stopwatch_expired(&sw));
++
++	return false;
++}
++
++/* Whether the device below PEG10 can run at 8 GT/s, read on a temporary bus 1 */
++static bool peg_device_supports_gen3(const pci_devfn_t dev)
++{
++	const pci_devfn_t device = PCI_DEV(1, 0, 0);
++	const u32 buses = pci_read_config32(dev, PCI_PRIMARY_BUS);
++	bool gen3 = false;
++
++	pci_write_config32(dev, PCI_PRIMARY_BUS, (buses & 0xff000000) | 1 << 16 | 1 << 8);
++
++	/* A configuration write makes the device capture its bus number */
++	pci_write_config16(device, PCI_VENDOR_ID, 0);
++	if (pci_read_config16(device, PCI_VENDOR_ID) != 0xffff) {
++		const u16 cap = pci_s_find_capability(device, PCI_CAP_ID_PCIE);
++		if (cap)
++			gen3 = (pci_read_config32(device, cap + PCI_EXP_LNKCAP) &
++				PCI_EXP_LNKCAP_MLS) >= 3;
++	}
++
++	pci_write_config32(dev, PCI_PRIMARY_BUS, buses);
++	return gen3;
++}
++
++/* The coefficients of an 8 GT/s preset for a transmitter with this full swing */
++static void gen3_preset_coefficients(const u8 preset, const u8 fs, u8 *pre, u8 *cur, u8 *post)
++{
++	/* Pre-cursor and post-cursor of each preset, in thousandths of the full swing */
++	static const u16 ratios[][2] = {
++		{   0, 250 }, {   0, 167 }, {   0, 200 }, {   0, 125 }, {   0,   0 },
++		{ 100,   0 }, { 125,   0 }, { 100, 200 }, { 125, 125 }, { 166,   0 },
++	};
++	const u16 *r = ratios[preset < ARRAY_SIZE(ratios) ? preset : PEG_GEN3_EP_PRESET];
++
++	/* Rounded half up, as the reference code does */
++	*pre = (fs * r[0] + 500) / 1000;
++	*post = (fs * r[1] + 500) / 1000;
++	*cur = fs - *pre - *post;
++}
++
++static u8 peg_phy_read_fs(const pci_devfn_t dev, const u8 lane)
++{
++	pci_write_config32(dev, PEG_PHY_LANE, PHY_LANE(lane) | PHY_READ_FS);
++	const u32 v = pci_read_config32(dev, PEG_PHY_LANE);
++	pci_write_config32(dev, PEG_PHY_LANE, 0);
++
++	return PHY_FS(v);
++}
++
++static void peg_phy_write_coefficients(const pci_devfn_t dev, const u8 lane, const u8 pre,
++				       const u8 cur, const u8 post)
++{
++	pci_write_config32(dev, PEG_PHY_LANE, PHY_LANE(lane) | PHY_WRITE_COEFFICIENTS |
++			   PHY_COEFFICIENTS(pre, cur, post));
++	pci_write_config32(dev, PEG_PHY_LANE, 0);
++}
++
++static void peg_gen3_equalize(const pci_devfn_t dev)
++{
++	const u16 cap = peg_find_ext_cap(dev, PCI_CAP_ID_SEC_PCIE);
++	const unsigned int lanes = MIN((pci_read_config32(dev, PEG_LCAP) >> 4) & 0x3f, 16);
++	const struct peg_gen3_presets p = peg_gen3_presets(0);
++	const u8 fs = peg_phy_read_fs(dev, 0);
++	struct stopwatch sw;
++	u8 pre, cur, post;
++
++	/* The specification allows 24 to 63, and 12 to 23 for a reduced swing */
++	if (!cap || fs < 12) {
++		printk(BIOS_WARNING, "PEG10: device full swing %u, no 8 GT/s equalization\n",
++		       fs);
++		return;
++	}
++
++	gen3_preset_coefficients(p.ep_preset, fs, &pre, &cur, &post);
++	for (unsigned int lane = 0; lane < lanes; lane++)
++		peg_phy_write_coefficients(dev, lane, pre, cur, post);
++
++	pci_or_config32(dev, cap + SEC_PCIE_LINK_CTL3, LINK_CTL3_PERFORM_EQ);
++	pci_or_config16(dev, PEG_LCTL, PCI_EXP_LNKCTL_RL);
++
++	/* The training starts, then up to 100 ms for the equalization and L0 */
++	stopwatch_init_msecs_expire(&sw, 2);
++	while (peg_link_state(dev) == PEG_LINK_L0 && !(pci_read_config16(dev, PEG_LSTS) &
++	       PEG_LSTS_LT) && !stopwatch_expired(&sw))
++		udelay(10);
++
++	stopwatch_init_msecs_expire(&sw, 100);
++	while (!(pci_read_config16(dev, PEG_LSTS2) & PEG_LSTS2_EQ_COMPLETE) &&
++	       !stopwatch_expired(&sw))
++		mdelay(1);
++	while (peg_link_state(dev) != PEG_LINK_L0 && !stopwatch_expired(&sw))
++		mdelay(1);
++
++	const u16 lsts = pci_read_config16(dev, PEG_LSTS);
++	const u16 lsts2 = pci_read_config16(dev, PEG_LSTS2);
++	printk(BIOS_INFO, "PEG10: 8 GT/s equalization, device preset %u (FS %u: %u/%u/%u), "
++	       "then Gen%u x%u, phase 1%c 2%c 3%c, %lld ms\n", p.ep_preset, fs, pre, cur, post,
++	       lsts & 0xf, (lsts >> 4) & 0x3f, lsts2 & (1 << 2) ? '+' : '-',
++	       lsts2 & (1 << 3) ? '+' : '-', lsts2 & (1 << 4) ? '+' : '-',
++	       stopwatch_duration_msecs(&sw));
++}
++
++void northbridge_peg_equalize(void)
++{
++	const pci_devfn_t dev = PEG_DEV(0);
++	const u32 deven = pci_read_config32(HOST_BRIDGE, DEVEN);
++
++	if (!peg_equalization_armed || !(deven & DEVEN_D1F0EN))
++		return;
++
++	if (peg_wait_link_up(dev, 100) && peg_device_supports_gen3(dev))
++		peg_gen3_equalize(dev);
++	else
++		printk(BIOS_INFO, "PEG10: no link to an 8 GT/s device, no equalization\n");
++
++	/* As the reference code does, with or without a device */
++	pci_or_config32(dev, PEG_EQ_DD8, PEG_DD8_AFTER_EQUALIZATION);
++}
+diff --git a/src/northbridge/intel/haswell/haswell.h b/src/northbridge/intel/haswell/haswell.h
+index 48d539b7..43241c27 100644
+--- a/src/northbridge/intel/haswell/haswell.h
++++ b/src/northbridge/intel/haswell/haswell.h
+@@ -72,9 +72,13 @@ void northbridge_unhide_peg(void);
+ enum peg_link_tuning {
+ 	PEG_TUNING_OFF		= 0,	/* the hardware defaults */
+ 	PEG_TUNING_AFE		= 1,	/* Intel's AFE settings, peg_dmi_recipe() */
+-	PEG_TUNING_AFE_PRESETS	= 2,	/* and Intel's Gen3 transmitter presets */
++	PEG_TUNING_AFE_PRESETS	= 2,	/* and the Gen3 transmitter presets */
++	PEG_TUNING_EQUALIZATION	= 3,	/* and the reference code's 8 GT/s equalization */
+ };
+-#define PEG_TUNING_DEFAULT	PEG_TUNING_AFE_PRESETS
++#define PEG_TUNING_DEFAULT	PEG_TUNING_EQUALIZATION
++
++/* The 8 GT/s equalization of the PEG link, once the device on it is powered */
++void northbridge_peg_equalize(void);
+ 
+ void dmi_early_init(void);
+ void peg_dmi_recipe(const bool is_peg, const pci_devfn_t dev);
+diff --git a/src/northbridge/intel/haswell/pcie.c b/src/northbridge/intel/haswell/pcie.c
+index c7c16c04..116d9cd3 100644
+--- a/src/northbridge/intel/haswell/pcie.c
++++ b/src/northbridge/intel/haswell/pcie.c
+@@ -166,9 +166,9 @@ static void peg_report_link(struct device *dev)
+ 
+ 	const unsigned int cap = pciexp_find_extended_cap(dev, PCI_CAP_ID_SEC_PCIE, 0);
+ 	if (cap)
+-		printk(BIOS_DEBUG, "PEG1%u: lane 0 EQ control %04x, lane errors %08x\n",
++		printk(BIOS_DEBUG, "PEG1%u: lane 0 EQ %04x, lane errors %08x, dd8 %08x\n",
+ 		       func, pci_read_config16(dev, cap + 0x0c),
+-		       pci_read_config32(dev, cap + 0x08));
++		       pci_read_config32(dev, cap + 0x08), pci_read_config32(dev, PEG_EQ_DD8));
+ }
+ 
+ static void peg_init(struct device *dev)
+diff --git a/src/northbridge/intel/haswell/registers/pcie_graphics.h b/src/northbridge/intel/haswell/registers/pcie_graphics.h
+index c8e113cb..c4ea8431 100644
+--- a/src/northbridge/intel/haswell/registers/pcie_graphics.h
++++ b/src/northbridge/intel/haswell/registers/pcie_graphics.h
+@@ -8,7 +8,9 @@
+ #define PEG_DCAP	0xa4
+ 
+ #define PEG_LCAP	0xac
++#define PEG_LCTL	0xb0
+ #define PEG_LSTS	0xb2
++#define  PEG_LSTS_LT	(1 << 11)	/* Link training */
+ 
+ #define PEG_DSTS	0xaa
+ 
+@@ -18,12 +20,24 @@
+ 
+ #define PEG_LCTL2	0xd0
+ #define PEG_LSTS2	0xd2
++#define  PEG_LSTS2_EQ_COMPLETE	(1 << 1)	/* 8 GT/s equalization complete */
+ 
+ /* Link state of the PEG port, [3:0]: 0 while the link is down, 7 in L0 */
+ #define PEG_LINK_STATE	0x216
+ #define  PEG_LINK_L0	7
+ 
+ #define PEG_VC0RCTL	0x114
++#define PEG_VC0RSTS	0x11a
++#define  PEG_VC0RSTS_VC0NP	(1 << 1)	/* VC0 negotiation pending */
++
++/*
++ * Not documented. The System Agent reference code sets bits of PEG_EQ_DD8 in
++ * PEG10 before the training and after the 8 GT/s equalization, and reads the
++ * full swing of the device and writes the coefficients of its preset through
++ * PEG_PHY_LANE, one lane at a time.
++ */
++#define PEG_PHY_LANE	0x814
++#define PEG_EQ_DD8	0xdd8
+ 
+ #define PEG_ESD		0x144	/* 32bit */
+ #define PEG_LE1D	0x150	/* 32bit */
+diff --git a/src/northbridge/intel/haswell/romstage.c b/src/northbridge/intel/haswell/romstage.c
+index 1691d798..4c704000 100644
+--- a/src/northbridge/intel/haswell/romstage.c
++++ b/src/northbridge/intel/haswell/romstage.c
+@@ -94,5 +94,9 @@ void mainboard_romstage_entry(void)
+ 
+ 	mb_late_romstage_setup();
+ 
++	/* With the device on the PEG port powered, if the mainboard powers it */
++	if (!CONFIG(INTEL_LYNXPOINT_LP))
++		northbridge_peg_equalize();
++
+ 	post_code(0x3f);
+ }
+-- 
+2.43.0
+

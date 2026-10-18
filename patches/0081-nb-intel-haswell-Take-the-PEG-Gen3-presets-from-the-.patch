@@ -1,0 +1,122 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 18 Oct 2026 20:36:39 +0200
+Subject: [PATCH] nb/intel/haswell: Take the PEG Gen3 presets from the
+ devicetree
+
+The presets northbridge_setup_peg() programs for 8 GT/s were Intel's
+defaults for every board: the root port transmits with preset 8 and asks
+the device for preset 7 with receiver preset hint 2. The OEM firmware of
+a board can use others: that of the ThinkPad W541 (GNET94WW) sets preset
+3 for the root port, with 7 and 2 for its NVIDIA GPU, while that of the
+ThinkPad T440p keeps 8, 7 and 2.
+
+Add them to the peg_config of each port, gen3_presets to use them, and
+fall back to Intel's defaults, as the System Agent reference code does,
+for presets above 9 and hints above 6.
+
+TEST=Built for Lenovo ThinkPad W541, mrc.bin and native RAM init.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/northbridge/intel/haswell/chip.h      |  9 +++++
+ src/northbridge/intel/haswell/early_peg.c | 41 ++++++++++++++++++++---
+ 2 files changed, 46 insertions(+), 4 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/chip.h b/src/northbridge/intel/haswell/chip.h
+index dc71340b..a4fec10e 100644
+--- a/src/northbridge/intel/haswell/chip.h
++++ b/src/northbridge/intel/haswell/chip.h
+@@ -11,6 +11,15 @@ struct peg_config {
+ 	uint8_t power_limit_scale;
+ 	uint8_t power_limit_value;
+ 	uint16_t phys_slot_number;
++	/*
++	 * The 8 GT/s presets of the lanes of the port, when gen3_presets is set:
++	 * the transmitter preset of the root port, the transmitter preset and the
++	 * receiver preset hint it asks of the device. Intel's defaults otherwise.
++	 */
++	bool gen3_presets;
++	uint8_t gen3_rp_preset;
++	uint8_t gen3_ep_preset;
++	uint8_t gen3_ep_hint;
+ };
+ 
+ /*
+diff --git a/src/northbridge/intel/haswell/early_peg.c b/src/northbridge/intel/haswell/early_peg.c
+index 829ea78b..7218dcb5 100644
+--- a/src/northbridge/intel/haswell/early_peg.c
++++ b/src/northbridge/intel/haswell/early_peg.c
+@@ -4,8 +4,10 @@
+ #include <console/console.h>
+ #include <device/pci_def.h>
+ #include <device/pci_ops.h>
++#include <northbridge/intel/haswell/chip.h>
+ #include <northbridge/intel/haswell/haswell.h>
+ #include <option.h>
++#include <static.h>
+ #include <types.h>
+ 
+ static bool peg_hidden[MAX_PEG_FUNC];
+@@ -24,12 +26,42 @@ static u32 deven_for_peg(const u8 func)
+  * Intel's default Gen3 presets for the PCIe ports of its CPUs, as the FSP of
+  * later ones documents them (CpuPcieGen3RootPortPreset, -EndPointPreset and
+  * -EndPointHint in alderlake/FspsUpd.h): the root port transmits with preset
+- * 8 and asks the device for preset 7, with receiver preset hint 2.
++ * 8 and asks the device for preset 7, with receiver preset hint 2. The System
++ * Agent reference code of Haswell falls back to the same values when those of
++ * its policy are out of range: presets above 9, hints above 6.
+  */
+ #define PEG_GEN3_RP_PRESET		8
+ #define PEG_GEN3_EP_PRESET		7
+ #define PEG_GEN3_EP_HINT		2
+ 
++struct peg_gen3_presets {
++	u8 rp_preset;
++	u8 ep_preset;
++	u8 ep_hint;
++};
++
++/* The presets of the devicetree for the port, Intel's defaults without them */
++static struct peg_gen3_presets peg_gen3_presets(const u8 func)
++{
++	const struct northbridge_intel_haswell_config *cfg = config_of_soc();
++	const struct peg_config *peg = &cfg->peg_cfg[func];
++	struct peg_gen3_presets p = {
++		.rp_preset	= PEG_GEN3_RP_PRESET,
++		.ep_preset	= PEG_GEN3_EP_PRESET,
++		.ep_hint	= PEG_GEN3_EP_HINT,
++	};
++
++	if (peg->gen3_presets) {
++		if (peg->gen3_rp_preset <= 9)
++			p.rp_preset = peg->gen3_rp_preset;
++		if (peg->gen3_ep_preset <= 9)
++			p.ep_preset = peg->gen3_ep_preset;
++		if (peg->gen3_ep_hint <= 6)
++			p.ep_hint = peg->gen3_ep_hint;
++	}
++	return p;
++}
++
+ /* Secondary PCI Express capability: Lane Equalization Control, 16 bits a lane */
+ #define SEC_PCIE_LANE_EQ_CTL		0x0c
+ #define  LANE_EQ_DP_TX_PRESET(x)	((x) << 0)
+@@ -76,9 +108,10 @@ static void peg_set_gen3_presets(const pci_devfn_t dev, const u8 func)
+ 	}
+ 
+ 	const unsigned int lanes = MIN((pci_read_config32(dev, PEG_LCAP) >> 4) & 0x3f, 16);
+-	const u16 presets = LANE_EQ_DP_TX_PRESET(PEG_GEN3_RP_PRESET) |
+-			    LANE_EQ_UP_TX_PRESET(PEG_GEN3_EP_PRESET) |
+-			    LANE_EQ_UP_RX_HINT(PEG_GEN3_EP_HINT);
++	const struct peg_gen3_presets p = peg_gen3_presets(func);
++	const u16 presets = LANE_EQ_DP_TX_PRESET(p.rp_preset) |
++			    LANE_EQ_UP_TX_PRESET(p.ep_preset) |
++			    LANE_EQ_UP_RX_HINT(p.ep_hint);
+ 
+ 	for (unsigned int lane = 0; lane < lanes; lane++)
+ 		pci_update_config16(dev, cap + SEC_PCIE_LANE_EQ_CTL + 2 * lane,
+-- 
+2.43.0
+

@@ -2,8 +2,8 @@
 # peg-report.py - il link PCIe tra il W541 e la sua GPU NVIDIA: la porta PEG
 # del processore (00:01.0) e la GPU (01:00.0). Velocita' e larghezza, le fasi
 # dell'equalizzazione a 8 GT/s, i preset Gen3 e le impostazioni AFE di Intel
-# che il firmware programma con *NVIDIA GPU link tuning* (patch 0078), e gli
-# errori che le due parti del link hanno registrato.
+# che il firmware programma con *NVIDIA GPU link tuning* (patch 0078-0083),
+# e gli errori che le due parti del link hanno registrato.
 #
 #   sudo python3 tools/peg-report.py              # il rapporto
 #   sudo python3 tools/peg-report.py --clear      # il rapporto, poi gli errori azzerati
@@ -55,6 +55,10 @@ RECIPE = [
 
 # Lo stato del link della porta PEG, 0x216[3:0]: 0 giu', 7 L0
 PEG_LINK_STATE = 0x216
+# Non documentato: il reference code di Intel, e il firmware dalla v1.3.7 con
+# "As the Lenovo firmware", vi accende i bit 15 e 1 prima del training e i bit
+# 15 e 14 dopo l'equalizzazione a 8 GT/s
+PEG_EQ_DD8 = 0xdd8
 # I registri d'errore dell'AER della porta PEG, fuori dalla lista delle
 # capability (Linux non li vede)
 PEG_UESTS, PEG_CESTS = 0x1c4, 0x1d0
@@ -164,6 +168,9 @@ def report(name, bdf, c, out):
                 same += (r32(c, off + 0x20 * i) >> shift & mask) == val
         out.append("  AFE: %d campi su %d come la ricetta di Intel%s" % (
             same, total, " (programmata)" if same == total else ""))
+        dd8 = r32(c, PEG_EQ_DD8)
+        out.append("  registro 0xdd8 0x%08x: sequenza del firmware Lenovo %s" % (
+            dd8, "completata" if dd8 & 0xc002 == 0xc002 else "non eseguita"))
     devsta = r16(c, p + 0x0a) & 0xf
     out.append("  DevSta errori 0x%x%s" % (devsta, names(devsta, DEVSTA)))
     aer = PEG_UESTS - 4 if bdf == RP else ext.get(0x1)

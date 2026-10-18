@@ -77,3 +77,6 @@
 0078-nb-intel-haswell-Program-the-PEG-AFE-and-Gen3-preset.patch
 0079-ec-lenovo-pmh7-Power-the-dGPU-up-with-the-PCIe-timin.patch
 0080-mb-lenovo-haswell-Add-the-NVIDIA-GPU-link-tuning-opt.patch
+0081-nb-intel-haswell-Take-the-PEG-Gen3-presets-from-the-.patch
+0082-nb-intel-haswell-Run-the-8-GT-s-equalization-of-the-.patch
+0083-mb-lenovo-haswell-Run-the-PEG-equalization-of-the-W5.patch

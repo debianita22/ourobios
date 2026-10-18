@@ -327,10 +327,10 @@ see [Testing on the laptop](vboot.md#testing-on-the-laptop).
     bound to it; NVIDIA's own driver does that only for Turing and newer
     GPUs, so with the 470 driver of this Kepler GPU it stays powered
     ([Power at idle](#power-at-idle)). Under it, from v1.3.7, *NVIDIA
-    GPU link tuning*: what the firmware programs on the PCIe link to the
-    GPU before it trains, *AFE and 8 GT/s presets* (the default), *AFE*
-    alone or *Off*, the hardware defaults as up to v1.3.6 ([The link to
-    the NVIDIA GPU](#the-link-to-the-nvidia-gpu)). *Hardware* also has the
+    GPU link tuning*: how the firmware sets up the PCIe link to the GPU,
+    *As the Lenovo firmware* (the default), *AFE and 8 GT/s presets*,
+    *AFE* alone or *Off*, the hardware defaults as up to v1.3.6 ([The link
+    to the NVIDIA GPU](#the-link-to-the-nvidia-gpu)). *Hardware* also has the
     graphics aperture and, with the native RAM init (`nri`), the graphics
     stolen memory (DVMT), the ExpressCard and Thunderbolt ports and the
     radios;
@@ -478,11 +478,16 @@ the performance level (`pstate`), up to 8 GT/s. With `mrc.bin` the port
 is hidden from it, so that the integrated GPU stays the primary one, and
 `mrc.bin` then leaves the analog front-end (AFE) of the port as it comes
 out of reset; the native RAM init did not program it either. From v1.3.7
-the firmware programs Intel's AFE settings and Intel's 8 GT/s presets
-before the link trains, as *Hardware* → *NVIDIA GPU link tuning* says.
-`tools/peg-report.py` shows the link from both ends: speed and width,
-the phases of the 8 GT/s equalization, the presets and the AFE settings
-of the port, and the errors each end recorded:
+the firmware sets the link up as the Lenovo firmware does, as *Hardware*
+→ *NVIDIA GPU link tuning* says: with *As the Lenovo firmware*, Intel's
+AFE settings and the 8 GT/s presets of the Lenovo firmware before the
+link trains (3 for the port, 7 with hint 2 for the GPU), then, once the
+GPU is on, the coefficients of its preset for each lane and a new 8 GT/s
+equalization; *AFE and 8 GT/s presets* stops before the equalization,
+*AFE* before the presets. `tools/peg-report.py` shows the link from both
+ends: speed and width, the phases of the 8 GT/s equalization, the
+presets and the AFE settings of the port, whether the sequence of the
+Lenovo firmware ran, and the errors each end recorded:
 
 ```sh
 echo on | sudo tee /sys/bus/pci/devices/0000:00:01.0/power/control /sys/bus/pci/devices/0000:01:00.0/power/control
@@ -497,7 +502,10 @@ device in D3cold, which the reading would wake. `auto` again afterwards,
 or a reboot, lets Linux power it down. Under load the link should be at
 8 GT/s x16, with the equalization complete and no errors. To compare the
 settings, repeat the test with each: whatever the link does, the setup
-stays reachable, as the integrated GPU drives the screen.
+stays reachable, as the integrated GPU drives the screen. After a resume
+from S3 with the GPU powered off by Linux, the firmware finds no link:
+the coefficients and the new equalization wait for the next boot, and
+the coreboot log of the resume says so.
 
 ## Diagnosing a hang
 

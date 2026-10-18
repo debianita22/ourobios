@@ -7,23 +7,30 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.3.7
 
-- The PCIe link to the NVIDIA GPU (patches 0078-0080). With `mrc.bin` the
-  graphics port of the processor (PEG, `00:01.0`) is hidden from it, so
-  that the integrated GPU stays the primary one, and `mrc.bin` then leaves
-  the port as it comes out of reset; the native RAM init did not program
-  it either. Measured on a W541 with v1.3.6: 75 of the 107 fields of
-  Intel's analog front-end (AFE) settings for the port at their hardware
-  defaults, the 8 GT/s presets at 0 on all 16 lanes, phase 3 of the 8 GT/s
-  equalization not done. The firmware now programs Intel's AFE settings
-  and Intel's 8 GT/s presets (root port preset 8, GPU preset 7 with hint
-  2, the defaults Intel's FSP documents for the PCIe ports of its later
-  CPUs) before the link trains. *Hardware* → *NVIDIA GPU link tuning*,
-  shown while *NVIDIA discrete GPU* is on, chooses *AFE and 8 GT/s
-  presets* (the default), *AFE* alone or *Off* (as up to v1.3.6), to
-  compare them with the same image. The coreboot log reports the link
-  (`cbmem -1 | grep PEG`), and `tools/peg-report.py` shows it from Linux
-  with the errors of both ends ([docs/flashing.md](docs/flashing.md#the-link-to-the-nvidia-gpu)).
-  The optional patch `test-peg-afe`, the AFE part alone, is gone.
+- The PCIe link to the NVIDIA GPU, as the Lenovo firmware of the W541 sets
+  it up (patches 0078-0083). With `mrc.bin` the graphics port of the
+  processor (PEG, `00:01.0`) is hidden from it, so that the integrated GPU
+  stays the primary one, and `mrc.bin` then leaves the port as it comes
+  out of reset; the native RAM init did not program it either. Measured on
+  a W541 with v1.3.6: 75 of the 107 fields of Intel's analog front-end
+  (AFE) settings for the port at their hardware defaults, the 8 GT/s
+  presets at 0 on all 16 lanes, phase 3 of the 8 GT/s equalization not
+  done. The Lenovo firmware (GNET94WW), read in its System Agent reference
+  code and its setup data, programs the AFE settings and the 8 GT/s
+  presets before the link trains: preset 3 for the root port, 7 with hint
+  2 for the GPU. Once the link is up it reads the full swing of the GPU
+  and writes the coefficients of its preset to each lane, then equalizes
+  again for 8 GT/s; its search of the best preset per lane is off on the
+  W541. The firmware now does the same, *As the Lenovo firmware* in
+  *Hardware* → *NVIDIA GPU link tuning*, shown while *NVIDIA discrete GPU*
+  is on. The same setting also offers *AFE and 8 GT/s presets* (the
+  presets without the equalization; the default of v1.3.7-rc1, with
+  Intel's presets 8, 7 and 2), *AFE* alone and *Off* (as up to v1.3.6), to
+  compare them with the same image. The coreboot log reports the link and
+  the equalization (`cbmem -1 | grep PEG`), and `tools/peg-report.py`
+  shows the link from Linux with the errors of both ends
+  ([docs/flashing.md](docs/flashing.md#the-link-to-the-nvidia-gpu)). The
+  optional patch `test-peg-afe`, the AFE part alone, is gone.
 - The firmware powers the GPU up with 100 ms from its power to the end of
   its reset and 100 ms after it, as the PCIe specifications want and as
   the ACPI power resource already did (10 and 50 ms before): 140 ms more
