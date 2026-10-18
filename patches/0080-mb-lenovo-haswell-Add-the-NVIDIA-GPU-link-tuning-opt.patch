@@ -1,0 +1,60 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 18 Oct 2026 18:38:50 +0200
+Subject: [PATCH] mb/lenovo/haswell: Add the NVIDIA GPU link tuning option
+
+peg_link_tuning, under Hardware > Graphics after the NVIDIA GPU itself
+and shown only while it is on: what coreboot programs on the PEG port
+before the link to the GPU trains. Off leaves the hardware defaults,
+AFE programs Intel's AFE settings, AFE and 8 GT/s presets (the
+default) also Intel's Gen3 transmitter presets. With it the effect of
+each on the link can be compared without a new image.
+
+TEST=Built for Lenovo ThinkPad W541.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/cfr.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index db38ee47..506c4a69 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -489,6 +489,24 @@ static const struct sm_object enable_dual_graphics = SM_DECLARE_BOOL({
+ 	.default_value	= false,
+ });
+ 
++/* What coreboot programs on the PEG port before its link trains */
++static const struct sm_object peg_link_tuning = SM_DECLARE_ENUM({
++	.flags		= CONFIG(USE_NATIVE_RAMINIT) || CONFIG(HASWELL_HIDE_PEG_FROM_MRC) ?
++			  0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "peg_link_tuning",
++	.ui_name	= "NVIDIA GPU link tuning",
++	.ui_helptext	= "Settings of the PCIe link to the NVIDIA GPU, programmed\n"
++			  "before it trains: Intel's analog front-end (AFE) settings,\n"
++			  "and Intel's transmitter presets for 8 GT/s (PCIe 3.0).\n"
++			  "Off: the hardware defaults. Takes effect at the next boot.",
++	.default_value	= PEG_TUNING_DEFAULT,
++	.values		= (const struct sm_enum_value[]) {
++				{ "Off",			PEG_TUNING_OFF		},
++				{ "AFE",			PEG_TUNING_AFE		},
++				{ "AFE and 8 GT/s presets",	PEG_TUNING_AFE_PRESETS	},
++				SM_ENUM_VALUE_END					},
++}, WITH_DEP_VALUES(&enable_dual_graphics, true));
++
+ static const struct sm_object expresscard = SM_DECLARE_BOOL({
+ 	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
+ 	.opt_name	= "expresscard",
+@@ -513,6 +531,7 @@ static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
+ 	.ui_name	= "Graphics",
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&enable_dual_graphics,
++		&peg_link_tuning,
+ 		&gfx_uma_size,
+ 		&gfx_uma_size_mrc,
+ 		&gfx_aperture_size,
+-- 
+2.43.0
+

@@ -349,10 +349,13 @@ step "serie di patch"
 check_series patches
 check_series patches/edk2
 check_series patches/lvglpkg
+n=0
 for p in patches/optional/*.patch; do
+	[ -e "${p}" ] || continue
 	head -1 "${p}" | grep -q '^From [0-9a-f]\{40\} ' || bad "${p}: non e' una mail di git format-patch"
+	n=$((n + 1))
 done
-ok "$(find patches/optional -name '*.patch' | wc -l) patch opzionali"
+ok "${n} patch opzionali"
 # la bozza per una release che riscrive la parte RO: in nessuna serie
 for p in patches/ro-next/*.patch; do
 	[ -e "${p}" ] || continue

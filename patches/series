@@ -74,3 +74,6 @@
 0075-payloads-external-iPXE-Choose-the-EFI-image-to-build.patch
 0076-payloads-external-edk2-Include-CSMWrap-as-a-boot-opt.patch
 0077-mb-lenovo-haswell-Add-the-boot-options-of-the-payloa.patch
+0078-nb-intel-haswell-Program-the-PEG-AFE-and-Gen3-preset.patch
+0079-ec-lenovo-pmh7-Power-the-dGPU-up-with-the-PCIe-timin.patch
+0080-mb-lenovo-haswell-Add-the-NVIDIA-GPU-link-tuning-opt.patch

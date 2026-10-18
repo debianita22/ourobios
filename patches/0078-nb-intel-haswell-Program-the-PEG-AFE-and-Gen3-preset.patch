@@ -1,0 +1,332 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 18 Oct 2026 18:16:57 +0200
+Subject: [PATCH] nb/intel/haswell: Program the PEG AFE and Gen3 presets before
+ training
+
+With HASWELL_HIDE_PEG_FROM_MRC the MRC does not see the PEG ports and
+does not program their AFE, and the native RAM init never did: on a
+ThinkPad W541, 75 of the 107 fields peg_dmi_recipe() sets for the PEG
+are at their hardware defaults, the Gen3 Lane Equalization Control
+registers are all 0 (preset 0 both ways) and LnkSta2 shows phase 3 of
+the 8 GT/s equalization not done. The link to its Quadro K2100M trains
+to 8 GT/s, and the GPU driver changes its speed at run time.
+
+When the MRC does not program the PEG itself (PEG hidden from it, or
+the native RAM init), northbridge_setup_peg() now programs what the
+peg_link_tuning option asks for before it starts the training:
+- PEG_TUNING_AFE: the PEG half of peg_dmi_recipe(), which only the DMI
+  used so far, once through PEG10, as it covers the whole PEG PHY;
+- PEG_TUNING_AFE_PRESETS, the default: also Intel's Gen3 presets in
+  the Lane Equalization Control registers of each PEG port: the root
+  port transmits with preset 8 and asks the device for preset 7 with
+  receiver preset hint 2, the defaults Intel's FSP documents for the
+  PCIe ports of later CPUs (CpuPcieGen3RootPortPreset and the next two
+  in alderlake/FspsUpd.h);
+- PEG_TUNING_OFF: nothing, as before.
+
+DEFER_OC (bit 16 of 0xc24, named in the Sandy Bridge code) holds the
+links until start_peg2_link_training() clears it, so a link trains and
+first equalizes for 8 GT/s with these settings in place. A link
+already up is left alone. At their init in ramstage the PEG ports
+report speed, width and equalization phases of the link, and the
+presets and the lane errors of lane 0. early_pcie.c and vcu_mailbox.c
+are now built with the Haswell MRC too.
+
+TEST=Built for Lenovo ThinkPad W541, mrc.bin and native RAM init.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/northbridge/intel/haswell/Kconfig         |   5 +-
+ src/northbridge/intel/haswell/Makefile.mk     |   6 +
+ src/northbridge/intel/haswell/early_peg.c     | 117 +++++++++++++++++-
+ src/northbridge/intel/haswell/haswell.h       |  11 ++
+ src/northbridge/intel/haswell/pcie.c          |  29 ++++-
+ .../intel/haswell/registers/pcie_graphics.h   |   6 +
+ 6 files changed, 168 insertions(+), 6 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
+index 11950198..ff4531d4 100644
+--- a/src/northbridge/intel/haswell/Kconfig
++++ b/src/northbridge/intel/haswell/Kconfig
+@@ -117,8 +117,9 @@ config HASWELL_HIDE_PEG_FROM_MRC
+ 	help
+ 	  If set, hides all PEG devices from MRC. This allows the iGPU
+ 	  to be used even when a dedicated graphics card is present.
+-	  However, it prevents MRC from programming PEG AFE registers,
+-	  which can make PEG devices unstable. When unsure, choose N.
++	  MRC then does not program the PEG AFE registers: coreboot
++	  programs them before the PEG links train, unless the
++	  peg_link_tuning option is set to off.
+ 
+ # The UEFI System Agent binary needs to be at a fixed offset in the flash
+ # and can therefore only reside in the COREBOOT fmap region
+diff --git a/src/northbridge/intel/haswell/Makefile.mk b/src/northbridge/intel/haswell/Makefile.mk
+index c5cc82fc..1780e1d1 100644
+--- a/src/northbridge/intel/haswell/Makefile.mk
++++ b/src/northbridge/intel/haswell/Makefile.mk
+@@ -35,6 +35,12 @@ subdirs-y  += broadwell_mrc
+ 
+ else
+ subdirs-y  += haswell_mrc
++
++# Intel's AFE settings for the PEG ports, which the MRC does not program
++# when they are hidden from it (early_peg.c)
++ifneq ($(CONFIG_INTEL_LYNXPOINT_LP),y)
++romstage-y += early_pcie.c vcu_mailbox.c
++endif
+ endif
+ endif
+ 
+diff --git a/src/northbridge/intel/haswell/early_peg.c b/src/northbridge/intel/haswell/early_peg.c
+index bb59d5d6..cedb78ca 100644
+--- a/src/northbridge/intel/haswell/early_peg.c
++++ b/src/northbridge/intel/haswell/early_peg.c
+@@ -1,8 +1,11 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <commonlib/helpers.h>
+ #include <console/console.h>
++#include <device/pci_def.h>
+ #include <device/pci_ops.h>
+ #include <northbridge/intel/haswell/haswell.h>
++#include <option.h>
+ #include <types.h>
+ 
+ static bool peg_hidden[MAX_PEG_FUNC];
+@@ -17,10 +20,113 @@ static u32 deven_for_peg(const u8 func)
+ 	}
+ }
+ 
++/*
++ * Intel's default Gen3 presets for the PCIe ports of its CPUs, as the FSP of
++ * later ones documents them (CpuPcieGen3RootPortPreset, -EndPointPreset and
++ * -EndPointHint in alderlake/FspsUpd.h): the root port transmits with preset
++ * 8 and asks the device for preset 7, with receiver preset hint 2.
++ */
++#define PEG_GEN3_RP_PRESET		8
++#define PEG_GEN3_EP_PRESET		7
++#define PEG_GEN3_EP_HINT		2
++
++/* Secondary PCI Express capability: Lane Equalization Control, 16 bits a lane */
++#define SEC_PCIE_LANE_EQ_CTL		0x0c
++#define  LANE_EQ_DP_TX_PRESET(x)	((x) << 0)
++#define  LANE_EQ_UP_TX_PRESET(x)	((x) << 8)
++#define  LANE_EQ_UP_RX_HINT(x)		((x) << 12)
++#define  LANE_EQ_FIELDS			0x7f0f
++
++/*
++ * MRC programs the PEG ports itself when it can see them. Hidden from it, or
++ * with the native RAM init, nothing does: peg_tune() takes over.
++ */
++static bool peg_left_to_coreboot(void)
++{
++	return CONFIG(USE_NATIVE_RAMINIT) || CONFIG(HASWELL_HIDE_PEG_FROM_MRC);
++}
++
++static u8 peg_link_state(const pci_devfn_t dev)
++{
++	return pci_read_config8(dev, PEG_LINK_STATE) & 0xf;
++}
++
++static u16 peg_find_ext_cap(const pci_devfn_t dev, const u16 id)
++{
++	u16 offset = 0x100;
++
++	for (unsigned int i = 0; i < 64 && offset >= 0x100; i++) {
++		const u32 header = pci_read_config32(dev, offset);
++		if (header == 0 || header == 0xffffffff)
++			break;
++		if ((header & 0xffff) == id)
++			return offset;
++		offset = (header >> 20) & 0xffc;
++	}
++	return 0;
++}
++
++static void peg_set_gen3_presets(const pci_devfn_t dev, const u8 func)
++{
++	const u16 cap = peg_find_ext_cap(dev, PCI_CAP_ID_SEC_PCIE);
++	if (!cap) {
++		printk(BIOS_WARNING, "PEG1%u: no Secondary PCIe capability, Gen3 presets left alone\n",
++		       func);
++		return;
++	}
++
++	const unsigned int lanes = MIN((pci_read_config32(dev, PEG_LCAP) >> 4) & 0x3f, 16);
++	const u16 presets = LANE_EQ_DP_TX_PRESET(PEG_GEN3_RP_PRESET) |
++			    LANE_EQ_UP_TX_PRESET(PEG_GEN3_EP_PRESET) |
++			    LANE_EQ_UP_RX_HINT(PEG_GEN3_EP_HINT);
++
++	for (unsigned int lane = 0; lane < lanes; lane++)
++		pci_update_config16(dev, cap + SEC_PCIE_LANE_EQ_CTL + 2 * lane,
++				    (u16)~LANE_EQ_FIELDS, presets);
++
++	printk(BIOS_DEBUG, "PEG1%u: Gen3 presets on %u lanes, lane 0 equalization control %04x\n",
++	       func, lanes, pci_read_config16(dev, cap + SEC_PCIE_LANE_EQ_CTL));
++}
++
++/*
++ * Runs while DEFER_OC holds the links, before the offset calibration and the
++ * training: what is programmed here is in place when a link first trains and
++ * when it first equalizes for 8 GT/s. A link already up is left alone.
++ */
++static void peg_tune(const u32 deven, const unsigned int tuning)
++{
++	if (tuning == PEG_TUNING_OFF || !peg_left_to_coreboot())
++		return;
++
++	for (u8 func = 0; func < MAX_PEG_FUNC; func++) {
++		if (!(deven & deven_for_peg(func)))
++			continue;
++		const u8 state = peg_link_state(PEG_DEV(func));
++		printk(BIOS_DEBUG, "PEG1%u: link state %u before tuning\n", func, state);
++		if (state >= PEG_LINK_L0) {
++			printk(BIOS_NOTICE, "PEG1%u: link already up, PEG not tuned\n", func);
++			return;
++		}
++	}
++
++	/* The PEG half of Intel's AFE recipe covers the whole PHY, through PEG10 */
++	peg_dmi_recipe(true, PEG_DEV(0));
++	printk(BIOS_DEBUG, "PEG: AFE programmed\n");
++
++	if (tuning < PEG_TUNING_AFE_PRESETS)
++		return;
++
++	for (u8 func = 0; func < MAX_PEG_FUNC; func++) {
++		if (deven & deven_for_peg(func))
++			peg_set_gen3_presets(PEG_DEV(func), func);
++	}
++}
++
+ static void start_peg2_link_training(const u8 func)
+ {
+ 	const pci_devfn_t dev = PEG_DEV(func);
+ 
++	/* Three offset calibration retries; clearing DEFER_OC starts the training */
+ 	pci_update_config32(dev, 0xc24, ~(1 << 16), 1 << 5);
+ 	printk(BIOS_DEBUG, "Started PEG1%u link training.\n", func);
+ 
+@@ -33,9 +139,9 @@ static void start_peg2_link_training(const u8 func)
+ 	 * If one really wants to enable the Intel iGPU as primary, hide
+ 	 * all PEG devices during MRC execution. This will trick the MRC
+ 	 * into thinking there aren't any, and will enable the IGD. Note
+-	 * that PEG AFE settings will not be programmed, which may cause
+-	 * stability problems at higher PCIe link speeds. The most ideal
+-	 * way to fix this problem for good is to implement native init.
++	 * that PEG AFE settings will not be programmed by the MRC, which
++	 * may cause stability problems at higher PCIe link speeds: with
++	 * the peg_link_tuning option, peg_tune() programs them instead.
+ 	 */
+ 	if (CONFIG(HASWELL_HIDE_PEG_FROM_MRC)) {
+ 		pci_and_config32(HOST_BRIDGE, DEVEN, ~deven_for_peg(func));
+@@ -47,6 +153,11 @@ static void start_peg2_link_training(const u8 func)
+ void northbridge_setup_peg(void)
+ {
+ 	const u32 deven = pci_read_config32(HOST_BRIDGE, DEVEN);
++	const unsigned int tuning = get_uint_option("peg_link_tuning", PEG_TUNING_DEFAULT);
++
++	/* The AFE of all the PEG ports is programmed through PEG10 */
++	if (deven & DEVEN_D1F0EN)
++		peg_tune(deven, tuning);
+ 
+ 	for (u8 func = 0; func < MAX_PEG_FUNC; func++) {
+ 		if (deven & deven_for_peg(func)) {
+diff --git a/src/northbridge/intel/haswell/haswell.h b/src/northbridge/intel/haswell/haswell.h
+index 35d2f8db..48d539b7 100644
+--- a/src/northbridge/intel/haswell/haswell.h
++++ b/src/northbridge/intel/haswell/haswell.h
+@@ -65,6 +65,17 @@ void haswell_late_initialization(void);
+ void northbridge_setup_peg(void);
+ void northbridge_unhide_peg(void);
+ 
++/*
++ * Values of the peg_link_tuning option: what the firmware programs on the
++ * PEG ports before their links train, when MRC does not.
++ */
++enum peg_link_tuning {
++	PEG_TUNING_OFF		= 0,	/* the hardware defaults */
++	PEG_TUNING_AFE		= 1,	/* Intel's AFE settings, peg_dmi_recipe() */
++	PEG_TUNING_AFE_PRESETS	= 2,	/* and Intel's Gen3 transmitter presets */
++};
++#define PEG_TUNING_DEFAULT	PEG_TUNING_AFE_PRESETS
++
+ void dmi_early_init(void);
+ void peg_dmi_recipe(const bool is_peg, const pci_devfn_t dev);
+ 
+diff --git a/src/northbridge/intel/haswell/pcie.c b/src/northbridge/intel/haswell/pcie.c
+index 345f00d5..b1f7de81 100644
+--- a/src/northbridge/intel/haswell/pcie.c
++++ b/src/northbridge/intel/haswell/pcie.c
+@@ -149,6 +149,33 @@ static void peg_enable(struct device *dev)
+ 	pci_or_config16(dev, 0x258, 1 << 2);
+ }
+ 
++/* Speed, width and 8 GT/s equalization of the link, with the presets in use */
++static void peg_report_link(struct device *dev)
++{
++	static const char *const speeds[] = { "?", "2.5 GT/s", "5 GT/s", "8 GT/s" };
++	const unsigned int func = PCI_FUNC(dev->path.pci.devfn);
++	const u16 lsts = pci_read_config16(dev, PEG_LSTS);
++	const u16 lsts2 = pci_read_config16(dev, PEG_LSTS2);
++	const unsigned int speed = lsts & 0xf;
++
++	printk(BIOS_INFO, "PEG1%u: link at %s x%u, 8 GT/s equalization %s (phase 1%c 2%c 3%c)\n",
++	       func, speed < ARRAY_SIZE(speeds) ? speeds[speed] : "?", (lsts >> 4) & 0x3f,
++	       lsts2 & (1 << 1) ? "complete" : "not done",
++	       lsts2 & (1 << 2) ? '+' : '-', lsts2 & (1 << 3) ? '+' : '-',
++	       lsts2 & (1 << 4) ? '+' : '-');
++
++	const unsigned int cap = pciexp_find_extended_cap(dev, PCI_CAP_ID_SEC_PCIE, 0);
++	if (cap)
++		printk(BIOS_DEBUG, "PEG1%u: lane 0 equalization control %04x, lane errors %08x\n",
++		       func, pci_read_config16(dev, cap + 0x0c), pci_read_config32(dev, cap + 0x08));
++}
++
++static void peg_init(struct device *dev)
++{
++	pci_dev_init(dev);
++	peg_report_link(dev);
++}
++
+ static struct device_operations device_ops = {
+ 	.read_resources		= pci_bus_read_resources,
+ 	.set_resources		= pci_dev_set_resources,
+@@ -156,7 +183,7 @@ static struct device_operations device_ops = {
+ 	.scan_bus		= pciexp_scan_bridge,
+ 	.reset_bus		= pci_bus_reset,
+ 	.enable			= peg_enable,
+-	.init			= pci_dev_init,
++	.init			= peg_init,
+ 	.ops_pci		= &pci_dev_ops_pci,
+ #if CONFIG(HAVE_ACPI_TABLES)
+ 	.acpi_name		= pcie_acpi_name,
+diff --git a/src/northbridge/intel/haswell/registers/pcie_graphics.h b/src/northbridge/intel/haswell/registers/pcie_graphics.h
+index 36627657..c8e113cb 100644
+--- a/src/northbridge/intel/haswell/registers/pcie_graphics.h
++++ b/src/northbridge/intel/haswell/registers/pcie_graphics.h
+@@ -8,6 +8,7 @@
+ #define PEG_DCAP	0xa4
+ 
+ #define PEG_LCAP	0xac
++#define PEG_LSTS	0xb2
+ 
+ #define PEG_DSTS	0xaa
+ 
+@@ -16,6 +17,11 @@
+ #define PEG_DCAP2	0xc4	/* 32bit */
+ 
+ #define PEG_LCTL2	0xd0
++#define PEG_LSTS2	0xd2
++
++/* Link state of the PEG port, [3:0]: 0 while the link is down, 7 in L0 */
++#define PEG_LINK_STATE	0x216
++#define  PEG_LINK_L0	7
+ 
+ #define PEG_VC0RCTL	0x114
+ 
+-- 
+2.43.0
+
