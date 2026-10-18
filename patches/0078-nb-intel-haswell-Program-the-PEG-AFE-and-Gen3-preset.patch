@@ -42,9 +42,9 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  src/northbridge/intel/haswell/Makefile.mk     |   6 +
  src/northbridge/intel/haswell/early_peg.c     | 117 +++++++++++++++++-
  src/northbridge/intel/haswell/haswell.h       |  11 ++
- src/northbridge/intel/haswell/pcie.c          |  29 ++++-
+ src/northbridge/intel/haswell/pcie.c          |  30 ++++-
  .../intel/haswell/registers/pcie_graphics.h   |   6 +
- 6 files changed, 168 insertions(+), 6 deletions(-)
+ 6 files changed, 169 insertions(+), 6 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
 index 11950198..ff4531d4 100644
@@ -80,7 +80,7 @@ index c5cc82fc..1780e1d1 100644
  endif
  
 diff --git a/src/northbridge/intel/haswell/early_peg.c b/src/northbridge/intel/haswell/early_peg.c
-index bb59d5d6..cedb78ca 100644
+index bb59d5d6..829ea78b 100644
 --- a/src/northbridge/intel/haswell/early_peg.c
 +++ b/src/northbridge/intel/haswell/early_peg.c
 @@ -1,8 +1,11 @@
@@ -149,7 +149,7 @@ index bb59d5d6..cedb78ca 100644
 +{
 +	const u16 cap = peg_find_ext_cap(dev, PCI_CAP_ID_SEC_PCIE);
 +	if (!cap) {
-+		printk(BIOS_WARNING, "PEG1%u: no Secondary PCIe capability, Gen3 presets left alone\n",
++		printk(BIOS_WARNING, "PEG1%u: no Secondary PCIe capability, no Gen3 presets\n",
 +		       func);
 +		return;
 +	}
@@ -163,7 +163,7 @@ index bb59d5d6..cedb78ca 100644
 +		pci_update_config16(dev, cap + SEC_PCIE_LANE_EQ_CTL + 2 * lane,
 +				    (u16)~LANE_EQ_FIELDS, presets);
 +
-+	printk(BIOS_DEBUG, "PEG1%u: Gen3 presets on %u lanes, lane 0 equalization control %04x\n",
++	printk(BIOS_DEBUG, "PEG1%u: Gen3 presets on %u lanes, lane 0 EQ control %04x\n",
 +	       func, lanes, pci_read_config16(dev, cap + SEC_PCIE_LANE_EQ_CTL));
 +}
 +
@@ -257,10 +257,10 @@ index 35d2f8db..48d539b7 100644
  void peg_dmi_recipe(const bool is_peg, const pci_devfn_t dev);
  
 diff --git a/src/northbridge/intel/haswell/pcie.c b/src/northbridge/intel/haswell/pcie.c
-index 345f00d5..b1f7de81 100644
+index 345f00d5..c7c16c04 100644
 --- a/src/northbridge/intel/haswell/pcie.c
 +++ b/src/northbridge/intel/haswell/pcie.c
-@@ -149,6 +149,33 @@ static void peg_enable(struct device *dev)
+@@ -149,6 +149,34 @@ static void peg_enable(struct device *dev)
  	pci_or_config16(dev, 0x258, 1 << 2);
  }
  
@@ -273,7 +273,7 @@ index 345f00d5..b1f7de81 100644
 +	const u16 lsts2 = pci_read_config16(dev, PEG_LSTS2);
 +	const unsigned int speed = lsts & 0xf;
 +
-+	printk(BIOS_INFO, "PEG1%u: link at %s x%u, 8 GT/s equalization %s (phase 1%c 2%c 3%c)\n",
++	printk(BIOS_INFO, "PEG1%u: link at %s x%u, 8 GT/s EQ %s (phase 1%c 2%c 3%c)\n",
 +	       func, speed < ARRAY_SIZE(speeds) ? speeds[speed] : "?", (lsts >> 4) & 0x3f,
 +	       lsts2 & (1 << 1) ? "complete" : "not done",
 +	       lsts2 & (1 << 2) ? '+' : '-', lsts2 & (1 << 3) ? '+' : '-',
@@ -281,8 +281,9 @@ index 345f00d5..b1f7de81 100644
 +
 +	const unsigned int cap = pciexp_find_extended_cap(dev, PCI_CAP_ID_SEC_PCIE, 0);
 +	if (cap)
-+		printk(BIOS_DEBUG, "PEG1%u: lane 0 equalization control %04x, lane errors %08x\n",
-+		       func, pci_read_config16(dev, cap + 0x0c), pci_read_config32(dev, cap + 0x08));
++		printk(BIOS_DEBUG, "PEG1%u: lane 0 EQ control %04x, lane errors %08x\n",
++		       func, pci_read_config16(dev, cap + 0x0c),
++		       pci_read_config32(dev, cap + 0x08));
 +}
 +
 +static void peg_init(struct device *dev)
@@ -294,7 +295,7 @@ index 345f00d5..b1f7de81 100644
  static struct device_operations device_ops = {
  	.read_resources		= pci_bus_read_resources,
  	.set_resources		= pci_dev_set_resources,
-@@ -156,7 +183,7 @@ static struct device_operations device_ops = {
+@@ -156,7 +184,7 @@ static struct device_operations device_ops = {
  	.scan_bus		= pciexp_scan_bridge,
  	.reset_bus		= pci_bus_reset,
  	.enable			= peg_enable,
