@@ -2,7 +2,7 @@
 # peg-report.py - il link PCIe tra il W541 e la sua GPU NVIDIA: la porta PEG
 # del processore (00:01.0) e la GPU (01:00.0). Velocita' e larghezza, le fasi
 # dell'equalizzazione a 8 GT/s, i preset Gen3 e le impostazioni AFE di Intel
-# che il firmware programma con *NVIDIA GPU link tuning* (patch 0078-0083),
+# che il firmware programma con *NVIDIA GPU link tuning* (patch 0078-0084),
 # e gli errori che le due parti del link hanno registrato.
 #
 #   sudo python3 tools/peg-report.py              # il rapporto

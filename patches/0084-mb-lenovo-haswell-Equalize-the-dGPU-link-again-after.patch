@@ -1,0 +1,109 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 18 Oct 2026 21:32:19 +0200
+Subject: [PATCH] mb/lenovo/haswell: Equalize the dGPU link again after a
+ power-up by the OS
+
+northbridge_peg_equalize() runs once, in romstage. When the OS powers
+the dGPU off and on again through the power resource, _ON retrains the
+link from Detect, and nothing redoes the 8 GT/s equalization that the
+firmware did after the training: _ON now sets Perform Equalization and
+retrains the link once it is in L0 with VC0 negotiated, when the
+firmware's sequence ran (bit 14 of PEG10 register 0xdd8, which only it
+sets), and waits up to 100 ms for L0 again. The coefficients the
+firmware wrote to the PHY of the port are still there.
+
+On S3 resume northbridge_peg_equalize() waits 10 ms for the link
+instead of 100: with the dGPU left powered off by the OS, which the
+resume keeps, no link comes up, and the resume should not wait.
+
+TEST=Built for Lenovo ThinkPad W541, mrc.bin and native RAM init; the
+DSDT compiles without warnings.
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/acpi/dgpu.asl | 23 ++++++++++++++++++++++
+ src/northbridge/intel/haswell/early_peg.c  |  9 ++++++++-
+ 2 files changed, 31 insertions(+), 1 deletion(-)
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/dgpu.asl b/src/mainboard/lenovo/haswell/acpi/dgpu.asl
+index 34034d96..fe913b3a 100644
+--- a/src/mainboard/lenovo/haswell/acpi/dgpu.asl
++++ b/src/mainboard/lenovo/haswell/acpi/dgpu.asl
+@@ -50,6 +50,7 @@ Scope (\_SB.PCI0.PEGP)
+ 		Offset (0xb0),
+ 		,	4,
+ 		LNKD,	1,	/* Link control: link disable */
++		LNRL,	1,	/* Link control: retrain link */
+ 		Offset (0xb2),
+ 		LSTS,	16,	/* Link status (RW1C bits) */
+ 		Offset (0xc0),
+@@ -67,8 +68,13 @@ Scope (\_SB.PCI0.PEGP)
+ 		LNKS,	4,	/* PEG link state */
+ 		Offset (0x508),
+ 		TREN,	1,	/* PEG link training enable */
++		Offset (0xd98),
++		PFEQ,	1,	/* Link control 3: perform equalization */
+ 		Offset (0xd9c),
+ 		LERR,	32,	/* Lane error status (RW1C) */
++		Offset (0xdd8),
++		,	14,
++		EQDN,	1,	/* Set by the firmware's 8 GT/s equalization (0xdd8[14]) */
+ 	}
+ 
+ 	/* PMH7 index/data interface */
+@@ -159,6 +165,23 @@ Scope (\_SB.PCI0.PEGP)
+ 				Local0--
+ 			}
+ 
++			/*
++			 * The firmware equalized the link for 8 GT/s again after
++			 * the training, as the Lenovo firmware does: do the same
++			 * after this one. The coefficients it wrote to the PHY of
++			 * the port are still there.
++			 */
++			If (EQDN && (LNKS == PEG_LINK_UP)) {
++				PFEQ = 1
++				LNRL = 1
++				Sleep (1)
++				Local0 = 100
++				While ((LNKS != PEG_LINK_UP) && Local0) {
++					Sleep (1)
++					Local0--
++				}
++			}
++
+ 			/* The GPU forgets its subsystem ID when powered off */
+ 			\_SB.PCI0.PEGP.DEV0.RSID ()
+ 		}
+diff --git a/src/northbridge/intel/haswell/early_peg.c b/src/northbridge/intel/haswell/early_peg.c
+index ac1cd6be..f397e05f 100644
+--- a/src/northbridge/intel/haswell/early_peg.c
++++ b/src/northbridge/intel/haswell/early_peg.c
+@@ -9,6 +9,7 @@
+ #include <northbridge/intel/haswell/chip.h>
+ #include <northbridge/intel/haswell/haswell.h>
+ #include <option.h>
++#include <romstage_handoff.h>
+ #include <static.h>
+ #include <timer.h>
+ #include <types.h>
+@@ -392,7 +393,13 @@ void northbridge_peg_equalize(void)
+ 	if (!peg_equalization_armed || !(deven & DEVEN_D1F0EN))
+ 		return;
+ 
+-	if (peg_wait_link_up(dev, 100) && peg_device_supports_gen3(dev))
++	/*
++	 * On S3 resume the OS may have left the device powered off: a link that
++	 * is not up by now will not come up, and the resume should not wait.
++	 */
++	const unsigned int timeout_ms = romstage_handoff_is_resume() ? 10 : 100;
++
++	if (peg_wait_link_up(dev, timeout_ms) && peg_device_supports_gen3(dev))
+ 		peg_gen3_equalize(dev);
+ 	else
+ 		printk(BIOS_INFO, "PEG10: no link to an 8 GT/s device, no equalization\n");
+-- 
+2.43.0
+
