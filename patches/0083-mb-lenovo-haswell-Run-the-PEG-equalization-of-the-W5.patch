@@ -1,0 +1,74 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 18 Oct 2026 20:41:01 +0200
+Subject: [PATCH] mb/lenovo/haswell: Run the PEG equalization of the W541 OEM
+ firmware
+
+The OEM firmware of the ThinkPad W541 (GNET94WW) programs the 8 GT/s
+presets of its NVIDIA GPU link with preset 3 for the root port, 7 for
+the GPU and receiver preset hint 2, in the System Agent policy its
+CpuInitPhnxPei module builds, then runs the 8 GT/s equalization of the
+reference code; the Gen3 preset search of that code is off in its
+setup data (SaPpiSetupVar). Give the W541 those presets in its
+devicetree, and the setup option peg_link_tuning its new value, "As the
+Lenovo firmware", the default: Intel's AFE settings, the presets and the
+equalization.
+
+The T440p keeps Intel's presets, which its OEM firmware uses.
+
+TEST=Built for Lenovo ThinkPad W541, mrc.bin and native RAM init.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/cfr.c                     | 10 ++++++----
+ .../lenovo/haswell/variants/w541/devicetree.cb         |  7 +++++++
+ 2 files changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 506c4a69..88631ef4 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -495,15 +495,17 @@ static const struct sm_object peg_link_tuning = SM_DECLARE_ENUM({
+ 			  0 : CFR_OPTFLAG_SUPPRESS,
+ 	.opt_name	= "peg_link_tuning",
+ 	.ui_name	= "NVIDIA GPU link tuning",
+-	.ui_helptext	= "Settings of the PCIe link to the NVIDIA GPU, programmed\n"
+-			  "before it trains: Intel's analog front-end (AFE) settings,\n"
+-			  "and Intel's transmitter presets for 8 GT/s (PCIe 3.0).\n"
+-			  "Off: the hardware defaults. Takes effect at the next boot.",
++	.ui_helptext	= "Settings of the PCIe link to the NVIDIA GPU: Intel's analog\n"
++			  "front-end (AFE) settings and the transmitter presets for\n"
++			  "8 GT/s (PCIe 3.0) before the link trains, then the 8 GT/s\n"
++			  "equalization of the Lenovo firmware. Off: the hardware\n"
++			  "defaults. Takes effect at the next boot.",
+ 	.default_value	= PEG_TUNING_DEFAULT,
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "Off",			PEG_TUNING_OFF		},
+ 				{ "AFE",			PEG_TUNING_AFE		},
+ 				{ "AFE and 8 GT/s presets",	PEG_TUNING_AFE_PRESETS	},
++				{ "As the Lenovo firmware",	PEG_TUNING_EQUALIZATION	},
+ 				SM_ENUM_VALUE_END					},
+ }, WITH_DEP_VALUES(&enable_dual_graphics, true));
+ 
+diff --git a/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb b/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb
+index 6f218144..14b2f4fa 100644
+--- a/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb
++++ b/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb
+@@ -14,6 +14,13 @@ chip northbridge/intel/haswell
+ 	}"
+ 	register "ec_present" = "true"
+ 	register "spd_addresses" = "{0x50, 0x52, 0x51, 0x53}"
++	# The 8 GT/s presets of the OEM firmware (GNET94WW) for the NVIDIA GPU
++	register "peg_cfg[0]" = "{
++		.gen3_presets	= true,
++		.gen3_rp_preset	= 3,
++		.gen3_ep_preset	= 7,
++		.gen3_ep_hint	= 2,
++	}"
+ 	chip cpu/intel/haswell
+ 		device cpu_cluster 0 on ops haswell_cpu_bus_ops end
+ 	end
+-- 
+2.43.0
+
