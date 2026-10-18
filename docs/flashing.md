@@ -502,10 +502,10 @@ device in D3cold, which the reading would wake. `auto` again afterwards,
 or a reboot, lets Linux power it down. Under load the link should be at
 8 GT/s x16, with the equalization complete and no errors. To compare the
 settings, repeat the test with each: whatever the link does, the setup
-stays reachable, as the integrated GPU drives the screen. After a resume
-from S3 with the GPU powered off by Linux, the firmware finds no link:
-the coefficients and the new equalization wait for the next boot, and
-the coreboot log of the resume says so.
+stays reachable, as the integrated GPU drives the screen. When Linux
+powers the GPU off and on again, or after a resume from S3 with the GPU
+left off, the ACPI power resource equalizes the link again at the
+power-up, as the firmware did at boot.
 
 ## Diagnosing a hang
 

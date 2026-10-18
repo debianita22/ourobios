@@ -80,3 +80,4 @@
 0081-nb-intel-haswell-Take-the-PEG-Gen3-presets-from-the-.patch
 0082-nb-intel-haswell-Run-the-8-GT-s-equalization-of-the-.patch
 0083-mb-lenovo-haswell-Run-the-PEG-equalization-of-the-W5.patch
+0084-mb-lenovo-haswell-Equalize-the-dGPU-link-again-after.patch

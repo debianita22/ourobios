@@ -8,7 +8,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 ## v1.3.7
 
 - The PCIe link to the NVIDIA GPU, as the Lenovo firmware of the W541 sets
-  it up (patches 0078-0083). With `mrc.bin` the graphics port of the
+  it up (patches 0078-0084). With `mrc.bin` the graphics port of the
   processor (PEG, `00:01.0`) is hidden from it, so that the integrated GPU
   stays the primary one, and `mrc.bin` then leaves the port as it comes
   out of reset; the native RAM init did not program it either. Measured on
@@ -29,7 +29,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   compare them with the same image. The coreboot log reports the link and
   the equalization (`cbmem -1 | grep PEG`), and `tools/peg-report.py`
   shows the link from Linux with the errors of both ends
-  ([docs/flashing.md](docs/flashing.md#the-link-to-the-nvidia-gpu)). The
+  ([docs/flashing.md](docs/flashing.md#the-link-to-the-nvidia-gpu)).
+  When Linux powers the GPU off and on again (runtime PM), the ACPI
+  power resource equalizes the link again the same way (patch 0084). The
   optional patch `test-peg-afe`, the AFE part alone, is gone.
 - The firmware powers the GPU up with 100 ms from its power to the end of
   its reset and 100 ms after it, as the PCIe specifications want and as
