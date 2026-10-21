@@ -190,10 +190,11 @@ flashrom, would change. Nothing of it is in the ROMs of the releases.
   bump the keyblock or preamble version (`VBOOT_KEYBLOCK_VERSION`, 1 today)
   when a release has to cut off the ones before.
 - **Larger RW slots**, if the payload needs them: the flash map is in the
-  read-only part, and in v1.3.6 about 195 KiB of `FW_MAIN_A` are free with
-  `mrc` and 129 KiB with `nri`, whose romstage carries the RAM init
-  (about 510 and 443 before iPXE, CSMWrap and the update screen went into
-  the payload).
+  read-only part, and in v1.3.8 about 304 KiB of `FW_MAIN_A` are free with
+  `mrc` and 237 KiB with `nri`, whose romstage carries the RAM init
+  (195 and 129 in v1.3.6, after iPXE, CSMWrap and the update screen went
+  into the payload; the drivers the W541 has no use for left it in
+  v1.3.8).
 - **With the same release, optional**: a newer coreboot pin, and vboot's
   CBFS verification (`VBOOT_CBFS_INTEGRATION`), which hashes each file as it
   is loaded instead of reading the slot twice: about 0.2 s less at every

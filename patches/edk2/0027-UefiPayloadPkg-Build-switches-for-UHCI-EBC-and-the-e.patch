@@ -1,0 +1,102 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 21 Oct 2026 18:06:05 +0200
+Subject: [PATCH] UefiPayloadPkg: Build switches for UHCI, EBC and the extra
+ filesystems
+
+UHCI_ENABLE, EBC_ENABLE and EXTRA_FS_DRIVERS, all TRUE by default, so
+that a platform without UHCI controllers, option ROMs in EFI byte code
+or a need to read NTFS, exFAT and ext2 volumes from the firmware can
+leave those drivers out, as UFS_ENABLE already allows for UFS. The ext4
+driver stays in: it reads a Linux boot volume.
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ UefiPayloadPkg/UefiPayloadPkg.dsc |  7 +++++++
+ UefiPayloadPkg/UefiPayloadPkg.fdf | 12 ++++++++++--
+ 2 files changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
+index 33c5bf008..b4f6dd170 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dsc
++++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
+@@ -47,6 +47,9 @@
+   DEFINE BOOTSPLASH_IMAGE             = TRUE
+   DEFINE NVME_ENABLE                  = TRUE
+   DEFINE UFS_ENABLE                   = TRUE
++  DEFINE UHCI_ENABLE                  = TRUE
++  DEFINE EBC_ENABLE                   = TRUE
++  DEFINE EXTRA_FS_DRIVERS             = TRUE
+   DEFINE CAPSULE_SUPPORT              = FALSE
+   DEFINE LOCKBOX_SUPPORT              = FALSE
+   DEFINE LOAD_OPTION_ROMS             = FALSE
+@@ -1331,7 +1334,9 @@
+ !endif
+   MdeModulePkg/Universal/TimeDateSettingsDxe/TimeDateSettingsDxe.inf
+   MdeModulePkg/Universal/PlatformDriOverrideDxe/PlatformDriOverrideDxe.inf
++!if $(EBC_ENABLE) == TRUE
+   MdeModulePkg/Universal/EbcDxe/EbcDxe.inf
++!endif
+ 
+   UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf
+   UefiPayloadPkg/EcAcpiBatteryStatusDxe/EcAcpiBatteryStatusDxe.inf
+@@ -1410,7 +1415,9 @@
+   #
+   # Usb Support
+   #
++!if $(UHCI_ENABLE) == TRUE
+   MdeModulePkg/Bus/Pci/UhciDxe/UhciDxe.inf
++!endif
+   MdeModulePkg/Bus/Pci/EhciDxe/EhciDxe.inf
+   MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf
+   MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
+index a27017918..d4bea3c71 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.fdf
++++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
+@@ -346,7 +346,9 @@ INF LvglPkg/LvglSetupDxe/LvglSetupDxe.inf
+ INF MdeModulePkg/Universal/DisplayEngineDxe/DisplayEngineDxe.inf
+ !endif
+ INF MdeModulePkg/Universal/TimeDateSettingsDxe/TimeDateSettingsDxe.inf
++!if $(EBC_ENABLE) == TRUE
+ INF MdeModulePkg/Universal/EbcDxe/EbcDxe.inf
++!endif
+ INF UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf
+ INF UefiPayloadPkg/EcAcpiBatteryStatusDxe/EcAcpiBatteryStatusDxe.inf
+ 
+@@ -428,15 +430,19 @@ INF FatPkg/EnhancedFatDxe/Fat.inf
+ # Filesystem drivers
+ #
+ !if $(ARCH) == IA32
++INF  RuleOverride=BINARY USE = IA32 FSDrivers/ext4.inf
++!if $(EXTRA_FS_DRIVERS) == TRUE
+ INF  RuleOverride=BINARY USE = IA32 FSDrivers/exfat.inf
+ INF  RuleOverride=BINARY USE = IA32 FSDrivers/ext2.inf
+ INF  RuleOverride=BINARY USE = IA32 FSDrivers/ntfs.inf
+-INF  RuleOverride=BINARY USE = IA32 FSDrivers/ext4.inf
++!endif
+ !else
++INF  RuleOverride=BINARY USE = X64 FSDrivers/ext4.inf
++!if $(EXTRA_FS_DRIVERS) == TRUE
+ INF  RuleOverride=BINARY USE = X64 FSDrivers/exfat.inf
+ INF  RuleOverride=BINARY USE = X64 FSDrivers/ext2.inf
+ INF  RuleOverride=BINARY USE = X64 FSDrivers/ntfs.inf
+-INF  RuleOverride=BINARY USE = X64 FSDrivers/ext4.inf
++!endif
+ !endif
+ 
+ #
+@@ -464,7 +470,9 @@ INF  SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigDxe.inf
+ #
+ # Usb Support
+ #
++!if $(UHCI_ENABLE) == TRUE
+ INF MdeModulePkg/Bus/Pci/UhciDxe/UhciDxe.inf
++!endif
+ INF MdeModulePkg/Bus/Pci/EhciDxe/EhciDxe.inf
+ INF MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf
+ INF MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf
+-- 
+2.43.0
+

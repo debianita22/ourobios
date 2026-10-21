@@ -13,6 +13,12 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   with the newer update appended, instead of the last update alone; the
   same union in `dbxDefault`, so that fwupd can tell the DBX version. All
   the patches apply as they are. About 24 KiB more in each slot.
+- A lighter payload (patch `edk2/0027`): the drivers the W541 has no use
+  for are left out, UFS and UHCI host controllers (the PCH has EHCI and
+  xHCI), EFI byte code option ROMs, and the NTFS, exFAT and ext2
+  filesystems (FAT and ext4 stay, for the ESP and a Linux boot volume).
+  About 110 KiB less in each slot, DBX included: about 304 KiB free with
+  `mrc` and 237 KiB with `nri` (194 and 128 in v1.3.7).
 
 ## v1.3.7
 

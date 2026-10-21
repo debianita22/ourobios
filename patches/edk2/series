@@ -24,3 +24,4 @@
 0024-UefiPayloadPkg-An-11-MiB-FD-for-a-release-build-12-M.patch
 0025-UefiPayloadPkg-Refuse-CSMWrap-while-Secure-Boot-is-o.patch
 0026-UefiPayloadPkg-A-firmware-update-screen-with-the-our.patch
+0027-UefiPayloadPkg-Build-switches-for-UHCI-EBC-and-the-e.patch
