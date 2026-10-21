@@ -5,6 +5,15 @@ GitHub include its section; release candidates take the section of the
 version they lead to. For the releases before v1.3.0, see their notes on
 the [releases page](https://github.com/debianita22/ourobios/releases).
 
+## v1.3.8
+
+- EDK2 moved to MrChromebox `f7cbaab0d5a2` (`uefipayload_2608`, two
+  commits after the pin of v1.3.7): the complete Microsoft DBX (the
+  revocation list of Secure Boot, 24 KiB) enrolled with the default keys,
+  with the newer update appended, instead of the last update alone; the
+  same union in `dbxDefault`, so that fwupd can tell the DBX version. All
+  the patches apply as they are. About 24 KiB more in each slot.
+
 ## v1.3.7
 
 - The PCIe link to the NVIDIA GPU, as the Lenovo firmware of the W541 sets
