@@ -148,3 +148,7 @@ CONFIG_EDK2_ENABLE_IPXE=y
 CONFIG_IPXE_EFI_IMAGE="intel.efi"
 CONFIG_EDK2_ENABLE_CSMWRAP=y
 CONFIG_EDK2_CSMWRAP_FILE="w541/csmwrap.efi"
+# Drivers the W541 has no use for, left out of the payload (patch edk2/0027):
+# UFS and UHCI controllers (the PCH has EHCI and xHCI), EFI byte code option
+# ROMs, NTFS, exFAT and ext2 (FAT and ext4 stay in)
+CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D UFS_ENABLE=FALSE -D UHCI_ENABLE=FALSE -D EBC_ENABLE=FALSE -D EXTRA_FS_DRIVERS=FALSE"
