@@ -18,7 +18,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   xHCI), EFI byte code option ROMs, and the NTFS, exFAT and ext2
   filesystems (FAT and ext4 stay, for the ESP and a Linux boot volume).
   About 110 KiB less in each slot, DBX included: about 304 KiB free with
-  `mrc` and 237 KiB with `nri` (194 and 128 in v1.3.7).
+  `mrc` and 237 KiB with `nri` (194 and 128 in v1.3.7). Verified on a W541
+  with v1.3.8-rc2: fwupd reports the DBX version (20260707), the boot
+  manager still boots a USB stick, and OpenBSD installed from it.
 
 ## v1.3.7
 
