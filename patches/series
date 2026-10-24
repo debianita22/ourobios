@@ -82,3 +82,5 @@
 0083-mb-lenovo-haswell-Run-the-PEG-equalization-of-the-W5.patch
 0084-mb-lenovo-haswell-Equalize-the-dGPU-link-again-after.patch
 0085-mb-lenovo-haswell-One-cache-as-RAM-layout-for-mrc.bi.patch
+0086-nb-intel-haswell-nri-Take-the-DRAM-voltage-from-the-.patch
+0087-nb-intel-haswell-nri-Test-the-memory-after-training-.patch

@@ -1,0 +1,105 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sat, 24 Oct 2026 17:36:05 +0200
+Subject: [PATCH] nb/intel/haswell/nri: Take the DRAM voltage from the SPDs
+
+The native RAM init assumes 1.5 V on traditional Haswell and 1.35 V on
+ULT, and the voltage selects the DDRIO settings: VccDDQ high in the
+data, command and control fubs, the DIMM Vref slope, the VSSHI target,
+and what the PCU is told. Haswell mobile boards with DDR3L SO-DIMMs
+feed 1.35 V: on a ThinkPad W541 (i7-4810MQ, four DDR3L-1600 SO-DIMMs)
+mrc.bin programs PCU_DDR_VOLTAGE with 1 (1.35 V), while the native RAM
+init would program the PHY for 1.5 V.
+
+Do as the MRC: 1.35 V when every DIMM operates at 1.35 V (SPD byte 6),
+1.5 V otherwise. A board whose VR feeds a voltage the SPDs cannot tell
+sets it in the devicetree, ddr_voltage_mv. The value still goes into
+the MRC cache with the other non-training parameters, so fast boot and
+S3 resume keep it.
+
+TEST=Built for the W541 with the native RAM init. Not yet run.
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/northbridge/intel/haswell/chip.h             |  8 ++++++++
+ .../intel/haswell/native_raminit/raminit_main.c  |  3 ++-
+ .../haswell/native_raminit/raminit_native.h      |  1 +
+ .../haswell/native_raminit/spd_bitmunching.c     | 16 ++++++++++++++++
+ 4 files changed, 27 insertions(+), 1 deletion(-)
+
+diff --git a/src/northbridge/intel/haswell/chip.h b/src/northbridge/intel/haswell/chip.h
+index a4fec10e..2b12027c 100644
+--- a/src/northbridge/intel/haswell/chip.h
++++ b/src/northbridge/intel/haswell/chip.h
+@@ -45,6 +45,14 @@ struct northbridge_intel_haswell_config {
+ 
+ 	bool dq_pins_interleaved;
+ 
++	/*
++	 * DRAM voltage in mV for the native RAM init: 1500, 1350 or 1250.
++	 * 0 (the default) takes it from the SPDs: 1.35 V when every DIMM
++	 * operates at 1.35 V, else 1.5 V. Set it when the board feeds the
++	 * DIMMs a fixed voltage that the SPDs cannot tell.
++	 */
++	u16 ddr_voltage_mv;
++
+ 	bool usb_xhci_on_resume;
+ 
+ 	struct i915_gpu_controller_info gfx;
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index 8fbc7af4..8e29f4c4 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -187,7 +187,8 @@ static void initialize_ctrl(struct sysinfo *ctrl)
+ 
+ 	ctrl->cpu = cpu_get_cpuid();
+ 	ctrl->stepping = get_stepping(ctrl->cpu);
+-	ctrl->vdd_mv = is_hsw_ult() ? 1350 : 1500; /** FIXME: Hardcoded, does it matter? **/
++	ctrl->vdd_mv = is_hsw_ult() ? 1350 : 1500; /* Until the SPDs are read */
++	ctrl->vdd_mv_cfg = cfg->ddr_voltage_mv;
+ 	ctrl->dq_pins_interleaved = cfg->dq_pins_interleaved;
+ 	ctrl->restore_mrs = false;
+ 	ctrl->bootmode = bootmode;
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index f986a7d6..19d57ec7 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -438,6 +438,7 @@ struct sysinfo {
+ 	uint32_t qclkps;		/* Quadrature clock period in picoseconds */
+ 
+ 	uint16_t vdd_mv;
++	uint16_t vdd_mv_cfg;	/* From the devicetree, 0 = from the SPDs */
+ 
+ 	union ddr_scram_misc_control_reg misc_control_0;
+ 
+diff --git a/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c b/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
+index d9319d20..a481ad80 100644
+--- a/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
++++ b/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
+@@ -193,6 +193,22 @@ static enum raminit_status find_common_spd_parameters(struct sysinfo *ctrl)
+ 	/** TODO: Complete LPDDR support **/
+ 	ctrl->lpddr = false;
+ 
++	/*
++	 * The DRAM voltage selects the DDRIO settings (VccDDQ high, DIMM
++	 * Vref, VSSHI target) and what the PCU is told. As the MRC, take
++	 * 1.35 V when every DIMM operates at it (DDR3L), 1.5 V otherwise,
++	 * unless the devicetree says what the board feeds.
++	 */
++	if (ctrl->vdd_mv_cfg) {
++		ctrl->vdd_mv = ctrl->vdd_mv_cfg;
++	} else if (ctrl->flags.operable_1_35V) {
++		ctrl->vdd_mv = 1350;
++	} else {
++		ctrl->vdd_mv = 1500;
++	}
++	printk(BIOS_INFO, "DRAM voltage: %u mV (%s)\n", ctrl->vdd_mv,
++	       ctrl->vdd_mv_cfg ? "devicetree" : "SPD");
++
+ 	return RAMINIT_STATUS_SUCCESS;
+ }
+ 
+-- 
+2.43.0
+

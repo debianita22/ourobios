@@ -1,0 +1,303 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sat, 24 Oct 2026 17:40:41 +0200
+Subject: [PATCH] nb/intel/haswell/nri: Test the memory after training, and
+ train again once
+
+The MRC ends a training with a memory test (MEMTST) and a margin check
+that redo the training when it is not good enough; the native RAM init
+saves whatever the training steps produced and boots on it, and the
+first sign of a marginal training is the OS.
+
+Add a memory test task at the end of the training schedule, behind
+HASWELL_NRI_MEMORY_TEST: with the REUT, every bank of every rank is
+written with the victim/aggressor patterns of the WDB and read back,
+the first miscompare stops the test, and the lanes in error are logged.
+The addressing is the one of the ECC scrub, the sequence the one of
+the alias check (a write subsequence and a read one over the same
+cachelines), the patterns straight from the WDB (bit buffer mux), so
+that the write and the read compare against the same data whatever the
+LFSR state. About 0.2 s per 512 MiB bank, the channels in parallel: a
+few seconds on a cold boot with 32 GiB, nothing on a fast boot or S3
+resume, which restore the training values the test checked.
+
+When a training step or the test fails, train once more from scratch
+before giving up, which raminit_main had as a TODO.
+
+TEST=Built for the W541 with the native RAM init. Not yet run.
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/northbridge/intel/haswell/Kconfig         |   9 +
+ .../intel/haswell/native_raminit/Makefile.mk  |   1 +
+ .../haswell/native_raminit/memory_test.c      | 170 ++++++++++++++++++
+ .../haswell/native_raminit/raminit_main.c     |  16 +-
+ .../haswell/native_raminit/raminit_native.h   |   2 +
+ 5 files changed, 194 insertions(+), 4 deletions(-)
+ create mode 100644 src/northbridge/intel/haswell/native_raminit/memory_test.c
+
+diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
+index ff4531d4..b426d2d3 100644
+--- a/src/northbridge/intel/haswell/Kconfig
++++ b/src/northbridge/intel/haswell/Kconfig
+@@ -19,6 +19,15 @@ config USE_NATIVE_RAMINIT
+ 	  basic training steps implemented and supports S3 resume. LPDDR3, ECC RAM
+ 	  and Broadwell CPUs are NOT supported yet.
+ 
++config HASWELL_NRI_MEMORY_TEST
++	bool "Test the memory after training it"
++	depends on USE_NATIVE_RAMINIT
++	help
++	  After a cold boot training, write every bank of every rank with
++	  the REUT and read it back, as the MRC's memory test: a training
++	  that leaves a miscompare is redone once, then the boot stops. A
++	  few seconds per cold boot; fast boots and S3 resume skip it.
++
+ config HASWELL_VBOOT_IN_BOOTBLOCK
+ 	depends on VBOOT
+ 	bool "Start verstage in bootblock"
+diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+index 87fba9f4..e525b728 100644
+--- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
++++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+@@ -10,6 +10,7 @@ romstage-y += init_mpll.c
+ romstage-y += io_comp_control.c
+ romstage-y += memory_map.c
+ romstage-y += memory_scrub.c
++romstage-y += memory_test.c
+ romstage-y += raminit_main.c
+ romstage-y += raminit_native.c
+ romstage-y += ranges.c
+diff --git a/src/northbridge/intel/haswell/native_raminit/memory_test.c b/src/northbridge/intel/haswell/native_raminit/memory_test.c
+new file mode 100644
+index 00000000..03d8f193
+--- /dev/null
++++ b/src/northbridge/intel/haswell/native_raminit/memory_test.c
+@@ -0,0 +1,170 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <console/console.h>
++#include <lib.h>
++#include <northbridge/intel/haswell/haswell.h>
++#include <types.h>
++
++#include "raminit_native.h"
++
++/*
++ * A memory test after training, as the MRC's MEMTST: with the REUT, every
++ * bank of every rank is written with the victim/aggressor patterns of the
++ * WDB and read back, and the first miscompare stops the test. It is a task
++ * of the training schedule only: a fast boot or S3 resume restores the
++ * training values that it checked, and does not touch the memory contents.
++ */
++
++static enum raminit_status run_bank_test(struct sysinfo *ctrl, const uint8_t chanmask)
++{
++	mchbar_write32(REUT_GLOBAL_CTL, (union reut_seq_ctl_reg) {
++		.start_test    = 1,
++		.clear_errors  = 1,
++		.stop_on_error = 1,
++	}.raw);
++	const uint8_t ch_error = wait_for_reut(ctrl, chanmask) & chanmask;
++	if (!ch_error)
++		return RAMINIT_STATUS_SUCCESS;
++
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(ch_error & BIT(channel)))
++			continue;
++
++		const union raw_bitlane_errors errors = get_bitlane_errors(channel);
++		printk(BIOS_ERR, "Memory test: channel %u miscompare, lanes 0x%02x%08x%08x\n",
++		       channel, errors.ecc, errors.upper, errors.lower);
++	}
++	return RAMINIT_STATUS_MEMTEST_FAILURE;
++}
++
++enum raminit_status memory_test(struct sysinfo *ctrl)
++{
++	if (!CONFIG(HASWELL_NRI_MEMORY_TEST))
++		return RAMINIT_STATUS_SUCCESS;
++
++	/* MRC skips the REUT-based checks for HSW A0, the subsequence bitfields differ */
++	if (ctrl->stepping == STEPPING_A0)
++		return RAMINIT_STATUS_SUCCESS;
++
++	printk(BIOS_INFO, "Testing the memory after training\n");
++
++	setup_wdb(ctrl);
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!does_ch_exist(ctrl, channel))
++			continue;
++
++		/* Write the bank, then read it back from its first address */
++		const union reut_seq_cfg_reg reut_seq_cfg = {
++			.global_control            = 1,
++			.initialization_mode       = REUT_MODE_TEST,
++			.subsequence_start_pointer = 0,
++			.subsequence_end_pointer   = 1,
++			.start_test_delay          = 2,
++		};
++		mchbar_write64(REUT_ch_SEQ_CFG(channel), reut_seq_cfg.raw);
++		program_loop_count(ctrl, channel, 0);	/* Loop once */
++
++		/*
++		 * The eight victim/aggressor patterns of the WDB, one per cacheline,
++		 * straight from the buffer: the same data for the write and the read
++		 * back whatever the LFSR state.
++		 */
++		mchbar_write32(REUT_ch_WDB_CL_CTRL(channel), (union reut_pat_wdb_cl_ctrl_reg) {
++			.start_ptr = 0,
++			.end_ptr   = 7,
++			.inc_rate  = 1,
++			.inc_scale = SCALE_LINEAR,
++		}.raw);
++		const union reut_pat_wdb_cl_mux_cfg_reg pat_wdb_cl_mux_cfg = {
++			.mux_0_control = REUT_MUX_BTBUFFER,
++			.mux_1_control = REUT_MUX_BTBUFFER,
++			.mux_2_control = REUT_MUX_BTBUFFER,
++			.ecc_data_source_sel = 1,
++		};
++		mchbar_write32(REUT_ch_PAT_WDB_CL_MUX_CFG(channel), pat_wdb_cl_mux_cfg.raw);
++		mchbar_write32(REUT_ch_PAT_WDB_INV(channel), 0);
++
++		/* Stop at the first miscompare, on any lane */
++		const union reut_err_ctl_reg reut_err_ctl = {
++			.selective_err_enable_cacheline = 0xff,
++			.selective_err_enable_chunk     = 0xff,
++			.stop_on_error_control          = NTHSOE,
++			.stop_on_nth_error              = 1,
++		};
++		mchbar_write32(REUT_ch_ERR_CONTROL(channel), reut_err_ctl.raw);
++		mchbar_write64(REUT_ch_ERR_DATA_MASK(channel), 0);
++		mchbar_write8(REUT_ch_ERR_ECC_MASK(channel), 0);
++	}
++
++	/* Every row and column of one bank, as the ECC scrub walks them */
++	struct reut_box reut_addr = {
++		.row = {
++			.inc_val = 1,
++		},
++		.col = {
++			.inc_val = 1,
++		},
++	};
++	enum raminit_status status = RAMINIT_STATUS_SUCCESS;
++	for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
++		uint8_t chanmask = 0;
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++)
++			chanmask |= select_reut_ranks(ctrl, channel, BIT(rank));
++
++		if (!chanmask)
++			continue;
++
++		printk(BIOS_INFO, "Testing rank %u\n", rank);
++		const uint8_t slot = rank / 2;
++		for (uint8_t bank = 0; bank < 8; bank++) {
++			reut_addr.bank.start = bank;
++			reut_addr.bank.stop = bank;
++			for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++				if (!(BIT(channel) & chanmask))
++					continue;
++
++				struct raminit_dimm_info *dimm = &ctrl->dimms[channel][slot];
++				const uint32_t row_size = BIT(dimm->data.row_bits);
++				const uint32_t col_size = BIT(dimm->data.col_bits);
++				const uint32_t cl_per_row = col_size / WDB_CACHE_LINE_SIZE;
++				reut_addr.row.stop = row_size - 1;
++				reut_addr.col.stop = col_size - WDB_CACHE_LINE_SIZE;
++				reut_addr.row.inc_rate = cl_per_row;
++				program_seq_addr(channel, &reut_addr, false);
++
++				/* Cachelines in the bank: a power of two, as the row and column counts */
++				const uint8_t num_cl = log2_ceil(row_size) + log2_ceil(cl_per_row);
++				const union reut_subseq_ctl_reg subseq_a = {
++					.num_cachelines_with_scale     = num_cl,
++					.subseq_type                   = SUBSEQ_B_WR,
++					.reset_curr_base_addr_to_start = 0,
++				};
++				const union reut_subseq_ctl_reg subseq_b = {
++					.num_cachelines_with_scale     = num_cl,
++					.subseq_type                   = SUBSEQ_B_RD,
++					.reset_curr_base_addr_to_start = 1,
++				};
++				mchbar_write32(REUT_ch_SUBSEQ_x_CTL(channel, 0), subseq_a.raw);
++				mchbar_write32(REUT_ch_SUBSEQ_x_CTL(channel, 1), subseq_b.raw);
++			}
++			status = run_bank_test(ctrl, chanmask);
++			if (status) {
++				printk(BIOS_ERR, "Memory test failed on rank %u bank %u\n", rank, bank);
++				break;
++			}
++		}
++		if (status)
++			break;
++	}
++
++	/* Return to normal operation mode */
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++)
++		reut_set_normal_mode(channel);
++
++	if (status)
++		printk(BIOS_ERR, "*** Memory test failed, the training is not usable ***\n");
++	else
++		printk(BIOS_INFO, "Memory test passed\n");
++
++	return status;
++}
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index 8e29f4c4..c6305ba2 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -138,6 +138,7 @@ static const struct task_entry cold_boot[] = {
+ 	{ save_non_training,                                      true, "SAVE_NONT",  },
+ 	{ alias_check,                                            true, "ALIASCHK",   },
+ 	{ ecc_scrub,                                              true, "ECCSCRUB",   },
++	{ memory_test,                                            true, "MEMTEST",    },
+ 	{ raminit_done,                                           true, "RAMINITEND", },
+ };
+ 
+@@ -287,9 +288,16 @@ void raminit_main(const enum raminit_boot_mode bootmode)
+ 		}
+ 	}
+ 
+-	/** TODO: Try more than once **/
+-	status = try_raminit(&mighty_ctrl, cold_boot, ARRAY_SIZE(cold_boot));
++	/* Train again once if a training step or the memory test fails */
++	for (uint8_t attempt = 0; attempt < 2; attempt++) {
++		if (attempt) {
++			printk(BIOS_WARNING, "Memory training failed (%u), trying again\n", status);
++			initialize_ctrl(&mighty_ctrl);
++		}
++		status = try_raminit(&mighty_ctrl, cold_boot, ARRAY_SIZE(cold_boot));
++		if (status == RAMINIT_STATUS_SUCCESS)
++			return;
++	}
+ 
+-	if (status != RAMINIT_STATUS_SUCCESS)
+-		die("Memory initialization was met with utmost failure and misery\n");
++	die("Memory initialization was met with utmost failure and misery\n");
+ }
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index 19d57ec7..4de4c434 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -331,6 +331,7 @@ enum raminit_status {
+ 	RAMINIT_STATUS_INVALID_CACHE,
+ 	RAMINIT_STATUS_LCT_FAILURE,
+ 	RAMINIT_STATUS_SCRUB_ERROR,
++	RAMINIT_STATUS_MEMTEST_FAILURE,
+ 	RAMINIT_STATUS_UNSPECIFIED_ERROR, /** TODO: Deprecated in favor of specific values **/
+ };
+ 
+@@ -637,6 +638,7 @@ enum raminit_status exit_selfrefresh(struct sysinfo *ctrl);
+ enum raminit_status normal_state(struct sysinfo *ctrl);
+ enum raminit_status activate_mc(struct sysinfo *ctrl);
+ enum raminit_status ecc_scrub(struct sysinfo *ctrl);
++enum raminit_status memory_test(struct sysinfo *ctrl);
+ enum raminit_status alias_check(struct sysinfo *ctrl);
+ enum raminit_status raminit_done(struct sysinfo *ctrl);
+ 
+-- 
+2.43.0
+
