@@ -47,14 +47,21 @@ import xml.etree.ElementTree as ET
 
 REPO = "debianita22/ourobios"
 
-# Il GUID dell'ESRT (DRIVERS_EFI_MAIN_FW_GUID nei defconfig) di ogni variante,
-# con la mappa del flash di vboot (dalla v1.3.0)
+# Il GUID dell'ESRT (DRIVERS_EFI_MAIN_FW_GUID nei defconfig) di ogni variante.
+# Cambia con la parte RO: una capsula scrive solo gli slot, e il firmware accetta
+# solo capsule con il suo GUID, cosi' una release i cui slot vogliono un'altra
+# parte RO non si installa con la capsula, ma una volta con flashrom.
+#   dalla v1.3.9: la parte RO con una cache-as-RAM uguale per mrc e nri
 VARIANTS = {
+    "mrc": uuid.UUID("70eab79a-675a-42ef-9543-43abcad96275"),
+    "nri": uuid.UUID("5379c75b-87f2-4669-8d87-6fdd92a50ed4"),
+}
+#   v1.3.0-v1.3.8: la prima parte RO con vboot, con la cache-as-RAM della sua variante
+RO1_VARIANTS = {
     "mrc": uuid.UUID("1a1d806e-1dec-436f-a428-17e010b08c58"),
     "nri": uuid.UUID("ef384a6d-1e1d-4344-abf9-b26f39d9e80a"),
 }
-# e quelli della mappa senza vboot (v1.2.x), per riconoscere un firmware o una
-# capsula di prima
+#   v1.2.x: la mappa del flash senza vboot
 LEGACY_VARIANTS = {
     "mrc": uuid.UUID("b774aa46-be0e-4ec1-bb1b-b7c0bf2722aa"),
     "nri": uuid.UUID("d945239f-4a5a-4089-8597-6bd72edd1a1f"),
@@ -64,6 +71,7 @@ LEGACY_VARIANTS = {
 REGIONS = ["RW_MRC_CACHE", "RW_SECTION_A", "RW_SECTION_B"]
 LEGACY_REGIONS = ["RW_MRC_CACHE", "COREBOOT"]
 MIGRATION = "docs/flashing.md, \"From v1.2.x to v1.3.0\""
+RO_MIGRATION = "docs/flashing.md, \"From v1.3.x to v1.3.9\""
 ROM_SIZE = 12 * 1024 * 1024
 
 FMP_CAPSULE_GUID = uuid.UUID("6dcbd5ed-e82d-4c44-bda1-7194199ad92a")
@@ -173,6 +181,17 @@ def legacy_variant_of(guid):
         if g == guid:
             return name
     return None
+
+
+def ro1_variant_of(guid):
+    for name, g in RO1_VARIANTS.items():
+        if g == guid:
+            return name
+    return None
+
+
+def any_variant_of(guid):
+    return variant_of(guid) or ro1_variant_of(guid) or legacy_variant_of(guid)
 
 
 # --- capsule -----------------------------------------------------------------
@@ -452,7 +471,8 @@ def check_capsule(cap, fw=None):
     """Quello che il firmware fw (esrt_entry(), o nessuno: solo la capsula)
     controllerebbe a parte la firma."""
     legacy = legacy_variant_of(cap["type_id"])
-    variant = cap["variant"] or legacy
+    ro1 = ro1_variant_of(cap["type_id"])
+    variant = cap["variant"] or ro1 or legacy
     if variant is None:
         raise Error("capsula per un firmware sconosciuto (%s)" % cap["type_id"])
     if fw and fw["legacy"] and not legacy:
@@ -461,6 +481,13 @@ def check_capsule(cap, fw=None):
     if fw and not fw["legacy"] and legacy:
         raise Error("capsula della v1.2.x (mappa del flash senza vboot): da un firmware v1.3.0 in su "
                     "si torna alla v1.2.x solo con flashrom")
+    if fw and fw.get("ro1") and cap["variant"]:
+        raise Error("qui gira la %s dietro la parte RO della v1.3.0: la v1.3.9 riscrive la parte RO "
+                    "(una cache-as-RAM per mrc e nri) e si installa una volta con flashrom (%s), "
+                    "poi con le capsule" % (version_str(fw["version"]), RO_MIGRATION))
+    if fw and not fw["legacy"] and not fw.get("ro1") and ro1:
+        raise Error("capsula della v1.3.0-v1.3.8: i suoi slot non partono dietro la parte RO della "
+                    "v1.3.9, indietro si va solo con flashrom (tutta l'immagine di quella release)")
     if fw and variant != fw["variant"]:
         raise Error("capsula della variante %s, qui gira la %s: per cambiare variante si usa "
                     "flashrom (docs/flashing.md)" % (variant, fw["variant"]))
@@ -492,13 +519,15 @@ def esrt_entry():
         except (TypeError, ValueError):
             continue
         name = variant_of(guid)
+        ro1 = ro1_variant_of(guid)
         legacy = legacy_variant_of(guid)
-        if name is None and legacy is None:
+        if name is None and ro1 is None and legacy is None:
             continue
         num = lambda f: int(read_text(os.path.join(d, f)) or "0", 0)
         return {
-            "variant": name or legacy,
-            "legacy": name is None,
+            "variant": name or ro1 or legacy,
+            "legacy": legacy is not None,
+            "ro1": ro1 is not None,
             "guid": guid,
             "version": num("fw_version"),
             "lsv": num("lowest_supported_fw_version"),
@@ -728,8 +757,11 @@ def print_capsule(path, cap):
         print("           %s" % " ".join(sorted(cap["cab"]["files"])))
     print("capsula:   %s" % (path if "cab" not in cap else "firmware.bin"))
     legacy = legacy_variant_of(cap["type_id"])
-    print("firmware:  ouroBIOS, variante %s%s (%s)" % (cap["variant"] or legacy or "?",
-                                                         ", v1.2.x senza vboot" if legacy else "", cap["type_id"]))
+    ro1 = ro1_variant_of(cap["type_id"])
+    print("firmware:  ouroBIOS, variante %s%s (%s)" % (
+        cap["variant"] or ro1 or legacy or "?",
+        ", v1.2.x senza vboot" if legacy else ", v1.3.0-v1.3.8 (la prima parte RO)" if ro1 else "",
+        cap["type_id"]))
     print("versione:  %s, minima %s" % (version_str(cap["version"]), version_str(cap["lsv"])))
     print("regioni:   %s" % (" ".join(cap["regions"]) or "tutto il flash"))
     signer = signer_of(cap)
@@ -783,6 +815,9 @@ def cmd_status(args):
     print("firmware:  ouroBIOS, variante %s (BIOS %s)" % (fw["variant"], bios or "?"))
     if fw["legacy"]:
         print("mappa:     senza vboot (v1.2.x): la v1.3.0 si installa una volta con flashrom (%s)" % MIGRATION)
+    elif fw["ro1"]:
+        print("mappa:     vboot, due slot RW, la parte RO della v1.3.0: la v1.3.9 la riscrive e si "
+              "installa una volta con flashrom (%s)" % RO_MIGRATION)
     else:
         print("mappa:     vboot, due slot RW (una capsula scrive quello che non gira)")
     print("versione:  %s, minima per una capsula %s" % (version_str(fw["version"]), version_str(fw["lsv"])))
@@ -813,7 +848,7 @@ def cmd_status(args):
     for f in files:
         try:
             _, cap = load_capsule(f)
-            what = "%s %s" % (cap["variant"] or legacy_variant_of(cap["type_id"]), version_str(cap["version"]))
+            what = "%s %s" % (any_variant_of(cap["type_id"]), version_str(cap["version"]))
         except (Error, OSError) as e:
             what = str(e)
         print("in attesa: %s (%s)" % (f, what))
@@ -987,6 +1022,10 @@ RELEASE_RE = re.compile(rb"(?:ouroBIOS|w541)-v\d+\.\d+\.\d+(?:-rc\d+)?-(?:mrc|nr
 # (X, Y, Z, rc) di una release come la scrive la build (ouroBIOS-vX.Y.Z-rcN-mrc),
 # con la release finale dopo tutte le sue rc; release_key e' quella dei tag
 RELEASE_KEY_RE = re.compile(r"(?:ouroBIOS|w541)-v(\d+)\.(\d+)\.(\d+)(?:-rc(\d+))?-(?:mrc|nri)")
+
+
+# la prima release la cui parte RO parte gli slot di tutte e due le varianti
+RO_COMMON = (1, 3, 9, 0)
 
 
 def build_release_key(name):
@@ -1272,16 +1311,27 @@ def cmd_other_slot(args):
     if len(names) != 1:
         raise Error("%s: nello slot %s porta %s" % (args.image, other, " + ".join(names) or "nessuna release"))
     # La parte RO lascia alla romstage i dati di vboot, la console e le cache
-    # agli indirizzi della cache-as-RAM della sua variante (configs/ro-interface.txt):
-    # uno slot dell'altra variante li cerca altrove e non parte (POST 0x21)
+    # agli indirizzi della cache-as-RAM della sua build (configs/ro-interface.txt):
+    # uno slot che li cerca altrove non parte (POST 0x21). Fino alla v1.3.8 ogni
+    # variante ha i suoi; dalla v1.3.9 sono uguali, ma diversi da prima, e solo
+    # la parte RO di mrc porta mrc.bin
     ro = region_releases(flash, areas["WP_RO"]) if "WP_RO" in areas else []
     ro_variant = ro[0].rsplit("-", 1)[1] if len(ro) == 1 else None
+    ro_common = len(ro) == 1 and build_release_key(ro[0]) >= RO_COMMON
     variant = names[0].rsplit("-", 1)[1]
-    if ro_variant and variant != ro_variant and not args.force:
-        raise Error("%s e' la variante %s: non parte dopo la parte RO di questo firmware, %s (%s). "
-                    "Serve una parte RO con il layout di tutte e due (patches/ro-next), scritta con "
-                    "flashrom: docs/vboot.md, One read-only part for both variants"
-                    % (names[0], variant, ro_variant, ro[0]))
+    common = build_release_key(names[0]) >= RO_COMMON
+    if ro and not args.force:
+        if common != ro_common:
+            raise Error("%s cerca nella cache-as-RAM quello che lascia la parte RO %s v1.3.9, qui c'e' "
+                        "%s: non parte. Si cambia con flashrom, tutta l'immagine (%s)"
+                        % (names[0], "della" if common else "di prima della", ro[0], RO_MIGRATION))
+        if variant != ro_variant and not (ro_common and ro_variant == "mrc"):
+            raise Error("%s e' la variante %s: non parte dopo la parte RO di questo firmware, %s (%s): "
+                        "%s. Si cambia con flashrom: docs/flashing.md"
+                        % (names[0], variant, ro_variant, ro[0],
+                           "solo quella di mrc, dalla v1.3.9, porta mrc.bin e la cache-as-RAM di tutte "
+                           "e due" if ro_common else "fino alla v1.3.8 ogni parte RO parte solo la sua "
+                           "variante"))
     print("gira:      slot %s, %s" % (current, " + ".join(in_cur) or "?"))
     print("da provare: slot %s, %s (ora: %s)" % (other, names[0],
           " + ".join(region_releases(flash, areas["FW_MAIN_" + other])) or "vuoto"))

@@ -17,6 +17,8 @@ CONFIG_FMDFILE="w541/w541.fmd"
 CONFIG_VBOOT=y
 CONFIG_VBOOT_SLOTS_RW_AB=y
 CONFIG_LENOVO_HASWELL_VBOOT_MINIMAL_RO=y
+# una cache-as-RAM uguale per mrc e nri: la parte RO di v1.3.9 parte gli slot di tutte e due
+CONFIG_LENOVO_HASWELL_COMMON_CAR=y
 # Niente dati di vboot nel TPM (anti-rollback degli slot): il TPM lo avvia
 # ramstage come senza vboot, con le stesse misure nei PCR
 CONFIG_VBOOT_MOCK_SECDATA=y
@@ -110,13 +112,14 @@ CONFIG_BOOTMEDIA_LOCK_RUNTIME_OPTION=y
 # keys/capsule-signing.pem (patch 0048-0052, 0054, edk2 0008-0016). La
 # capsula porta i due slot RW e il payload scrive solo quello che non gira,
 # poi chiede a vboot di provarlo: la regione RO, le variabili UEFI, la VPD e
-# il registro degli eventi restano. Il GUID e' della variante e della mappa
-# del flash con vboot (v1.3.0): una capsula nri non si applica sulla mrc, ne'
-# una di questa mappa su un firmware fino alla v1.2.x, e viceversa. Mai
-# capsule piu' vecchie della v1.3.0 (LSV).
+# il registro degli eventi restano. Il GUID e' della variante e della parte
+# RO (cambiato con la mappa del flash in v1.3.0 e con la cache-as-RAM in
+# v1.3.9): una capsula nri non si applica sulla mrc, ne' una della v1.3.9 su
+# un firmware fino alla v1.3.8, e viceversa (tools/update.py). Mai capsule
+# piu' vecchie della v1.3.9 (LSV).
 CONFIG_DRIVERS_EFI_FW_INFO=y
-CONFIG_DRIVERS_EFI_MAIN_FW_GUID="1a1d806e-1dec-436f-a428-17e010b08c58"
-CONFIG_DRIVERS_EFI_MAIN_FW_LSV=0x01030000
+CONFIG_DRIVERS_EFI_MAIN_FW_GUID="70eab79a-675a-42ef-9543-43abcad96275"
+CONFIG_DRIVERS_EFI_MAIN_FW_LSV=0x01030900
 CONFIG_DRIVERS_EFI_UPDATE_CAPSULES=y
 CONFIG_DRIVERS_EFI_CAPSULE_ON_DISK_SUPPORT=y
 # relativo all'albero di EDK2 (payloads/external/edk2/workspace/mrchromebox)

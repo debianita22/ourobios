@@ -99,7 +99,7 @@ index bbfd6829..3472d01b 100644
  	 * variables that are not shared like the timestamp and the pre-ram
  	 * cbmem console. This is useful for clearing this area on a per-stage
 diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
-index b65cd785..cf8da886 100644
+index 9f918e06..fafe04a4 100644
 --- a/src/mainboard/lenovo/haswell/Kconfig
 +++ b/src/mainboard/lenovo/haswell/Kconfig
 @@ -65,6 +65,33 @@ config LENOVO_HASWELL_VBOOT_MINIMAL_RO
