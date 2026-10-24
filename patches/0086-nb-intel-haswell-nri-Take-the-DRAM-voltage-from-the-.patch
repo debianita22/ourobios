@@ -17,7 +17,9 @@ sets it in the devicetree, ddr_voltage_mv. The value still goes into
 the MRC cache with the other non-training parameters, so fast boot and
 S3 resume keep it.
 
-TEST=Built for the W541 with the native RAM init. Not yet run.
+TEST=On a ThinkPad W541 (i7-4810MQ, four 8 GiB DDR3L-1600 dual-rank
+SO-DIMMs): PCU_DDR_VOLTAGE reads 1 (1.35 V) after this RAM init, as
+after mrc.bin; the training, the fast boot and S3 resume work.
 
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
