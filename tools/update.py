@@ -1210,6 +1210,91 @@ def cmd_rollback(args):
     return finish_stage(args)
 
 
+# Un record di RW_NVRAM come lo scrive vbnv_try_other_slot() di coreboot (patch
+# 0065): il record corrente con try_next sull'altro slot e i tentativi, CRC
+# rifatto; appeso dopo l'ultimo (vbnv_flash.c scrive cosi' un record che
+# accende bit), o da solo in una regione cancellata quando e' piena
+NV_BOOT_TRY_COUNT_MASK = 0x0f
+NV_BOOT2_TRIED = 0x04
+NV_BOOT2_TRY_NEXT = 0x08
+
+
+def nv_try_other(region, tries=2):
+    """La regione RW_NVRAM con un record in piu': prova l'altro slot. (regione, slot)"""
+    st = nv_state(region)
+    if not st["valid"]:
+        raise Error("RW_NVRAM senza un record valido: non si sa quale slot gira")
+    rec = bytearray(region[st["offset"]:st["offset"] + NV_RECORD])
+    if rec[7] & NV_BOOT2_TRIED:
+        rec[7] &= ~NV_BOOT2_TRY_NEXT
+        other = "A"
+    else:
+        rec[7] |= NV_BOOT2_TRY_NEXT
+        other = "B"
+    rec[1] = (rec[1] & ~NV_BOOT_TRY_COUNT_MASK) | (tries & NV_BOOT_TRY_COUNT_MASK)
+    rec[15] = nv_crc8(rec[:15])
+    new = bytearray(region)
+    nxt = st["used"] * NV_RECORD
+    if nxt + NV_RECORD > len(region):
+        new = bytearray(b"\xff" * len(region))
+        nxt = 0
+    new[nxt:nxt + NV_RECORD] = rec
+    return bytes(new), other
+
+
+def cmd_other_slot(args):
+    """Un'immagine del flash con, nello slot che non gira, lo slot di una release
+    (anche dell'altra variante), RW_MRC_CACHE vuota e RW_NVRAM che chiede a vboot
+    di provarlo: da scrivere con flashrom in quelle tre regioni soltanto."""
+    with open(args.dump, "rb") as f:
+        flash = f.read()
+    areas = fmap_areas(flash)
+    need_whole_flash(args.dump, flash, areas)
+    need = ("RW_NVRAM", "RW_MRC_CACHE", "FW_MAIN_A", "FW_MAIN_B", "RW_SECTION_A", "RW_SECTION_B")
+    if areas is None or any(n not in areas or sum(areas[n]) > len(flash) for n in need):
+        raise Error("serve tutto il flash di un firmware con vboot (v1.3.0 in su): "
+                    "sudo flashrom -p internal -r FILE")
+    image = flash_image(args.image)
+    iareas = fmap_areas(image)
+    if len(image) != len(flash) or iareas is None or any(iareas.get(n) != areas.get(n) for n in need):
+        raise Error("%s: un'immagine con un'altra mappa del flash" % args.image)
+    off, size = areas["RW_NVRAM"]
+    nvram, other = nv_try_other(flash[off:off + size])
+    current = "B" if other == "A" else "A"
+    running = RELEASE_KEY_RE.search(read_text(BIOS_VERSION) or "")
+    in_cur = region_releases(flash, areas["FW_MAIN_" + current])
+    tag = lambda name: TAG_RE.search(name or "").group() if TAG_RE.search(name or "") else None
+    if running and [tag(n) for n in in_cur] != [tag(running.group())]:
+        raise Error("nello slot %s, quello di questo avvio secondo RW_NVRAM, c'e' %s e gira %s: "
+                    "una copia del flash di un altro avvio? rileggila"
+                    % (current, " + ".join(in_cur) or "altro", running.group()))
+    names = region_releases(image, iareas["FW_MAIN_" + other])
+    if len(names) != 1:
+        raise Error("%s: nello slot %s porta %s" % (args.image, other, " + ".join(names) or "nessuna release"))
+    print("gira:      slot %s, %s" % (current, " + ".join(in_cur) or "?"))
+    print("da provare: slot %s, %s (ora: %s)" % (other, names[0],
+          " + ".join(region_releases(flash, areas["FW_MAIN_" + other])) or "vuoto"))
+    out = bytearray(flash)
+    for name in ("RW_SECTION_" + other,):
+        o, s = areas[name]
+        out[o:o + s] = image[o:o + s]
+    o, s = areas["RW_MRC_CACHE"]
+    out[o:o + s] = b"\xff" * s
+    out[off:off + size] = nvram
+    with open(args.out, "wb") as f:
+        f.write(out)
+    print("\nscritta %s: come il flash di ora, con lo slot %s della release, RW_MRC_CACHE vuota e"
+          % (args.out, other))
+    print("un record in RW_NVRAM che chiede a vboot lo slot %s con due tentativi. Da scrivere con:" % other)
+    print("\n  sudo flashrom -p internal --fmap -i RW_SECTION_%s -i RW_MRC_CACHE -i RW_NVRAM -w %s"
+          % (other, args.out))
+    print("\nSolo quelle tre regioni: parte RO, settings (SMMSTORE), VPD e registro restano come sono.")
+    print("Al riavvio parte lo slot %s; se non arriva al payload per due avvii di fila (spegnere e"
+          % other)
+    print("riaccendere a ogni blocco), vboot torna allo slot %s. BIOS Lock deve essere spento." % current)
+    return 0
+
+
 # --- le variabili UEFI in SMMSTORE ---------------------------------------------
 #
 # Lo store di EDK2 nella regione SMMSTORE: un firmware volume
@@ -1377,6 +1462,13 @@ def main():
     p.add_argument("--all", action="store_true", help="anche tutti i record, dal primo")
     p.add_argument("--image", help="confronta RO e slot con una release (.rom, .cap o .cab)")
     p.set_defaults(func=cmd_vboot)
+
+    p = sub.add_parser("other-slot", help="prepara l'immagine per scrivere con flashrom lo slot di una release "
+                       "(anche dell'altra variante) nello slot che non gira, e farlo provare a vboot")
+    p.add_argument("dump", help="sudo flashrom -p internal -r FILE: tutto il flash, preso in questo avvio")
+    p.add_argument("image", help="la release: .rom, .cap o .cab")
+    p.add_argument("--out", default="other-slot.rom", help="l'immagine da scrivere (default: other-slot.rom)")
+    p.set_defaults(func=cmd_other_slot)
 
     p = sub.add_parser("rollback", help="torna alla release nell'altro slot, quella di prima dell'ultimo aggiornamento")
     p.add_argument("dump", help="sudo flashrom -p internal -r FILE: tutto il flash, preso in questo avvio")
