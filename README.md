@@ -24,7 +24,7 @@ repository and publishes two complete flash images per version:
 | Release | RAM initialization | Status |
 |---|---|---|
 | `vX.Y.Z-mrc` | Intel `mrc.bin`, the blob from the coreboot 24.08 image that ran on this W541 ([blobs/README.md](blobs/README.md)) | the conservative choice |
-| `vX.Y.Z-nri` | coreboot's native RAM init (NRI), no `mrc.bin` ([docs/raminit.md](docs/raminit.md)) | a pre-release until verified on a W541, as upstream still labels it *[NOT COMPLETE]* ([Libreboot](https://libreboot.org/docs/install/w541_external.html) ships it on the W541); v1.3.9 is the first `nri` release |
+| `vX.Y.Z-nri` | coreboot's native RAM init (NRI), no `mrc.bin` ([docs/raminit.md](docs/raminit.md)) | a release with the `mrc` one from v1.3.9 (a pre-release before), although upstream still labels it *[NOT COMPLETE]*: how it compares with `mrc.bin` on the W541 is in [docs/raminit.md](docs/raminit.md#on-the-w541) ([Libreboot](https://libreboot.org/docs/install/w541_external.html) ships it on the W541 too) |
 
 Everything else is the same in the two variants.
 
@@ -322,11 +322,9 @@ test keys). Versions with a hyphen
 (`v1.1.0-rc1`) or the *prerelease* box give two pre-releases. The notes of
 both include the section of [`CHANGELOG.md`](CHANGELOG.md) for the version
 (`## v1.1.0` for `v1.1.0-rc1` too), and a release build stops at once without it.
-A pre-release that works on the laptop becomes a release without
-rebuilding it. The `nri` one comes out as a pre-release from every build
-and becomes a release the same way once verified on a W541, but never the
-latest: the fwupd remote takes its metadata from the latest release, the
-`mrc` one.
+The `nri` release is never the latest: the fwupd remote takes its metadata
+from the latest release, the `mrc` one. A pre-release that works on the
+laptop becomes a release without rebuilding it:
 
 ```sh
 gh release edit v1.0.0-mrc --repo debianita22/ourobios --prerelease=false --latest

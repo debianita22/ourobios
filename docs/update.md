@@ -80,7 +80,7 @@ partition (ESP) mounted (`/boot/efi`, `/efi`; elsewhere: `--esp DIR`).
 | Command | |
 |---|---|
 | `status` | running variant and version, the lowest version it accepts, the result of the last update, the capsule waiting for the next boot |
-| `stage --latest` | downloads the newest release of the running variant from GitHub (`--pre`: pre-releases too; for `nri` the release of a version counts also while it is still a pre-release, its candidates only with `--pre`), checks its `SHA256SUMS` |
+| `stage --latest` | downloads the newest release of the running variant from GitHub (`--pre`: the release candidates and other pre-releases too; the `nri` releases up to v1.3.8, published as pre-releases, count as releases), checks its `SHA256SUMS` |
 | `stage FILE.cap` | a capsule already downloaded |
 | `cancel` | removes the waiting capsule and the request |
 | `info FILE.cap` | variant, version, regions and signer of a capsule (or of the fwupd package, `FILE.cab`) |

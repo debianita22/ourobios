@@ -47,6 +47,10 @@ part again ([docs/flashing.md](docs/flashing.md#from-v13x-to-v139)).
   included. The other differences, the power training and the voltage
   centering of `mrc.bin`, are listed in
   [docs/raminit.md](docs/raminit.md#on-the-w541).
+- The `nri` variant is published as a release together with the `mrc`
+  one, never as the latest (the fwupd remote reads the `mrc` release);
+  release candidates stay pre-releases for both. Up to v1.3.8 `nri` was
+  always a pre-release.
 - `tools/ddr-report.py`: the memory controller as the RAM init left it
   (timings, turnarounds, command rate, latencies, trained delays and Vrefs
   per byte, comp, ODT, equalisation), read only, and two dumps compared:
