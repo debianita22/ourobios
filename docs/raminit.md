@@ -85,7 +85,10 @@ tried with `update.py other-slot`:
   2 fails; with the guard band the round trips end at 44 and 45 qclks, with
   IO latencies of 4 and rt_iocomp 21, the values of `mrc.bin` on this
   machine;
-- suspend to RAM and resume (rc2).
+- 30 minutes of `stress-ng --vm 4 --verify` over 5 GB, under load, without
+  errors (rc3);
+- suspend to RAM (S3) and resume, rc2 and rc3: after the wake the
+  registers are the trained ones, the shorter round trips included.
 
 The registers after `mrc.bin` (v1.3.9-rc1) and after the NRI (rc3), from
 `ddr-report.py`:
@@ -174,8 +177,8 @@ firmware.
   last 16 KiB: on the W541 from the receive enable training on (the eyes,
   the command training, the round trip, the memory test), not the SPD and
   timing part.
-- S3 resume: tried on the W541 with v1.3.9-rc2 (suspend, wake, session
-  intact). A report from 2025, with the NRI of that time, had a W541 reboot
+- S3 resume: tried on the W541 with v1.3.9-rc2 and rc3 (suspend, wake,
+  session intact). A report from 2025, with the NRI of that time, had a W541 reboot
   instead of resuming ([coreboot ticket 461](https://ticket.coreboot.org/issues/461));
   patch 0010 resets the machine when the S3 fast path fails.
 - A training or a memory test that fails twice stops the boot; on a slot
