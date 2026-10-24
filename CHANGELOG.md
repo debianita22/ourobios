@@ -32,10 +32,18 @@ part again ([docs/flashing.md](docs/flashing.md#from-v13x-to-v139)).
   MRC's MEMTST; nothing on fast boots). On the W541 with four DIMMs the
   `nri` slot of rc2 trained, passed the test and took the fast path after
   ([docs/raminit.md](docs/raminit.md)).
+- Native RAM init: a shorter read round trip (patch 0088). Compared on
+  the W541 with `ddr-report.py`, `mrc.bin` reads 2.5-3.1 ns sooner: same
+  receive enable delays, but the read data kept fewer qclks in the I/O.
+  The NRI now takes those qclks off after the command training while a
+  read test passes on every rank, and keeps one as a guard band. The
+  other differences, the power training and the voltage centering of
+  `mrc.bin`, are listed in [docs/raminit.md](docs/raminit.md#on-the-w541).
 - `tools/ddr-report.py`: the memory controller as the RAM init left it
   (timings, turnarounds, command rate, latencies, trained delays and Vrefs
   per byte, comp, ODT, equalisation), read only, and two dumps compared:
-  `mrc.bin` against the native RAM init on the same machine.
+  `mrc.bin` against the native RAM init on the same machine;
+  `tools/mem-latency.c`, how long a read from the memory takes.
 - `tools/update.py other-slot`: the slot of a release, from its image,
   written into the slot that is not running, with flashrom in three
   regions only, and vboot asked to try it with two tries, so that a slot

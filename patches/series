@@ -84,3 +84,4 @@
 0085-mb-lenovo-haswell-One-cache-as-RAM-layout-for-mrc.bi.patch
 0086-nb-intel-haswell-nri-Take-the-DRAM-voltage-from-the-.patch
 0087-nb-intel-haswell-nri-Test-the-memory-after-training-.patch
+0088-nb-intel-haswell-nri-Shorten-the-read-round-trip-aft.patch
