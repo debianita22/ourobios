@@ -92,9 +92,9 @@ not.
   `cbmem -c` reports *Pre-CBMEM romstage console overflowed* and keeps the
   last 16 KiB: on the W541 from the receive enable training on (the eyes,
   the command training, the memory test), not the SPD and timing part.
-- S3 resume with the NRI has not been tried on this project's W541 yet. A
-  report from 2025, with the NRI of that time, had a W541 reboot instead of
-  resuming ([coreboot ticket 461](https://ticket.coreboot.org/issues/461));
+- S3 resume: tried on the W541 with v1.3.9-rc2 (suspend, wake, session
+  intact). A report from 2025, with the NRI of that time, had a W541 reboot
+  instead of resuming ([coreboot ticket 461](https://ticket.coreboot.org/issues/461));
   patch 0010 resets the machine when the S3 fast path fails.
 - A training or a memory test that fails twice stops the boot; on a slot
   under trial, as after `update.py other-slot`, vboot goes back to the other
