@@ -24,12 +24,18 @@ part again ([docs/flashing.md](docs/flashing.md#from-v13x-to-v139)).
   capsule of v1.3.9 does not install on them (`update.py stage`, fwupd and
   the setup refuse it) and the releases after v1.3.9 install with their
   capsule on v1.3.9 only.
-- Native RAM init (`nri`), from the comparison with the MRC of the Lenovo
-  firmware and of `mrc.bin`: the DRAM voltage from the SPDs (patch 0086:
+- Native RAM init (`nri`), from its comparison with the MRC's steps and
+  with `mrc.bin` on the W541: the DRAM voltage from the SPDs (patch 0086:
   1.35 V on the W541's DDR3L, as `mrc.bin` sets it; the code assumed
   1.5 V, which selects the DDRIO settings), and a memory test after
   training with the training redone once if it fails (patch 0087, as the
-  MRC's MEMTST; a few seconds on a cold boot, nothing on fast boots).
+  MRC's MEMTST; nothing on fast boots). On the W541 with four DIMMs the
+  `nri` slot of rc2 trained, passed the test and took the fast path after
+  ([docs/raminit.md](docs/raminit.md)).
+- `tools/ddr-report.py`: the memory controller as the RAM init left it
+  (timings, turnarounds, command rate, latencies, trained delays and Vrefs
+  per byte, comp, ODT, equalisation), read only, and two dumps compared:
+  `mrc.bin` against the native RAM init on the same machine.
 - `tools/update.py other-slot`: the slot of a release, from its image,
   written into the slot that is not running, with flashrom in three
   regions only, and vboot asked to try it with two tries, so that a slot

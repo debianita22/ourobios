@@ -24,7 +24,7 @@ repository and publishes two complete flash images per version:
 | Release | RAM initialization | Status |
 |---|---|---|
 | `vX.Y.Z-mrc` | Intel `mrc.bin`, the blob from the coreboot 24.08 image that ran on this W541 ([blobs/README.md](blobs/README.md)) | the conservative choice |
-| `vX.Y.Z-nri` | coreboot's native RAM init (NRI), no `mrc.bin` | always a pre-release: upstream still labels it *[NOT COMPLETE]* ([Libreboot](https://libreboot.org/docs/install/w541_external.html) ships it on the W541) |
+| `vX.Y.Z-nri` | coreboot's native RAM init (NRI), no `mrc.bin` ([docs/raminit.md](docs/raminit.md)) | always a pre-release: upstream still labels it *[NOT COMPLETE]* ([Libreboot](https://libreboot.org/docs/install/w541_external.html) ships it on the W541) |
 
 Everything else is the same in the two variants.
 
@@ -174,7 +174,8 @@ Inside coreboot:
 - fixes for wake from suspend (lid, Fn), the Fn hotkeys, Bluetooth and WWAN
   state on resume, xHCI ports, USB over-current mapping, PCIe interrupts, the
   backlight, HDMI/DisplayPort audio clocks, the battery `_UID` and the AES-NI
-  lock, plus three fixes to the native RAM init used by the `nri` variant.
+  lock, plus fixes and additions to the native RAM init of the `nri` variant
+  ([docs/raminit.md](docs/raminit.md)).
   [patches/](patches/) lists them all.
 
 > [!NOTE]
@@ -336,11 +337,11 @@ gh release edit v1.0.0-mrc --repo debianita22/ourobios --prerelease=false --late
 | `blobs/` | IFD, GbE, ME, `mrc.bin` and VBIOS images ([blobs/README.md](blobs/README.md)) |
 | `assets/` | the logo, `ourobios.svg`, and the boot splash made from it (`tools/logo.py splash`) |
 | `configs/` | `w541-mrc.defconfig` and `w541-nri.defconfig`, the flash map `w541.fmd`, the interface of the read-only part already on the laptops (`ro-interface.txt`), the fwupd remotes (`fwupd/ourobios.conf`, the releases; `fwupd/ourobios-testing.conf`, the candidates too) |
-| `patches/` | the series applied to coreboot, optional patches, the patches to EDK2 and its LvglPkg, the q35 patch of the update test, and a draft for the next read-only part ([patches/README.md](patches/README.md)) |
-| `tools/` | build, verification, CI and upstream-check scripts; `update.py`, the capsule update from Linux; `fwupd-cab.py`, the fwupd package and the metadata of the remote; `vpd.py`, the serial number and machine type; `elog.py`, which reads the event log from a flash dump; `idle-report.py`, package C-states, power, memory traffic and device power states at idle; `pm-regs.py`, the power management registers the firmware left; `qemu-smoke.py`, the payload booted in QEMU; `qemu-update.py`, capsule updates with vboot A/B in QEMU (with `efi/slot-lock-test.c`, a UEFI application for it); `logo.py`, the logo as an LVGL image or a PNG |
+| `patches/` | the series applied to coreboot, optional patches, the patches to EDK2 and its LvglPkg, the q35 patch of the update test ([patches/README.md](patches/README.md)) |
+| `tools/` | build, verification, CI and upstream-check scripts; `update.py`, the capsule update from Linux; `fwupd-cab.py`, the fwupd package and the metadata of the remote; `vpd.py`, the serial number and machine type; `elog.py`, which reads the event log from a flash dump; `idle-report.py`, package C-states, power, memory traffic and device power states at idle; `pm-regs.py`, the power management registers the firmware left; `ddr-report.py`, the memory controller as the RAM init left it, and two of its dumps compared; `peg-report.py`, the PCIe link to the NVIDIA GPU; `qemu-smoke.py`, the payload booted in QEMU; `qemu-update.py`, capsule updates with vboot A/B in QEMU (with `efi/slot-lock-test.c`, a UEFI application for it); `logo.py`, the logo as an LVGL image or a PNG |
 | `keys/` | the certificate of the key that signs the capsules, and vboot's public keys ([keys/README.md](keys/README.md)) |
 | `legacy/coreboot-4.22/` | the coreboot 4.22 image and configuration this project started from, built from the same blobs |
-| `docs/` | [flashing and recovery](docs/flashing.md), [updates with capsules](docs/update.md), [verified boot and A/B](docs/vboot.md) |
+| `docs/` | [flashing and recovery](docs/flashing.md), [updates with capsules](docs/update.md), [verified boot and A/B](docs/vboot.md), [the native RAM init](docs/raminit.md) |
 
 ## Binary blobs
 

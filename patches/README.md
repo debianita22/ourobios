@@ -105,10 +105,10 @@ became part of patch 0078 in v1.3.7.
 
 ## The next read-only part
 
-`ro-next/` is for a draft of a release that writes the read-only part
-again ([docs/vboot.md](../docs/vboot.md#later-with-another-read-only-part)):
-no tool applies what is there, and `tools/ci-check.sh` only checks that it
-is made of patches. Empty since v1.3.9 took patch 0085 from it.
+Drafts for a release that writes the read-only part again
+([docs/vboot.md](../docs/vboot.md#later-with-another-read-only-part)) go in
+`ro-next/`, which no tool applies; `tools/ci-check.sh` only checks that they
+are patches. None at the moment: v1.3.9 took patch 0085 from there.
 
 ## The update test
 
