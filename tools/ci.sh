@@ -11,11 +11,10 @@
 #
 # Regole (le stesse dei commenti di build.yml):
 #   - versione vX.Y.Z o vX.Y.Z-qualcosa; con un trattino, o con la casella
-#     prerelease, tutte e due le release sono pre-release
-#   - nri esce sempre pre-release: upstream la RAM init nativa di Haswell e'
-#     ancora "[NOT COMPLETE]". Diventa release a mano quando e' provata sul
-#     W541 (gh release edit ... --prerelease=false --latest=false, README),
-#     mai latest: i metadati del remote fwupd sono nella mrc
+#     prerelease, tutte e due le release sono pre-release, senza tutte e due
+#     release: dalla v1.3.9 la nri esce con la mrc (fino alla v1.3.8 sempre
+#     pre-release: upstream la RAM init nativa di Haswell e' "[NOT COMPLETE]")
+#   - la nri mai latest: i metadati del remote fwupd sono nella mrc
 #   - una release che non e' pre-release solo da un commit del ramo principale
 #   - "latest" solo alla mrc della versione piu' alta (sort -V)
 #   - i metadati del remote fwupd (FWUPD_METADATA e la sua firma .jcat) nella
@@ -171,7 +170,7 @@ cmd_version() {
 	elif [ "${prerelease}" = true ]; then
 		summ "Release ${version}-mrc e ${version}-nri, tutte e due pre-release."
 	else
-		summ "Release ${version}-mrc (latest se e' la piu' alta) e ${version}-nri (pre-release)."
+		summ "Release ${version}-mrc (latest se e' la piu' alta) e ${version}-nri (mai latest)."
 	fi
 	echo "versione ${version}, release ${publish}, pre-release ${prerelease}"
 }
@@ -199,7 +198,6 @@ cmd_notes() {
 	edk2="$(sed -n 's/^CONFIG_EDK2_TAG_OR_REV="\(.*\)"$/\1/p' "${O}/configs/w541-${v}.defconfig")"
 	npatch="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${O}/patches/series" | wc -l)"
 	nedk2="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${O}/patches/edk2/series" "${O}/patches/lvglpkg/series" | wc -l)"
-	case "${v}" in nri) pre=yes ;; esac
 	case "${version}" in *-*) pre=yes ;; esac
 	if [ "${PRERELEASE:-false}" = true ]; then pre=yes; fi
 	# --latest salta le pre-release: per queste ci vuole anche --pre
@@ -230,9 +228,9 @@ EOF
 	else
 		cat <<EOF
 RAM is initialized by coreboot's own native code (NRI), with no \`mrc.bin\`.
-Upstream coreboot still labels the Haswell native RAM init *[NOT COMPLETE]*,
-so this variant comes out as a pre-release and becomes a release once
-verified on a W541 ([docs/raminit.md](https://github.com/${repo}/blob/main/docs/raminit.md#on-the-w541)).
+Upstream coreboot still labels the Haswell native RAM init *[NOT COMPLETE]*:
+what it does on the W541 and how it compares with \`mrc.bin\` are in
+[docs/raminit.md](https://github.com/${repo}/blob/main/docs/raminit.md#on-the-w541).
 If the laptop does not come up after flashing it (black screen, no boot),
 recovery needs an external programmer: see [Recovery](https://github.com/${repo}/blob/main/docs/flashing.md#recovery).
 EOF
@@ -250,7 +248,7 @@ EOF
 		# i link relativi del file, assoluti nella pagina della release
 		printf '%s\n' "${changes}" | sed -E "s#\]\(((docs|patches|tools|keys|configs|blobs|assets)/[^)]*|[A-Za-z0-9_.-]+\.md(\#[^)]*)?)\)#](https://github.com/${repo}/blob/main/\1)#g"
 	fi
-	if [ "${pre}" = yes ] && [ "${v}" = mrc ]; then
+	if [ "${pre}" = yes ]; then
 		echo
 		echo "**Pre-release**: not yet confirmed on real hardware. Keep a backup of your flash and an external programmer at hand."
 	elif [ "${v}" = mrc ]; then
@@ -473,7 +471,7 @@ cmd_publish() {
 		(cd "${d}/release-${v}" && sha256sum -- "${up[@]}" > SHA256SUMS)
 		cmd_notes "${d}" "${v}" > "${d}/release-${v}/NOTES.md"
 		local flags=()
-		if [ "${pre}" = true ] || [ "${v}" = nri ]; then flags+=(--prerelease); fi
+		if [ "${pre}" = true ]; then flags+=(--prerelease); fi
 		gh release create "${t}" --repo "${GITHUB_REPOSITORY}" --draft --target "${sha}" \
 			--title "ouroBIOS ${VERSION} - $(title_of "${v}")" \
 			--notes-file "${d}/release-${v}/NOTES.md" "${flags[@]}"
@@ -494,9 +492,9 @@ cmd_publish() {
 	if [ "${pre}" = true ]; then
 		echo "  mrc e nri pre-release"
 	elif [ "${latest}" = true ]; then
-		echo "  ${VERSION}-mrc latest, nri pre-release"
+		echo "  ${VERSION}-mrc latest, nri release"
 	else
-		echo "  ${VERSION}-mrc non latest (resta ${cur}), nri pre-release"
+		echo "  ${VERSION}-mrc non latest (resta ${cur}), nri release"
 	fi
 	publish_testing "${d}" "${sha}"
 }

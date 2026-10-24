@@ -713,8 +713,8 @@ def download_latest(variant, pre, dest):
         tag = r.get("tag_name", "")
         if r.get("draft") or not tag.endswith("-" + variant) or release_key(tag) is None:
             continue
-        # la nri esce pre-release e diventa release quando e' provata sul W541:
-        # la release di una versione conta anche prima, le candidate solo con --pre
+        # le candidate (vX.Y.Z-rcN) solo con --pre; la nri fino alla v1.3.8
+        # usciva pre-release anche come release: quelle contano come release
         candidate = not release_key(tag)[3]
         if not pre and (candidate or (r.get("prerelease") and variant != "nri")):
             continue
