@@ -13,32 +13,35 @@ Add a memory test task at the end of the training schedule, behind
 HASWELL_NRI_MEMORY_TEST: with the REUT, every bank of every rank is
 written with the victim/aggressor patterns of the WDB and read back,
 the first miscompare stops the test, and the lanes in error are logged.
-The addressing is the one of the ECC scrub, the sequence the one of
-the alias check (a write subsequence and a read one over the same
-cachelines), the patterns straight from the WDB (bit buffer mux), so
-that the write and the read compare against the same data whatever the
-LFSR state. About 0.2 s per 512 MiB bank, the channels in parallel: a
-few seconds on a cold boot with 32 GiB, nothing on a fast boot or S3
-resume, which restore the training values the test checked.
+The addressing is the one of the ECC scrub, the sequence and the data
+the ones of the alias check: a write subsequence and a read one over
+the same cachelines, the WDB patterns driven by the LFSRs, which
+setup_wdb() seeds alike for writes and reads. It runs with the training
+only: a fast boot or an S3 resume restores the values it checked and
+does not touch the memory contents.
 
 When a training step or the test fails, train once more from scratch
 before giving up, which raminit_main had as a TODO.
 
-TEST=Built for the W541 with the native RAM init. Not yet run.
+TEST=On a ThinkPad W541 (i7-4810MQ, four 8 GiB DDR3L-1600 dual-rank
+SO-DIMMs), with the WDB patterns from the bit buffer instead of the
+LFSRs: after a cold boot training the test passed on the four ranks of
+both channels, and the next boot took the fast path without it. Built
+with the LFSRs.
 
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
  src/northbridge/intel/haswell/Kconfig         |   9 +
  .../intel/haswell/native_raminit/Makefile.mk  |   1 +
- .../haswell/native_raminit/memory_test.c      | 170 ++++++++++++++++++
+ .../haswell/native_raminit/memory_test.c      | 171 ++++++++++++++++++
  .../haswell/native_raminit/raminit_main.c     |  16 +-
  .../haswell/native_raminit/raminit_native.h   |   2 +
- 5 files changed, 194 insertions(+), 4 deletions(-)
+ 5 files changed, 195 insertions(+), 4 deletions(-)
  create mode 100644 src/northbridge/intel/haswell/native_raminit/memory_test.c
 
 diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
-index ff4531d4..b426d2d3 100644
+index ff4531d40e..b426d2d35a 100644
 --- a/src/northbridge/intel/haswell/Kconfig
 +++ b/src/northbridge/intel/haswell/Kconfig
 @@ -19,6 +19,15 @@ config USE_NATIVE_RAMINIT
@@ -58,7 +61,7 @@ index ff4531d4..b426d2d3 100644
  	depends on VBOOT
  	bool "Start verstage in bootblock"
 diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
-index 87fba9f4..e525b728 100644
+index 87fba9f4ec..e525b72814 100644
 --- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
 +++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
 @@ -10,6 +10,7 @@ romstage-y += init_mpll.c
@@ -71,10 +74,10 @@ index 87fba9f4..e525b728 100644
  romstage-y += ranges.c
 diff --git a/src/northbridge/intel/haswell/native_raminit/memory_test.c b/src/northbridge/intel/haswell/native_raminit/memory_test.c
 new file mode 100644
-index 00000000..03d8f193
+index 0000000000..d815d931c8
 --- /dev/null
 +++ b/src/northbridge/intel/haswell/native_raminit/memory_test.c
-@@ -0,0 +1,170 @@
+@@ -0,0 +1,171 @@
 +/* SPDX-License-Identifier: GPL-2.0-or-later */
 +
 +#include <console/console.h>
@@ -143,8 +146,9 @@ index 00000000..03d8f193
 +
 +		/*
 +		 * The eight victim/aggressor patterns of the WDB, one per cacheline,
-+		 * straight from the buffer: the same data for the write and the read
-+		 * back whatever the LFSR state.
++		 * driven by the LFSRs as in the alias check: setup_wdb() seeds the
++		 * write and the read LFSRs alike, so the read back is compared with
++		 * the data that was written, pseudo-random across the bank.
 +		 */
 +		mchbar_write32(REUT_ch_WDB_CL_CTRL(channel), (union reut_pat_wdb_cl_ctrl_reg) {
 +			.start_ptr = 0,
@@ -153,9 +157,9 @@ index 00000000..03d8f193
 +			.inc_scale = SCALE_LINEAR,
 +		}.raw);
 +		const union reut_pat_wdb_cl_mux_cfg_reg pat_wdb_cl_mux_cfg = {
-+			.mux_0_control = REUT_MUX_BTBUFFER,
-+			.mux_1_control = REUT_MUX_BTBUFFER,
-+			.mux_2_control = REUT_MUX_BTBUFFER,
++			.mux_0_control = REUT_MUX_LFSR,
++			.mux_1_control = REUT_MUX_LFSR,
++			.mux_2_control = REUT_MUX_LFSR,
 +			.ecc_data_source_sel = 1,
 +		};
 +		mchbar_write32(REUT_ch_PAT_WDB_CL_MUX_CFG(channel), pat_wdb_cl_mux_cfg.raw);
@@ -246,7 +250,7 @@ index 00000000..03d8f193
 +	return status;
 +}
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
-index 8e29f4c4..c6305ba2 100644
+index 8e29f4c4a9..c6305ba231 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 @@ -138,6 +138,7 @@ static const struct task_entry cold_boot[] = {
@@ -279,7 +283,7 @@ index 8e29f4c4..c6305ba2 100644
 +	die("Memory initialization was met with utmost failure and misery\n");
  }
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index 19d57ec7..4de4c434 100644
+index 19d57ec7f4..4de4c434a2 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 @@ -331,6 +331,7 @@ enum raminit_status {
