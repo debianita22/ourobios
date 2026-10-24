@@ -5,6 +5,15 @@ GitHub include its section; release candidates take the section of the
 version they lead to. For the releases before v1.3.0, see their notes on
 the [releases page](https://github.com/debianita22/ourobios/releases).
 
+## v1.3.9
+
+- `tools/update.py other-slot`: the release of the other variant (`nri`
+  on a laptop that runs `mrc`, or back) written into the slot that is not
+  running, with flashrom in three regions only, and vboot asked to try it
+  with two tries, so that a variant that does not boot falls back to the
+  one that ran, as after a capsule
+  ([docs/update.md](docs/update.md#trying-the-other-variant)).
+
 ## v1.3.8
 
 - EDK2 moved to MrChromebox `f7cbaab0d5a2` (`uefipayload_2608`, two
