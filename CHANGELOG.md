@@ -26,7 +26,10 @@ part again ([docs/flashing.md](docs/flashing.md#from-v13x-to-v139)).
   the read-only part of v1.3.0-v1.3.8, nor those behind the new one, so the
   capsule of v1.3.9 does not install on them (`update.py stage`, fwupd and
   the setup refuse it) and the releases after v1.3.9 install with their
-  capsule on v1.3.9 only.
+  capsule on v1.3.9 only. Verified on a W541: the capsule of v1.3.9-nri,
+  staged with `update.py stage --latest` on the `nri` slot of rc3, wrote
+  the other slot, which trained and passed the memory test; the ESRT
+  reports v1.3.9 and the last update as successful.
 - Native RAM init (`nri`), from its comparison with the MRC's steps and
   with `mrc.bin` on the W541: the DRAM voltage from the SPDs (patch 0086:
   1.35 V on the W541's DDR3L, as `mrc.bin` sets it; the code assumed
