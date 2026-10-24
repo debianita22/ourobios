@@ -12,8 +12,10 @@
 # Regole (le stesse dei commenti di build.yml):
 #   - versione vX.Y.Z o vX.Y.Z-qualcosa; con un trattino, o con la casella
 #     prerelease, tutte e due le release sono pre-release
-#   - nri e' sempre una pre-release: upstream la RAM init nativa di Haswell e'
-#     ancora "[NOT COMPLETE]"
+#   - nri esce sempre pre-release: upstream la RAM init nativa di Haswell e'
+#     ancora "[NOT COMPLETE]". Diventa release a mano quando e' provata sul
+#     W541 (gh release edit ... --prerelease=false --latest=false, README),
+#     mai latest: i metadati del remote fwupd sono nella mrc
 #   - una release che non e' pre-release solo da un commit del ramo principale
 #   - "latest" solo alla mrc della versione piu' alta (sort -V)
 #   - i metadati del remote fwupd (FWUPD_METADATA e la sua firma .jcat) nella
@@ -229,9 +231,10 @@ EOF
 		cat <<EOF
 RAM is initialized by coreboot's own native code (NRI), with no \`mrc.bin\`.
 Upstream coreboot still labels the Haswell native RAM init *[NOT COMPLETE]*,
-so this variant is always published as a pre-release. If the laptop does not
-come up after flashing it (black screen, no boot), recovery needs an external
-programmer: see [Recovery](https://github.com/${repo}/blob/main/docs/flashing.md#recovery).
+so this variant comes out as a pre-release and becomes a release once
+verified on a W541 ([docs/raminit.md](https://github.com/${repo}/blob/main/docs/raminit.md#on-the-w541)).
+If the laptop does not come up after flashing it (black screen, no boot),
+recovery needs an external programmer: see [Recovery](https://github.com/${repo}/blob/main/docs/flashing.md#recovery).
 EOF
 	fi
 	local changes
