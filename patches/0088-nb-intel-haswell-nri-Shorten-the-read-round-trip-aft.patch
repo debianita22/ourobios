@@ -1,0 +1,379 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sat, 24 Oct 2026 19:43:05 +0200
+Subject: [PATCH] nb/intel/haswell/nri: Shorten the read round trip after
+ training
+
+The receive enable training plans the IO latencies around a receive
+enable delay of 320 PI ticks and keeps rt_iocomp two qclks (four on
+ULT) above its base, as margin for the board layout, and nothing takes
+that margin back: read data waits in the I/O longer than it needs to.
+
+The controller expects read data SC_ROUNDT_LAT qclks after the command,
+and the I/O holds it for the IO latency of the rank plus rt_iocomp, so
+for a given receive enable delay the moment the strobes come back is
+
+  64 * (round trip - IO latency - rt_iocomp) + receive enable delay
+
+and the three latencies can move together without changing it, as the
+receive enable training of Sandy Bridge moves IO latency and logic delay
+(compute_final_logic_delay). Registers of a ThinkPad W541 with four
+dual-rank DDR3L-1600 SO-DIMMs, after mrc.bin and after this RAM init:
+the same receive enable delays (within 4 ticks), the same difference
+between the three latencies (19 qclks on channel 0, 20 on channel 1);
+mrc.bin ends with rt_iocomp 21 and IO latencies of 4, this RAM init
+with rt_iocomp 23 and IO latencies of 7 and 6: round trips of 44/45
+qclks against 49, reads 3.1/2.5 ns shorter with mrc.bin.
+
+Add a task after the late command training, behind
+HASWELL_NRI_ROUND_TRIP: per channel, take one qclk at a time off
+rt_iocomp down to its base, then off the IO latency of every rank, and
+as much off the round trip latencies, while the write and read test of
+the 1D margin training passes on every rank; give one qclk back as a
+guard band, test again, and go back to the trained values if that
+fails. The receive enable delays do not change. The values go into the
+training cache with the others, so fast boots and S3 resume keep them.
+When the memory test after training fails and the training is redone,
+the second run leaves the round trip as trained.
+
+TEST=Built for the W541 with the native RAM init. Not yet run.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/northbridge/intel/haswell/Kconfig         |  12 +
+ .../intel/haswell/native_raminit/Makefile.mk  |   1 +
+ .../haswell/native_raminit/raminit_main.c     |   3 +
+ .../haswell/native_raminit/raminit_native.h   |   2 +
+ .../haswell/native_raminit/train_round_trip.c | 243 ++++++++++++++++++
+ 5 files changed, 261 insertions(+)
+ create mode 100644 src/northbridge/intel/haswell/native_raminit/train_round_trip.c
+
+diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
+index b426d2d35a..4e71e49ec3 100644
+--- a/src/northbridge/intel/haswell/Kconfig
++++ b/src/northbridge/intel/haswell/Kconfig
+@@ -28,6 +28,18 @@ config HASWELL_NRI_MEMORY_TEST
+ 	  that leaves a miscompare is redone once, then the boot stops. A
+ 	  few seconds per cold boot; fast boots and S3 resume skip it.
+ 
++config HASWELL_NRI_ROUND_TRIP
++	bool "Shorten the read round trip after training"
++	depends on USE_NATIVE_RAMINIT
++	help
++	  After the command training, take off the IO latencies and the
++	  round trip latency of each channel the qclks that the receive
++	  enable training keeps as margin, one at a time while a write and
++	  read test passes on every rank, and give one back as a guard band:
++	  reads return up to a few ns sooner. Best with
++	  HASWELL_NRI_MEMORY_TEST, which trains again without this when the
++	  memory test fails.
++
+ config HASWELL_VBOOT_IN_BOOTBLOCK
+ 	depends on VBOOT
+ 	bool "Start verstage in bootblock"
+diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+index e525b72814..66c6f7c65a 100644
+--- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
++++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+@@ -25,6 +25,7 @@ romstage-y += train_late_command.c
+ romstage-y += train_jedec_write_leveling.c
+ romstage-y += train_read_mpr.c
+ romstage-y += train_receive_enable.c
++romstage-y += train_round_trip.c
+ romstage-y += train_sense_amp_offset.c
+ 
+ romstage-$(CONFIG_DEBUG_RAM_SETUP) += info_dumps.c
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index c6305ba231..c69f2367c6 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -133,6 +133,7 @@ static const struct task_entry cold_boot[] = {
+ 	{ optimise_comp,                                          true, "OPTCOMP",    },
+ 	{ post_training,                                          true, "POSTTRAIN",  },
+ 	{ train_late_command,                                     true, "LCT",        },
++	{ optimise_round_trip,                                    true, "RTL",        },
+ 	{ activate_mc,                                            true, "ACTIVATE",   },
+ 	{ save_training_values,                                   true, "SAVE_TRAIN", },
+ 	{ save_non_training,                                      true, "SAVE_NONT",  },
+@@ -293,6 +294,8 @@ void raminit_main(const enum raminit_boot_mode bootmode)
+ 		if (attempt) {
+ 			printk(BIOS_WARNING, "Memory training failed (%u), trying again\n", status);
+ 			initialize_ctrl(&mighty_ctrl);
++			/* As trained: the optimisations are the first suspects */
++			mighty_ctrl.no_latency_optimisation = true;
+ 		}
+ 		status = try_raminit(&mighty_ctrl, cold_boot, ARRAY_SIZE(cold_boot));
+ 		if (status == RAMINIT_STATUS_SUCCESS)
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index 4de4c434a2..1d45bb8fe2 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -386,6 +386,7 @@ struct sysinfo {
+ 
+ 	bool dq_pins_interleaved;
+ 	bool restore_mrs;
++	bool no_latency_optimisation;	/* training again after a failure */
+ 
+ 	long wait_time_us;
+ 
+@@ -639,6 +640,7 @@ enum raminit_status normal_state(struct sysinfo *ctrl);
+ enum raminit_status activate_mc(struct sysinfo *ctrl);
+ enum raminit_status ecc_scrub(struct sysinfo *ctrl);
+ enum raminit_status memory_test(struct sysinfo *ctrl);
++enum raminit_status optimise_round_trip(struct sysinfo *ctrl);
+ enum raminit_status alias_check(struct sysinfo *ctrl);
+ enum raminit_status raminit_done(struct sysinfo *ctrl);
+ 
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_round_trip.c b/src/northbridge/intel/haswell/native_raminit/train_round_trip.c
+new file mode 100644
+index 0000000000..932b0311c2
+--- /dev/null
++++ b/src/northbridge/intel/haswell/native_raminit/train_round_trip.c
+@@ -0,0 +1,243 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <console/console.h>
++#include <northbridge/intel/haswell/haswell.h>
++#include <types.h>
++
++#include "raminit_native.h"
++
++/*
++ * Round trip latency optimisation.
++ *
++ * The controller expects read data SC_ROUNDT_LAT qclks after a read command. The I/O
++ * keeps the data that long in its read FIFO, for its IO latency (per rank) plus
++ * rt_iocomp (per channel), so for a given receive enable timing
++ *
++ *   64 * (round trip - IO latency - rt_iocomp) + receive enable delay
++ *
++ * stays the same when the three latencies move together: that is the moment the
++ * DQS strobes come back, fixed by the board and the DIMMs. The receive enable
++ * training plans the IO latencies around a receive enable delay of 320 PI ticks,
++ * and keeps rt_iocomp two qclks (four on ULT) above its base, for the board layout:
++ * the data waits in the FIFO longer than it needs to. On a ThinkPad W541 with four
++ * DIMMs, mrc.bin leaves the same receive enable delays and the same difference
++ * between the three latencies, with rt_iocomp at its base and IO latencies two to
++ * three qclks lower: reads 2.5 to 3.1 ns shorter.
++ *
++ * Take one qclk at a time off rt_iocomp down to its base, then off the IO latency of
++ * every rank of the channel, and as much off its round trip latencies, while a write
++ * and read test on every rank passes; then give one qclk back, as a guard band. The
++ * receive enable delays do not change. A memory test follows the training
++ * (HASWELL_NRI_MEMORY_TEST); if it fails, the training is done again without this.
++ */
++
++/* train_receive_enable.c starts from rt_io_comp = 21 + 2 (4 on ULT) */
++#define RT_IO_COMP_BASE		21
++/* change_rcven_timing() keeps the IO latencies at 1 or more */
++#define IO_LATENCY_MIN		1
++/* As the 1D margin training: 128 cachelines, 256 loops per rank */
++#define RTL_TEST_LOOPCOUNT	15
++
++enum qclk_source {
++	FROM_RT_IOCOMP,
++	FROM_IO_LATENCY,
++};
++
++static void read_latencies(struct sysinfo *ctrl, const uint8_t channel)
++{
++	const union sc_io_latency_reg sc_io_lat = {
++		.raw = mchbar_read32(SC_IO_LATENCY_ch(channel)),
++	};
++	ctrl->rt_io_comp[channel] = sc_io_lat.rt_iocomp;
++	for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++)
++		ctrl->io_latency[channel][rank] = (sc_io_lat.raw >> (rank * 4)) & 0xf;
++
++	ctrl->rt_latency[channel].raw = mchbar_read32(SC_ROUNDT_LAT_ch(channel));
++}
++
++static void write_latencies(struct sysinfo *ctrl, const uint8_t channel)
++{
++	union sc_io_latency_reg sc_io_lat = {
++		.raw = mchbar_read32(SC_IO_LATENCY_ch(channel)),
++	};
++	sc_io_lat.rt_iocomp = ctrl->rt_io_comp[channel];
++	for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
++		if (!rank_in_ch(ctrl, rank, channel))
++			continue;
++
++		const uint8_t shift = rank * 4;
++		sc_io_lat.raw &= ~(0xf << shift);
++		sc_io_lat.raw |= ctrl->io_latency[channel][rank] << shift;
++	}
++	mchbar_write32(SC_IO_LATENCY_ch(channel), sc_io_lat.raw);
++	mchbar_write32(SC_ROUNDT_LAT_ch(channel), ctrl->rt_latency[channel].raw);
++}
++
++static void move_qclk(struct sysinfo *ctrl, const uint8_t channel,
++		      const enum qclk_source source, const int8_t delta)
++{
++	if (source == FROM_RT_IOCOMP)
++		ctrl->rt_io_comp[channel] += delta;
++
++	for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
++		if (!rank_in_ch(ctrl, rank, channel))
++			continue;
++
++		if (source == FROM_IO_LATENCY)
++			ctrl->io_latency[channel][rank] += delta;
++
++		ctrl->rt_latency[channel].rank[rank] += delta;
++	}
++	write_latencies(ctrl, channel);
++}
++
++/* Where the next qclk can come from, or false if the channel is at its minimum */
++static bool next_qclk(const struct sysinfo *ctrl, const uint8_t channel,
++		      enum qclk_source *source)
++{
++	if (ctrl->rt_io_comp[channel] > RT_IO_COMP_BASE) {
++		*source = FROM_RT_IOCOMP;
++		return true;
++	}
++	for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
++		if (!rank_in_ch(ctrl, rank, channel))
++			continue;
++
++		if (ctrl->io_latency[channel][rank] <= IO_LATENCY_MIN)
++			return false;
++
++		if (ctrl->rt_latency[channel].rank[rank] <= 1)
++			return false;
++	}
++	*source = FROM_IO_LATENCY;
++	return true;
++}
++
++/* Channels of chanmask with errors in a write and read test on any of their ranks */
++static uint8_t test_reads(struct sysinfo *ctrl, const uint8_t chanmask_in)
++{
++	uint8_t failed = 0;
++	setup_io_test_basic_va(ctrl, chanmask_in, RTL_TEST_LOOPCOUNT, NSOE);
++	for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
++		uint8_t chanmask = 0;
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (chanmask_in & BIT(channel))
++				chanmask |= select_reut_ranks(ctrl, channel, BIT(rank));
++		}
++		if (!chanmask)
++			continue;
++
++		failed |= run_io_test(ctrl, chanmask, ctrl->dq_pat, true) & chanmask;
++	}
++	return failed;
++}
++
++enum raminit_status optimise_round_trip(struct sysinfo *ctrl)
++{
++	if (!CONFIG(HASWELL_NRI_ROUND_TRIP))
++		return RAMINIT_STATUS_SUCCESS;
++
++	if (ctrl->no_latency_optimisation) {
++		printk(BIOS_INFO, "Round trip latency left as trained\n");
++		return RAMINIT_STATUS_SUCCESS;
++	}
++
++	uint8_t active = 0;
++	uint32_t rt_io_comp[NUM_CHANNELS] = { 0 };
++	union sc_roundt_lat_reg rt_latency[NUM_CHANNELS] = { 0 };
++	uint8_t io_latency[NUM_CHANNELS][NUM_SLOTRANKS] = { 0 };
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!does_ch_exist(ctrl, channel))
++			continue;
++
++		read_latencies(ctrl, channel);
++		rt_io_comp[channel] = ctrl->rt_io_comp[channel];
++		rt_latency[channel] = ctrl->rt_latency[channel];
++		for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++)
++			io_latency[channel][rank] = ctrl->io_latency[channel][rank];
++
++		active |= BIT(channel);
++	}
++
++	/* The patterns of the 1D margin training, as the memory test reloads them */
++	setup_wdb(ctrl);
++
++	/* The test has to pass as trained, or it tells nothing */
++	const uint8_t all = active;
++	const uint8_t failing = test_reads(ctrl, all);
++	if (failing) {
++		printk(BIOS_WARNING, "RTL: read test fails as trained (0x%x), not optimising\n",
++		       failing);
++		return RAMINIT_STATUS_SUCCESS;
++	}
++
++	uint8_t steps[NUM_CHANNELS] = { 0 };
++	enum qclk_source last[NUM_CHANNELS] = { 0 };
++	enum qclk_source last_ok[NUM_CHANNELS] = { 0 };
++	while (active) {
++		uint8_t tried = 0;
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(active & BIT(channel)))
++				continue;
++
++			if (!next_qclk(ctrl, channel, &last[channel])) {
++				active &= ~BIT(channel);
++				continue;
++			}
++			move_qclk(ctrl, channel, last[channel], -1);
++			tried |= BIT(channel);
++		}
++		if (!tried)
++			break;
++
++		const uint8_t failed = test_reads(ctrl, tried);
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(tried & BIT(channel)))
++				continue;
++
++			if (failed & BIT(channel)) {
++				move_qclk(ctrl, channel, last[channel], +1);
++				active &= ~BIT(channel);
++			} else {
++				last_ok[channel] = last[channel];
++				steps[channel]++;
++			}
++		}
++	}
++
++	/* One qclk back, as a guard band, where the last step took it */
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (steps[channel]) {
++			move_qclk(ctrl, channel, last_ok[channel], +1);
++			steps[channel]--;
++		}
++	}
++
++	/* Back to the trained latencies if the result does not pass */
++	const uint8_t failed = test_reads(ctrl, all);
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(all & BIT(channel)))
++			continue;
++
++		if (failed & BIT(channel)) {
++			printk(BIOS_WARNING, "RTL: C%u fails with the guard band, as trained\n",
++			       channel);
++			ctrl->rt_io_comp[channel] = rt_io_comp[channel];
++			ctrl->rt_latency[channel] = rt_latency[channel];
++			for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++)
++				ctrl->io_latency[channel][rank] = io_latency[channel][rank];
++
++			write_latencies(ctrl, channel);
++			steps[channel] = 0;
++		}
++		uint8_t rank = 0;
++		while (rank < NUM_SLOTRANKS - 1 && !rank_in_ch(ctrl, rank, channel))
++			rank++;
++
++		printk(BIOS_INFO, "RTL: C%u %u qclk shorter: round trip %u, IO latency %u, "
++		       "rt_iocomp %u\n", channel, steps[channel],
++		       ctrl->rt_latency[channel].rank[rank], ctrl->io_latency[channel][rank],
++		       ctrl->rt_io_comp[channel]);
++	}
++	return RAMINIT_STATUS_SUCCESS;
++}
+-- 
+2.43.0
+
