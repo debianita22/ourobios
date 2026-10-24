@@ -36,9 +36,11 @@ part again ([docs/flashing.md](docs/flashing.md#from-v13x-to-v139)).
   the W541 with `ddr-report.py`, `mrc.bin` reads 2.5-3.1 ns sooner: same
   receive enable delays, but the read data kept fewer qclks in the I/O.
   The NRI now takes those qclks off after the command training while a
-  read test passes on every rank, and keeps one as a guard band. The
-  other differences, the power training and the voltage centering of
-  `mrc.bin`, are listed in [docs/raminit.md](docs/raminit.md#on-the-w541).
+  read test passes on every rank, and keeps one as a guard band. On the
+  W541 the `nri` slot of rc3 ends with the latencies of `mrc.bin` (round
+  trips of 44 and 45 qclks) and reads from Linux as fast. The other
+  differences, the power training and the voltage centering of `mrc.bin`,
+  are listed in [docs/raminit.md](docs/raminit.md#on-the-w541).
 - `tools/ddr-report.py`: the memory controller as the RAM init left it
   (timings, turnarounds, command rate, latencies, trained delays and Vrefs
   per byte, comp, ODT, equalisation), read only, and two dumps compared:

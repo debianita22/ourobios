@@ -24,10 +24,9 @@ When a training step or the test fails, train once more from scratch
 before giving up, which raminit_main had as a TODO.
 
 TEST=On a ThinkPad W541 (i7-4810MQ, four 8 GiB DDR3L-1600 dual-rank
-SO-DIMMs), with the WDB patterns from the bit buffer instead of the
-LFSRs: after a cold boot training the test passed on the four ranks of
-both channels, and the next boot took the fast path without it. Built
-with the LFSRs.
+SO-DIMMs): after a cold boot training the test passed on the four ranks
+of both channels, first with the WDB patterns from the bit buffer, then
+with the LFSRs as here; the next boots took the fast path without it.
 
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv

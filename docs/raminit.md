@@ -52,7 +52,9 @@ each of them in the registers:
 - timing and voltage centering together (2D), and the centering of the
   write and command Vrefs of the DIMMs;
 - power training: read ODT, drive strength, transmit and receive
-  equalisation, receive bias, ODT and sense amplifier windows per byte;
+  equalisation, receive bias, ODT and sense amplifier windows per byte (at
+  rest the two variants draw the same, as far as the battery reading can
+  tell: [On the W541](#on-the-w541));
 - the deskew of each bit within a byte (the NRI keeps the read offsets at
   zero on purpose, so as not to use up the range of the read strobe delay,
   and the write ones neutral);
@@ -69,8 +71,8 @@ With two DIMMs per channel the NRI runs the commands at 2N, by a TODO in
 ## On the W541
 
 i7-4810MQ with four 8 GiB DDR3L-1600 dual-rank SO-DIMMs (two per channel,
-four ranks each), `nri` slot of v1.3.9-rc2 tried with `update.py
-other-slot`:
+four ranks each), `nri` slot of v1.3.9-rc2 and rc3 (rc3 with patch 0088)
+tried with `update.py other-slot`:
 
 - the first boot trains (black screen meanwhile), tests every bank of the
   four ranks of both channels (*Memory test passed*) and saves the training;
@@ -79,10 +81,14 @@ other-slot`:
   interval, 625 ps at DDR3-1600): read timing 28-44 per byte, write timing
   29-45, read voltage 43-100 half steps; command, control and clock 90-127
   of 128 at 2N. The NRI fails the training below 8;
-- suspend to RAM and resume.
+- patch 0088: an IO latency of 3 passes the read test on both channels and
+  2 fails; with the guard band the round trips end at 44 and 45 qclks, with
+  IO latencies of 4 and rt_iocomp 21, the values of `mrc.bin` on this
+  machine;
+- suspend to RAM and resume (rc2).
 
-The registers after `mrc.bin` (v1.3.9-rc1) and after the NRI (rc2, before
-patch 0088), from `ddr-report.py`:
+The registers after `mrc.bin` (v1.3.9-rc1) and after the NRI (rc3), from
+`ddr-report.py`:
 
 | | `mrc.bin` | NRI |
 |---|---|---|
@@ -92,19 +98,36 @@ patch 0088), from `ddr-report.py`:
 | Turnarounds rank to rank (read/read, write/write, read/write) | 6, 7, 11 | the same |
 | Turnaround write to read, other rank | 3 | 4 |
 | tXP (power down exit) | 6 | 5, the JEDEC minimum |
-| Round trip, channel 0 / 1 (qclk) | 44 / 45 | 49 / 49 |
-| IO latency + rt_iocomp | 4 + 21 | 7 / 6 + 23 |
+| Round trip, channel 0 / 1 (qclk) | 44 / 45 | 44 / 45; 49 / 49 without patch 0088 |
+| IO latency + rt_iocomp | 4 + 21 | 4 + 21; 7 / 6 + 23 without patch 0088 |
 | Write Vref channel 0 / 1, command Vref | +3 / +2, -3 | 0, 0 |
 | Transmit equalisation | 51-56 per byte | 59 |
 | Read ODT offsets, drive offsets per byte | -6..+1, -3..+3 | 0, 0 |
 | Per bit deskew, read and write | trained | none |
 
-The round trip is the only difference that changes how fast the memory
-answers: 5 and 4 qclks, 3.1 and 2.5 ns per read. The receive enable delays
-are the same with both, within 4 PI ticks, and so is round trip minus IO
-latency minus rt_iocomp (19 qclks on channel 0, 20 on channel 1): `mrc.bin`
-keeps the read data in the I/O for a shorter time, which is what patch 0088
-does.
+Without patch 0088 the round trip is the only difference that changes how
+fast the memory answers: 5 and 4 qclks, 3.1 and 2.5 ns per read. The
+receive enable delays are the same with both, within 4 PI ticks, and so is
+round trip minus IO latency minus rt_iocomp (19 qclks on channel 0, 20 on
+channel 1): `mrc.bin` keeps the read data in the I/O for a shorter time.
+Patch 0088 brings the NRI to the same latencies, and from Linux the reads
+take as long as with `mrc.bin` (on battery, Firefox closed, at rest):
+
+| | `mrc.bin` | NRI (rc3) |
+|---|---|---|
+| Read latency, `mem-latency` (median / minimum of 9 runs) | 90.8 / 90.7 ns | 91.3 / 90.3 ns |
+| Package power, `idle-report` (60 s) | 2.07 W | 1.99 W, 1.91 W |
+| Battery power, `idle-report` (60 s) | 13.4 W | 15.6 W, 11.8 W |
+| Package in PC6 | 86 % | 89 % |
+
+The two NRI figures are two runs one after the other: the battery reading
+moves more between them than between the two variants, and the package
+power follows how busy the machine was (more Wi-Fi and display traffic in
+the `mrc.bin` run). At rest the memory moves about 100 MB/s and the package
+spends most of the time in PC6, so the settings that the power training
+tunes, which spend energy on data transfers, have little to show there.
+The RAPL DRAM domain does not compare: `mrc.bin` programs other energy
+weights (2.9 W against 1.6 W).
 
 ## Measuring
 
@@ -134,9 +157,15 @@ variant, with the machine on the same power source and at rest:
 
 ```sh
 curl -sSLO https://raw.githubusercontent.com/debianita22/ourobios/main/tools/mem-latency.c
+curl -sSLO https://raw.githubusercontent.com/debianita22/ourobios/main/tools/idle-report.py
 gcc -O2 -o mem-latency mem-latency.c
 ./mem-latency                 # median of 9 runs over 512 MiB
+sudo python3 idle-report.py --seconds 60
 ```
+
+Run `idle-report.py` more than once on each variant: on the W541 the
+battery reading changed by almost 4 W between two runs of the same
+firmware.
 
 ## Limits
 
