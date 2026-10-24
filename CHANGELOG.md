@@ -7,12 +7,29 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.3.9
 
+**Installs with flashrom, not with the capsule**: it writes the read-only
+part again ([docs/flashing.md](docs/flashing.md#from-v13x-to-v139)).
+
+- The read-only part of v1.3.9 (patch 0085, `LENOVO_HASWELL_COMMON_CAR`;
+  [docs/vboot.md](docs/vboot.md#the-read-only-part-of-v139)): one
+  cache-as-RAM layout for `mrc.bin` and the native RAM init, with the stack
+  after the regions that the bootblock and verstage leave to romstage, so
+  that the `mrc` read-only part, the one with `mrc.bin`, starts the slots
+  of either variant; an early console of 16 KiB in place of 3, where the
+  messages of the bootblock and of vboot fit; the CBFS caches 8 KiB each in
+  place of 16. The read-only part is now built from the coreboot pin of the
+  slots, 26.09-280 (v1.3.0's was 26.09-53).
+- New ESRT GUIDs for both variants: the slots of v1.3.9 do not boot behind
+  the read-only part of v1.3.0-v1.3.8, nor those behind the new one, so the
+  capsule of v1.3.9 does not install on them (`update.py stage`, fwupd and
+  the setup refuse it) and the releases after v1.3.9 install with their
+  capsule on v1.3.9 only.
 - `tools/update.py other-slot`: the slot of a release, from its image,
   written into the slot that is not running, with flashrom in three
   regions only, and vboot asked to try it with two tries, so that a slot
   that does not boot falls back to the one that ran, as after a capsule.
-  Not for the other variant: the read-only part starts only slots of its
-  own, which the tool checks
+  From v1.3.9 behind the `mrc` read-only part also the other variant; the
+  tool checks what the read-only part on the laptop can start
   ([docs/update.md](docs/update.md#a-release-from-its-image-in-the-other-slot)).
 
 ## v1.3.8

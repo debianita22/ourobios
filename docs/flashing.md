@@ -22,13 +22,16 @@ that runs v1.3.0 or later, later releases install from Linux or from the
 setup menu with their capsule, without flashrom ([docs/update.md](update.md));
 flashrom is for the first install of v1.3.0 (from v1.2.x, see
 [From v1.2.x to v1.3.0](#from-v12x-to-v130), or from other firmware), for
-switching variant, and for an update of the read-only part.
+v1.3.9, which writes the read-only part again
+([From v1.3.x to v1.3.9](#from-v13x-to-v139)), for switching variant before
+v1.3.9, and for any other update of the read-only part.
 
 - [Before you start](#before-you-start)
 - [Boot loader fallback path](#boot-loader-fallback-path)
 - [Serial number and machine type (VPD)](#serial-number-and-machine-type-vpd)
 - [Internal update](#internal-update)
 - [From v1.2.x to v1.3.0](#from-v12x-to-v130)
+- [From v1.3.x to v1.3.9](#from-v13x-to-v139)
 - [First boot and settings](#first-boot-and-settings)
 - [Diagnosing a hang](#diagnosing-a-hang)
 - [External programmer](#external-programmer)
@@ -234,6 +237,31 @@ trains the memory (a few seconds of black screen) and boots slot A. Then
 `sudo python3 tools/update.py status` shows *mappa: vboot*, and the next
 releases install with their capsule. Before trusting it with an update,
 see [Testing on the laptop](vboot.md#testing-on-the-laptop).
+
+## From v1.3.x to v1.3.9
+
+v1.3.9 writes the read-only part again, which a capsule never does: one
+cache-as-RAM layout for `mrc` and `nri` and a 16 KiB early console
+([docs/vboot.md](vboot.md#the-read-only-part-of-v139)). Its slots look for
+what the bootblock and verstage leave in cache-as-RAM where the read-only
+part of v1.3.0-v1.3.8 does not leave it, and the other way round: a v1.3.9
+slot behind the old read-only part, or an older slot behind the new one,
+does not boot (vboot falls back after two tries). So v1.3.9 has new ESRT
+GUIDs, its capsule does not install on v1.3.0-v1.3.8 (`update.py stage`
+and fwupd say so), and it goes in once with flashrom, read-only part and
+both slots together, with the command of
+[From v1.2.x to v1.3.0](#from-v12x-to-v130) and the v1.3.9 image: it keeps
+settings, boot entries, Secure Boot keys, supervisor password, VPD and
+event log, and empties vboot's state and the memory training, which the
+first boot redoes (a few seconds of black screen). *Firmware protection*
+and *BIOS Lock* must be off (*Security* → *Flash protection*; save, reboot,
+`sudo flashrom -p internal 2>&1 | grep PR0` prints nothing), AC adapter
+connected, battery charged. From v1.3.9 on, releases install again with
+their capsule, and `update.py other-slot` can try the other variant behind
+the `mrc` read-only part, the one that holds `mrc.bin`.
+
+Going back to v1.3.8 or earlier is the same command with that release's
+image: flashrom, not a capsule.
 
 ## First boot and settings
 

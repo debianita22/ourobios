@@ -94,7 +94,7 @@ address on the machine stay as they are.
 
 Inside coreboot:
 
-- coreboot `26.09-53-g26317964960f` plus the [patch series](patches/), EDK2
+- coreboot `26.09-280-gacdbfd47295d` plus the [patch series](patches/), EDK2
   from MrChromebox pinned to a tested commit plus its own
   [patches](patches/README.md#edk2-and-lvglpkg), with the boot splash in
   `assets/`;

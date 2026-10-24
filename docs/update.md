@@ -330,19 +330,23 @@ release), and `tools/update.py` still reads their `.cab` (*triplet*
 format).
 
 The firmware refuses capsules older than its lowest supported version,
-v1.3.0 (v1.2.0 for v1.2.x): an older release goes back with flashrom. Older
-capsules from that version up install with `--allow-older`. The lowest
-supported version can later go up to v1.3.6 (`0x01030600`) or beyond, not
-in between: there the two layouts overlap (v1.3.5 was `0x01030005`, below
-v1.3.5 in the new one, `0x01030500`), and `tools/ci-check.sh` refuses such
-a value.
+v1.3.9 from v1.3.9 on (v1.3.0 in v1.3.0-v1.3.8, v1.2.0 in v1.2.x): an older
+release goes back with flashrom. Older capsules from that version up
+install with `--allow-older`. The lowest supported version is at or above
+v1.3.6 (`0x01030600`) or at most v1.3.0, never in between: there the two
+layouts overlap (v1.3.5 was `0x01030005`, below v1.3.5 in the new one,
+`0x01030500`), and `tools/ci-check.sh` refuses such a value.
 
 `mrc` and `nri` are different firmware for the ESRT (each its own GUID):
-a capsule installs only on its own variant. The GUIDs changed with the flash
-map in v1.3.0, so fwupd and other tools do not offer a v1.3.0 package to a
-v1.2.x firmware. To switch variant, flash the
-other image with flashrom ([docs/flashing.md](flashing.md#internal-update)):
-the read-only part of each variant starts only its own slots
+a capsule installs only on its own variant. The GUIDs change whenever a
+release needs something a capsule does not write: with the flash map in
+v1.3.0, and with the read-only part in v1.3.9 (one cache-as-RAM layout for
+both variants, [docs/flashing.md](flashing.md#from-v13x-to-v139)), so
+fwupd and `update.py` do not offer a v1.3.0 package to a v1.2.x firmware,
+nor a v1.3.9 one to v1.3.0-v1.3.8; both go in once with flashrom. To switch
+variant, flash the other image with flashrom
+([docs/flashing.md](flashing.md#internal-update)), or, from v1.3.9 behind
+the `mrc` read-only part, try the other variant's slot
 ([A release from its image](#a-release-from-its-image-in-the-other-slot)).
 
 ## A release from its image, in the other slot
@@ -368,15 +372,18 @@ sudo systemctl reboot
 As after a capsule, if the slot does not reach the payload twice in a row
 (power off and on at each hang), vboot goes back to the slot that ran.
 
-It refuses the other variant, as the setup and the capsules do, and for a
-reason, not a policy: the read-only part leaves vboot's data, the early
-console and the caches for romstage at the cache-as-RAM addresses of its
-own variant (`configs/ro-interface.txt`), so an `nri` slot behind an `mrc`
-read-only part dies before its first POST code (tried on a W541: last
-POST `0x21`, then vboot's fallback). Switching variant takes a read-only
-part with one layout for both, `patches/ro-next`, written with flashrom
-([docs/vboot.md](vboot.md#a-new-read-only-part)). `--force` writes it
-anyway, for a laptop whose read-only part has that layout.
+It refuses a slot that cannot start behind the read-only part on the
+laptop, and for a reason, not a policy: the read-only part leaves vboot's
+data, the early console and the caches for romstage at the cache-as-RAM
+addresses of its build (`configs/ro-interface.txt`), and a slot that looks
+for them elsewhere dies before its first POST code (tried on a W541: an
+`nri` slot behind the `mrc` read-only part of v1.3.0, last POST `0x21`,
+then vboot's fallback). Up to v1.3.8 each variant's read-only part has its
+own layout, so only the same variant; from v1.3.9 the layout is one for
+both ([docs/vboot.md](vboot.md#the-read-only-part-of-v139)), but another
+than before, so only releases from v1.3.9, and the other variant only
+behind the `mrc` read-only part, the one that holds `mrc.bin`. `--force`
+writes it anyway.
 
 ## Going back
 
