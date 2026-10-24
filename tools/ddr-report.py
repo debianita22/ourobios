@@ -92,6 +92,10 @@ FIELDS = {
         ('en_dimm_vref_ch1', 22, 1), ('en_dimm_vref_ch0', 23, 1), ('hi_z_timer_ctrl', 24, 2),
         ('vccddq_hi_qnnn_h', 26, 1), ('ca_slow_bw', 29, 1), ('ch0_slow_bw', 30, 1),
         ('ch1_slow_bw', 31, 1)],
+    'ddr_data_vref_control': [('hi_bw_divider', 0, 2), ('lo_bw_divider', 2, 2),
+        ('sample_divider', 4, 3), ('open_loop', 7, 1), ('slow_bw_error', 8, 2),
+        ('hi_bw_enable', 10, 1), ('vt_slope_b', 12, 3), ('vt_slope_a', 15, 3),
+        ('vt_offset', 18, 3), ('sel_code', 21, 3), ('output_code', 24, 8)],
     'ddr_comp_vsshi': [('panic_drv_down_vref', 0, 6), ('panic_drv_up_vref', 6, 6),
         ('vt_offset', 12, 5), ('vt_slope_a', 17, 3), ('vt_slope_b', 20, 3)],
     'ddr_comp_vsshi_control': [('vsshi_target', 0, 6), ('hi_bw_divider', 6, 2),
@@ -183,7 +187,11 @@ def registers():
            ("CLK_COMP", 0x3a10, "ddr_comp_clk_comp"), ("COMP_CTL_0", 0x3a14, "ddr_comp_ctl_0"),
            ("COMP_CTL_1", 0x3a18, "ddr_comp_ctl_1"), ("COMP_VSSHI", 0x3a1c, "ddr_comp_vsshi"),
            ("COMP_VSSHI_CONTROL", 0x3a24, "ddr_comp_vsshi_control"),
-           ("VREF_ADJUST", 0x0078, "ddr_data_vref_adjust")]
+           # il generatore delle Vref dei DIMM: le copie di canale 1, byte 7, quelle
+           # che la nri legge e scrive (change_margin.c); le altre copie dei byte
+           # ricevono solo le scritture broadcast
+           ("VREF_ADJUST", 0x0f78, "ddr_data_vref_adjust"),
+           ("VREF_CONTROL", 0x0f6c, "ddr_data_vref_control")]
     for ch in range(CHANNELS):
         c, mc, io = "C%d " % ch, 0x400 * ch, 0x100 * ch
         out += [(c + "MAD_DIMM", 0x5004 + 4 * ch, "mad_dimm"),
@@ -436,7 +444,7 @@ def report(v, info, out):
 
     print("\nComp globale e Vref", file=out)
     for reg in ("DATA_COMP_0", "DATA_COMP_1", "CMD_COMP", "CTL_COMP", "CLK_COMP", "COMP_CTL_0",
-                "COMP_CTL_1", "VREF_ADJUST"):
+                "COMP_CTL_1", "VREF_ADJUST", "VREF_CONTROL"):
         fs = [(k.split(".", 1)[1], x) for k, x in v.items() if k.startswith(reg + ".")]
         print("  %-12s %s" % (reg, " ".join("%s=%d" % f for f in fs)), file=out)
     print("  potenza      PM_PDWN_CONFIG=0x%x PM_SREF_CONFIG=0x%x PTM_CTL=0x%x" % (
