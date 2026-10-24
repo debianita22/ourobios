@@ -7,12 +7,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.3.9
 
-- `tools/update.py other-slot`: the release of the other variant (`nri`
-  on a laptop that runs `mrc`, or back) written into the slot that is not
-  running, with flashrom in three regions only, and vboot asked to try it
-  with two tries, so that a variant that does not boot falls back to the
-  one that ran, as after a capsule
-  ([docs/update.md](docs/update.md#trying-the-other-variant)).
+- `tools/update.py other-slot`: the slot of a release, from its image,
+  written into the slot that is not running, with flashrom in three
+  regions only, and vboot asked to try it with two tries, so that a slot
+  that does not boot falls back to the one that ran, as after a capsule.
+  Not for the other variant: the read-only part starts only slots of its
+  own, which the tool checks
+  ([docs/update.md](docs/update.md#a-release-from-its-image-in-the-other-slot)).
 
 ## v1.3.8
 

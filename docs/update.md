@@ -84,7 +84,7 @@ partition (ESP) mounted (`/boot/efi`, `/efi`; elsewhere: `--esp DIR`).
 | `stage FILE.cap` | a capsule already downloaded |
 | `cancel` | removes the waiting capsule and the request |
 | `info FILE.cap` | variant, version, regions and signer of a capsule (or of the fwupd package, `FILE.cab`) |
-| `other-slot flash.bin FILE.rom` | an image to write with flashrom, three regions only: the release of the other variant in the slot that is not running, vboot asked to try it ([Trying the other variant](#trying-the-other-variant)) |
+| `other-slot flash.bin FILE.rom` | an image to write with flashrom, three regions only: the slot of a release in the slot that is not running, vboot asked to try it ([A release from its image](#a-release-from-its-image-in-the-other-slot)) |
 | `rollback FLASH.bin` | back to the release in the slot that is not running, the one before the last update: see [Going back](#going-back) |
 | `vboot FLASH.bin` | from a copy of the flash (`sudo flashrom -p internal -r FLASH.bin`): the slot of the next boot and its tries, the slot of this boot and of the one before, and whether vboot found one broken ([docs/vboot.md](vboot.md)) |
 
@@ -341,36 +341,42 @@ a value.
 a capsule installs only on its own variant. The GUIDs changed with the flash
 map in v1.3.0, so fwupd and other tools do not offer a v1.3.0 package to a
 v1.2.x firmware. To switch variant, flash the
-other image with flashrom ([docs/flashing.md](flashing.md#internal-update)),
-or, keeping vboot's safety net, with `update.py other-slot`
-([Trying the other variant](#trying-the-other-variant)).
+other image with flashrom ([docs/flashing.md](flashing.md#internal-update)):
+the read-only part of each variant starts only its own slots
+([A release from its image](#a-release-from-its-image-in-the-other-slot)).
 
-## Trying the other variant
+## A release from its image, in the other slot
 
-A capsule installs only on its own variant, but the slots do not care:
-`update.py other-slot` prepares an image with the release of the other
-variant in the slot that is not running, an empty `RW_MRC_CACHE` and a
-record in `RW_NVRAM` that asks vboot to try that slot, with two tries;
-flashrom then writes those three regions only (`--fmap` reads the map from
-the image), with the read-only part, the settings, the VPD and the event
-log untouched. *BIOS Lock* must be off; `Firmware protection` can stay on,
-it covers the read-only part only.
+`update.py other-slot` prepares an image with the slot of a release, from
+its `.rom`, `.cap` or `.cab`, in the slot that is not running, an empty
+`RW_MRC_CACHE` and a record in `RW_NVRAM` that asks vboot to try that slot
+with two tries; flashrom then writes those three regions only (`--fmap`
+reads the map from the image), with the read-only part, the settings, the
+VPD and the event log untouched. For a release the capsule path does not
+offer: an older one, a local build. *BIOS Lock* must be off (flashrom says
+*BIOS region SMM protection is enabled* otherwise, and writes nothing);
+*Firmware protection* can stay on, it covers the read-only part only.
 
 ```sh
 sudo modprobe -r spi_intel_platform spi_intel
 sudo flashrom -p internal -r flash.bin
-python3 tools/update.py other-slot flash.bin w541-coreboot-v1.3.8-nri.rom
+python3 tools/update.py other-slot flash.bin w541-coreboot-v1.3.8-mrc.rom
 sudo flashrom -p internal --fmap -i RW_SECTION_B -i RW_MRC_CACHE -i RW_NVRAM -w other-slot.rom
 sudo systemctl reboot
 ```
 
-The next boot runs the other variant (a few seconds more: it trains the
-memory). As after a capsule, if it does not reach the payload twice in a
-row (power off and on at each hang), vboot goes back to the slot that ran.
-To come back on purpose, the same command with the `.rom` of the running
-variant's release, or *Go back to* in the setup, which refuses the other
-variant: `other-slot` is the way. `rollback` and `stage` refuse the other
-variant too.
+As after a capsule, if the slot does not reach the payload twice in a row
+(power off and on at each hang), vboot goes back to the slot that ran.
+
+It refuses the other variant, as the setup and the capsules do, and for a
+reason, not a policy: the read-only part leaves vboot's data, the early
+console and the caches for romstage at the cache-as-RAM addresses of its
+own variant (`configs/ro-interface.txt`), so an `nri` slot behind an `mrc`
+read-only part dies before its first POST code (tried on a W541: last
+POST `0x21`, then vboot's fallback). Switching variant takes a read-only
+part with one layout for both, `patches/ro-next`, written with flashrom
+([docs/vboot.md](vboot.md#a-new-read-only-part)). `--force` writes it
+anyway, for a laptop whose read-only part has that layout.
 
 ## Going back
 
