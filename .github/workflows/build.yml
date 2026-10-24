@@ -40,11 +40,13 @@
 # Quale release e' cosa (tools/ci.sh):
 #   - mrc: RAM init con mrc.bin, come la 4.22. "latest" se non e' una
 #     pre-release ed e' la versione piu' alta.
-#   - nri: RAM init nativa, sempre pre-release (upstream "[NOT COMPLETE]").
+#   - nri: RAM init nativa, esce pre-release (upstream "[NOT COMPLETE]");
+#     diventa release a mano quando e' provata sul W541, mai latest.
 #   - pre-release tutte e due con la casella "prerelease" o un trattino nella
 #     versione (v1.1.0-rc1); le release vere solo dal ramo principale. Una
 #     pre-release provata sul portatile diventa release senza ricostruirla:
 #       gh release edit v1.0.0-mrc --repo debianita22/ourobios --prerelease=false --latest
+#       gh release edit v1.0.0-nri --repo debianita22/ourobios --prerelease=false --latest=false
 #   - il job Release si puo' rilanciare: le bozze di un tentativo fallito si
 #     cancellano e si rifanno; un tag che c'e' gia' deve essere sul commit della
 #     build; con le due release gia' pubblicate da quel commit resta solo
