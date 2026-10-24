@@ -51,6 +51,8 @@ CONFIG_CHECK_ME=y
 
 # RAM init: upstream la marca ancora "[NOT COMPLETE]"
 CONFIG_USE_NATIVE_RAMINIT=y
+# dopo il training, ogni banco scritto e riletto con la REUT (patch 0087)
+CONFIG_HASWELL_NRI_MEMORY_TEST=y
 CONFIG_ENABLE_DDR_2X_REFRESH=y
 # Memoria azzerata a ogni avvio (non alla ripresa da S3): 1,7 s con 32 GB.
 # Si spegne dal menu, Security -> Memory protection (patch 0045-0046).

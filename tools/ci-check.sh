@@ -423,7 +423,7 @@ done < <(files)
 if [ -n "${k}" ]; then bad "byte della chiave fuori da blobs/opvk.inc:${k}"; else ok "byte della chiave solo in blobs/opvk.inc"; fi
 
 step "defconfig"
-ram='^CONFIG_(HAVE_MRC|MRC_FILE|HASWELL_HIDE_PEG_FROM_MRC|USE_NATIVE_RAMINIT|DRIVERS_EFI_MAIN_FW_GUID)='
+ram='^CONFIG_(HAVE_MRC|MRC_FILE|HASWELL_HIDE_PEG_FROM_MRC|USE_NATIVE_RAMINIT|HASWELL_NRI_MEMORY_TEST|DRIVERS_EFI_MAIN_FW_GUID)='
 for v in mrc nri; do
 	[ -f "configs/w541-${v}.defconfig" ] || bad "configs/w541-${v}.defconfig non c'e'"
 done
