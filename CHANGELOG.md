@@ -18,7 +18,10 @@ part again ([docs/flashing.md](docs/flashing.md#from-v13x-to-v139)).
   of either variant; an early console of 16 KiB in place of 3, where the
   messages of the bootblock and of vboot fit; the CBFS caches 8 KiB each in
   place of 16. The read-only part is now built from the coreboot pin of the
-  slots, 26.09-280 (v1.3.0's was 26.09-53).
+  slots, 26.09-280 (v1.3.0's was 26.09-53). Verified on a W541 with
+  v1.3.9-rc1 (`mrc`, written with flashrom): it starts its slot, the log
+  keeps the messages of the bootblock and of verstage, and the same
+  read-only part starts the `nri` slots of rc2 and rc3.
 - New ESRT GUIDs for both variants: the slots of v1.3.9 do not boot behind
   the read-only part of v1.3.0-v1.3.8, nor those behind the new one, so the
   capsule of v1.3.9 does not install on them (`update.py stage`, fwupd and
@@ -38,9 +41,12 @@ part again ([docs/flashing.md](docs/flashing.md#from-v13x-to-v139)).
   The NRI now takes those qclks off after the command training while a
   read test passes on every rank, and keeps one as a guard band. On the
   W541 the `nri` slot of rc3 ends with the latencies of `mrc.bin` (round
-  trips of 44 and 45 qclks) and reads from Linux as fast. The other
-  differences, the power training and the voltage centering of `mrc.bin`,
-  are listed in [docs/raminit.md](docs/raminit.md#on-the-w541).
+  trips of 44 and 45 qclks) and reads from Linux as fast; it passed 30
+  minutes of `stress-ng --vm` with verification under load, and after an
+  S3 resume the registers are the trained ones, shorter round trips
+  included. The other differences, the power training and the voltage
+  centering of `mrc.bin`, are listed in
+  [docs/raminit.md](docs/raminit.md#on-the-w541).
 - `tools/ddr-report.py`: the memory controller as the RAM init left it
   (timings, turnarounds, command rate, latencies, trained delays and Vrefs
   per byte, comp, ODT, equalisation), read only, and two dumps compared:
@@ -53,6 +59,8 @@ part again ([docs/flashing.md](docs/flashing.md#from-v13x-to-v139)).
   From v1.3.9 behind the `mrc` read-only part also the other variant; the
   tool checks what the read-only part on the laptop can start
   ([docs/update.md](docs/update.md#a-release-from-its-image-in-the-other-slot)).
+  Verified on a W541: from `mrc` (rc1) to the `nri` slot of rc2, back to
+  `mrc`, then to the `nri` slot of rc3.
 
 ## v1.3.8
 
