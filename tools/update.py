@@ -1271,6 +1271,17 @@ def cmd_other_slot(args):
     names = region_releases(image, iareas["FW_MAIN_" + other])
     if len(names) != 1:
         raise Error("%s: nello slot %s porta %s" % (args.image, other, " + ".join(names) or "nessuna release"))
+    # La parte RO lascia alla romstage i dati di vboot, la console e le cache
+    # agli indirizzi della cache-as-RAM della sua variante (configs/ro-interface.txt):
+    # uno slot dell'altra variante li cerca altrove e non parte (POST 0x21)
+    ro = region_releases(flash, areas["WP_RO"]) if "WP_RO" in areas else []
+    ro_variant = ro[0].rsplit("-", 1)[1] if len(ro) == 1 else None
+    variant = names[0].rsplit("-", 1)[1]
+    if ro_variant and variant != ro_variant and not args.force:
+        raise Error("%s e' la variante %s: non parte dopo la parte RO di questo firmware, %s (%s). "
+                    "Serve una parte RO con il layout di tutte e due (patches/ro-next), scritta con "
+                    "flashrom: docs/vboot.md, One read-only part for both variants"
+                    % (names[0], variant, ro_variant, ro[0]))
     print("gira:      slot %s, %s" % (current, " + ".join(in_cur) or "?"))
     print("da provare: slot %s, %s (ora: %s)" % (other, names[0],
           " + ".join(region_releases(flash, areas["FW_MAIN_" + other])) or "vuoto"))
@@ -1464,10 +1475,11 @@ def main():
     p.set_defaults(func=cmd_vboot)
 
     p = sub.add_parser("other-slot", help="prepara l'immagine per scrivere con flashrom lo slot di una release "
-                       "(anche dell'altra variante) nello slot che non gira, e farlo provare a vboot")
+                   "nello slot che non gira, e farlo provare a vboot")
     p.add_argument("dump", help="sudo flashrom -p internal -r FILE: tutto il flash, preso in questo avvio")
     p.add_argument("image", help="la release: .rom, .cap o .cab")
     p.add_argument("--out", default="other-slot.rom", help="l'immagine da scrivere (default: other-slot.rom)")
+    p.add_argument("--force", action="store_true", help="anche l'altra variante, che dopo questa parte RO non parte")
     p.set_defaults(func=cmd_other_slot)
 
     p = sub.add_parser("rollback", help="torna alla release nell'altro slot, quella di prima dell'ultimo aggiornamento")
