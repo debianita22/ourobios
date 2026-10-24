@@ -85,8 +85,8 @@ tried with `update.py other-slot`:
   2 fails; with the guard band the round trips end at 44 and 45 qclks, with
   IO latencies of 4 and rt_iocomp 21, the values of `mrc.bin` on this
   machine;
-- 30 minutes of `stress-ng --vm 4 --verify` over 5 GB, under load, without
-  errors (rc3);
+- `stress-ng --vm 4 --verify` under load, 30 minutes over 5 GB and 30
+  minutes over 18.6 GB (75% of the free memory), without errors (rc3);
 - suspend to RAM (S3) and resume, rc2 and rc3: after the wake the
   registers are the trained ones, the shorter round trips included.
 
