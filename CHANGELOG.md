@@ -80,7 +80,8 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   rc4 (`tools/elog.py`) shows it at each wake: *ACPI wake* S3 from the
   power button, then *Power button*, written by the PM1 handler, and *ACPI
   enter* S5; the next boot reads POST code 0x76 (`BS_POST_DEVICE`, where
-  `lpc_final()` sends the finalize command).
+  `lpc_final()` sends the finalize command). Verified on the W541 with rc5
+  (nri) under CachyOS: the laptop resumes from S3 again.
 - From rc6: no "No handler for Region [ERAM]" for `BAT0._STA` and
   `BAT1._STA` in the log of macOS at boot. macOS evaluates them before its
   EC driver is up; they now read no EC RAM before `_REG` (3, 1) and return
