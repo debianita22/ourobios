@@ -93,5 +93,3 @@
 0094-mb-lenovo-haswell-Read-the-EC-wake-cause-as-one-byte.patch
 0095-sb-intel-Describe-the-HPET-and-the-8254-as-on-a-Mac-.patch
 0096-mb-lenovo-haswell-Put-the-backlight-level-back-at-wa.patch
-0097-sb-intel-lynxpoint-Put-a-disabled-EHCI-controller-in.patch
-0098-mb-lenovo-haswell-Hide-the-EHCI-controllers-with-the.patch
