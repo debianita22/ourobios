@@ -18,9 +18,11 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   OpenCore configurations the parts under macOS stay off: remove it
   ([docs/macos.md](docs/macos.md#in-the-opencore-configuration)).
 - `nri`: v1.3.10-rc1 hid the two EHCI controllers, as the native RAM init
-  puts every USB port on the xHCI one. With it only one USB port of the
-  W541 kept finding a USB drive, under Linux and macOS; it was the only
-  change to USB, and rc2 drops it: the EHCI controllers stay as in v1.3.9.
+  puts every USB port on the xHCI one. With it a USB drive plugged in was
+  mostly not found, under Linux and macOS: under Linux, whenever the xHCI
+  controller was in runtime suspend (kept in D0, it found the drive). It
+  was the only change to USB, and rc2 drops it: the EHCI controllers stay
+  as in v1.3.9.
 - ACPI: the model, serial number, type and OEM name of the battery as
   strings (they were buffers); the CPUs notified by `_PSR` only when the
   power source changes, not at every read; the EC wake cause read as one
