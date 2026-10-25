@@ -74,7 +74,8 @@ laptop:
 - the EHCI controllers stay visible, with both variants. v1.3.10-rc1 hid
   them in the `nri` variant, and with it a USB drive plugged in was mostly
   not found, under Linux and macOS (under Linux, whenever the xHCI
-  controller was in runtime suspend).
+  controller was in runtime suspend), and USB 3.0 drives ran at USB 2.0
+  speed (the SuperSpeed link went to compliance mode).
 
 ## Linux and Windows
 
