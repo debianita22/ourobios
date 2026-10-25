@@ -55,8 +55,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   of rc4: at 2880×1620 the setup opens and answers the keys at each of the
   four UI scales (rc3: page fault at each); at 1920×1080 the whole smoke
   test passes, and the wallpaper differs from rc3's by at most 2 levels per
-  color. Out of the black screen on rc3, from Linux: `sudo efibootmgr -n`
-  with the number of the *UEFI Shell* entry, a restart, then in the Shell
+  color. A capsule update at 2880×1620 too, from a ROM of
+  `tools/build.sh update-test` with the screen at that size: the update
+  screen drawn through the whole write, the capsule applied, the other slot
+  equal to it, then booted by vboot; so rc4 installs with `update.py stage`
+  on rc3 with the option on. Out of the black screen on rc3 without
+  updating, from Linux: `sudo efibootmgr -n` with the number of the *UEFI
+  Shell* entry, a restart, then in the Shell
   `setvar gfx_fb_limit -guid ceae4c1d-335b-4685-a4a0-fc4a94eea085 -bs -nv
   =00000000` and `reset`: the firmware screen is at 1920×1080 again.
 
