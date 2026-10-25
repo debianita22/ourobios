@@ -72,9 +72,9 @@ laptop:
 - at wake libgfxinit sets the panel up again, under every OS, as at boot.
   To change if macOS shows a black or corrupt screen after sleep;
 - the EHCI controllers stay visible, with both variants. v1.3.10-rc1 hid
-  them in the `nri` variant, and with it only one USB port of the W541
-  kept finding a USB drive, under Linux and macOS. A configuration that
-  turns them off with an SSDT keeps it.
+  them in the `nri` variant, and with it a USB drive plugged in was mostly
+  not found, under Linux and macOS (under Linux, whenever the xHCI
+  controller was in runtime suspend).
 
 ## Linux and Windows
 
