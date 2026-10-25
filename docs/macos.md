@@ -26,7 +26,6 @@ renames `_OSI` to `XOSI` hides that answer from the firmware: see
 | CFG Lock off (0089, 0091) | setup: *Energy Saver* → *Processor* → *C-state configuration lock*: off (default: on) | the kernel quirk `AppleXcpmCfgLock` |
 | The HPET shown, with IRQ 0 and 8, and the 8254 timer without IRQ 0, as on a Mac (0095) | under macOS | renames and an SSDT for the HPET and the 8254: the IRQ fix (*FixHPET* of SSDTTime) |
 | The last backlight level put back at wake (0096) | under macOS | nothing: the resume path starts the backlight at 50% and macOS kept it there until a brightness key |
-| The two EHCI controllers put in D3 and hidden (0097, 0098) | `nri` variant: the native RAM init puts every USB port on the xHCI controller | an SSDT that turns them off, if the configuration had one |
 | Model, serial number, type and OEM name of the battery as strings (0092) | always | nothing: they were buffers, which ACPICA converts and an OS need not |
 | The CPUs notified by `_PSR` only when the power source changes, not at every read (0093) | always | nothing |
 | The EC wake cause read as one byte (0094) | always | ECEnabler, which the battery methods still need |
@@ -71,7 +70,11 @@ laptop:
   the pixels; to try if the panel stays black when macOS takes over the
   display;
 - at wake libgfxinit sets the panel up again, under every OS, as at boot.
-  To change if macOS shows a black or corrupt screen after sleep.
+  To change if macOS shows a black or corrupt screen after sleep;
+- the EHCI controllers stay visible, with both variants. v1.3.10-rc1 hid
+  them in the `nri` variant, and with it only one USB port of the W541
+  kept finding a USB drive, under Linux and macOS. A configuration that
+  turns them off with an SSDT keeps it.
 
 ## Linux and Windows
 
@@ -81,6 +84,4 @@ ignored the query.
 
 - With *ACPI processor objects* on *Processor*, Linux lists the CPUs as
   `LNXCPU` devices instead of `ACPI0007`, with the same tables;
-- the CFG Lock: Linux and Windows do not need it either way;
-- with the `nri` variant, `lspci` no longer shows `00:1a.0` and `00:1d.0`,
-  the EHCI controllers.
+- the CFG Lock: Linux and Windows do not need it either way.
