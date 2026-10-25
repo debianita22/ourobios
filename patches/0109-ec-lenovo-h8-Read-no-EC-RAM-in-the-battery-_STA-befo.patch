@@ -1,0 +1,106 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 25 Oct 2026 23:51:09 +0100
+Subject: [PATCH] ec/lenovo/h8: Read no EC RAM in the battery _STA before _REG
+
+AML must assume an operation region inaccessible until _REG
+(RegionSpace, 1) is evaluated for it (ACPI 6.5, 6.5.4). The _STA of
+BAT0 and BAT1 read the battery present bits from ERAM whenever the OS
+evaluates them: macOS does so before its EC driver installs the
+EmbeddedControl handler, and logs "No handler for Region [ERAM]" for
+both at every boot, then evaluates them again later.
+
+Keep ECAV in the EC device, set by _REG (3, Arg1), and have the _STA of
+the batteries return 0x0F (no battery) while it is 0. Once the handler
+is in, _REG notifies both batteries with 0x81, as a battery attach event
+of the EC does, so that the OS checks them again. This is the pattern
+of the System76 EC (ECOK). Linux installs the EC handler from the DSDT
+and evaluates _REG in acpi_bus_init(), before acpi_scan_init()
+evaluates the _STA of the devices, so nothing changes there.
+
+An ECDT would let the OS reach the EC before the namespace is
+enumerated, but it changes how every OS brings the EC up (Linux takes
+its boot EC from it instead of the DSDT), and the methods would still
+read ERAM before _REG.
+
+TEST=Build the ThinkPad W541; in acpiexec on its DSDT, with _REG (3, 0)
+the _STA of BAT0 and BAT1 return 0x0F without touching the EC region,
+with _REG (3, 1) they read it again (0x1F with the battery present bit
+set) and both batteries get Notify 0x81; the other battery, _PSR, HPET
+and _PTS/_WAK checks of the earlier patches give the same results.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/ec/lenovo/h8/acpi/battery.asl |  8 ++++++++
+ src/ec/lenovo/h8/acpi/ec.asl      | 18 ++++++++++++++++++
+ 2 files changed, 26 insertions(+)
+
+diff --git a/src/ec/lenovo/h8/acpi/battery.asl b/src/ec/lenovo/h8/acpi/battery.asl
+index 67b562dace..b06ee54412 100644
+--- a/src/ec/lenovo/h8/acpi/battery.asl
++++ b/src/ec/lenovo/h8/acpi/battery.asl
+@@ -427,6 +427,10 @@ Device (BAT0)
+ 
+ 	Method (_STA, 0, NotSerialized)
+ 	{
++		/* No ERAM before the EC driver of the OS: no battery yet */
++		If (!ECAV) {
++			Return (0x0f)
++		}
+ 		if (B0PR) {
+ 			Return (0x1f)
+ 		} else {
+@@ -544,6 +548,10 @@ Device (BAT1)
+ 
+ 	Method (_STA, 0, NotSerialized)
+ 	{
++		/* No ERAM before the EC driver of the OS: no battery yet */
++		If (!ECAV) {
++			Return (0x0f)
++		}
+ 		if (B1PR) {
+ 			Return (0x1f)
+ 		} else {
+diff --git a/src/ec/lenovo/h8/acpi/ec.asl b/src/ec/lenovo/h8/acpi/ec.asl
+index 01737ab809..82b4c61a23 100644
+--- a/src/ec/lenovo/h8/acpi/ec.asl
++++ b/src/ec/lenovo/h8/acpi/ec.asl
+@@ -68,9 +68,21 @@ Device(EC)
+ 				DKR3, 1		/* Dock register 3 */
+ 	}
+ 
++	/*
++	 * 1 while the OS has a handler for ERAM, from _REG (3, 1): until then
++	 * AML must not read ERAM (ACPI 6.5, 6.5.4). The _STA of the batteries
++	 * checks it, as an OS may evaluate them before its EC driver is up
++	 * (macOS: "No handler for Region [ERAM]").
++	 */
++	Name (ECAV, 0)
++
+ 	/* Called on OperationRegion driver changes */
+ 	Method (_REG, 2, NotSerialized)
+ 	{
++		If (Arg0 == 3) {
++			ECAV = Arg1
++		}
++
+ 		/* Wait for ERAM driver loaded */
+ 		if (Arg1 == 1) {
+ 			/* Fill HKEY defaults on first boot */
+@@ -80,6 +92,12 @@ Device(EC)
+ 				^HKEY.INIT = 1
+ 			}
+ 		}
++
++		/* The batteries now read the EC: let the OS check them again */
++		If ((Arg0 == 3) && (Arg1 == 1)) {
++			Notify (BAT0, 0x81)
++			Notify (BAT1, 0x81)
++		}
+ 	}
+ 
+ 	Method (_CRS, 0, Serialized)
+-- 
+2.43.0
+

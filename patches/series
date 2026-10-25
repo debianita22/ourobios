@@ -103,3 +103,4 @@
 0106-nb-intel-haswell-Add-an-option-for-a-firmware-frameb.patch
 0107-mb-lenovo-haswell-Put-the-display-options-in-the-set.patch
 0108-sb-intel-lynxpoint-Leave-PM1-and-GPE0-events-to-the-.patch
+0109-ec-lenovo-h8-Read-no-EC-RAM-in-the-battery-_STA-befo.patch
