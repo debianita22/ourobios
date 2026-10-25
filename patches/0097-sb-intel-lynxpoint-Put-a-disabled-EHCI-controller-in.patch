@@ -1,0 +1,68 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 25 Oct 2026 17:15:55 +0100
+Subject: [PATCH] sb/intel/lynxpoint: Put a disabled EHCI controller in D3
+ before hiding it
+
+usb_ehci_disable(), which the SMM handler runs when it routes every port
+to xHCI, sets DCh[0] (the clock gating step that usb_ehci_clock_gating()
+leaves for a disabled controller), puts the controller in D3hot with PME
+disabled and clears its BAR, then sets its function disable bit.
+pch_disable_devfn() only sets the bit: an EHCI controller turned off in
+the devicetree or by the mainboard code is hidden in D0, without that
+clock gating step.
+
+Take the same steps there for both EHCI controllers. pch_enable() has
+already cleared their command register.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/southbridge/intel/lynxpoint/pch.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/src/southbridge/intel/lynxpoint/pch.c b/src/southbridge/intel/lynxpoint/pch.c
+index 80473332ef..76392d8419 100644
+--- a/src/southbridge/intel/lynxpoint/pch.c
++++ b/src/southbridge/intel/lynxpoint/pch.c
+@@ -84,6 +84,19 @@ static void pch_enable_d3hot(struct device *dev)
+ 	pci_or_config32(dev, PCH_PCS, PCH_PCS_PS_D3HOT);
+ }
+ 
++/* As usb_ehci_disable() in SMM, before the function disable bit */
++static void pch_disable_ehci(struct device *dev)
++{
++	/* Dx:F0:DCh[0] = 1b when the EHCI controller is disabled */
++	pci_or_config32(dev, 0xdc, 1 << 0);
++
++	/* D3hot, PME disabled */
++	pci_update_config16(dev, EHCI_PWR_CTL_STS, ~(PWR_CTL_ENABLE_PME | PWR_CTL_SET_MASK),
++			    PWR_CTL_SET_D3);
++
++	pci_write_config32(dev, PCI_BASE_ADDRESS_0, 0);
++}
++
+ /* Set bit in function disable register to hide this device */
+ void pch_disable_devfn(struct device *dev)
+ {
+@@ -142,6 +155,7 @@ void pch_disable_devfn(struct device *dev)
+ 		RCBA32_OR(BUC, PCH_DISABLE_GBE);
+ 		break;
+ 	case PCI_DEVFN(26, 0): /* EHCI #2 */
++		pch_disable_ehci(dev);
+ 		RCBA32_OR(FD, PCH_DISABLE_EHCI2);
+ 		break;
+ 	case PCI_DEVFN(27, 0): /* HD Audio Controller */
+@@ -158,6 +172,7 @@ void pch_disable_devfn(struct device *dev)
+ 		RCBA32_OR(FD, PCH_DISABLE_PCIE(PCI_FUNC(dev->path.pci.devfn)));
+ 		break;
+ 	case PCI_DEVFN(29, 0): /* EHCI #1 */
++		pch_disable_ehci(dev);
+ 		RCBA32_OR(FD, PCH_DISABLE_EHCI1);
+ 		break;
+ 	case PCI_DEVFN(31, 0): /* LPC */
+-- 
+2.43.0
+

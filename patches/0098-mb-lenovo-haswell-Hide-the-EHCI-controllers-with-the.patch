@@ -9,10 +9,11 @@ the xHCI controller, at every boot and S3 resume. The two EHCI
 controllers stay enabled with nothing but their rate matching hubs: the
 OS runs two empty controllers, with their wake events on GPE 0x0d.
 
-Disable both in mainboard_enable(), before enumeration, so that the PCH
-code sets their function disable bits at every boot and resume, as for
-the ExpressCard and Thunderbolt root ports (the helper now takes the PCI
-slot too). Not with mrc.bin, which starts the ports on EHCI.
+Disable both in mainboard_enable(), before enumeration, as the
+ExpressCard and Thunderbolt root ports already are (the helper now takes
+the PCI slot too): at every boot and resume, pch_enable() then puts them
+in D3hot and sets their function disable bits. Not with mrc.bin, which
+starts the ports on EHCI.
 
 TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
 

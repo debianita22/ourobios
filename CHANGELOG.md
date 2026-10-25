@@ -12,15 +12,17 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   OpenCore's `AppleXcpmCfgLock` quirk) and *ACPI processor objects*
   (*Processor*: the CPUs declared the way macOS looks for them, without an
   SSDT that wraps them); under macOS only, the HPET with IRQ 0 and 8 and
-  the 8254 timer without IRQ 0, as on a Mac, and the backlight level of the
-  brightness keys put back at wake, which the resume path starts at 50%
-  (patches 0089-0091, 0095, 0096).
-- `nri`: the two EHCI controllers hidden, as the native RAM init puts every
-  USB port on the xHCI one (patch 0097).
+  the 8254 timer without IRQ 0, as on a Mac, and the last backlight level
+  put back at wake, which the resume path starts at 50% (patches
+  0089-0091, 0095, 0096). With the `_OSI` to `XOSI` rename of some
+  OpenCore configurations the parts under macOS stay off: remove it
+  ([docs/macos.md](docs/macos.md#in-the-opencore-configuration)).
+- `nri`: the two EHCI controllers put in D3 and hidden, as the native RAM
+  init puts every USB port on the xHCI one (patches 0097, 0098).
 - ACPI: the model, serial number, type and OEM name of the battery as
-  strings (they were buffers); the CPUs notified when the AC adapter comes
-  or goes, not at every read of the power source; the EC wake cause read
-  as one byte (patches 0092-0094).
+  strings (they were buffers); the CPUs notified by `_PSR` only when the
+  power source changes, not at every read; the EC wake cause read as one
+  byte (patches 0092-0094).
 
 ## v1.3.9
 

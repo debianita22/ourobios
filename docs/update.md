@@ -98,6 +98,10 @@ capsule to `\EFI\UpdateCapsule\w541-coreboot.cap` on the ESP and sets the
 *capsule on disk* bit of the `OsIndications` UEFI variable. `--reboot`
 restarts straight away.
 
+Then restart or shut down, do not hibernate: at the next power-on the
+firmware would apply the update, and the OS resume on the new firmware
+from an image made on the old one, with its ACPI tables.
+
 After the reboot, `update.py status` shows the new version and, under
 *ultimo* (last), the result of the update. Releases before v1.3.0 (and
 v1.3.0-rc1 and rc2) never put the result in the ESRT: there *ultimo* stays
