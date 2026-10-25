@@ -59,11 +59,15 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `tools/build.sh update-test` with the screen at that size: the update
   screen drawn through the whole write, the capsule applied, the other slot
   equal to it, then booted by vboot; so rc4 installs with `update.py stage`
-  on rc3 with the option on. Out of the black screen on rc3 without
-  updating, from Linux: `sudo efibootmgr -n` with the number of the *UEFI
-  Shell* entry, a restart, then in the Shell
+  on rc3 with the option on. Verified on the W541 with rc4 (nri), installed
+  that way on rc3 with the option on: the update succeeded, the firmware
+  screen is at 2880×1620 and the setup opens. Out of the black screen on
+  rc3 without updating, from Linux: `sudo efibootmgr -n` with the number of
+  the *UEFI Shell* entry, a restart, then in the Shell
   `setvar gfx_fb_limit -guid ceae4c1d-335b-4685-a4a0-fc4a94eea085 -bs -nv
-  =00000000` and `reset`: the firmware screen is at 1920×1080 again.
+  =00000000` and `reset`: the firmware screen is at 1920×1080 again. A
+  Linux started by OpenCore with `RequestBootVarRouting` sees OpenCore's
+  boot entries, not the firmware's, and no *UEFI Shell*: there, update.
 
 ## v1.3.9
 
