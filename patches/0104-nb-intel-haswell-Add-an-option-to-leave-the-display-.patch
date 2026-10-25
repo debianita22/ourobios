@@ -1,0 +1,105 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 25 Oct 2026 19:53:03 +0100
+Subject: [PATCH] nb/intel/haswell: Add an option to leave the display to the
+ OS at wake
+
+On S3 resume gma_func0_init() runs libgfxinit as at boot: it sets the
+panel up at the mode of the firmware framebuffer, with the backlight at
+the 50% that gma_setup_panel() programs, and the graphics driver of the
+OS sets the display up again from scratch right after. The panel goes
+through two mode sets and the backlight comes on twice. A VBIOS is not
+run again on resume (S3_VGA_ROM_RUN): there the OS driver does it alone.
+
+Add a gfx_resume_init option, with a CFR object for the setup menu: off,
+the S3 resume path keeps the panel setup (power timings, backlight PWM)
+and the rest of the GPU init, and runs neither libgfxinit nor a VBIOS.
+It defaults to on, what the code does today: with an OS that has no
+driver for the GPU, the screen would stay black after wake.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/northbridge/intel/haswell/cfr.h | 14 ++++++++++++++
+ src/northbridge/intel/haswell/gma.c | 14 +++++++++++++-
+ 2 files changed, 27 insertions(+), 1 deletion(-)
+
+diff --git a/src/northbridge/intel/haswell/cfr.h b/src/northbridge/intel/haswell/cfr.h
+index a1d0259945..4d5271ff8c 100644
+--- a/src/northbridge/intel/haswell/cfr.h
++++ b/src/northbridge/intel/haswell/cfr.h
+@@ -51,6 +51,20 @@ static const struct sm_object gfx_uma_size_mrc = SM_DECLARE_COMMENT({
+ 			  "The build with the native RAM init makes it configurable.",
+ });
+ 
++static const struct sm_object gfx_resume_init = SM_DECLARE_BOOL({
++	.opt_name	= "gfx_resume_init",
++	.ui_name	= "Light the display up at wake",
++	.ui_helptext	= "At wake from sleep (S3) the firmware sets the display up\n"
++			  "again, as at boot, before the OS takes over. Off: it only\n"
++			  "sets the panel power timings and the backlight PWM, and\n"
++			  "leaves the display to the graphics driver of the OS (i915\n"
++			  "on Linux, macOS): a faster wake, without the backlight\n"
++			  "coming on twice. With an OS without an Intel graphics\n"
++			  "driver (a plain framebuffer) the screen stays black after\n"
++			  "wake.",
++	.default_value	= true,
++});
++
+ static const struct sm_object vtd = SM_DECLARE_BOOL({
+ 	.opt_name	= "vtd",
+ 	.ui_name	= "Intel VT-d",
+diff --git a/src/northbridge/intel/haswell/gma.c b/src/northbridge/intel/haswell/gma.c
+index b5eb9ce775..609c3b9bd3 100644
+--- a/src/northbridge/intel/haswell/gma.c
++++ b/src/northbridge/intel/haswell/gma.c
+@@ -1,5 +1,6 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <acpi/acpi.h>
+ #include <arch/io.h>
+ #include <bootmode.h>
+ #include <console/console.h>
+@@ -15,6 +16,7 @@
+ #include <drivers/intel/gma/i915.h>
+ #include <drivers/intel/gma/libgfxinit.h>
+ #include <drivers/intel/gma/opregion.h>
++#include <option.h>
+ #include <southbridge/intel/lynxpoint/pch.h>
+ #include <types.h>
+ 
+@@ -656,10 +658,20 @@ static void gma_func0_init(struct device *dev)
+ 
+ 	int vga_disable = (pci_read_config16(dev, GGC) & 2) >> 1;
+ 
++	/*
++	 * On S3 resume, unless asked to light the display up as at boot, leave
++	 * it to the graphics driver of the OS, as when a VBIOS is not run again
++	 * on resume: the panel setup above is all the firmware does.
++	 */
++	const bool display_to_os = acpi_is_wakeup_s3() &&
++				   !get_uint_option("gfx_resume_init", 1);
++
+ 	if (CONFIG(MAINBOARD_USE_LIBGFXINIT)) {
+ 		if (vga_disable) {
+ 			printk(BIOS_INFO,
+ 			       "IGD is not decoding legacy VGA MEM and IO: skipping NATIVE graphic init\n");
++		} else if (display_to_os) {
++			printk(BIOS_INFO, "S3 resume: display left to the OS\n");
+ 		} else {
+ 			printk(BIOS_SPEW, "NATIVE graphics, run native enable\n");
+ 			gma_gfxinit(&lightup_ok);
+@@ -667,7 +679,7 @@ static void gma_func0_init(struct device *dev)
+ 		}
+ 	}
+ 
+-	if (!lightup_ok) {
++	if (!lightup_ok && !display_to_os) {
+ 		printk(BIOS_SPEW, "FUI did not run; using VBIOS\n");
+ 		pci_dev_init(dev);
+ 	}
+-- 
+2.43.0
+

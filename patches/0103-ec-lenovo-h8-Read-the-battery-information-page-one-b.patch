@@ -1,0 +1,193 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 25 Oct 2026 19:52:07 +0100
+Subject: [PATCH] ec/lenovo/h8: Read the battery information page one byte at a
+ time
+
+The battery methods read the information page of the EC (0xa0-0xaf,
+selected with PAGE) through 16-bit fields, and through 32- and 128-bit
+ones for the type, the OEM name and the model. The EC driver of macOS
+handles no access wider than 8 bits to the EmbeddedControl space: there
+the battery shows nothing without a kext that splits such accesses
+(ECEnabler) or patches that rewrite the methods.
+
+Declare the page as 16 byte fields and turn BARC, BAFC, BAPR, BAVO,
+BAMA, BACC, BADC, BADV and BASN into methods with the same names that
+put the two bytes together, read low byte first as a 16-bit field with
+byte access is (an 8-bit read of 0xa1 alone returns garbage for BAMA),
+and BATY, BAOE and BANA into methods that return the bytes as a buffer.
+The rest of the battery code calls them as it read the fields.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec, with the same bytes in the EC page and in 0x38, _BST, _BIF,
+_BIX and _BTP of BAT0 return the same as with the 16-bit fields. The
+DSDTs of lenovo/t60, x61, x200, x201, x230, t420 and t440p build too.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/ec/lenovo/h8/acpi/battery.asl | 124 ++++++++++++++++++++++--------
+ 1 file changed, 93 insertions(+), 31 deletions(-)
+
+diff --git a/src/ec/lenovo/h8/acpi/battery.asl b/src/ec/lenovo/h8/acpi/battery.asl
+index c15b7bb516..67b562dace 100644
+--- a/src/ec/lenovo/h8/acpi/battery.asl
++++ b/src/ec/lenovo/h8/acpi/battery.asl
+@@ -16,61 +16,123 @@ Field(ERAM, ByteAcc, NoLock, Preserve)
+ 			B1PR, 1		/* Battery 1 present */
+ }
+ 
+-/* EC Registers */
+-/* PAGE == 0x00 */
++/*
++ * EC Registers: the information page (16 bytes ERAM @0xa0, page set by BPAG),
++ * read one byte at a time, so that an EC driver that handles no wider access
++ * (macOS without ECEnabler) reads it too. The methods below have the names
++ * the 16-bit and wider fields had. A 16-bit value is read low byte first, as
++ * a 16-bit field with byte access is: an 8-bit read of 0xa1 alone returns
++ * garbage for BAMA.
++ */
+ Field (ERAM, ByteAcc, NoLock, Preserve)
+ {
+ 	Offset(0xa0),
+-			BARC, 16,		/* Battery remaining capacity */
+-			BAFC, 16,		/* Battery full charge capacity */
+-	Offset(0xa8),
+-			BAPR, 16,		/* Battery present rate */
+-			BAVO, 16,		/* Battery Voltage */
++			BI00, 8, BI01, 8, BI02, 8, BI03, 8,
++			BI04, 8, BI05, 8, BI06, 8, BI07, 8,
++			BI08, 8, BI09, 8, BI0A, 8, BI0B, 8,
++			BI0C, 8, BI0D, 8, BI0E, 8, BI0F, 8,
++}
++
++/* PAGE == 0x00 */
++Method (BARC, 0, NotSerialized)		/* Battery remaining capacity */
++{
++	Local0 = BI00
++	Return (Local0 | (BI01 << 8))
++}
++
++Method (BAFC, 0, NotSerialized)		/* Battery full charge capacity */
++{
++	Local0 = BI02
++	Return (Local0 | (BI03 << 8))
++}
++
++Method (BAPR, 0, NotSerialized)		/* Battery present rate, @0xa8 */
++{
++	Local0 = BI08
++	Return (Local0 | (BI09 << 8))
++}
++
++Method (BAVO, 0, NotSerialized)		/* Battery Voltage, @0xaa */
++{
++	Local0 = BI0A
++	Return (Local0 | (BI0B << 8))
+ }
+ 
+ /* PAGE == 0x01 */
+-Field (ERAM, ByteAcc, NoLock, Preserve)
++Method (BAMA, 0, NotSerialized)		/* Battery management (bit 15: mWh) */
+ {
+-	Offset(0xa0),
+-			BAMA, 16,		/* 16-bit read required; 8-bit access at 0xa1 returns garbage! */
++	Local0 = BI00
++	Return (Local0 | (BI01 << 8))
++}
++
+ #if CONFIG(H8_HAS_BAT_INFO_EXTENDED)
+-	Offset(0xa4),
+-			BACC, 16,		/* Battery Cycle Count */
+-#endif
++Method (BACC, 0, NotSerialized)		/* Battery Cycle Count, @0xa4 */
++{
++	Local0 = BI04
++	Return (Local0 | (BI05 << 8))
+ }
++#endif
+ 
+ /* PAGE == 0x02 */
+-Field (ERAM, ByteAcc, NoLock, Preserve)
++Method (BADC, 0, NotSerialized)		/* Design Capacity */
+ {
+-	Offset(0xa0),
+-			BADC, 16,		/* Design Capacity */
+-			BADV, 16,		/* Design voltage */
+-			    , 16,
+-			    , 16,
+-			    , 16,
+-			BASN, 16,
++	Local0 = BI00
++	Return (Local0 | (BI01 << 8))
+ }
+ 
+-/* PAGE == 0x04: Battery type */
+-Field (ERAM, ByteAcc, NoLock, Preserve)
++Method (BADV, 0, NotSerialized)		/* Design voltage */
+ {
+-	Offset(0xa0),
+-			BATY, 32
++	Local0 = BI02
++	Return (Local0 | (BI03 << 8))
+ }
+ 
++Method (BASN, 0, NotSerialized)		/* Serial number, @0xaa */
++{
++	Local0 = BI0A
++	Return (Local0 | (BI0B << 8))
++}
++
++/* The first Arg0 bytes of the page, 4 or 16, as a buffer */
++Method (BIBF, 1, Serialized)
++{
++	Name (BUF, Buffer (16) {})
++	BUF [0] = BI00
++	BUF [1] = BI01
++	BUF [2] = BI02
++	BUF [3] = BI03
++	If (Arg0 > 4) {
++		BUF [4] = BI04
++		BUF [5] = BI05
++		BUF [6] = BI06
++		BUF [7] = BI07
++		BUF [8] = BI08
++		BUF [9] = BI09
++		BUF [10] = BI0A
++		BUF [11] = BI0B
++		BUF [12] = BI0C
++		BUF [13] = BI0D
++		BUF [14] = BI0E
++		BUF [15] = BI0F
++	}
++	Return (Mid (BUF, 0, Arg0))
++}
++
++/* PAGE == 0x04: Battery type */
++Method (BATY, 0, NotSerialized)
++{
++	Return (BIBF (4))
++}
+ 
+ /* PAGE == 0x05: Battery OEM information */
+-Field (ERAM, ByteAcc, NoLock, Preserve)
++Method (BAOE, 0, NotSerialized)
+ {
+-	Offset(0xa0),
+-			BAOE, 128
++	Return (BIBF (16))
+ }
+ 
+ /* PAGE == 0x06: Battery name */
+-Field (ERAM, ByteAcc, NoLock, Preserve)
++Method (BANA, 0, NotSerialized)
+ {
+-	Offset(0xa0),
+-			BANA, 128
++	Return (BIBF (16))
+ }
+ 
+ /*
+-- 
+2.43.0
+

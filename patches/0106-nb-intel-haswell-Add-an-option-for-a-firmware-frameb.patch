@@ -1,0 +1,122 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 25 Oct 2026 19:55:50 +0100
+Subject: [PATCH] nb/intel/haswell: Add an option for a firmware framebuffer up
+ to 2880x1620
+
+With libgfxinit the firmware framebuffer is the mode of the panel, at
+most LINEAR_FRAMEBUFFER_MAX_WIDTH x _HEIGHT: a build for a panel of
+2880 x 1620, as on the ThinkPad W541, can cap it at 1920 x 1080, which
+the panel fitter scales by 1.5, so that the text of the firmware stays
+readable. Every boot loader that keeps the mode then draws scaled too.
+
+Add a gfx_fb_limit option, with a CFR object for the setup menu, that
+raises the limit to 2880 x 1620 through gma_gfxinit_fb_max_width() and
+_height(): the panel then runs at its own mode. It defaults to the
+Kconfig limit, what the code does today. The framebuffer of 2880 x 1620
+takes 18.7 MB of the graphics stolen memory, 32 MB at the least here.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/northbridge/intel/haswell/cfr.h     | 27 +++++++++++++++++++++++++
+ src/northbridge/intel/haswell/gma.c     | 18 +++++++++++++++++
+ src/northbridge/intel/haswell/haswell.h |  6 ++++++
+ 3 files changed, 51 insertions(+)
+
+diff --git a/src/northbridge/intel/haswell/cfr.h b/src/northbridge/intel/haswell/cfr.h
+index 4d5271ff8c..daa4724e19 100644
+--- a/src/northbridge/intel/haswell/cfr.h
++++ b/src/northbridge/intel/haswell/cfr.h
+@@ -7,6 +7,7 @@
+ #ifndef NB_INTEL_HASWELL_CFR_H
+ #define NB_INTEL_HASWELL_CFR_H
+ 
++#include <commonlib/bsd/helpers.h>
+ #include <drivers/option/cfr_frontend.h>
+ #include <northbridge/intel/haswell/haswell.h>
+ 
+@@ -65,6 +66,32 @@ static const struct sm_object gfx_resume_init = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ });
+ 
++/* The firmware framebuffer of libgfxinit, from its Kconfig limit up to 2880 x 1620 */
++#if CONFIG(MAINBOARD_USE_LIBGFXINIT) && CONFIG(LINEAR_FRAMEBUFFER)
++#define GFX_FB_CONFIG_SIZE	STRINGIFY(CONFIG_LINEAR_FRAMEBUFFER_MAX_WIDTH) " x " \
++				STRINGIFY(CONFIG_LINEAR_FRAMEBUFFER_MAX_HEIGHT)
++#else
++#define GFX_FB_CONFIG_SIZE	"the build's size"
++#endif
++
++static const struct sm_object gfx_fb_limit = SM_DECLARE_ENUM({
++	.flags		= CONFIG(MAINBOARD_USE_LIBGFXINIT) && CONFIG(LINEAR_FRAMEBUFFER) ?
++			  0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "gfx_fb_limit",
++	.ui_name	= "Firmware screen resolution",
++	.ui_helptext	= "Resolution of the screen of the firmware: boot logo, setup,\n"
++			  "and the boot loaders that keep it. At most " GFX_FB_CONFIG_SIZE ",\n"
++			  "scaled to the panel, or the mode of the panel up to\n"
++			  "2880 x 1620: sharp, with smaller text (raise the scale in\n"
++			  "Graphical UI Configuration) and more pixels to draw.\n"
++			  "Takes effect at the next boot.",
++	.default_value	= IGD_FB_LIMIT_CONFIG,
++	.values		= (const struct sm_enum_value[]) {
++				{ "At most " GFX_FB_CONFIG_SIZE,	IGD_FB_LIMIT_CONFIG },
++				{ "Panel, up to 2880 x 1620",		IGD_FB_LIMIT_2880 },
++				SM_ENUM_VALUE_END },
++});
++
+ static const struct sm_object vtd = SM_DECLARE_BOOL({
+ 	.opt_name	= "vtd",
+ 	.ui_name	= "Intel VT-d",
+diff --git a/src/northbridge/intel/haswell/gma.c b/src/northbridge/intel/haswell/gma.c
+index 609c3b9bd3..a3e5b04ce8 100644
+--- a/src/northbridge/intel/haswell/gma.c
++++ b/src/northbridge/intel/haswell/gma.c
+@@ -626,6 +626,24 @@ static void gma_enable_swsci(void)
+ 	enable_tco_sci();
+ }
+ 
++#if CONFIG(MAINBOARD_USE_LIBGFXINIT) && CONFIG(LINEAR_FRAMEBUFFER)
++/* The firmware framebuffer: at most the Kconfig size, or up to 2880 x 1620 */
++static bool gma_fb_up_to_2880(void)
++{
++	return get_uint_option("gfx_fb_limit", IGD_FB_LIMIT_CONFIG) == IGD_FB_LIMIT_2880;
++}
++
++unsigned int gma_gfxinit_fb_max_width(void)
++{
++	return gma_fb_up_to_2880() ? 2880 : CONFIG_LINEAR_FRAMEBUFFER_MAX_WIDTH;
++}
++
++unsigned int gma_gfxinit_fb_max_height(void)
++{
++	return gma_fb_up_to_2880() ? 1620 : CONFIG_LINEAR_FRAMEBUFFER_MAX_HEIGHT;
++}
++#endif
++
+ static void gma_func0_init(struct device *dev)
+ {
+ 	const bool is_broadwell = cpu_is_broadwell();
+diff --git a/src/northbridge/intel/haswell/haswell.h b/src/northbridge/intel/haswell/haswell.h
+index 43241c274f..1313fb950b 100644
+--- a/src/northbridge/intel/haswell/haswell.h
++++ b/src/northbridge/intel/haswell/haswell.h
+@@ -52,6 +52,12 @@ enum igd_uma_size {
+  */
+ u8 haswell_igd_gms(void);
+ 
++/* Values of the gfx_fb_limit option: the size of the firmware framebuffer */
++enum igd_fb_limit {
++	IGD_FB_LIMIT_CONFIG = 0,	/* LINEAR_FRAMEBUFFER_MAX_WIDTH x _HEIGHT */
++	IGD_FB_LIMIT_2880   = 1,	/* the mode of the panel, up to 2880 x 1620 */
++};
++
+ #define ARCHDIS		0xff0	/* DMA Remap Engine Policy Control */
+ #define  DMAR_LCKDN	(1 << 31)
+ #define  SPCAPCTRL	(1 << 25)
+-- 
+2.43.0
+

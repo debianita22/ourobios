@@ -1,0 +1,65 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 25 Oct 2026 19:48:36 +0100
+Subject: [PATCH] mb/lenovo/haswell: Set the sleep LEDs and the lid wake under
+ macOS
+
+\_SI._SST of the H8 EC sets the indicators: on S3 the power button and
+the dot of the logo pulse and the moon LED lights up, back to steady
+light on wake. ACPICA (Linux) calls it around _PTS and _WAK; macOS does
+not, and the LEDs stay as in S0 while the laptop sleeps.
+
+Under macOS (ISDW), call _SST (3) at the end of _PTS for S3 and _SST (1)
+at the start of _WAK. In _PTS, also arm the wake on lid opening with
+_PSW of the lid (WKLD), as Linux does when it enables the lid as a
+wakeup source: the Fn key already wakes the laptop under macOS, but
+nothing shows that the lid is armed. Linux and Windows run the same
+methods as before.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec, without _OSI ("Darwin") installed, _PTS (3) and _WAK (3)
+leave the LED register (0x0c) and 0x32 of the EC at 0; with it, _PTS
+(3) sets WKLD (0x32 = 0x04) and leaves the LEDs at 0xaa, the last value
+of _SST (3), _WAK (3) at 0x8a, the last of _SST (1), and _PTS (4)
+changes nothing.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/acpi/platform.asl | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/platform.asl b/src/mainboard/lenovo/haswell/acpi/platform.asl
+index 4297baf47e..bed1217185 100644
+--- a/src/mainboard/lenovo/haswell/acpi/platform.asl
++++ b/src/mainboard/lenovo/haswell/acpi/platform.asl
+@@ -2,6 +2,11 @@
+ 
+ Method(_WAK,1)
+ {
++	/* macOS does not call _SST: the indicators back to working */
++	If (\ISDW ()) {
++		\_SI._SST (1)
++	}
++
+ 	/* Wake the HKEY to init BT/WWAN */
+ 	\_SB.PCI0.LPCB.EC.HKEY.WAKE (Arg0)
+ 
+@@ -20,4 +25,14 @@ Method(_WAK,1)
+ Method(_PTS,1)
+ {
+ 	\_SB.PCI0.LPCB.EC.RADI(0)
++
++	/*
++	 * Under macOS, before S3: the sleep indicators (power button and logo
++	 * pulsing, moon on), which macOS does not set with _SST, and the wake
++	 * on lid opening, which the other OSes enable with _PSW of the lid.
++	 */
++	If (Arg0 == 3 && \ISDW ()) {
++		\_SB.PCI0.LPCB.EC.LID._PSW (1)
++		\_SI._SST (3)
++	}
+ }
+-- 
+2.43.0
+

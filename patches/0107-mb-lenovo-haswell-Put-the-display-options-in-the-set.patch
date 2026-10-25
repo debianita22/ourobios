@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 25 Oct 2026 19:56:00 +0100
+Subject: [PATCH] mb/lenovo/haswell: Put the display options in the setup
+
+Show the firmware framebuffer size (gfx_fb_limit) and the display setup
+at wake (gfx_resume_init) in Hardware > Graphics, after the graphics
+memory options.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/cfr.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 31c3756e4e..5f41ce9b1c 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -539,6 +539,8 @@ static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
+ 		&gfx_uma_size,
+ 		&gfx_uma_size_mrc,
+ 		&gfx_aperture_size,
++		&gfx_fb_limit,
++		&gfx_resume_init,
+ 		NULL
+ 	},
+ });
+-- 
+2.43.0
+

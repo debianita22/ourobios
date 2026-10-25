@@ -93,3 +93,12 @@
 0094-mb-lenovo-haswell-Read-the-EC-wake-cause-as-one-byte.patch
 0095-sb-intel-Describe-the-HPET-and-the-8254-as-on-a-Mac-.patch
 0096-mb-lenovo-haswell-Put-the-backlight-level-back-at-wa.patch
+0099-sb-intel-lynxpoint-Leave-the-wake-status-to-the-OS-o.patch
+0100-mb-lenovo-haswell-Set-the-sleep-LEDs-and-the-lid-wak.patch
+0101-drivers-intel-gma-Address-the-backlight-registers-at.patch
+0102-sb-intel-lynxpoint-Address-the-xHCI-MMIO-with-the-wh.patch
+0103-ec-lenovo-h8-Read-the-battery-information-page-one-b.patch
+0104-nb-intel-haswell-Add-an-option-to-leave-the-display-.patch
+0105-drivers-intel-gma-Let-the-platform-set-the-framebuff.patch
+0106-nb-intel-haswell-Add-an-option-for-a-firmware-frameb.patch
+0107-mb-lenovo-haswell-Put-the-display-options-in-the-set.patch

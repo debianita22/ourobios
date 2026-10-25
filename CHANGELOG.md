@@ -30,6 +30,19 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   strings (they were buffers); the CPUs notified by `_PSR` only when the
   power source changes, not at every read; the EC wake cause read as one
   byte (patches 0092-0094).
+- From rc3, more for macOS ([docs/macos.md](docs/macos.md)): the wake
+  source left in PM1_STS and GPE0_STS at S3 resume, for every OS, as with
+  the OEM firmware (macOS tells a wake by the user from a dark wake by
+  it), with SCI_EN set before the SMIs come on so that a power button wake
+  cannot turn into a power off (0099); under macOS, the sleep LEDs and the
+  wake on lid opening set in `_PTS`, as `_SST` and `_PSW` do under Linux
+  (0100); the backlight registers and the MMIO of the xHCI controller
+  addressed at the BAR they have when the methods run, all 64 bits of it,
+  not the one of boot (0101, 0102); the battery read one byte at a time,
+  so that macOS reads it without ECEnabler (0103); two options in
+  *Hardware* → *Graphics*: the display left to the OS at wake, without the
+  mode set of libgfxinit, and the firmware screen at the panel's
+  2880×1620 (0104-0107, off by default).
 
 ## v1.3.9
 

@@ -1,0 +1,68 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 25 Oct 2026 19:47:54 +0100
+Subject: [PATCH] sb/intel/lynxpoint: Leave the wake status to the OS on S3
+ resume
+
+smm_southbridge_clear_state() clears PM1_STS and GPE0_STS at every boot,
+S3 resume included, after pch_log_state() has put the wake source in the
+event log. The OS then finds no wake source: Linux reads the power
+button status on resume to report a wakeup event, and macOS decides by
+these registers whether a wake is a full one, by the user, or a dark
+wake (pmset reports the wake reason from them).
+
+On S3 resume, leave PM1_STS and GPE0_STS to the OS, which clears them.
+Set SCI_EN first, as the OS had it before it slept: SCI_EN is written
+again only in lpc_init(), after global_smi_enable() has enabled the
+power button and the SMIs, and with SCI_EN clear a pending power button
+event would raise an SMI, which southbridge_smi_pm1() turns into a power
+off, and a pending GPE an SMI that clears GPE0_STS.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/southbridge/intel/lynxpoint/smi.c | 19 +++++++++++++++++--
+ 1 file changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/src/southbridge/intel/lynxpoint/smi.c b/src/southbridge/intel/lynxpoint/smi.c
+index 5f7d48af77..37d2008a26 100644
+--- a/src/southbridge/intel/lynxpoint/smi.c
++++ b/src/southbridge/intel/lynxpoint/smi.c
+@@ -1,5 +1,6 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <acpi/acpi.h>
+ #include <device/device.h>
+ #include <device/pci.h>
+ #include <console/console.h>
+@@ -28,9 +29,23 @@ void smm_southbridge_clear_state(void)
+ 
+ 	/* Dump and clear status registers */
+ 	clear_smi_status();
+-	clear_pm1_status();
+ 	clear_tco_status();
+-	clear_gpe_status();
++
++	/*
++	 * On S3 resume PM1_STS and GPE0_STS hold the wake source: leave them to
++	 * the OS, which reads and clears them (macOS tells a wake by the user
++	 * from a dark wake by them). Their events go to the OS as SCIs, as
++	 * before it slept: with SCI_EN clear, the SMIs enabled next would take
++	 * them, and the SMI handler turns a pending power button event into a
++	 * power off.
++	 */
++	if (acpi_is_wakeup_s3()) {
++		enable_pm1_control(SCI_EN);
++		printk(BIOS_DEBUG, "S3 resume: PM1 and GPE0 status left to the OS\n");
++	} else {
++		clear_pm1_status();
++		clear_gpe_status();
++	}
+ }
+ 
+ static void smm_southbridge_enable(uint16_t pm1_events)
+-- 
+2.43.0
+

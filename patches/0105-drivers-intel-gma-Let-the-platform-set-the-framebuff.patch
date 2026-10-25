@@ -1,0 +1,117 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 25 Oct 2026 19:54:45 +0100
+Subject: [PATCH] drivers/intel/gma: Let the platform set the framebuffer limit
+ at runtime
+
+The linear framebuffer of libgfxinit is the mode of the panel, capped
+at LINEAR_FRAMEBUFFER_MAX_WIDTH and _HEIGHT, fixed at build time. A
+build that caps a high-resolution panel to keep the firmware's text and
+UI readable has the scaled mode for every boot loader and OS after it.
+
+Take the limits from gma_gfxinit_fb_max_width() and _height(), weak
+functions that return the Kconfig values, so that a platform can set
+them at runtime, from an option for instance. A limit of 0, or above
+the range of pos32, falls back to the Kconfig value.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/drivers/intel/gma/Makefile.mk               |  1 +
+ src/drivers/intel/gma/gfx_init_fb.c             | 13 +++++++++++++
+ src/drivers/intel/gma/gma-gfx_init.ads          |  6 ++++++
+ src/drivers/intel/gma/hires_fb/gma-gfx_init.adb | 12 ++++++++++--
+ src/drivers/intel/gma/libgfxinit.h              |  7 +++++++
+ 5 files changed, 37 insertions(+), 2 deletions(-)
+ create mode 100644 src/drivers/intel/gma/gfx_init_fb.c
+
+diff --git a/src/drivers/intel/gma/Makefile.mk b/src/drivers/intel/gma/Makefile.mk
+index 7311ac27b2..544a9d25ec 100644
+--- a/src/drivers/intel/gma/Makefile.mk
++++ b/src/drivers/intel/gma/Makefile.mk
+@@ -55,6 +55,7 @@ ifeq ($(CONFIG_GFX_GMA),y)
+ 
+ ramstage-$(CONFIG_MAINBOARD_USE_LIBGFXINIT) += gma-gfx_init.ads
+ ifeq ($(CONFIG_LINEAR_FRAMEBUFFER),y)
++ramstage-$(CONFIG_MAINBOARD_USE_LIBGFXINIT) += gfx_init_fb.c
+ ramstage-$(CONFIG_MAINBOARD_USE_LIBGFXINIT) += hires_fb/gma-gfx_init.adb
+ else
+ ramstage-$(CONFIG_MAINBOARD_USE_LIBGFXINIT) += text_fb/gma-gfx_init.adb
+diff --git a/src/drivers/intel/gma/gfx_init_fb.c b/src/drivers/intel/gma/gfx_init_fb.c
+new file mode 100644
+index 0000000000..256491510f
+--- /dev/null
++++ b/src/drivers/intel/gma/gfx_init_fb.c
+@@ -0,0 +1,13 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <drivers/intel/gma/libgfxinit.h>
++
++__weak unsigned int gma_gfxinit_fb_max_width(void)
++{
++	return CONFIG_LINEAR_FRAMEBUFFER_MAX_WIDTH;
++}
++
++__weak unsigned int gma_gfxinit_fb_max_height(void)
++{
++	return CONFIG_LINEAR_FRAMEBUFFER_MAX_HEIGHT;
++}
+diff --git a/src/drivers/intel/gma/gma-gfx_init.ads b/src/drivers/intel/gma/gma-gfx_init.ads
+index ec1e0ce0ce..bdcfec42ba 100644
+--- a/src/drivers/intel/gma/gma-gfx_init.ads
++++ b/src/drivers/intel/gma/gma-gfx_init.ads
+@@ -26,4 +26,10 @@ is
+ 
+    pragma import (C, C_Fb_Add_Framebuffer_Info_Simple, "fb_add_framebuffer_info_simple");
+ 
++   function C_Fb_Max_Width return Interfaces.C.unsigned;
++   pragma import (C, C_Fb_Max_Width, "gma_gfxinit_fb_max_width");
++
++   function C_Fb_Max_Height return Interfaces.C.unsigned;
++   pragma import (C, C_Fb_Max_Height, "gma_gfxinit_fb_max_height");
++
+ end GMA.GFX_Init;
+diff --git a/src/drivers/intel/gma/hires_fb/gma-gfx_init.adb b/src/drivers/intel/gma/hires_fb/gma-gfx_init.adb
+index ff70e5600d..15e3de490e 100644
+--- a/src/drivers/intel/gma/hires_fb/gma-gfx_init.adb
++++ b/src/drivers/intel/gma/hires_fb/gma-gfx_init.adb
+@@ -63,8 +63,16 @@ is
+ 
+       fb : Framebuffer_Type;
+ 
+-      min_h : pos32 := Config.LINEAR_FRAMEBUFFER_MAX_WIDTH;
+-      min_v : pos32 := Config.LINEAR_FRAMEBUFFER_MAX_HEIGHT;
++      max_h : constant Interfaces.C.unsigned := C_Fb_Max_Width;
++      max_v : constant Interfaces.C.unsigned := C_Fb_Max_Height;
++
++      -- The platform's limits, the Kconfig ones if it gives none
++      min_h : pos32 :=
++        (if max_h in 1 .. 16#7fff_ffff# then pos32 (max_h)
++         else Config.LINEAR_FRAMEBUFFER_MAX_WIDTH);
++      min_v : pos32 :=
++        (if max_v in 1 .. 16#7fff_ffff# then pos32 (max_v)
++         else Config.LINEAR_FRAMEBUFFER_MAX_HEIGHT);
+ 
+       fbinfo : Interfaces.C.int;
+ 
+diff --git a/src/drivers/intel/gma/libgfxinit.h b/src/drivers/intel/gma/libgfxinit.h
+index 24079c31ff..94ba27cf5e 100644
+--- a/src/drivers/intel/gma/libgfxinit.h
++++ b/src/drivers/intel/gma/libgfxinit.h
+@@ -20,4 +20,11 @@ void gma_gfxinit(int *lightup_ok);
+ void gma_gfxstop(void);
+ int gma_read_edid(unsigned char edid[], int port);
+ 
++/*
++ * The largest linear framebuffer that gma_gfxinit() sets up: by default
++ * LINEAR_FRAMEBUFFER_MAX_WIDTH and _HEIGHT, a platform may decide at runtime.
++ */
++unsigned int gma_gfxinit_fb_max_width(void);
++unsigned int gma_gfxinit_fb_max_height(void);
++
+ #endif
+-- 
+2.43.0
+
