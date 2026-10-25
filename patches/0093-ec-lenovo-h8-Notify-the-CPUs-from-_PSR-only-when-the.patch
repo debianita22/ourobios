@@ -1,0 +1,61 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 25 Oct 2026 15:13:16 +0100
+Subject: [PATCH] ec/lenovo/h8: Notify the CPUs from _PSR only when the AC
+ state changes
+
+_PSR of the AC adapter updates PWRS and calls PNOT, which notifies every
+CPU thread with 0x81 (re-evaluate the processor objects), each time the
+OS reads the power source and not only on a change: Linux evaluates
+_PSR on every read of the online property of the AC power supply, and
+other OSes and their drivers poll it.
+
+Call PNOT only when PWRS changes. On a change the notification from
+_PSR is still needed: _Q26 and _Q27 call PNOT before the OS evaluates
+_PSR, while PWRS can still hold the old state, and on the boards whose
+_CST chooses its C-states on PWRS (write_cst_entries() of
+cpu/intel/speedstep, as on lenovo/x200) only the later one sees the new
+state.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec, with a test SSDT that counts the calls of \_SB.CNOT: PWRS 1
+and HPAC 0, the first _PSR returns 0 and calls CNOT, the second returns
+0 without calling it; with HPAC 1, _PSR returns 1 and calls it once
+more, the next one not; _Q27 notifies AC and calls it, as before. The
+DSDTs of lenovo/t60, x200, t420, x230 and t440p build too.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/ec/lenovo/h8/acpi/ac.asl | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/src/ec/lenovo/h8/acpi/ac.asl b/src/ec/lenovo/h8/acpi/ac.asl
+index 436fdcfaeb..4477301ec1 100644
+--- a/src/ec/lenovo/h8/acpi/ac.asl
++++ b/src/ec/lenovo/h8/acpi/ac.asl
+@@ -13,11 +13,19 @@ Device(AC)
+ 	Name(_UID, 0x00)
+ 	Name(_PCL, Package() { \_SB } )
+ 
++	/*
++	 * The OS reads _PSR whenever it likes (some poll it): notify the CPUs
++	 * only when PWRS changes. _Q26 and _Q27 notify them too, but before
++	 * the OS gets here to update PWRS, on which some _CST depend.
++	 */
+ 	Method(_PSR, 0, NotSerialized)
+ 	{
+ 		Local0 = HPAC
+-		\PWRS = Local0
+-		\PNOT()
++		If (\PWRS != Local0)
++		{
++			\PWRS = Local0
++			\PNOT()
++		}
+ 		return (Local0)
+ 	}
+ 
+-- 
+2.43.0
+

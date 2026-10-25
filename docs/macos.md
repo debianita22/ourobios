@@ -16,17 +16,19 @@ OpenCore.
 ## What the firmware does
 
 "Under macOS" means when the OS answers `_OSI ("Darwin")`, which macOS
-does and Linux and Windows do not on this laptop.
+does and Linux and Windows do not on this laptop. A configuration that
+renames `_OSI` to `XOSI` hides that answer from the firmware: see
+[below](#in-the-opencore-configuration).
 
 | | When | What OpenCore did for it |
 |---|---|---|
-| The CPU threads as `Processor` objects, `\_SB.CP00`-`\_SB.CP07` (patches 0090, 0091) | setup: *General* → *Advanced* → *ACPI processor objects*: *Processor* (default: *Device*, the ACPI 6.0 form) | an SSDT that declares `Processor` objects for the ACPI0007 devices: without one, macOS finds no CPU and stops early in the boot |
+| The CPU threads as `Processor` objects, `\_SB.CP00`-`\_SB.CP07` (patches 0090, 0091) | setup: *General* → *Advanced* → *ACPI processor objects*: *Processor* (default: *Device (ACPI0007)*, the form ACPI asks for since 6.3) | an SSDT that declares `Processor` objects for the ACPI0007 devices: without one, macOS finds no CPU and stops early in the boot |
 | CFG Lock off (0089, 0091) | setup: *Energy Saver* → *Processor* → *C-state configuration lock*: off (default: on) | the kernel quirk `AppleXcpmCfgLock` |
 | The HPET shown, with IRQ 0 and 8, and the 8254 timer without IRQ 0, as on a Mac (0095) | under macOS | renames and an SSDT for the HPET and the 8254: the IRQ fix (*FixHPET* of SSDTTime) |
-| The backlight level of the brightness keys put back at wake (0096) | under macOS | nothing: the resume path starts the backlight at 50% and macOS kept it there until a brightness key |
-| The two EHCI controllers hidden (0097) | `nri` variant: the native RAM init puts every USB port on the xHCI controller | an SSDT that turns them off, if the configuration had one |
+| The last backlight level put back at wake (0096) | under macOS | nothing: the resume path starts the backlight at 50% and macOS kept it there until a brightness key |
+| The two EHCI controllers put in D3 and hidden (0097, 0098) | `nri` variant: the native RAM init puts every USB port on the xHCI controller | an SSDT that turns them off, if the configuration had one |
 | Model, serial number, type and OEM name of the battery as strings (0092) | always | nothing: they were buffers, which ACPICA converts and an OS need not |
-| No CPU notification at every read of the power source, `_PSR` (0093) | always | nothing |
+| The CPUs notified by `_PSR` only when the power source changes, not at every read (0093) | always | nothing |
 | The EC wake cause read as one byte (0094) | always | ECEnabler, which the battery methods still need |
 
 ## In the OpenCore configuration
@@ -40,6 +42,12 @@ After the update, and with the two setup options set:
 - *C-state configuration lock* off: `Kernel` → `Quirks` →
   `AppleXcpmCfgLock` to false;
 - the HPET: remove the renames and the SSDT of the IRQ fix;
+- the `_OSI` to `XOSI` rename and `SSDT-XOSI`, if there: remove them. With
+  the rename the firmware's `_OSI ("Darwin")` becomes `XOSI ("Darwin")`,
+  to which `SSDT-XOSI` says no (yes only to Windows names), and what is
+  *under macOS* above stays off. The firmware asks `_OSI` nothing else on this laptop (its checks of
+  the Windows versions, in `GOS`, are never called), so the rename has
+  nothing to turn on;
 - still needed: a way to read the EC fields wider than 8 bits, ECEnabler
   or the battery patches (the battery methods of the EC read 16 bits),
   the backlight device (`PNLF`), the USB map and the rest of the
@@ -47,6 +55,10 @@ After the update, and with the two setup options set:
 
 The firmware's own `Processor` objects carry no `_DSM`: `plugin-type` is a
 macOS property and stays in OpenCore.
+
+Update the firmware, and change the two options, with the OS shut down or
+restarted, not hibernated, whatever the OS: an OS resumed from
+hibernation keeps the ACPI tables of the firmware it was hibernated on.
 
 ## Not done
 

@@ -13,15 +13,21 @@ an SSDT, the IRQ fix of SSDTTime (FixHPET).
 Add ISDW to the common platform ASL, 1 when _OSI ("Darwin") answers, and
 under macOS only: HPTS shows the HPET, its _CRS adds IRQ 0 and 8 (with
 the same HPAS fixup of the base), and the _CRS of TIMR, now a method,
-leaves IRQ 0 out. Linux answers _OSI ("Darwin") on Apple hardware only,
-Windows never: both see the same objects as before. The RTC lists no
-IRQ already.
+leaves IRQ 0 out. The RTC lists no IRQ already.
+
+Windows never answers _OSI ("Darwin"). Linux only does on Apple hardware
+and elsewhere logs once "BIOS _OSI(Darwin) query ignored". HPTS is
+common to the Intel southbridges from i82801gx to Lynx Point: with all
+of them, macOS (and Linux on the apple boards) now sees the HPET, with
+its IRQs on Lynx Point only.
 
 TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
 acpiexec, with HPTE = 1 and HPAS = 2, without and then with _OSI
 ("Darwin") installed: ISDW 0 and 1; _STA of HPET 0xb and 0xf; its _CRS
 the range at 0xfed02000, then IRQ 0, IRQ 8 and the same range; _CRS of
-TIMR with IRQ 0, then without.
+TIMR with IRQ 0, then without. The DSDTs of lenovo/t60, x200, t420, x230
+and t440p, apple/macbook21 and macbookair4_2, asrock/b85m_pro4 and
+google/monroe build too.
 
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv

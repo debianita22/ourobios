@@ -5,11 +5,11 @@ Subject: [PATCH] cpu/intel/haswell: Add an option to declare the CPUs as
  Processor
 
 The SSDT declares each CPU thread as a Device with _HID ACPI0007
-(acpigen_write_processor_device()), the form that ACPI 6.0 introduced in
-place of the Processor operator, now deprecated. macOS only looks for
-Processor objects: with none it finds no CPU and stops early in the
-boot, unless an SSDT loaded by OpenCore wraps the devices in Processor
-objects of its own.
+(acpigen_write_processor_device()), the form the ACPI specification asks
+for since version 6.3, which deprecated the Processor operator. macOS
+only looks for Processor objects: with none it finds no CPU and stops
+early in the boot, unless an SSDT loaded by OpenCore wraps the devices
+in Processor objects of its own.
 
 Add an acpi_cpu_objects option, with a CFR object for the setup menu,
 that writes Processor(\_SB.CPxx, xx, 0, 0) instead, with the same names,
@@ -24,12 +24,12 @@ Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
  src/cpu/intel/haswell/acpi.c    | 33 ++++++++++++++++++++++++++-------
- src/cpu/intel/haswell/cfr.h     | 15 +++++++++++++++
+ src/cpu/intel/haswell/cfr.h     | 16 ++++++++++++++++
  src/cpu/intel/haswell/haswell.h |  4 ++++
- 3 files changed, 45 insertions(+), 7 deletions(-)
+ 3 files changed, 46 insertions(+), 7 deletions(-)
 
 diff --git a/src/cpu/intel/haswell/acpi.c b/src/cpu/intel/haswell/acpi.c
-index e946c9e478..a04a1d2045 100644
+index e946c9e478..58441ed506 100644
 --- a/src/cpu/intel/haswell/acpi.c
 +++ b/src/cpu/intel/haswell/acpi.c
 @@ -8,6 +8,7 @@
@@ -53,9 +53,9 @@ index e946c9e478..a04a1d2045 100644
 +	const unsigned int index = cpu * cores_per_package + core;
 +
 +	/*
-+	 * Generate Scope(\_SB) { Device(CPUx, or Processor(\_SB.CPUx) as before
-+	 * ACPI 6.0, without a processor block: the _CST, _PTC and _PSS below go
-+	 * through MWAIT and the MSRs.
++	 * Generate Scope(\_SB) { Device(CPUx, or Processor(\_SB.CPUx), deprecated
++	 * since ACPI 6.3, without a processor block: the _CST, _PTC and _PSS below
++	 * go through MWAIT and the MSRs.
 +	 */
 +	if (processor_op)
 +		acpigen_write_processor(index, 0, 0);
@@ -98,7 +98,7 @@ index e946c9e478..a04a1d2045 100644
  	/* PPKG is usually used for thermal management
  	   of the first and only package. */
 diff --git a/src/cpu/intel/haswell/cfr.h b/src/cpu/intel/haswell/cfr.h
-index f53afee49b..f2038188eb 100644
+index f53afee49b..a64a76621e 100644
 --- a/src/cpu/intel/haswell/cfr.h
 +++ b/src/cpu/intel/haswell/cfr.h
 @@ -3,6 +3,7 @@
@@ -109,7 +109,7 @@ index f53afee49b..f2038188eb 100644
  #include <drivers/option/cfr_frontend.h>
  
  static const struct sm_object cpu_power_limit_lock = SM_DECLARE_BOOL({
-@@ -51,6 +52,20 @@ static const struct sm_object cfg_lock = SM_DECLARE_BOOL({
+@@ -51,6 +52,21 @@ static const struct sm_object cfg_lock = SM_DECLARE_BOOL({
  	.default_value	= true,
  });
  
@@ -117,12 +117,13 @@ index f53afee49b..f2038188eb 100644
 +	.opt_name	= "acpi_cpu_objects",
 +	.ui_name	= "ACPI processor objects",
 +	.ui_helptext	= "How the ACPI tables declare the CPU threads: as Device\n"
-+			  "objects (ACPI0007), the form of ACPI 6.0, or as Processor\n"
-+			  "objects, the older form and the only one macOS looks for.\n"
-+			  "Linux and Windows work with both.",
++			  "objects with _HID ACPI0007, the form ACPI asks for since\n"
++			  "version 6.3, or as Processor objects, the older form and\n"
++			  "the only one macOS looks for. Linux and Windows work with\n"
++			  "both.",
 +	.default_value	= ACPI_CPU_OBJECTS_DEVICE,
 +	.values		= (const struct sm_enum_value[]) {
-+				{ "Device (ACPI 6.0)",	ACPI_CPU_OBJECTS_DEVICE		},
++				{ "Device (ACPI0007)",	ACPI_CPU_OBJECTS_DEVICE		},
 +				{ "Processor",		ACPI_CPU_OBJECTS_PROCESSOR	},
 +				SM_ENUM_VALUE_END					},
 +});
@@ -131,7 +132,7 @@ index f53afee49b..f2038188eb 100644
  	.opt_name	= "vmx",
  	.ui_name	= "Intel VT-x",
 diff --git a/src/cpu/intel/haswell/haswell.h b/src/cpu/intel/haswell/haswell.h
-index 0cca857dc2..1b6d9924d4 100644
+index 0cca857dc2..c2d3aac066 100644
 --- a/src/cpu/intel/haswell/haswell.h
 +++ b/src/cpu/intel/haswell/haswell.h
 @@ -172,6 +172,10 @@ int cpu_config_tdp_levels(void);
@@ -139,8 +140,8 @@ index 0cca857dc2..1b6d9924d4 100644
  bool haswell_c_states_enabled(void);
  
 +/* The acpi_cpu_objects option: how the ACPI tables declare the CPU threads */
-+#define ACPI_CPU_OBJECTS_DEVICE		0	/* Device (ACPI0007), as in ACPI 6.0 */
-+#define ACPI_CPU_OBJECTS_PROCESSOR	1	/* Processor, deprecated in ACPI 6.0 */
++#define ACPI_CPU_OBJECTS_DEVICE		0	/* Device, with _HID ACPI0007 */
++#define ACPI_CPU_OBJECTS_PROCESSOR	1	/* Processor, deprecated since ACPI 6.3 */
 +
  void set_max_freq(void);
  
