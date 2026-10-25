@@ -76,7 +76,11 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   ramstage sends APMC commands before the OS resumes (finalize, the lock of
   the other vboot slot): the first one turned the wake into a power off.
   The SMI handler now leaves PM1 and GPE0 events to the OS when `SCI_EN` is
-  set, as `soc/intel/common` does (0108).
+  set, as `soc/intel/common` does (0108). The event log of the W541 with
+  rc4 (`tools/elog.py`) shows it at each wake: *ACPI wake* S3 from the
+  power button, then *Power button*, written by the PM1 handler, and *ACPI
+  enter* S5; the next boot reads POST code 0x76 (`BS_POST_DEVICE`, where
+  `lpc_final()` sends the finalize command).
 
 ## v1.3.9
 
