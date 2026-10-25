@@ -1,0 +1,195 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 25 Oct 2026 19:50:27 +0100
+Subject: [PATCH] drivers/intel/gma: Address the backlight registers at the
+ current BAR
+
+GFRG, the region of BCLV and BCLM, is declared at the scope of GFX0 with
+BAR0 as its address: ACPICA evaluates it once, when it loads the table.
+An OS that moves the BAR of the GPU, as macOS can when it reassigns PCI
+resources, leaves the region at the old address, and _BCM and _BQC then
+read and write whatever is there. BAR0 is also read as 64 bits, so with
+the 32-bit BAR of older GPUs the address takes the next BAR as its high
+dword.
+
+Make BCLV and BCLM methods, with SBLV to write BCLV, that map the dword
+of the register at the address BAR0 has when they run: the high dword
+only for a 64-bit BAR, nothing without a BAR. The fields keep DWordAcc
+and Preserve, as BCLV and BCLM can share their dword. The callers in
+configure_brightness_levels.asl now call them.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec, with BAR0 at 0x7FA0000000 and then at 0x6FB0000000 (64-bit
+BARs), XBCM writes BCLV in the dword at the BAR of the moment, keeping
+BCLM, and leaves the dword at the previous BAR alone; XBQC reads the
+level back; with BAR0 at 0xE0000000 as a 32-bit BAR and another value
+in the next dword, the methods use 0xE0000000; with BAR0 all ones, BCLM
+reads 0 and XBCM writes nothing. The DSDTs of lenovo/t60, x61, x200,
+x201, x230, t420 and t440p, apple/macbook21, asrock/b85m_pro4,
+google/monroe, purism/librem13_v1 and system76/galp2 build too.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ .../gma/acpi/configure_brightness_levels.asl  | 10 +-
+ src/drivers/intel/gma/acpi/gma.asl            | 91 +++++++++++++++++--
+ 2 files changed, 89 insertions(+), 12 deletions(-)
+
+diff --git a/src/drivers/intel/gma/acpi/configure_brightness_levels.asl b/src/drivers/intel/gma/acpi/configure_brightness_levels.asl
+index 4400f5159c..c67a2382bf 100644
+--- a/src/drivers/intel/gma/acpi/configure_brightness_levels.asl
++++ b/src/drivers/intel/gma/acpi/configure_brightness_levels.asl
+@@ -109,18 +109,18 @@
+ 
+ 		Method (XBCM, 1, NotSerialized)
+ 		{
+-			BCLV = DRCL (Arg0 * BCLM, 100)
++			SBLV (DRCL (Arg0 * BCLM (), 100))
+ 		}
+ 
+ 		/* Find value closest to BCLV in BRIG (which must be ordered) */
+ 		Method (XBQC, 0, NotSerialized)
+ 		{
+ 			/* Prevent DivideByZero if backlight control isn't enabled */
+-			If (BCLM == 0) {
++			If (BCLM () == 0) {
+ 				Return (0)
+ 			}
+ 			/* Local0: current percentage */
+-			Local0 = DRCL (BCLV * 100, BCLM)
++			Local0 = DRCL (BCLV () * 100, BCLM ())
+ 
+ 			/* Local1: loop index (selectable values start at 2 in BRIG) */
+ 			Local1 = 2
+@@ -154,7 +154,7 @@
+ 			 * Only touch the legacy PWM registers after the graphics driver
+ 			 * reprograms them during boot/resume (BCLM stays zero until then).
+ 			 */
+-			If (BCLM != 0) {
++			If (BCLM () != 0) {
+ 				^LEGA.XBCM (Arg0)
+ 			}
+ 		}
+@@ -168,7 +168,7 @@
+ 		 * the cached value we last exposed to the OS. If there's no cached
+ 		 * value yet, use the platform's default from BRIG[0].
+ 		 */
+-		If (BCLM == 0) {
++		If (BCLM () == 0) {
+ 			If (BRVA != 0) {
+ 				Return (BRLV)
+ 			}
+diff --git a/src/drivers/intel/gma/acpi/gma.asl b/src/drivers/intel/gma/acpi/gma.asl
+index 0b21f66447..7f2734d291 100644
+--- a/src/drivers/intel/gma/acpi/gma.asl
++++ b/src/drivers/intel/gma/acpi/gma.asl
+@@ -1,5 +1,21 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++/* Where BCLV and BCLM start in their dword, which their regions map */
++#if (CONFIG_INTEL_GMA_BCLV_OFFSET & 3) == 0
++#define GMA_BCLV_BYTE 0
++#elif (CONFIG_INTEL_GMA_BCLV_OFFSET & 3) == 2 && CONFIG_INTEL_GMA_BCLV_WIDTH <= 16
++#define GMA_BCLV_BYTE 2
++#else
++#error "BCLV does not fit in one dword"
++#endif
++#if (CONFIG_INTEL_GMA_BCLM_OFFSET & 3) == 0
++#define GMA_BCLM_BYTE 0
++#elif (CONFIG_INTEL_GMA_BCLM_OFFSET & 3) == 2 && CONFIG_INTEL_GMA_BCLM_WIDTH <= 16
++#define GMA_BCLM_BYTE 2
++#else
++#error "BCLM does not fit in one dword"
++#endif
++
+ Scope (GFX0)
+ {
+ 	OperationRegion (GFXC, PCI_Config, 0x00, 0x0100)
+@@ -13,16 +29,77 @@ Scope (GFX0)
+ 		ASLS, 32,
+ 	}
+ 
+-	OperationRegion (GFRG, SystemMemory, BAR0 & 0xfffffffffffffff0, 0x400000)
+-	Field (GFRG, DWordAcc, NoLock, Preserve)
++	/*
++	 * The MMIO base in BAR0 as it is now, 0 without one: the dword at 0x14
++	 * is part of BAR0 only when BAR0 is a 64-bit BAR (bits 2:1 = 10b).
++	 */
++	Method (GMMB, 0, NotSerialized)
++	{
++		Local0 = BAR0
++		If ((Local0 & 0x6) == 0x4) {
++			Local0 &= 0xfffffffffffffff0
++		} Else {
++			Local0 &= 0xfffffff0
++		}
++		If (Local0 == 0xfffffff0 || Local0 == 0xfffffffffffffff0) {
++			Local0 = 0
++		}
++		Return (Local0)
++	}
++
++	/*
++	 * The backlight registers, with a region over their dword at the BAR of
++	 * the moment: one declared here would take BAR0 once, when the table
++	 * loads, and miss the BAR if the OS moves it. DWordAcc and Preserve:
++	 * BCLV and BCLM may share the dword. Without a BAR, BCLV and BCLM read
++	 * 0 and SBLV writes nothing.
++	 */
++	Method (BCLV, 0, Serialized)
+ 	{
+-		Offset (CONFIG_INTEL_GMA_BCLV_OFFSET),
+-		BCLV, CONFIG_INTEL_GMA_BCLV_WIDTH,
++		Local0 = GMMB ()
++		If (Local0 == 0) {
++			Return (0)
++		}
++		OperationRegion (GFRG, SystemMemory,
++				 Local0 + (CONFIG_INTEL_GMA_BCLV_OFFSET & 0xfffffffc), 4)
++		Field (GFRG, DWordAcc, NoLock, Preserve)
++		{
++			Offset (GMA_BCLV_BYTE),
++			XBLV, CONFIG_INTEL_GMA_BCLV_WIDTH,
++		}
++		Return (XBLV)
+ 	}
+-	Field (GFRG, DWordAcc, NoLock, Preserve)
++
++	Method (SBLV, 1, Serialized)
++	{
++		Local0 = GMMB ()
++		If (Local0 == 0) {
++			Return ()
++		}
++		OperationRegion (GFRG, SystemMemory,
++				 Local0 + (CONFIG_INTEL_GMA_BCLV_OFFSET & 0xfffffffc), 4)
++		Field (GFRG, DWordAcc, NoLock, Preserve)
++		{
++			Offset (GMA_BCLV_BYTE),
++			XBLV, CONFIG_INTEL_GMA_BCLV_WIDTH,
++		}
++		XBLV = Arg0
++	}
++
++	Method (BCLM, 0, Serialized)
+ 	{
+-		Offset (CONFIG_INTEL_GMA_BCLM_OFFSET),
+-		BCLM, CONFIG_INTEL_GMA_BCLM_WIDTH
++		Local0 = GMMB ()
++		If (Local0 == 0) {
++			Return (0)
++		}
++		OperationRegion (GFRG, SystemMemory,
++				 Local0 + (CONFIG_INTEL_GMA_BCLM_OFFSET & 0xfffffffc), 4)
++		Field (GFRG, DWordAcc, NoLock, Preserve)
++		{
++			Offset (GMA_BCLM_BYTE),
++			XBLM, CONFIG_INTEL_GMA_BCLM_WIDTH
++		}
++		Return (XBLM)
+ 	}
+ 
+ #include "configure_brightness_levels.asl"
+-- 
+2.43.0
+
