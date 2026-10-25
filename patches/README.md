@@ -100,6 +100,7 @@ a clean tree to the pinned commit but leaves a modified one alone.
 | `lvglpkg/0013` | the *Firmware Update* page under *General*, with its icon |
 | `lvglpkg/0014` | the ouroBIOS logo (`assets/ourobios.svg`, 16 x 16 pixel art as an LVGL image, enlarged by whole factors only) and the firmware name at the left of the menu bar, in place of the settings symbol |
 | `lvglpkg/0015` | the entries of the *Firmware Update* page to the other vboot slot (*Go back to*, *Switch to*) with the previous and next symbols, checked before the other words, which a release name could hold |
+| `lvglpkg/0016-0017` | the setup at 2880×1620: the fix of LVGL v9.6.0 to the circle mask, which for some radii from 922 px on wrote past its buffer (with the firmware screen at 2880×1620 of v1.3.10-rc3 the setup stopped on a page fault as it opened: a black screen), taken into the LVGL submodule of LvglLib; the orbs of the wallpaper, up to 1004 px of radius at that height, drawn without a circle mask, which only clipped pixels that their gradient leaves transparent |
 
 ## Optional patches
 

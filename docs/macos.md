@@ -77,7 +77,9 @@ The two display options, which by default leave the display as before:
   framebuffer takes 18.7 MB of the graphics stolen memory (32 MB with
   `mrc.bin`, 64 MB by default with the native RAM init); the setup draws
   2.25 times the pixels, and its text is smaller: raise the scale in
-  *Graphical UI Configuration*, OpenCore's with `UIScale`;
+  *Graphical UI Configuration*, OpenCore's with `UIScale`. From rc4: with
+  rc3 the setup opened on a black screen at this resolution (the
+  [CHANGELOG](../CHANGELOG.md#v1310) has the way out);
 - *Light the display up at wake* off: at wake from S3 the firmware sets
   only the panel timings and the backlight PWM, and the graphics driver
   of the OS sets the display up, as it does anyway right after: the wake

@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 25 Oct 2026 21:55:00 +0100
+Subject: [PATCH] LvglLib: Fix the circle mask of a large radius, from LVGL
+ v9.6.0
+
+LvglLib builds LVGL v9.5.0, whose circ_calc_aa4() computes the
+anti-aliased edge of a rounded mask: the points of one eighth of the
+circle, the point at 45 degrees, the other eighth mirrored, then an
+index of the points by row. The point at 45 degrees is
+radius * 723 / 1024, a little short of radius / sqrt(2): for some radii
+from 922 px on it falls on an earlier row than the last point of the
+first eighth. The index takes the points of a row while their row
+equals y, stops at that point for good, and goes on writing rows past
+the 6 * radius + 6 bytes of the buffer until it faults.
+
+The orbs of the wallpaper (0011) have a radius of 52, 58 and 62% of the
+screen height: at 1080 px at most 669 px, at 1620 px 842, 939 and
+1004 px. With the 2880 x 1620 framebuffer of the ThinkPad W541 the setup
+stopped on a page fault in circ_calc_aa4(), for the orb of 939 px,
+before it drew anything: a black screen, at any UI scale.
+
+LVGL v9.6.0 fixes the index: a row takes the points up to its row, so
+that a point that comes late ends the row before it (commit
+f9c059715db7, "fix(draw): resolve infinite loop and out-of-bounds access
+in circular mask cache calculation (#9864)", by Kreedb). Take the same
+change into the LVGL submodule of LvglLib: the file is then the one of
+that commit.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ Library/LvglLib/lvgl/src/draw/sw/lv_draw_sw_mask.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Library/LvglLib/lvgl/src/draw/sw/lv_draw_sw_mask.c b/Library/LvglLib/lvgl/src/draw/sw/lv_draw_sw_mask.c
+index f5e8c5aea..68f368c29 100644
+--- a/Library/LvglLib/lvgl/src/draw/sw/lv_draw_sw_mask.c
++++ b/Library/LvglLib/lvgl/src/draw/sw/lv_draw_sw_mask.c
+@@ -1209,7 +1209,7 @@ static void circ_calc_aa4(lv_draw_sw_mask_radius_circle_dsc_t * c, int32_t radiu
+     while(i < cir_size) {
+         c->opa_start_on_y[y] = i;
+         c->x_start_on_y[y] = cir_x[i];
+-        for(; i < (int32_t)cir_size && cir_y[i] == y; i++) {
++        for(; i < (int32_t)cir_size && cir_y[i] <= y; i++) {
+             c->x_start_on_y[y] = LV_MIN(c->x_start_on_y[y], cir_x[i]);
+         }
+         y++;
+-- 
+2.43.0
+

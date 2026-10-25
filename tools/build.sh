@@ -32,7 +32,9 @@
 #                  una ROM coreboot per QEMU q35 con lo stesso UEFIPAYLOAD.fd
 #                  (EDK2 non si ricompila), avviata in QEMU da
 #                  tools/qemu-smoke.py: il payload parte, il setup si apre e
-#                  risponde ai tasti. Schermate e seriale in WORK/smoke-<variante>
+#                  risponde ai tasti. Schermate e seriale in WORK/smoke-<variante>.
+#                  Poi una seconda ROM a 2880x1620, la risoluzione del pannello
+#                  3K con gfx_fb_limit: solo il setup, in WORK/smoke-<variante>-2880x1620
 #   update-test    la prova dell'aggiornamento con le capsule (vboot A/B) in
 #                  QEMU q35, tools/qemu-update.py: un payload EDK2 DEBUG con
 #                  le patch del progetto, che si fida di una chiave creata per
@@ -1151,44 +1153,58 @@ cmd_smoke() {
 		xgcc_ok || die "crossgcc mancante in ${XGCC}: prima tools/build.sh toolchain"
 		export PATH="${XGCC}/bin:${PATH}"
 	fi
-	local v q fd guid lsv
+	local v q fd guid lsv res x y
 	for v in "${VARIANTS[@]}"; do
-		q="q35-${v}"
 		fd="${TREE}/build-${v}/UEFIPAYLOAD.fd"
 		[ -f "${fd}" ] || die "smoke ${v}: manca ${fd}, prima tools/build.sh roms"
 		guid="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_GUID="\(.*\)"$/\1/p' "${O}/configs/w541-${v}.defconfig")"
 		lsv="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_LSV=\(.*\)$/\1/p' "${O}/configs/w541-${v}.defconfig")"
 		[ -n "${guid}" ] && [ -n "${lsv}" ] || die "smoke ${v}: GUID o LSV dell'ESRT non nel defconfig"
-		say "smoke ${v}: coreboot per QEMU q35 con il payload di ${v}"
-		rm -rf "${TREE:?}/build-${q}"
-		mkdir -p "${TREE}/build-${q}"
-		{
-			echo "CONFIG_VENDOR_EMULATION=y"
-			echo "CONFIG_BOARD_EMULATION_QEMU_X86_Q35=y"
-			echo "CONFIG_CPU_QEMU_X86_TSEG_SMM=y"
-			echo "CONFIG_SMMSTORE=y"
-			echo "CONFIG_PAYLOAD_ELF=y"
-			echo "CONFIG_PAYLOAD_FILE=\"${fd}\""
-			echo "CONFIG_GENERIC_LINEAR_FRAMEBUFFER=y"
-			echo "CONFIG_DRIVERS_EMULATION_QEMU_XRES=1920"
-			echo "CONFIG_DRIVERS_EMULATION_QEMU_YRES=1080"
-			echo "CONFIG_DRIVERS_EFI_FW_INFO=y"
-			echo "CONFIG_DRIVERS_EFI_MAIN_FW_GUID=\"${guid}\""
-			echo "CONFIG_DRIVERS_EFI_MAIN_FW_LSV=${lsv}"
-			echo "CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=$(fw_version)"
-			echo "CONFIG_LOCALVERSION=\"$(localversion "${v}")-q35\""
-			if [ "${TOOLCHAIN}" = host ]; then echo "CONFIG_ANY_TOOLCHAIN=y"; fi
-		} > "${TREE}/build-${q}/defconfig"
-		mk "${q}" defconfig KBUILD_DEFCONFIG="build-${q}/defconfig" > "${TREE}/build-${q}/defconfig.log" 2>&1 \
-			|| { cat "${TREE}/build-${q}/defconfig.log"; die "smoke ${v}: make defconfig fallito"; }
-		defconfig_kept "${TREE}/build-${q}" || die "smoke ${v}: il .config di q35 non ha tutto il defconfig"
-		if ! mk "${q}" -j"${JOBS}" > "${TREE}/build-${q}/make.log" 2>&1; then
-			grep -n -i -B2 -A6 'error' "${TREE}/build-${q}/make.log" | tail -n 40 || true
-			die "smoke ${v}: build per q35 fallita (build-${q}/make.log nell'albero)"
-		fi
-		say "smoke ${v}: QEMU"
-		python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-${v}" "${TREE}/build-${q}/coreboot.rom" \
-			|| die "smoke ${v}: il payload non passa la prova in QEMU (${WORK}/smoke-${v})"
+		# 1920x1080 per tutta la prova; 2880x1620, il pannello 3K del W541 con
+		# gfx_fb_limit, per il setup soltanto: la VGA di QEMU con 32 MiB, il
+		# framebuffer e' di 18
+		for res in 1920x1080 2880x1620; do
+			x="${res%x*}"
+			y="${res#*x}"
+			q="q35-${v}"
+			[ "${res}" = 1920x1080 ] || q="q35-${v}-${res}"
+			say "smoke ${v}: coreboot per QEMU q35 a ${res} con il payload di ${v}"
+			rm -rf "${TREE:?}/build-${q}"
+			mkdir -p "${TREE}/build-${q}"
+			{
+				echo "CONFIG_VENDOR_EMULATION=y"
+				echo "CONFIG_BOARD_EMULATION_QEMU_X86_Q35=y"
+				echo "CONFIG_CPU_QEMU_X86_TSEG_SMM=y"
+				echo "CONFIG_SMMSTORE=y"
+				echo "CONFIG_PAYLOAD_ELF=y"
+				echo "CONFIG_PAYLOAD_FILE=\"${fd}\""
+				echo "CONFIG_GENERIC_LINEAR_FRAMEBUFFER=y"
+				echo "CONFIG_DRIVERS_EMULATION_QEMU_XRES=${x}"
+				echo "CONFIG_DRIVERS_EMULATION_QEMU_YRES=${y}"
+				echo "CONFIG_DRIVERS_EFI_FW_INFO=y"
+				echo "CONFIG_DRIVERS_EFI_MAIN_FW_GUID=\"${guid}\""
+				echo "CONFIG_DRIVERS_EFI_MAIN_FW_LSV=${lsv}"
+				echo "CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=$(fw_version)"
+				echo "CONFIG_LOCALVERSION=\"$(localversion "${v}")-q35\""
+				if [ "${TOOLCHAIN}" = host ]; then echo "CONFIG_ANY_TOOLCHAIN=y"; fi
+			} > "${TREE}/build-${q}/defconfig"
+			mk "${q}" defconfig KBUILD_DEFCONFIG="build-${q}/defconfig" > "${TREE}/build-${q}/defconfig.log" 2>&1 \
+				|| { cat "${TREE}/build-${q}/defconfig.log"; die "smoke ${v}: make defconfig fallito (${res})"; }
+			defconfig_kept "${TREE}/build-${q}" || die "smoke ${v}: il .config di q35 non ha tutto il defconfig (${res})"
+			if ! mk "${q}" -j"${JOBS}" > "${TREE}/build-${q}/make.log" 2>&1; then
+				grep -n -i -B2 -A6 'error' "${TREE}/build-${q}/make.log" | tail -n 40 || true
+				die "smoke ${v}: build per q35 fallita (build-${q}/make.log nell'albero)"
+			fi
+			say "smoke ${v}: QEMU a ${res}"
+			if [ "${res}" = 1920x1080 ]; then
+				python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-${v}" "${TREE}/build-${q}/coreboot.rom" \
+					|| die "smoke ${v}: il payload non passa la prova in QEMU (${WORK}/smoke-${v})"
+			else
+				python3 "${O}/tools/qemu-smoke.py" --setup-only --vga-mb 32 --size "${res}" \
+					--out "${WORK}/smoke-${v}-${res}" "${TREE}/build-${q}/coreboot.rom" \
+					|| die "smoke ${v}: il setup a ${res} non passa la prova in QEMU (${WORK}/smoke-${v}-${res})"
+			fi
+		done
 	done
 }
 
