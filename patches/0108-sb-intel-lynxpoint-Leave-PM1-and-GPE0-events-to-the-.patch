@@ -1,0 +1,86 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 25 Oct 2026 23:13:17 +0100
+Subject: [PATCH] sb/intel/lynxpoint: Leave PM1 and GPE0 events to the OS in
+ SCI mode
+
+With SCI_EN set, PM1 and GPE0 events raise an SCI for the OS, not an
+SMI#, but their bits in SMI_STS still show them until the OS clears
+them. The SMI handler calls the PM1 and GPE0 sub handlers for any SMI#
+with those bits set: an APMC command while the OS has a power button
+event pending powers the system off, and the GPE0 status of the OS is
+cleared.
+
+On S3 resume the firmware leaves PM1_STS and GPE0_STS to the OS since
+the patch "Leave the wake status to the OS on S3 resume", and ramstage
+sends APMC commands before the OS resumes: finalize from lpc_final()
+and, with vboot A/B, the lock of the other slot from SMMSTORE. The
+ThinkPad EC wakes the system through the power button line, so
+PWRBTN_STS is set at every wake, by the power button, the lid or a key:
+the first APMC command powered the laptop off, under Linux and macOS.
+
+Ignore PM1 and GPE0 in the SMI handler when SCI_EN is set, as
+soc/intel/common does since commit 517750745f7f ("soc/intel/common/
+block/smm: Ignore PM1 and GPE0 events in SCI mode"). Should those
+events alone have raised the SMI#, which SCI_EN rules out, clear them
+as before, without powering off, so that the SMI# does not repeat.
+
+TEST=Build the ThinkPad W541 (mrc and nri); on the laptop, S3 entered
+under Linux and macOS and left with the power button, the lid and a
+key: the system resumes instead of powering off.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/southbridge/intel/lynxpoint/pch.h        |  2 ++
+ src/southbridge/intel/lynxpoint/smihandler.c | 21 ++++++++++++++++++++
+ 2 files changed, 23 insertions(+)
+
+diff --git a/src/southbridge/intel/lynxpoint/pch.h b/src/southbridge/intel/lynxpoint/pch.h
+index 57e1cef2fc..2a622374be 100644
+--- a/src/southbridge/intel/lynxpoint/pch.h
++++ b/src/southbridge/intel/lynxpoint/pch.h
+@@ -593,6 +593,8 @@ void mainboard_config_rcba(void);
+ #define   EOS		 (1 <<  1) // End of SMI (deassert SMI#)
+ #define   GBL_SMI_EN	 (1 <<  0) // SMI# generation at all?
+ #define SMI_STS		0x34
++#define   GPE0_STS_BIT	9 // GPE0 event: an SCI with SCI_EN set
++#define   PM1_STS_BIT	8 // PM1 event: an SCI with SCI_EN set
+ #define ALT_GP_SMI_EN	0x38
+ #define ALT_GP_SMI_STS	0x3a
+ #define GPE_CNTL	0x42
+diff --git a/src/southbridge/intel/lynxpoint/smihandler.c b/src/southbridge/intel/lynxpoint/smihandler.c
+index 68b212997e..d77268801a 100644
+--- a/src/southbridge/intel/lynxpoint/smihandler.c
++++ b/src/southbridge/intel/lynxpoint/smihandler.c
+@@ -578,6 +578,27 @@ void southbridge_smi_handler(void)
+ 	 */
+ 	smi_sts = clear_smi_status();
+ 
++	/*
++	 * With SCI_EN set, PM1 and GPE0 events raise an SCI for the OS, not an
++	 * SMI#, but SMI_STS still shows them until the OS clears them. Leave
++	 * them to the OS: any SMI# meanwhile, such as an APMC command, would
++	 * clear its GPE0 status and turn its pending power button event into a
++	 * power off. On S3 resume PM1_STS holds PWRBTN_STS when the power
++	 * button, or the EC through it, woke the system, and ramstage sends
++	 * APMC commands before the OS resumes (finalize, the vboot slot lock).
++	 * Should those events alone have raised this SMI#, clear them, or it
++	 * would come again.
++	 */
++	if (inl(get_pmbase() + PM1_CNT) & SCI_EN) {
++		const u32 os_events = smi_sts & (1 << PM1_STS_BIT | 1 << GPE0_STS_BIT);
++
++		smi_sts &= ~os_events;
++		if (os_events && !smi_sts) {
++			clear_pm1_status();
++			clear_gpe_status();
++		}
++	}
++
+ 	/* Call SMI sub handler for each of the status bits */
+ 	for (i = 0; i < 31; i++) {
+ 		if (smi_sts & (1 << i)) {
+-- 
+2.43.0
+
