@@ -23,8 +23,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   controller was in runtime suspend (kept in D0, it found the drive), and
   in a USB 3.0 port the SuperSpeed link went to compliance mode, so the
   drive ran at USB 2.0 speed. It was the only change to USB, and rc2 drops
-  it: the EHCI controllers stay as in v1.3.9. With rc2 the same USB 3.0
-  drive links at SuperSpeed (U0, 5 Gb/s).
+  it: the EHCI controllers stay as in v1.3.9. Verified on the W541 with
+  rc2 (nri, installed with the capsule): the drive is found in all four
+  ports, and in a USB 3.0 one it links at SuperSpeed (U0, 5 Gb/s).
 - ACPI: the model, serial number, type and OEM name of the battery as
   strings (they were buffers); the CPUs notified by `_PSR` only when the
   power source changes, not at every read; the EC wake cause read as one
