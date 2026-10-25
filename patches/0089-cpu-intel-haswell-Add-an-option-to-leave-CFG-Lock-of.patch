@@ -1,0 +1,88 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 25 Oct 2026 15:10:39 +0100
+Subject: [PATCH] cpu/intel/haswell: Add an option to leave CFG Lock off
+
+configure_c_states() always sets bit 15 of MSR_PKG_CST_CONFIG_CONTROL,
+which locks bits 15:0 of that MSR (CFG Lock) until the next reset. The
+power management of macOS (XCPM) writes it: with the lock set, macOS
+only boots with the OpenCore quirk AppleXcpmCfgLock, which patches the
+kernel to skip the write.
+
+Add a cfg_lock option, with a CFR object for the setup menu. It defaults
+to enabled, which is what the code does today; when disabled, every
+thread leaves the bit clear, at every boot and resume.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/cpu/intel/haswell/cfr.h          | 10 ++++++++++
+ src/cpu/intel/haswell/haswell_init.c | 11 ++++++++---
+ 2 files changed, 18 insertions(+), 3 deletions(-)
+
+diff --git a/src/cpu/intel/haswell/cfr.h b/src/cpu/intel/haswell/cfr.h
+index 477eaffd7a..f53afee49b 100644
+--- a/src/cpu/intel/haswell/cfr.h
++++ b/src/cpu/intel/haswell/cfr.h
+@@ -41,6 +41,16 @@ static const struct sm_object c_states = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ });
+ 
++static const struct sm_object cfg_lock = SM_DECLARE_BOOL({
++	.opt_name	= "cfg_lock",
++	.ui_name	= "C-state configuration lock",
++	.ui_helptext	= "Lock the package C-state configuration (MSR 0xE2, CFG\n"
++			  "Lock) once the firmware has set it, so that the OS cannot\n"
++			  "change it. macOS writes it: with the lock, it only boots\n"
++			  "with the OpenCore quirk AppleXcpmCfgLock.",
++	.default_value	= true,
++});
++
+ static const struct sm_object vmx = SM_DECLARE_BOOL({
+ 	.opt_name	= "vmx",
+ 	.ui_name	= "Intel VT-x",
+diff --git a/src/cpu/intel/haswell/haswell_init.c b/src/cpu/intel/haswell/haswell_init.c
+index 526e7f7d12..8254e381d4 100644
+--- a/src/cpu/intel/haswell/haswell_init.c
++++ b/src/cpu/intel/haswell/haswell_init.c
+@@ -350,6 +350,7 @@ static struct {
+ 	bool eist;
+ 	bool turbo;
+ 	bool c_states;
++	bool cfg_lock;
+ 	bool vmx;
+ } cpu_options;
+ 
+@@ -362,12 +363,15 @@ static void read_cpu_options(void)
+ 	/* Turbo Boost needs P-states */
+ 	cpu_options.turbo = cpu_options.eist && get_uint_option("turbo_mode", 1);
+ 	cpu_options.c_states = get_uint_option("c_states", 1);
++	cpu_options.cfg_lock = get_uint_option("cfg_lock", 1);
+ 	cpu_options.vmx = get_uint_option("vmx", CONFIG(ENABLE_VMX));
+ 	cpu_options.valid = true;
+ 
+-	printk(BIOS_DEBUG, "CPU: SpeedStep %s, Turbo Boost %s, C-states %s, VT-x %s\n",
++	printk(BIOS_DEBUG,
++	       "CPU: SpeedStep %s, Turbo Boost %s, C-states %s, CFG lock %s, VT-x %s\n",
+ 	       cpu_options.eist ? "on" : "off", cpu_options.turbo ? "on" : "off",
+-	       cpu_options.c_states ? "on" : "off", cpu_options.vmx ? "on" : "off");
++	       cpu_options.c_states ? "on" : "off", cpu_options.cfg_lock ? "on" : "off",
++	       cpu_options.vmx ? "on" : "off");
+ }
+ 
+ bool haswell_eist_enabled(void)
+@@ -408,7 +412,8 @@ static void configure_c_states(void)
+ 	msr.lo |= (1 << 27);	// C3 Auto Undemotion Enable
+ 	msr.lo |= (1 << 26);	// C1 Auto Demotion Enable
+ 	msr.lo |= (1 << 25);	// C3 Auto Demotion Enable
+-	msr.lo |= (1 << 15);	// Lock bits 15:0
++	if (cpu_options.cfg_lock)
++		msr.lo |= (1 << 15);	// Lock bits 15:0 (CFG Lock)
+ 	msr.lo &= ~(1 << 10);	// Disable IO MWAIT redirection
+ 
+ 	if (timed_mwait_capable)
+-- 
+2.43.0
+

@@ -1,0 +1,42 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 25 Oct 2026 15:12:07 +0100
+Subject: [PATCH] mb/lenovo/haswell: Put CFG Lock and the processor objects in
+ the setup
+
+The C-state configuration lock goes to Energy Saver > Processor, after
+the C-states; the form of the ACPI processor objects to General >
+Advanced, next to the NMI option: both matter to the OS rather than to
+the hardware. Their defaults keep what the firmware did so far.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/cfr.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 88631ef42d..31c3756e4e 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -254,6 +254,7 @@ static const struct sm_object general_advanced = SM_DECLARE_FORM({
+ 	.ui_name	= "Advanced",
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&nmi,
++		&acpi_cpu_objects,
+ 		NULL
+ 	},
+ });
+@@ -334,6 +335,7 @@ static const struct sm_object energy_processor = SM_DECLARE_FORM({
+ 		&eist,
+ 		&turbo_mode,
+ 		&c_states,
++		&cfg_lock,
+ 		&tdp_pl1_override,
+ 		&tdp_pl2_override,
+ 		&cpu_power_limit_lock,
+-- 
+2.43.0
+

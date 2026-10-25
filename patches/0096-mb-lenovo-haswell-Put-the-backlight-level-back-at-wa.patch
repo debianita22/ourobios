@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 25 Oct 2026 15:15:44 +0100
+Subject: [PATCH] mb/lenovo/haswell: Put the backlight level back at wake under
+ macOS
+
+On resume from S3, gma_setup_panel() starts the backlight PWM at a 50%
+duty cycle. Linux and Windows set their own level again; macOS keeps
+the 50% until a brightness key is pressed, when XBQC finds the PWM away
+from BRLV and applies BRLV again.
+
+In _WAK, under macOS (ISDW) and once a level has been set through ACPI
+(BRVA), call XBCM with BRLV, as the next key press would. The other OSes
+run the same _WAK as before.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec, after XBCM (40): with _OSI ("Darwin") installed _WAK (3)
+calls XBCM with BRLV, without it _WAK runs as before; both return.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/acpi/platform.asl | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/platform.asl b/src/mainboard/lenovo/haswell/acpi/platform.asl
+index 07381b80e3..344a3c24e6 100644
+--- a/src/mainboard/lenovo/haswell/acpi/platform.asl
++++ b/src/mainboard/lenovo/haswell/acpi/platform.asl
+@@ -5,6 +5,16 @@ Method(_WAK,1)
+ 	/* Wake the HKEY to init BT/WWAN */
+ 	\_SB.PCI0.LPCB.EC.HKEY.WAKE (Arg0)
+ 
++	/*
++	 * The resume path sets the backlight PWM to 50% (gma_setup_panel()).
++	 * Linux and Windows set their own level again, macOS keeps that one:
++	 * there, put back the last level set through ACPI, which is what the
++	 * brightness keys use under macOS.
++	 */
++	If (Arg0 == 3 && \ISDW () && \_SB.PCI0.GFX0.BRVA) {
++		\_SB.PCI0.GFX0.XBCM (\_SB.PCI0.GFX0.BRLV)
++	}
++
+ 	Return(Package(){0,0})
+ }
+ 
+-- 
+2.43.0
+

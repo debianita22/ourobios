@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 25 Oct 2026 15:13:16 +0100
+Subject: [PATCH] ec/lenovo/h8: Notify the CPUs on AC changes only, not from
+ _PSR
+
+_PSR of the AC adapter calls PNOT, which notifies every CPU thread with
+0x81 (re-evaluate the processor objects) each time the OS reads the
+power source. That is not only on a change: Linux evaluates _PSR on
+every read of the online property of the AC power supply, and other
+OSes and their drivers poll it.
+
+The EC events that report a change, _Q26 and _Q27, already notify AC and
+call PNOT. Leave _PSR to report the state and update PWRS, as before. No
+processor object of this platform depends on PWRS.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec, _PSR of AC returns HPAC; before, it went on to \PNOT and
+\_SB.CNOT (not found there, as the DSDT was loaded without the SSDT).
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/ec/lenovo/h8/acpi/ac.asl | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/src/ec/lenovo/h8/acpi/ac.asl b/src/ec/lenovo/h8/acpi/ac.asl
+index 436fdcfaeb..0bfee95d05 100644
+--- a/src/ec/lenovo/h8/acpi/ac.asl
++++ b/src/ec/lenovo/h8/acpi/ac.asl
+@@ -13,11 +13,14 @@ Device(AC)
+ 	Name(_UID, 0x00)
+ 	Name(_PCL, Package() { \_SB } )
+ 
++	/*
++	 * Only reports the state: _Q26 and _Q27 notify the CPUs when it
++	 * changes, and the OS reads _PSR whenever it likes (some poll it).
++	 */
+ 	Method(_PSR, 0, NotSerialized)
+ 	{
+ 		Local0 = HPAC
+ 		\PWRS = Local0
+-		\PNOT()
+ 		return (Local0)
+ 	}
+ 
+-- 
+2.43.0
+

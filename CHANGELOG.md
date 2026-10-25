@@ -5,6 +5,23 @@ GitHub include its section; release candidates take the section of the
 version they lead to. For the releases before v1.3.0, see their notes on
 the [releases page](https://github.com/debianita22/ourobios/releases).
 
+## v1.3.10
+
+- macOS with OpenCore ([docs/macos.md](docs/macos.md)): two setup options,
+  *C-state configuration lock* (CFG Lock; off, macOS boots without
+  OpenCore's `AppleXcpmCfgLock` quirk) and *ACPI processor objects*
+  (*Processor*: the CPUs declared the way macOS looks for them, without an
+  SSDT that wraps them); under macOS only, the HPET with IRQ 0 and 8 and
+  the 8254 timer without IRQ 0, as on a Mac, and the backlight level of the
+  brightness keys put back at wake, which the resume path starts at 50%
+  (patches 0089-0091, 0095, 0096).
+- `nri`: the two EHCI controllers hidden, as the native RAM init puts every
+  USB port on the xHCI one (patch 0097).
+- ACPI: the model, serial number, type and OEM name of the battery as
+  strings (they were buffers); the CPUs notified when the AC adapter comes
+  or goes, not at every read of the power source; the EC wake cause read
+  as one byte (patches 0092-0094).
+
 ## v1.3.9
 
 **Installs with flashrom, not with the capsule**: it writes the read-only
