@@ -27,7 +27,7 @@ renames `_OSI` to `XOSI` hides that answer from the firmware: see
 | The HPET shown, with IRQ 0 and 8, and the 8254 timer without IRQ 0, as on a Mac (0095) | under macOS | renames and an SSDT for the HPET and the 8254: the IRQ fix (*FixHPET* of SSDTTime) |
 | The last backlight level put back at wake (0096) | under macOS | nothing: the resume path starts the backlight at 50% and macOS kept it there until a brightness key |
 | The sleep LEDs (power button and logo pulsing, moon on) and the wake on lid opening, before S3 (0100) | under macOS | an SSDT that calls `\_SI._SST`, if the configuration had one: macOS does not call it |
-| The wake source left in PM1_STS and GPE0_STS at S3 resume (0099) | always | nothing: the firmware cleared them, and macOS saw no reason for the wake |
+| The wake source left in PM1_STS and GPE0_STS at S3 resume, and to the OS by the SMI handler (0099, 0108; with rc3 and rc4, without 0108, every wake from S3 powered off) | always | nothing: the firmware cleared them, and macOS saw no reason for the wake |
 | The battery and the EC wake cause read one byte at a time (0103, 0094) | always | ECEnabler, or patches of the battery methods: the EC driver of macOS reads no wider field |
 | The backlight registers and the MMIO of the xHCI controller at the BAR they have when the methods run, all 64 bits of it (0101, 0102) | always | the boot argument `npci=0x2000`, if the configuration has it, keeps macOS from moving the BARs |
 | The display left to the OS at wake: only the panel timings and the backlight PWM, no mode set (0104, 0107) | setup: *Hardware* → *Graphics* → *Light the display up at wake*: off (default: on) | nothing: the firmware sets the panel up at 1920×1080 and macOS sets it up again |

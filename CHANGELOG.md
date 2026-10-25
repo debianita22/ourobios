@@ -68,6 +68,15 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   =00000000` and `reset`: the firmware screen is at 1920×1080 again. A
   Linux started by OpenCore with `RequestBootVarRouting` sees OpenCore's
   boot entries, not the firmware's, and no *UEFI Shell*: there, update.
+- From rc5: rc3 and rc4 powered the laptop off at every wake from S3, by
+  the power button, the lid or a key, under Linux and macOS. The EC wakes
+  the system through the power button line, so PWRBTN_STS is set at every
+  wake, and rc3 leaves it to the OS (0099); but the SMI handler ran its PM1
+  handler at any SMI# with that status set, also with `SCI_EN` set, and
+  ramstage sends APMC commands before the OS resumes (finalize, the lock of
+  the other vboot slot): the first one turned the wake into a power off.
+  The SMI handler now leaves PM1 and GPE0 events to the OS when `SCI_EN` is
+  set, as `soc/intel/common` does (0108).
 
 ## v1.3.9
 
