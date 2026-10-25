@@ -81,6 +81,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   power button, then *Power button*, written by the PM1 handler, and *ACPI
   enter* S5; the next boot reads POST code 0x76 (`BS_POST_DEVICE`, where
   `lpc_final()` sends the finalize command).
+- From rc6: no "No handler for Region [ERAM]" for `BAT0._STA` and
+  `BAT1._STA` in the log of macOS at boot. macOS evaluates them before its
+  EC driver is up; they now read no EC RAM before `_REG` (3, 1) and return
+  "no battery" until then, and `_REG` notifies both batteries (0x81) when
+  the handler arrives, so that the OS checks them again (0109). Linux runs
+  `_REG` before it looks at the batteries: nothing changes there. Checked
+  in `acpiexec` on the DSDT of the W541.
 
 ## v1.3.9
 
