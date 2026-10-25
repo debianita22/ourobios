@@ -75,7 +75,7 @@ on:
         type: string
         default: ""
       prerelease:
-        description: "Pre-release anche la mrc (la nri lo e' sempre)"
+        description: "Pre-release, mrc e nri (con un trattino nella versione lo sono comunque)"
         type: boolean
         default: false
 
