@@ -1,0 +1,143 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 25 Oct 2026 15:15:17 +0100
+Subject: [PATCH] sb/intel: Describe the HPET and the 8254 as on a Mac, under
+ macOS
+
+On a Mac the HPET (PNP0103) lists IRQ 0 and 8 in _CRS, the 8254 timer
+(PNP0100) none, and _STA shows the HPET. Here the HPET has no IRQ and is
+not shown (_STA 0xb: OSYS stays 0, as nothing calls GOS), and TIMR has
+IRQ 0. OpenCore configurations for laptops patch that with renames and
+an SSDT, the IRQ fix of SSDTTime (FixHPET).
+
+Add ISDW to the common platform ASL, 1 when _OSI ("Darwin") answers, and
+under macOS only: HPTS shows the HPET, its _CRS adds IRQ 0 and 8 (with
+the same HPAS fixup of the base), and the _CRS of TIMR, now a method,
+leaves IRQ 0 out. Linux answers _OSI ("Darwin") on Apple hardware only,
+Windows never: both see the same objects as before. The RTC lists no
+IRQ already.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec, with HPTE = 1 and HPAS = 2, without and then with _OSI
+("Darwin") installed: ISDW 0 and 1; _STA of HPET 0xb and 0xf; its _CRS
+the range at 0xfed02000, then IRQ 0, IRQ 8 and the same range; _CRS of
+TIMR with IRQ 0, then without.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ .../intel/common/acpi/platform.asl            | 19 ++++++++++
+ src/southbridge/intel/lynxpoint/acpi/lpc.asl  | 35 ++++++++++++++++++-
+ 2 files changed, 53 insertions(+), 1 deletion(-)
+
+diff --git a/src/southbridge/intel/common/acpi/platform.asl b/src/southbridge/intel/common/acpi/platform.asl
+index f19ac6c125..7e3c47c371 100644
+--- a/src/southbridge/intel/common/acpi/platform.asl
++++ b/src/southbridge/intel/common/acpi/platform.asl
+@@ -48,6 +48,20 @@ Method(GOS, 0)
+ 	}
+ }
+ 
++/*
++ * 1 under macOS, which answers _OSI ("Darwin"). Linux only does on Apple
++ * hardware, Windows never.
++ */
++Method (ISDW, 0, NotSerialized)
++{
++	If (CondRefOf (\_OSI)) {
++		If (\_OSI ("Darwin")) {
++			Return (1)
++		}
++	}
++	Return (0)
++}
++
+ /* Arg0 is state of HPET hardware enablement. */
+ Method (HPTS, 1)
+ {
+@@ -56,6 +70,11 @@ Method (HPTS, 1)
+ 		Return (0x0)
+ 	}
+ 
++	/* macOS: shown, as on a Mac */
++	If (ISDW ()) {
++		Return (0xf)
++	}
++
+ 	/* Ancient versions of Windows don't want to see the HPET. */
+ 	If (OSYS < 2001) {
+ 		Return (0xb)
+diff --git a/src/southbridge/intel/lynxpoint/acpi/lpc.asl b/src/southbridge/intel/lynxpoint/acpi/lpc.asl
+index 1e02467a85..29b5dfe671 100644
+--- a/src/southbridge/intel/lynxpoint/acpi/lpc.asl
++++ b/src/southbridge/intel/lynxpoint/acpi/lpc.asl
+@@ -71,6 +71,17 @@ Device (LPCB)
+ 			Memory32Fixed (ReadOnly, HPET_BASE_ADDRESS, 0x400, FED0)
+ 		})
+ 
++		/*
++		 * macOS: the HPET with the legacy interrupts too, IRQ 0 and 8,
++		 * as on a Mac. TIMR gives up IRQ 0 there; the RTC lists no IRQ.
++		 */
++		Name (BUF1, ResourceTemplate ()
++		{
++			IRQNoFlags () { 0 }
++			IRQNoFlags () { 8 }
++			Memory32Fixed (ReadOnly, HPET_BASE_ADDRESS, 0x400, FED1)
++		})
++
+ 		Method (_STA, 0)	// Device Status
+ 		{
+ 			Return (\HPTS(HPTE))
+@@ -80,6 +91,7 @@ Device (LPCB)
+ 		{
+ 			If (HPTE) {
+ 				CreateDWordField (BUF0, \_SB.PCI0.LPCB.HPET.FED0._BAS, HPT0)
++				CreateDWordField (BUF1, \_SB.PCI0.LPCB.HPET.FED1._BAS, HPT1)
+ 				If (HPAS == 1) {
+ 					HPT0 = HPET_BASE_ADDRESS + 0x1000
+ 				}
+@@ -91,6 +103,12 @@ Device (LPCB)
+ 				If (HPAS == 3) {
+ 					HPT0 = HPET_BASE_ADDRESS + 0x3000
+ 				}
++
++				HPT1 = HPT0
++			}
++
++			If (\ISDW ()) {
++				Return (BUF1)
+ 			}
+ 
+ 			Return (BUF0)
+@@ -177,11 +195,26 @@ Device (LPCB)
+ 	Device (TIMR)	// Intel 8254 timer
+ 	{
+ 		Name (_HID, EISAID ("PNP0100"))
+-		Name (_CRS, ResourceTemplate () {
++		Name (BUF0, ResourceTemplate () {
+ 			IO (Decode16, 0x40, 0x40, 0x01, 0x04)
+ 			IO (Decode16, 0x50, 0x50, 0x10, 0x04)
+ 			IRQNoFlags () {0}
+ 		})
++
++		/* macOS: IRQ 0 goes to the HPET */
++		Name (BUF1, ResourceTemplate () {
++			IO (Decode16, 0x40, 0x40, 0x01, 0x04)
++			IO (Decode16, 0x50, 0x50, 0x10, 0x04)
++		})
++
++		Method (_CRS, 0, NotSerialized)
++		{
++			If (\ISDW ()) {
++				Return (BUF1)
++			}
++
++			Return (BUF0)
++		}
+ 	}
+ 
+ #if CONFIG(INTEL_LYNXPOINT_LP)
+-- 
+2.43.0
+

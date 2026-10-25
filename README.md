@@ -116,8 +116,8 @@ Inside coreboot:
 
   | Category | Settings |
   |---|---|
-  | *General* | model, machine type, serial number and UUID (from the VPD), processor, memory and firmware versions; the iPXE and CSMWrap boot entries; beeps and volume; NMI |
-  | *Energy Saver* | battery charge thresholds (OS controlled, 100%, 80%, 60%), Intel SpeedStep, Turbo Boost, C-states, CPU PL1/PL2 limits, cooling policy (active or passive), USB always on, power-on after power failure |
+  | *General* | model, machine type, serial number and UUID (from the VPD), processor, memory and firmware versions; the iPXE and CSMWrap boot entries; beeps and volume; NMI; the form of the ACPI processor objects (*Processor* for macOS) |
+  | *Energy Saver* | battery charge thresholds (OS controlled, 100%, 80%, 60%), Intel SpeedStep, Turbo Boost, C-states, the C-state configuration lock (CFG Lock), CPU PL1/PL2 limits, cooling policy (active or passive), USB always on, power-on after power failure |
   | *Security* | BIOS Lock (flash writable only by the firmware, off by default), Firmware protection (the read-only part locked at every boot, on by default), memory cleared at power-on, Intel VT-x, VT-d, Intel ME, supervisor password (asked for before the setup menu opens) |
   | *Keyboard* | Fn/Ctrl swap, F1-F12 or special keys, sticky Fn, keyboard backlight, TrackPoint, touchpad |
   | *Hardware* | NVIDIA GPU and the tuning of its PCIe link, graphics stolen memory (native RAM init only: `mrc.bin` reserves a fixed 32 MiB) and aperture, ExpressCard and Thunderbolt ports, Wi-Fi, Bluetooth, WWAN |
@@ -171,6 +171,11 @@ Inside coreboot:
   while Secure Boot is on the entry goes and the firmware refuses to start
   CSMWrap, however it is chosen; *General* → *Boot* in the setup turns it
   off;
+- macOS with OpenCore (from v1.3.10): the CPUs as `Processor` objects and CFG
+  Lock off on request in the setup, and, under macOS only, the HPET and
+  8254 interrupts of a Mac and the backlight level kept across sleep, which
+  OpenCore configurations otherwise patch in
+  ([docs/macos.md](docs/macos.md));
 - fixes for wake from suspend (lid, Fn), the Fn hotkeys, Bluetooth and WWAN
   state on resume, xHCI ports, USB over-current mapping, PCIe interrupts, the
   backlight, HDMI/DisplayPort audio clocks, the battery `_UID` and the AES-NI

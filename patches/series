@@ -85,3 +85,12 @@
 0086-nb-intel-haswell-nri-Take-the-DRAM-voltage-from-the-.patch
 0087-nb-intel-haswell-nri-Test-the-memory-after-training-.patch
 0088-nb-intel-haswell-nri-Shorten-the-read-round-trip-aft.patch
+0089-cpu-intel-haswell-Add-an-option-to-leave-CFG-Lock-of.patch
+0090-cpu-intel-haswell-Add-an-option-to-declare-the-CPUs-.patch
+0091-mb-lenovo-haswell-Put-CFG-Lock-and-the-processor-obj.patch
+0092-ec-lenovo-h8-Return-the-battery-strings-of-_BIF-and-.patch
+0093-ec-lenovo-h8-Notify-the-CPUs-on-AC-changes-only-not-.patch
+0094-mb-lenovo-haswell-Read-the-EC-wake-cause-as-one-byte.patch
+0095-sb-intel-Describe-the-HPET-and-the-8254-as-on-a-Mac-.patch
+0096-mb-lenovo-haswell-Put-the-backlight-level-back-at-wa.patch
+0097-mb-lenovo-haswell-Hide-the-EHCI-controllers-with-the.patch

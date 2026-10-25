@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 25 Oct 2026 15:13:57 +0100
+Subject: [PATCH] mb/lenovo/haswell: Read the EC wake cause as one byte
+
+HWAC, the wake cause at EC offset 0x36, is a 16-bit field, as in the OEM
+DSDT, but _L1D only tests bits 2, 3, 4 and 7, all in the first byte.
+Declare it with 8 bits: one EC read instead of two, and on macOS _L1D no
+longer needs a kext that reads wider EC fields (ECEnabler); the battery
+methods still do.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/acpi/ec.asl | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/ec.asl b/src/mainboard/lenovo/haswell/acpi/ec.asl
+index be1d7192ff..05990f6bd1 100644
+--- a/src/mainboard/lenovo/haswell/acpi/ec.asl
++++ b/src/mainboard/lenovo/haswell/acpi/ec.asl
+@@ -7,8 +7,13 @@ Scope (EC)
+ {
+ 	Field (ERAM, ByteAcc, NoLock, Preserve)
+ 	{
++		/*
++		 * Wake cause. The OEM firmware reads 16 bits, but the bits
++		 * that _L1D tests are all in the first byte: one byte is
++		 * enough, and macOS reads no wider EC field without a kext.
++		 */
+ 		Offset (0x36),
+-		HWAC, 16,	/* Wake cause */
++		HWAC, 8,
+ 	}
+ }
+ 
+-- 
+2.43.0
+

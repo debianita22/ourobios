@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 25 Oct 2026 15:12:39 +0100
+Subject: [PATCH] ec/lenovo/h8: Return the battery strings of _BIF and _BIX as
+ strings
+
+ACPI defines Model Number, Serial Number, Battery Type and OEM
+Information of _BIF and _BIX as strings. BINX() puts buffers there: the
+128-bit EC fields BANA and BAOE as they read, and the serial number and
+type in buffers built in the method. Linux takes a buffer in those
+places too; an OS that goes by the specification need not.
+
+Convert each with ToString(), up to its first NUL. BINF() copies the
+four from the _BIX package, so _BIF gets strings as well.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec (ACPICA 20230628), _BIX of BAT0 returns strings at indices 16
+to 19; before, ACPICA repaired the package and logged "Converted
+Buffer to expected String" for each of the four.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/ec/lenovo/h8/acpi/battery.asl | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/src/ec/lenovo/h8/acpi/battery.asl b/src/ec/lenovo/h8/acpi/battery.asl
+index 0560a3ba2d..c15b7bb516 100644
+--- a/src/ec/lenovo/h8/acpi/battery.asl
++++ b/src/ec/lenovo/h8/acpi/battery.asl
+@@ -207,6 +207,9 @@ Method(BINF, 3, Serialized)
+  *
+  * Arg0: Template with default values
+  * Arg1: Battery ID (0x1=BAT0; 0x2=BAT1)
++ *
++ * The EC keeps model, serial number, type and OEM name as bytes: they go
++ * into the package as strings, the type that ACPI gives these fields.
+  */
+ Method(BINX, 2, Serialized)
+ {
+@@ -256,21 +259,23 @@ Method(BINX, 2, Serialized)
+ 		SERN [Local1] = Local2 + 48
+ 		Local1--
+ 	}
+-	Arg0 [0x11] = SERN
++	Arg0 [0x11] = ToString (SERN, Ones)
+ 
+ 	// Battery Type
+ 	^BPAG(Arg1 | 4)
+ 	Name (TYPE, Buffer() { 0, 0, 0, 0, 0 })
+ 	TYPE = BATY
+-	Arg0 [0x12] = TYPE
++	Arg0 [0x12] = ToString (TYPE, Ones)
+ 
+ 	// OEM Information
+ 	^BPAG(Arg1 | 5)
+-	Arg0 [0x13] = BAOE
++	Local0 = BAOE
++	Arg0 [0x13] = ToString (Local0, Ones)
+ 
+ 	// Model Number
+ 	^BPAG(Arg1 | 6)
+-	Arg0 [0x10] = BANA
++	Local0 = BANA
++	Arg0 [0x10] = ToString (Local0, Ones)
+ 
+ 	Release(ECLK)
+ 	Return (Arg0)
+-- 
+2.43.0
+
