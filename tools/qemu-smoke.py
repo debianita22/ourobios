@@ -3,7 +3,8 @@
 # q35 con l'EDK2 del W541 (tools/build.sh smoke) avviata in QEMU, per vedere
 # prima di una release che il payload parte, disegna e risponde ai tasti.
 #
-#   python3 tools/qemu-smoke.py [--out DIR] [--timeout S] ROM
+#   python3 tools/qemu-smoke.py [--out DIR] [--timeout S] [--setup-only]
+#                               [--vga-mb N] [--size WxH] ROM
 #
 # Controlla, in ordine:
 #   1. coreboot arriva al payload ("Jumping to boot code" sulla seriale);
@@ -31,6 +32,15 @@
 #      SATA il cui MBR scrive una riga sulla porta seriale: il BIOS legacy
 #      deve avviarlo (INT 13h di SeaBIOS, con il suo driver AHCI).
 # Le schermate di ogni passo vanno in DIR (PNG), con la console seriale.
+# Un'eccezione del payload sulla seriale ("X64 Exception Type") ferma la
+# prova al passo in cui arriva, con la riga dell'eccezione e l'immagine.
+#
+# --setup-only fa i passi 1-5 soltanto, --vga-mb da' alla VGA di QEMU piu'
+# memoria (16 MiB di default: un framebuffer di 2880x1620 ne vuole 18) e
+# --size controlla che il setup sia disegnato a quella risoluzione:
+# tools/build.sh smoke prova cosi' anche il setup alla risoluzione del
+# pannello 3K del W541 (gfx_fb_limit), dove v1.3.10-rc3 si fermava su un page
+# fault di LVGL (patches/lvglpkg/0016).
 #
 # Il W541 non si emula: qui girano il payload (UEFIPayloadPkg, LvglPkg, le
 # patch di patches/edk2) e il codice comune di coreboot, non quello della
@@ -132,8 +142,8 @@ class Smoke:
     """Le macchine QEMU di una prova: una per fase, tutte sulla stessa copia
     della ROM, che il payload scrive (SMMSTORE)."""
 
-    def __init__(self, rom, out, timeout):
-        self.out, self.timeout = out, timeout
+    def __init__(self, rom, out, timeout, vga_mb=16):
+        self.out, self.timeout, self.vga_mb = out, timeout, vga_mb
         self.tmp = tempfile.mkdtemp(prefix="qemu-smoke-")
         self.flash = os.path.join(self.tmp, "flash.rom")
         shutil.copyfile(rom, self.flash)
@@ -151,7 +161,10 @@ class Smoke:
         cmd = ["qemu-system-x86_64", "-M", "q35,acpi=off", "-cpu", "Haswell-noTSX,stepping=3",
                "-smp", "1", "-m", "2048", "-drive", "if=pflash,format=raw,file=" + self.flash,
                "-serial", "file:" + self.serial, "-qmp", "unix:%s,server=on,wait=off" % self.sock,
-               "-display", "none", "-vga", "std", "-no-reboot", "-S"] + list(extra)
+               "-display", "none", "-vga", "std", "-no-reboot", "-S"]
+        if self.vga_mb != 16:
+            cmd += ["-global", "VGA.vgamem_mb=%d" % self.vga_mb]
+        cmd += list(extra)
         self.log = open(os.path.join(self.out, "qemu-%s.log" % tag), "w")
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT)
         self.qmp = Qmp(self.sock)
@@ -234,9 +247,22 @@ class Smoke:
             self.qmp.cmd("send-key", keys=[{"type": "qcode", "data": k}])
             time.sleep(0.15)
 
+    def exception(self):
+        """La riga di un'eccezione del payload sulla seriale, con l'immagine
+        in cui e' avvenuta, o None."""
+        text = self.serial_text()
+        at = text.find("Exception Type")
+        if at < 0:
+            return None
+        lines = text[text.rfind("\n", 0, at) + 1:].splitlines()
+        image = [x for x in lines if "Find image" in x]
+        return " ".join(x.strip(" !") for x in lines[:1] + image[:1])
+
     def wait(self, what, test, seconds):
         end = time.monotonic() + seconds
         while time.monotonic() < end:
+            if self.proc is not None and self.exception():
+                raise Fail("%s: eccezione del payload: %s" % (what, self.exception()))
             r = test()
             if r:
                 return r
@@ -357,9 +383,9 @@ def store_copies(flash):
             for v in found if v["name"] == VAR_NAME and v["guid"] == guid]
 
 
-def run(rom, out, timeout):
+def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None):
     os.makedirs(out, exist_ok=True)
-    sm = Smoke(rom, out, timeout)
+    sm = Smoke(rom, out, timeout, vga_mb)
     steps = []
     t0 = time.monotonic()
     at = lambda: "%3.0f s" % (time.monotonic() - t0)
@@ -388,7 +414,9 @@ def run(rom, out, timeout):
         if home.colors() <= 8:
             raise Fail("lo schermo si e' fermato con %d colori: la Shell UEFI o la console di testo, "
                        "non il setup (Esc non l'ha aperto)" % home.colors())
-        steps.append("%s  setup, pagina principale (%d colori)" % (at(), home.colors()))
+        if size and home.size != size:
+            raise Fail("il setup e' a %dx%d, non a %dx%d" % (home.size + size))
+        steps.append("%s  setup, pagina principale (%d colori, %dx%d)" % ((at(), home.colors()) + home.size))
 
         sm.key("down", "ret")
         page = sm.stable("dopo Giu' e Invio lo schermo non si e' fermato", timeout)
@@ -410,6 +438,8 @@ def run(rom, out, timeout):
         if boots > 1:
             raise Fail("coreboot e' partito %d volte" % boots)
         steps.append("%s  QEMU vivo, un solo avvio" % at())
+        if setup_only:
+            return steps
 
         # 2. le variabili UEFI in SMMSTORE: senza dischi il payload arriva
         # alla Shell, dove setvar scrive la variabile di prova e reset -s
@@ -505,11 +535,21 @@ def main():
     ap.add_argument("rom", help="ROM coreboot per QEMU q35 (tools/build.sh smoke)")
     ap.add_argument("--out", default="smoke", help="dove salvare schermate e seriale (default: smoke/)")
     ap.add_argument("--timeout", type=float, default=180, help="secondi per ogni passo (default 180)")
+    ap.add_argument("--setup-only", action="store_true", help="solo il setup (passi 1-5)")
+    ap.add_argument("--vga-mb", type=int, default=16, help="MiB della VGA di QEMU (default 16)")
+    ap.add_argument("--size", help="la risoluzione attesa del setup, LxA (es. 2880x1620)")
     args = ap.parse_args()
+    size = None
+    if args.size:
+        try:
+            size = tuple(int(x) for x in args.size.lower().split("x"))
+            assert len(size) == 2
+        except (ValueError, AssertionError):
+            ap.error("--size: LxA, per esempio 2880x1620")
     if not shutil.which("qemu-system-x86_64"):
         sys.exit("serve qemu-system-x86_64 (Debian/Ubuntu: apt install qemu-system-x86)")
     try:
-        steps = run(args.rom, args.out, args.timeout)
+        steps = run(args.rom, args.out, args.timeout, args.setup_only, args.vga_mb, size)
     except Fail as e:
         print("smoke: FALLITO: %s (schermate e seriale in %s)" % (e, args.out))
         return 1

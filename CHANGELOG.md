@@ -43,6 +43,22 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   *Hardware* → *Graphics*: the display left to the OS at wake, without the
   mode set of libgfxinit, and the firmware screen at the panel's
   2880×1620 (0104-0107, off by default).
+- From rc4: with *Firmware screen resolution* on *Panel, up to 2880 x
+  1620*, the setup of rc3 opened on a black screen, at any UI scale: a page
+  fault in LVGL v9.5.0, whose circle mask writes past its buffer for some
+  radii from 922 px on, and the orbs of the wallpaper reach 939 and 1004 px
+  at 1620 px of height. rc4 takes the fix of LVGL v9.6.0 and draws the orbs
+  without a circle mask, which only clipped pixels that their gradient
+  leaves transparent (lvglpkg/0016-0017); the smoke test of the payload
+  (`tools/build.sh smoke`) now also opens the setup at 2880×1620, and stops
+  on an exception of the payload. Verified in QEMU (q35) with the payload
+  of rc4: at 2880×1620 the setup opens and answers the keys at each of the
+  four UI scales (rc3: page fault at each); at 1920×1080 the whole smoke
+  test passes, and the wallpaper differs from rc3's by at most 2 levels per
+  color. Out of the black screen on rc3, from Linux: `sudo efibootmgr -n`
+  with the number of the *UEFI Shell* entry, a restart, then in the Shell
+  `setvar gfx_fb_limit -guid ceae4c1d-335b-4685-a4a0-fc4a94eea085 -bs -nv
+  =00000000` and `reset`: the firmware screen is at 1920×1080 again.
 
 ## v1.3.9
 
