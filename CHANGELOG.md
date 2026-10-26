@@ -113,11 +113,12 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   wake it trains the link and runs the pipe, but it never powers the
   panel up through the panel power sequencer nor enables the backlight,
   which libgfxinit does with the option on. Under macOS the `_WAK` of
-  the firmware now does it, after putting the backlight level back, from
-  the state that the option off leaves, VDD only (0112): what the
-  OpenCore table SSDT-PNLWAK did, with the `_WAK` of the DSDT renamed;
-  remove both. Linux and Windows are left alone: they power the panel
-  up themselves. Checked in `acpiexec` on the DSDT of the W541.
+  the firmware now does it, after putting the backlight level back,
+  when the panel has the forced VDD of the option off and is not lit
+  (0112): what the OpenCore table SSDT-PNLWAK did, with the `_WAK` of
+  the DSDT renamed; remove both. Linux and Windows are left alone: they
+  power the panel up themselves. Checked in `acpiexec` on the DSDT of
+  the W541.
 
 ## v1.3.9
 
