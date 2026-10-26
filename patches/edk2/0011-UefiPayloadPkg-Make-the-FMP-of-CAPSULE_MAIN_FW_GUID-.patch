@@ -20,10 +20,10 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 7 insertions(+)
 
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
-index 3f4de29969..6cfa73653b 100644
+index d34532e63..4f9724cdc 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dsc
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
-@@ -942,6 +942,13 @@
+@@ -943,6 +943,13 @@
    gEfiMdeModulePkgTokenSpaceGuid.PcdSerialRegisterStride|1
  
  [PcdsPatchableInModule.common]

@@ -27,7 +27,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  4 files changed, 90 insertions(+), 18 deletions(-)
 
 diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
-index 58fc80bc7..6ec0d73b9 100644
+index cee1deeae..9fca1a747 100644
 --- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
 +++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
 @@ -225,6 +225,70 @@ PlatformRegisterFvBootOption (
@@ -159,10 +159,10 @@ index 782b6c32b..999a0938d 100644
  !include NetworkPkg/NetworkDefines.dsc.inc
  
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
-index 1c2fa620d..c1ce2cb8d 100644
+index d39e9bad4..dac49694b 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.fdf
 +++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
-@@ -490,14 +490,6 @@ INF MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
+@@ -496,14 +496,6 @@ INF MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
  !if $(NETWORK_DRIVER_ENABLE) == TRUE
    !include NetworkPkg/Network.fdf.inc
    #
@@ -177,7 +177,7 @@ index 1c2fa620d..c1ce2cb8d 100644
    # Rng Protocol producer
    #
    INF  SecurityPkg/RandomNumberGenerator/RngDxe/RngDxe.inf
-@@ -509,6 +501,16 @@ INF MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
+@@ -515,6 +507,16 @@ INF MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
  !endif
  !endif
  

@@ -11,8 +11,10 @@ directory (116 such paths in the payload of ouroBIOS), and a build is
 reproducible only from the same path. --zero, which GenFw has for this,
 drops the directory for the release builds; the debug builds keep it,
 where the loader names the modules in its messages from it.
-
 ---
+ BaseTools/Conf/tools_def.template | 4 ++++
+ 1 file changed, 4 insertions(+)
+
 diff --git a/BaseTools/Conf/tools_def.template b/BaseTools/Conf/tools_def.template
 index 72ca0dfa2..79b701ca3 100644
 --- a/BaseTools/Conf/tools_def.template

@@ -28,7 +28,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 224 insertions(+), 632 deletions(-)
 
 diff --git a/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c
-index eadfb7e1f5..3275cca3dd 100644
+index eadfb7e1f..3275cca3d 100644
 --- a/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c
 +++ b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c
 @@ -2,15 +2,15 @@

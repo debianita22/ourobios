@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sat, 10 Oct 2026 08:46:23 +0200
-Subject: [PATCH 6/7] UefiPayloadPkg/UserAuthenticationDxe: Show the messages
- as HII popups
+Subject: [PATCH] UefiPayloadPkg/UserAuthenticationDxe: Show the messages as
+ HII popups
 
 The driver reports a wrong password, a new password set, a short one and
 the retry limit with CreatePopUp(): blue text boxes drawn on the console,
@@ -28,7 +28,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  4 files changed, 93 insertions(+), 6 deletions(-)
 
 diff --git a/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxe.c b/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxe.c
-index 7ac2f8b3e3..a7d7872d50 100644
+index 7ac2f8b3e..a7d7872d5 100644
 --- a/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxe.c
 +++ b/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxe.c
 @@ -118,18 +118,69 @@ GetUserInput (
@@ -168,7 +168,7 @@ index 7ac2f8b3e3..a7d7872d50 100644
      }
  
 diff --git a/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxe.h b/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxe.h
-index 86694ad15c..acaca1de0b 100644
+index 86694ad15..acaca1de0 100644
 --- a/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxe.h
 +++ b/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxe.h
 @@ -12,6 +12,7 @@
@@ -180,7 +180,7 @@ index 86694ad15c..acaca1de0b 100644
  #include <Guid/MdeModuleHii.h>
  #include <Guid/HiiPlatformSetupFormset.h>
 diff --git a/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxe.inf b/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxe.inf
-index 2abacc51b7..b0f395a3e4 100644
+index 2abacc51b..b0f395a3e 100644
 --- a/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxe.inf
 +++ b/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxe.inf
 @@ -57,6 +57,7 @@
@@ -192,7 +192,7 @@ index 2abacc51b7..b0f395a3e4 100644
  [Depex]
    gEfiSimpleTextOutProtocolGuid      AND
 diff --git a/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxeStrings.uni b/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxeStrings.uni
-index 84807eb0b1..09d46865ed 100644
+index 84807eb0b..09d46865e 100644
 --- a/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxeStrings.uni
 +++ b/UefiPayloadPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxeStrings.uni
 @@ -19,8 +19,8 @@

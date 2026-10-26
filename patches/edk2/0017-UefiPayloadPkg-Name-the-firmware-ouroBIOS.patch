@@ -15,10 +15,10 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 2 insertions(+), 1 deletion(-)
 
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
-index 66d9a81d5f..9809c89e14 100644
+index ac9183fbb..b2bf2a3dc 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dsc
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
-@@ -773,6 +773,7 @@
+@@ -774,6 +774,7 @@
  
  [PcdsFixedAtBuild]
    gEfiMdePkgTokenSpaceGuid.PcdHardwareErrorRecordLevel|1
@@ -26,7 +26,7 @@ index 66d9a81d5f..9809c89e14 100644
    gEfiMdeModulePkgTokenSpaceGuid.PcdMaxVariableSize|0x8000
    gEfiMdeModulePkgTokenSpaceGuid.PcdMaxHardwareErrorVariableSize|0x8000
    gEfiMdeModulePkgTokenSpaceGuid.PcdVariableStoreSize|0x10000
-@@ -793,7 +794,7 @@
+@@ -794,7 +795,7 @@
    #
    gLvglPkgTokenSpaceGuid.PcdLvglHelpPaneWidthPct|25
    gLvglPkgTokenSpaceGuid.PcdLvglAptioHeaderTitle|"System Preferences"
@@ -35,3 +35,6 @@ index 66d9a81d5f..9809c89e14 100644
    gLvglPkgTokenSpaceGuid.PcdLvglCenteredFrameEnabled|TRUE
    gLvglPkgTokenSpaceGuid.PcdLvglCenteredFrameHeightPct|90
    gLvglPkgTokenSpaceGuid.PcdLvglCenteredFrameAspectNum|16
+-- 
+2.43.0
+

@@ -28,7 +28,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  .../FirmwareUpdateDxe/FirmwareUpdate.c        | 886 ++++++++++++++++++
  .../FirmwareUpdateDxe/FirmwareUpdate.uni      |  37 +
  .../FirmwareUpdateDxe/FirmwareUpdateDxe.inf   |  68 ++
- .../FirmwareUpdateDxe/FirmwareUpdateVfr.vfr   |  52 ++
+ .../FirmwareUpdateDxe/FirmwareUpdateVfr.vfr   |  52 +
  .../Include/Guid/FirmwareUpdateConfig.h       |  18 +
  UefiPayloadPkg/UefiPayloadPkg.dec             |   3 +
  UefiPayloadPkg/UefiPayloadPkg.dsc             |   1 +
@@ -42,7 +42,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 
 diff --git a/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.c b/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.c
 new file mode 100644
-index 0000000000..7eecc97351
+index 000000000..7eecc9735
 --- /dev/null
 +++ b/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.c
 @@ -0,0 +1,886 @@
@@ -934,7 +934,7 @@ index 0000000000..7eecc97351
 +}
 diff --git a/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.uni b/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.uni
 new file mode 100644
-index 0000000000..f27a00cbbe
+index 000000000..f27a00cbb
 --- /dev/null
 +++ b/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.uni
 @@ -0,0 +1,37 @@
@@ -977,7 +977,7 @@ index 0000000000..f27a00cbbe
 +#string STR_NULL_STRING          #language en-US ""
 diff --git a/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdateDxe.inf b/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdateDxe.inf
 new file mode 100644
-index 0000000000..ea77ceaae9
+index 000000000..ea77ceaae
 --- /dev/null
 +++ b/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdateDxe.inf
 @@ -0,0 +1,68 @@
@@ -1051,7 +1051,7 @@ index 0000000000..ea77ceaae9
 +  gEfiVariableWriteArchProtocolGuid
 diff --git a/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdateVfr.vfr b/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdateVfr.vfr
 new file mode 100644
-index 0000000000..aeb41d8817
+index 000000000..aeb41d881
 --- /dev/null
 +++ b/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdateVfr.vfr
 @@ -0,0 +1,52 @@
@@ -1109,7 +1109,7 @@ index 0000000000..aeb41d8817
 +endformset;
 diff --git a/UefiPayloadPkg/Include/Guid/FirmwareUpdateConfig.h b/UefiPayloadPkg/Include/Guid/FirmwareUpdateConfig.h
 new file mode 100644
-index 0000000000..68939a0c47
+index 000000000..68939a0c4
 --- /dev/null
 +++ b/UefiPayloadPkg/Include/Guid/FirmwareUpdateConfig.h
 @@ -0,0 +1,18 @@
@@ -1132,10 +1132,10 @@ index 0000000000..68939a0c47
 +
 +#endif
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
-index 715e4f6254..5035b573d1 100644
+index 08119dc78..81391c345 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dec
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dec
-@@ -32,6 +32,9 @@
+@@ -33,6 +33,9 @@
    gUefiPayloadBootSplashGuid = { 0x8a7c3e21, 0x4f5b, 0x4d91, { 0x9c, 0x2e, 0x1a, 0x3b, 0x5d, 0x7f, 0x8e, 0x90 } }
    gBootSplashConfigFormSetGuid = { 0xb2d4e6f8, 0x1a3c, 0x4e5f, { 0x8b, 0x9d, 0x0c, 0x2e, 0x4a, 0x6f, 0x8d, 0xb1 } }
  
@@ -1146,10 +1146,10 @@ index 715e4f6254..5035b573d1 100644
    ## Defines the token space for the UEFI Payload Package PCDs.
    #
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
-index 6cfa73653b..66d9a81d5f 100644
+index 4f9724cdc..ac9183fbb 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dsc
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
-@@ -1266,6 +1266,7 @@
+@@ -1267,6 +1267,7 @@
  !endif
    }
    MdeModulePkg/Universal/EsrtDxe/EsrtDxe.inf
@@ -1158,10 +1158,10 @@ index 6cfa73653b..66d9a81d5f 100644
  
  
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
-index 3577a4df13..a0330ce983 100644
+index 0fb8c9884..35f7b5088 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.fdf
 +++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
-@@ -550,6 +550,7 @@ INF ShellPkg/Application/Shell/Shell.inf
+@@ -565,6 +565,7 @@ INF ShellPkg/Application/Shell/Shell.inf
  INF  FILE_GUID = $(CAPSULE_MAIN_FW_GUID) FmpDevicePkg/FmpDxe/FmpDxe.inf
  !endif
  INF MdeModulePkg/Universal/EsrtDxe/EsrtDxe.inf

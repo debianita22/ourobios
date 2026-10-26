@@ -28,7 +28,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  6 files changed, 68 insertions(+), 1 deletion(-)
 
 diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
-index 6ec0d73b9..eb220efd0 100644
+index 9fca1a747..3f068c44a 100644
 --- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
 +++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
 @@ -289,6 +289,29 @@ PlatformSetupSwitch (
@@ -120,10 +120,10 @@ index e322a95d4..d350c1aaf 100644
 +  gUefiPayloadPkgTokenSpaceGuid.PcdCsmWrapFile
 +  gUefiPayloadPkgTokenSpaceGuid.PcdCsmWrapOptionName
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
-index b04fc1fd4..ff3eb359d 100644
+index 81391c345..88825c871 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dec
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dec
-@@ -117,6 +117,10 @@ gUefiPayloadPkgTokenSpaceGuid.PcdBootloaderParameter|0|UINT64|0x10000004
+@@ -118,6 +118,10 @@ gUefiPayloadPkgTokenSpaceGuid.PcdBootloaderParameter|0|UINT64|0x10000004
  gUefiPayloadPkgTokenSpaceGuid.PcdiPXEFile|{ 0xC7, 0x53, 0x86, 0xB6, 0xA1, 0xEE, 0x35, 0x44, 0xA1, 0x99, 0xA4, 0x4F, 0x59, 0xE4, 0x47, 0x6C }|VOID*|0x10000032
  gUefiPayloadPkgTokenSpaceGuid.PcdiPXEOptionName|L"iPXE Network Boot"|VOID*|0x10000033
  
@@ -153,10 +153,10 @@ index 999a0938d..99579f438 100644
    DEFINE NETWORK_ENABLE                 = TRUE
    DEFINE NETWORK_DRIVER_ENABLE          = TRUE
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
-index c1ce2cb8d..55e5ce139 100644
+index dac49694b..855f0220e 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.fdf
 +++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
-@@ -511,6 +511,16 @@ INF MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
+@@ -517,6 +517,16 @@ INF MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
    }
  !endif
  

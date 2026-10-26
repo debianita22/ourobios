@@ -15,7 +15,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c
-index 0916b62cba..4fe7bb37f4 100644
+index 0916b62cb..4fe7bb37f 100644
 --- a/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c
 +++ b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c
 @@ -1802,7 +1802,7 @@ FmpDeviceSetImageWithStatus (
