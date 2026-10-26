@@ -277,9 +277,14 @@ def traced_writes(path, areas, names):
 
 class UpdateTest:
     # Il payload ha pubblicato l'ESRT (ReadyToBoot), il disco non ha un
-    # sistema da avviare e il payload aspetta un tasto: nessuna scrittura del
-    # flash in corso, si puo' spegnere
-    IDLE = "Press any key to continue"
+    # sistema da avviare e il payload si e' fermato: nessuna scrittura del
+    # flash in corso, si puo' spegnere. Fino a uefipayload_2608 ddf612165c8b
+    # aspettava un tasto dopo la prima voce fallita; da ebad826c3a44 scorre
+    # tutte le voci di BootOrder e si ferma (DEBUG) con "[Bds] Unable to boot!"
+    IDLE = ("Press any key to continue", "[Bds] Unable to boot!")
+
+    def idle(self, text):
+        return any(m in text for m in self.IDLE)
 
     def __init__(self, caps, lock_test, out, timeout):
         self.paths, self.lock_test, self.out, self.timeout = caps, lock_test, out, timeout
@@ -361,7 +366,7 @@ class UpdateTest:
             if cut_at and cut_at(text):
                 self.m.cut()
                 return "cut", self.m.serial_text()
-            if self.IDLE in text:
+            if self.idle(text):
                 self.m.halt()
                 return "booted", self.m.serial_text()
             if time.monotonic() > end:
@@ -506,7 +511,7 @@ class UpdateTest:
 
         def opened():
             text = m.serial_text()
-            if self.IDLE in text:
+            if self.idle(text):
                 raise Fail("%s: Esc non ha aperto il setup, il payload ha provato il disco" % tag)
             if self.LVGL_PAGE in text:
                 return True
