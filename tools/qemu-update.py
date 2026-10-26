@@ -278,10 +278,12 @@ def traced_writes(path, areas, names):
 class UpdateTest:
     # Il payload ha pubblicato l'ESRT (ReadyToBoot), il disco non ha un
     # sistema da avviare e il payload si e' fermato: nessuna scrittura del
-    # flash in corso, si puo' spegnere. Fino a uefipayload_2608 ddf612165c8b
-    # aspettava un tasto dopo la prima voce fallita; da ebad826c3a44 scorre
-    # tutte le voci di BootOrder e si ferma (DEBUG) con "[Bds] Unable to boot!"
-    IDLE = ("Press any key to continue", "[Bds] Unable to boot!")
+    # flash in corso, si puo' spegnere. Fino a uefipayload_2608 f7cbaab0d5a2
+    # aspettava un tasto dopo la prima voce fallita (il disco); da ebad826c3a44
+    # scorre tutte le voci di BootOrder: la UEFI Shell del payload parte e
+    # aspetta un comando. Senza shell si fermerebbe (DEBUG) con "[Bds] Unable
+    # to boot!"
+    IDLE = ("Press any key to continue", "Welcome to the UEFI Shell!", "[Bds] Unable to boot!")
 
     def idle(self, text):
         return any(m in text for m in self.IDLE)
