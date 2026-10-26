@@ -1,0 +1,82 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Mon, 26 Oct 2026 18:49:17 +0100
+Subject: [PATCH 120/121] ec/lenovo/h8: Read no EC RAM in the AC adapter _PSR
+ before _REG
+
+As the _STA of the batteries and the _LID of the lid: macOS evaluates
+_PSR at boot before its EC driver is up and logs "No handler for Region
+[ERAM]", twice on the W541 with the batteries and the lid fixed. Until
+_REG (3, 1) return PWRS, the last state known (1, on AC, at boot), and
+have _REG notify the AC device (0x80) when the handler arrives, so that
+the OS reads it again. Linux evaluates _REG before it binds the AC
+device: nothing changes there.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec on its DSDT with the EC on battery: after _REG (3, 0) _PSR
+returns 1 without reading the EC and notifies nothing; after _REG
+(3, 1), which notifies AC with 0x80, it returns 0 and notifies the
+CPUs once; back on AC it returns 1. The other ACPI checks give the same
+results as before.
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/ec/lenovo/h8/acpi/ac.asl |  5 +++++
+ src/ec/lenovo/h8/acpi/ec.asl | 12 +++++++-----
+ 2 files changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/src/ec/lenovo/h8/acpi/ac.asl b/src/ec/lenovo/h8/acpi/ac.asl
+index 4477301ec1..6bb6d67a1e 100644
+--- a/src/ec/lenovo/h8/acpi/ac.asl
++++ b/src/ec/lenovo/h8/acpi/ac.asl
+@@ -20,6 +20,11 @@ Device(AC)
+ 	 */
+ 	Method(_PSR, 0, NotSerialized)
+ 	{
++		/* Before _REG (3, 1): the last state known, no EC access */
++		If (!ECAV) {
++			Return (\PWRS)
++		}
++
+ 		Local0 = HPAC
+ 		If (\PWRS != Local0)
+ 		{
+diff --git a/src/ec/lenovo/h8/acpi/ec.asl b/src/ec/lenovo/h8/acpi/ec.asl
+index 9b24e808a7..03e1eaec49 100644
+--- a/src/ec/lenovo/h8/acpi/ec.asl
++++ b/src/ec/lenovo/h8/acpi/ec.asl
+@@ -70,9 +70,10 @@ Device(EC)
+ 
+ 	/*
+ 	 * 1 while the OS has a handler for ERAM, from _REG (3, 1): until then
+-	 * AML must not read ERAM (ACPI 6.5, 6.5.4). The _STA of the batteries
+-	 * and the _LID of the lid check it, as an OS may evaluate them before
+-	 * its EC driver is up (macOS: "No handler for Region [ERAM]").
++	 * AML must not read ERAM (ACPI 6.5, 6.5.4). The _STA of the batteries,
++	 * the _LID of the lid and the _PSR of the AC adapter check it, as an
++	 * OS may evaluate them before its EC driver is up (macOS: "No handler
++	 * for Region [ERAM]").
+ 	 */
+ 	Name (ECAV, 0)
+ 
+@@ -94,13 +95,14 @@ Device(EC)
+ 		}
+ 
+ 		/*
+-		 * The batteries and the lid now read the EC: let the OS check
+-		 * them again
++		 * The batteries, the lid and the AC adapter now read the EC:
++		 * let the OS check them again
+ 		 */
+ 		If ((Arg0 == 3) && (Arg1 == 1)) {
+ 			Notify (BAT0, 0x81)
+ 			Notify (BAT1, 0x81)
+ 			Notify (LID, 0x80)
++			Notify (AC, 0x80)
+ 		}
+ 	}
+ 
+-- 
+2.43.0
+

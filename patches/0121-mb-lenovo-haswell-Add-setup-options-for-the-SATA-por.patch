@@ -1,0 +1,135 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Mon, 26 Oct 2026 18:49:17 +0100
+Subject: [PATCH 121/121] mb/lenovo/haswell: Add setup options for the SATA
+ ports of the W541
+
+The W541 implements SATA ports 0 (drive bay), 1 (M.2 on the I/O
+subcard), 4 (M.2 WWAN/SSD) and 5 (Ultrabay), and the OS probes every
+implemented port at boot and at every wake from S3, waiting for a link
+that an empty slot never brings up: about a second per wake. Add to
+Hardware > Expansion ports one switch per port besides the drive bay,
+on by default. A port turned off is cleared from the port map of the
+devicetree before the SATA controller is set up, so it is neither
+enabled in the controller (PCS) nor implemented for AHCI (PI), and the
+OS does not see it.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init; the
+DSDT does not change.
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/cfr.c       | 32 ++++++++++++++++++++++
+ src/mainboard/lenovo/haswell/mainboard.c | 34 ++++++++++++++++++++++++
+ 2 files changed, 66 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 61d03cd126..2f40c0734a 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -558,12 +558,44 @@ static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
+ 	},
+ });
+ 
++/* The SATA ports of the W541 besides the one of the drive bay (port 0) */
++#define SATA_PORT_HELP	"Disabled: the port is not implemented in the SATA controller, so\n" \
++			"the OS does not probe it at boot and at every wake. Enable it\n" \
++			"for a drive in the slot: it does not detect the drive by itself."
++
++static const struct sm_object sata_port1 = SM_DECLARE_BOOL({
++	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "sata_port1",
++	.ui_name	= "M.2 slot on the I/O subcard (SATA port 1)",
++	.ui_helptext	= SATA_PORT_HELP,
++	.default_value	= true,
++});
++
++static const struct sm_object sata_port4 = SM_DECLARE_BOOL({
++	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "sata_port4",
++	.ui_name	= "M.2 WWAN/SSD slot (SATA port 4)",
++	.ui_helptext	= SATA_PORT_HELP,
++	.default_value	= true,
++});
++
++static const struct sm_object sata_port5 = SM_DECLARE_BOOL({
++	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "sata_port5",
++	.ui_name	= "Ultrabay (SATA port 5)",
++	.ui_helptext	= SATA_PORT_HELP,
++	.default_value	= true,
++});
++
+ static const struct sm_object hardware_ports = SM_DECLARE_FORM({
+ 	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
+ 	.ui_name	= "Expansion ports",
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&expresscard,
+ 		&thunderbolt,
++		&sata_port1,
++		&sata_port4,
++		&sata_port5,
+ 		NULL
+ 	},
+ });
+diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
+index 43081129f6..0c55fa7177 100644
+--- a/src/mainboard/lenovo/haswell/mainboard.c
++++ b/src/mainboard/lenovo/haswell/mainboard.c
+@@ -10,6 +10,7 @@
+ #include <ec/lenovo/h8/h8.h>
+ #include <option.h>
+ #include <smbios.h>
++#include <southbridge/intel/lynxpoint/chip.h>
+ #include <string.h>
+ 
+ #include "setup_options.h"
+@@ -71,11 +72,44 @@ static void mainboard_fill_ssdt(const struct device *dev)
+ 	acpigen_pop_len();
+ }
+ 
++/*
++ * W541: the SATA ports of the devicetree, 0 (drive bay), 1 (M.2 on the I/O
++ * subcard), 4 (M.2 WWAN/SSD) and 5 (Ultrabay), less those turned off in the
++ * setup. A port not implemented is not probed by the OS, at boot and at wake.
++ */
++static void set_sata_ports(void)
++{
++	struct device *sata = pcidev_on_root(0x1f, 2);
++	struct southbridge_intel_lynxpoint_config *cfg;
++	const struct {
++		const char *option;
++		unsigned int port;
++	} ports[] = {
++		{ "sata_port1", 1 },
++		{ "sata_port4", 4 },
++		{ "sata_port5", 5 },
++	};
++
++	if (!sata || !sata->chip_info)
++		return;
++
++	cfg = sata->chip_info;
++	for (size_t i = 0; i < ARRAY_SIZE(ports); i++) {
++		if (!get_uint_option(ports[i].option, 1)) {
++			printk(BIOS_INFO, "SATA: port %u disabled\n", ports[i].port);
++			cfg->sata_port_map &= ~(1 << ports[i].port);
++		}
++	}
++}
++
+ static void mainboard_enable(struct device *dev)
+ {
+ 	if (CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM))
+ 		dev->ops->acpi_fill_ssdt = mainboard_fill_ssdt;
+ 
++	if (CONFIG(BOARD_LENOVO_THINKPAD_W541))
++		set_sata_ports();
++
+ 	install_intel_vga_int15_handler(GMA_INT15_ACTIVE_LFP_EDP,
+ 					GMA_INT15_PANEL_FIT_DEFAULT,
+ 					GMA_INT15_BOOT_DISPLAY_DEFAULT, 0);
+-- 
+2.43.0
+

@@ -363,8 +363,9 @@ image: flashrom, not a capsule.
     GPU, and the firmware powers it off there, at boot and after a wake
     ([docs/macos.md](macos.md)). *Hardware* also has the
     graphics aperture and, with the native RAM init (`nri`), the graphics
-    stolen memory (DVMT), the ExpressCard and Thunderbolt ports and the
-    radios;
+    stolen memory (DVMT), the ExpressCard and Thunderbolt ports, the
+    SATA ports besides the drive bay (from v1.3.10: a port turned off is
+    not probed by the OS at boot and at every wake) and the radios;
   - *Energy Saver*: battery charge thresholds (*OS controlled* keeps what
     TLP or `thinkpad_acpi` sets), SpeedStep, Turbo Boost, C-states, CPU
     PL1/PL2 limits and lock, cooling policy, *Restore AC Power Loss*. From

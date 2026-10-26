@@ -113,3 +113,5 @@
 0117-sb-intel-lynxpoint-Clear-no-PM1-or-GPE0-status-from-.patch
 0118-nb-intel-haswell-Wait-for-the-HPD-of-the-panel-not-t.patch
 0119-nb-intel-haswell-Read-the-aperture-size-option-once-.patch
+0120-ec-lenovo-h8-Read-no-EC-RAM-in-the-AC-adapter-_PSR-b.patch
+0121-mb-lenovo-haswell-Add-setup-options-for-the-SATA-por.patch
