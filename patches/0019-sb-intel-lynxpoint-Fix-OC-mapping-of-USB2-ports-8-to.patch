@@ -23,7 +23,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/southbridge/intel/lynxpoint/early_usb_native.c b/src/southbridge/intel/lynxpoint/early_usb_native.c
-index b63ae3d50..ff167fa1c 100644
+index b63ae3d505..ff167fa1ca 100644
 --- a/src/southbridge/intel/lynxpoint/early_usb_native.c
 +++ b/src/southbridge/intel/lynxpoint/early_usb_native.c
 @@ -402,7 +402,7 @@ static void usb_overcurrent_mapping(void)

@@ -24,7 +24,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 5 deletions(-)
 
 diff --git a/src/southbridge/intel/lynxpoint/acpi/pch.asl b/src/southbridge/intel/lynxpoint/acpi/pch.asl
-index 256147fa..c8492eaf 100644
+index 256147fa5e..c8492eaf4f 100644
 --- a/src/southbridge/intel/lynxpoint/acpi/pch.asl
 +++ b/src/southbridge/intel/lynxpoint/acpi/pch.asl
 @@ -48,11 +48,6 @@ Scope (\)

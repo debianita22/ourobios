@@ -29,7 +29,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/northbridge/intel/haswell/native_raminit/train_jedec_write_leveling.c b/src/northbridge/intel/haswell/native_raminit/train_jedec_write_leveling.c
-index a8ce54053..d502cfa39 100644
+index a8ce540530..d502cfa391 100644
 --- a/src/northbridge/intel/haswell/native_raminit/train_jedec_write_leveling.c
 +++ b/src/northbridge/intel/haswell/native_raminit/train_jedec_write_leveling.c
 @@ -56,7 +56,7 @@ static int16_t calc_global_offset(const int8_t tgt_off)

@@ -23,7 +23,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  3 files changed, 23 insertions(+)
 
 diff --git a/src/security/lockdown/Kconfig b/src/security/lockdown/Kconfig
-index 22e97c68b..49ac27415 100644
+index 22e97c68b2..49ac27415e 100644
 --- a/src/security/lockdown/Kconfig
 +++ b/src/security/lockdown/Kconfig
 @@ -96,6 +96,16 @@ config BOOTMEDIA_LOCK_IN_VERSTAGE
@@ -44,7 +44,7 @@ index 22e97c68b..49ac27415 100644
  	bool "Boot media only writable in SMM"
  	depends on !CONSOLE_SPI_FLASH
 diff --git a/src/security/lockdown/lockdown.c b/src/security/lockdown/lockdown.c
-index 6a75111f6..11a52ecdc 100644
+index 6a75111f6b..11a52ecdce 100644
 --- a/src/security/lockdown/lockdown.c
 +++ b/src/security/lockdown/lockdown.c
 @@ -5,6 +5,7 @@
@@ -68,7 +68,7 @@ index 6a75111f6..11a52ecdc 100644
  
  	if (CONFIG(BOOTMEDIA_LOCK_CONTROLLER)) {
 diff --git a/src/security/lockdown/lockdown.h b/src/security/lockdown/lockdown.h
-index b81e636c3..aad1714be 100644
+index b81e636c32..aad1714be4 100644
 --- a/src/security/lockdown/lockdown.h
 +++ b/src/security/lockdown/lockdown.h
 @@ -13,4 +13,11 @@ static inline bool enable_smm_bios_protection(void)

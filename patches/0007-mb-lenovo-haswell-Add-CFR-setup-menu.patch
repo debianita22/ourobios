@@ -43,7 +43,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  create mode 100644 src/mainboard/lenovo/haswell/cfr.c
 
 diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
-index b104f2136..02a427b7e 100644
+index b104f2136c..02a427b7ef 100644
 --- a/src/mainboard/lenovo/haswell/Kconfig
 +++ b/src/mainboard/lenovo/haswell/Kconfig
 @@ -4,6 +4,7 @@ config BOARD_LENOVO_HASWELL_COMMON
@@ -63,7 +63,7 @@ index b104f2136..02a427b7e 100644
  
  endif
 diff --git a/src/mainboard/lenovo/haswell/Makefile.mk b/src/mainboard/lenovo/haswell/Makefile.mk
-index 7305e46e8..f96e1b892 100644
+index 7305e46e83..f96e1b8923 100644
 --- a/src/mainboard/lenovo/haswell/Makefile.mk
 +++ b/src/mainboard/lenovo/haswell/Makefile.mk
 @@ -4,6 +4,7 @@ romstage-y += variants/$(VARIANT_DIR)/gpio.c
@@ -76,7 +76,7 @@ index 7305e46e8..f96e1b892 100644
  
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
 new file mode 100644
-index 000000000..56b231570
+index 0000000000..56b231570f
 --- /dev/null
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -0,0 +1,87 @@

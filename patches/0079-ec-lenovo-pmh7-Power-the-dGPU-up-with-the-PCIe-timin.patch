@@ -19,7 +19,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 4 insertions(+), 2 deletions(-)
 
 diff --git a/src/ec/lenovo/pmh7/pmh7.c b/src/ec/lenovo/pmh7/pmh7.c
-index 00d34edb..ad8dfc48 100644
+index 00d34edb56..ad8dfc48ae 100644
 --- a/src/ec/lenovo/pmh7/pmh7.c
 +++ b/src/ec/lenovo/pmh7/pmh7.c
 @@ -56,9 +56,11 @@ void pmh7_dgpu_power_enable(int onoff)

@@ -28,7 +28,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/mainboard/lenovo/haswell/romstage.c b/src/mainboard/lenovo/haswell/romstage.c
-index 64d8cd442..f786f68bf 100644
+index 64d8cd4420..f786f68bf5 100644
 --- a/src/mainboard/lenovo/haswell/romstage.c
 +++ b/src/mainboard/lenovo/haswell/romstage.c
 @@ -12,7 +12,7 @@ void mainboard_config_rcba(void)

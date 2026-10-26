@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Fri, 9 Oct 2026 23:49:25 +0200
-Subject: [PATCH 25/37] nb/intel/haswell: Add an option for the graphics
- aperture size
+Subject: [PATCH] nb/intel/haswell: Add an option for the graphics aperture
+ size
 
 The IGD aperture (GMADR BAR) is fixed to 256 MiB. Add a gfx_aperture_size
 option for 128, 256 or 512 MiB and a CFR object that mainboards can put in
@@ -38,7 +38,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 
 diff --git a/src/northbridge/intel/haswell/cfr.h b/src/northbridge/intel/haswell/cfr.h
 new file mode 100644
-index 000000000..7548a4560
+index 0000000000..7548a45609
 --- /dev/null
 +++ b/src/northbridge/intel/haswell/cfr.h
 @@ -0,0 +1,27 @@
@@ -70,7 +70,7 @@ index 000000000..7548a4560
 +
 +#endif /* NB_INTEL_HASWELL_CFR_H */
 diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
-index 6a5ce53a4..4b0e4acae 100644
+index 6a5ce53a40..4b0e4acaee 100644
 --- a/src/northbridge/intel/haswell/early_init.c
 +++ b/src/northbridge/intel/haswell/early_init.c
 @@ -5,6 +5,7 @@
@@ -140,7 +140,7 @@ index 6a5ce53a4..4b0e4acae 100644
  
  static void haswell_setup_misc(void)
 diff --git a/src/northbridge/intel/haswell/haswell.h b/src/northbridge/intel/haswell/haswell.h
-index 0c669c442..316ee2341 100644
+index 0c669c442c..316ee2341c 100644
 --- a/src/northbridge/intel/haswell/haswell.h
 +++ b/src/northbridge/intel/haswell/haswell.h
 @@ -24,6 +24,17 @@
@@ -162,7 +162,7 @@ index 0c669c442..316ee2341 100644
  #define ARCHDIS		0xff0	/* DMA Remap Engine Policy Control */
  #define  DMAR_LCKDN	(1 << 31)
 diff --git a/src/northbridge/intel/haswell/romstage.c b/src/northbridge/intel/haswell/romstage.c
-index a6726f7f0..719fb027d 100644
+index a6726f7f06..719fb027da 100644
 --- a/src/northbridge/intel/haswell/romstage.c
 +++ b/src/northbridge/intel/haswell/romstage.c
 @@ -3,6 +3,7 @@

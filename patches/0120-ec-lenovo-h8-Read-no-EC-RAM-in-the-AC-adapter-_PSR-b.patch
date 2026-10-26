@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Mon, 26 Oct 2026 18:49:17 +0100
-Subject: [PATCH 120/121] ec/lenovo/h8: Read no EC RAM in the AC adapter _PSR
- before _REG
+Subject: [PATCH] ec/lenovo/h8: Read no EC RAM in the AC adapter _PSR before
+ _REG
 
 As the _STA of the batteries and the _LID of the lid: macOS evaluates
 _PSR at boot before its EC driver is up and logs "No handler for Region

@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Fri, 9 Oct 2026 23:59:50 +0200
-Subject: [PATCH 33/37] mb/lenovo/haswell: Add switches for the W541
- ExpressCard and Thunderbolt
+Subject: [PATCH] mb/lenovo/haswell: Add switches for the W541 ExpressCard and
+ Thunderbolt
 
 On the W541, PCIe root port 3 goes to the ExpressCard/34 slot and root
 port 5 (x4) to the Intel DSL4410 Thunderbolt controller. Both are
@@ -28,7 +28,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 42 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 9200dae61..520fa6611 100644
+index 9200dae614..520fa66119 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -75,6 +75,26 @@ static const struct sm_object battery_charge_limit = SM_DECLARE_ENUM({
@@ -68,7 +68,7 @@ index 9200dae61..520fa6611 100644
  	},
  };
 diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
-index 088256b6d..b234534ae 100644
+index 088256b6d7..b234534ae0 100644
 --- a/src/mainboard/lenovo/haswell/mainboard.c
 +++ b/src/mainboard/lenovo/haswell/mainboard.c
 @@ -27,11 +27,31 @@ const char *smbios_mainboard_bios_version(void)

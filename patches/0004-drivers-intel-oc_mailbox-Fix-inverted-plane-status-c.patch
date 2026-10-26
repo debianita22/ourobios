@@ -23,7 +23,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/drivers/intel/oc_mailbox/oc_mailbox.c b/src/drivers/intel/oc_mailbox/oc_mailbox.c
-index f318e49b5..3cf5b449c 100644
+index f318e49b5d..3cf5b449c1 100644
 --- a/src/drivers/intel/oc_mailbox/oc_mailbox.c
 +++ b/src/drivers/intel/oc_mailbox/oc_mailbox.c
 @@ -206,7 +206,7 @@ static void oc_mailbox_undervolt(void)

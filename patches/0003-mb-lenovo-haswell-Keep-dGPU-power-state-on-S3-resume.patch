@@ -20,7 +20,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 14 insertions(+), 3 deletions(-)
 
 diff --git a/src/mainboard/lenovo/haswell/romstage.c b/src/mainboard/lenovo/haswell/romstage.c
-index 518bd4b61..64d8cd442 100644
+index 518bd4b61c..64d8cd4420 100644
 --- a/src/mainboard/lenovo/haswell/romstage.c
 +++ b/src/mainboard/lenovo/haswell/romstage.c
 @@ -6,6 +6,7 @@

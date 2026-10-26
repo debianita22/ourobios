@@ -21,7 +21,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 3 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/acpi/platform.asl b/src/mainboard/lenovo/haswell/acpi/platform.asl
-index 42587fd78..07381b80e 100644
+index 42587fd78a..07381b80e3 100644
 --- a/src/mainboard/lenovo/haswell/acpi/platform.asl
 +++ b/src/mainboard/lenovo/haswell/acpi/platform.asl
 @@ -2,6 +2,9 @@

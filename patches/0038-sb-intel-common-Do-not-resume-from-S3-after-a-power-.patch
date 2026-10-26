@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sat, 10 Oct 2026 12:24:42 +0200
-Subject: [PATCH 38/42] sb/intel/common: Do not resume from S3 after a power
- button override
+Subject: [PATCH] sb/intel/common: Do not resume from S3 after a power button
+ override
 
 A power button override puts the system in S5 whatever state it was
 in, and DRAM loses its contents. When the power button is held down
@@ -27,7 +27,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 13 insertions(+)
 
 diff --git a/src/southbridge/intel/common/pmclib.c b/src/southbridge/intel/common/pmclib.c
-index 34a449b2b..638203af6 100644
+index 34a449b2b3..638203af6e 100644
 --- a/src/southbridge/intel/common/pmclib.c
 +++ b/src/southbridge/intel/common/pmclib.c
 @@ -19,6 +19,19 @@ int southbridge_detect_s3_resume(void)

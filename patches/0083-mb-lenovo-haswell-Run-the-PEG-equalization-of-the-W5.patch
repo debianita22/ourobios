@@ -26,7 +26,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 13 insertions(+), 4 deletions(-)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 506c4a69..88631ef4 100644
+index 506c4a69f9..88631ef42d 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -495,15 +495,17 @@ static const struct sm_object peg_link_tuning = SM_DECLARE_ENUM({
@@ -52,7 +52,7 @@ index 506c4a69..88631ef4 100644
  }, WITH_DEP_VALUES(&enable_dual_graphics, true));
  
 diff --git a/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb b/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb
-index 6f218144..14b2f4fa 100644
+index 6f218144ea..14b2f4fa4d 100644
 --- a/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb
 +++ b/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb
 @@ -14,6 +14,13 @@ chip northbridge/intel/haswell

@@ -23,7 +23,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/southbridge/intel/lynxpoint/early_usb_native.c b/src/southbridge/intel/lynxpoint/early_usb_native.c
-index cb6f6ee8e..b63ae3d50 100644
+index cb6f6ee8e6..b63ae3d505 100644
 --- a/src/southbridge/intel/lynxpoint/early_usb_native.c
 +++ b/src/southbridge/intel/lynxpoint/early_usb_native.c
 @@ -133,7 +133,7 @@ static void common_xhci_hc_init(void)

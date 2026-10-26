@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Fri, 9 Oct 2026 23:57:52 +0200
-Subject: [PATCH 31/37] mb/lenovo/haswell: Add a cooling policy option
+Subject: [PATCH] mb/lenovo/haswell: Add a cooling policy option
 
 Add a cooling_policy option to the setup menu:
 
@@ -27,7 +27,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  create mode 100644 src/mainboard/lenovo/haswell/setup_options.h
 
 diff --git a/src/mainboard/lenovo/haswell/acpi_tables.c b/src/mainboard/lenovo/haswell/acpi_tables.c
-index 0301443f8..a232eadc6 100644
+index 0301443f88..a232eadc6c 100644
 --- a/src/mainboard/lenovo/haswell/acpi_tables.c
 +++ b/src/mainboard/lenovo/haswell/acpi_tables.c
 @@ -1,8 +1,11 @@
@@ -56,7 +56,7 @@ index 0301443f8..a232eadc6 100644
 +		gnvs->f0on = gnvs->tpsv + 5;
  }
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 56b231570..d614c7dc1 100644
+index 56b231570f..d614c7dc19 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -6,6 +6,8 @@
@@ -100,7 +100,7 @@ index 56b231570..d614c7dc1 100644
  };
 diff --git a/src/mainboard/lenovo/haswell/setup_options.h b/src/mainboard/lenovo/haswell/setup_options.h
 new file mode 100644
-index 000000000..e1aac2bf7
+index 0000000000..e1aac2bf7c
 --- /dev/null
 +++ b/src/mainboard/lenovo/haswell/setup_options.h
 @@ -0,0 +1,12 @@

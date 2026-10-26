@@ -23,7 +23,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 13 insertions(+), 2 deletions(-)
 
 diff --git a/src/southbridge/intel/common/spi.c b/src/southbridge/intel/common/spi.c
-index b340dcbeb..59bc4ec56 100644
+index b340dcbebc..59bc4ec56e 100644
 --- a/src/southbridge/intel/common/spi.c
 +++ b/src/southbridge/intel/common/spi.c
 @@ -956,12 +956,23 @@ static int spi_flash_programmer_probe(const struct spi_slave *spi,
@@ -52,3 +52,6 @@ index b340dcbeb..59bc4ec56 100644
  	printk(BIOS_DEBUG, "flash size 0x%x bytes\n", flash->size);
  
  	return 0;
+-- 
+2.43.0
+

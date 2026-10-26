@@ -15,7 +15,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 21 insertions(+), 1 deletion(-)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 61e15a044..94aaed170 100644
+index 61e15a0448..94aaed170e 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -340,6 +340,24 @@ static const struct sm_object bios_lock = SM_DECLARE_BOOL({

@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Fri, 9 Oct 2026 23:54:40 +0200
-Subject: [PATCH 27/37] cpu/intel/haswell: Add options for SpeedStep, Turbo
- Boost and C-states
+Subject: [PATCH] cpu/intel/haswell: Add options for SpeedStep, Turbo Boost and
+ C-states
 
 Add eist, turbo_mode and c_states options, with CFR objects that
 mainboards can put in their setup menu. All three default to enabled,
@@ -43,7 +43,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  5 files changed, 139 insertions(+), 6 deletions(-)
 
 diff --git a/src/cpu/intel/haswell/acpi.c b/src/cpu/intel/haswell/acpi.c
-index c8f6a07a0..e946c9e47 100644
+index c92087a2ea..4a0795d0a6 100644
 --- a/src/cpu/intel/haswell/acpi.c
 +++ b/src/cpu/intel/haswell/acpi.c
 @@ -179,6 +179,14 @@ static void generate_C_state_entries(const struct device *dev)
@@ -61,7 +61,7 @@ index c8f6a07a0..e946c9e47 100644
  	if (is_s0ix_enabled(dev))
  		acpi_cstates = cstate_set_s0ix;
  	else if (haswell_is_ult())
-@@ -330,8 +338,9 @@ static void generate_cpu_entry(const struct device *device, int cpu, int core, i
+@@ -328,8 +336,9 @@ static void generate_cpu_entry(const struct device *device, int cpu, int core, i
  	/* Generate Scope(\_SB) { Device(CPUx */
  	acpigen_write_processor_device(cpu * cores_per_package + core);
  
@@ -74,7 +74,7 @@ index c8f6a07a0..e946c9e47 100644
  	/* Generate C-state tables */
  	generate_C_state_entries(device);
 diff --git a/src/cpu/intel/haswell/cfr.h b/src/cpu/intel/haswell/cfr.h
-index 2c92c1540..c00a05986 100644
+index 2c92c1540a..c00a059865 100644
 --- a/src/cpu/intel/haswell/cfr.h
 +++ b/src/cpu/intel/haswell/cfr.h
 @@ -13,4 +13,32 @@ static const struct sm_object cpu_power_limit_lock = SM_DECLARE_BOOL({
@@ -111,10 +111,10 @@ index 2c92c1540..c00a05986 100644
 +
  #endif /* _CPU_INTEL_HASWELL_CFR_H_ */
 diff --git a/src/cpu/intel/haswell/haswell.h b/src/cpu/intel/haswell/haswell.h
-index 4b1e85cb2..8826904e4 100644
+index 259cfd1d37..3fe44685f0 100644
 --- a/src/cpu/intel/haswell/haswell.h
 +++ b/src/cpu/intel/haswell/haswell.h
-@@ -168,6 +168,10 @@ enum {
+@@ -225,6 +225,10 @@ union msr_vr_misc_config {
  void set_power_limits(u8 power_limit_1_time);
  int cpu_config_tdp_levels(void);
  
@@ -126,10 +126,10 @@ index 4b1e85cb2..8826904e4 100644
  
  /* pcode_mailbox.c */
 diff --git a/src/cpu/intel/haswell/haswell_init.c b/src/cpu/intel/haswell/haswell_init.c
-index 9cfd94f60..2ff08cdec 100644
+index 211ca05b32..78606aeebf 100644
 --- a/src/cpu/intel/haswell/haswell_init.c
 +++ b/src/cpu/intel/haswell/haswell_init.c
-@@ -341,6 +341,58 @@ void set_power_limits(u8 power_limit_1_time)
+@@ -321,6 +321,58 @@ void set_power_limits(u8 power_limit_1_time)
  	}
  }
  
@@ -187,9 +187,9 @@ index 9cfd94f60..2ff08cdec 100644
 +
  static void configure_c_states(void)
  {
- 	msr_t msr = rdmsr(MSR_PLATFORM_INFO);
-@@ -360,7 +412,12 @@ static void configure_c_states(void)
- 	if (timed_mwait_capable)
+ 	msr_t msr = rdmsr(MSR_PKG_CST_CONFIG_CONTROL);
+@@ -336,7 +388,12 @@ static void configure_c_states(void)
+ 	if (rdmsr_platform_info().timed_mwait_supported)
  		msr.lo |= (1 << 31);	// Timed MWAIT Enable
  
 -	/* The deepest package c-state defaults to factory-configured value. */
@@ -202,7 +202,7 @@ index 9cfd94f60..2ff08cdec 100644
  	wrmsr(MSR_PKG_CST_CONFIG_CONTROL, msr);
  
  	msr = rdmsr(MSR_MISC_PWR_MGMT);
-@@ -369,7 +426,10 @@ static void configure_c_states(void)
+@@ -345,7 +402,10 @@ static void configure_c_states(void)
  
  	msr = rdmsr(MSR_POWER_CTL);
  	msr.lo |= (1 << 18);	// Enable Energy Perf Bias MSR 0x1b0
@@ -214,7 +214,7 @@ index 9cfd94f60..2ff08cdec 100644
  	msr.lo |= (1 << 0);	// Bi-directional PROCHOT#
  	wrmsr(MSR_POWER_CTL, msr);
  
-@@ -434,6 +494,16 @@ static void configure_misc(void)
+@@ -408,6 +468,16 @@ static void configure_misc(void)
  	msr.lo |= (1 << 16);	  /* Enhanced SpeedStep Enable */
  	wrmsr(IA32_MISC_ENABLE, msr);
  
@@ -231,7 +231,7 @@ index 9cfd94f60..2ff08cdec 100644
  	/* Disable Thermal interrupts */
  	msr.lo = 0;
  	msr.hi = 0;
-@@ -515,13 +585,19 @@ static void cpu_core_init(struct device *cpu)
+@@ -487,13 +557,19 @@ static void cpu_core_init(struct device *cpu)
  	/* Set energy policy */
  	set_energy_perf_bias(ENERGY_POLICY_NORMAL);
  
@@ -253,7 +253,7 @@ index 9cfd94f60..2ff08cdec 100644
  	/* Setup MTRRs based on physical address size. */
  	x86_setup_mtrrs_with_detect();
  	x86_mtrr_check();
-@@ -575,6 +651,17 @@ static void post_mp_init(void)
+@@ -547,6 +623,17 @@ static void post_mp_init(void)
  	/* Set Max Ratio */
  	set_max_ratio();
  
@@ -272,7 +272,7 @@ index 9cfd94f60..2ff08cdec 100644
  	 * start flowing. */
  	global_smi_enable();
 diff --git a/src/northbridge/intel/haswell/acpi/ctdp.asl b/src/northbridge/intel/haswell/acpi/ctdp.asl
-index 89669b366..b03470219 100644
+index 89669b3661..b03470219a 100644
 --- a/src/northbridge/intel/haswell/acpi/ctdp.asl
 +++ b/src/northbridge/intel/haswell/acpi/ctdp.asl
 @@ -61,6 +61,11 @@ Scope (\_SB.PCI0.MCHC)

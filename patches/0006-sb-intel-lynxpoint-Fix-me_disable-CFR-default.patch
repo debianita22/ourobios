@@ -23,7 +23,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/southbridge/intel/lynxpoint/cfr.h b/src/southbridge/intel/lynxpoint/cfr.h
-index 83950ea8b..e574a2683 100644
+index 83950ea8b5..e574a2683b 100644
 --- a/src/southbridge/intel/lynxpoint/cfr.h
 +++ b/src/southbridge/intel/lynxpoint/cfr.h
 @@ -28,7 +28,7 @@ static const struct sm_object me_disable = SM_DECLARE_ENUM({

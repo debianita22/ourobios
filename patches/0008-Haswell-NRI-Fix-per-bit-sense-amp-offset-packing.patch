@@ -30,7 +30,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 5 insertions(+), 2 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/native_raminit/save_restore.c b/src/northbridge/intel/haswell/native_raminit/save_restore.c
-index 5be68808d..6e199d344 100644
+index 5be68808d8..6e199d3441 100644
 --- a/src/northbridge/intel/haswell/native_raminit/save_restore.c
 +++ b/src/northbridge/intel/haswell/native_raminit/save_restore.c
 @@ -14,8 +14,11 @@ uint32_t reg_frame_rev(void)
@@ -47,7 +47,7 @@ index 5be68808d..6e199d344 100644
  
  struct register_save {
 diff --git a/src/northbridge/intel/haswell/native_raminit/train_sense_amp_offset.c b/src/northbridge/intel/haswell/native_raminit/train_sense_amp_offset.c
-index 6989dd631..938ae70a3 100644
+index 6989dd6318..938ae70a3b 100644
 --- a/src/northbridge/intel/haswell/native_raminit/train_sense_amp_offset.c
 +++ b/src/northbridge/intel/haswell/native_raminit/train_sense_amp_offset.c
 @@ -299,7 +299,7 @@ static void train_samp_offset(struct sysinfo *ctrl)

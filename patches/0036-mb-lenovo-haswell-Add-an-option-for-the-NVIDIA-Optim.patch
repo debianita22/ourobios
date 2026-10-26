@@ -1,8 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Wed, 30 Sep 2026 23:14:02 +0200
-Subject: [PATCH 36/37] mb/lenovo/haswell: Add an option for the NVIDIA Optimus
- key
+Subject: [PATCH] mb/lenovo/haswell: Add an option for the NVIDIA Optimus key
 
 The Windows NVIDIA driver requests an Optimus key through NVOP function
 0x10 and keeps Optimus disabled without it; the Linux drivers do not ask
@@ -26,7 +25,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  create mode 100644 src/mainboard/lenovo/haswell/acpi/.gitignore
 
 diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
-index ca8cf3c7d..991a90c3f 100644
+index ca8cf3c7dc..991a90c3f4 100644
 --- a/src/mainboard/lenovo/haswell/Kconfig
 +++ b/src/mainboard/lenovo/haswell/Kconfig
 @@ -110,4 +110,14 @@ config LENOVO_HASWELL_DGPU_RUNTIME_PM
@@ -46,13 +45,13 @@ index ca8cf3c7d..991a90c3f 100644
  endif
 diff --git a/src/mainboard/lenovo/haswell/acpi/.gitignore b/src/mainboard/lenovo/haswell/acpi/.gitignore
 new file mode 100644
-index 000000000..05470cdc5
+index 0000000000..05470cdc5e
 --- /dev/null
 +++ b/src/mainboard/lenovo/haswell/acpi/.gitignore
 @@ -0,0 +1 @@
 +opvk.inc
 diff --git a/src/mainboard/lenovo/haswell/acpi/dgpu.asl b/src/mainboard/lenovo/haswell/acpi/dgpu.asl
-index cebd5da62..34034d96a 100644
+index cebd5da62b..34034d96ad 100644
 --- a/src/mainboard/lenovo/haswell/acpi/dgpu.asl
 +++ b/src/mainboard/lenovo/haswell/acpi/dgpu.asl
 @@ -28,6 +28,7 @@

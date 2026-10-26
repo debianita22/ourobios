@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sat, 10 Oct 2026 12:25:56 +0200
-Subject: [PATCH 40/42] nb/intel/haswell: Add POST codes to the romstage steps
+Subject: [PATCH] nb/intel/haswell: Add POST codes to the romstage steps
 
 With CMOS_POST, a boot that hangs is reported at the next boot with its
 last POST code. In romstage only 0x3a, before the RAM init, and 0x3f, at
@@ -35,7 +35,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  4 files changed, 20 insertions(+)
 
 diff --git a/src/northbridge/intel/haswell/broadwell_mrc/raminit.c b/src/northbridge/intel/haswell/broadwell_mrc/raminit.c
-index 593e05aa0..cbf517aa3 100644
+index 593e05aa08..cbf517aa3a 100644
 --- a/src/northbridge/intel/haswell/broadwell_mrc/raminit.c
 +++ b/src/northbridge/intel/haswell/broadwell_mrc/raminit.c
 @@ -266,6 +266,7 @@ void perform_raminit(const bool s3resume)
@@ -47,7 +47,7 @@ index 593e05aa0..cbf517aa3 100644
  	}
  
 diff --git a/src/northbridge/intel/haswell/haswell_mrc/raminit.c b/src/northbridge/intel/haswell/haswell_mrc/raminit.c
-index 4f966369f..9e4ef766a 100644
+index 4f966369fa..9e4ef766a0 100644
 --- a/src/northbridge/intel/haswell/haswell_mrc/raminit.c
 +++ b/src/northbridge/intel/haswell/haswell_mrc/raminit.c
 @@ -262,6 +262,7 @@ void perform_raminit(const bool s3resume)
@@ -59,7 +59,7 @@ index 4f966369f..9e4ef766a 100644
  	}
  
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.c b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
-index 9a0597408..af784fbc9 100644
+index 9a05974083..af784fbc9d 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
 @@ -206,6 +206,7 @@ void perform_raminit(const bool s3resume)
@@ -71,7 +71,7 @@ index 9a0597408..af784fbc9 100644
  	}
  
 diff --git a/src/northbridge/intel/haswell/romstage.c b/src/northbridge/intel/haswell/romstage.c
-index 229b7d6b2..1691d7989 100644
+index 229b7d6b20..1691d79891 100644
 --- a/src/northbridge/intel/haswell/romstage.c
 +++ b/src/northbridge/intel/haswell/romstage.c
 @@ -21,16 +21,29 @@ void __weak mb_late_romstage_setup(void)

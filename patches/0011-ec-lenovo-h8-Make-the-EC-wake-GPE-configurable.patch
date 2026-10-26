@@ -22,7 +22,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 12 insertions(+), 2 deletions(-)
 
 diff --git a/src/ec/lenovo/h8/acpi/lid.asl b/src/ec/lenovo/h8/acpi/lid.asl
-index 7695e4e5a..f70e3d614 100644
+index 7695e4e5ab..f70e3d6142 100644
 --- a/src/ec/lenovo/h8/acpi/lid.asl
 +++ b/src/ec/lenovo/h8/acpi/lid.asl
 @@ -1,5 +1,10 @@
@@ -46,7 +46,7 @@ index 7695e4e5a..f70e3d614 100644
  
  	Method(_PSW, 1, NotSerialized)
 diff --git a/src/ec/lenovo/h8/acpi/sleepbutton.asl b/src/ec/lenovo/h8/acpi/sleepbutton.asl
-index 441dc65c9..e2dfc5eed 100644
+index 441dc65c9d..e2dfc5eede 100644
 --- a/src/ec/lenovo/h8/acpi/sleepbutton.asl
 +++ b/src/ec/lenovo/h8/acpi/sleepbutton.asl
 @@ -1,5 +1,10 @@

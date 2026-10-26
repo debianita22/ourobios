@@ -1,8 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Fri, 9 Oct 2026 23:56:40 +0200
-Subject: [PATCH 30/37] ec/lenovo/h8: Allow mainboards to set the active trip
- point
+Subject: [PATCH] ec/lenovo/h8: Allow mainboards to set the active trip point
 
 The active trip point of THM0, where the OS turns on the fan power
 resource and the EC runs the fan at full speed, is always 10 degrees
@@ -29,7 +28,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  3 files changed, 19 insertions(+)
 
 diff --git a/src/ec/lenovo/h8/Kconfig b/src/ec/lenovo/h8/Kconfig
-index 7f6d45be3..a1e34e3a8 100644
+index 7f6d45be30..a1e34e3a8d 100644
 --- a/src/ec/lenovo/h8/Kconfig
 +++ b/src/ec/lenovo/h8/Kconfig
 @@ -96,4 +96,13 @@ config H8_HAS_2ND_THERMAL_ZONE
@@ -47,7 +46,7 @@ index 7f6d45be3..a1e34e3a8 100644
 +
  endif # EC_LENOVO_H8
 diff --git a/src/ec/lenovo/h8/acpi/thermal.asl b/src/ec/lenovo/h8/acpi/thermal.asl
-index 54f4f922b..5494f085a 100644
+index 54f4f922bd..5494f085a9 100644
 --- a/src/ec/lenovo/h8/acpi/thermal.asl
 +++ b/src/ec/lenovo/h8/acpi/thermal.asl
 @@ -75,10 +75,19 @@ External (\PPKG, MethodObj)
@@ -71,7 +70,7 @@ index 54f4f922b..5494f085a 100644
  			If (\FLVL) {
  				/* Turn of 5 degree below trip point */
 diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
-index 02a427b7e..a4d5e8d5d 100644
+index 02a427b7ef..a4d5e8d5dd 100644
 --- a/src/mainboard/lenovo/haswell/Kconfig
 +++ b/src/mainboard/lenovo/haswell/Kconfig
 @@ -7,6 +7,7 @@ config BOARD_LENOVO_HASWELL_COMMON

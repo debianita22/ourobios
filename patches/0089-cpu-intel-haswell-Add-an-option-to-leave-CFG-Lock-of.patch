@@ -44,10 +44,10 @@ index 477eaffd7a..f53afee49b 100644
  	.opt_name	= "vmx",
  	.ui_name	= "Intel VT-x",
 diff --git a/src/cpu/intel/haswell/haswell_init.c b/src/cpu/intel/haswell/haswell_init.c
-index 526e7f7d12..8254e381d4 100644
+index 5acf9cfa4d..a376943321 100644
 --- a/src/cpu/intel/haswell/haswell_init.c
 +++ b/src/cpu/intel/haswell/haswell_init.c
-@@ -350,6 +350,7 @@ static struct {
+@@ -330,6 +330,7 @@ static struct {
  	bool eist;
  	bool turbo;
  	bool c_states;
@@ -55,7 +55,7 @@ index 526e7f7d12..8254e381d4 100644
  	bool vmx;
  } cpu_options;
  
-@@ -362,12 +363,15 @@ static void read_cpu_options(void)
+@@ -342,12 +343,15 @@ static void read_cpu_options(void)
  	/* Turbo Boost needs P-states */
  	cpu_options.turbo = cpu_options.eist && get_uint_option("turbo_mode", 1);
  	cpu_options.c_states = get_uint_option("c_states", 1);
@@ -73,7 +73,7 @@ index 526e7f7d12..8254e381d4 100644
  }
  
  bool haswell_eist_enabled(void)
-@@ -408,7 +412,8 @@ static void configure_c_states(void)
+@@ -384,7 +388,8 @@ static void configure_c_states(void)
  	msr.lo |= (1 << 27);	// C3 Auto Undemotion Enable
  	msr.lo |= (1 << 26);	// C1 Auto Demotion Enable
  	msr.lo |= (1 << 25);	// C3 Auto Demotion Enable
@@ -82,7 +82,7 @@ index 526e7f7d12..8254e381d4 100644
 +		msr.lo |= (1 << 15);	// Lock bits 15:0 (CFG Lock)
  	msr.lo &= ~(1 << 10);	// Disable IO MWAIT redirection
  
- 	if (timed_mwait_capable)
+ 	if (rdmsr_platform_info().timed_mwait_supported)
 -- 
 2.43.0
 

@@ -55,7 +55,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  5 files changed, 357 insertions(+), 1 deletion(-)
 
 diff --git a/src/drivers/smmstore/ramstage.c b/src/drivers/smmstore/ramstage.c
-index 50767875..bff99df0 100644
+index 507678754c..bff99df0ec 100644
 --- a/src/drivers/smmstore/ramstage.c
 +++ b/src/drivers/smmstore/ramstage.c
 @@ -1,5 +1,7 @@
@@ -87,7 +87,7 @@ index 50767875..bff99df0 100644
 +
 +BOOT_STATE_INIT_ENTRY(BS_OS_RESUME, BS_ON_ENTRY, lock_vboot_try_other, NULL);
 diff --git a/src/drivers/smmstore/smi.c b/src/drivers/smmstore/smi.c
-index 09ffbf5c..bce7b9b6 100644
+index 09ffbf5cb7..bce7b9b67b 100644
 --- a/src/drivers/smmstore/smi.c
 +++ b/src/drivers/smmstore/smi.c
 @@ -1,12 +1,18 @@
@@ -376,7 +376,7 @@ index 09ffbf5c..bce7b9b6 100644
  		printk(BIOS_DEBUG, "Unknown SMM store command: 0x%02x\n", command);
  		ret = SMMSTORE_RET_UNSUPPORTED;
 diff --git a/src/include/smmstore.h b/src/include/smmstore.h
-index 2020fa32..01f7c82d 100644
+index 2020fa3209..01f7c82d12 100644
 --- a/src/include/smmstore.h
 +++ b/src/include/smmstore.h
 @@ -23,6 +23,35 @@
@@ -416,7 +416,7 @@ index 2020fa32..01f7c82d 100644
   * Used by capsule updates as a standalone command or modifier to v2 commands.
   *
 diff --git a/src/security/vboot/vbnv.c b/src/security/vboot/vbnv.c
-index 069c3e10..c1da9c85 100644
+index 069c3e103d..c1da9c857f 100644
 --- a/src/security/vboot/vbnv.c
 +++ b/src/security/vboot/vbnv.c
 @@ -96,6 +96,51 @@ int vbnv_mark_tried_slot_good(void)
@@ -472,7 +472,7 @@ index 069c3e10..c1da9c85 100644
  int vbnv_udc_enable_flag(void)
  {
 diff --git a/src/security/vboot/vbnv.h b/src/security/vboot/vbnv.h
-index bf64734b..7d0ec773 100644
+index bf64734b62..7d0ec773c5 100644
 --- a/src/security/vboot/vbnv.h
 +++ b/src/security/vboot/vbnv.h
 @@ -20,6 +20,20 @@ void regen_vbnv_crc(uint8_t *vbnv_copy);

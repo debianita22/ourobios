@@ -24,7 +24,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 46 insertions(+)
 
 diff --git a/src/ec/lenovo/h8/acpi/thinkpad.asl b/src/ec/lenovo/h8/acpi/thinkpad.asl
-index 28877a61..497666c6 100644
+index 28877a6113..497666c6aa 100644
 --- a/src/ec/lenovo/h8/acpi/thinkpad.asl
 +++ b/src/ec/lenovo/h8/acpi/thinkpad.asl
 @@ -333,3 +333,49 @@ Device (HKEY)

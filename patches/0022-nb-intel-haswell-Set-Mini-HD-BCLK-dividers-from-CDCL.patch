@@ -27,7 +27,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  3 files changed, 45 insertions(+), 3 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/gma.c b/src/northbridge/intel/haswell/gma.c
-index fc44a98a5..b5eb9ce77 100644
+index fc44a98a57..b5eb9ce775 100644
 --- a/src/northbridge/intel/haswell/gma.c
 +++ b/src/northbridge/intel/haswell/gma.c
 @@ -429,6 +429,39 @@ enum gt_cdclk {
@@ -80,7 +80,7 @@ index fc44a98a5..b5eb9ce77 100644
  		/* Inform power controller of selected frequency */
  		gtt_pcode_write(HSW_PCODE_DE_WRITE_FREQ_REQ, cdsel);
 diff --git a/src/northbridge/intel/haswell/haswell.h b/src/northbridge/intel/haswell/haswell.h
-index 4d2da0178..0c669c442 100644
+index 4d2da01788..0c669c442c 100644
 --- a/src/northbridge/intel/haswell/haswell.h
 +++ b/src/northbridge/intel/haswell/haswell.h
 @@ -43,6 +43,9 @@ void peg_dmi_recipe(const bool is_peg, const pci_devfn_t dev);
@@ -94,7 +94,7 @@ index 4d2da0178..0c669c442 100644
  unsigned long northbridge_write_acpi_tables(const struct device *device, unsigned long start,
  					    struct acpi_rsdp *rsdp);
 diff --git a/src/northbridge/intel/haswell/minihd.c b/src/northbridge/intel/haswell/minihd.c
-index 123a934f0..e8c2d93bf 100644
+index 123a934f0d..e8c2d93bf6 100644
 --- a/src/northbridge/intel/haswell/minihd.c
 +++ b/src/northbridge/intel/haswell/minihd.c
 @@ -7,6 +7,7 @@

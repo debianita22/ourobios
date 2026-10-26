@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sat, 10 Oct 2026 12:25:02 +0200
-Subject: [PATCH 39/42] drivers/pc80/rtc: Start each boot's CMOS POST bank with
- a POST code
+Subject: [PATCH] drivers/pc80/rtc: Start each boot's CMOS POST bank with a
+ POST code
 
 With CMOS_POST, cmos_post_init() switches to the other of two CMOS
 banks at every boot, and the next boot reports the last POST code and
@@ -25,7 +25,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 8 insertions(+)
 
 diff --git a/src/drivers/pc80/rtc/post.c b/src/drivers/pc80/rtc/post.c
-index 8150fbad8..ca5300534 100644
+index 8150fbad8a..ca53005344 100644
 --- a/src/drivers/pc80/rtc/post.c
 +++ b/src/drivers/pc80/rtc/post.c
 @@ -92,6 +92,14 @@ void cmos_post_init(void)

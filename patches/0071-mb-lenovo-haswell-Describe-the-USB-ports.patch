@@ -25,7 +25,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 
 diff --git a/src/mainboard/lenovo/haswell/acpi/usb.asl b/src/mainboard/lenovo/haswell/acpi/usb.asl
 new file mode 100644
-index 00000000..1531df4b
+index 0000000000..1531df4b72
 --- /dev/null
 +++ b/src/mainboard/lenovo/haswell/acpi/usb.asl
 @@ -0,0 +1,79 @@
@@ -109,7 +109,7 @@ index 00000000..1531df4b
 +USB_PORT(SS05, USB_YES, USB_OEM, PLD_DOCK)
 +USB_PORT(SS06, USB_NO, USB_OEM, PLD_INSIDE)
 diff --git a/src/mainboard/lenovo/haswell/dsdt.asl b/src/mainboard/lenovo/haswell/dsdt.asl
-index 50344f5a..b8ebcb36 100644
+index 50344f5aea..b8ebcb36a6 100644
 --- a/src/mainboard/lenovo/haswell/dsdt.asl
 +++ b/src/mainboard/lenovo/haswell/dsdt.asl
 @@ -47,4 +47,6 @@ DefinitionBlock(

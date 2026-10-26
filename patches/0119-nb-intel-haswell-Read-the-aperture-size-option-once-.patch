@@ -1,8 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Mon, 26 Oct 2026 18:13:03 +0100
-Subject: [PATCH 119/119] nb/intel/haswell: Read the aperture size option once
- per boot
+Subject: [PATCH] nb/intel/haswell: Read the aperture size option once per boot
 
 With mrc.bin haswell_igd_set_aperture() runs before and after raminit,
 and read the option from the store in flash both times. Keep the value
