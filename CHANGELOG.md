@@ -107,18 +107,22 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   again too) and `SDEISR 00800000 PP_STATUS 00000000 PP_CONTROL
   00000008`: HPD high, the panel with VDD and no power sequence; i915
   shows no warning. Under macOS the display still stays black at wake
-  with the option off (the laptop wakes): leave it on there.
-- From rc7, the rest for macOS with *Light the display up at wake* off:
-  macOS drives the panel of the W541, on DDI D, as a DisplayPort sink. At
-  wake it trains the link and runs the pipe, but it never powers the
-  panel up through the panel power sequencer nor enables the backlight,
-  which libgfxinit does with the option on. Under macOS the `_WAK` of
-  the firmware now does it, after putting the backlight level back,
-  when the panel has the forced VDD of the option off and is not lit
-  (0112): what the OpenCore table SSDT-PNLWAK did, with the `_WAK` of
-  the DSDT renamed; remove both. Linux and Windows are left alone: they
-  power the panel up themselves. Checked in `acpiexec` on the DSDT of
-  the W541.
+  with the option off (the laptop wakes): leave it on there, unless the
+  OS side does what is missing (next point).
+- rc7 and rc8, for macOS with *Light the display up at wake* off: macOS
+  drives the panel of the W541, on DDI D, as a DisplayPort sink. At wake
+  it trains the link and runs the pipe, but it never powers the panel up
+  through the panel power sequencer nor enables the backlight, which
+  libgfxinit does with the option on. rc7 did both from the `_WAK` of
+  the firmware under macOS (0112); but then the backlight came on at
+  every wake from S3, the dark wakes of macOS too, before macOS had
+  decided to light the display up. From rc8 0112 is gone: that is for
+  the OS to do when it lights the display up, as a Lilu plugin for
+  AppleIntelFramebufferAzul does (after `LightUpDP`, the power sequence
+  and then the backlight; before `DisableDisplay`, the backlight only,
+  so that the panel keeps power and HPD), and dark wakes stay dark. 0110
+  and 0111 stay: Azul checks HPD before anything else at wake.
+  SSDT-PNLWAK, with the `_WAK` of the DSDT renamed, does what 0112 did.
 
 ## v1.3.9
 
