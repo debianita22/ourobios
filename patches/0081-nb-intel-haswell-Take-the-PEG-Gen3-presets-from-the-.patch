@@ -25,7 +25,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 46 insertions(+), 4 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/chip.h b/src/northbridge/intel/haswell/chip.h
-index dc71340b..a4fec10e 100644
+index dc71340bd6..a4fec10ee7 100644
 --- a/src/northbridge/intel/haswell/chip.h
 +++ b/src/northbridge/intel/haswell/chip.h
 @@ -11,6 +11,15 @@ struct peg_config {
@@ -45,7 +45,7 @@ index dc71340b..a4fec10e 100644
  
  /*
 diff --git a/src/northbridge/intel/haswell/early_peg.c b/src/northbridge/intel/haswell/early_peg.c
-index 829ea78b..7218dcb5 100644
+index 829ea78b05..7218dcb559 100644
 --- a/src/northbridge/intel/haswell/early_peg.c
 +++ b/src/northbridge/intel/haswell/early_peg.c
 @@ -4,8 +4,10 @@

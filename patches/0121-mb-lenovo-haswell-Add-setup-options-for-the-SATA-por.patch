@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Mon, 26 Oct 2026 18:49:17 +0100
-Subject: [PATCH 121/121] mb/lenovo/haswell: Add setup options for the SATA
- ports of the W541
+Subject: [PATCH] mb/lenovo/haswell: Add setup options for the SATA ports of
+ the W541
 
 The W541 implements SATA ports 0 (drive bay), 1 (M.2 on the I/O
 subcard), 4 (M.2 WWAN/SSD) and 5 (Ultrabay), and the OS probes every

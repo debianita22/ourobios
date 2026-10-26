@@ -28,7 +28,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  3 files changed, 48 insertions(+), 2 deletions(-)
 
 diff --git a/payloads/external/Makefile.mk b/payloads/external/Makefile.mk
-index a3660bb1a..6f54e93da 100644
+index 6f4e8e650d..8ca7962513 100644
 --- a/payloads/external/Makefile.mk
 +++ b/payloads/external/Makefile.mk
 @@ -262,9 +262,16 @@ EDK2_PAYLOAD_ARGS = \
@@ -50,7 +50,7 @@ index a3660bb1a..6f54e93da 100644
  		EDK2_UEFIPAYLOAD_OUT="$(abspath $@)" \
  		$(EDK2_PAYLOAD_ARGS)
 diff --git a/payloads/external/edk2/Kconfig b/payloads/external/edk2/Kconfig
-index 860627a5f..da0e5236a 100644
+index 860627a5fa..da0e5236aa 100644
 --- a/payloads/external/edk2/Kconfig
 +++ b/payloads/external/edk2/Kconfig
 @@ -365,4 +365,30 @@ config EDK2_IPXE_OPTION_NAME
@@ -85,7 +85,7 @@ index 860627a5f..da0e5236a 100644
 +
  endif
 diff --git a/payloads/external/edk2/Makefile b/payloads/external/edk2/Makefile
-index 0c4816efb..3f42d93ed 100644
+index 0c4816efbd..3f42d93ed4 100644
 --- a/payloads/external/edk2/Makefile
 +++ b/payloads/external/edk2/Makefile
 @@ -223,6 +223,11 @@ ifeq ($(CONFIG_EDK2_IPXE),y)

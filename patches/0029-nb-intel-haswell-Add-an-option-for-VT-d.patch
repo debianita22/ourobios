@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Fri, 9 Oct 2026 23:55:33 +0200
-Subject: [PATCH 29/37] nb/intel/haswell: Add an option for VT-d
+Subject: [PATCH] nb/intel/haswell: Add an option for VT-d
 
 The DMA remapping engines are always set up when the CPU supports
 VT-d. Add a vtd option, enabled by default, and a CFR object for it.
@@ -22,7 +22,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  3 files changed, 18 insertions(+)
 
 diff --git a/src/northbridge/intel/haswell/acpi.c b/src/northbridge/intel/haswell/acpi.c
-index 58c1f5bba..b4a7f5cab 100644
+index 58c1f5bba8..b4a7f5cab7 100644
 --- a/src/northbridge/intel/haswell/acpi.c
 +++ b/src/northbridge/intel/haswell/acpi.c
 @@ -76,6 +76,10 @@ unsigned long northbridge_write_acpi_tables(const struct device *const dev,
@@ -37,7 +37,7 @@ index 58c1f5bba..b4a7f5cab 100644
  	printk(BIOS_DEBUG, "ACPI:    * DMAR\n");
  	acpi_create_dmar(dmar, DMAR_INTR_REMAP, acpi_fill_dmar);
 diff --git a/src/northbridge/intel/haswell/cfr.h b/src/northbridge/intel/haswell/cfr.h
-index 3917ba1b7..a1d025994 100644
+index 3917ba1b73..a1d0259945 100644
 --- a/src/northbridge/intel/haswell/cfr.h
 +++ b/src/northbridge/intel/haswell/cfr.h
 @@ -51,4 +51,12 @@ static const struct sm_object gfx_uma_size_mrc = SM_DECLARE_COMMENT({
@@ -54,7 +54,7 @@ index 3917ba1b7..a1d025994 100644
 +
  #endif /* NB_INTEL_HASWELL_CFR_H */
 diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
-index 37742a523..f58a7b04f 100644
+index 37742a523d..f58a7b04f4 100644
 --- a/src/northbridge/intel/haswell/early_init.c
 +++ b/src/northbridge/intel/haswell/early_init.c
 @@ -152,6 +152,12 @@ static void northbridge_setup_iommu(void)

@@ -40,7 +40,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 9 insertions(+), 4 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
-index f58a7b04f..779ff23c5 100644
+index f58a7b04f4..779ff23c51 100644
 --- a/src/northbridge/intel/haswell/early_init.c
 +++ b/src/northbridge/intel/haswell/early_init.c
 @@ -174,10 +174,15 @@ static void northbridge_setup_iommu(void)

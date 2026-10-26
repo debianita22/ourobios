@@ -27,7 +27,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/drivers/intel/oc_mailbox/cfr.h b/src/drivers/intel/oc_mailbox/cfr.h
-index 6ea5c34f8..688742812 100644
+index 6ea5c34f88..6887428120 100644
 --- a/src/drivers/intel/oc_mailbox/cfr.h
 +++ b/src/drivers/intel/oc_mailbox/cfr.h
 @@ -85,7 +85,7 @@ static const struct sm_object oc_undervolt_digital_io = SM_DECLARE_NUMBER({

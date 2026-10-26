@@ -20,7 +20,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  3 files changed, 19 insertions(+), 1 deletion(-)
 
 diff --git a/src/drivers/efi/capsules.c b/src/drivers/efi/capsules.c
-index c53e1b024..1984d5fbb 100644
+index c53e1b0246..1984d5fbb6 100644
 --- a/src/drivers/efi/capsules.c
 +++ b/src/drivers/efi/capsules.c
 @@ -817,6 +817,13 @@ void efi_add_capsules_to_bootmem(void)
@@ -38,7 +38,7 @@ index c53e1b024..1984d5fbb 100644
   * The code from this unit is typically executed by clear_memory() which is run
   * after DEV_INIT.  However, clear_memory() might not be compiled in in which
 diff --git a/src/drivers/efi/capsules.h b/src/drivers/efi/capsules.h
-index 608ce3400..0a84be101 100644
+index 608ce3400f..0a84be101f 100644
 --- a/src/drivers/efi/capsules.h
 +++ b/src/drivers/efi/capsules.h
 @@ -3,18 +3,25 @@
@@ -68,7 +68,7 @@ index 608ce3400..0a84be101 100644
  
  #endif /* _EDK2_CAPSULES_H_ */
 diff --git a/src/security/memory/memory_clear.c b/src/security/memory/memory_clear.c
-index a67e2432f..56de955cd 100644
+index a67e2432ff..56de955cd9 100644
 --- a/src/security/memory/memory_clear.c
 +++ b/src/security/memory/memory_clear.c
 @@ -84,11 +84,15 @@ static void clear_memory(void *unused)

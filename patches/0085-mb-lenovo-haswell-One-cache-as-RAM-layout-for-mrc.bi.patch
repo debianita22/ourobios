@@ -47,7 +47,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  3 files changed, 46 insertions(+)
 
 diff --git a/src/arch/x86/Kconfig b/src/arch/x86/Kconfig
-index 14093089..7ca4f5ae 100644
+index 14093089e7..7ca4f5aea5 100644
 --- a/src/arch/x86/Kconfig
 +++ b/src/arch/x86/Kconfig
 @@ -147,6 +147,17 @@ config X86_TOP4G_BOOTMEDIA_MAP
@@ -69,7 +69,7 @@ index 14093089..7ca4f5ae 100644
  	hex
  	default 0xc00
 diff --git a/src/arch/x86/car.ld b/src/arch/x86/car.ld
-index bbfd6829..3472d01b 100644
+index bbfd682934..3472d01b38 100644
 --- a/src/arch/x86/car.ld
 +++ b/src/arch/x86/car.ld
 @@ -28,10 +28,12 @@
@@ -99,7 +99,7 @@ index bbfd6829..3472d01b 100644
  	 * variables that are not shared like the timestamp and the pre-ram
  	 * cbmem console. This is useful for clearing this area on a per-stage
 diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
-index 9f918e06..fafe04a4 100644
+index 9f918e060d..fafe04a4d4 100644
 --- a/src/mainboard/lenovo/haswell/Kconfig
 +++ b/src/mainboard/lenovo/haswell/Kconfig
 @@ -65,6 +65,33 @@ config LENOVO_HASWELL_VBOOT_MINIMAL_RO

@@ -28,7 +28,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 39 insertions(+), 16 deletions(-)
 
 diff --git a/src/southbridge/intel/common/rcba_pirq.c b/src/southbridge/intel/common/rcba_pirq.c
-index ae2214336..b0b3ce93f 100644
+index ae22143364..b0b3ce93f9 100644
 --- a/src/southbridge/intel/common/rcba_pirq.c
 +++ b/src/southbridge/intel/common/rcba_pirq.c
 @@ -44,6 +44,18 @@ static enum pirq map_pirq(const struct device *dev, const enum pci_pin pci_pin)
@@ -100,3 +100,6 @@ index ae2214336..b0b3ce93f 100644
  	}
  
  	intel_write_pci_PRT("\\_SB.PCI0", pin_irq_map, map_count, &pirq_map);
+-- 
+2.43.0
+

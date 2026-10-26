@@ -27,7 +27,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  3 files changed, 37 insertions(+), 14 deletions(-)
 
 diff --git a/Documentation/drivers/smmstore.md b/Documentation/drivers/smmstore.md
-index 63dde2249..7e4c54845 100644
+index 63dde22499..7e4c548459 100644
 --- a/Documentation/drivers/smmstore.md
 +++ b/Documentation/drivers/smmstore.md
 @@ -242,12 +242,16 @@ with highest bit set can be used.
@@ -54,7 +54,7 @@ index 63dde2249..7e4c54845 100644
  The assumption is that if capsule updates are enabled at build time and
  whole flash access is enabled at runtime, a UEFI payload (highly likely
 diff --git a/src/drivers/efi/capsules.c b/src/drivers/efi/capsules.c
-index 1984d5fbb..8b02b636e 100644
+index 1984d5fbb6..8b02b636e3 100644
 --- a/src/drivers/efi/capsules.c
 +++ b/src/drivers/efi/capsules.c
 @@ -858,3 +858,5 @@ static void enable_capsule_smi(void *unused)
@@ -64,7 +64,7 @@ index 1984d5fbb..8b02b636e 100644
 +/* On S3 resume the payload doesn't run: decide here, before the OS could */
 +BOOT_STATE_INIT_ENTRY(BS_OS_RESUME, BS_ON_ENTRY, enable_capsule_smi, NULL);
 diff --git a/src/drivers/smmstore/store.c b/src/drivers/smmstore/store.c
-index b5715200a..9ecb31a93 100644
+index b5715200a5..9ecb31a935 100644
 --- a/src/drivers/smmstore/store.c
 +++ b/src/drivers/smmstore/store.c
 @@ -28,8 +28,12 @@ static int has_capsules = -1;

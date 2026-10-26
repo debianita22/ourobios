@@ -24,7 +24,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 42 insertions(+), 13 deletions(-)
 
 diff --git a/src/southbridge/intel/lynxpoint/smihandler.c b/src/southbridge/intel/lynxpoint/smihandler.c
-index 966b3d892..68b212997 100644
+index 966b3d8929..68b212997e 100644
 --- a/src/southbridge/intel/lynxpoint/smihandler.c
 +++ b/src/southbridge/intel/lynxpoint/smihandler.c
 @@ -35,6 +35,34 @@ void southbridge_smi_set_eos(void)

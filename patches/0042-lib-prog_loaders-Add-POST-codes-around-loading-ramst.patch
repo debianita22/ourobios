@@ -1,8 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sat, 10 Oct 2026 12:27:07 +0200
-Subject: [PATCH 42/42] lib/prog_loaders: Add POST codes around loading
- ramstage
+Subject: [PATCH] lib/prog_loaders: Add POST codes around loading ramstage
 
 POSTCODE_PREPARE_RAMSTAGE and POSTCODE_RAMSTAGE_IS_PREPARED are defined
 for the start and the end of loading ramstage, but nothing posts them.
@@ -23,7 +22,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 6 insertions(+)
 
 diff --git a/src/arch/x86/postcar_loader.c b/src/arch/x86/postcar_loader.c
-index d3d3dac4c..29881dcbb 100644
+index d3d3dac4c4..29881dcbb7 100644
 --- a/src/arch/x86/postcar_loader.c
 +++ b/src/arch/x86/postcar_loader.c
 @@ -138,6 +138,7 @@ void postcar_enable_tseg_cache(struct postcar_frame *pcf)
@@ -35,7 +34,7 @@ index d3d3dac4c..29881dcbb 100644
  }
  
 diff --git a/src/lib/prog_loaders.c b/src/lib/prog_loaders.c
-index eb307f015..c7bb2eb1a 100644
+index eb307f015d..c7bb2eb1a3 100644
 --- a/src/lib/prog_loaders.c
 +++ b/src/lib/prog_loaders.c
 @@ -66,10 +66,12 @@ static void run_ramstage_from_resume(struct prog *ramstage)

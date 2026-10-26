@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Fri, 9 Oct 2026 23:50:39 +0200
-Subject: [PATCH 26/37] nb/intel/haswell: Make the iGPU stolen memory
- configurable with NRI
+Subject: [PATCH] nb/intel/haswell: Make the iGPU stolen memory configurable
+ with NRI
 
 The native RAM init always reserves 64 MiB of graphics stolen memory and
 writes GGC itself, over the value haswell_setup_igd() programmed. Add a
@@ -33,7 +33,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  4 files changed, 67 insertions(+), 3 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/cfr.h b/src/northbridge/intel/haswell/cfr.h
-index 7548a4560..3917ba1b7 100644
+index 7548a45609..3917ba1b73 100644
 --- a/src/northbridge/intel/haswell/cfr.h
 +++ b/src/northbridge/intel/haswell/cfr.h
 @@ -24,4 +24,31 @@ static const struct sm_object gfx_aperture_size = SM_DECLARE_ENUM({
@@ -69,7 +69,7 @@ index 7548a4560..3917ba1b7 100644
 +
  #endif /* NB_INTEL_HASWELL_CFR_H */
 diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
-index 4b0e4acae..37742a523 100644
+index 4b0e4acaee..37742a523d 100644
 --- a/src/northbridge/intel/haswell/early_init.c
 +++ b/src/northbridge/intel/haswell/early_init.c
 @@ -36,6 +36,27 @@ static void haswell_setup_bars(void)
@@ -110,7 +110,7 @@ index 4b0e4acae..37742a523 100644
  	} else {
  		ggc |= GGC_GTT_0MB | GGC_IGD_MEM_IN_32MB_UNITS(0) | GGC_DISABLE_VGA_IO_DECODE;
 diff --git a/src/northbridge/intel/haswell/haswell.h b/src/northbridge/intel/haswell/haswell.h
-index 316ee2341..35d2f8dbc 100644
+index 316ee2341c..35d2f8dbc6 100644
 --- a/src/northbridge/intel/haswell/haswell.h
 +++ b/src/northbridge/intel/haswell/haswell.h
 @@ -36,6 +36,22 @@ enum igd_aperture_size {
@@ -137,7 +137,7 @@ index 316ee2341..35d2f8dbc 100644
  #define  DMAR_LCKDN	(1 << 31)
  #define  SPCAPCTRL	(1 << 25)
 diff --git a/src/northbridge/intel/haswell/native_raminit/memory_map.c b/src/northbridge/intel/haswell/native_raminit/memory_map.c
-index e3aded2b3..af73b20e5 100644
+index e3aded2b37..af73b20e57 100644
 --- a/src/northbridge/intel/haswell/native_raminit/memory_map.c
 +++ b/src/northbridge/intel/haswell/native_raminit/memory_map.c
 @@ -169,11 +169,11 @@ enum raminit_status configure_memory_map(struct sysinfo *ctrl)

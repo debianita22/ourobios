@@ -31,7 +31,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 103 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 4d9010d5d..61e15a044 100644
+index 4d9010d5dd..61e15a0448 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -8,6 +8,7 @@
@@ -136,7 +136,7 @@ index 4d9010d5d..61e15a044 100644
  		&info_memory,
  		&info_memory_profile,
 diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
-index b234534ae..eaeb0c898 100644
+index b234534ae0..eaeb0c8982 100644
 --- a/src/mainboard/lenovo/haswell/mainboard.c
 +++ b/src/mainboard/lenovo/haswell/mainboard.c
 @@ -4,6 +4,7 @@

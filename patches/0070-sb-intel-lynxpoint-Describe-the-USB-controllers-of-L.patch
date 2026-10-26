@@ -26,7 +26,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 62 insertions(+)
 
 diff --git a/src/southbridge/intel/lynxpoint/acpi/ehci.asl b/src/southbridge/intel/lynxpoint/acpi/ehci.asl
-index 2a54304a..a556d3e4 100644
+index 2a54304a2c..a556d3e4b7 100644
 --- a/src/southbridge/intel/lynxpoint/acpi/ehci.asl
 +++ b/src/southbridge/intel/lynxpoint/acpi/ehci.asl
 @@ -32,3 +32,36 @@ Device (EHCI)
@@ -67,7 +67,7 @@ index 2a54304a..a556d3e4 100644
 +}
 +#endif
 diff --git a/src/southbridge/intel/lynxpoint/acpi/xhci.asl b/src/southbridge/intel/lynxpoint/acpi/xhci.asl
-index c38a5923..5c5c6144 100644
+index c38a592372..5c5c6144d2 100644
 --- a/src/southbridge/intel/lynxpoint/acpi/xhci.asl
 +++ b/src/southbridge/intel/lynxpoint/acpi/xhci.asl
 @@ -366,6 +366,7 @@ Device (XHCI)

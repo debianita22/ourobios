@@ -47,7 +47,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  5 files changed, 213 insertions(+), 4 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/early_peg.c b/src/northbridge/intel/haswell/early_peg.c
-index 7218dcb5..ac1cd6be 100644
+index 7218dcb559..ac1cd6be59 100644
 --- a/src/northbridge/intel/haswell/early_peg.c
 +++ b/src/northbridge/intel/haswell/early_peg.c
 @@ -2,16 +2,22 @@
@@ -273,7 +273,7 @@ index 7218dcb5..ac1cd6be 100644
 +	pci_or_config32(dev, PEG_EQ_DD8, PEG_DD8_AFTER_EQUALIZATION);
 +}
 diff --git a/src/northbridge/intel/haswell/haswell.h b/src/northbridge/intel/haswell/haswell.h
-index 48d539b7..43241c27 100644
+index 48d539b730..43241c274f 100644
 --- a/src/northbridge/intel/haswell/haswell.h
 +++ b/src/northbridge/intel/haswell/haswell.h
 @@ -72,9 +72,13 @@ void northbridge_unhide_peg(void);
@@ -293,7 +293,7 @@ index 48d539b7..43241c27 100644
  void dmi_early_init(void);
  void peg_dmi_recipe(const bool is_peg, const pci_devfn_t dev);
 diff --git a/src/northbridge/intel/haswell/pcie.c b/src/northbridge/intel/haswell/pcie.c
-index c7c16c04..116d9cd3 100644
+index c7c16c0427..116d9cd3df 100644
 --- a/src/northbridge/intel/haswell/pcie.c
 +++ b/src/northbridge/intel/haswell/pcie.c
 @@ -166,9 +166,9 @@ static void peg_report_link(struct device *dev)
@@ -309,7 +309,7 @@ index c7c16c04..116d9cd3 100644
  
  static void peg_init(struct device *dev)
 diff --git a/src/northbridge/intel/haswell/registers/pcie_graphics.h b/src/northbridge/intel/haswell/registers/pcie_graphics.h
-index c8e113cb..c4ea8431 100644
+index c8e113cb27..c4ea8431f3 100644
 --- a/src/northbridge/intel/haswell/registers/pcie_graphics.h
 +++ b/src/northbridge/intel/haswell/registers/pcie_graphics.h
 @@ -8,7 +8,9 @@
@@ -348,7 +348,7 @@ index c8e113cb..c4ea8431 100644
  #define PEG_ESD		0x144	/* 32bit */
  #define PEG_LE1D	0x150	/* 32bit */
 diff --git a/src/northbridge/intel/haswell/romstage.c b/src/northbridge/intel/haswell/romstage.c
-index 1691d798..4c704000 100644
+index 1691d79891..4c70400016 100644
 --- a/src/northbridge/intel/haswell/romstage.c
 +++ b/src/northbridge/intel/haswell/romstage.c
 @@ -94,5 +94,9 @@ void mainboard_romstage_entry(void)

@@ -1,8 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Mon, 26 Oct 2026 18:13:03 +0100
-Subject: [PATCH 116/119] drivers/efi/capsules: No full flash access on S3
- resume
+Subject: [PATCH] drivers/efi/capsules: No full flash access on S3 resume
 
 enable_capsule_smi() runs on S3 resume too, so that the firmware
 decides before the OS does (the payload does not run there), and it

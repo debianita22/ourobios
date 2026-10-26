@@ -30,7 +30,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 43 insertions(+)
 
 diff --git a/src/ec/lenovo/h8/acpi/ec.asl b/src/ec/lenovo/h8/acpi/ec.asl
-index 31aabe65f..a8cb147fb 100644
+index 31aabe65f3..a8cb147fb2 100644
 --- a/src/ec/lenovo/h8/acpi/ec.asl
 +++ b/src/ec/lenovo/h8/acpi/ec.asl
 @@ -233,6 +233,10 @@ Device(EC)
@@ -101,7 +101,7 @@ index 31aabe65f..a8cb147fb 100644
  	Method (_Q63, 0, NotSerialized)
  	{
 diff --git a/src/ec/lenovo/h8/acpi/thinkpad.asl b/src/ec/lenovo/h8/acpi/thinkpad.asl
-index f8f2dc029..28877a611 100644
+index f8f2dc0292..28877a6113 100644
 --- a/src/ec/lenovo/h8/acpi/thinkpad.asl
 +++ b/src/ec/lenovo/h8/acpi/thinkpad.asl
 @@ -115,7 +115,12 @@ Device (HKEY)

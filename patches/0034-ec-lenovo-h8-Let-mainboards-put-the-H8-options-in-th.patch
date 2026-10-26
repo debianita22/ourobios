@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sat, 10 Oct 2026 00:00:34 +0200
-Subject: [PATCH 34/37] ec/lenovo/h8: Let mainboards put the H8 options in
- their own forms
+Subject: [PATCH] ec/lenovo/h8: Let mainboards put the H8 options in their own
+ forms
 
 The H8 setup options are always in four generic forms (Power, Devices,
 Keyboard/Mouse, Other), which come after the forms of the mainboard. A
@@ -27,7 +27,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  create mode 100644 src/ec/lenovo/h8/cfr.h
 
 diff --git a/src/ec/lenovo/h8/Kconfig b/src/ec/lenovo/h8/Kconfig
-index a1e34e3a8..49fad627d 100644
+index a1e34e3a8d..49fad627d5 100644
 --- a/src/ec/lenovo/h8/Kconfig
 +++ b/src/ec/lenovo/h8/Kconfig
 @@ -96,6 +96,13 @@ config H8_HAS_2ND_THERMAL_ZONE
@@ -45,7 +45,7 @@ index a1e34e3a8..49fad627d 100644
  	bool
  	default n
 diff --git a/src/ec/lenovo/h8/cfr.c b/src/ec/lenovo/h8/cfr.c
-index 21cc117e9..a315c34bd 100644
+index 21cc117e9e..a315c34bd7 100644
 --- a/src/ec/lenovo/h8/cfr.c
 +++ b/src/ec/lenovo/h8/cfr.c
 @@ -1,6 +1,7 @@
@@ -268,7 +268,7 @@ index 21cc117e9..a315c34bd 100644
 +#endif
 diff --git a/src/ec/lenovo/h8/cfr.h b/src/ec/lenovo/h8/cfr.h
 new file mode 100644
-index 000000000..b67c97ef4
+index 0000000000..b67c97ef4c
 --- /dev/null
 +++ b/src/ec/lenovo/h8/cfr.h
 @@ -0,0 +1,29 @@

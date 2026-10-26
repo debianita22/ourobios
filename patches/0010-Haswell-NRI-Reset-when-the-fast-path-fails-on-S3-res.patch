@@ -26,10 +26,10 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  3 files changed, 11 insertions(+), 1 deletion(-)
 
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
-index 18a78fcde..e673291fd 100644
+index 67856e8375..8fbc7af462 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
-@@ -264,6 +264,15 @@ void raminit_main(const enum raminit_boot_mode bootmode)
+@@ -275,6 +275,15 @@ void raminit_main(const enum raminit_boot_mode bootmode)
  		status = try_raminit(&mighty_ctrl, fast_boot, ARRAY_SIZE(fast_boot));
  		if (status == RAMINIT_STATUS_SUCCESS)
  			return;
@@ -46,7 +46,7 @@ index 18a78fcde..e673291fd 100644
  
  	/** TODO: Try more than once **/
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.c b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
-index ab1e4ff1a..9a0597408 100644
+index ab1e4ff1a3..9a05974083 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
 @@ -81,7 +81,7 @@ static void clear_disb(void)
@@ -59,10 +59,10 @@ index ab1e4ff1a..9a0597408 100644
  	clear_disb();
  	system_reset();
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index 50ad872cd..7423defd1 100644
+index eb8caa8240..f986a7d660 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-@@ -530,6 +530,7 @@ static inline void mchbar_write64(const uintptr_t x, const uint64_t v)
+@@ -611,6 +611,7 @@ static inline void reut_set_normal_mode(const uint8_t channel)
  }
  
  void raminit_main(enum raminit_boot_mode bootmode);

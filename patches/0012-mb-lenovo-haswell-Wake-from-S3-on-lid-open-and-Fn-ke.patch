@@ -29,7 +29,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 25 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/acpi/ec.asl b/src/mainboard/lenovo/haswell/acpi/ec.asl
-index 8dea15207..be1d7192f 100644
+index 8dea152079..be1d7192ff 100644
 --- a/src/mainboard/lenovo/haswell/acpi/ec.asl
 +++ b/src/mainboard/lenovo/haswell/acpi/ec.asl
 @@ -2,3 +2,27 @@
@@ -61,7 +61,7 @@ index 8dea15207..be1d7192f 100644
 +	}
 +}
 diff --git a/src/mainboard/lenovo/haswell/dsdt.asl b/src/mainboard/lenovo/haswell/dsdt.asl
-index 212657d7e..046584a87 100644
+index 212657d7e4..046584a878 100644
 --- a/src/mainboard/lenovo/haswell/dsdt.asl
 +++ b/src/mainboard/lenovo/haswell/dsdt.asl
 @@ -3,6 +3,7 @@

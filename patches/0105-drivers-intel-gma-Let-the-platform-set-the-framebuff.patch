@@ -74,10 +74,10 @@ index ec1e0ce0ce..bdcfec42ba 100644
 +
  end GMA.GFX_Init;
 diff --git a/src/drivers/intel/gma/hires_fb/gma-gfx_init.adb b/src/drivers/intel/gma/hires_fb/gma-gfx_init.adb
-index ff70e5600d..15e3de490e 100644
+index 7d2130dab9..138fa2810b 100644
 --- a/src/drivers/intel/gma/hires_fb/gma-gfx_init.adb
 +++ b/src/drivers/intel/gma/hires_fb/gma-gfx_init.adb
-@@ -63,8 +63,16 @@ is
+@@ -62,8 +62,16 @@ is
  
        fb : Framebuffer_Type;
  

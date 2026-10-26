@@ -27,7 +27,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 47 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index a71f96bac..4d9010d5d 100644
+index a71f96bac5..4d9010d5dd 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -243,6 +243,51 @@ static const struct sm_object energy_power = SM_DECLARE_FORM({

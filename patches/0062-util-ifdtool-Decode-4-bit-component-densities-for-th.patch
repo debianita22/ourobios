@@ -23,7 +23,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 10 insertions(+)
 
 diff --git a/util/ifdtool/ifdtool.c b/util/ifdtool/ifdtool.c
-index a3b66fd46..07bc4d8ff 100644
+index a3b66fd465..07bc4d8ff0 100644
 --- a/util/ifdtool/ifdtool.c
 +++ b/util/ifdtool/ifdtool.c
 @@ -337,6 +337,16 @@ static void check_ifd_version(char *image, int size)
@@ -43,3 +43,6 @@ index a3b66fd46..07bc4d8ff 100644
  		max_regions = MIN(max_regions_from_fdbar(fdb), MAX_REGIONS_OLD);
  	}
  }
+-- 
+2.43.0
+

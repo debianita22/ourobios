@@ -31,7 +31,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 3 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
-index 6015c3170..11950198a 100644
+index 6015c31702..11950198a4 100644
 --- a/src/northbridge/intel/haswell/Kconfig
 +++ b/src/northbridge/intel/haswell/Kconfig
 @@ -127,9 +127,6 @@ config RO_REGION_ONLY

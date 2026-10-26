@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sat, 10 Oct 2026 12:26:34 +0200
-Subject: [PATCH 41/42] nb/intel/haswell/haswell_mrc: Keep the mrc.bin progress
- for CMOS_POST
+Subject: [PATCH] nb/intel/haswell/haswell_mrc: Keep the mrc.bin progress for
+ CMOS_POST
 
 mrc.bin posts its POST codes to port 80h only, so with CMOS_POST a hang
 inside it is reported with the last code of coreboot, 0x3a, whatever
@@ -31,7 +31,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 25 insertions(+), 1 deletion(-)
 
 diff --git a/src/northbridge/intel/haswell/haswell_mrc/raminit.c b/src/northbridge/intel/haswell/haswell_mrc/raminit.c
-index 9e4ef766a..00140bf3e 100644
+index 9e4ef766a0..00140bf3e2 100644
 --- a/src/northbridge/intel/haswell/haswell_mrc/raminit.c
 +++ b/src/northbridge/intel/haswell/haswell_mrc/raminit.c
 @@ -13,6 +13,7 @@

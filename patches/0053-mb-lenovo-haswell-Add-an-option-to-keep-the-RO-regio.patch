@@ -22,7 +22,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 17 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
-index 991a90c3f..b65cd7853 100644
+index 991a90c3f4..b65cd7853e 100644
 --- a/src/mainboard/lenovo/haswell/Kconfig
 +++ b/src/mainboard/lenovo/haswell/Kconfig
 @@ -51,6 +51,23 @@ config VBOOT

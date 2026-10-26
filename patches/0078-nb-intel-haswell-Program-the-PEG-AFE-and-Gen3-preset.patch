@@ -47,7 +47,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  6 files changed, 169 insertions(+), 6 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
-index 11950198..ff4531d4 100644
+index 11950198a4..ff4531d40e 100644
 --- a/src/northbridge/intel/haswell/Kconfig
 +++ b/src/northbridge/intel/haswell/Kconfig
 @@ -117,8 +117,9 @@ config HASWELL_HIDE_PEG_FROM_MRC
@@ -63,7 +63,7 @@ index 11950198..ff4531d4 100644
  # The UEFI System Agent binary needs to be at a fixed offset in the flash
  # and can therefore only reside in the COREBOOT fmap region
 diff --git a/src/northbridge/intel/haswell/Makefile.mk b/src/northbridge/intel/haswell/Makefile.mk
-index c5cc82fc..1780e1d1 100644
+index c5cc82fc16..1780e1d108 100644
 --- a/src/northbridge/intel/haswell/Makefile.mk
 +++ b/src/northbridge/intel/haswell/Makefile.mk
 @@ -35,6 +35,12 @@ subdirs-y  += broadwell_mrc
@@ -80,7 +80,7 @@ index c5cc82fc..1780e1d1 100644
  endif
  
 diff --git a/src/northbridge/intel/haswell/early_peg.c b/src/northbridge/intel/haswell/early_peg.c
-index bb59d5d6..829ea78b 100644
+index bb59d5d6d2..829ea78b05 100644
 --- a/src/northbridge/intel/haswell/early_peg.c
 +++ b/src/northbridge/intel/haswell/early_peg.c
 @@ -1,8 +1,11 @@
@@ -235,7 +235,7 @@ index bb59d5d6..829ea78b 100644
  	for (u8 func = 0; func < MAX_PEG_FUNC; func++) {
  		if (deven & deven_for_peg(func)) {
 diff --git a/src/northbridge/intel/haswell/haswell.h b/src/northbridge/intel/haswell/haswell.h
-index 35d2f8db..48d539b7 100644
+index 35d2f8dbc6..48d539b730 100644
 --- a/src/northbridge/intel/haswell/haswell.h
 +++ b/src/northbridge/intel/haswell/haswell.h
 @@ -65,6 +65,17 @@ void haswell_late_initialization(void);
@@ -257,7 +257,7 @@ index 35d2f8db..48d539b7 100644
  void peg_dmi_recipe(const bool is_peg, const pci_devfn_t dev);
  
 diff --git a/src/northbridge/intel/haswell/pcie.c b/src/northbridge/intel/haswell/pcie.c
-index 345f00d5..c7c16c04 100644
+index 345f00d53d..c7c16c0427 100644
 --- a/src/northbridge/intel/haswell/pcie.c
 +++ b/src/northbridge/intel/haswell/pcie.c
 @@ -149,6 +149,34 @@ static void peg_enable(struct device *dev)
@@ -305,7 +305,7 @@ index 345f00d5..c7c16c04 100644
  #if CONFIG(HAVE_ACPI_TABLES)
  	.acpi_name		= pcie_acpi_name,
 diff --git a/src/northbridge/intel/haswell/registers/pcie_graphics.h b/src/northbridge/intel/haswell/registers/pcie_graphics.h
-index 36627657..c8e113cb 100644
+index 36627657f3..c8e113cb27 100644
 --- a/src/northbridge/intel/haswell/registers/pcie_graphics.h
 +++ b/src/northbridge/intel/haswell/registers/pcie_graphics.h
 @@ -8,6 +8,7 @@

@@ -22,7 +22,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 6 insertions(+), 3 deletions(-)
 
 diff --git a/payloads/external/edk2/Makefile b/payloads/external/edk2/Makefile
-index 29fa450ae..bb488553a 100644
+index f09b00080d..0c4816efbd 100644
 --- a/payloads/external/edk2/Makefile
 +++ b/payloads/external/edk2/Makefile
 @@ -166,13 +166,15 @@ CAPSULE_SIGNER_PRIVATE_CERT_PATH := $(call edk2_abspath,$(CAPSULE_SIGNER_PRIVATE
@@ -43,7 +43,7 @@ index 29fa450ae..bb488553a 100644
  endif
  endif
  
-@@ -346,7 +348,8 @@ checktools:
+@@ -339,7 +341,8 @@ checktools:
  	fi
  
  ifeq ($(CONFIG_DRIVERS_EFI_UPDATE_CAPSULES),y)

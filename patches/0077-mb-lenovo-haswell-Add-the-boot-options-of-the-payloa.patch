@@ -21,7 +21,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 38 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 94aaed170..db38ee470 100644
+index 94aaed170e..db38ee470f 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -203,6 +203,43 @@ static const struct sm_object general_about = SM_DECLARE_FORM({

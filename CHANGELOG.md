@@ -178,6 +178,17 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   in the controller, and the OS does not wait for a link on it at boot
   and at every wake, about a second per empty port. Keep the port of a
   slot with a drive on: macOS on the M.2 SATA drive needs port 4.
+- From rc12, coreboot `26.09-438-g206078d6d990`, 158 commits after the pin
+  of the earlier release candidates (26.09-280): the 117 patches apply
+  with the same bodies, only their context moves (the PLATFORM_INFO and VR
+  MSR refactoring of cpu/intel/haswell); upstream does not touch the
+  cache-as-RAM layout, vboot, the console, the timestamps nor the FMAP and
+  CBFS caches, and bootblock and romstage have the same regions
+  (`configs/ro-interface.txt`, `rw-ok`), so the slots still run behind the
+  read-only part of v1.3.9. EDK2 from MrChromebox `uefipayload_2608` at
+  `ddf612165c8b`, three commits after the pin (the setup hotkey, failed
+  automatic boot options, the SubForm parsing fix that our patch 0002
+  already covered).
 
 ## v1.3.9
 

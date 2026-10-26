@@ -23,6 +23,9 @@
 #                               cache di FMAP e CBFS: struct e indirizzi uguali)
 #   VARIANTE SIMBOLO INDIRIZZO  una regione della cache-as-RAM (car.ld), come la scrive nm
 coreboot 26.09-280-gacdbfd47295d
+# 26.09-438: upstream non tocca car.ld, vboot (stesso submodule), la console,
+# i timestamp ne' le cache di FMAP e CBFS; regioni uguali in bootblock e romstage
+rw-ok 26.09-438-g206078d6d990
 mrc _car_region_start ff7c0000
 mrc _vboot2_work ff7c0000
 mrc _evboot2_work ff7c3000

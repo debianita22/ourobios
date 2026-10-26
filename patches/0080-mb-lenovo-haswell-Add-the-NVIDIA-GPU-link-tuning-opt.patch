@@ -19,7 +19,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 19 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index db38ee47..506c4a69 100644
+index db38ee470f..506c4a69f9 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -489,6 +489,24 @@ static const struct sm_object enable_dual_graphics = SM_DECLARE_BOOL({

@@ -15,7 +15,7 @@ same machine.
 
 ## What runs
 
-At the coreboot pin of the releases (26.09-280), the NRI runs:
+At the coreboot pin of the releases (26.09-438; 26.09-280 up to v1.3.10-rc11), the NRI runs:
 
 - SPD, memory clock, timings, controller and memory map, JEDEC init;
 - sense amplifier offsets, receive enable, read MPR, write leveling;

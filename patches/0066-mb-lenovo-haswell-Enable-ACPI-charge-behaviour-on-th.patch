@@ -33,7 +33,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
-index b65cd785..9f918e06 100644
+index b65cd7853e..9f918e060d 100644
 --- a/src/mainboard/lenovo/haswell/Kconfig
 +++ b/src/mainboard/lenovo/haswell/Kconfig
 @@ -9,6 +9,7 @@ config BOARD_LENOVO_HASWELL_COMMON

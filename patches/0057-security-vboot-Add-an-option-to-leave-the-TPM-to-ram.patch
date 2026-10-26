@@ -24,7 +24,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  3 files changed, 22 insertions(+), 2 deletions(-)
 
 diff --git a/src/drivers/tpm/Kconfig b/src/drivers/tpm/Kconfig
-index 1bcc79c8e..967fcc9d0 100644
+index 1bcc79c8e9..967fcc9d03 100644
 --- a/src/drivers/tpm/Kconfig
 +++ b/src/drivers/tpm/Kconfig
 @@ -3,7 +3,8 @@
@@ -38,7 +38,7 @@ index 1bcc79c8e..967fcc9d0 100644
  	help
  	  This driver automatically initializes the TPM if vboot is not used.
 diff --git a/src/security/vboot/Kconfig b/src/security/vboot/Kconfig
-index f09a22b1e..a28eb5b4e 100644
+index f09a22b1e0..a28eb5b4e8 100644
 --- a/src/security/vboot/Kconfig
 +++ b/src/security/vboot/Kconfig
 @@ -115,6 +115,18 @@ config VBOOT_MOCK_SECDATA
@@ -61,7 +61,7 @@ index f09a22b1e..a28eb5b4e 100644
  	bool
  	default n
 diff --git a/src/security/vboot/vboot_logic.c b/src/security/vboot/vboot_logic.c
-index a540e96e4..01d43a08c 100644
+index a540e96e40..01d43a08cd 100644
 --- a/src/security/vboot/vboot_logic.c
 +++ b/src/security/vboot/vboot_logic.c
 @@ -187,6 +187,10 @@ static vb2_error_t hash_body(struct vb2_context *ctx,

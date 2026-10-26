@@ -25,7 +25,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  3 files changed, 18 insertions(+), 10 deletions(-)
 
 diff --git a/Documentation/drivers/smmstore.md b/Documentation/drivers/smmstore.md
-index a647ecb86..63dde2249 100644
+index a647ecb86f..63dde22499 100644
 --- a/Documentation/drivers/smmstore.md
 +++ b/Documentation/drivers/smmstore.md
 @@ -241,19 +241,21 @@ with highest bit set can be used.
@@ -60,7 +60,7 @@ index a647ecb86..63dde2249 100644
  ## External links
  
 diff --git a/src/drivers/smmstore/store.c b/src/drivers/smmstore/store.c
-index e950a4239..b5715200a 100644
+index e950a4239d..b5715200a5 100644
 --- a/src/drivers/smmstore/store.c
 +++ b/src/drivers/smmstore/store.c
 @@ -37,6 +37,11 @@ int smmstore_preprocess_cmd(uint8_t *cmd, void *param)
@@ -76,7 +76,7 @@ index e950a4239..b5715200a 100644
  			smmstore_use_full_flash = 1;
  			*cmd &= ~SMMSTORE_CMD_USE_FULL_FLASH;
 diff --git a/src/include/smmstore.h b/src/include/smmstore.h
-index 8962137db..6b25774cb 100644
+index 8962137db4..6b25774cb9 100644
 --- a/src/include/smmstore.h
 +++ b/src/include/smmstore.h
 @@ -21,7 +21,8 @@

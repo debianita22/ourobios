@@ -27,10 +27,10 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 6 insertions(+), 1 deletion(-)
 
 diff --git a/src/device/Kconfig b/src/device/Kconfig
-index f3a3ef7be..33e8306c5 100644
+index aa8a9d83c6..8a26d60931 100644
 --- a/src/device/Kconfig
 +++ b/src/device/Kconfig
-@@ -918,11 +918,16 @@ config VGA_BIOS_SECOND_ID
+@@ -928,11 +928,16 @@ config VGA_BIOS_SECOND_ID
  
  config VGA_BIOS_DGPU
  	bool "Add a discrete VGA BIOS image"

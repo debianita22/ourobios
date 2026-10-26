@@ -21,7 +21,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 3 insertions(+), 1 deletion(-)
 
 diff --git a/payloads/external/edk2/Makefile b/payloads/external/edk2/Makefile
-index 75b7f7983..29fa450ae 100644
+index f2c80183b4..f09b00080d 100644
 --- a/payloads/external/edk2/Makefile
 +++ b/payloads/external/edk2/Makefile
 @@ -147,7 +147,9 @@ BUILD_STR += --pcd gEfiMdeModulePkgTokenSpaceGuid.PcdCapsuleEmbeddedDriverSuppor

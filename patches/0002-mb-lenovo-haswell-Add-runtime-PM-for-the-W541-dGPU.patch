@@ -43,7 +43,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  create mode 100644 src/mainboard/lenovo/haswell/acpi/dgpu.asl
 
 diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
-index 0b2e48bee..b104f2136 100644
+index 0b2e48bee8..b104f2136c 100644
 --- a/src/mainboard/lenovo/haswell/Kconfig
 +++ b/src/mainboard/lenovo/haswell/Kconfig
 @@ -97,4 +97,14 @@ config THINKPADEC_HKEY_EISAID
@@ -63,7 +63,7 @@ index 0b2e48bee..b104f2136 100644
  endif
 diff --git a/src/mainboard/lenovo/haswell/acpi/dgpu.asl b/src/mainboard/lenovo/haswell/acpi/dgpu.asl
 new file mode 100644
-index 000000000..cebd5da62
+index 0000000000..cebd5da62b
 --- /dev/null
 +++ b/src/mainboard/lenovo/haswell/acpi/dgpu.asl
 @@ -0,0 +1,262 @@
@@ -330,7 +330,7 @@ index 000000000..cebd5da62
 +	}
 +}
 diff --git a/src/mainboard/lenovo/haswell/dsdt.asl b/src/mainboard/lenovo/haswell/dsdt.asl
-index 708f524b0..212657d7e 100644
+index 708f524b08..212657d7e4 100644
 --- a/src/mainboard/lenovo/haswell/dsdt.asl
 +++ b/src/mainboard/lenovo/haswell/dsdt.asl
 @@ -27,4 +27,8 @@ DefinitionBlock(

@@ -25,7 +25,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 13 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/dsdt.asl b/src/mainboard/lenovo/haswell/dsdt.asl
-index 70d13de9..50344f5a 100644
+index 70d13de922..50344f5aea 100644
 --- a/src/mainboard/lenovo/haswell/dsdt.asl
 +++ b/src/mainboard/lenovo/haswell/dsdt.asl
 @@ -29,6 +29,19 @@ DefinitionBlock(

@@ -28,7 +28,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 31 insertions(+), 1 deletion(-)
 
 diff --git a/src/mainboard/lenovo/haswell/acpi/dgpu.asl b/src/mainboard/lenovo/haswell/acpi/dgpu.asl
-index 34034d96..fe913b3a 100644
+index 34034d96ad..fe913b3a4a 100644
 --- a/src/mainboard/lenovo/haswell/acpi/dgpu.asl
 +++ b/src/mainboard/lenovo/haswell/acpi/dgpu.asl
 @@ -50,6 +50,7 @@ Scope (\_SB.PCI0.PEGP)
@@ -78,7 +78,7 @@ index 34034d96..fe913b3a 100644
  			\_SB.PCI0.PEGP.DEV0.RSID ()
  		}
 diff --git a/src/northbridge/intel/haswell/early_peg.c b/src/northbridge/intel/haswell/early_peg.c
-index ac1cd6be..f397e05f 100644
+index ac1cd6be59..f397e05fdd 100644
 --- a/src/northbridge/intel/haswell/early_peg.c
 +++ b/src/northbridge/intel/haswell/early_peg.c
 @@ -9,6 +9,7 @@

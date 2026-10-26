@@ -23,7 +23,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  3 files changed, 11 insertions(+), 1 deletion(-)
 
 diff --git a/payloads/external/Makefile.mk b/payloads/external/Makefile.mk
-index 859e555e7..a3660bb1a 100644
+index 24c54b08ef..6f4e8e650d 100644
 --- a/payloads/external/Makefile.mk
 +++ b/payloads/external/Makefile.mk
 @@ -416,6 +416,7 @@ payloads/external/iPXE/ipxe/ipxe.rom ipxe: $(DOTCONFIG) $(IPXE_CONFIG_SCRIPT)
@@ -35,7 +35,7 @@ index 859e555e7..a3660bb1a 100644
  # LinuxBoot
  LINUXBOOT_CROSS_COMPILE_ARCH-$(CONFIG_LINUXBOOT_X86)        = x86_32
 diff --git a/payloads/external/iPXE/Kconfig b/payloads/external/iPXE/Kconfig
-index 31686c891..cd90e0d93 100644
+index 31686c8916..cd90e0d930 100644
 --- a/payloads/external/iPXE/Kconfig
 +++ b/payloads/external/iPXE/Kconfig
 @@ -127,6 +127,15 @@ config IPXE_BUILD_EFI
@@ -55,7 +55,7 @@ index 31686c891..cd90e0d93 100644
  
  endmenu
 diff --git a/payloads/external/iPXE/Makefile b/payloads/external/iPXE/Makefile
-index a9fb43f84..4844ab03b 100644
+index a9fb43f846..4844ab03b9 100644
 --- a/payloads/external/iPXE/Makefile
 +++ b/payloads/external/iPXE/Makefile
 @@ -12,7 +12,7 @@ project_dir=ipxe

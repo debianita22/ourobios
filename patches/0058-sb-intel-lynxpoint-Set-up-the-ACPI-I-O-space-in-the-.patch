@@ -29,7 +29,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 14 insertions(+)
 
 diff --git a/src/southbridge/intel/lynxpoint/bootblock.c b/src/southbridge/intel/lynxpoint/bootblock.c
-index d7e719f1c..c11950553 100644
+index d7e719f1c4..c119505530 100644
 --- a/src/southbridge/intel/lynxpoint/bootblock.c
 +++ b/src/southbridge/intel/lynxpoint/bootblock.c
 @@ -39,9 +39,23 @@ static void set_spi_speed(void)
@@ -56,3 +56,6 @@ index d7e719f1c..c11950553 100644
  	enable_spi_prefetching_and_caching();
  	enable_port80_on_lpc();
  	set_spi_speed();
+-- 
+2.43.0
+

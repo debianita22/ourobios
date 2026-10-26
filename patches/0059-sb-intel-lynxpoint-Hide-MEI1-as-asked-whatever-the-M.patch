@@ -24,7 +24,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 13 insertions(+), 8 deletions(-)
 
 diff --git a/src/southbridge/intel/lynxpoint/me.c b/src/southbridge/intel/lynxpoint/me.c
-index d59040c9b..1a6de29b2 100644
+index d59040c9b9..1a6de29b2c 100644
 --- a/src/southbridge/intel/lynxpoint/me.c
 +++ b/src/southbridge/intel/lynxpoint/me.c
 @@ -598,14 +598,19 @@ static void intel_me_finalize(struct device *dev)
@@ -55,3 +55,6 @@ index d59040c9b..1a6de29b2 100644
  #endif
  
  	if (!get_uint_option("me_disable", CONFIG(DISABLE_ME_PCI)))
+-- 
+2.43.0
+

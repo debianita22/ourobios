@@ -31,7 +31,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  6 files changed, 56 insertions(+)
 
 diff --git a/src/drivers/smmstore/smi.c b/src/drivers/smmstore/smi.c
-index 9b87b7f4a..09ffbf5cb 100644
+index 9b87b7f4ad..09ffbf5cb7 100644
 --- a/src/drivers/smmstore/smi.c
 +++ b/src/drivers/smmstore/smi.c
 @@ -3,6 +3,7 @@
@@ -58,7 +58,7 @@ index 9b87b7f4a..09ffbf5cb 100644
  		printk(BIOS_DEBUG, "Unknown SMM store command: 0x%02x\n", command);
  		ret = SMMSTORE_RET_UNSUPPORTED;
 diff --git a/src/include/smmstore.h b/src/include/smmstore.h
-index 6b25774cb..2020fa320 100644
+index 6b25774cb9..2020fa3209 100644
 --- a/src/include/smmstore.h
 +++ b/src/include/smmstore.h
 @@ -15,6 +15,14 @@
@@ -77,7 +77,7 @@ index 6b25774cb..2020fa320 100644
   * Used by capsule updates as a standalone command or modifier to v2 commands.
   *
 diff --git a/src/security/vboot/Makefile.mk b/src/security/vboot/Makefile.mk
-index 16afe527c..28addfed2 100644
+index f41a1318c2..a5a5ac4484 100644
 --- a/src/security/vboot/Makefile.mk
 +++ b/src/security/vboot/Makefile.mk
 @@ -89,6 +89,11 @@ romstage-$(CONFIG_VBOOT_VBNV_CMOS_BACKUP_TO_FLASH) += vbnv_flash.c
@@ -93,7 +93,7 @@ index 16afe527c..28addfed2 100644
  verstage-$(CONFIG_VBOOT_VBNV_FLASH) += vbnv_flash.c
  romstage-$(CONFIG_VBOOT_VBNV_FLASH) += vbnv_flash.c
 diff --git a/src/security/vboot/vbnv.c b/src/security/vboot/vbnv.c
-index 2ddb89803..069c3e103 100644
+index 2ddb89803d..069c3e103d 100644
 --- a/src/security/vboot/vbnv.c
 +++ b/src/security/vboot/vbnv.c
 @@ -1,6 +1,7 @@
@@ -129,7 +129,7 @@ index 2ddb89803..069c3e103 100644
  int vbnv_udc_enable_flag(void)
  {
 diff --git a/src/security/vboot/vbnv.h b/src/security/vboot/vbnv.h
-index 49d1f12f6..bf64734b6 100644
+index 49d1f12f63..bf64734b62 100644
 --- a/src/security/vboot/vbnv.h
 +++ b/src/security/vboot/vbnv.h
 @@ -11,6 +11,15 @@ void save_vbnv(const uint8_t *vbnv_copy);
@@ -149,7 +149,7 @@ index 49d1f12f6..bf64734b6 100644
  int vbnv_udc_enable_flag(void);
  
 diff --git a/src/security/vboot/vbnv_layout.h b/src/security/vboot/vbnv_layout.h
-index 5dd39643c..70efac55f 100644
+index 5dd39643c7..70efac55fe 100644
 --- a/src/security/vboot/vbnv_layout.h
 +++ b/src/security/vboot/vbnv_layout.h
 @@ -24,6 +24,13 @@

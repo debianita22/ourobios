@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sat, 10 Oct 2026 11:18:44 +0200
-Subject: [PATCH 37/37] security/memory: Do not report clearing address zero as
- a NULL dereference
+Subject: [PATCH] security/memory: Do not report clearing address zero as a
+ NULL dereference
 
 With SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT and the default
 DEBUG_NULL_DEREF_BREAKPOINTS, every regular boot logs
@@ -24,7 +24,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 11 insertions(+)
 
 diff --git a/src/security/memory/memory_clear.c b/src/security/memory/memory_clear.c
-index e747f4f3c..a67e2432f 100644
+index e747f4f3ce..a67e2432ff 100644
 --- a/src/security/memory/memory_clear.c
 +++ b/src/security/memory/memory_clear.c
 @@ -1,6 +1,7 @@

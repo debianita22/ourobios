@@ -29,7 +29,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  3 files changed, 46 insertions(+), 7 deletions(-)
 
 diff --git a/src/cpu/intel/haswell/acpi.c b/src/cpu/intel/haswell/acpi.c
-index e946c9e478..58441ed506 100644
+index 4a0795d0a6..fd47320d13 100644
 --- a/src/cpu/intel/haswell/acpi.c
 +++ b/src/cpu/intel/haswell/acpi.c
 @@ -8,6 +8,7 @@
@@ -40,7 +40,7 @@ index e946c9e478..58441ed506 100644
  #include <types.h>
  
  #include "haswell.h"
-@@ -333,10 +334,20 @@ static void generate_P_state_entries(int core, int cores_per_package)
+@@ -331,10 +332,20 @@ static void generate_P_state_entries(int core, int cores_per_package)
  	acpigen_pop_len();
  }
  
@@ -64,7 +64,7 @@ index e946c9e478..58441ed506 100644
  
  	/* Generate P-state tables, unless SpeedStep is disabled */
  	if (haswell_eist_enabled())
-@@ -348,7 +359,10 @@ static void generate_cpu_entry(const struct device *device, int cpu, int core, i
+@@ -346,7 +357,10 @@ static void generate_cpu_entry(const struct device *device, int cpu, int core, i
  	/* Generate T-state tables */
  	generate_T_state_entries(cpu, cores_per_package);
  
@@ -76,7 +76,7 @@ index e946c9e478..58441ed506 100644
  }
  
  void generate_cpu_entries(const struct device *device)
-@@ -357,12 +371,17 @@ void generate_cpu_entries(const struct device *device)
+@@ -355,12 +369,17 @@ void generate_cpu_entries(const struct device *device)
  	int cores_per_package = get_logical_cores_per_package();
  	int numcpus = totalcores / cores_per_package;
  
@@ -132,10 +132,10 @@ index f53afee49b..a64a76621e 100644
  	.opt_name	= "vmx",
  	.ui_name	= "Intel VT-x",
 diff --git a/src/cpu/intel/haswell/haswell.h b/src/cpu/intel/haswell/haswell.h
-index 0cca857dc2..c2d3aac066 100644
+index 7322d033d2..374494a62c 100644
 --- a/src/cpu/intel/haswell/haswell.h
 +++ b/src/cpu/intel/haswell/haswell.h
-@@ -172,6 +172,10 @@ int cpu_config_tdp_levels(void);
+@@ -229,6 +229,10 @@ int cpu_config_tdp_levels(void);
  bool haswell_eist_enabled(void);
  bool haswell_c_states_enabled(void);
  

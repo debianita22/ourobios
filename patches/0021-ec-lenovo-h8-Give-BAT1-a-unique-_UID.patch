@@ -18,7 +18,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/ec/lenovo/h8/acpi/battery.asl b/src/ec/lenovo/h8/acpi/battery.asl
-index 0eb08ae0c..ca68cb1df 100644
+index 0eb08ae0ca..ca68cb1dfa 100644
 --- a/src/ec/lenovo/h8/acpi/battery.asl
 +++ b/src/ec/lenovo/h8/acpi/battery.asl
 @@ -371,7 +371,7 @@ Device (BAT0)

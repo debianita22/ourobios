@@ -21,10 +21,10 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 2 insertions(+)
 
 diff --git a/src/cpu/intel/haswell/haswell_init.c b/src/cpu/intel/haswell/haswell_init.c
-index 499768159..9cfd94f60 100644
+index 982792395e..211ca05b32 100644
 --- a/src/cpu/intel/haswell/haswell_init.c
 +++ b/src/cpu/intel/haswell/haswell_init.c
-@@ -498,6 +498,8 @@ static void cpu_core_init(struct device *cpu)
+@@ -470,6 +470,8 @@ static void cpu_core_init(struct device *cpu)
  	/* Set virtualization based on Kconfig option */
  	set_vmx_and_lock();
  

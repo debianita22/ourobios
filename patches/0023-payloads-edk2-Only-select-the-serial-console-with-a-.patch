@@ -29,7 +29,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 2 insertions(+), 1 deletion(-)
 
 diff --git a/payloads/external/edk2/Kconfig b/payloads/external/edk2/Kconfig
-index 68021bd60..f857f19bb 100644
+index ccfe9c0e98..860627a5fa 100644
 --- a/payloads/external/edk2/Kconfig
 +++ b/payloads/external/edk2/Kconfig
 @@ -123,7 +123,7 @@ choice

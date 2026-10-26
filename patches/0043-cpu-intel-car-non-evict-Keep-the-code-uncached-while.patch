@@ -34,7 +34,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 37 insertions(+), 30 deletions(-)
 
 diff --git a/src/cpu/intel/car/non-evict/cache_as_ram.S b/src/cpu/intel/car/non-evict/cache_as_ram.S
-index 91035dabb..53a05e194 100644
+index 91035dabb4..53a05e1948 100644
 --- a/src/cpu/intel/car/non-evict/cache_as_ram.S
 +++ b/src/cpu/intel/car/non-evict/cache_as_ram.S
 @@ -159,7 +159,20 @@ end_microcode_update:
