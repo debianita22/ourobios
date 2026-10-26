@@ -1,0 +1,172 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 26 Oct 2026 16:52:27 +0100
+Subject: [PATCH] mb/lenovo/haswell: Power the NVIDIA GPU off under macOS
+
+macOS has no driver for the Kepler GPU of the W541 (Apple removed the
+Kepler drivers in Monterey; root patches of OpenCore Legacy Patcher put
+them back), and with the GPU enabled in the setup nothing takes it
+over: it stays in D0, powered and idle at the clocks it comes up with.
+OpenCore configurations turn it off with an SSDT that calls the _OFF of
+the OEM firmware, a path this DSDT does not have, or hide it from the
+drivers (-wegnoegpu), which leaves it powered.
+
+Under macOS (ISDW), call the _OFF of the power resource of the PEG port
+from the _INI of the port: link down, PERST#, rails off, the sequence
+of the runtime power management of Linux. _INI runs only with the port
+present, the GPU enabled in the setup, and before the _INI of the GPU,
+whose RSID then reads no NVIDIA vendor ID and writes nothing.
+
+_WAK powers the GPU off again when _INI did (DGMO). The firmware powers
+it at boot, so at a resume from S4; at S3 resume romstage leaves PMH7
+as it is (mb_late_romstage_setup()), and whether its register 0x50
+lasts through S3 is not verified. _OFF does nothing on a GPU that is
+off.
+
+A setup option, "NVIDIA GPU off under macOS" (dgpu_macos_off, on by
+default, shown with the GPU enabled), leaves the GPU powered, for the
+Kepler drivers of OpenCore Legacy Patcher, without the _OSI rename that
+would turn off every other macOS fix as well. Ramstage writes it into
+the SSDT as \_SB.PCI0.PEGP.DGOM; without that name the GPU goes off.
+Linux and Windows are left alone.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec on its DSDT, with an SSDT as the one of ramstage: with
+_OSI ("Darwin") answered and DGOM 1 or missing, the _INI of PEGP
+clears the power and PERST# bits of PMH7 register 0x50 (0x88 to 0x00)
+and sets DGMO, and _WAK (3) and _WAK (4) clear them again once set
+back; with DGOM 0, or without "Darwin", neither changes anything. RSID
+writes the subsystem ID with vendor ID 0x10de, nothing with 0xffff;
+acpiexec runs the _INI of a device before those of its children. The
+other ACPI checks give the same results as before.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/acpi/dgpu.asl    | 24 +++++++++++++++++++
+ .../lenovo/haswell/acpi/platform.asl          | 10 ++++++++
+ src/mainboard/lenovo/haswell/cfr.c            | 13 ++++++++++
+ src/mainboard/lenovo/haswell/mainboard.c      | 12 ++++++++++
+ 4 files changed, 59 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/dgpu.asl b/src/mainboard/lenovo/haswell/acpi/dgpu.asl
+index fe913b3a4a..90120499be 100644
+--- a/src/mainboard/lenovo/haswell/acpi/dgpu.asl
++++ b/src/mainboard/lenovo/haswell/acpi/dgpu.asl
+@@ -215,6 +215,30 @@ Scope (\_SB.PCI0.PEGP)
+ 
+ 	/* D3cold is supported while in S0 */
+ 	Name (_S0W, 4)
++
++	/*
++	 * Under macOS, off from the start. It has no driver for this Kepler GPU
++	 * (Apple removed them in Monterey), and a GPU that no driver takes over
++	 * stays in D0, powered, at the clocks it comes up with. The same _OFF
++	 * as the runtime power management of Linux reaches: link down, PERST#,
++	 * rails off. DGOM, the setup option dgpu_macos_off, comes from the SSDT
++	 * (mainboard_fill_ssdt()); without it, off. DGMO tells _WAK to turn the
++	 * GPU off again, should the wake have powered it.
++	 */
++	External (DGOM, IntObj)
++	Name (DGMO, 0)
++
++	Method (_INI, 0, Serialized)
++	{
++		Local0 = 1
++		If (CondRefOf (DGOM)) {
++			Local0 = DGOM
++		}
++		If (\ISDW () && Local0) {
++			\_SB.PCI0.PEGP.PGPR._OFF ()
++			DGMO = 1
++		}
++	}
+ }
+ 
+ Scope (\_SB.PCI0.PEGP.DEV0)
+diff --git a/src/mainboard/lenovo/haswell/acpi/platform.asl b/src/mainboard/lenovo/haswell/acpi/platform.asl
+index bed1217185..f570cfab8c 100644
+--- a/src/mainboard/lenovo/haswell/acpi/platform.asl
++++ b/src/mainboard/lenovo/haswell/acpi/platform.asl
+@@ -19,6 +19,16 @@ Method(_WAK,1)
+ 		\_SB.PCI0.GFX0.XBCM (\_SB.PCI0.GFX0.BRLV)
+ 	}
+ 
++#if CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM)
++	/*
++	 * PEGP._INI powered the NVIDIA GPU off for macOS: off again, should the
++	 * wake have powered it. The firmware powers it at boot, thus from S4.
++	 */
++	If (\_SB.PCI0.PEGP.DGMO) {
++		\_SB.PCI0.PEGP.PGPR._OFF ()
++	}
++#endif
++
+ 	Return(Package(){0,0})
+ }
+ 
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 5f41ce9b1c..61d03cd126 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -491,6 +491,18 @@ static const struct sm_object enable_dual_graphics = SM_DECLARE_BOOL({
+ 	.default_value	= false,
+ });
+ 
++/* For PEGP._INI, through the SSDT (mainboard_fill_ssdt()) */
++static const struct sm_object dgpu_macos_off = SM_DECLARE_BOOL({
++	.flags		= CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "dgpu_macos_off",
++	.ui_name	= "NVIDIA GPU off under macOS",
++	.ui_helptext	= "Since Monterey, macOS has no driver for this GPU: power it\n"
++			  "off when macOS starts, and again after a wake.\n"
++			  "Disabled: leave it powered, e.g. for the Kepler drivers\n"
++			  "that OpenCore Legacy Patcher can install.",
++	.default_value	= true,
++}, WITH_DEP_VALUES(&enable_dual_graphics, true));
++
+ /* What coreboot programs on the PEG port before its link trains */
+ static const struct sm_object peg_link_tuning = SM_DECLARE_ENUM({
+ 	.flags		= CONFIG(USE_NATIVE_RAMINIT) || CONFIG(HASWELL_HIDE_PEG_FROM_MRC) ?
+@@ -535,6 +547,7 @@ static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
+ 	.ui_name	= "Graphics",
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&enable_dual_graphics,
++		&dgpu_macos_off,
+ 		&peg_link_tuning,
+ 		&gfx_uma_size,
+ 		&gfx_uma_size_mrc,
+diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
+index eaeb0c8982..43081129f6 100644
+--- a/src/mainboard/lenovo/haswell/mainboard.c
++++ b/src/mainboard/lenovo/haswell/mainboard.c
+@@ -1,5 +1,6 @@
+ /* SPDX-License-Identifier: GPL-2.0-or-later */
+ 
++#include <acpi/acpigen.h>
+ #include <build.h>
+ #include <console/console.h>
+ #include <device/device.h>
+@@ -62,8 +63,19 @@ static void disable_root_port(unsigned int func, const char *what)
+ 	rp->enabled = 0;
+ }
+ 
++/* The setup option that PEGP._INI reads (acpi/dgpu.asl) */
++static void mainboard_fill_ssdt(const struct device *dev)
++{
++	acpigen_write_scope("\\_SB.PCI0.PEGP");
++	acpigen_write_name_integer("DGOM", get_uint_option("dgpu_macos_off", 1) ? 1 : 0);
++	acpigen_pop_len();
++}
++
+ static void mainboard_enable(struct device *dev)
+ {
++	if (CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM))
++		dev->ops->acpi_fill_ssdt = mainboard_fill_ssdt;
++
+ 	install_intel_vga_int15_handler(GMA_INT15_ACTIVE_LFP_EDP,
+ 					GMA_INT15_PANEL_FIT_DEFAULT,
+ 					GMA_INT15_BOOT_DISPLAY_DEFAULT, 0);
+-- 
+2.43.0
+
