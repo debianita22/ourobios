@@ -1,0 +1,97 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 26 Oct 2026 01:28:11 +0100
+Subject: [PATCH] nb/intel/haswell: Give the panel power at wake for its HPD
+
+With gfx_resume_init off, the S3 resume path sets up the panel timings
+and the backlight PWM and leaves the panel without power. An eDP panel
+raises HPD only once it has power (T3), and macOS
+(AppleIntelFramebufferAzul) reads the live HPD state of the panel port
+at wake before it powers the panel up: it finds it low and keeps the
+display off. With the option on, libgfxinit powers the panel up to probe
+it, and HPD is high by the time the OS looks.
+
+On the ThinkPad W541 under Linux, with the detection of the panel port
+(DDI D) enabled, SDEISR bit 23 reads 1 with the panel powered and 0 with
+it off (PP_STATUS and PP_CONTROL 0).
+
+On that path, force VDD on, as an OS driver does to reach an eDP panel
+over AUX while the panel is off, and wait for the power-up delay of the
+panel (up_delay_ms). The power sequence and the backlight stay off, so
+nothing shows. Linux takes the forced VDD over at resume ("VDD left on
+by BIOS, adjusting state tracking") and turns it off when it no longer
+needs it, whereas the power sequence left on would trip the "panel power
+already on" warning of i915. An OS driver that never clears the override
+leaves the panel with power until the next sleep, also with the display
+off. Skip boards without a panel power sequence, and a panel that has
+power already.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/northbridge/intel/haswell/gma.c | 32 ++++++++++++++++++++++++++---
+ 1 file changed, 29 insertions(+), 3 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/gma.c b/src/northbridge/intel/haswell/gma.c
+index 578d5a4d3e..d30550a74f 100644
+--- a/src/northbridge/intel/haswell/gma.c
++++ b/src/northbridge/intel/haswell/gma.c
+@@ -413,6 +413,29 @@ static void gma_setup_panel(struct device *dev)
+ 	gtt_write(DDI_BUF_CTL_A, reg32);
+ }
+ 
++/*
++ * Power the panel up, not its backlight, when the display is left to the OS
++ * at wake. An eDP panel raises HPD only once it has power (T3), and an OS can
++ * read the HPD state of the panel port before it powers the panel up itself:
++ * macOS does at wake, and keeps the display off when it finds it low. Force
++ * VDD on, as an OS driver does to reach the panel over AUX with the panel off,
++ * and wait for the power-up delay. The power sequence and the backlight stay
++ * off; Linux takes the forced VDD over ("VDD left on by BIOS").
++ */
++static void gma_panel_vdd_on(struct device *dev)
++{
++	const struct northbridge_intel_haswell_config *conf = config_of(dev);
++	const unsigned int up_delay_ms = conf->panel_cfg.up_delay_ms;
++	const u32 pp_control = gtt_read(PCH_PP_CONTROL);
++
++	/* No panel power sequence, or the panel has power already */
++	if (!up_delay_ms || (pp_control & (PANEL_POWER_ON | EDP_FORCE_VDD)))
++		return;
++
++	gtt_write(PCH_PP_CONTROL, pp_control | EDP_FORCE_VDD);
++	mdelay(up_delay_ms);
++}
++
+ enum gpu_type {
+ 	GPU_TYPE_ULX,
+ 	GPU_TYPE_ULT,
+@@ -692,7 +715,8 @@ static void gma_func0_init(struct device *dev)
+ 	/*
+ 	 * On S3 resume, unless asked to light the display up as at boot, leave
+ 	 * it to the graphics driver of the OS, as when a VBIOS is not run again
+-	 * on resume: the panel setup above is all the firmware does.
++	 * on resume: the panel setup above is all the firmware does, with VDD
++	 * for the HPD of the panel.
+ 	 */
+ 	const bool display_to_os = acpi_is_wakeup_s3() &&
+ 				   !get_uint_option("gfx_resume_init", 1);
+@@ -703,9 +727,11 @@ static void gma_func0_init(struct device *dev)
+ 			       "IGD is not decoding legacy VGA MEM and IO: skipping NATIVE graphic init\n");
+ 		} else if (display_to_os) {
+ 			printk(BIOS_INFO, "S3 resume: display left to the OS\n");
++			gma_panel_vdd_on(dev);
+ 			/* What the OS finds: the live HPD state, the panel power */
+-			printk(BIOS_DEBUG, "GMA: SDEISR %08x, PP_STATUS %08x\n",
+-			       gtt_read(SDEISR), gtt_read(PCH_PP_STATUS));
++			printk(BIOS_DEBUG, "GMA: SDEISR %08x PP_STATUS %08x PP_CONTROL %08x\n",
++			       gtt_read(SDEISR), gtt_read(PCH_PP_STATUS),
++			       gtt_read(PCH_PP_CONTROL));
+ 		} else {
+ 			printk(BIOS_SPEW, "NATIVE graphics, run native enable\n");
+ 			gma_gfxinit(&lightup_ok);
+-- 
+2.43.0
+
