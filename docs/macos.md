@@ -28,6 +28,7 @@ renames `_OSI` to `XOSI` hides that answer from the firmware: see
 | The last backlight level put back at wake (0096) | under macOS | nothing: the resume path starts the backlight at 50% and macOS kept it there until a brightness key |
 | The sleep LEDs (power button and logo pulsing, moon on) and the wake on lid opening, before S3 (0100) | under macOS | an SSDT that calls `\_SI._SST`, if the configuration had one: macOS does not call it |
 | Sleep on lid close on AC: the sleep button pressed for macOS, as Fn+4, since it takes the panel of the W541 for an external display and runs in desktop mode, in which it does not sleep on lid close on AC (0113); no clamshell mode on AC | under macOS, on AC | nothing: the lid did not sleep on AC, and the panel stayed lit inside the closed lid |
+| The NVIDIA GPU powered off at boot, as macOS has no driver for it (0115) | under macOS, with *NVIDIA discrete GPU* on | an SSDT that calls `_OFF` (the path of the OEM firmware, which this DSDT does not have), or `-wegnoegpu`, which only hides the GPU: it stays powered |
 | The wake source left in PM1_STS and GPE0_STS at S3 resume, and to the OS by the SMI handler (0099, 0108; with rc3 and rc4, without 0108, every wake from S3 powered off) | always | nothing: the firmware cleared them, and macOS saw no reason for the wake |
 | The battery and the EC wake cause read one byte at a time (0103, 0094), and the battery and the lid not before the EC driver of macOS (0109, 0114) | always | ECEnabler, or patches of the battery methods: the EC driver of macOS reads no wider field; nothing for the "No handler for Region [ERAM]" that macOS logged for `BAT0._STA`, `BAT1._STA` and `LID._LID` at every boot (with the lid taken for closed until it read it again) |
 | The backlight registers and the MMIO of the xHCI controller at the BAR they have when the methods run, all 64 bits of it (0101, 0102) | always | the boot argument `npci=0x2000`, if the configuration has it, keeps macOS from moving the BARs |
@@ -60,6 +61,8 @@ After the update, and with the setup options of the table set:
   0102); if macOS hangs at *PCI configuration begin* without it, put it
   back;
 - an SSDT that calls `\_SI._SST` in `_PTS`/`_WAK`, if there: remove it;
+- an SSDT that powers the NVIDIA GPU off and `-wegnoegpu`, if there: not
+  needed from rc10, which powers it off at boot under macOS (0115);
 - with *Light the display up at wake* off: what powers the panel up and
   enables its backlight when macOS lights the display up, which macOS
   does not do (below);

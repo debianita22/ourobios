@@ -140,6 +140,14 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   and `_REG` notifies it so that the OS reads it again. Linux runs `_REG`
   before it looks at the lid: nothing changes there. Checked in
   `acpiexec` on the DSDT of the W541.
+- From rc10, under macOS with *NVIDIA discrete GPU* on in the setup, the
+  GPU is powered off at boot (0115): macOS has no driver for it (none for
+  Kepler since Big Sur), and it stayed powered in D0 for nothing.
+  `-wegnoegpu` only hides it, and the SSDTs that call the `_OFF` of the
+  OEM firmware find no such path in this DSDT. The `_INI` of the PEG port
+  calls the `_OFF` of its power resource, the sequence of the runtime
+  power management of Linux; a wake from S3 keeps it off. Linux and
+  Windows as before. Checked in `acpiexec` on the DSDT of the W541.
 
 ## v1.3.9
 
