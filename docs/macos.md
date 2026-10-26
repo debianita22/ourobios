@@ -85,16 +85,16 @@ The two display options, which by default leave the display as before:
   of the OS sets the display up, as it does anyway right after: the wake
   is faster and the backlight comes on once. With an OS that has no
   driver for the Intel GPU (a plain framebuffer) the screen stays black
-  after wake: leave it on there. Under macOS, rc5 left the display off at
-  wake: macOS checks the HPD of the panel port before it powers the panel
-  up, and the panel, without power, kept HPD low. From rc6 the firmware
-  gives the panel power at wake (VDD, not the backlight) and waits its
-  power-up delay, 200 ms (0110, 0111); not yet verified under macOS. If
-  macOS never clears the forced VDD, the panel keeps power until the next
-  sleep, also with the display off. Without the firmware's help,
-  WhateverGreen's `igfxonln=1` has macOS take the displays as connected
-  whatever HPD says (`getDisplayStatus`); with `igfxonlnfbs=0` only
-  framebuffer 0, the panel in the usual framebuffer patches.
+  after wake: leave it on there. Under macOS too: the laptop wakes, the
+  display stays black. macOS checks the HPD of the panel port before it
+  powers the panel up, and the panel, without power, kept HPD low with
+  rc5. From rc6 the firmware gives the panel power at wake (VDD, not the
+  backlight) and waits its power-up delay, 200 ms (0110, 0111), and HPD
+  is high when the OS takes over (seen under Linux); macOS still leaves
+  the display black. WhateverGreen's `igfxonln=1` has macOS take the
+  displays as connected whatever HPD says (`getDisplayStatus`); with
+  `igfxonlnfbs=0` only framebuffer 0, the panel in the usual framebuffer
+  patches.
 
 ## Not done
 

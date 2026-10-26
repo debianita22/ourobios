@@ -106,7 +106,8 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   clears the register, and the code before 0110 enabled the detection
   again too) and `SDEISR 00800000 PP_STATUS 00000000 PP_CONTROL
   00000008`: HPD high, the panel with VDD and no power sequence; i915
-  shows no warning. Not yet verified under macOS.
+  shows no warning. Under macOS the display still stays black at wake
+  with the option off (the laptop wakes): leave it on there.
 
 ## v1.3.9
 
