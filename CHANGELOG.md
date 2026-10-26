@@ -167,7 +167,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   with VDD` (0118); the framebuffer limit and the aperture size options
   are read once per boot instead of twice, each read a walk of the
   option store in flash (0118, 0119). The DSDT does not change.
-- From rc12, the AC adapter reads no EC RAM before the EC driver of the
+- From rc11 too, the AC adapter reads no EC RAM before the EC driver of the
   OS is up (0120), as the batteries (0109) and the lid (0114): the last
   two "No handler for Region [ERAM]" of macOS at boot. Until `_REG` the
   adapter reads as at the last check, on AC at boot, and `_REG`
