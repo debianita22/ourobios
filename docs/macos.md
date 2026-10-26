@@ -30,7 +30,7 @@ renames `_OSI` to `XOSI` hides that answer from the firmware: see
 | The wake source left in PM1_STS and GPE0_STS at S3 resume, and to the OS by the SMI handler (0099, 0108; with rc3 and rc4, without 0108, every wake from S3 powered off) | always | nothing: the firmware cleared them, and macOS saw no reason for the wake |
 | The battery and the EC wake cause read one byte at a time (0103, 0094), and the battery not before the EC driver of macOS (0109) | always | ECEnabler, or patches of the battery methods: the EC driver of macOS reads no wider field; nothing for the "No handler for Region [ERAM]" that macOS logged for `BAT0._STA` and `BAT1._STA` at every boot |
 | The backlight registers and the MMIO of the xHCI controller at the BAR they have when the methods run, all 64 bits of it (0101, 0102) | always | the boot argument `npci=0x2000`, if the configuration has it, keeps macOS from moving the BARs |
-| The display left to the OS at wake: only the panel timings, the backlight PWM, the hotplug detection of the ports and power to the panel for its HPD, no mode set and no backlight (0104, 0107, 0110, 0111) | setup: *Hardware* → *Graphics* → *Light the display up at wake*: off (default: on) | nothing: the firmware sets the panel up at 1920×1080 and macOS sets it up again |
+| The display left to the OS at wake: only the panel timings, the backlight PWM, the hotplug detection of the ports and power to the panel for its HPD, no mode set (0104, 0107, 0110, 0111); under macOS, `_WAK` then powers the panel up with its backlight, which macOS does not do (0112) | setup: *Hardware* → *Graphics* → *Light the display up at wake*: off (default: on) | nothing: the firmware sets the panel up at 1920×1080 and macOS sets it up again; with the option off, SSDT-PNLWAK with the `_WAK` of the DSDT renamed |
 | The firmware screen at the 2880×1620 of the panel, for the OpenCore picker and the boot of macOS (0105-0107) | setup: *Hardware* → *Graphics* → *Firmware screen resolution*: *Panel, up to 2880 x 1620* (default: at most 1920 x 1080, scaled) | nothing |
 
 ## In the OpenCore configuration
@@ -59,6 +59,8 @@ After the update, and with the setup options of the table set:
   0102); if macOS hangs at *PCI configuration begin* without it, put it
   back;
 - an SSDT that calls `\_SI._SST` in `_PTS`/`_WAK`, if there: remove it;
+- SSDT-PNLWAK and the rename of `_WAK` to `ZWAK`, if there: remove them
+  from rc7, whose `_WAK` powers the panel up at wake (0112);
 - still needed: the backlight device (`PNLF`), the USB map and the rest
   of the configuration.
 
@@ -85,16 +87,17 @@ The two display options, which by default leave the display as before:
   of the OS sets the display up, as it does anyway right after: the wake
   is faster and the backlight comes on once. With an OS that has no
   driver for the Intel GPU (a plain framebuffer) the screen stays black
-  after wake: leave it on there. Under macOS too: the laptop wakes, the
-  display stays black. macOS checks the HPD of the panel port before it
-  powers the panel up, and the panel, without power, kept HPD low with
-  rc5. From rc6 the firmware gives the panel power at wake (VDD, not the
-  backlight) and waits its power-up delay, 200 ms (0110, 0111), and HPD
-  is high when the OS takes over (seen under Linux); macOS still leaves
-  the display black. WhateverGreen's `igfxonln=1` has macOS take the
-  displays as connected whatever HPD says (`getDisplayStatus`); with
-  `igfxonlnfbs=0` only framebuffer 0, the panel in the usual framebuffer
-  patches.
+  after wake: leave it on there. Under macOS it takes rc7. macOS drives
+  the panel of the W541, on DDI D, as a DisplayPort sink: it checks its
+  HPD at wake, trains the link and runs the pipe, but it never powers the
+  panel up through the panel power sequencer nor enables the backlight;
+  with the option on, libgfxinit does both. With rc5 the panel had no
+  power at all and HPD was low; rc6 gives it VDD at wake and waits its
+  power-up delay, 200 ms (0110, 0111), so HPD is high when the OS takes
+  over, but the display stayed black; from rc7 the `_WAK` of the
+  firmware, under macOS, powers the panel up and enables the backlight,
+  after putting the backlight level back (0112). The forced VDD stays
+  until the next sleep: macOS does not touch the sequencer.
 
 ## Not done
 

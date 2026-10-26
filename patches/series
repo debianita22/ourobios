@@ -106,3 +106,4 @@
 0109-ec-lenovo-h8-Read-no-EC-RAM-in-the-battery-_STA-befo.patch
 0110-nb-intel-haswell-Enable-the-PCH-port-hotplug-whateve.patch
 0111-nb-intel-haswell-Give-the-panel-power-at-wake-for-it.patch
+0112-mb-lenovo-haswell-Power-the-panel-up-at-wake-under-m.patch

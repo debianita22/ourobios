@@ -1,0 +1,116 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Mon, 26 Oct 2026 11:37:15 +0100
+Subject: [PATCH] mb/lenovo/haswell: Power the panel up at wake under macOS
+
+With gfx_resume_init off, the S3 resume path leaves the panel with VDD
+only, for its HPD, and the graphics driver of the OS powers it up. macOS
+drives the panel of the W541, on DDI D, as a DisplayPort sink: at wake
+it trains the link and runs the pipe, but it never powers the panel up
+through the panel power sequencer nor enables the backlight, and the
+display stays black. With the option on, libgfxinit does both
+(PP_CONTROL 0x07), and macOS finds the panel lit.
+
+Under macOS, power the panel up with its backlight from _WAK (3), after
+the backlight level is put back: power on, power down on reset and
+backlight enable in PP_CONTROL, at the BAR of the moment, as libgfxinit
+sets them. Only from the state that the resume path leaves with the
+option off, VDD forced on and nothing else: with the option on, the
+panel is lit already. The forced VDD stays: macOS does not touch the
+sequencer, and S3 clears it. Linux and Windows power the panel up
+themselves, and i915 warns about a panel that it finds powered up.
+
+An OpenCore table for the W541 (SSDT-PNLWAK, with the _WAK of the DSDT
+renamed) does the same, and waits for the panel when HPD is low; the
+resume path leaves HPD high before the OS runs, so _WAK does not wait.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec on its DSDT, with _OSI ("Darwin") answered, _WAK (3) turns a
+PP_CONTROL of 0x8 at BAR0 + 0xc7204 into 0xf (0xabcd0008 into
+0xabcd000f) and leaves 0, 0x2, 0x7 and 0xf as they are, _WAK (4) changes
+nothing, and nothing is accessed without a BAR; without "Darwin" nothing
+changes. The checks of the earlier ACPI patches give the same results.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/acpi/panel.asl   | 30 +++++++++++++++++++
+ .../lenovo/haswell/acpi/platform.asl          | 11 +++++++
+ src/mainboard/lenovo/haswell/dsdt.asl         |  2 ++
+ 3 files changed, 43 insertions(+)
+ create mode 100644 src/mainboard/lenovo/haswell/acpi/panel.asl
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/panel.asl b/src/mainboard/lenovo/haswell/acpi/panel.asl
+new file mode 100644
+index 0000000000..a05ec830f1
+--- /dev/null
++++ b/src/mainboard/lenovo/haswell/acpi/panel.asl
+@@ -0,0 +1,30 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++Scope (GFX0)
++{
++	/*
++	 * Power the panel up with its backlight, through the panel power
++	 * sequencer of the PCH (PP_CONTROL, at the BAR of the moment), as
++	 * libgfxinit does at wake with gfx_resume_init on: power on, power down
++	 * on reset, backlight enable. Only from the state that the resume path
++	 * leaves with the option off, VDD forced on and nothing else; the
++	 * forced VDD stays, as it does in libgfxinit until the panel is up.
++	 */
++	Method (PNON, 0, Serialized)
++	{
++		Local0 = GMMB ()
++		If (Local0 == 0) {
++			Return ()
++		}
++		OperationRegion (GFPP, SystemMemory, Local0 + 0xc7204, 4)
++		Field (GFPP, DWordAcc, NoLock, Preserve)
++		{
++			PPCT, 32,
++		}
++		Local1 = PPCT
++		If ((Local1 & 0xf) != 0x8) {
++			Return ()
++		}
++		PPCT = Local1 | 0x7
++	}
++}
+diff --git a/src/mainboard/lenovo/haswell/acpi/platform.asl b/src/mainboard/lenovo/haswell/acpi/platform.asl
+index bed1217185..90b175b00e 100644
+--- a/src/mainboard/lenovo/haswell/acpi/platform.asl
++++ b/src/mainboard/lenovo/haswell/acpi/platform.asl
+@@ -19,6 +19,17 @@ Method(_WAK,1)
+ 		\_SB.PCI0.GFX0.XBCM (\_SB.PCI0.GFX0.BRLV)
+ 	}
+ 
++	/*
++	 * With the display left to the OS at wake (gfx_resume_init off), the
++	 * resume path gives the panel only VDD, for its HPD. macOS drives the
++	 * panel of the W541, on DDI D, as a DisplayPort sink: it trains the
++	 * link and runs the pipe, but never powers the panel up through the
++	 * sequencer nor enables the backlight. Do it here, after the level.
++	 */
++	If (Arg0 == 3 && \ISDW ()) {
++		\_SB.PCI0.GFX0.PNON ()
++	}
++
+ 	Return(Package(){0,0})
+ }
+ 
+diff --git a/src/mainboard/lenovo/haswell/dsdt.asl b/src/mainboard/lenovo/haswell/dsdt.asl
+index d959faad0c..45249840bc 100644
+--- a/src/mainboard/lenovo/haswell/dsdt.asl
++++ b/src/mainboard/lenovo/haswell/dsdt.asl
+@@ -73,6 +73,8 @@ DefinitionBlock(
+ 		Scope (SBUS) { Name (_S3D, 3) }
+ 		Scope (RP03.PXSX) { Method (_RMV) { Return (1) } }
+ 		Scope (RP05.PXSX) { Method (_RMV) { Return (1) } }
++
++		#include "acpi/panel.asl"
+ 	}
+ 
+ #if CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM)
+-- 
+2.43.0
+
