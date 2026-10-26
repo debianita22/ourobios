@@ -91,14 +91,17 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   in `acpiexec` on the DSDT of the W541.
 - From rc6, for *Light the display up at wake* off, with which macOS left
   the display off at wake on rc5: it reads the live HPD state of the panel
-  port (`SDEISR`) before it turns the panel on, and that bit follows the
-  pin only with the hotplug detection of the port enabled. The firmware
-  enabled it only when the register read 0; it now does whatever the
-  register holds, without clearing its status bits, and at wake with the
-  option off logs what the OS finds: `GMA: SDEISR ..., PP_STATUS ...` in
-  `cbmem -c` (0110). An eDP panel raises HPD only once powered, and that
-  path does not power it: not yet verified under macOS, so leave the
-  option on there until it is.
+  port (`SDEISR`) before it powers the panel up, and an eDP panel raises
+  HPD only once it has power, which that path did not give it (with the
+  option on, libgfxinit powers the panel up to probe it). Measured on the
+  W541 under Linux: the HPD of the panel port is high with the panel
+  powered and low with it off, with its detection enabled. At wake with
+  the option off the firmware now forces the panel VDD on, without the
+  power sequence and the backlight, and waits its power-up delay, 200 ms
+  (0111); enables the hotplug detection of the ports whatever the
+  register holds (0110); and logs what the OS finds, `GMA: SDEISR ...
+  PP_STATUS ... PP_CONTROL ...` in `cbmem -c`. Linux takes the forced
+  VDD over. Not yet verified under macOS.
 
 ## v1.3.9
 
