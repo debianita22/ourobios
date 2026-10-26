@@ -123,6 +123,15 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   so that the panel keeps power and HPD), and dark wakes stay dark. 0110
   and 0111 stay: Azul checks HPD before anything else at wake.
   SSDT-PNLWAK, with the `_WAK` of the DSDT renamed, does what 0112 did.
+- From rc9, under macOS on AC, closing the lid sleeps (0113). macOS takes
+  the panel of the W541 for an external display: with no built-in
+  display online, IOGraphics puts it in desktop mode, and in desktop mode
+  on AC macOS does not sleep on lid close; the panel stayed lit inside
+  the closed lid. On a lid close event under macOS on AC, the EC methods
+  now press the sleep button, as Fn+4 does; on battery macOS sleeps by
+  itself. No clamshell mode under macOS on AC: a closed lid sleeps there
+  also with an external display. Linux and Windows as before. Checked in
+  `acpiexec` on the DSDT of the W541.
 
 ## v1.3.9
 

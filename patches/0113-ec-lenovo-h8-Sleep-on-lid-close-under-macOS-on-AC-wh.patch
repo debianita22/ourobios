@@ -1,0 +1,78 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 26 Oct 2026 14:13:38 +0100
+Subject: [PATCH] ec/lenovo/h8: Sleep on lid close under macOS on AC, where
+ asked
+
+On the ThinkPad W541 the panel is on DDI D, which macOS drives as an
+external DisplayPort display (AppleDisplay, not AppleBacklightDisplay).
+IOGraphics puts macOS in desktop mode whenever no built-in (backlight)
+display is online, and IOPMrootDomain does not sleep on lid close in
+desktop mode on AC (shouldSleepOnClamshellClosed()): closing the lid
+then neither sleeps nor turns the panel off, which stays lit inside the
+closed lid. On battery macOS sleeps on lid close as usual.
+
+Let a board ask, with EC_LENOVO_H8_LID_SLEEP_DARWIN, for the sleep
+button on a lid close event (_Q2B) under macOS (ISDW) on AC, as Fn+4
+does through _Q13: macOS sleeps on it whatever the desktop mode. Not on
+battery, where macOS sleeps by itself and the button would be a second
+request. The wake on lid opening is armed in _PTS under macOS already.
+The W541 asks for it; on the T440p macOS drives the panel as a built-in
+display. Linux and Windows run the same _Q2B as before. With it, a lid
+closed on AC always sleeps under macOS, also with an external display:
+no clamshell mode.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec on its DSDT, with _OSI ("Darwin") answered, _Q2B notifies LID
+and then SLPB (0x80) with the AC bit of the EC set, and LID only without
+it; without "Darwin", and for _Q2A, LID only. The checks of the earlier
+ACPI patches give the same results. Fn+4 (_Q13, the same notify of
+SLPB) sleeps macOS 14 on the W541.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/ec/lenovo/h8/acpi/ec.asl          | 11 +++++++++++
+ src/mainboard/lenovo/haswell/dsdt.asl |  4 ++++
+ 2 files changed, 15 insertions(+)
+
+diff --git a/src/ec/lenovo/h8/acpi/ec.asl b/src/ec/lenovo/h8/acpi/ec.asl
+index 82b4c61a23..a340a99ab1 100644
+--- a/src/ec/lenovo/h8/acpi/ec.asl
++++ b/src/ec/lenovo/h8/acpi/ec.asl
+@@ -200,6 +200,17 @@ Device(EC)
+ 	Method(_Q2B, 0, NotSerialized)
+ 	{
+ 		Notify(^LID, 0x80)
++#ifdef EC_LENOVO_H8_LID_SLEEP_DARWIN
++		/*
++		 * The lid closed. macOS does not sleep on that in desktop mode on
++		 * AC, and it is in desktop mode whenever no built-in display is
++		 * online: on boards where it drives the panel as an external
++		 * display, press the sleep button for it on AC, as Fn+4 does.
++		 */
++		If (HPAC && \ISDW ()) {
++			Notify(^SLPB, 0x80)
++		}
++#endif
+ 	}
+ 
+ 
+diff --git a/src/mainboard/lenovo/haswell/dsdt.asl b/src/mainboard/lenovo/haswell/dsdt.asl
+index d959faad0c..1721a5356e 100644
+--- a/src/mainboard/lenovo/haswell/dsdt.asl
++++ b/src/mainboard/lenovo/haswell/dsdt.asl
+@@ -6,6 +6,10 @@
+ #define THINKPAD_EC_WAKE_GPE 0x1d /* GPIO13 */
+ #define EC_LENOVO_H8_ALT_FN_F2F3_LAYOUT 1
+ #define EC_LENOVO_H8_FN_F9_F12_LAYOUT 1
++#if CONFIG(BOARD_LENOVO_THINKPAD_W541)
++/* macOS drives the panel, on DDI D, as an external display */
++#define EC_LENOVO_H8_LID_SLEEP_DARWIN 1
++#endif
+ 
+ #include <acpi/acpi.h>
+ DefinitionBlock(
+-- 
+2.43.0
+
