@@ -100,8 +100,9 @@ The two display options, which by default leave the display as before:
   the pipe, but it never powers the panel up through the panel power
   sequencer nor enables the backlight; with the option on, libgfxinit
   does both. With rc5 the panel had no power at all and HPD was low; from
-  rc6 it has VDD at wake and the firmware waits its power-up delay,
-  200 ms (0110, 0111), so HPD is high when the OS takes over. The rest:
+  rc6 it has VDD at wake and the firmware waits for its HPD, up to the
+  200 ms power-up delay (0110, 0111, 0118), so HPD is high when the OS
+  takes over. The rest:
   - a Lilu plugin for AppleIntelFramebufferAzul that, after `LightUpDP`,
     powers the panel up through the sequencer and then enables the
     backlight, and before `DisableDisplay` turns off the backlight only,

@@ -154,6 +154,19 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   installs, without the `_OSI` rename, which would turn off all the
   other fixes under macOS. Linux and Windows as before. Checked in
   `acpiexec` on the DSDT of the W541.
+- From rc11, after a review of all the patches (0116-0119): no full
+  flash access for the OS at S3 resume, when the boot that the OS
+  resumes from had the firmware update mode on and the payload found
+  no capsule (0116; until now the lock of the vboot slot switch ran
+  first and covered it, by link order); the SMI handler in SCI mode no
+  longer clears PM1_STS and GPE0_STS when their bits are the only ones
+  in SMI_STS, which threw away an event the OS had yet to see (0117,
+  as the common SMM code of soc/intel); at wake with *Light the display
+  up at wake* off, the firmware waits for the HPD of the panel instead
+  of the whole 200 ms power-up delay, and logs `GMA: HPD up after N ms
+  with VDD` (0118); the framebuffer limit and the aperture size options
+  are read once per boot instead of twice, each read a walk of the
+  option store in flash (0118, 0119). The DSDT does not change.
 
 ## v1.3.9
 
