@@ -132,6 +132,14 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   itself. No clamshell mode under macOS on AC: a closed lid sleeps there
   also with an external display. Linux and Windows as before. Checked in
   `acpiexec` on the DSDT of the W541.
+- From rc10, the lid reads no EC RAM before the EC driver of the OS is up
+  (0114), as the batteries since rc6 (0109): macOS read it at boot before
+  its EC driver, logged "No handler for Region [ERAM]", took the lid for
+  closed and found it open only some 20 s later, which would turn off a
+  panel that it drives as built in. Until `_REG` the lid now reads open,
+  and `_REG` notifies it so that the OS reads it again. Linux runs `_REG`
+  before it looks at the lid: nothing changes there. Checked in
+  `acpiexec` on the DSDT of the W541.
 
 ## v1.3.9
 

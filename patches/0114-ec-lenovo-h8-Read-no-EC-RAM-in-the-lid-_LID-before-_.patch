@@ -1,0 +1,86 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 26 Oct 2026 16:41:17 +0100
+Subject: [PATCH] ec/lenovo/h8: Read no EC RAM in the lid _LID before _REG
+
+The _LID of the lid reads LIDS from ERAM whenever the OS evaluates it.
+macOS does so at boot before its EC driver installs the EmbeddedControl
+handler: the read fails ("No handler for Region [ERAM]"), macOS takes
+the lid for closed, and finds it open only some 20 s later, when it
+reads it again. An OS that drives the panel as a built-in display would
+turn it off meanwhile, as with the lid closed.
+
+As the _STA of the batteries does (ECAV, set by _REG (3, Arg1)), have
+_LID return 1, open, until the OS has the handler, and have _REG notify
+the lid (0x80) once it has, so that the OS reads it again. A lid wrongly
+taken for open changes nothing; one wrongly taken for closed can turn
+the panel off or suspend. Linux evaluates _REG in acpi_bus_init(),
+before the device scan binds the lid: it reads the EC as before.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec on its DSDT, after _REG (3, 0) _LID returns 1 whatever the lid
+bit of the EC holds; _REG (3, 1) notifies BAT0 and BAT1 (0x81) and LID
+(0x80), and _LID then returns the bit (0 or 1). The other ACPI checks,
+the lid events (_Q2A, _Q2B) and their sleep button included, give the
+same results.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/ec/lenovo/h8/acpi/ec.asl  | 10 +++++++---
+ src/ec/lenovo/h8/acpi/lid.asl |  8 ++++++++
+ 2 files changed, 15 insertions(+), 3 deletions(-)
+
+diff --git a/src/ec/lenovo/h8/acpi/ec.asl b/src/ec/lenovo/h8/acpi/ec.asl
+index a340a99ab1..9b24e808a7 100644
+--- a/src/ec/lenovo/h8/acpi/ec.asl
++++ b/src/ec/lenovo/h8/acpi/ec.asl
+@@ -71,8 +71,8 @@ Device(EC)
+ 	/*
+ 	 * 1 while the OS has a handler for ERAM, from _REG (3, 1): until then
+ 	 * AML must not read ERAM (ACPI 6.5, 6.5.4). The _STA of the batteries
+-	 * checks it, as an OS may evaluate them before its EC driver is up
+-	 * (macOS: "No handler for Region [ERAM]").
++	 * and the _LID of the lid check it, as an OS may evaluate them before
++	 * its EC driver is up (macOS: "No handler for Region [ERAM]").
+ 	 */
+ 	Name (ECAV, 0)
+ 
+@@ -93,10 +93,14 @@ Device(EC)
+ 			}
+ 		}
+ 
+-		/* The batteries now read the EC: let the OS check them again */
++		/*
++		 * The batteries and the lid now read the EC: let the OS check
++		 * them again
++		 */
+ 		If ((Arg0 == 3) && (Arg1 == 1)) {
+ 			Notify (BAT0, 0x81)
+ 			Notify (BAT1, 0x81)
++			Notify (LID, 0x80)
+ 		}
+ 	}
+ 
+diff --git a/src/ec/lenovo/h8/acpi/lid.asl b/src/ec/lenovo/h8/acpi/lid.asl
+index f70e3d6142..873357a0f8 100644
+--- a/src/ec/lenovo/h8/acpi/lid.asl
++++ b/src/ec/lenovo/h8/acpi/lid.asl
+@@ -21,6 +21,14 @@ Device(LID)
+ 
+ 	Method(_LID, 0, NotSerialized)
+ 	{
++		/*
++		 * Open until the OS has an EC handler (ECAV): a lid taken for
++		 * closed would have an OS turn the built-in panel off, as with
++		 * the lid closed. _REG notifies the lid once ERAM can be read.
++		 */
++		If (!ECAV) {
++			Return (1)
++		}
+ 		return (LIDS)
+ 	}
+ 
+-- 
+2.43.0
+
