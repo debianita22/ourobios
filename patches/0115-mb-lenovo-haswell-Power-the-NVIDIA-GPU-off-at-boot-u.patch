@@ -1,0 +1,60 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 26 Oct 2026 16:52:27 +0100
+Subject: [PATCH] mb/lenovo/haswell: Power the NVIDIA GPU off at boot under
+ macOS
+
+macOS has no driver for the Kepler GPU of the W541 (none since Big Sur,
+OpenCore Legacy Patcher root patches aside), and with the GPU enabled
+in the setup nothing takes it over: it stays in D0, powered and idle at
+the clocks it comes up with. OpenCore configurations turn it off with
+an SSDT that calls the _OFF of the OEM firmware, a path this DSDT does
+not have, or hide it from the drivers (-wegnoegpu), which leaves it
+powered.
+
+Under macOS (ISDW), call the _OFF of the power resource of the PEG port
+from the _INI of the port: link down, PERST#, rails off, the sequence
+of the runtime power management of Linux. _INI runs only with the port
+present, the GPU enabled in the setup; a wake from S3 keeps the GPU off
+(mb_late_romstage_setup()). Linux and Windows are left alone.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec on its DSDT, with _OSI ("Darwin") answered, the _INI of PEGP
+sets the link disable bit of the port and clears the power and PERST#
+bits of PMH7 register 0x50 (0x88 and 0x08 to 0x00); without "Darwin"
+it changes nothing. The other ACPI checks give the same results.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/acpi/dgpu.asl | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/dgpu.asl b/src/mainboard/lenovo/haswell/acpi/dgpu.asl
+index fe913b3a4a..aa7b5aa8ce 100644
+--- a/src/mainboard/lenovo/haswell/acpi/dgpu.asl
++++ b/src/mainboard/lenovo/haswell/acpi/dgpu.asl
+@@ -215,6 +215,20 @@ Scope (\_SB.PCI0.PEGP)
+ 
+ 	/* D3cold is supported while in S0 */
+ 	Name (_S0W, 4)
++
++	/*
++	 * Under macOS, off from the start. It has no driver for this Kepler GPU
++	 * (none since Big Sur), and a GPU that no driver takes over stays in D0,
++	 * powered, at the clocks it comes up with. The same _OFF as the runtime
++	 * power management of Linux reaches: link down, PERST#, rails off. A
++	 * wake from S3 keeps the GPU off (mb_late_romstage_setup()).
++	 */
++	Method (_INI, 0, Serialized)
++	{
++		If (\ISDW ()) {
++			\_SB.PCI0.PEGP.PGPR._OFF ()
++		}
++	}
+ }
+ 
+ Scope (\_SB.PCI0.PEGP.DEV0)
+-- 
+2.43.0
+
