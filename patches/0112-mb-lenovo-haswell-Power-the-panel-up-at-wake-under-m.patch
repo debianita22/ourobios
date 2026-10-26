@@ -14,10 +14,11 @@ display stays black. With the option on, libgfxinit does both
 Under macOS, power the panel up with its backlight from _WAK (3), after
 the backlight level is put back: power on, power down on reset and
 backlight enable in PP_CONTROL, at the BAR of the moment, as libgfxinit
-sets them. Only from the state that the resume path leaves with the
-option off, VDD forced on and nothing else: with the option on, the
-panel is lit already. The forced VDD stays: macOS does not touch the
-sequencer, and S3 clears it. Linux and Windows power the panel up
+sets them. Only with VDD forced on, as the resume path leaves it with
+the option off for the HPD of the panel, and the panel not lit: with
+the option on it is lit already, and without VDD HPD would rise too
+late for macOS to see it. The forced VDD stays: macOS does not touch
+the sequencer, and S3 clears it. Linux and Windows power the panel up
 themselves, and i915 warns about a panel that it finds powered up.
 
 An OpenCore table for the W541 (SSDT-PNLWAK, with the _WAK of the DSDT
@@ -26,26 +27,27 @@ resume path leaves HPD high before the OS runs, so _WAK does not wait.
 
 TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
 acpiexec on its DSDT, with _OSI ("Darwin") answered, _WAK (3) turns a
-PP_CONTROL of 0x8 at BAR0 + 0xc7204 into 0xf (0xabcd0008 into
-0xabcd000f) and leaves 0, 0x2, 0x7 and 0xf as they are, _WAK (4) changes
-nothing, and nothing is accessed without a BAR; without "Darwin" nothing
-changes. The checks of the earlier ACPI patches give the same results.
+PP_CONTROL of 0x8, 0x9, 0xa or 0xc at BAR0 + 0xc7204 into 0xf
+(0xabcd0008 into 0xabcd000f) and leaves 0, 0x2, 0x7, 0xf and all ones
+as they are, _WAK (4) changes nothing, and nothing is accessed without
+a BAR; without "Darwin" nothing changes. The checks of the earlier ACPI
+patches give the same results.
 
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
- src/mainboard/lenovo/haswell/acpi/panel.asl   | 30 +++++++++++++++++++
+ src/mainboard/lenovo/haswell/acpi/panel.asl   | 32 +++++++++++++++++++
  .../lenovo/haswell/acpi/platform.asl          | 11 +++++++
  src/mainboard/lenovo/haswell/dsdt.asl         |  2 ++
- 3 files changed, 43 insertions(+)
+ 3 files changed, 45 insertions(+)
  create mode 100644 src/mainboard/lenovo/haswell/acpi/panel.asl
 
 diff --git a/src/mainboard/lenovo/haswell/acpi/panel.asl b/src/mainboard/lenovo/haswell/acpi/panel.asl
 new file mode 100644
-index 0000000000..a05ec830f1
+index 0000000000..de2fd668f9
 --- /dev/null
 +++ b/src/mainboard/lenovo/haswell/acpi/panel.asl
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,32 @@
 +/* SPDX-License-Identifier: GPL-2.0-or-later */
 +
 +Scope (GFX0)
@@ -54,9 +56,11 @@ index 0000000000..a05ec830f1
 +	 * Power the panel up with its backlight, through the panel power
 +	 * sequencer of the PCH (PP_CONTROL, at the BAR of the moment), as
 +	 * libgfxinit does at wake with gfx_resume_init on: power on, power down
-+	 * on reset, backlight enable. Only from the state that the resume path
-+	 * leaves with the option off, VDD forced on and nothing else; the
-+	 * forced VDD stays, as it does in libgfxinit until the panel is up.
++	 * on reset, backlight enable. Only with VDD forced on, as the resume
++	 * path leaves it with the option off for the HPD of the panel, and the
++	 * panel not lit: without VDD, HPD would rise too late for the OS to see
++	 * it, and a GPU that reads all ones is left alone. The forced VDD stays,
++	 * as it does in libgfxinit until the panel is up.
 +	 */
 +	Method (PNON, 0, Serialized)
 +	{
@@ -70,7 +74,7 @@ index 0000000000..a05ec830f1
 +			PPCT, 32,
 +		}
 +		Local1 = PPCT
-+		If ((Local1 & 0xf) != 0x8) {
++		If (!(Local1 & 0x8) || (Local1 & 0x5) == 0x5) {
 +			Return ()
 +		}
 +		PPCT = Local1 | 0x7
