@@ -101,7 +101,12 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   (0111); enables the hotplug detection of the ports whatever the
   register holds (0110); and logs what the OS finds, `GMA: SDEISR ...
   PP_STATUS ... PP_CONTROL ...` in `cbmem -c`. Linux takes the forced
-  VDD over. Not yet verified under macOS.
+  VDD over. Verified on the W541 with rc6 under CachyOS, with the option
+  off: at wake the log reads `PCH_PORT_HOTPLUG 00000000 -> 00101010` (S3
+  clears the register, and the code before 0110 enabled the detection
+  again too) and `SDEISR 00800000 PP_STATUS 00000000 PP_CONTROL
+  00000008`: HPD high, the panel with VDD and no power sequence; i915
+  shows no warning. Not yet verified under macOS.
 
 ## v1.3.9
 
