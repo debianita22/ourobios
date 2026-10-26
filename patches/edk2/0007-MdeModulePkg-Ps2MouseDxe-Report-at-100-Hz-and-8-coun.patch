@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sat, 10 Oct 2026 15:55:58 +0200
-Subject: [PATCH 7/7] MdeModulePkg/Ps2MouseDxe: Report at 100 Hz and 8
- counts/mm, keep in sync
+Subject: [PATCH] MdeModulePkg/Ps2MouseDxe: Report at 100 Hz and 8 counts/mm,
+ keep in sync
 
 The driver sets the mouse to 20 reports per second at 4 counts/mm, and
 takes one packet per 10 ms poll. On a laptop the TrackPoint and the
@@ -31,7 +31,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 33 insertions(+), 9 deletions(-)
 
 diff --git a/MdeModulePkg/Bus/Isa/Ps2MouseDxe/CommPs2.h b/MdeModulePkg/Bus/Isa/Ps2MouseDxe/CommPs2.h
-index d6fc0cc8c7..769823b390 100644
+index d6fc0cc8c..769823b39 100644
 --- a/MdeModulePkg/Bus/Isa/Ps2MouseDxe/CommPs2.h
 +++ b/MdeModulePkg/Bus/Isa/Ps2MouseDxe/CommPs2.h
 @@ -11,8 +11,20 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
@@ -58,7 +58,7 @@ index d6fc0cc8c7..769823b390 100644
  #define IS_PS2_SYNC_BYTE(byte)  ((byte & PS2_SYNC_MASK) == PS2_SYNC_BYTE)
  
 diff --git a/MdeModulePkg/Bus/Isa/Ps2MouseDxe/Ps2Mouse.c b/MdeModulePkg/Bus/Isa/Ps2MouseDxe/Ps2Mouse.c
-index fb61f75e08..84aa63d627 100644
+index fb61f75e0..84aa63d62 100644
 --- a/MdeModulePkg/Bus/Isa/Ps2MouseDxe/Ps2Mouse.c
 +++ b/MdeModulePkg/Bus/Isa/Ps2MouseDxe/Ps2Mouse.c
 @@ -218,17 +218,22 @@ PS2MouseDriverStart (

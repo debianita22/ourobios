@@ -34,7 +34,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 147 insertions(+), 1 deletion(-)
 
 diff --git a/SecurityPkg/Tcg/TcgDxe/TcgDxe.c b/SecurityPkg/Tcg/TcgDxe/TcgDxe.c
-index ee6c627303..7657f59991 100644
+index ee6c62730..7657f5999 100644
 --- a/SecurityPkg/Tcg/TcgDxe/TcgDxe.c
 +++ b/SecurityPkg/Tcg/TcgDxe/TcgDxe.c
 @@ -26,6 +26,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
@@ -227,7 +227,7 @@ index ee6c627303..7657f59991 100644
    if (EFI_ERROR (Status)) {
      DEBUG ((DEBUG_ERROR, "TPM not detected!\n"));
 diff --git a/SecurityPkg/Tcg/TcgDxe/TcgDxe.inf b/SecurityPkg/Tcg/TcgDxe/TcgDxe.inf
-index c93b377b34..2eb1b01b9e 100644
+index c93b377b3..2eb1b01b9 100644
 --- a/SecurityPkg/Tcg/TcgDxe/TcgDxe.inf
 +++ b/SecurityPkg/Tcg/TcgDxe/TcgDxe.inf
 @@ -55,6 +55,7 @@

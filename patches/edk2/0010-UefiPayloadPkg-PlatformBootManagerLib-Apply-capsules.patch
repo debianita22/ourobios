@@ -48,7 +48,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  create mode 100644 UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
 
 diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
-index b235733a47..5fa9462bb6 100644
+index bb78bb9f4..0b2997d17 100644
 --- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
 +++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
 @@ -373,7 +373,6 @@ PlatformBootManagerBeforeConsole (
@@ -119,7 +119,7 @@ index b235733a47..5fa9462bb6 100644
    // Process TPM PPI request
    //
 diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
-index 13c70065bc..9085f89771 100644
+index 13c70065b..9085f8977 100644
 --- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
 +++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
 @@ -150,3 +150,16 @@ PlatformBootManagerShowProgress (
@@ -140,7 +140,7 @@ index 13c70065bc..9085f89771 100644
 +  VOID
 +  );
 diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-index d1a15df444..8ce7235057 100644
+index d1a15df44..8ce723505 100644
 --- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
 +++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
 @@ -26,6 +26,7 @@
@@ -187,7 +187,7 @@ index d1a15df444..8ce7235057 100644
    gUefiPayloadPkgTokenSpaceGuid.PcdiPXEOptionName
 diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
 new file mode 100644
-index 0000000000..7f0ac10d4e
+index 000000000..7f0ac10d4
 --- /dev/null
 +++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
 @@ -0,0 +1,546 @@

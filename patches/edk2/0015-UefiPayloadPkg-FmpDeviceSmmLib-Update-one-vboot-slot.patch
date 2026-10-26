@@ -32,7 +32,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  create mode 100644 UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmVboot.h
 
 diff --git a/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c
-index 3275cca3dd..0916b62cba 100644
+index 3275cca3d..0916b62cb 100644
 --- a/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c
 +++ b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c
 @@ -12,6 +12,12 @@
@@ -291,7 +291,7 @@ index 3275cca3dd..0916b62cba 100644
    FreePool (ReadBuffer);
  
 diff --git a/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.inf b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.inf
-index f5c968cc4a..e3131facdb 100644
+index f5c968cc4..e3131facd 100644
 --- a/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.inf
 +++ b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.inf
 @@ -26,6 +26,8 @@
@@ -305,7 +305,7 @@ index f5c968cc4a..e3131facdb 100644
  [LibraryClasses]
 diff --git a/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmVboot.c b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmVboot.c
 new file mode 100644
-index 0000000000..fdffa1f2da
+index 000000000..fdffa1f2d
 --- /dev/null
 +++ b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmVboot.c
 @@ -0,0 +1,169 @@
@@ -480,7 +480,7 @@ index 0000000000..fdffa1f2da
 +}
 diff --git a/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmVboot.h b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmVboot.h
 new file mode 100644
-index 0000000000..d480fe5c15
+index 000000000..d480fe5c1
 --- /dev/null
 +++ b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmVboot.h
 @@ -0,0 +1,107 @@

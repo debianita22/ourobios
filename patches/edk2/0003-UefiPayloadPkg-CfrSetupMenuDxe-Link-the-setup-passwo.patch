@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sat, 10 Oct 2026 01:22:44 +0200
-Subject: [PATCH 3/7] UefiPayloadPkg/CfrSetupMenuDxe: Link the setup password
- from a category
+Subject: [PATCH] UefiPayloadPkg/CfrSetupMenuDxe: Link the setup password from
+ a category
 
 The password asked for before the setup menu opens is set in its own
 formset, which UserAuthenticationDxe installs under System
@@ -27,7 +27,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  5 files changed, 106 insertions(+), 3 deletions(-)
 
 diff --git a/UefiPayloadPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf b/UefiPayloadPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf
-index ceaa96bee3..091ee78b64 100644
+index ceaa96bee..091ee78b6 100644
 --- a/UefiPayloadPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf
 +++ b/UefiPayloadPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf
 @@ -36,6 +36,7 @@
@@ -49,7 +49,7 @@ index ceaa96bee3..091ee78b64 100644
    gEfiDevicePathProtocolGuid        ## PRODUCES
    gEfiHiiConfigAccessProtocolGuid   ## PRODUCES
 diff --git a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuCfr.c b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuCfr.c
-index 8e8885c5b2..9f2183d03c 100644
+index 8e8885c5b..9f2183d03 100644
 --- a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuCfr.c
 +++ b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuCfr.c
 @@ -15,6 +15,7 @@
@@ -181,7 +181,7 @@ index 8e8885c5b2..9f2183d03c 100644
                   mSetupMenuPrivate.HiiHandle,
                   &mSetupMenuFormsetGuid,
 diff --git a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuNVDataStruc.h b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuNVDataStruc.h
-index 51fe6c47c8..a8355eee5b 100644
+index 51fe6c47c..a8355eee5 100644
 --- a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuNVDataStruc.h
 +++ b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuNVDataStruc.h
 @@ -26,6 +26,12 @@
@@ -198,7 +198,7 @@ index 51fe6c47c8..a8355eee5b 100644
  // EDKII_IFR_FRONT_PAGE_FORMS_GUID: the front page lists the categories
  //
 diff --git a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuStrings.uni b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuStrings.uni
-index e3972a2eae..18c1f504cd 100644
+index e3972a2ea..18c1f504c 100644
 --- a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuStrings.uni
 +++ b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuStrings.uni
 @@ -30,6 +30,12 @@
@@ -215,10 +215,10 @@ index e3972a2eae..18c1f504cd 100644
                              #language fr-FR  "Enabled"
  #string STR_BOOL_DISABLED   #language en-US  "Disabled"
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
-index 7f9b4391e5..715e4f6254 100644
+index cf0b3269b..08119dc78 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dec
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dec
-@@ -165,3 +165,8 @@ gUefiPayloadPkgTokenSpaceGuid.PcdPciAllocateMemoryAbove4GB|FALSE|BOOLEAN|0x00000
+@@ -164,3 +164,8 @@ gUefiPayloadPkgTokenSpaceGuid.PcdPciAllocateMemoryAbove4GB|FALSE|BOOLEAN|0x00000
  #  default PK/KEK/db/dbx. If FALSE (legacy MrChromebox behavior), keys are
  #  enrolled but SecureBootEnable/SecureBoot remain disabled until toggled in setup.
  gUefiPayloadPkgTokenSpaceGuid.PcdSecureBootDefaultEnable|FALSE|BOOLEAN|0x0000002F

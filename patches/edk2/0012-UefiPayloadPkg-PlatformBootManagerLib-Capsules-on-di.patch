@@ -22,7 +22,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 42 insertions(+), 5 deletions(-)
 
 diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
-index 7f0ac10d4e..3cdae2ad4e 100644
+index 7f0ac10d4..3cdae2ad4 100644
 --- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
 +++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
 @@ -7,8 +7,8 @@
