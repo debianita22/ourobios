@@ -167,6 +167,17 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   with VDD` (0118); the framebuffer limit and the aperture size options
   are read once per boot instead of twice, each read a walk of the
   option store in flash (0118, 0119). The DSDT does not change.
+- From rc12, the AC adapter reads no EC RAM before the EC driver of the
+  OS is up (0120), as the batteries (0109) and the lid (0114): the last
+  two "No handler for Region [ERAM]" of macOS at boot. Until `_REG` the
+  adapter reads as at the last check, on AC at boot, and `_REG`
+  notifies it. And *Hardware* → *Expansion ports* has a switch for each
+  SATA port of the W541 besides the drive bay (0121): the M.2 slot on
+  the I/O subcard (port 1), the M.2 WWAN/SSD slot (port 4) and the
+  Ultrabay (port 5), on by default. A port turned off is not implemented
+  in the controller, and the OS does not wait for a link on it at boot
+  and at every wake, about a second per empty port. Keep the port of a
+  slot with a drive on: macOS on the M.2 SATA drive needs port 4.
 
 ## v1.3.9
 
