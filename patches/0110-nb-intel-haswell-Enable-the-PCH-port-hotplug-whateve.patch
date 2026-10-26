@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 26 Oct 2026 01:00:28 +0100
+Subject: [PATCH] nb/intel/haswell: Enable the PCH port hotplug whatever its
+ value
+
+gma_setup_panel() enables the hotplug detection of DDI B, C and D
+(PCH_PORT_HOTPLUG, from gpu_dp_*_hotplug of the devicetree) only if the
+register reads 0, and leaves it as it is otherwise. At boot, and on S3
+resume with gfx_resume_init on, libgfxinit enables the detection of the
+ports itself right after; with the display left to the OS at wake,
+nothing else touches the register before the OS. The live HPD state of
+a port in SDEISR follows its pin only with the detection of the port
+enabled, and macOS (AppleIntelFramebufferAzul) reads that of the panel
+port at wake, before it turns the panel on: if it is low, the display
+stays off.
+
+Program the fields of the three ports whatever the register holds, as
+libgfxinit and Linux do, without writing the status bits back as 1:
+they are write-1-to-clear, and what they latched is for the OS. Log the
+register before and after, and, on the resume path that leaves the
+display to the OS, SDEISR and PP_STATUS: the HPD state that the OS will
+find there, and whether the panel has power. An eDP panel raises its
+HPD only once powered on (T3), and this path does not power it on.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. On the
+host, the expression with the devicetree of the W541 (4, 4, 4) writes
+0x00101010 over 0, and over any other value sets the three fields, keeps
+the other bits and writes the status bits as 0.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/northbridge/intel/haswell/gma.c | 28 ++++++++++++++++++++++------
+ 1 file changed, 22 insertions(+), 6 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/gma.c b/src/northbridge/intel/haswell/gma.c
+index a3e5b04ce8..578d5a4d3e 100644
+--- a/src/northbridge/intel/haswell/gma.c
++++ b/src/northbridge/intel/haswell/gma.c
+@@ -72,6 +72,11 @@ u32 map_oprom_vendev(u32 vendev)
+ 	return new_vendev;
+ }
+ 
++/* PCH_PORT_HOTPLUG: the enable and pulse duration fields of DDI B, C and D */
++#define PCH_HOTPLUG_PORTS_MASK		(0x7 << 18 | 0x7 << 10 | 0x7 << 2)
++/* PCH_PORT_HOTPLUG: the status bits of the ports, write-1-to-clear */
++#define PCH_HOTPLUG_STATUS_MASK		0x03030303
++
+ static struct resource *gtt_res = NULL;
+ 
+ u32 gtt_read(u32 reg)
+@@ -320,13 +325,21 @@ static void gma_setup_panel(struct device *dev)
+ 	const struct i915_gpu_panel_config *panel_cfg = &conf->panel_cfg;
+ 	u32 reg32;
+ 
+-	/* Setup Digital Port Hotplug */
+-	reg32 = gtt_read(PCH_PORT_HOTPLUG);
+-	if (!reg32) {
+-		reg32 = (conf->gpu_dp_b_hotplug & 0x7) << 2;
+-		reg32 |= (conf->gpu_dp_c_hotplug & 0x7) << 10;
+-		reg32 |= (conf->gpu_dp_d_hotplug & 0x7) << 18;
++	/*
++	 * Setup Digital Port Hotplug, whatever the register holds: the live HPD
++	 * state of a port in SDEISR follows its pin only with the detection of
++	 * the port enabled, and when the display is left to the OS at wake,
++	 * nothing else enables it before the OS looks. The status bits are
++	 * write-1-to-clear: write them as 0, and leave them to the OS.
++	 */
++	const u32 hotplug = (conf->gpu_dp_b_hotplug & 0x7) << 2 |
++			    (conf->gpu_dp_c_hotplug & 0x7) << 10 |
++			    (conf->gpu_dp_d_hotplug & 0x7) << 18;
++	if (hotplug) {
++		const u32 old = gtt_read(PCH_PORT_HOTPLUG);
++		reg32 = (old & ~(PCH_HOTPLUG_PORTS_MASK | PCH_HOTPLUG_STATUS_MASK)) | hotplug;
+ 		gtt_write(PCH_PORT_HOTPLUG, reg32);
++		printk(BIOS_DEBUG, "GMA: PCH_PORT_HOTPLUG %08x -> %08x\n", old, reg32);
+ 	}
+ 
+ 	/* Setup Panel Power On Delays */
+@@ -690,6 +703,9 @@ static void gma_func0_init(struct device *dev)
+ 			       "IGD is not decoding legacy VGA MEM and IO: skipping NATIVE graphic init\n");
+ 		} else if (display_to_os) {
+ 			printk(BIOS_INFO, "S3 resume: display left to the OS\n");
++			/* What the OS finds: the live HPD state, the panel power */
++			printk(BIOS_DEBUG, "GMA: SDEISR %08x, PP_STATUS %08x\n",
++			       gtt_read(SDEISR), gtt_read(PCH_PP_STATUS));
+ 		} else {
+ 			printk(BIOS_SPEW, "NATIVE graphics, run native enable\n");
+ 			gma_gfxinit(&lightup_ok);
+-- 
+2.43.0
+
