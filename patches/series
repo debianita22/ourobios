@@ -108,4 +108,4 @@
 0111-nb-intel-haswell-Give-the-panel-power-at-wake-for-it.patch
 0113-ec-lenovo-h8-Sleep-on-lid-close-under-macOS-on-AC-wh.patch
 0114-ec-lenovo-h8-Read-no-EC-RAM-in-the-lid-_LID-before-_.patch
-0115-mb-lenovo-haswell-Power-the-NVIDIA-GPU-off-at-boot-u.patch
+0115-mb-lenovo-haswell-Power-the-NVIDIA-GPU-off-under-mac.patch

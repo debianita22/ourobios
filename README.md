@@ -185,7 +185,7 @@ Inside coreboot:
 
 > [!NOTE]
 > The NVIDIA GPU is **disabled by default**, as in upstream coreboot. Turn it
-> on in the setup menu: *Hardware* → *NVIDIA discrete GPU*.
+> on in the setup menu: *Hardware* → *Graphics* → *NVIDIA discrete GPU*.
 
 > [!WARNING]
 > Suspend to RAM (S3): with the images up to v1.0.6 the laptop sleeps and

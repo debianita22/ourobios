@@ -349,16 +349,19 @@ image: flashrom, not a capsule.
 - Settings: Esc at power-on opens the setup menu, a grid of icons. Arrow
   keys, Enter and Esc, or the TrackPoint and touchpad, move around; F10
   saves, F9 loads the defaults of every category, not only the open one.
-  - *Hardware* → *NVIDIA discrete GPU*: **off by default**. When on,
-    Linux can power the GPU down while it is unused, through the ACPI
-    power resource of the firmware, with nouveau or with no driver
+  - *Hardware* → *Graphics* → *NVIDIA discrete GPU*: **off by default**.
+    When on, Linux can power the GPU down while it is unused, through the
+    ACPI power resource of the firmware, with nouveau or with no driver
     bound to it; NVIDIA's own driver does that only for Turing and newer
     GPUs, so with the 470 driver of this Kepler GPU it stays powered
     ([Power at idle](#power-at-idle)). Under it, from v1.3.7, *NVIDIA
     GPU link tuning*: how the firmware sets up the PCIe link to the GPU,
     *As the Lenovo firmware* (the default), *AFE and 8 GT/s presets*,
     *AFE* alone or *Off*, the hardware defaults as up to v1.3.6 ([The link
-    to the NVIDIA GPU](#the-link-to-the-nvidia-gpu)). *Hardware* also has the
+    to the NVIDIA GPU](#the-link-to-the-nvidia-gpu)); from v1.3.10, *NVIDIA
+    GPU off under macOS*, on by default: macOS has no driver for this
+    GPU, and the firmware powers it off there, at boot and after a wake
+    ([docs/macos.md](macos.md)). *Hardware* also has the
     graphics aperture and, with the native RAM init (`nri`), the graphics
     stolen memory (DVMT), the ExpressCard and Thunderbolt ports and the
     radios;
