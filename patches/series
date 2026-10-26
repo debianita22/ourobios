@@ -109,3 +109,7 @@
 0113-ec-lenovo-h8-Sleep-on-lid-close-under-macOS-on-AC-wh.patch
 0114-ec-lenovo-h8-Read-no-EC-RAM-in-the-lid-_LID-before-_.patch
 0115-mb-lenovo-haswell-Power-the-NVIDIA-GPU-off-under-mac.patch
+0116-drivers-efi-capsules-No-full-flash-access-on-S3-resu.patch
+0117-sb-intel-lynxpoint-Clear-no-PM1-or-GPE0-status-from-.patch
+0118-nb-intel-haswell-Wait-for-the-HPD-of-the-panel-not-t.patch
+0119-nb-intel-haswell-Read-the-aperture-size-option-once-.patch

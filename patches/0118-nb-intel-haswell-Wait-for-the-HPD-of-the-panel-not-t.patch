@@ -1,0 +1,101 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 26 Oct 2026 18:13:03 +0100
+Subject: [PATCH 118/119] nb/intel/haswell: Wait for the HPD of the panel, not
+ the whole T3
+
+With the display left to the OS at wake, the panel gets VDD for its HPD
+and ramstage waited the full power-up delay, 200 ms on the W541, on
+every wake. The panel raises HPD well before its maximum T3, and the
+OS looks at it hundreds of milliseconds later anyway. Poll the live HPD
+in SDEISR of the ports with their detection enabled whose HPD is low
+when VDD goes on, with the power-up delay as the timeout, and log how
+long it took, so that the state the OS finds stays in the log.
+
+The option that reads the framebuffer limit is evaluated twice per
+boot, for the width and the height, each a walk of the option store in
+flash: read it once.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init; the
+DSDT does not change.
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/northbridge/intel/haswell/gma.c | 34 +++++++++++++++++++++++++----
+ 1 file changed, 30 insertions(+), 4 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/gma.c b/src/northbridge/intel/haswell/gma.c
+index d30550a74f..958722f2ff 100644
+--- a/src/northbridge/intel/haswell/gma.c
++++ b/src/northbridge/intel/haswell/gma.c
+@@ -18,6 +18,7 @@
+ #include <drivers/intel/gma/opregion.h>
+ #include <option.h>
+ #include <southbridge/intel/lynxpoint/pch.h>
++#include <timer.h>
+ #include <types.h>
+ 
+ #include "chip.h"
+@@ -419,21 +420,39 @@ static void gma_setup_panel(struct device *dev)
+  * read the HPD state of the panel port before it powers the panel up itself:
+  * macOS does at wake, and keeps the display off when it finds it low. Force
+  * VDD on, as an OS driver does to reach the panel over AUX with the panel off,
+- * and wait for the power-up delay. The power sequence and the backlight stay
+- * off; Linux takes the forced VDD over ("VDD left on by BIOS").
++ * and wait for the HPD of a port to rise, the power-up delay at most: the
++ * panel takes less than its maximum T3. The power sequence and the backlight
++ * stay off; Linux takes the forced VDD over ("VDD left on by BIOS").
+  */
+ static void gma_panel_vdd_on(struct device *dev)
+ {
+ 	const struct northbridge_intel_haswell_config *conf = config_of(dev);
+ 	const unsigned int up_delay_ms = conf->panel_cfg.up_delay_ms;
+ 	const u32 pp_control = gtt_read(PCH_PP_CONTROL);
++	struct stopwatch sw;
++	u32 hpd = 0;
+ 
+ 	/* No panel power sequence, or the panel has power already */
+ 	if (!up_delay_ms || (pp_control & (PANEL_POWER_ON | EDP_FORCE_VDD)))
+ 		return;
+ 
++	/* The ports with their detection enabled, whose HPD is low now */
++	if (conf->gpu_dp_b_hotplug)
++		hpd |= SDE_PORTB_HOTPLUG_CPT;
++	if (conf->gpu_dp_c_hotplug)
++		hpd |= SDE_PORTC_HOTPLUG_CPT;
++	if (conf->gpu_dp_d_hotplug)
++		hpd |= SDE_PORTD_HOTPLUG_CPT;
++	hpd &= ~gtt_read(SDEISR);
++
+ 	gtt_write(PCH_PP_CONTROL, pp_control | EDP_FORCE_VDD);
+-	mdelay(up_delay_ms);
++
++	stopwatch_init_msecs_expire(&sw, up_delay_ms);
++	while (!(gtt_read(SDEISR) & hpd) && !stopwatch_expired(&sw))
++		udelay(100);
++
++	printk(BIOS_DEBUG, "GMA: HPD %s after %lld ms with VDD\n",
++	       gtt_read(SDEISR) & hpd ? "up" : "still down", stopwatch_duration_msecs(&sw));
+ }
+ 
+ enum gpu_type {
+@@ -666,7 +685,14 @@ static void gma_enable_swsci(void)
+ /* The firmware framebuffer: at most the Kconfig size, or up to 2880 x 1620 */
+ static bool gma_fb_up_to_2880(void)
+ {
+-	return get_uint_option("gfx_fb_limit", IGD_FB_LIMIT_CONFIG) == IGD_FB_LIMIT_2880;
++	/* Read once: the option store is in flash */
++	static int up_to_2880 = -1;
++
++	if (up_to_2880 < 0)
++		up_to_2880 = get_uint_option("gfx_fb_limit", IGD_FB_LIMIT_CONFIG) ==
++			     IGD_FB_LIMIT_2880;
++
++	return up_to_2880;
+ }
+ 
+ unsigned int gma_gfxinit_fb_max_width(void)
+-- 
+2.43.0
+

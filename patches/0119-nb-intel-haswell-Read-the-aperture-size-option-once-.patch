@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 26 Oct 2026 18:13:03 +0100
+Subject: [PATCH 119/119] nb/intel/haswell: Read the aperture size option once
+ per boot
+
+With mrc.bin haswell_igd_set_aperture() runs before and after raminit,
+and read the option from the store in flash both times. Keep the value
+in a static: both runs are in romstage.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/northbridge/intel/haswell/early_init.c | 17 +++++++++++------
+ 1 file changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
+index 779ff23c51..d3625f12a0 100644
+--- a/src/northbridge/intel/haswell/early_init.c
++++ b/src/northbridge/intel/haswell/early_init.c
+@@ -104,12 +104,17 @@ static unsigned int igd_aperture_mib(enum igd_aperture_size size)
+ void haswell_igd_set_aperture(void)
+ {
+ 	const pci_devfn_t igd = PCI_DEV(0, 2, 0);
+-	unsigned int size = get_uint_option("gfx_aperture_size", IGD_APERTURE_256MB);
+-
+-	if (size != IGD_APERTURE_128MB && size != IGD_APERTURE_256MB &&
+-	    size != IGD_APERTURE_512MB) {
+-		printk(BIOS_WARNING, "IGD: invalid gfx_aperture_size %u, using 256 MiB\n", size);
+-		size = IGD_APERTURE_256MB;
++	/* Read once: the option store is in flash, and MRC calls for a second run */
++	static unsigned int size = ~0U;
++
++	if (size == ~0U) {
++		size = get_uint_option("gfx_aperture_size", IGD_APERTURE_256MB);
++		if (size != IGD_APERTURE_128MB && size != IGD_APERTURE_256MB &&
++		    size != IGD_APERTURE_512MB) {
++			printk(BIOS_WARNING, "IGD: invalid gfx_aperture_size %u, using 256 MiB\n",
++			       size);
++			size = IGD_APERTURE_256MB;
++		}
+ 	}
+ 
+ 	const u8 old = pci_read_config8(igd, MSAC);
+-- 
+2.43.0
+

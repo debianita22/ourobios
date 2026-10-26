@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 26 Oct 2026 18:13:03 +0100
+Subject: [PATCH 117/119] sb/intel/lynxpoint: Clear no PM1 or GPE0 status from
+ the SMI handler
+
+With SCI_EN set, PM1 and GPE0 events raise an SCI, never an SMI#, and
+the handler ignores their bits of SMI_STS. It cleared PM1_STS and
+GPE0_STS all the same when those were the only bits set, "or the SMI#
+would come again": it would not, as they did not raise it. An SMI# that
+shows nothing else came from elsewhere (an IPI, a timeout), and the
+clear threw away an event the OS had yet to see, the power button
+pending as an SCI for one. Do as the common SMM code of soc/intel: mask
+the two bits and leave the status registers to the OS.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/southbridge/intel/lynxpoint/smihandler.c | 14 +++-----------
+ 1 file changed, 3 insertions(+), 11 deletions(-)
+
+diff --git a/src/southbridge/intel/lynxpoint/smihandler.c b/src/southbridge/intel/lynxpoint/smihandler.c
+index d77268801a..fb9ba87be3 100644
+--- a/src/southbridge/intel/lynxpoint/smihandler.c
++++ b/src/southbridge/intel/lynxpoint/smihandler.c
+@@ -586,18 +586,10 @@ void southbridge_smi_handler(void)
+ 	 * power off. On S3 resume PM1_STS holds PWRBTN_STS when the power
+ 	 * button, or the EC through it, woke the system, and ramstage sends
+ 	 * APMC commands before the OS resumes (finalize, the vboot slot lock).
+-	 * Should those events alone have raised this SMI#, clear them, or it
+-	 * would come again.
++	 * They cannot have raised this SMI#, so nothing is left pending here.
+ 	 */
+-	if (inl(get_pmbase() + PM1_CNT) & SCI_EN) {
+-		const u32 os_events = smi_sts & (1 << PM1_STS_BIT | 1 << GPE0_STS_BIT);
+-
+-		smi_sts &= ~os_events;
+-		if (os_events && !smi_sts) {
+-			clear_pm1_status();
+-			clear_gpe_status();
+-		}
+-	}
++	if (inl(get_pmbase() + PM1_CNT) & SCI_EN)
++		smi_sts &= ~(1 << PM1_STS_BIT | 1 << GPE0_STS_BIT);
+ 
+ 	/* Call SMI sub handler for each of the status bits */
+ 	for (i = 0; i < 31; i++) {
+-- 
+2.43.0
+

@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 26 Oct 2026 18:13:03 +0100
+Subject: [PATCH 116/119] drivers/efi/capsules: No full flash access on S3
+ resume
+
+enable_capsule_smi() runs on S3 resume too, so that the firmware
+decides before the OS does (the payload does not run there), and it
+decides with the boot mode in CBMEM. CBMEM is recovered on resume, not
+rebuilt, and the boot mode is the one of the boot the OS resumes from:
+FLASH_UPDATE when that boot had capsules, or OsIndications set. When
+the payload found nothing to apply and gave the access up with
+USE_FULL_FLASH (0), the resume would turn it on again, for the OS.
+
+Today the lock of the vboot slot switch, also at BS_OS_RESUME, runs
+first and seals the decision as "no capsules", by the order the
+drivers link in. Do not rely on it: on S3 resume there are no capsules.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/drivers/efi/capsules.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/drivers/efi/capsules.c b/src/drivers/efi/capsules.c
+index 8b02b636e3..356ee242b2 100644
+--- a/src/drivers/efi/capsules.c
++++ b/src/drivers/efi/capsules.c
+@@ -849,7 +849,12 @@ BOOT_STATE_INIT_ENTRY(BS_DEV_INIT, BS_ON_EXIT, parse_capsules, NULL);
+ static void enable_capsule_smi(void *unused)
+ {
+ 	uint32_t ret;
+-	const bool supported = get_boot_mode() == LB_BOOT_MODE_FLASH_UPDATE;
++	/*
++	 * Never on S3 resume: the boot mode in CBMEM is the one of the boot
++	 * that the OS resumes from, and that one is over with its capsules.
++	 */
++	const bool supported = !acpi_is_wakeup_s3() &&
++			       get_boot_mode() == LB_BOOT_MODE_FLASH_UPDATE;
+ 	ret = call_smm(APM_CNT_SMMSTORE, SMMSTORE_CMD_USE_FULL_FLASH,
+ 		       (void *)(uintptr_t)supported);
+ 
+-- 
+2.43.0
+
