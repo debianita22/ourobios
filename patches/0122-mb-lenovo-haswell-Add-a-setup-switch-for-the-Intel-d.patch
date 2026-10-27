@@ -1,0 +1,91 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Tue, 27 Oct 2026 11:02:58 +0100
+Subject: [PATCH] mb/lenovo/haswell: Add a setup switch for the Intel display
+ audio
+
+The HD Audio controller at 0:3.0 carries the audio of the digital
+display ports of the iGPU. On the W541 the iGPU drives the panel and
+the VGA port, neither with audio, so its codec has nothing to drive.
+Under macOS AppleHDAHDMI_DPDriver still powers that codec at every wake,
+and at sleep with the display already off, and waits 10 s for an answer
+each time: the wake takes 10-20 s instead of about 1.3 s, and the
+battery polling of SMCBatteryManager waits with it.
+
+Add Hardware > Graphics > "Intel display audio", on by default as the
+OEM firmware has it. Off, the mainboard marks 0:3.0 disabled before
+enumeration and disable_devices() of the northbridge clears DEVEN.D3EN,
+at boot and at S3 resume: no OS sees the controller. The HDAU device
+of the DSDT stays, as an _ADR with no function behind it.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init; the
+option and its text are in the ramstage.
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/cfr.c       | 13 +++++++++++++
+ src/mainboard/lenovo/haswell/mainboard.c | 16 ++++++++++++++++
+ 2 files changed, 29 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 2f40c0734a..9698319f60 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -543,6 +543,18 @@ static const struct sm_object thunderbolt = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ });
+ 
++/* The HD Audio controller for the digital display ports of the iGPU, 0:3.0 */
++static const struct sm_object minihd_audio = SM_DECLARE_BOOL({
++	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "minihd_audio",
++	.ui_name	= "Intel display audio",
++	.ui_helptext	= "The audio controller of the display ports of the Intel GPU.\n"
++			  "On the W541 the Intel GPU drives the panel and the VGA port,\n"
++			  "neither with audio. Disabled: the controller is hidden, and\n"
++			  "an OS does not wait for its codec at every wake (macOS).",
++	.default_value	= true,
++});
++
+ static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
+ 	.ui_name	= "Graphics",
+ 	.obj_list	= (const struct sm_object *[]) {
+@@ -554,6 +566,7 @@ static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
+ 		&gfx_aperture_size,
+ 		&gfx_fb_limit,
+ 		&gfx_resume_init,
++		&minihd_audio,
+ 		NULL
+ 	},
+ });
+diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
+index 0c55fa7177..66d4a0c7fd 100644
+--- a/src/mainboard/lenovo/haswell/mainboard.c
++++ b/src/mainboard/lenovo/haswell/mainboard.c
+@@ -120,6 +120,22 @@ static void mainboard_enable(struct device *dev)
+ 			disable_root_port(2, "ExpressCard");
+ 		if (!get_uint_option("thunderbolt", 1))
+ 			disable_root_port(4, "Thunderbolt");
++
++		/*
++		 * The Intel display audio controller, 0:3.0: the iGPU of the W541
++		 * drives the panel and the VGA port, neither with audio. Off, the
++		 * northbridge clears its DEVEN bit (disable_devices()), at boot
++		 * and at S3 resume: no OS sees it.
++		 */
++		if (!get_uint_option("minihd_audio", 1)) {
++			struct device *minihd = pcidev_on_root(0x03, 0);
++
++			if (minihd && minihd->enabled) {
++				printk(BIOS_INFO, "Intel display audio: disabling %s\n",
++				       dev_path(minihd));
++				minihd->enabled = 0;
++			}
++		}
+ 	}
+ }
+ 
+-- 
+2.43.0
+
