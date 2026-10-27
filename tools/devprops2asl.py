@@ -5,10 +5,20 @@
 # macos_device_properties on.
 #
 #   python3 tools/devprops2asl.py config.plist > devprops.asl
+#   python3 tools/devprops2asl.py configs/macos/DeviceProperties.plist \
+#       --builtin configs/macos/DeviceProperties-builtin.plist > devprops.asl
+#
+# With --builtin, a device that has properties in both files returns those
+# of the second one when Panel under macOS is on Built-in display
+# (\_SB.PCI0.GFX0.DWBI, patch 0129), the others otherwise: the framebuffer
+# of the Intel GPU differs between the two (desktop 0x0D220003 with the
+# panel as a DisplayPort sink, laptop 0x0A260006 with con0 on DDI D).
 #
 # configs/macos/DeviceProperties.plist holds the DeviceProperties of patch
-# 0128: after a change there, the output goes in the devprops.asl of a new
-# patch, and the setup help of macos_device_properties says what they are.
+# 0128, configs/macos/DeviceProperties-builtin.plist those of 0133 for
+# Built-in display: after a change there, the output (with --builtin) goes
+# in the devprops.asl of a new patch, and the setup help of
+# macos_device_properties says what they are.
 #
 # Reads DeviceProperties -> Add of config.plist (or of a plist that holds only
 # that dictionary, or the Add dictionary itself): nothing else of the file,
@@ -98,17 +108,47 @@ def value_bytes(key, value):
     raise ValueError(f"{key}: type {type(value).__name__} not supported")
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("plist")
-    args = ap.parse_args()
-    with open(args.plist, "rb") as f:
-        root = plistlib.load(f)
-    add = root
+def load_add(path):
+    """DeviceProperties -> Add of the plist at path"""
+    with open(path, "rb") as f:
+        add = plistlib.load(f)
     if "DeviceProperties" in add:
         add = add["DeviceProperties"]
     if "Add" in add:
         add = add["Add"]
+    return add
+
+
+def package(props, indent, path):
+    """The properties as the lines of a Return (Package () { ... }), indented
+    by indent tabs, and the number of errors"""
+    lines = ["\t" * indent + "Return (Package () {"]
+    errors = 0
+    for key in props:
+        try:
+            data = value_bytes(key, props[key])
+            lead = f"{asl_string(key)}, "
+            if printable(data):
+                value = 'Buffer () { "%s" }' % data[:-1].decode("ascii")
+            else:
+                value = asl_buffer(data, indent + 1, lead)
+            lines.append("\t" * (indent + 1) + f"{lead}{value},")
+        except ValueError as e:
+            print(f"devprops2asl: {path}: {e}", file=sys.stderr)
+            errors += 1
+    lines.append("\t" * indent + "})")
+    return lines, errors
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("plist")
+    ap.add_argument("--builtin", metavar="PLIST",
+                    help="the properties of the devices that differ with Panel "
+                         "under macOS on Built-in display (\\_SB.PCI0.GFX0.DWBI)")
+    args = ap.parse_args()
+    add = load_add(args.plist)
+    builtin = {norm(p): v for p, v in load_add(args.builtin).items()} if args.builtin else {}
     out = [
         "/* SPDX-License-Identifier: GPL-2.0-only */",
         "",
@@ -117,6 +157,14 @@ def main():
         " * OpenCore configuration gives them, through the _DSM of each device for",
         " * Apple's UUID: function 0 lists function 1, which returns them. Written",
         " * by tools/devprops2asl.py of ouroBIOS from that DeviceProperties.",
+    ]
+    if builtin:
+        out += [
+            " * With Panel under macOS on Built-in display (\\_SB.PCI0.GFX0.DWBI,",
+            " * patch 0129), a device that has properties in the DeviceProperties",
+            " * for it gets those instead.",
+        ]
+    out += [
         " */",
         "",
         "External (\\_SB.PCI0.DPRP, IntObj)",
@@ -155,21 +203,20 @@ def main():
             "\t\tIf (Arg2 == Zero) {",
             "\t\t\tReturn (Buffer (One) { 0x03 })",
             "\t\t}",
-            "\t\tReturn (Package () {",
         ]
-        for key in props:
-            try:
-                data = value_bytes(key, props[key])
-                lead = f"{asl_string(key)}, "
-                if printable(data):
-                    value = 'Buffer () { "%s" }' % data[:-1].decode("ascii")
-                else:
-                    value = asl_buffer(data, 3, lead)
-                out.append(f"\t\t\t{lead}{value},")
-            except ValueError as e:
-                print(f"devprops2asl: {path}: {e}", file=sys.stderr)
-                errors += 1
-        out += ["\t\t})", "\t}", "}"]
+        # The properties for Built-in display first, when the device has them
+        other = builtin.pop(norm(path), None)
+        if other:
+            lines, n = package(other, 3, path)
+            out += ["\t\tIf (\\_SB.PCI0.GFX0.DWBI ()) {"] + lines + ["\t\t}"]
+            errors += n
+        lines, n = package(props, 2, path)
+        out += lines
+        errors += n
+        out += ["\t}", "}"]
+    for path in builtin:
+        print(f"devprops2asl: {path}: in --builtin only, not in {args.plist}", file=sys.stderr)
+        errors += 1
     print("\n".join(out))
     return 1 if errors else 0
 

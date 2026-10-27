@@ -210,7 +210,8 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
     themselves, as the `_Q14`/`_Q15` renames and their SSDT did, and
     closing the lid on AC sleeps the laptop (0113). *Built-in display*,
     for a laptop framebuffer with its built-in connector on DDI D (not
-    tried yet): the backlight device of macOS, `\_SB.PCI0.GFX0.PNLF`
+    tried when rc12 came out; tried since, see rc14): the backlight
+    device of macOS, `\_SB.PCI0.GFX0.PNLF`
     (`_UID` 15, the PWM at the 0xad9 of the Haswell Macs from boot and
     after every wake, as `SSDT-PNLF`), an ambient light sensor (`ALS0`, as
     `SSDT-ALS0`), the keys as ACPI events for BrightnessKeys.kext, and the
@@ -280,6 +281,20 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   setting it is asked for, and `_REG` writes the last one to the EC.
   Linux calls `_PSW` after `_REG`: nothing changes there. Checked in
   `acpiexec` on the DSDT of the W541.
+- From rc14, *Device properties for macOS* follows *Panel under macOS*
+  (0133): with *Built-in display* the firmware gives the Intel GPU a
+  laptop framebuffer, 0x0A260006 with its built-in connector (con0) on
+  DDI D, where the panel of the W541 is
+  (`configs/macos/DeviceProperties-builtin.plist`); with *External
+  display* the desktop framebuffer 0x0D220003, as before. *Built-in
+  display* has been tried on the W541 (rc12 `nri`, macOS 14.8.9,
+  OpenCore 1.0.8, the same properties in OpenCore): macOS drives the
+  panel as its built-in display, with the backlight through `PNLF`,
+  sleep on lid close and the panel back at wake. It takes AzulFix 1.1.7
+  or later and *Light the display up at wake* off
+  ([docs/macos.md](docs/macos.md#the-panel-as-built-in-display)).
+  `tools/devprops2asl.py --builtin` writes the properties of both;
+  checked in `acpiexec` on the DSDT of the W541.
 
 ## v1.3.9
 
