@@ -1,0 +1,491 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 27 Oct 2026 12:30:38 +0100
+Subject: [PATCH] mb/lenovo/haswell: Reorganize the setup menu
+
+The setup menu grew a card at a time, and some cards had become a mix:
+Hardware > Graphics held the Intel and the NVIDIA GPU, the display at
+wake and the Intel display audio, General > Advanced the NMIs and the
+ACPI processor objects, and the options for macOS were spread over
+three categories. Reorganize it into six categories, by what the user
+looks for:
+
+- General: About this ThinkPad, Boot, Sound;
+- Energy Saver: Battery, Processor, Processor voltage (the undervolting
+  options of drivers/intel/oc_mailbox, a category of their own until
+  now), Thermal, Power;
+- Hardware: Intel graphics, NVIDIA graphics, Storage (the SATA ports),
+  Expansion ports (ExpressCard and Thunderbolt), Wireless;
+- Keyboard: Keys, Pointing devices;
+- Security: Flash protection, Memory protection, Virtualization,
+  Management Engine;
+- Compatibility, new: macOS, with the options that take the place of
+  parts of an OpenCore configuration (ACPI processor objects, C-state
+  configuration lock, NVIDIA GPU off under macOS, Light the display up
+  at wake, Intel display audio) and a note on the slot switches;
+  Advanced, with the non-maskable interrupts.
+
+Each option is in one card only. The option names, values and defaults
+do not change, so the saved settings stay. The help of each option of
+the mainboard says what it does, its default and when to change it, as
+the help of the options of the CPU, the northbridge, Lynx Point and the
+EC now does.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. The
+setup of both, in QEMU with the CFR record of the W541, has the six
+categories with the cards above; every option is in one card only.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/cfr.c | 224 ++++++++++++++++++++---------
+ 1 file changed, 157 insertions(+), 67 deletions(-)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 9698319f60..5bcdf75795 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -21,7 +21,9 @@
+ 
+ /*
+  * The setup menu, one form per category, each split into cards (nested
+- * forms): General, Energy Saver, Security, Keyboard and Hardware.
++ * forms): General, Energy Saver, Hardware, Keyboard, Security and
++ * Compatibility. Each option is in one card only, and its help says what
++ * it does, its default and when to change it.
+  */
+ 
+ /* General: what this machine is */
+@@ -211,9 +213,9 @@ static const struct sm_object ipxe_boot = SM_DECLARE_BOOL({
+ 	.flags		= CONFIG(EDK2_ENABLE_IPXE) ? 0 : CFR_OPTFLAG_SUPPRESS,
+ 	.opt_name	= "ipxe_boot",
+ 	.ui_name	= "Network boot (iPXE)",
+-	.ui_helptext	= "The iPXE entry of the boot menu (ESC at power on): PXE,\n"
+-			  "HTTP and iPXE scripts over the Ethernet port. Off, the\n"
+-			  "entry goes.",
++	.ui_helptext	= "The iPXE entry of the boot menu: PXE, HTTP and iPXE\n"
++			  "scripts over the Ethernet port.\n"
++			  "Default: on. Off: the entry is not listed.",
+ 	.default_value	= true,
+ });
+ 
+@@ -222,10 +224,10 @@ static const struct sm_object csmwrap_boot = SM_DECLARE_BOOL({
+ 	.opt_name	= "csmwrap_boot",
+ 	.ui_name	= "Legacy boot (CSMWrap)",
+ 	.ui_helptext	= "The CSMWrap entry of the boot menu: a legacy BIOS (the\n"
+-			  "CSM of SeaBIOS) for the operating systems and tools that\n"
+-			  "do not boot from UEFI, from the disks and USB drives.\n"
+-			  "Needs Secure Boot off: while it is on the entry goes\n"
+-			  "and the firmware refuses to start CSMWrap.",
++			  "CSM of SeaBIOS) for the systems and tools that do not boot\n"
++			  "from UEFI, from the disks and USB drives. Needs Secure Boot\n"
++			  "off: while it is on, the entry is not listed.\n"
++			  "Default: on. Off: the entry is not listed.",
+ 	.default_value	= true,
+ });
+ 
+@@ -250,23 +252,17 @@ static const struct sm_object general_sound = SM_DECLARE_FORM({
+ 	},
+ });
+ 
+-static const struct sm_object general_advanced = SM_DECLARE_FORM({
+-	.ui_name	= "Advanced",
+-	.obj_list	= (const struct sm_object *[]) {
+-		&nmi,
+-		&acpi_cpu_objects,
+-		NULL
+-	},
+-});
+ 
+ /* Energy Saver */
+ 
+ static const struct sm_object battery_charge_limit = SM_DECLARE_ENUM({
+ 	.opt_name	= "battery_charge_limit",
+ 	.ui_name	= "Battery charge thresholds",
+-	.ui_helptext	= "Thresholds the EC gets at every boot. A lower limit makes the\n"
+-			  "battery last longer when the laptop mostly runs on AC.\n"
+-			  "OS controlled: keep what the OS sets (TLP, thinkpad_acpi).",
++	.ui_helptext	= "The charge thresholds the EC gets at every boot. A lower\n"
++			  "limit makes the battery last longer when the laptop mostly\n"
++			  "runs on AC.\n"
++			  "Default: OS controlled, what the OS sets (TLP,\n"
++			  "thinkpad_acpi) stays.",
+ 	.default_value	= BATTERY_CHARGE_LIMIT_OS,
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "OS controlled",		BATTERY_CHARGE_LIMIT_OS		},
+@@ -283,8 +279,8 @@ static const struct sm_object battery_charge_limit = SM_DECLARE_ENUM({
+ static const struct sm_object tdp_pl1_override = SM_DECLARE_NUMBER({
+ 	.opt_name	= "tdp_pl1_override",
+ 	.ui_name	= "CPU PL1 power limit (W)",
+-	.ui_helptext	= "Long-duration CPU package power limit.\n"
+-			  "0 = CPU default (TDP). Range: 0-75 W.",
++	.ui_helptext	= "Long-duration power limit of the CPU package, 0-75 W.\n"
++			  "Default: 0, the TDP of the CPU.",
+ 	.default_value	= 0,
+ 	.min		= 0,
+ 	.max		= 75,
+@@ -295,9 +291,9 @@ static const struct sm_object tdp_pl1_override = SM_DECLARE_NUMBER({
+ static const struct sm_object tdp_pl2_override = SM_DECLARE_NUMBER({
+ 	.opt_name	= "tdp_pl2_override",
+ 	.ui_name	= "CPU PL2 power limit (W)",
+-	.ui_helptext	= "Short-duration CPU package power limit.\n"
+-			  "0 = CPU default (1.25 x TDP). Range: 0-95 W.\n"
+-			  "Must be >= PL1 (enforced at boot).",
++	.ui_helptext	= "Short-duration power limit of the CPU package, 0-95 W, at\n"
++			  "least PL1 (the firmware raises it to PL1 if lower).\n"
++			  "Default: 0, 1.25 times the TDP.",
+ 	.default_value	= 0,
+ 	.min		= 0,
+ 	.max		= 95,
+@@ -312,7 +308,8 @@ static const struct sm_object cooling_policy = SM_DECLARE_ENUM({
+ 			  "throttles the CPU from 90 C.\n"
+ 			  "Passive: the OS throttles the CPU from 90 C and forces the\n"
+ 			  "fan to full speed only from 95 C; below that the EC runs\n"
+-			  "the fan on its own curve. Quieter, slower under load.",
++			  "the fan on its own curve. Quieter, slower under load.\n"
++			  "Default: Active.",
+ 	.default_value	= COOLING_POLICY_ACTIVE,
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "Active",	COOLING_POLICY_ACTIVE	},
+@@ -335,7 +332,6 @@ static const struct sm_object energy_processor = SM_DECLARE_FORM({
+ 		&eist,
+ 		&turbo_mode,
+ 		&c_states,
+-		&cfg_lock,
+ 		&tdp_pl1_override,
+ 		&tdp_pl2_override,
+ 		&cpu_power_limit_lock,
+@@ -343,6 +339,25 @@ static const struct sm_object energy_processor = SM_DECLARE_FORM({
+ 	},
+ });
+ 
++#if CONFIG(INTEL_OC_MAILBOX_ENABLE_UNDERVOLTING)
++/* The options of drivers/intel/oc_mailbox, as a card of Energy Saver */
++static const struct sm_object energy_voltage = SM_DECLARE_FORM({
++	.ui_name	= "Processor voltage",
++	.obj_list	= (const struct sm_object *[]) {
++		&oc_undervolt_apply,
++		&oc_undervolt_core,
++		&oc_undervolt_gpu,
++		&oc_undervolt_cache,
++		&oc_undervolt_sa,
++		&oc_undervolt_analog_io,
++#if CONFIG(HAS_DIGITAL_IO_POWER_DOMAIN)
++		&oc_undervolt_digital_io,
++#endif
++		NULL
++	},
++});
++#endif
++
+ static const struct sm_object energy_thermal = SM_DECLARE_FORM({
+ 	.ui_name	= "Thermal",
+ 	.obj_list	= (const struct sm_object *[]) {
+@@ -374,8 +389,10 @@ static const struct sm_object bios_lock = SM_DECLARE_BOOL({
+ 	.ui_name	= "BIOS Lock",
+ 	.ui_helptext	= "Only the firmware, in System Management Mode, can write\n"
+ 			  "the flash: flashrom and the other tools of the OS can only\n"
+-			  "read it. Settings are still saved.\n"
+-			  "Turn it off before updating the firmware from the OS.",
++			  "read it. Settings are still saved and update capsules\n"
++			  "still install.\n"
++			  "Default: off. Turn it off before writing the flash with\n"
++			  "flashrom.",
+ 	.default_value	= CONFIG(BOOTMEDIA_SMM_BWP),
+ }, WITH_CALLBACK(update_bios_lock));
+ 
+@@ -392,7 +409,8 @@ static const struct sm_object bootmedia_lock = SM_DECLARE_BOOL({
+ 	.ui_helptext	= "Write-protect the read-only part of the firmware (the\n"
+ 			  "bootblock and the keys of verified boot) from power-on, so\n"
+ 			  "that no program can change it. Updates with a capsule still\n"
+-			  "install. Turn it off only to write the whole flash with\n"
++			  "install.\n"
++			  "Default: on. Turn it off only to write the whole flash with\n"
+ 			  "flashrom, then on again.",
+ 	.default_value	= true,
+ }, WITH_CALLBACK(update_bootmedia_lock));
+@@ -403,7 +421,8 @@ static const struct sm_object clear_dram_on_boot = SM_DECLARE_BOOL({
+ 	.ui_name	= "Clear memory at power-on",
+ 	.ui_helptext	= "Clear all the memory at every boot (not when resuming\n"
+ 			  "from sleep), so that what the previous OS left in it\n"
+-			  "cannot be read. About 1.7 s with 32 GB of memory.",
++			  "cannot be read. About 1.7 s with 32 GB of memory.\n"
++			  "Default: on.",
+ 	.default_value	= true,
+ });
+ 
+@@ -437,7 +456,7 @@ static const struct sm_object security_virtualization = SM_DECLARE_FORM({
+ });
+ 
+ static const struct sm_object security_me = SM_DECLARE_FORM({
+-	.ui_name	= "Intel Management Engine",
++	.ui_name	= "Management Engine",
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&me_disable,
+ 		NULL
+@@ -453,7 +472,8 @@ static const struct sm_object f1_to_f12_mode = SM_DECLARE_ENUM({
+ 	.ui_name	= "F1-F12 keys",
+ 	.ui_helptext	= "Function keys: F1-F12 by default, the special functions\n"
+ 			  "(volume, brightness...) with Fn.\n"
+-			  "Special keys: the other way around.",
++			  "Special keys: the other way around.\n"
++			  "Default: Function keys.",
+ 	.default_value	= 1,
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "Function keys (F1-F12)",	1	},
+@@ -462,7 +482,7 @@ static const struct sm_object f1_to_f12_mode = SM_DECLARE_ENUM({
+ });
+ 
+ static const struct sm_object keyboard_keys = SM_DECLARE_FORM({
+-	.ui_name	= "Keyboard",
++	.ui_name	= "Keys",
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&h8_cfr_fn_ctrl_swap,
+ 		&f1_to_f12_mode,
+@@ -486,8 +506,12 @@ static const struct sm_object keyboard_pointing = SM_DECLARE_FORM({
+ static const struct sm_object enable_dual_graphics = SM_DECLARE_BOOL({
+ 	.opt_name	= "enable_dual_graphics",
+ 	.ui_name	= "NVIDIA discrete GPU",
+-	.ui_helptext	= "Power on and enable the NVIDIA GPU on models that have one.\n"
+-			  "When disabled, the GPU is powered off and hidden.",
++	.ui_helptext	= "The NVIDIA GPU, on the models that have one. When on, the\n"
++			  "OS can still power it off while it is unused (runtime\n"
++			  "power management), and the setup shows its options: the\n"
++			  "link tuning here, the GPU off under macOS in\n"
++			  "Compatibility > macOS.\n"
++			  "Default: off: the GPU is powered off and hidden.",
+ 	.default_value	= false,
+ });
+ 
+@@ -497,9 +521,11 @@ static const struct sm_object dgpu_macos_off = SM_DECLARE_BOOL({
+ 	.opt_name	= "dgpu_macos_off",
+ 	.ui_name	= "NVIDIA GPU off under macOS",
+ 	.ui_helptext	= "Since Monterey, macOS has no driver for this GPU: power it\n"
+-			  "off when macOS starts, and again after a wake.\n"
+-			  "Disabled: leave it powered, e.g. for the Kepler drivers\n"
+-			  "that OpenCore Legacy Patcher can install.",
++			  "off when macOS starts, and again after a wake. Replaces an\n"
++			  "SSDT that calls _OFF and -wegnoegpu in OpenCore.\n"
++			  "Default: on. Off: the GPU stays powered, e.g. for the\n"
++			  "Kepler drivers that OpenCore Legacy Patcher can install.\n"
++			  "Shown with the NVIDIA GPU on.",
+ 	.default_value	= true,
+ }, WITH_DEP_VALUES(&enable_dual_graphics, true));
+ 
+@@ -513,7 +539,8 @@ static const struct sm_object peg_link_tuning = SM_DECLARE_ENUM({
+ 			  "front-end (AFE) settings and the transmitter presets for\n"
+ 			  "8 GT/s (PCIe 3.0) before the link trains, then the 8 GT/s\n"
+ 			  "equalization of the Lenovo firmware. Off: the hardware\n"
+-			  "defaults. Takes effect at the next boot.",
++			  "defaults. Takes effect at the next boot.\n"
++			  "Default: As the Lenovo firmware.",
+ 	.default_value	= PEG_TUNING_DEFAULT,
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "Off",			PEG_TUNING_OFF		},
+@@ -527,9 +554,10 @@ static const struct sm_object expresscard = SM_DECLARE_BOOL({
+ 	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
+ 	.opt_name	= "expresscard",
+ 	.ui_name	= "ExpressCard slot",
+-	.ui_helptext	= "PCIe link of the ExpressCard/34 slot (root port 3).\n"
+-			  "Disabled: the port is hidden and powered down, which also\n"
+-			  "closes a hot-plug path for DMA-capable devices.",
++	.ui_helptext	= "The PCIe link of the ExpressCard/34 slot (root port 3).\n"
++			  "Default: on. Off: the port is hidden and powered down, for\n"
++			  "every OS: one empty hot-plug port less at every wake, and\n"
++			  "a hot-plug path for DMA-capable devices closed.",
+ 	.default_value	= true,
+ });
+ 
+@@ -537,9 +565,11 @@ static const struct sm_object thunderbolt = SM_DECLARE_BOOL({
+ 	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
+ 	.opt_name	= "thunderbolt",
+ 	.ui_name	= "Thunderbolt",
+-	.ui_helptext	= "PCIe link of the Thunderbolt controller (root port 5).\n"
+-			  "Disabled: the port is hidden and powered down, which also\n"
+-			  "closes a hot-plug path for DMA-capable devices.",
++	.ui_helptext	= "The PCIe link of the Thunderbolt controller (root port 5).\n"
++			  "The firmware does not power the controller up itself.\n"
++			  "Default: on. Off: the port is hidden and powered down, for\n"
++			  "every OS, and a hot-plug path for DMA-capable devices is\n"
++			  "closed.",
+ 	.default_value	= true,
+ });
+ 
+@@ -550,31 +580,37 @@ static const struct sm_object minihd_audio = SM_DECLARE_BOOL({
+ 	.ui_name	= "Intel display audio",
+ 	.ui_helptext	= "The audio controller of the display ports of the Intel GPU.\n"
+ 			  "On the W541 the Intel GPU drives the panel and the VGA port,\n"
+-			  "neither with audio. Disabled: the controller is hidden, and\n"
+-			  "an OS does not wait for its codec at every wake (macOS).",
++			  "neither with audio, and macOS waits 10 s for its codec at\n"
++			  "every wake and sleep.\n"
++			  "Default: on. Off: the controller is hidden, for every OS.",
+ 	.default_value	= true,
+ });
+ 
+-static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
+-	.ui_name	= "Graphics",
++static const struct sm_object hardware_intel_graphics = SM_DECLARE_FORM({
++	.ui_name	= "Intel graphics",
+ 	.obj_list	= (const struct sm_object *[]) {
+-		&enable_dual_graphics,
+-		&dgpu_macos_off,
+-		&peg_link_tuning,
+ 		&gfx_uma_size,
+ 		&gfx_uma_size_mrc,
+ 		&gfx_aperture_size,
+ 		&gfx_fb_limit,
+-		&gfx_resume_init,
+-		&minihd_audio,
++		NULL
++	},
++});
++
++static const struct sm_object hardware_nvidia_graphics = SM_DECLARE_FORM({
++	.ui_name	= "NVIDIA graphics",
++	.obj_list	= (const struct sm_object *[]) {
++		&enable_dual_graphics,
++		&peg_link_tuning,
+ 		NULL
+ 	},
+ });
+ 
+ /* The SATA ports of the W541 besides the one of the drive bay (port 0) */
+-#define SATA_PORT_HELP	"Disabled: the port is not implemented in the SATA controller, so\n" \
+-			"the OS does not probe it at boot and at every wake. Enable it\n" \
+-			"for a drive in the slot: it does not detect the drive by itself."
++#define SATA_PORT_HELP	"Default: on. Off: the port is not implemented in the SATA\n" \
++			"controller, for every OS, which then does not wait for a\n" \
++			"link on it at boot and at every wake. Turn it on before\n" \
++			"putting a drive in the slot: it does not detect it off."
+ 
+ static const struct sm_object sata_port1 = SM_DECLARE_BOOL({
+ 	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
+@@ -600,15 +636,23 @@ static const struct sm_object sata_port5 = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ });
+ 
++static const struct sm_object hardware_storage = SM_DECLARE_FORM({
++	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.ui_name	= "Storage",
++	.obj_list	= (const struct sm_object *[]) {
++		&sata_port1,
++		&sata_port4,
++		&sata_port5,
++		NULL
++	},
++});
++
+ static const struct sm_object hardware_ports = SM_DECLARE_FORM({
+ 	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
+ 	.ui_name	= "Expansion ports",
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&expresscard,
+ 		&thunderbolt,
+-		&sata_port1,
+-		&sata_port4,
+-		&sata_port5,
+ 		NULL
+ 	},
+ });
+@@ -624,6 +668,41 @@ static const struct sm_object hardware_wireless = SM_DECLARE_FORM({
+ 	},
+ });
+ 
++/* Compatibility */
++
++static const struct sm_object macos_ports_note = SM_DECLARE_COMMENT({
++	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.ui_name	= "Unused slots: Hardware > Storage and Expansion ports",
++	.ui_helptext	= "The empty SATA slots, the ExpressCard slot and Thunderbolt\n"
++			  "can be turned off there, for every OS: macOS then has\n"
++			  "fewer ports to wait for at every wake.",
++});
++
++/*
++ * What an OpenCore configuration did for macOS, with an option: the help of
++ * each says what it replaces. The other macOS fixes need no option.
++ */
++static const struct sm_object compatibility_macos = SM_DECLARE_FORM({
++	.ui_name	= "macOS",
++	.obj_list	= (const struct sm_object *[]) {
++		&acpi_cpu_objects,
++		&cfg_lock,
++		&dgpu_macos_off,
++		&gfx_resume_init,
++		&minihd_audio,
++		&macos_ports_note,
++		NULL
++	},
++});
++
++static const struct sm_object compatibility_advanced = SM_DECLARE_FORM({
++	.ui_name	= "Advanced",
++	.obj_list	= (const struct sm_object *[]) {
++		&nmi,
++		NULL
++	},
++});
++
+ /* The categories */
+ 
+ static struct sm_obj_form general = {
+@@ -632,7 +711,6 @@ static struct sm_obj_form general = {
+ 		&general_about,
+ 		&general_boot,
+ 		&general_sound,
+-		&general_advanced,
+ 		NULL
+ 	},
+ };
+@@ -642,6 +720,9 @@ static struct sm_obj_form energy_saver = {
+ 	.obj_list = (const struct sm_object *[]) {
+ 		&energy_battery,
+ 		&energy_processor,
++#if CONFIG(INTEL_OC_MAILBOX_ENABLE_UNDERVOLTING)
++		&energy_voltage,
++#endif
+ 		&energy_thermal,
+ 		&energy_power,
+ 		NULL
+@@ -671,22 +752,31 @@ static struct sm_obj_form keyboard = {
+ static struct sm_obj_form hardware = {
+ 	.ui_name = "Hardware",
+ 	.obj_list = (const struct sm_object *[]) {
+-		&hardware_graphics,
++		&hardware_intel_graphics,
++		&hardware_nvidia_graphics,
++		&hardware_storage,
+ 		&hardware_ports,
+ 		&hardware_wireless,
+ 		NULL
+ 	},
+ };
+ 
++static struct sm_obj_form compatibility = {
++	.ui_name = "Compatibility",
++	.obj_list = (const struct sm_object *[]) {
++		&compatibility_macos,
++		&compatibility_advanced,
++		NULL
++	},
++};
++
+ static struct sm_obj_form *sm_root[] = {
+ 	&general,
+ 	&energy_saver,
+-	&security,
+-	&keyboard,
+ 	&hardware,
+-#if CONFIG(INTEL_OC_MAILBOX_ENABLE_UNDERVOLTING)
+-	&cpu_voltage,
+-#endif
++	&keyboard,
++	&security,
++	&compatibility,
+ 	NULL
+ };
+ 
+-- 
+2.43.0
+

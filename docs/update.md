@@ -154,7 +154,8 @@ the write access back and boots on.
 ## From the setup, with a USB drive
 
 From v1.2.2, without an OS: *System Preferences* (Esc at power-on) →
-*System Configuration* → *Firmware Update* shows the installed version, the
+*System Configuration* → *Firmware Update* (from v1.3.10 also *General* →
+*Firmware Update*) shows the installed version, the
 lowest version a capsule may have, and the result of the last update
 (version and *successful*, or why it was refused).
 

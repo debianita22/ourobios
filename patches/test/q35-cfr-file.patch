@@ -1,0 +1,69 @@
+q35 for the setup screenshots in QEMU (tools/qemu-setup-shots.py), never
+in a W541 ROM: like q35-update-test.patch, it goes in a git worktree of the
+coreboot tree of its own, which only builds the ROM for QEMU
+(tools/q35-cfr-rom.sh).
+
+The W541 cannot be emulated, so its setup menu cannot come from its
+ramstage: tools/cfr-dump.sh builds the menu code of the W541 on the host
+and writes the CFR record that the ramstage puts in the coreboot table.
+With DRIVERS_OPTION_CFR, mb_cfr_setup_menu() of q35 copies that record
+from the CBFS file cfr.bin into the table as it is (qemu-setup-shots.py
+--cfr adds the file to its copy of the ROM with cbfstool), so the payload
+of the W541 shows the W541's menu. Without the file, or with a file that
+is not a CFR record, the generic forms of q35 as on any board.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+diff --git a/src/mainboard/emulation/qemu-q35/Makefile.mk b/src/mainboard/emulation/qemu-q35/Makefile.mk
+index cba6b4ebc5..2cf574a8e5 100644
+--- a/src/mainboard/emulation/qemu-q35/Makefile.mk
++++ b/src/mainboard/emulation/qemu-q35/Makefile.mk
+@@ -16,6 +16,8 @@ all-y += ../qemu-i440fx/bootmode.c
+ all-y += memmap.c
+ 
+ ramstage-$(CONFIG_CHROMEOS) += chromeos.c
++# ouroBIOS setup screenshots: the CFR record of the CBFS file cfr.bin
++ramstage-$(CONFIG_DRIVERS_OPTION_CFR) += cfr.c
+ 
+ smm-y += ../qemu-i440fx/rom_media.c
+ smm-y += smihandler.c
+diff --git a/src/mainboard/emulation/qemu-q35/cfr.c b/src/mainboard/emulation/qemu-q35/cfr.c
+new file mode 100644
+index 0000000000..dea13e4de5
+--- /dev/null
++++ b/src/mainboard/emulation/qemu-q35/cfr.c
+@@ -0,0 +1,33 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * ouroBIOS setup screenshots in QEMU (tools/qemu-setup-shots.py), never in
++ * a W541 ROM: the setup menu of the W541 in q35. The CBFS file "cfr.bin"
++ * holds the CFR record that the W541's ramstage writes in the coreboot
++ * table (tools/cfr-dump.sh builds it on the host); it goes in the table as
++ * it is, so the payload shows that menu. Without the file, the generic
++ * forms of q35, as on any board.
++ */
++
++#include <boot/coreboot_tables.h>
++#include <cbfs.h>
++#include <console/console.h>
++#include <drivers/option/cfr_frontend.h>
++#include <string.h>
++
++void mb_cfr_setup_menu(struct lb_cfr *cfr_root)
++{
++	size_t size;
++	struct lb_cfr *file = cbfs_map("cfr.bin", &size);
++
++	if (file && size >= sizeof(*file) && file->tag == LB_TAG_CFR_ROOT && file->size == size) {
++		memcpy(cfr_root, file, size);
++		printk(BIOS_INFO, "CFR: setup menu from cfr.bin, %zu bytes\n", size);
++	} else {
++		if (file)
++			printk(BIOS_ERR, "CFR: cfr.bin is no CFR record, generic forms only\n");
++		cfr_write_setup_menu(cfr_root, NULL);
++	}
++	if (file)
++		cbfs_unmap(file);
++}

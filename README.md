@@ -171,11 +171,12 @@ Inside coreboot:
   while Secure Boot is on the entry goes and the firmware refuses to start
   CSMWrap, however it is chosen; *General* → *Boot* in the setup turns it
   off;
-- macOS with OpenCore (from v1.3.10): the CPUs as `Processor` objects and CFG
-  Lock off on request in the setup, and, under macOS only, the HPET and
-  8254 interrupts of a Mac and the backlight level kept across sleep, which
-  OpenCore configurations otherwise patch in
-  ([docs/macos.md](docs/macos.md));
+- macOS with OpenCore (from v1.3.10): in the setup (*Compatibility* →
+  *macOS*) the CPUs as `Processor` objects with `plugin-type` and CFG
+  Lock off, and, under macOS only, the backlight device (PNLF), the HPET
+  and 8254 interrupts of a Mac, the backlight level kept across sleep and
+  the NVIDIA GPU powered off, which OpenCore configurations otherwise add
+  or patch in ([docs/macos.md](docs/macos.md));
 - fixes for wake from suspend (lid, Fn), the Fn hotkeys, Bluetooth and WWAN
   state on resume, xHCI ports, USB over-current mapping, PCIe interrupts, the
   backlight, HDMI/DisplayPort audio clocks, the battery `_UID` and the AES-NI
@@ -185,7 +186,7 @@ Inside coreboot:
 
 > [!NOTE]
 > The NVIDIA GPU is **disabled by default**, as in upstream coreboot. Turn it
-> on in the setup menu: *Hardware* → *Graphics* → *NVIDIA discrete GPU*.
+> on in the setup menu: *Hardware* → *NVIDIA graphics* → *NVIDIA discrete GPU*.
 
 > [!WARNING]
 > Suspend to RAM (S3): with the images up to v1.0.6 the laptop sleeps and

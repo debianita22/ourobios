@@ -1,0 +1,215 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 27 Oct 2026 12:29:30 +0100
+Subject: [PATCH] ec/lenovo/h8: Say what each setup option does, and its
+ default
+
+The help of the H8 options said "Enable or disable ..." or nothing at
+all ("TBD"). Say what each one controls, whether for every OS, and its
+default, as the other setup options of the Lenovo Haswell boards do from
+now on, and name them in the case of the rest of the menu: "Keyboard
+light", "USB always on", "Battery charged first", "Power management
+beeps", "Low battery beep", "Swap Fn and Ctrl" and "TrackPoint". The
+option names, their values and their defaults do not change.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/ec/lenovo/h8/cfr.c | 76 ++++++++++++++++++++++++++++--------------
+ 1 file changed, 51 insertions(+), 25 deletions(-)
+
+diff --git a/src/ec/lenovo/h8/cfr.c b/src/ec/lenovo/h8/cfr.c
+index a315c34bd7..431cec2d66 100644
+--- a/src/ec/lenovo/h8/cfr.c
++++ b/src/ec/lenovo/h8/cfr.c
+@@ -33,7 +33,9 @@ static void update_bluetooth(struct sm_object *new)
+ const struct sm_object h8_cfr_bluetooth = SM_DECLARE_BOOL({
+ 	.opt_name	= "bluetooth",
+ 	.ui_name	= "Bluetooth",
+-	.ui_helptext	= "Enable or disable the bluetooth module",
++	.ui_helptext	= "The Bluetooth module. Off: the EC powers it off, for every\n"
++			  "OS.\n"
++			  "Default: on.",
+ 	.default_value	= true,
+ }, WITH_CALLBACK(update_bluetooth));
+ 
+@@ -69,13 +71,14 @@ static void update_backlight(struct sm_object *new)
+ 
+ 	if (has_thinklight && has_kb_backlight) {
+ 		new->sm_enum.values = kic_values_both;
+-		new->sm_enum.ui_helptext = "Select illumination device(s)";
++		new->sm_enum.ui_helptext = "Which lights the light key (Fn+Space) turns on: the\n"
++					   "ThinkLight, the keyboard backlight, both or none.";
+ 	} else if (has_thinklight) {
+ 		new->sm_enum.values = kic_values_thinklight_only;
+-		new->sm_enum.ui_helptext = "Enable or disable ThinkLight";
++		new->sm_enum.ui_helptext = "The ThinkLight, which Fn+PgUp turns on.";
+ 	} else {
+ 		new->sm_enum.values = kic_values_keyboard_only;
+-		new->sm_enum.ui_helptext = "Enable or disable keyboard illumination";
++		new->sm_enum.ui_helptext = "The keyboard backlight, which Fn+Space turns on.";
+ 	}
+ 
+ 	new->sm_enum.default_value = h8_illumination_default();
+@@ -84,21 +87,24 @@ static void update_backlight(struct sm_object *new)
+ /* Illumination Control (ThinkLight and/or keyboard backlight) */
+ const struct sm_object h8_cfr_backlight = SM_DECLARE_ENUM({
+ 	.opt_name	= "backlight",
+-	.ui_name	= "Illumination Control",
+-	.ui_helptext	= "Select illumination device(s)",
++	.ui_name	= "Keyboard light",
++	.ui_helptext	= "Which lights the light key turns on.",
+ 	.values		= kic_values_both,
+ }, WITH_CALLBACK(update_backlight));
+ 
+ /* USB Always-On */
+ const struct sm_object h8_cfr_usb_always_on = SM_DECLARE_ENUM({
+ 	.opt_name	= "usb_always_on",
+-	.ui_name	= "USB Always-on",
+-	.ui_helptext	= "Always keep USB ports powered",
++	.ui_name	= "USB always on",
++	.ui_helptext	= "Power to the Always On USB port while the laptop sleeps or\n"
++			  "is off, to charge devices: on AC only, or on AC and\n"
++			  "battery.\n"
++			  "Default: Disabled.",
+ 	.default_value	= UAO_OFF,
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "Disabled",		UAO_OFF			},
+ 				{ "AC only",		UAO_AC_ONLY		},
+-				{ "AC and Battery",	UAO_AC_AND_BATTERY	},
++				{ "AC and battery",	UAO_AC_AND_BATTERY	},
+ 				SM_ENUM_VALUE_END				},
+ });
+ 
+@@ -112,7 +118,8 @@ static void update_uwb(struct sm_object *new)
+ const struct sm_object h8_cfr_uwb = SM_DECLARE_BOOL({
+ 	.opt_name	= "uwb",
+ 	.ui_name	= "Ultrawideband",
+-	.ui_helptext	= "TBD",
++	.ui_helptext	= "The Ultrawideband radio. Off: the EC powers it off.\n"
++			  "Default: on.",
+ 	.default_value	= true,
+ }, WITH_CALLBACK(update_uwb));
+ 
+@@ -124,8 +131,9 @@ enum {
+ /* Battery charge priority */
+ const struct sm_object h8_cfr_first_battery = SM_DECLARE_ENUM({
+ 	.opt_name	= "first_battery",
+-	.ui_name	= "Battery Charge Priority",
+-	.ui_helptext	= "Select which battery to charge first.",
++	.ui_name	= "Battery charged first",
++	.ui_helptext	= "With a second battery, the one the EC charges first.\n"
++			  "Default: Primary.",
+ 	.default_value	= H8_PRIMARY_BATTERY,
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "Secondary", H8_SECONDARY_BATTERY	},
+@@ -137,7 +145,9 @@ const struct sm_object h8_cfr_first_battery = SM_DECLARE_ENUM({
+ const struct sm_object h8_cfr_volume = SM_DECLARE_NUMBER({
+ 	.opt_name	= "volume",
+ 	.ui_name	= "Volume",
+-	.ui_helptext	= "EC volume register value to restore at boot.",
++	.ui_helptext	= "The volume register of the EC, written at power-on (not at\n"
++			  "wake). The OS sets its own volume once it runs.\n"
++			  "Default: 3.",
+ 	.default_value	= 3,
+ 	.min		= 0,
+ 	.max		= 0xff,
+@@ -149,7 +159,8 @@ const struct sm_object h8_cfr_volume = SM_DECLARE_NUMBER({
+ const struct sm_object h8_cfr_wlan = SM_DECLARE_BOOL({
+ 	.opt_name	= "wlan",
+ 	.ui_name	= "WLAN",
+-	.ui_helptext	= "Enable or disable the WLAN module",
++	.ui_helptext	= "The Wi-Fi card. Off: the EC powers it off, for every OS.\n"
++			  "Default: on.",
+ 	.default_value	= true,
+ });
+ 
+@@ -163,7 +174,9 @@ static void update_wwan(struct sm_object *new)
+ const struct sm_object h8_cfr_wwan = SM_DECLARE_BOOL({
+ 	.opt_name	= "wwan",
+ 	.ui_name	= "WWAN",
+-	.ui_helptext	= "Enable or disable the WWAN module",
++	.ui_helptext	= "The mobile broadband card. Off: the EC powers it off, for\n"
++			  "every OS.\n"
++			  "Default: on.",
+ 	.default_value	= true,
+ }, WITH_CALLBACK(update_wwan));
+ 
+@@ -176,24 +189,33 @@ static void update_beep(struct sm_object *new)
+ 
+ const struct sm_object h8_cfr_pm_beeps = SM_DECLARE_BOOL({
+ 	.opt_name	= "power_management_beeps",
+-	.ui_name	= "Power Management Beeps",
+-	.ui_helptext	= "Enable or disable power management beeps",
++	.ui_name	= "Power management beeps",
++	.ui_helptext	= "Beeps of the EC on power events, such as the AC adapter\n"
++			  "plugged in or out.\n"
++			  "Default: on.",
+ 	.default_value	= true,
+ }, WITH_CALLBACK(update_beep));
+ 
+ /* Low Battery Beep */
+ const struct sm_object h8_cfr_battery_beep = SM_DECLARE_BOOL({
+ 	.opt_name	= "low_battery_beep",
+-	.ui_name	= "Low Battery Beep",
+-	.ui_helptext	= "Enable or disable low battery beep",
++	.ui_name	= "Low battery beep",
++	.ui_helptext	= "Beep of the EC when the battery runs low.\n"
++			  "Default: on.",
+ 	.default_value	= true,
+ }, WITH_CALLBACK(update_beep));
+ 
+ /* Fn-CTRL Swap */
+ const struct sm_object h8_cfr_fn_ctrl_swap = SM_DECLARE_BOOL({
+ 	.opt_name	= "fn_ctrl_swap",
+-	.ui_name	= "Swap Fn and CTRL",
+-	.ui_helptext	= "Swap the left Fn and CTRL keys",
++	.ui_name	= "Swap Fn and Ctrl",
++	.ui_helptext	= "Swap the Fn and Ctrl keys at the bottom left of the\n"
++			  "keyboard.\n"
++#if CONFIG(H8_FN_CTRL_SWAP)
++			  "Default: on.",
++#else
++			  "Default: off.",
++#endif
+ 	.default_value	= CONFIG(H8_FN_CTRL_SWAP),
+ });
+ 
+@@ -201,7 +223,9 @@ const struct sm_object h8_cfr_fn_ctrl_swap = SM_DECLARE_BOOL({
+ const struct sm_object h8_cfr_sticky_fn = SM_DECLARE_BOOL({
+ 	.opt_name	= "sticky_fn",
+ 	.ui_name	= "Sticky Fn key",
+-	.ui_helptext	= "Function key acts as a toggle",
++	.ui_helptext	= "Fn acts as a toggle: press and release it, then the other\n"
++			  "key.\n"
++			  "Default: off.",
+ 	.default_value	= false,
+ });
+ 
+@@ -218,7 +242,8 @@ const struct sm_object h8_cfr_f1_to_f12_as_primary = SM_DECLARE_BOOL({
+ const struct sm_object h8_cfr_touchpad = SM_DECLARE_BOOL({
+ 	.opt_name	= "touchpad",
+ 	.ui_name	= "Touchpad",
+-	.ui_helptext	= "Enable or disable the touchpad",
++	.ui_helptext	= "The touchpad. Off: turned off for every OS.\n"
++			  "Default: on.",
+ 	.default_value	= true,
+ 	.flags		= CONFIG(EC_LENOVO_PMH7) ? 0 : CFR_OPTFLAG_SUPPRESS,
+ });
+@@ -226,8 +251,9 @@ const struct sm_object h8_cfr_touchpad = SM_DECLARE_BOOL({
+ /* Trackpoint - Controlled by PMH7 */
+ const struct sm_object h8_cfr_trackpoint = SM_DECLARE_BOOL({
+ 	.opt_name	= "trackpoint",
+-	.ui_name	= "Trackpoint",
+-	.ui_helptext	= "Enable or disable the trackpoint",
++	.ui_name	= "TrackPoint",
++	.ui_helptext	= "The TrackPoint. Off: turned off for every OS.\n"
++			  "Default: on.",
+ 	.default_value	= true,
+ 	.flags		= CONFIG(EC_LENOVO_PMH7) ? 0 : CFR_OPTFLAG_SUPPRESS,
+ });
+-- 
+2.43.0
+

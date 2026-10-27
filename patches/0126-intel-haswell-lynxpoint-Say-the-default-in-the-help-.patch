@@ -1,0 +1,241 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 27 Oct 2026 12:29:58 +0100
+Subject: [PATCH] intel/haswell,lynxpoint: Say the default in the help of the
+ options
+
+Give the setup options of the Haswell CPU, its northbridge and Lynx
+Point the help that the other options of the Lenovo Haswell boards now
+have: what the option does, its default and when to change it. Some
+also say more than before: the CPU power limit lock holds until the next
+reset, a change of VT-x needs a full power cycle that the firmware does
+itself, C-state configuration lock off is for macOS without the
+AppleXcpmCfgLock quirk, and with "Light the display up at wake" off
+macOS needs a Lilu plugin or SSDT-PNLWAK to light the panel up.
+
+The names of three Lynx Point options follow what they do: "After a
+power loss" (was "Restore AC Power Loss"), "Intel ME interface (HECI)"
+(was "Intel Management Engine": the option hides the HECI interface,
+the ME keeps running) and "Non-maskable interrupts". Their defaults
+depend on Kconfig (MAINBOARD_POWER_FAILURE_STATE, DISABLE_ME_PCI), so
+the help gets them from there. The option names, values and defaults do
+not change.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init; the
+help of "After a power loss" and of the ME interface name the defaults
+of the W541.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/cpu/intel/haswell/cfr.h           | 22 ++++++++++------
+ src/northbridge/intel/haswell/cfr.h   | 29 ++++++++++++---------
+ src/southbridge/intel/lynxpoint/cfr.h | 36 +++++++++++++++++++++------
+ 3 files changed, 61 insertions(+), 26 deletions(-)
+
+diff --git a/src/cpu/intel/haswell/cfr.h b/src/cpu/intel/haswell/cfr.h
+index bf8cc7504d..0473221a0b 100644
+--- a/src/cpu/intel/haswell/cfr.h
++++ b/src/cpu/intel/haswell/cfr.h
+@@ -9,8 +9,10 @@
+ static const struct sm_object cpu_power_limit_lock = SM_DECLARE_BOOL({
+ 	.opt_name	= "cpu_power_limit_lock",
+ 	.ui_name	= "CPU power limit lock",
+-	.ui_helptext	= "Lock CPU package power limits after programming.\n"
+-			  "This prevents the power limits from being changed by the OS or runtime tools.\n",
++	.ui_helptext	= "Lock the power limits of the CPU package once the firmware\n"
++			  "has set them, so that the OS and its tools cannot change\n"
++			  "them until the next reset.\n"
++			  "Default: off.",
+ 	.default_value	= false,
+ });
+ 
+@@ -20,7 +22,8 @@ static const struct sm_object eist = SM_DECLARE_BOOL({
+ 	.ui_helptext	= "Enhanced Intel SpeedStep (P-states): the OS scales the CPU\n"
+ 			  "frequency and voltage with the load. When disabled, the\n"
+ 			  "firmware requests the base frequency, turns Turbo Boost off\n"
+-			  "and gives the OS no P-state table.",
++			  "and gives the OS no P-state table.\n"
++			  "Default: on.",
+ 	.default_value	= true,
+ });
+ 
+@@ -28,7 +31,8 @@ static const struct sm_object turbo_mode = SM_DECLARE_BOOL({
+ 	.opt_name	= "turbo_mode",
+ 	.ui_name	= "Intel Turbo Boost",
+ 	.ui_helptext	= "Run above the base frequency while power and temperature\n"
+-			  "allow. Needs Intel SpeedStep.",
++			  "allow. Needs Intel SpeedStep.\n"
++			  "Default: on.",
+ 	.default_value	= true,
+ }, WITH_DEP(&eist));
+ 
+@@ -38,7 +42,8 @@ static const struct sm_object c_states = SM_DECLARE_BOOL({
+ 	.ui_helptext	= "Idle power states. When disabled, ACPI only reports C1, and\n"
+ 			  "package C-states and C1E are off: more power and heat at\n"
+ 			  "idle, lower wake-up latency. The Linux intel_idle driver\n"
+-			  "still uses core C-states (intel_idle.max_cstate=0 stops it).",
++			  "still uses core C-states (intel_idle.max_cstate=0 stops it).\n"
++			  "Default: on.",
+ 	.default_value	= true,
+ });
+ 
+@@ -48,7 +53,8 @@ static const struct sm_object cfg_lock = SM_DECLARE_BOOL({
+ 	.ui_helptext	= "Lock the package C-state configuration (MSR 0xE2, CFG\n"
+ 			  "Lock) once the firmware has set it, so that the OS cannot\n"
+ 			  "change it. macOS writes it: with the lock, it only boots\n"
+-			  "with the OpenCore quirk AppleXcpmCfgLock.",
++			  "with the OpenCore quirk AppleXcpmCfgLock.\n"
++			  "Default: on. Off for macOS, without that quirk.",
+ 	.default_value	= true,
+ });
+ 
+@@ -74,7 +80,9 @@ static const struct sm_object vmx = SM_DECLARE_BOOL({
+ 	.opt_name	= "vmx",
+ 	.ui_name	= "Intel VT-x",
+ 	.ui_helptext	= "Intel Virtualization Technology: hardware support for\n"
+-			  "virtual machines (VMX).",
++			  "virtual machines (VMX). A change needs a full power cycle,\n"
++			  "which the firmware does by itself.\n"
++			  "Default: on.",
+ 	.default_value	= CONFIG(ENABLE_VMX),
+ });
+ 
+diff --git a/src/northbridge/intel/haswell/cfr.h b/src/northbridge/intel/haswell/cfr.h
+index daa4724e19..4133f6acbb 100644
+--- a/src/northbridge/intel/haswell/cfr.h
++++ b/src/northbridge/intel/haswell/cfr.h
+@@ -16,7 +16,8 @@ static const struct sm_object gfx_aperture_size = SM_DECLARE_ENUM({
+ 	.opt_name	= "gfx_aperture_size",
+ 	.ui_name	= "Graphics aperture size",
+ 	.ui_helptext	= "Size of the integrated GPU aperture (GMADR BAR), the CPU\n"
+-			  "window into graphics memory. Takes effect at the next boot.",
++			  "window into graphics memory. Takes effect at the next boot.\n"
++			  "Default: 256 MB.",
+ 	.default_value	= IGD_APERTURE_256MB,
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "128 MB",	IGD_APERTURE_128MB	},
+@@ -32,7 +33,8 @@ static const struct sm_object gfx_uma_size = SM_DECLARE_ENUM({
+ 	.ui_name	= "DVMT pre-allocated memory",
+ 	.ui_helptext	= "Memory reserved at boot for the integrated GPU (graphics\n"
+ 			  "stolen memory), taken from system RAM. Takes effect at the\n"
+-			  "next boot.",
++			  "next boot.\n"
++			  "Default: 64 MB.",
+ 	.default_value	= IGD_UMA_SIZE_64MB,
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "32 MB",	IGD_UMA_SIZE_32MB	},
+@@ -56,13 +58,14 @@ static const struct sm_object gfx_resume_init = SM_DECLARE_BOOL({
+ 	.opt_name	= "gfx_resume_init",
+ 	.ui_name	= "Light the display up at wake",
+ 	.ui_helptext	= "At wake from sleep (S3) the firmware sets the display up\n"
+-			  "again, as at boot, before the OS takes over. Off: it only\n"
+-			  "sets the panel power timings and the backlight PWM, and\n"
+-			  "leaves the display to the graphics driver of the OS (i915\n"
+-			  "on Linux, macOS): a faster wake, without the backlight\n"
+-			  "coming on twice. With an OS without an Intel graphics\n"
+-			  "driver (a plain framebuffer) the screen stays black after\n"
+-			  "wake.",
++			  "again, as at boot, before the OS takes over.\n"
++			  "Default: on. Off: it only sets the panel power timings and\n"
++			  "the backlight PWM and powers the panel, and leaves the rest\n"
++			  "to the graphics driver of the OS, for every OS: a faster\n"
++			  "wake, without the backlight coming on twice. macOS then\n"
++			  "needs a Lilu plugin or SSDT-PNLWAK to light the panel up;\n"
++			  "an OS without an Intel graphics driver (a plain\n"
++			  "framebuffer) wakes to a black screen.",
+ 	.default_value	= true,
+ });
+ 
+@@ -83,8 +86,9 @@ static const struct sm_object gfx_fb_limit = SM_DECLARE_ENUM({
+ 			  "and the boot loaders that keep it. At most " GFX_FB_CONFIG_SIZE ",\n"
+ 			  "scaled to the panel, or the mode of the panel up to\n"
+ 			  "2880 x 1620: sharp, with smaller text (raise the scale in\n"
+-			  "Graphical UI Configuration) and more pixels to draw.\n"
+-			  "Takes effect at the next boot.",
++			  "Graphical UI) and more pixels to draw. Takes effect at the\n"
++			  "next boot.\n"
++			  "Default: at most " GFX_FB_CONFIG_SIZE ".",
+ 	.default_value	= IGD_FB_LIMIT_CONFIG,
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "At most " GFX_FB_CONFIG_SIZE,	IGD_FB_LIMIT_CONFIG },
+@@ -96,7 +100,8 @@ static const struct sm_object vtd = SM_DECLARE_BOOL({
+ 	.opt_name	= "vtd",
+ 	.ui_name	= "Intel VT-d",
+ 	.ui_helptext	= "DMA remapping (IOMMU): isolates devices from memory they\n"
+-			  "do not own and allows PCI passthrough to virtual machines.",
++			  "do not own and allows PCI passthrough to virtual machines.\n"
++			  "Default: on.",
+ 	.default_value	= true,
+ });
+ 
+diff --git a/src/southbridge/intel/lynxpoint/cfr.h b/src/southbridge/intel/lynxpoint/cfr.h
+index e574a2683b..fef850cc1a 100644
+--- a/src/southbridge/intel/lynxpoint/cfr.h
++++ b/src/southbridge/intel/lynxpoint/cfr.h
+@@ -10,15 +10,32 @@
+ #include <drivers/option/cfr_frontend.h>
+ #include "pch_minimal.h"
+ 
++/* The defaults, for the help texts */
++#if CONFIG_MAINBOARD_POWER_FAILURE_STATE == MAINBOARD_POWER_ON
++#define POWER_FAILURE_DEFAULT	"Power on (S0)"
++#elif CONFIG_MAINBOARD_POWER_FAILURE_STATE == MAINBOARD_POWER_KEEP
++#define POWER_FAILURE_DEFAULT	"Previous state"
++#else
++#define POWER_FAILURE_DEFAULT	"Power off (S5)"
++#endif
++#if CONFIG(DISABLE_ME_PCI)
++#define ME_PCI_DEFAULT		"Disabled"
++#else
++#define ME_PCI_DEFAULT		"Enabled"
++#endif
++
+ /* Power state after power loss */
+ static const struct sm_object power_on_after_fail = SM_DECLARE_ENUM({
+ 	.opt_name	= "power_on_after_fail",
+-	.ui_name	= "Restore AC Power Loss",
+-	.ui_helptext	= "Specify what to do when power is re-applied after a power loss.",
++	.ui_name	= "After a power loss",
++	.ui_helptext	= "What the laptop does when power comes back after it was lost\n"
++			  "with no battery to keep it: stay off, power on, or go back\n"
++			  "to the state it was in.\n"
++			  "Default: " POWER_FAILURE_DEFAULT ".",
+ 	.default_value	= CONFIG_MAINBOARD_POWER_FAILURE_STATE,
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "Power off (S5)", MAINBOARD_POWER_OFF		},
+-				{ "Power on  (S0)", MAINBOARD_POWER_ON		},
++				{ "Power on (S0)",  MAINBOARD_POWER_ON		},
+ 				{ "Previous state", MAINBOARD_POWER_KEEP	},
+ 				SM_ENUM_VALUE_END				},
+ });
+@@ -26,8 +43,10 @@ static const struct sm_object power_on_after_fail = SM_DECLARE_ENUM({
+ /* Intel ME State */
+ static const struct sm_object me_disable = SM_DECLARE_ENUM({
+ 	.opt_name	= "me_disable",
+-	.ui_name	= "Intel Management Engine",
+-	.ui_helptext	= "Enable or disable the PCI/HECI interface of the Intel Management Engine",
++	.ui_name	= "Intel ME interface (HECI)",
++	.ui_helptext	= "The PCI interface (HECI) of the Management Engine, through\n"
++			  "which the OS talks to it. The ME itself keeps running.\n"
++			  "Default: " ME_PCI_DEFAULT ".",
+ 	.default_value	= CONFIG(DISABLE_ME_PCI),
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "Disabled",	1	},
+@@ -48,8 +67,11 @@ enum {
+ /* Non-maskable interrupts */
+ static const struct sm_object nmi = SM_DECLARE_ENUM({
+ 	.opt_name	= "nmi",
+-	.ui_name	= "Non-maskable Interrupts",
+-	.ui_helptext	= "Enable or disable non-maskable interrupts",
++	.ui_name	= "Non-maskable interrupts",
++	.ui_helptext	= "Let the chipset raise non-maskable interrupts (NMI), as on\n"
++			  "an I/O channel check (IOCHK#), for debugging. PCI SERR#\n"
++			  "raises none either way.\n"
++			  "Default: off.",
+ 	.default_value	= NMI_OFF,
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "Disabled",	NMI_OFF	},
+-- 
+2.43.0
+

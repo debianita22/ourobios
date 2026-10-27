@@ -189,13 +189,50 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `ddf612165c8b`, three commits after the pin (the setup hotkey, failed
   automatic boot options, the SubForm parsing fix that our patch 0002
   already covered).
-- From rc12, *Hardware* → *Graphics* → *Intel display audio* (0122): the
-  HD Audio controller of the display ports of the Intel GPU (0:3.0), on
-  by default. On the W541 the Intel GPU drives the panel and the VGA
+- From rc12, *Compatibility* → *macOS* → *Intel display audio* (0122):
+  the HD Audio controller of the display ports of the Intel GPU (0:3.0),
+  on by default. On the W541 the Intel GPU drives the panel and the VGA
   port, neither with audio, and under macOS AppleHDAHDMI_DPDriver waited
   10 s for its codec at every wake and at every sleep with the display
   off: 10-20 s of wake time instead of about 1.3 s, with the battery
   polling held meanwhile. Off, the controller is hidden for every OS.
+- From rc12, two more parts of an OpenCore configuration in the firmware
+  ([docs/macos.md](docs/macos.md)): the backlight device of macOS,
+  `\_SB.PCI0.GFX0.PNLF`, under macOS only, with the PWM of the panel at
+  the maximum of the Haswell Macs (0xad9, `_UID` 15) from boot and again
+  after every wake, as OpenCore's `SSDT-PNLF` sets it at boot (0124); and,
+  with *ACPI processor objects* on *Processor*, `plugin-type` on the first
+  thread, which turns XCPM on, as OpenCore's `SSDT-PLUG` does (0123).
+  Remove those two SSDTs from the configuration: theirs would be a second
+  `PNLF` and a second `_DSM`. The NVRAM of macOS needs no emulation either
+  ([docs/macos.md](docs/macos.md#native-nvram)).
+- From rc12, the setup menu in six categories, each option in one card
+  only (0125-0127, edk2/0028, lvglpkg/0018); the option names and values
+  stay, and so do the settings. *General*: *About this ThinkPad*, *Boot*,
+  *Sound*, and links to *Time and Date Settings*, *Firmware Update*,
+  *Boot Splash Settings* and *Graphical UI Configuration*, which *System
+  Configuration* still lists too; *Energy Saver*: *Battery*, *Processor*,
+  *Processor voltage* (the undervolting options, a category of their own
+  until now), *Thermal*, *Power*; *Hardware*: *Intel graphics*, *NVIDIA
+  graphics*, *Storage* (the SATA ports), *Expansion ports* (ExpressCard
+  and Thunderbolt), *Wireless*; *Keyboard*: *Keys*, *Pointing devices*;
+  *Security*: *Flash protection*, *Memory protection*, *Virtualization*,
+  *Management Engine*, and links to *Secure Boot Configuration* and to
+  the password; *Compatibility*, new: *macOS* (*ACPI processor objects*,
+  *C-state configuration lock*, *NVIDIA GPU off under macOS*, *Light the
+  display up at wake*, *Intel display audio*) and *Advanced*
+  (*Non-maskable interrupts*). The options that the entries above place
+  in *Hardware* → *Graphics*, *General* → *Advanced* or *Energy Saver* →
+  *Processor* are in these cards now. The help of every option says what
+  it does, its default and when to change it, and some names say more:
+  *After a power loss* (was *Restore AC Power Loss*), *Intel ME interface
+  (HECI)* (was *Intel Management Engine*), *Keyboard light*
+  (*Illumination Control*), *Battery charged first* (*Battery Charge
+  Priority*). The build checks the menu of each variant, built on the host
+  from the same sources (`tools/build.sh menu`): an option in two cards,
+  or in none, stops it; `tools/qemu-setup-shots.py` takes screenshots of
+  the setup with the menu of the W541 in QEMU
+  ([patches/README.md](patches/README.md#the-setup-menu-and-its-screenshots)).
 
 ## v1.3.9
 
