@@ -206,6 +206,14 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   Remove those two SSDTs from the configuration: theirs would be a second
   `PNLF` and a second `_DSM`. The NVRAM of macOS needs no emulation either
   ([docs/macos.md](docs/macos.md#native-nvram)).
+- From rc12, *Compatibility* → *macOS* → *Device properties for macOS*
+  (0128), off by default: on, the firmware gives macOS, through the `_DSM`
+  of each device, the `DeviceProperties` of the OpenCore configuration of
+  this W541 (`configs/macos/DeviceProperties.plist`): AAPL,ig-platform-id
+  0x0D220003, device-id 0x0412 and the framebuffer patches on the Intel
+  GPU, `layout-id` 28 on the audio, the card reader and the LPC bridge as
+  Apple's, `class-code` 0xFFFFFFFF on the Intel display audio. Then that
+  section of the configuration can go.
 - From rc12, the setup menu in six categories, each option in one card
   only (0125-0127, edk2/0028, lvglpkg/0018); the option names and values
   stay, and so do the settings. *General*: *About this ThinkPad*, *Boot*,
@@ -220,8 +228,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   *Management Engine*, and links to *Secure Boot Configuration* and to
   the password; *Compatibility*, new: *macOS* (*ACPI processor objects*,
   *C-state configuration lock*, *NVIDIA GPU off under macOS*, *Light the
-  display up at wake*, *Intel display audio*) and *Advanced*
-  (*Non-maskable interrupts*). The options that the entries above place
+  display up at wake*, *Intel display audio*, *Device properties for
+  macOS*) and *Advanced* (*Non-maskable interrupts*). The options that
+  the entries above place
   in *Hardware* → *Graphics*, *General* → *Advanced* or *Energy Saver* →
   *Processor* are in these cards now. The help of every option says what
   it does, its default and when to change it, and some names say more:

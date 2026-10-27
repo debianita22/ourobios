@@ -1,0 +1,266 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 27 Oct 2026 13:02:37 +0100
+Subject: [PATCH] mb/lenovo/haswell: Give macOS the device properties of the
+ W541
+
+OpenCore configurations give macOS device properties (DeviceProperties):
+the framebuffer of the Intel GPU, the layout of the audio codec, the
+device IDs that macOS drivers know. macOS also takes them from the _DSM
+of the device in the ACPI tables, for Apple's UUID
+(a0b5b7c6-1318-441c-b0c9-fe695eaf949b): function 0 lists function 1,
+which returns them as pairs of name and value.
+
+Add acpi/devprops.asl to the DSDT of the W541, written by the
+devprops2asl.py tool of ouroBIOS from the DeviceProperties of the
+OpenCore configuration that runs macOS Sonoma on it:
+- GFX0: AAPL,ig-platform-id 0x0D220003, device-id 0x0412 and the
+  framebuffer patches of WhateverGreen (connector 2, force-online, a
+  maximum pixel clock of 450 MHz);
+- HDEF: layout-id 28 for AppleALC;
+- HDAU: class-code 0xFFFFFFFF, so that no macOS driver takes the Intel
+  display audio;
+- LPCB: compatible pci8086,8c4b; RP01.PXSX, the card reader: compatible
+  pci14e4,16bc.
+The values are as OpenCore gives them: data as is, strings with their
+NUL.
+
+The _DSM give them only for Apple's UUID, under macOS (\ISDW) and with
+the new setup option macos_device_properties on (Compatibility > macOS >
+Device properties for macOS, DPRP in the SSDT), off by default: the same
+property from two sources with different values is not well defined,
+and the properties of another configuration (another framebuffer) could
+leave the screen black. With the option on, DeviceProperties can go
+from the OpenCore configuration.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec 20230628 with the DSDT and an SSDT with DPRP: without Darwin,
+and with Darwin and DPRP 0, every _DSM returns Buffer {0}; with Darwin
+and DPRP 1, function 0 returns Buffer {0x03} and function 1 the
+properties above, byte for byte, and another UUID gets Buffer {0}. The
+other ACPI checks of the series give the same results as before.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ .../lenovo/haswell/acpi/devprops.asl          | 116 ++++++++++++++++++
+ src/mainboard/lenovo/haswell/cfr.c            |  15 +++
+ src/mainboard/lenovo/haswell/dsdt.asl         |   3 +
+ src/mainboard/lenovo/haswell/mainboard.c      |  22 +++-
+ 4 files changed, 151 insertions(+), 5 deletions(-)
+ create mode 100644 src/mainboard/lenovo/haswell/acpi/devprops.asl
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/devprops.asl b/src/mainboard/lenovo/haswell/acpi/devprops.asl
+new file mode 100644
+index 0000000000..d15238505c
+--- /dev/null
++++ b/src/mainboard/lenovo/haswell/acpi/devprops.asl
+@@ -0,0 +1,116 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * The device properties of macOS on this W541, as DeviceProperties of an
++ * OpenCore configuration gives them, through the _DSM of each device for
++ * Apple's UUID: function 0 lists function 1, which returns them. Written
++ * by tools/devprops2asl.py of ouroBIOS from that DeviceProperties.
++ */
++
++External (\_SB.PCI0.DPRP, IntObj)
++
++/*
++ * Whether a _DSM gives the properties: for Apple's UUID (Arg0), under
++ * macOS, with the setup option macos_device_properties on (DPRP, from
++ * the SSDT; off without it).
++ */
++Method (\_SB.PCI0.DPON, 1, Serialized)
++{
++	If (Arg0 != ToUUID ("a0b5b7c6-1318-441c-b0c9-fe695eaf949b")) {
++		Return (0)
++	}
++	If (\ISDW () && CondRefOf (\_SB.PCI0.DPRP)) {
++		Return (\_SB.PCI0.DPRP)
++	}
++	Return (0)
++}
++
++Scope (\_SB.PCI0.HDEF)
++{
++	Method (_DSM, 4, Serialized)
++	{
++		If (!\_SB.PCI0.DPON (Arg0)) {
++			Return (Buffer (One) { 0x00 })
++		}
++		If (Arg2 == Zero) {
++			Return (Buffer (One) { 0x03 })
++		}
++		Return (Package () {
++			"layout-id", Buffer () { 0x1c, 0x00, 0x00, 0x00 },
++		})
++	}
++}
++
++Scope (\_SB.PCI0.RP01.PXSX)
++{
++	Method (_DSM, 4, Serialized)
++	{
++		If (!\_SB.PCI0.DPON (Arg0)) {
++			Return (Buffer (One) { 0x00 })
++		}
++		If (Arg2 == Zero) {
++			Return (Buffer (One) { 0x03 })
++		}
++		Return (Package () {
++			"compatible", Buffer () { "pci14e4,16bc" },
++		})
++	}
++}
++
++Scope (\_SB.PCI0.LPCB)
++{
++	Method (_DSM, 4, Serialized)
++	{
++		If (!\_SB.PCI0.DPON (Arg0)) {
++			Return (Buffer (One) { 0x00 })
++		}
++		If (Arg2 == Zero) {
++			Return (Buffer (One) { 0x03 })
++		}
++		Return (Package () {
++			"compatible", Buffer () { "pci8086,8c4b" },
++		})
++	}
++}
++
++Scope (\_SB.PCI0.GFX0)
++{
++	Method (_DSM, 4, Serialized)
++	{
++		If (!\_SB.PCI0.DPON (Arg0)) {
++			Return (Buffer (One) { 0x00 })
++		}
++		If (Arg2 == Zero) {
++			Return (Buffer (One) { 0x03 })
++		}
++		Return (Package () {
++			"AAPL,ig-platform-id", Buffer () { 0x03, 0x00, 0x22, 0x0d },
++			"device-id", Buffer () { 0x12, 0x04, 0x00, 0x00 },
++			"enable-max-pixel-clock-override", Buffer () { 0x01, 0x00, 0x00, 0x00 },
++			"force-online", Buffer () { 0x01, 0x00, 0x00, 0x00 },
++			"force-online-framebuffers", Buffer () {
++				0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02
++			},
++			"framebuffer-con2-enable", Buffer () { 0x01, 0x00, 0x00, 0x00 },
++			"framebuffer-con2-flags", Buffer () { 0x01, 0x00, 0x00, 0x00 },
++			"framebuffer-patch-enable", Buffer () { 0x01, 0x00, 0x00, 0x00 },
++			"max-pixel-clock-frequency", Buffer () { 0x80, 0x74, 0xd2, 0x1a },
++		})
++	}
++}
++
++Scope (\_SB.PCI0.HDAU)
++{
++	Method (_DSM, 4, Serialized)
++	{
++		If (!\_SB.PCI0.DPON (Arg0)) {
++			Return (Buffer (One) { 0x00 })
++		}
++		If (Arg2 == Zero) {
++			Return (Buffer (One) { 0x03 })
++		}
++		Return (Package () {
++			"class-code", Buffer () { 0xff, 0xff, 0xff, 0xff },
++		})
++	}
++}
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 5bcdf75795..9b8b5dfdaa 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -670,6 +670,20 @@ static const struct sm_object hardware_wireless = SM_DECLARE_FORM({
+ 
+ /* Compatibility */
+ 
++/* For the _DSM of acpi/devprops.asl, through the SSDT (mainboard_fill_ssdt()) */
++static const struct sm_object macos_device_properties = SM_DECLARE_BOOL({
++	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "macos_device_properties",
++	.ui_name	= "Device properties for macOS",
++	.ui_helptext	= "The device properties of this W541 for macOS, through\n"
++			  "_DSM: the framebuffer of the Intel GPU (0x0D220003 and its\n"
++			  "patches), audio layout 28, the card reader and the LPC\n"
++			  "bridge as Apple's, Intel display audio without a driver.\n"
++			  "They replace DeviceProperties in OpenCore: keep only one.\n"
++			  "Default: off.",
++	.default_value	= false,
++});
++
+ static const struct sm_object macos_ports_note = SM_DECLARE_COMMENT({
+ 	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
+ 	.ui_name	= "Unused slots: Hardware > Storage and Expansion ports",
+@@ -690,6 +704,7 @@ static const struct sm_object compatibility_macos = SM_DECLARE_FORM({
+ 		&dgpu_macos_off,
+ 		&gfx_resume_init,
+ 		&minihd_audio,
++		&macos_device_properties,
+ 		&macos_ports_note,
+ 		NULL
+ 	},
+diff --git a/src/mainboard/lenovo/haswell/dsdt.asl b/src/mainboard/lenovo/haswell/dsdt.asl
+index 50f02122d5..1a4a236e87 100644
+--- a/src/mainboard/lenovo/haswell/dsdt.asl
++++ b/src/mainboard/lenovo/haswell/dsdt.asl
+@@ -80,6 +80,9 @@ DefinitionBlock(
+ 	}
+ 
+ 	#include "acpi/pnlf.asl"
++#if CONFIG(BOARD_LENOVO_THINKPAD_W541)
++	#include "acpi/devprops.asl"
++#endif
+ 
+ #if CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM)
+ 	#include "acpi/dgpu.asl"
+diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
+index 66d4a0c7fd..07320d8c1e 100644
+--- a/src/mainboard/lenovo/haswell/mainboard.c
++++ b/src/mainboard/lenovo/haswell/mainboard.c
+@@ -64,12 +64,24 @@ static void disable_root_port(unsigned int func, const char *what)
+ 	rp->enabled = 0;
+ }
+ 
+-/* The setup option that PEGP._INI reads (acpi/dgpu.asl) */
++/* The setup options that the DSDT reads (acpi/dgpu.asl, acpi/devprops.asl) */
+ static void mainboard_fill_ssdt(const struct device *dev)
+ {
+-	acpigen_write_scope("\\_SB.PCI0.PEGP");
+-	acpigen_write_name_integer("DGOM", get_uint_option("dgpu_macos_off", 1) ? 1 : 0);
+-	acpigen_pop_len();
++	if (CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM)) {
++		acpigen_write_scope("\\_SB.PCI0.PEGP");
++		acpigen_write_name_integer("DGOM",
++					   get_uint_option("dgpu_macos_off", 1) ? 1 : 0);
++		acpigen_pop_len();
++	}
++
++	/* W541: whether the _DSM of acpi/devprops.asl give macOS its properties */
++	if (CONFIG(BOARD_LENOVO_THINKPAD_W541)) {
++		const bool props = get_uint_option("macos_device_properties", 0);
++
++		acpigen_write_scope("\\_SB.PCI0");
++		acpigen_write_name_integer("DPRP", props ? 1 : 0);
++		acpigen_pop_len();
++	}
+ }
+ 
+ /*
+@@ -104,7 +116,7 @@ static void set_sata_ports(void)
+ 
+ static void mainboard_enable(struct device *dev)
+ {
+-	if (CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM))
++	if (CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM) || CONFIG(BOARD_LENOVO_THINKPAD_W541))
+ 		dev->ops->acpi_fill_ssdt = mainboard_fill_ssdt;
+ 
+ 	if (CONFIG(BOARD_LENOVO_THINKPAD_W541))
+-- 
+2.43.0
+

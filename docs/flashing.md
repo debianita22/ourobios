@@ -426,8 +426,9 @@ image: flashrom, not a capsule.
   - *Compatibility*, from v1.3.10: *macOS*, the options that take the
     place of parts of an OpenCore configuration (*ACPI processor objects*,
     *C-state configuration lock*, *NVIDIA GPU off under macOS*, *Light the
-    display up at wake*, *Intel display audio*; [docs/macos.md](macos.md)),
-    and *Advanced*, *Non-maskable interrupts*;
+    display up at wake*, *Intel display audio*, *Device properties for
+    macOS*; [docs/macos.md](macos.md)), and *Advanced*, *Non-maskable
+    interrupts*;
   - *Boot Manager* (second row): boot order, boot entries, *Boot Device
     Priority* and *Auto Boot Time-out*, the seconds the firmware waits
     for Esc before it boots: 2 by default, 0 boots at once and leaves
