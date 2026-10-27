@@ -355,6 +355,35 @@ fw_version() {
 	printf '0x%08x' 0
 }
 
+# La revisione del firmware nella tabella di sistema UEFI (FirmwareRevision,
+# PcdFirmwareRevision di EDK2): X << 24 | Y << 16 | Z << 8 | N per
+# vX.Y.Z-rcN, N = 0 per vX.Y.Z (v1.3.10-rc14 -> 0x01030a0e, v1.3.10 ->
+# 0x01030a00); 0 per le altre versioni. Non e' la versione dell'ESRT
+# (fw_version), in cui una rc conta come la release prima: questa dice quale
+# release gira anche sotto macOS, dove OpenCore sostituisce lo SMBIOS
+# (firmware-revision in IODeviceTree:/efi, docs/update.md)
+fw_revision() {
+	local x y z r
+	if [[ "${VERSION}" =~ ^v([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})(-rc([1-9][0-9]{0,2}))?$ ]]; then
+		x=$((10#${BASH_REMATCH[1]})); y=$((10#${BASH_REMATCH[2]})); z=$((10#${BASH_REMATCH[3]}))
+		r=$((10#${BASH_REMATCH[5]:-0}))
+		if [ "${x}" -le 255 ] && [ "${y}" -le 255 ] && [ "${z}" -le 255 ] && [ "${r}" -le 255 ]; then
+			printf '0x%08x' $(( (x << 24) | (y << 16) | (z << 8) | r ))
+			return
+		fi
+	fi
+	printf '0x%08x' 0
+}
+
+# CONFIG_EDK2_CUSTOM_BUILD_PARAMS della variante $1: le opzioni di EDK2 del
+# suo defconfig e la revisione del firmware (fw_revision)
+edk2_params() {
+	local p
+	p="$(sed -n 's/^CONFIG_EDK2_CUSTOM_BUILD_PARAMS="\(.*\)"$/\1/p' "${O}/configs/w541-$1.defconfig")"
+	printf 'CONFIG_EDK2_CUSTOM_BUILD_PARAMS="%s--pcd gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareRevision=%s"\n' \
+		"${p:+${p} }" "$(fw_revision)"
+}
+
 # Il tag di un numero dell'ESRT (l'inverso di fw_version, come version_str di
 # tools/update.py): 0x01030600 -> v1.3.6, 0x01030602 -> v1.3.7-rc2
 fw_tag() {
@@ -691,9 +720,10 @@ variant_config() {
 		else
 			grep -v -E '^CONFIG_VBOOT_(ROOT_KEY|RECOVERY_KEY|KERNEL_KEY|KEYBLOCK|FIRMWARE_PRIVKEY)=' \
 				"${O}/configs/w541-${v}.defconfig"
-		fi
+		fi | grep -v '^CONFIG_EDK2_CUSTOM_BUILD_PARAMS='
 		echo "CONFIG_LOCALVERSION=\"$(localversion "${v}")\""
 		echo "CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=$(fw_version)"
+		edk2_params "${v}"
 		if [ "${TOOLCHAIN}" = host ]; then echo "CONFIG_ANY_TOOLCHAIN=y"; fi
 		if [ "${VBOOT_KEYS_REAL}" != yes ]; then
 			# senza la chiave del progetto: le chiavi di prova di vboot
