@@ -122,3 +122,6 @@
 0126-intel-haswell-lynxpoint-Say-the-default-in-the-help-.patch
 0127-mb-lenovo-haswell-Reorganize-the-setup-menu.patch
 0128-mb-lenovo-haswell-Give-macOS-the-device-properties-o.patch
+0129-mb-lenovo-haswell-Say-how-macOS-drives-the-panel.patch
+0130-sb-intel-lynxpoint-mb-lenovo-haswell-Keep-PME-from-w.patch
+0131-mb-lenovo-haswell-Give-macOS-its-USB-power-propertie.patch

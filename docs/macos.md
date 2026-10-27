@@ -30,11 +30,13 @@ renames `_OSI` to `XOSI` hides that answer from the firmware: see
 | The CPU threads as `Processor` objects, `\_SB.CP00`-`\_SB.CP07` (patches 0090, 0091), and from rc12 `plugin-type` 1 on the first one, which turns XCPM on (0123) | setup: *Compatibility* → *macOS* → *ACPI processor objects*: *Processor* (default: *Device (ACPI0007)*, the form ACPI asks for since 6.3) | an SSDT that declares `Processor` objects for the ACPI0007 devices (without one, macOS finds no CPU and stops early in the boot), and `SSDT-PLUG` for `plugin-type` |
 | CFG Lock off (0089, 0091) | setup: *Compatibility* → *macOS* → *C-state configuration lock*: off (default: on) | the kernel quirk `AppleXcpmCfgLock` |
 | The HPET shown, with IRQ 0 and 8, and the 8254 timer without IRQ 0, as on a Mac (0095) | under macOS | renames and an SSDT for the HPET and the 8254: the IRQ fix (*FixHPET* of SSDTTime) |
-| The backlight device of macOS, `\_SB.PCI0.GFX0.PNLF` (`APP0002`, `_UID` 15), with the PWM of the panel set to the maximum of the Haswell Macs, 0xad9, the duty cycle scaled: at boot, and from rc12 after every wake, when the firmware has set up the PWM again (0124) | under macOS | `SSDT-PNLF`, OpenCore's sample: the same device and maximum, at boot only |
+| How macOS drives the panel, as the Intel framebuffer of the configuration sets it up (0124, 0129). *External display*, for a desktop framebuffer (the panel of the W541 is on DDI D, where the laptop framebuffers have no built-in connector): macOS has no backlight control for it, and the brightness keys set the PWM themselves. *Built-in display*, for a laptop framebuffer: the backlight device of macOS, `\_SB.PCI0.GFX0.PNLF` (`APP0002`, `_UID` 15), with the PWM of the panel set to the maximum of the Haswell Macs, 0xad9, the duty cycle scaled, at boot and after every wake; an ambient light sensor, `\_SB.ALS0`; the keys as ACPI events (Notify of `LCD0`) for BrightnessKeys.kext | under macOS, setup: *Compatibility* → *macOS* → *Panel under macOS* (default: *External display* on the W541) | external: the `_Q14`/`_Q15` renames and an SSDT that keeps the keys from notifying the OS; built-in: `SSDT-PNLF` (at boot only) and `SSDT-ALS0` |
 | The last backlight level put back at wake (0096) | under macOS | nothing: the resume path starts the backlight at 50% and macOS kept it there until a brightness key |
 | The sleep LEDs (power button and logo pulsing, moon on) and the wake on lid opening, before S3 (0100) | under macOS | an SSDT that calls `\_SI._SST`, if the configuration had one: macOS does not call it |
-| Sleep on lid close on AC: the sleep button pressed for macOS, as Fn+4, since it takes the panel of the W541 for an external display and runs in desktop mode, in which it does not sleep on lid close on AC (0113); no clamshell mode on AC | under macOS, on AC | nothing: the lid did not sleep on AC, and the panel stayed lit inside the closed lid |
-| The Intel display audio controller (0:3.0) hidden, whose codec macOS waited 10 s for at every wake and sleep (0122) | setup: *Compatibility* → *macOS* → *Intel display audio*: off (default: on) | nothing: a wake took 10-20 s |
+| Sleep on lid close on AC: the sleep button pressed for macOS, as Fn+4, since it takes the panel of the W541 for an external display and runs in desktop mode, in which it does not sleep on lid close on AC (0113); no clamshell mode on AC | under macOS, on AC, with *Panel under macOS* on *External display* | nothing: the lid did not sleep on AC, and the panel stayed lit inside the closed lid |
+| The Intel display audio controller (0:3.0) hidden, whose codec macOS waited 10 s for at every wake and sleep (0122); with it goes the audio over the mini DisplayPort and a port of the dock, for every OS | setup: *Compatibility* → *macOS* → *Intel display audio*: off (default: on) | nothing: a wake took 10-20 s |
+| The USB, HD Audio and Ethernet controllers kept from waking macOS: their `_PRW` gives S0 as the deepest sleep state they wake from, so macOS does not arm their PME (GPE 0x0d) for S3 (0130) | under macOS, setup: *Compatibility* → *macOS* → *USB, audio and LAN wake*: off (default: off) | the `_PRW` renames (`0D 03` and `0D 04` to `0D 00`) against wakes right after sleep |
+| The USB power properties of the Macs from Skylake on, in `\_SB.USBX` (0131): `kUSBSleepPowerSupply` and `kUSBWakePowerSupply` 5100 mA, `kUSBSleepPortCurrentLimit` and `kUSBWakePortCurrentLimit` 2100 mA, as OpenCore's sample | under macOS | `SSDT-USBX` |
 | The device properties of the OpenCore configuration of this W541 (`DeviceProperties`: the framebuffer of the Intel GPU, `layout-id` 28, the card reader and the LPC bridge as Apple's, Intel display audio without a driver), through the `_DSM` of each device for Apple's UUID (0128; `configs/macos/DeviceProperties.plist`, written into the DSDT by `tools/devprops2asl.py`) | under macOS, setup: *Compatibility* → *macOS* → *Device properties for macOS*: on (default: off) | `DeviceProperties` → `Add` |
 | The empty slots turned off: the SATA ports besides the drive bay (0121), the ExpressCard slot and Thunderbolt (0033), for every OS: no port to wait for at every wake, no hot-plug path left open | setup: *Hardware* → *Storage* and *Hardware* → *Expansion ports* (default: on) | nothing: macOS waited for a link on each empty SATA port, about a second per port at every wake |
 | The NVIDIA GPU powered off, as macOS has no driver for it (Apple removed the Kepler drivers in Monterey): at boot, and again after a wake that powered it, as a resume from S4 does (0115) | under macOS, with *NVIDIA discrete GPU* on (*Hardware* → *NVIDIA graphics*); setup: *Compatibility* → *macOS* → *NVIDIA GPU off under macOS* (default: on) | an SSDT that calls `_OFF` (the path of the OEM firmware, which this DSDT does not have), or `-wegnoegpu`, which only hides the GPU: it stays powered |
@@ -79,10 +81,20 @@ After the update, and with the setup options of the table set:
 - with *Light the display up at wake* off: what powers the panel up and
   enables its backlight when macOS lights the display up, which macOS
   does not do (below);
-- `SSDT-PNLF`, from rc12: the firmware has `\_SB.PCI0.GFX0.PNLF`,
-  with the same `_UID` and the same setup of the PWM, and the device of
-  the SSDT would be a second one. The renames of the GPU device are not
-  needed for it (WhateverGreen names it `IGPU` in the I/O Registry);
+- `SSDT-PNLF` and `SSDT-ALS0`, from rc12: the firmware has
+  `\_SB.PCI0.GFX0.PNLF` and `\_SB.ALS0`, present with *Panel under
+  macOS* on *Built-in display*, and the devices of the SSDTs would be
+  second ones whatever the option. The renames of the GPU device are not
+  needed for them (WhateverGreen names it `IGPU` in the I/O Registry).
+  With *External display* SMCLightSensor has no sensor to read;
+- the `_Q14`/`_Q15` renames and their SSDT, which keeps the brightness
+  keys from notifying the OS (`BRCT` 0), from rc12 with *External
+  display*: the firmware does it. With *Built-in display* the keys go to
+  macOS as ACPI events, for BrightnessKeys.kext;
+- the `_PRW` renames to S0 (`0D 03` and `0D 04` to `0D 00`), from rc12:
+  the `_PRW` of those devices is a method now, the renames find nothing,
+  and *USB, audio and LAN wake* says what macOS may arm;
+- `SSDT-USBX`, from rc12: the firmware has `\_SB.USBX`;
 - `DeviceProperties` → `Add`, from rc12, with *Device properties for
   macOS* on: the firmware gives the same properties (those of
   `configs/macos/DeviceProperties.plist`). Leave the section empty: a
@@ -161,6 +173,17 @@ refused until the next boot. A store filled by macOS has not been tried.
 
 ## Not done
 
+- a laptop framebuffer that drives the panel as built-in display:
+  *Panel under macOS* → *Built-in display* has what macOS wants for one,
+  but no configuration has been tried. The panel is on DDI D (eDP on
+  DP-D in the VBT, `DP3` for libgfxinit), and the laptop framebuffers of
+  Haswell have their built-in connector, `[0]`, on DDI A (LVDS, busId
+  0x00). A try: `AAPL,ig-platform-id` 0x0A260006, `device-id` 0x0412,
+  `framebuffer-patch-enable` 1, `framebuffer-con0-enable` 1 and
+  `framebuffer-con0-alldata` `030608000200000030000000` (index 3, busId
+  0x06, pipe 8, LVDS, flags 0x30: DDI D), with *Device properties for
+  macOS* off; keep a configuration that boots, and a display on the mini
+  DisplayPort, which the Intel GPU drives too;
 - the EHCI controllers stay visible, with both variants. v1.3.10-rc1 hid
   them in the `nri` variant, and with it a USB drive plugged in was mostly
   not found, under Linux and macOS (under Linux, whenever the xHCI
