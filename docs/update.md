@@ -334,6 +334,23 @@ tag (`0x01030005` is v1.3.5; a candidate of then has the number of its
 release), and `tools/update.py` still reads their `.cab` (*triplet*
 format).
 
+From v1.3.10-rc15 the UEFI system table carries the release too, as its
+firmware revision (`tools/build.sh` gives it to EDK2 as
+`PcdFirmwareRevision`; before, it was 0x00010000 for every release):
+X << 24 | Y << 16 | Z << 8 | N for vX.Y.Z-rcN, N = 0 for vX.Y.Z
+(v1.3.10-rc15 is `0x01030A0F`, v1.3.10 is `0x01030A00`), and 0 for a
+build that is not a release. Unlike the number of the ESRT, a candidate
+has the X.Y.Z of the release it leads to: it reads as the tag, but sorts
+after that release. It is where an OS that does not see the SMBIOS of the
+firmware can read the release: macOS through OpenCore, `ioreg -p
+IODeviceTree -n efi -l | grep firmware-revision`, four bytes
+little-endian (`<0f0a0301>` for rc15); also the `ver` command of a UEFI
+shell. Linux has the release in the SMBIOS (`cat
+/sys/class/dmi/id/bios_version`) and the number of the ESRT in
+`/sys/firmware/efi/esrt/entries/entry0/fw_version`; the `efi: EFI v2.7
+by ouroBIOS` line of its log is the revision of the UEFI specification,
+not of the firmware.
+
 The firmware refuses capsules older than its lowest supported version,
 v1.3.9 from v1.3.9 on (v1.3.0 in v1.3.0-v1.3.8, v1.2.0 in v1.2.x): an older
 release goes back with flashrom. Older capsules from that version up

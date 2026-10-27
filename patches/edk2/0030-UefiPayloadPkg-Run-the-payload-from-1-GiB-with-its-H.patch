@@ -1,0 +1,118 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Tue, 27 Oct 2026 20:19:06 +0100
+Subject: [PATCH] UefiPayloadPkg: Run the payload from 1 GiB, with its HOB
+ memory above
+
+The payload ran from 8 MiB (FD_BASE), and UefiPayloadEntry placed its
+HOB memory, the 64 MiB that the DXE core starts from, in the first free
+RAM past it: from 19 MiB, with the DXE core and its first allocations
+at the top (the memmap of the W541: boot services data at
+0x00800000-0x012FFFFF and 0x04EB7000-0x052FFFFF). The kernel of macOS
+goes at 1 MiB plus 2 MiB times a slide of 0 to 255, about 100 MB long:
+OpenCore found the slides below 41 taken ("Only 215/256 slide values
+are usable!") and needed ProvideCustomSlide, and EnableSafeModeSlide
+with it, since in safe mode boot.efi takes slide 0.
+
+The FD now starts at 1 GiB, and the HOB memory is taken only above it:
+the memory from 1 MiB to 1 GiB is free for the OS loaders. With the FD
+at the usual 8 MiB nothing changes, the 7 MiB below it being too small
+for the HOB memory anyway. cbfstool takes the load address of the
+payload from the images of the FD, so coreboot loads it there.
+
+TEST=The W541 payload (nri) in a q35 ROM, QEMU with 2 GiB: coreboot
+loads the payload at 0x40000000 (entry 0x4000222E), and the memmap of
+OpenShell shows Available from 0x100000 to 0x3FFFFFFF, the FD at
+0x40000000-0x40AFFFFF and the DXE core at the top of the HOB memory,
+0x442B8000-0x44AFFFFF (with the payload of rc14: 0x800000-0x12FFFFF and
+0x4AB7000-0x52FFFFF). The smoke test of the payload passes (the setup,
+a variable across a restart, iPXE, CSMWrap booting an MBR); OpenCore
+1.0.8 DEBUG starts with MAT support 1, and Linux 6.8 boots.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ .../UefiPayloadEntry/UefiPayloadEntry.c       | 36 +++++++++++--------
+ UefiPayloadPkg/UefiPayloadPkg.fdf             |  9 ++++-
+ 2 files changed, 30 insertions(+), 15 deletions(-)
+
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+index 1a46d67..8f4be85 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+@@ -192,6 +192,9 @@ FindFreeMemForHobCallback (
+   EFI_STATUS        Status;
+   MEMORY_MAP_ENTRY  MemoryMapEntrySplit;
+   UINTN             *HobMemBase = (UINTN *)Params;
++  UINT64            FdBase;
++  UINT64            FdEnd;
++  UINT64            End;
+ 
+   //
+   // Found new base, nothing to do
+@@ -240,23 +243,28 @@ FindFreeMemForHobCallback (
+     return EFI_SUCCESS;
+   }
+ 
++  FdBase = PcdGet32 (PcdPayloadFdMemBase);
++  FdEnd  = FdBase + PcdGet32 (PcdPayloadFdMemSize);
++  End    = MemoryMapEntry->Base + MemoryMapEntry->Size;
++
+   //
+-  // Overlaps UefiPayload, split into smaller chunks
++  // Only above UefiPayload: the memory below it stays free for the OS
++  // loaders, which want low memory (the kernel of macOS goes at 1 MiB plus
++  // a slide). With the payload at the usual 8 MiB there is too little below
++  // it anyway.
+   //
+-  if ((MemoryMapEntry->Base <= PcdGet32 (PcdPayloadFdMemBase)) &&
+-      ((MemoryMapEntry->Base + MemoryMapEntry->Size) >= PcdGet32 (PcdPayloadFdMemBase)))
+-  {
+-    MemoryMapEntrySplit.Type = E820_RAM;
+-    MemoryMapEntrySplit.Base = MemoryMapEntry->Base;
+-    MemoryMapEntrySplit.Size = PcdGet32 (PcdPayloadFdMemBase) - MemoryMapEntrySplit.Base;
+-    Status                   = FindFreeMemForHobCallback (&MemoryMapEntrySplit, Params);
+-    if (EFI_ERROR (Status)) {
+-      return Status;
+-    }
++  if (End <= FdBase) {
++    return EFI_SUCCESS;
++  }
+ 
+-    if ((MemoryMapEntry->Base + MemoryMapEntry->Size) > (PcdGet32 (PcdPayloadFdMemBase) + PcdGet32 (PcdPayloadFdMemSize))) {
+-      MemoryMapEntrySplit.Base = PcdGet32 (PcdPayloadFdMemBase) + PcdGet32 (PcdPayloadFdMemSize);
+-      MemoryMapEntrySplit.Size = (MemoryMapEntry->Base + MemoryMapEntry->Size) - MemoryMapEntrySplit.Base;
++  //
++  // Overlaps UefiPayload: the part above it
++  //
++  if (MemoryMapEntry->Base < FdEnd) {
++    if (End > FdEnd) {
++      MemoryMapEntrySplit.Type = E820_RAM;
++      MemoryMapEntrySplit.Base = FdEnd;
++      MemoryMapEntrySplit.Size = End - FdEnd;
+       Status                   = FindFreeMemForHobCallback (&MemoryMapEntrySplit, Params);
+       if (EFI_ERROR (Status)) {
+         return Status;
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
+index d4bea3c..6ddc86f 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.fdf
++++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
+@@ -10,7 +10,14 @@
+ ##
+ 
+ [Defines]
+-DEFINE FD_BASE       = 0x00800000
++#
++# The payload runs from 1 GiB, and its HOB memory follows it
++# (UefiPayloadEntry): the memory from 1 MiB to 1 GiB stays free for the OS
++# loaders, which want it low. The kernel of macOS goes at 1 MiB plus 2 MiB
++# times a slide of up to 255, about 100 MB long; with the payload at 8 MiB
++# and the HOB memory after it, from 19 MiB, the slides below 41 were taken.
++#
++DEFINE FD_BASE       = 0x40000000
+ DEFINE FD_BLOCK_SIZE = 0x00001000
+ 
+ !if $(TARGET) == "NOOPT"
+-- 
+2.43.0
+

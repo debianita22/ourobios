@@ -295,6 +295,33 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   ([docs/macos.md](docs/macos.md#the-panel-as-built-in-display)).
   `tools/devprops2asl.py --builtin` writes the properties of both;
   checked in `acpiexec` on the DSDT of the W541.
+- From rc15, what trimming the OpenCore configuration of the W541 (rc14,
+  OpenCore 1.0.8) found for the firmware. Checked in QEMU with the payload
+  of the W541; on the W541 still to be tried:
+  - the com buffer of SMMSTORE, which the runtime variable services
+    write, is runtime services data in the memory map (`edk2/0029`). It
+    was reserved memory with `EFI_MEMORY_RUNTIME` (0x7F635000-0x7F644FFF
+    on the W541), which XNU does not map: without OpenCore's
+    `ProtectMemoryRegions` macOS restarted right after boot.efi, with no
+    panic report. Linux maps both kinds; in QEMU it writes variables as
+    before;
+  - the payload runs from 1 GiB, and its HOB memory, where the DXE core
+    starts, follows it (`edk2/0030`): the memory from 1 MiB to 1 GiB is
+    free for the OS loaders. With the payload at 8 MiB and the HOB memory
+    after it, up to 83 MiB, the slides of the kernel of macOS below 41
+    were taken ("Only 215/256 slide values are usable!"), and OpenCore
+    needed `ProvideCustomSlide`, and `EnableSafeModeSlide` with it;
+  - the firmware revision of the UEFI system table is the release:
+    X << 24 | Y << 16 | Z << 8 | N for vX.Y.Z-rcN, N = 0 for vX.Y.Z,
+    0 for a build that is not a release (`tools/build.sh`, as
+    `PcdFirmwareRevision` of EDK2; it was 0x00010000 for every release).
+    Under macOS, where OpenCore replaces the SMBIOS, it is the place
+    that tells the release: `firmware-revision` <0f0a0301> for rc15
+    ([docs/update.md](docs/update.md#versions-variants-downgrades)).
+
+  Without `ProtectMemoryRegions`, `ProvideCustomSlide` and
+  `EnableSafeModeSlide` OpenCore should boot macOS: try it
+  ([docs/macos.md](docs/macos.md#in-the-opencore-configuration)).
 
 ## v1.3.9
 
