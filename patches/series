@@ -125,3 +125,4 @@
 0129-mb-lenovo-haswell-Say-how-macOS-drives-the-panel.patch
 0130-sb-intel-lynxpoint-mb-lenovo-haswell-Keep-PME-from-w.patch
 0131-mb-lenovo-haswell-Give-macOS-its-USB-power-propertie.patch
+0132-ec-lenovo-h8-Write-no-EC-RAM-in-_PSW-before-_REG.patch

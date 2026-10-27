@@ -41,12 +41,16 @@ renames `_OSI` to `XOSI` hides that answer from the firmware: see
 | The empty slots turned off: the SATA ports besides the drive bay (0121), the ExpressCard slot and Thunderbolt (0033), for every OS: no port to wait for at every wake, no hot-plug path left open | setup: *Hardware* → *Storage* and *Hardware* → *Expansion ports* (default: on) | nothing: macOS waited for a link on each empty SATA port, about a second per port at every wake |
 | The NVIDIA GPU powered off, as macOS has no driver for it (Apple removed the Kepler drivers in Monterey): at boot, and again after a wake that powered it, as a resume from S4 does (0115) | under macOS, with *NVIDIA discrete GPU* on (*Hardware* → *NVIDIA graphics*); setup: *Compatibility* → *macOS* → *NVIDIA GPU off under macOS* (default: on) | an SSDT that calls `_OFF` (the path of the OEM firmware, which this DSDT does not have), or `-wegnoegpu`, which only hides the GPU: it stays powered |
 | The wake source left in PM1_STS and GPE0_STS at S3 resume, and to the OS by the SMI handler (0099, 0108; with rc3 and rc4, without 0108, every wake from S3 powered off) | always | nothing: the firmware cleared them, and macOS saw no reason for the wake |
-| The battery and the EC wake cause read one byte at a time (0103, 0094), and the battery, the lid and the AC adapter not before the EC driver of macOS (0109, 0114, 0120) | always | ECEnabler, or patches of the battery methods: the EC driver of macOS reads no wider field; nothing for the "No handler for Region [ERAM]" that macOS logged for `BAT0._STA`, `BAT1._STA`, `LID._LID` and `AC._PSR` at every boot (with the lid taken for closed until it read it again) |
+| The battery and the EC wake cause read one byte at a time (0103, 0094), and the battery, the lid and the AC adapter not before the EC driver of macOS (0109, 0114, 0120), nor from rc13 the wake settings of the lid and the sleep button (`_PSW`, kept for `_REG`, 0132) | always | ECEnabler, or patches of the battery methods: the EC driver of macOS reads no wider field; nothing for the "No handler for Region [ERAM]" that macOS logged for `BAT0._STA`, `BAT1._STA`, `LID._LID`, `AC._PSR` and `LID._PSW` at every boot (with the lid taken for closed until it read it again) |
 | The backlight registers and the MMIO of the xHCI controller at the BAR they have when the methods run, all 64 bits of it (0101, 0102) | always | the boot argument `npci=0x2000`, if the configuration has it, keeps macOS from moving the BARs |
 | The display left to the OS at wake: only the panel timings, the backlight PWM, the hotplug detection of the ports and power to the panel for its HPD, no mode set (0104, 0107, 0110, 0111); macOS does not power the panel up nor enable its backlight itself (see below) | setup: *Compatibility* → *macOS* → *Light the display up at wake*: off (default: on) | nothing: the firmware sets the panel up at 1920×1080 and macOS sets it up again; with the option off, the panel power-up and its backlight from a Lilu plugin for Azul, or from SSDT-PNLWAK |
 | The firmware screen at the 2880×1620 of the panel, for the OpenCore picker and the boot of macOS (0105-0107) | setup: *Hardware* → *Intel graphics* → *Firmware screen resolution*: *Panel, up to 2880 x 1620* (default: at most 1920 x 1080, scaled) | nothing |
 
 ## In the OpenCore configuration
+
+**From rc12, `Booter` → `Quirks` needs `RebuildAppleMemoryMap` and
+`SyncRuntimePermissions` on and `EnableWriteUnprotector` off**: without
+them macOS restarts the laptop at the resume from S3 (below).
 
 After the update, and with the setup options of the table set:
 
@@ -101,14 +105,19 @@ After the update, and with the setup options of the table set:
   property from both, with different values, is not well defined, and to
   try other values in OpenCore turn the option off. Other values for good
   go in that file, and from there into a new patch (`tools/devprops2asl.py`);
-- `Booter` → `Quirks`: the firmware has a memory attributes table (MAT;
-  `OCABC: MAT support is 1` in the log of a DEBUG OpenCore, seen with the
-  payload of rc12 in QEMU), for which OpenCore's documentation has
-  `RebuildAppleMemoryMap` and `SyncRuntimePermissions` on and
-  `EnableWriteUnprotector` off. `UEFI` → `Quirks` →
-  `ReleaseUsbOwnership` is not needed: EDK2 hands the USB controllers
-  over at ExitBootServices. Try these with a configuration that boots at
-  hand;
+- `Booter` → `Quirks`, needed from rc12: `RebuildAppleMemoryMap` and
+  `SyncRuntimePermissions` on, `EnableWriteUnprotector` off. The firmware
+  has a memory attributes table (MAT; `OCABC: MAT support is 1` in the
+  log of a DEBUG OpenCore, seen with the payload of rc12 in QEMU), for
+  which OpenCore's documentation has these. With the quirks of the
+  configuration up to rc11 (`EnableWriteUnprotector` on, the other two
+  off) macOS restarts the laptop at the resume from S3, with no panic
+  report, and `pmset -g log` reads `Failure during wake:
+  IGPU(),HDEF(),SATA(AppleIntelPchSeriesAHCI) : Some drivers failed to
+  handle setPowerState` (seen on the W541 with rc12);
+- `UEFI` → `Quirks` → `ReleaseUsbOwnership`: not needed, EDK2 hands the
+  USB controllers over at ExitBootServices. Try it with a configuration
+  that boots at hand;
 - still needed: the USB map and the rest of the configuration.
 
 Update the firmware, and change these options, with the OS shut down or

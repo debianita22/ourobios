@@ -1,0 +1,133 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 27 Oct 2026 16:40:16 +0100
+Subject: [PATCH] ec/lenovo/h8: Write no EC RAM in _PSW before _REG
+
+As the _STA of the batteries, the _LID of the lid and the _PSR of the
+AC adapter, which read no EC RAM before _REG (3, 1): macOS calls the
+_PSW of the lid at boot, to disarm its wake, before its EC driver is
+up, and the write of WKLD fails,
+
+  Region EmbeddedControl (ID=3) has no handler
+  [_PSW] @0000B #0070: WKLD = Zero
+
+the last "No handler for Region [ERAM]" of macOS at boot on the W541.
+The _PSW of the sleep button writes EC RAM the same way. Until _REG
+(3, 1) both keep what they are asked for, without EC access, and _REG
+passes the last request on to the EC when the handler arrives; with no
+request it writes nothing. Linux runs _REG before it calls _PSW, at
+boot and at suspend: nothing changes there.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init (the
+same DSDT). In acpiexec on it: after _REG (3, 0) the _PSW (0) of the
+lid and of the sleep button access the EC no more (2 and 3 accesses
+before), and EC 0x32 and 0x83 stay as they were; _REG (3, 1) then
+writes them (0x04 and 0x06 to 0, and 0 to 0x14 and 0x06 for _PSW (1)),
+the last request of two, nothing without one; after _REG (3, 1) _PSW
+writes the EC at once, and _PTS (3) under Darwin still sets the wake
+on lid. The other ACPI checks give the same results as before.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/ec/lenovo/h8/acpi/ec.asl          | 14 ++++++++++++--
+ src/ec/lenovo/h8/acpi/lid.asl         | 14 ++++++++++++++
+ src/ec/lenovo/h8/acpi/sleepbutton.asl |  9 +++++++++
+ 3 files changed, 35 insertions(+), 2 deletions(-)
+
+diff --git a/src/ec/lenovo/h8/acpi/ec.asl b/src/ec/lenovo/h8/acpi/ec.asl
+index 99cbd07bb2..61f8385948 100644
+--- a/src/ec/lenovo/h8/acpi/ec.asl
++++ b/src/ec/lenovo/h8/acpi/ec.asl
+@@ -73,7 +73,9 @@ Device(EC)
+ 	 * AML must not read ERAM (ACPI 6.5, 6.5.4). The _STA of the batteries,
+ 	 * the _LID of the lid and the _PSR of the AC adapter check it, as an
+ 	 * OS may evaluate them before its EC driver is up (macOS: "No handler
+-	 * for Region [ERAM]").
++	 * for Region [ERAM]"), and so does the _PSW of the lid and of the
++	 * sleep button, which macOS calls then too: it keeps the setting for
++	 * _REG (3, 1) to write.
+ 	 */
+ 	Name (ECAV, 0)
+ 
+@@ -96,9 +98,17 @@ Device(EC)
+ 
+ 		/*
+ 		 * The batteries, the lid and the AC adapter now read the EC:
+-		 * let the OS check them again
++		 * let the OS check them again. A _PSW asked before: to the EC.
+ 		 */
+ 		If ((Arg0 == 3) && (Arg1 == 1)) {
++			If (^SLPB.PSWP != Ones) {
++				^SLPB._PSW (^SLPB.PSWP)
++				^SLPB.PSWP = Ones
++			}
++			If (^LID.PSWP != Ones) {
++				^LID._PSW (^LID.PSWP)
++				^LID.PSWP = Ones
++			}
+ 			Notify (BAT0, 0x81)
+ 			Notify (BAT1, 0x81)
+ 			Notify (LID, 0x80)
+diff --git a/src/ec/lenovo/h8/acpi/lid.asl b/src/ec/lenovo/h8/acpi/lid.asl
+index 873357a0f8..eafd2c08b7 100644
+--- a/src/ec/lenovo/h8/acpi/lid.asl
++++ b/src/ec/lenovo/h8/acpi/lid.asl
+@@ -19,6 +19,12 @@ Device(LID)
+ {
+ 	Name(_HID, "PNP0C0D")
+ 
++	/*
++	 * What _PSW was asked before the OS had an EC handler (ECAV), for
++	 * _REG (3, 1) to pass on to the EC; Ones: nothing.
++	 */
++	Name (PSWP, Ones)
++
+ 	Method(_LID, 0, NotSerialized)
+ 	{
+ 		/*
+@@ -39,6 +45,14 @@ Device(LID)
+ 
+ 	Method(_PSW, 1, NotSerialized)
+ 	{
++		/*
++		 * No ERAM before _REG (3, 1): macOS calls _PSW (0) at boot,
++		 * before its EC driver is up ("No handler for Region [ERAM]").
++		 */
++		If (!ECAV) {
++			PSWP = Arg0
++			Return ()
++		}
+ 		if (Arg0) {
+ 			WKLD = 1
+ 		} else {
+diff --git a/src/ec/lenovo/h8/acpi/sleepbutton.asl b/src/ec/lenovo/h8/acpi/sleepbutton.asl
+index e2dfc5eede..eb34a1b3d3 100644
+--- a/src/ec/lenovo/h8/acpi/sleepbutton.asl
++++ b/src/ec/lenovo/h8/acpi/sleepbutton.asl
+@@ -17,6 +17,10 @@ Field(ERAM, ByteAcc, NoLock, Preserve)
+ Device(SLPB)
+ {
+ 	Name (_HID, EisaId ("PNP0C0E"))
++
++	/* As for the lid: what _PSW was asked before ECAV; Ones: nothing */
++	Name (PSWP, Ones)
++
+ 	Method(_PRW, 0, NotSerialized)
+ 	{
+ 		Return (Package() { THINKPAD_EC_WAKE_GPE, 0x03 })
+@@ -24,6 +28,11 @@ Device(SLPB)
+ 
+ 	Method(_PSW, 1, NotSerialized)
+ 	{
++		/* No ERAM before _REG (3, 1): _REG passes it on */
++		If (!ECAV) {
++			PSWP = Arg0
++			Return ()
++		}
+ 		if (Arg0) {
+ 			FNKY = 6 /* Fn key acts as wake button */
+ 			WKFN = 1
+-- 
+2.43.0
+

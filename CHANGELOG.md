@@ -226,6 +226,16 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   second definition of an object for an error and drops the SSDT. The
   NVRAM of macOS needs no emulation either
   ([docs/macos.md](docs/macos.md#native-nvram)).
+- **From rc12, OpenCore needs the `Booter` quirks for the memory
+  attributes table of the firmware**: `RebuildAppleMemoryMap` and
+  `SyncRuntimePermissions` on, `EnableWriteUnprotector` off. With the
+  quirks of the configuration of the W541 up to rc11
+  (`EnableWriteUnprotector` on, the other two off) macOS restarts the
+  laptop at the resume from S3, with no panic report, and `pmset -g log`
+  reads `Failure during wake: IGPU(),HDEF(),SATA(AppleIntelPchSeriesAHCI)
+  : Some drivers failed to handle setPowerState`. Seen on the W541 with
+  rc12 (`nri`); with the three quirks set it resumes
+  ([docs/macos.md](docs/macos.md#in-the-opencore-configuration)).
 - From rc12, *Compatibility* → *macOS* → *Device properties for macOS*
   (0128), off by default: on, the firmware gives macOS, through the `_DSM`
   of each device, the `DeviceProperties` of the OpenCore configuration of
@@ -262,6 +272,14 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   or in none, stops it; `tools/qemu-setup-shots.py` takes screenshots of
   the setup with the menu of the W541 in QEMU
   ([patches/README.md](patches/README.md#the-setup-menu-and-its-screenshots)).
+- From rc13, the `_PSW` of the lid and of the sleep button write no EC RAM
+  before `_REG` (3, 1) (0132), as the batteries (0109), the lid (0114)
+  and the AC adapter (0120) read none: macOS called the one of the lid at
+  boot, before its EC driver, and logged "No handler for Region [ERAM]"
+  for `WKLD = Zero`, the last of them at boot. Until `_REG` each keeps the
+  setting it is asked for, and `_REG` writes the last one to the EC.
+  Linux calls `_PSW` after `_REG`: nothing changes there. Checked in
+  `acpiexec` on the DSDT of the W541.
 
 ## v1.3.9
 
