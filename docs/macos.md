@@ -101,6 +101,14 @@ After the update, and with the setup options of the table set:
   property from both, with different values, is not well defined, and to
   try other values in OpenCore turn the option off. Other values for good
   go in that file, and from there into a new patch (`tools/devprops2asl.py`);
+- `Booter` → `Quirks`: the firmware has a memory attributes table (MAT;
+  `OCABC: MAT support is 1` in the log of a DEBUG OpenCore, seen with the
+  payload of rc12 in QEMU), for which OpenCore's documentation has
+  `RebuildAppleMemoryMap` and `SyncRuntimePermissions` on and
+  `EnableWriteUnprotector` off. `UEFI` → `Quirks` →
+  `ReleaseUsbOwnership` is not needed: EDK2 hands the USB controllers
+  over at ExitBootServices. Try these with a configuration that boots at
+  hand;
 - still needed: the USB map and the rest of the configuration.
 
 Update the firmware, and change these options, with the OS shut down or
@@ -155,8 +163,15 @@ SMM, the same path as `efivarfs` under Linux. An OpenCore configuration
 does not need emulated NVRAM there:
 
 - `NVRAM` → `WriteFlash`: true;
-- `NVRAM` → `LegacyEnable`: false;
+- no `OpenVariableRuntimeDxe.efi` among the drivers, the emulated NVRAM
+  of OpenCore, and `NVRAM` → `LegacySchema` empty (older versions of
+  OpenCore had the key `LegacyEnable` for it: false);
 - no `LogoutHook` and no `nvram.plist` on the EFI partition.
+
+*Reset NVRAM* in the OpenCore picker (`ResetNvramEntry.efi`) deletes the
+variables of Apple and OpenCore and the boot entries (`Boot####`, kept
+with `--preserve-boot`), not those of the setup of the firmware: the
+settings stay.
 
 To check it under macOS:
 
