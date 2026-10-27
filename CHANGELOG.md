@@ -189,6 +189,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `ddf612165c8b`, three commits after the pin (the setup hotkey, failed
   automatic boot options, the SubForm parsing fix that our patch 0002
   already covered).
+- From rc12, *Hardware* → *Graphics* → *Intel display audio* (0122): the
+  HD Audio controller of the display ports of the Intel GPU (0:3.0), on
+  by default. On the W541 the Intel GPU drives the panel and the VGA
+  port, neither with audio, and under macOS AppleHDAHDMI_DPDriver waited
+  10 s for its codec at every wake and at every sleep with the display
+  off: 10-20 s of wake time instead of about 1.3 s, with the battery
+  polling held meanwhile. Off, the controller is hidden for every OS.
 
 ## v1.3.9
 
