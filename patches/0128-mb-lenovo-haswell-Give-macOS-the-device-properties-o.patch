@@ -173,10 +173,10 @@ index 0000000000..d15238505c
 +	}
 +}
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 5bcdf75795..9b8b5dfdaa 100644
+index 6fb62ccb12..3753492762 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
-@@ -670,6 +670,20 @@ static const struct sm_object hardware_wireless = SM_DECLARE_FORM({
+@@ -671,6 +671,20 @@ static const struct sm_object hardware_wireless = SM_DECLARE_FORM({
  
  /* Compatibility */
  
@@ -197,7 +197,7 @@ index 5bcdf75795..9b8b5dfdaa 100644
  static const struct sm_object macos_ports_note = SM_DECLARE_COMMENT({
  	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
  	.ui_name	= "Unused slots: Hardware > Storage and Expansion ports",
-@@ -690,6 +704,7 @@ static const struct sm_object compatibility_macos = SM_DECLARE_FORM({
+@@ -691,6 +705,7 @@ static const struct sm_object compatibility_macos = SM_DECLARE_FORM({
  		&dgpu_macos_off,
  		&gfx_resume_init,
  		&minihd_audio,
@@ -220,7 +220,7 @@ index 50f02122d5..1a4a236e87 100644
  #if CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM)
  	#include "acpi/dgpu.asl"
 diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
-index 66d4a0c7fd..07320d8c1e 100644
+index 51a3dbd5ee..44ba99fec9 100644
 --- a/src/mainboard/lenovo/haswell/mainboard.c
 +++ b/src/mainboard/lenovo/haswell/mainboard.c
 @@ -64,12 +64,24 @@ static void disable_root_port(unsigned int func, const char *what)

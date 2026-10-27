@@ -1,0 +1,232 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Tue, 27 Oct 2026 13:54:27 +0100
+Subject: [PATCH] sb/intel/lynxpoint,mb/lenovo/haswell: Keep PME from waking
+ macOS
+
+OpenCore configurations for the W541 patch the _PRW of the HD Audio,
+EHCI, xHCI and Ethernet controllers from S3 (S4) to S0, so that macOS
+does not arm their PME (GPE 0x0d) and wake right after sleep: binary
+patches of the DSDT, which stop matching at any change around them.
+
+Let a mainboard define PCH_PRW, the _PRW of the PCH devices that wake
+through PME, before it includes pch.asl; by default it is the same
+Name as before. The Lenovo Haswell boards define it as a method that
+gives S0 under macOS, unless the new setup option macos_pme_wake (USB,
+audio and LAN wake, default off) is on, and use it for GLAN as well.
+Linux and Windows get the same packages as before.
+
+TEST=acpiexec on the DSDT, under macOS and not, with PMWK missing, 0
+and 1: HDEF, EHCI, EHC2, XHCI and GLAN give {0x0d, 0} only under macOS
+without PMWK 1, else {0x0d, 3} and {0x0d, 4} as before; the _PRW of
+RP02, RP03, the lid and the sleep button are unchanged. cfr-dump: the
+option once, in Compatibility > macOS. Both variants build.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/acpi/wake.asl    | 24 +++++++++++++++++++
+ src/mainboard/lenovo/haswell/cfr.c            | 15 ++++++++++++
+ src/mainboard/lenovo/haswell/dsdt.asl         | 12 +++++++++-
+ src/mainboard/lenovo/haswell/mainboard.c      |  7 +++++-
+ .../intel/lynxpoint/acpi/audio.asl            |  2 +-
+ src/southbridge/intel/lynxpoint/acpi/ehci.asl |  4 ++--
+ src/southbridge/intel/lynxpoint/acpi/pch.asl  |  9 +++++++
+ src/southbridge/intel/lynxpoint/acpi/xhci.asl |  2 +-
+ 8 files changed, 69 insertions(+), 6 deletions(-)
+ create mode 100644 src/mainboard/lenovo/haswell/acpi/wake.asl
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/wake.asl b/src/mainboard/lenovo/haswell/acpi/wake.asl
+new file mode 100644
+index 0000000000..947add4abd
+--- /dev/null
++++ b/src/mainboard/lenovo/haswell/acpi/wake.asl
+@@ -0,0 +1,24 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++External (\_SB.PCI0.PMWK, IntObj)
++
++/*
++ * 1 under macOS, unless the setup option macos_pme_wake is on (PMWK, from
++ * the SSDT): the devices that wake the laptop through PME (PCH_PRW of
++ * dsdt.asl: the USB controllers, HD Audio and Ethernet) then give S0 as the
++ * deepest sleep state they wake from, and macOS does not arm them for S3,
++ * as the _PRW renames of OpenCore configurations against wakes right after
++ * sleep did. The lid and the power button wake it anyway.
++ */
++Method (PMWD)
++{
++	If (!\ISDW ()) {
++		Return (0)
++	}
++	If (CondRefOf (\_SB.PCI0.PMWK)) {
++		If (\_SB.PCI0.PMWK) {
++			Return (0)
++		}
++	}
++	Return (1)
++}
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index e628b5eddc..a49bccd0ec 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -709,6 +709,20 @@ static const struct sm_object macos_panel = SM_DECLARE_ENUM({
+ 				SM_ENUM_VALUE_END				},
+ });
+ 
++/* For acpi/wake.asl, through the SSDT (mainboard_fill_ssdt()) */
++static const struct sm_object macos_pme_wake = SM_DECLARE_BOOL({
++	.opt_name	= "macos_pme_wake",
++	.ui_name	= "USB, audio and LAN wake",
++	.ui_helptext	= "Whether the USB controllers, the HD Audio controller and\n"
++			  "the Ethernet controller may wake the laptop from sleep\n"
++			  "under macOS. Off: macOS does not arm them (_PRW with S0),\n"
++			  "as the _PRW renames of OpenCore configurations against\n"
++			  "wakes right after sleep did; the lid and the power button\n"
++			  "wake it anyway. Linux and Windows are not affected.\n"
++			  "Default: off. On: e.g. a USB keyboard wakes macOS.",
++	.default_value	= false,
++});
++
+ static const struct sm_object macos_ports_note = SM_DECLARE_COMMENT({
+ 	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
+ 	.ui_name	= "Unused slots: Hardware > Storage and Expansion ports",
+@@ -730,6 +744,7 @@ static const struct sm_object compatibility_macos = SM_DECLARE_FORM({
+ 		&gfx_resume_init,
+ 		&macos_panel,
+ 		&minihd_audio,
++		&macos_pme_wake,
+ 		&macos_device_properties,
+ 		&macos_ports_note,
+ 		NULL
+diff --git a/src/mainboard/lenovo/haswell/dsdt.asl b/src/mainboard/lenovo/haswell/dsdt.asl
+index 679499e1d3..e955070f60 100644
+--- a/src/mainboard/lenovo/haswell/dsdt.asl
++++ b/src/mainboard/lenovo/haswell/dsdt.asl
+@@ -3,6 +3,15 @@
+ /* INCB and DECB, through the brightness keys of macOS (acpi/pnlf.asl) */
+ #define BRIGHTNESS_UP \_SB.PCI0.GFX0.BKUP
+ #define BRIGHTNESS_DOWN \_SB.PCI0.GFX0.BKDN
++/* The devices that wake through PME, as a method for macOS (acpi/wake.asl) */
++#define PCH_PRW(gpe, sleep_state) \
++	Method (_PRW) \
++	{ \
++		If (\PMWD ()) { \
++			Return (Package () { gpe, 0 }) \
++		} \
++		Return (Package () { gpe, sleep_state }) \
++	}
+ #define THINKPAD_EC_GPE 17
+ #define THINKPAD_EC_WAKE_GPE 0x1d /* GPIO13 */
+ #define EC_LENOVO_H8_ALT_FN_F2F3_LAYOUT 1
+@@ -24,6 +33,7 @@ DefinitionBlock(
+ {
+ 	#include <acpi/dsdt_top.asl>
+ 	#include "acpi/platform.asl"
++	#include "acpi/wake.asl"
+ 	#include <cpu/intel/common/acpi/cpu.asl>
+ 	#include <southbridge/intel/common/acpi/platform.asl>
+ 	#include <southbridge/intel/lynxpoint/acpi/globalnvs.asl>
+@@ -59,7 +69,7 @@ DefinitionBlock(
+ 		{
+ 			Name (_ADR, 0x00190000)
+ 			Name (_S3D, 3)
+-			Name (_PRW, Package () { 0x0d, 4 })
++			PCH_PRW (0x0d, 4)
+ 		}
+ 		Scope (RP02) { Name (_PRW, Package () { 0x09, 4 }) }
+ 		Scope (RP03) { Name (_PRW, Package () { 0x09, 4 }) }
+diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
+index 6751c9b161..b4d66ef738 100644
+--- a/src/mainboard/lenovo/haswell/mainboard.c
++++ b/src/mainboard/lenovo/haswell/mainboard.c
+@@ -64,7 +64,7 @@ static void disable_root_port(unsigned int func, const char *what)
+ 	rp->enabled = 0;
+ }
+ 
+-/* The setup options that the DSDT reads: acpi/dgpu.asl, devprops.asl, pnlf.asl */
++/* The setup options that the DSDT reads: acpi/dgpu.asl, devprops.asl, pnlf.asl, wake.asl */
+ static void mainboard_fill_ssdt(const struct device *dev)
+ {
+ 	const unsigned int panel = get_uint_option("macos_panel", MACOS_PANEL_DEFAULT);
+@@ -74,6 +74,11 @@ static void mainboard_fill_ssdt(const struct device *dev)
+ 	acpigen_write_name_integer("MPBI", panel == MACOS_PANEL_BUILTIN ? 1 : 0);
+ 	acpigen_pop_len();
+ 
++	/* Whether macOS may arm the PME wake of USB, HD Audio and Ethernet */
++	acpigen_write_scope("\\_SB.PCI0");
++	acpigen_write_name_integer("PMWK", get_uint_option("macos_pme_wake", 0) ? 1 : 0);
++	acpigen_pop_len();
++
+ 	if (CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM)) {
+ 		acpigen_write_scope("\\_SB.PCI0.PEGP");
+ 		acpigen_write_name_integer("DGOM",
+diff --git a/src/southbridge/intel/lynxpoint/acpi/audio.asl b/src/southbridge/intel/lynxpoint/acpi/audio.asl
+index 43f2150b62..9f33f2487d 100644
+--- a/src/southbridge/intel/lynxpoint/acpi/audio.asl
++++ b/src/southbridge/intel/lynxpoint/acpi/audio.asl
+@@ -7,5 +7,5 @@
+ Device (HDEF)
+ {
+ 	Name (_ADR, 0x001b0000)
+-	Name (_PRW, Package () { DEFAULT_PRW_VALUE, 3 })
++	PCH_PRW (DEFAULT_PRW_VALUE, 3)
+ }
+diff --git a/src/southbridge/intel/lynxpoint/acpi/ehci.asl b/src/southbridge/intel/lynxpoint/acpi/ehci.asl
+index a556d3e4b7..1c434e2f63 100644
+--- a/src/southbridge/intel/lynxpoint/acpi/ehci.asl
++++ b/src/southbridge/intel/lynxpoint/acpi/ehci.asl
+@@ -6,7 +6,7 @@ Device (EHCI)
+ {
+ 	Name (_ADR, 0x001d0000)
+ 
+-	Name (_PRW, Package () { DEFAULT_PRW_VALUE, 3 })
++	PCH_PRW (DEFAULT_PRW_VALUE, 3)
+ 
+ 	// Leave USB ports on for to allow Wake from USB
+ 
+@@ -40,7 +40,7 @@ Device (EHC2)
+ {
+ 	Name (_ADR, 0x001a0000)
+ 
+-	Name (_PRW, Package () { DEFAULT_PRW_VALUE, 3 })
++	PCH_PRW (DEFAULT_PRW_VALUE, 3)
+ 
+ 	Method (_S3D, 0)	// Highest D State in S3 State
+ 	{
+diff --git a/src/southbridge/intel/lynxpoint/acpi/pch.asl b/src/southbridge/intel/lynxpoint/acpi/pch.asl
+index c8492eaf4f..af064e326b 100644
+--- a/src/southbridge/intel/lynxpoint/acpi/pch.asl
++++ b/src/southbridge/intel/lynxpoint/acpi/pch.asl
+@@ -16,6 +16,15 @@
+ #define DEFAULT_PRW_VALUE	0x0d
+ #endif
+ 
++/*
++ * The _PRW of the PCH devices that wake the system through PME: the HD Audio,
++ * EHCI and xHCI controllers. A mainboard may define its own before it
++ * includes this file, e.g. as a method.
++ */
++#ifndef PCH_PRW
++#define PCH_PRW(gpe, sleep_state)	Name (_PRW, Package () { gpe, sleep_state })
++#endif
++
+ Scope (\)
+ {
+ 	// Root Complex Register Block
+diff --git a/src/southbridge/intel/lynxpoint/acpi/xhci.asl b/src/southbridge/intel/lynxpoint/acpi/xhci.asl
+index 5a9fc3af62..9bd2e50d12 100644
+--- a/src/southbridge/intel/lynxpoint/acpi/xhci.asl
++++ b/src/southbridge/intel/lynxpoint/acpi/xhci.asl
+@@ -346,7 +346,7 @@ Device (XHCI)
+ 		Return ()
+ 	}
+ 
+-	Name (_PRW, Package () { DEFAULT_PRW_VALUE, 3 })
++	PCH_PRW (DEFAULT_PRW_VALUE, 3)
+ 
+ 	// Leave USB ports on for to allow Wake from USB
+ 
+-- 
+2.43.0
+

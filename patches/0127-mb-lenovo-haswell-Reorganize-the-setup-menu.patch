@@ -38,11 +38,11 @@ categories with the cards above; every option is in one card only.
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
- src/mainboard/lenovo/haswell/cfr.c | 224 ++++++++++++++++++++---------
- 1 file changed, 157 insertions(+), 67 deletions(-)
+ src/mainboard/lenovo/haswell/cfr.c | 227 ++++++++++++++++++++---------
+ 1 file changed, 159 insertions(+), 68 deletions(-)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 9698319f60..5bcdf75795 100644
+index 33222042a4..6fb62ccb12 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -21,7 +21,9 @@
@@ -311,15 +311,18 @@ index 9698319f60..5bcdf75795 100644
  	.default_value	= true,
  });
  
-@@ -550,31 +580,37 @@ static const struct sm_object minihd_audio = SM_DECLARE_BOOL({
+@@ -549,32 +579,39 @@ static const struct sm_object minihd_audio = SM_DECLARE_BOOL({
+ 	.opt_name	= "minihd_audio",
  	.ui_name	= "Intel display audio",
- 	.ui_helptext	= "The audio controller of the display ports of the Intel GPU.\n"
- 			  "On the W541 the Intel GPU drives the panel and the VGA port,\n"
--			  "neither with audio. Disabled: the controller is hidden, and\n"
--			  "an OS does not wait for its codec at every wake (macOS).",
-+			  "neither with audio, and macOS waits 10 s for its codec at\n"
-+			  "every wake and sleep.\n"
-+			  "Default: on. Off: the controller is hidden, for every OS.",
+ 	.ui_helptext	= "The audio controller of the display ports of the Intel GPU:\n"
+-			  "the audio over the mini DisplayPort and a port of the dock.\n"
+-			  "Disabled: the controller is hidden, with that audio, and an\n"
+-			  "OS does not wait for its codec at every wake (macOS).",
++			  "the audio over the mini DisplayPort and a port of the dock\n"
++			  "(the panel and VGA have none). macOS waits 10 s for its\n"
++			  "codec at every wake and sleep.\n"
++			  "Default: on. Off: the controller is hidden, for every OS,\n"
++			  "and with it the audio over those ports.",
  	.default_value	= true,
  });
  
@@ -361,7 +364,7 @@ index 9698319f60..5bcdf75795 100644
  
  static const struct sm_object sata_port1 = SM_DECLARE_BOOL({
  	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
-@@ -600,15 +636,23 @@ static const struct sm_object sata_port5 = SM_DECLARE_BOOL({
+@@ -600,15 +637,23 @@ static const struct sm_object sata_port5 = SM_DECLARE_BOOL({
  	.default_value	= true,
  });
  
@@ -388,7 +391,7 @@ index 9698319f60..5bcdf75795 100644
  		NULL
  	},
  });
-@@ -624,6 +668,41 @@ static const struct sm_object hardware_wireless = SM_DECLARE_FORM({
+@@ -624,6 +669,41 @@ static const struct sm_object hardware_wireless = SM_DECLARE_FORM({
  	},
  });
  
@@ -430,7 +433,7 @@ index 9698319f60..5bcdf75795 100644
  /* The categories */
  
  static struct sm_obj_form general = {
-@@ -632,7 +711,6 @@ static struct sm_obj_form general = {
+@@ -632,7 +712,6 @@ static struct sm_obj_form general = {
  		&general_about,
  		&general_boot,
  		&general_sound,
@@ -438,7 +441,7 @@ index 9698319f60..5bcdf75795 100644
  		NULL
  	},
  };
-@@ -642,6 +720,9 @@ static struct sm_obj_form energy_saver = {
+@@ -642,6 +721,9 @@ static struct sm_obj_form energy_saver = {
  	.obj_list = (const struct sm_object *[]) {
  		&energy_battery,
  		&energy_processor,
@@ -448,7 +451,7 @@ index 9698319f60..5bcdf75795 100644
  		&energy_thermal,
  		&energy_power,
  		NULL
-@@ -671,22 +752,31 @@ static struct sm_obj_form keyboard = {
+@@ -671,22 +753,31 @@ static struct sm_obj_form keyboard = {
  static struct sm_obj_form hardware = {
  	.ui_name = "Hardware",
  	.obj_list = (const struct sm_object *[]) {

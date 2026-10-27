@@ -191,20 +191,40 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   already covered).
 - From rc12, *Compatibility* → *macOS* → *Intel display audio* (0122):
   the HD Audio controller of the display ports of the Intel GPU (0:3.0),
-  on by default. On the W541 the Intel GPU drives the panel and the VGA
-  port, neither with audio, and under macOS AppleHDAHDMI_DPDriver waited
-  10 s for its codec at every wake and at every sleep with the display
-  off: 10-20 s of wake time instead of about 1.3 s, with the battery
-  polling held meanwhile. Off, the controller is hidden for every OS.
-- From rc12, two more parts of an OpenCore configuration in the firmware
-  ([docs/macos.md](docs/macos.md)): the backlight device of macOS,
-  `\_SB.PCI0.GFX0.PNLF`, under macOS only, with the PWM of the panel at
-  the maximum of the Haswell Macs (0xad9, `_UID` 15) from boot and again
-  after every wake, as OpenCore's `SSDT-PNLF` sets it at boot (0124); and,
-  with *ACPI processor objects* on *Processor*, `plugin-type` on the first
-  thread, which turns XCPM on, as OpenCore's `SSDT-PLUG` does (0123).
-  Remove those two SSDTs from the configuration: theirs would be a second
-  `PNLF` and a second `_DSM`. The NVRAM of macOS needs no emulation either
+  on by default: the audio over the mini DisplayPort and a port of the
+  dock (DP-B and DP-C in the VBT; the panel and VGA have none). Under
+  macOS AppleHDAHDMI_DPDriver waited 10 s for its codec at every wake and
+  at every sleep with the display off: 10-20 s of wake time instead of
+  about 1.3 s, with the battery polling held meanwhile. Off, the
+  controller is hidden for every OS, and with it the audio over those
+  ports.
+- From rc12, more of an OpenCore configuration in the firmware, under
+  macOS only ([docs/macos.md](docs/macos.md)):
+  - with *ACPI processor objects* on *Processor*, `plugin-type` on the
+    first thread, which turns XCPM on, as `SSDT-PLUG` does (0123);
+  - *Compatibility* → *macOS* → *Panel under macOS* (0124, 0129), how the
+    Intel framebuffer of the configuration has macOS drive the panel.
+    *External display*, the default on the W541, whose panel is on DDI D
+    where the laptop framebuffers have no built-in connector: macOS has
+    no backlight control for it, so the brightness keys set the PWM
+    themselves, as the `_Q14`/`_Q15` renames and their SSDT did, and
+    closing the lid on AC sleeps the laptop (0113). *Built-in display*,
+    for a laptop framebuffer with its built-in connector on DDI D (not
+    tried yet): the backlight device of macOS, `\_SB.PCI0.GFX0.PNLF`
+    (`_UID` 15, the PWM at the 0xad9 of the Haswell Macs from boot and
+    after every wake, as `SSDT-PNLF`), an ambient light sensor (`ALS0`, as
+    `SSDT-ALS0`), the keys as ACPI events for BrightnessKeys.kext, and the
+    lid left to macOS;
+  - *Compatibility* → *macOS* → *USB, audio and LAN wake* (0130), off by
+    default: macOS does not arm the wake of the USB, HD Audio and
+    Ethernet controllers (`_PRW` with S0), as the `_PRW` renames of
+    OpenCore configurations did against wakes right after sleep;
+  - `\_SB.USBX`, the USB power properties of the SMBIOS of the Macs from
+    Skylake on, as `SSDT-USBX` (0131).
+
+  Remove from the configuration what each of them replaces: macOS takes a
+  second definition of an object for an error and drops the SSDT. The
+  NVRAM of macOS needs no emulation either
   ([docs/macos.md](docs/macos.md#native-nvram)).
 - From rc12, *Compatibility* → *macOS* → *Device properties for macOS*
   (0128), off by default: on, the firmware gives macOS, through the `_DSM`
@@ -228,9 +248,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   *Management Engine*, and links to *Secure Boot Configuration* and to
   the password; *Compatibility*, new: *macOS* (*ACPI processor objects*,
   *C-state configuration lock*, *NVIDIA GPU off under macOS*, *Light the
-  display up at wake*, *Intel display audio*, *Device properties for
-  macOS*) and *Advanced* (*Non-maskable interrupts*). The options that
-  the entries above place
+  display up at wake*, *Panel under macOS*, *Intel display audio*, *USB,
+  audio and LAN wake*, *Device properties for macOS*) and *Advanced*
+  (*Non-maskable interrupts*). The options that the entries above place
   in *Hardware* → *Graphics*, *General* → *Advanced* or *Energy Saver* →
   *Processor* are in these cards now. The help of every option says what
   it does, its default and when to change it, and some names say more:

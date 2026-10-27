@@ -1,0 +1,81 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Tue, 27 Oct 2026 13:54:28 +0100
+Subject: [PATCH] mb/lenovo/haswell: Give macOS its USB power properties
+
+With the SMBIOS of a Mac from Skylake on, macOS reads the supply and
+the current limits of the USB ports from a device named USBX, which
+OpenCore configurations add with an SSDT. Add it under macOS only,
+with the values of the SSDT-EC-USBX sample of OpenCore: 5100 mA of
+supply and 2100 mA per port, in sleep and awake.
+
+TEST=acpiexec on the DSDT: USBX present only under macOS; its _DSM
+lists function 1 for Apple's UUID, which returns the four properties,
+and nothing for another UUID. Both variants build.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/mainboard/lenovo/haswell/acpi/usbx.asl | 39 ++++++++++++++++++++++
+ src/mainboard/lenovo/haswell/dsdt.asl      |  1 +
+ 2 files changed, 40 insertions(+)
+ create mode 100644 src/mainboard/lenovo/haswell/acpi/usbx.asl
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/usbx.asl b/src/mainboard/lenovo/haswell/acpi/usbx.asl
+new file mode 100644
+index 0000000000..540a51d10c
+--- /dev/null
++++ b/src/mainboard/lenovo/haswell/acpi/usbx.asl
+@@ -0,0 +1,39 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * The USB power properties of macOS, which it reads from this device with
++ * the SMBIOS of a Mac from Skylake on: the supply and the current limit of
++ * the ports, in sleep and awake, in mA. The values of the SSDT-EC-USBX
++ * sample of OpenCore. Under macOS only.
++ */
++Scope (\_SB)
++{
++	Device (USBX)
++	{
++		Name (_ADR, 0)
++
++		Method (_STA)
++		{
++			If (\ISDW ()) {
++				Return (0x0f)
++			}
++			Return (0)
++		}
++
++		Method (_DSM, 4, Serialized)
++		{
++			If (Arg0 != ToUUID ("a0b5b7c6-1318-441c-b0c9-fe695eaf949b")) {
++				Return (Buffer (One) { 0x00 })
++			}
++			If (Arg2 == Zero) {
++				Return (Buffer (One) { 0x03 })
++			}
++			Return (Package () {
++				"kUSBSleepPowerSupply", 5100,
++				"kUSBSleepPortCurrentLimit", 2100,
++				"kUSBWakePowerSupply", 5100,
++				"kUSBWakePortCurrentLimit", 2100,
++			})
++		}
++	}
++}
+diff --git a/src/mainboard/lenovo/haswell/dsdt.asl b/src/mainboard/lenovo/haswell/dsdt.asl
+index e955070f60..5ef1c62768 100644
+--- a/src/mainboard/lenovo/haswell/dsdt.asl
++++ b/src/mainboard/lenovo/haswell/dsdt.asl
+@@ -100,4 +100,5 @@ DefinitionBlock(
+ #endif
+ 
+ 	#include "acpi/usb.asl"
++	#include "acpi/usbx.asl"
+ }
+-- 
+2.43.0
+

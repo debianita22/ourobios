@@ -173,11 +173,13 @@ Inside coreboot:
   off;
 - macOS with OpenCore (from v1.3.10): in the setup (*Compatibility* →
   *macOS*) the CPUs as `Processor` objects with `plugin-type`, CFG Lock
-  off and the device properties of the W541 (framebuffer, audio layout),
-  and, under macOS only, the backlight device (PNLF), the HPET and 8254
-  interrupts of a Mac, the backlight level kept across sleep and the
-  NVIDIA GPU powered off, which OpenCore configurations otherwise add or
-  patch in ([docs/macos.md](docs/macos.md));
+  off, the device properties of the W541 (framebuffer, audio layout), the
+  panel as external display (brightness keys from the firmware) or
+  built-in (PNLF, ALS0) and the USB, audio and LAN wake, and, under macOS
+  only, the USB power properties (USBX), the HPET and 8254 interrupts of
+  a Mac, the backlight level kept across sleep and the NVIDIA GPU powered
+  off, which OpenCore configurations otherwise add or patch in
+  ([docs/macos.md](docs/macos.md));
 - fixes for wake from suspend (lid, Fn), the Fn hotkeys, Bluetooth and WWAN
   state on resume, xHCI ports, USB over-current mapping, PCIe interrupts, the
   backlight, HDMI/DisplayPort audio clocks, the battery `_UID` and the AES-NI
