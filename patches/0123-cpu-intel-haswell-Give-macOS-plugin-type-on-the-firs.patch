@@ -1,0 +1,99 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Tue, 27 Oct 2026 12:29:08 +0100
+Subject: [PATCH] cpu/intel/haswell: Give macOS plugin-type on the first
+ Processor object
+
+With the CPU threads declared as Processor objects (acpi_cpu_objects),
+macOS finds them, but its kernel runs XCPM, its CPU power management,
+only when the first thread carries the property plugin-type 1, which
+makes it load the X86PlatformPlugin. OpenCore configurations add it with
+an SSDT, OpenCore's SSDT-PLUG sample, that defines _DSM on the first
+CPU.
+
+Add that _DSM to the first Processor object: for Apple's UUID
+(a0b5b7c6-1318-441c-b0c9-fe695eaf949b) function 0 lists function 1,
+which returns Package () { "plugin-type", 1 }; other functions and
+other UUIDs get Buffer () { 0 }. No other OS asks with Apple's UUID.
+The Device (ACPI0007) objects, the default, get no _DSM: macOS does not
+find CPUs declared that way. An SSDT-PLUG still in the OpenCore
+configuration cannot add its own _DSM to \_SB.CP00, which has one.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. The
+SSDT that acpigen writes for two threads, with acpigen.c built for the
+host, loads in acpiexec 20230628: \_SB.CP00._DSM returns Buffer {0x03}
+for function 0 of Apple's UUID, Package {"plugin-type", 1} for function
+1, Buffer {0} for function 2 and for another UUID; CP01 has no _DSM.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/cpu/intel/haswell/acpi.c | 26 ++++++++++++++++++++++++++
+ src/cpu/intel/haswell/cfr.h  |  7 +++++--
+ 2 files changed, 31 insertions(+), 2 deletions(-)
+
+diff --git a/src/cpu/intel/haswell/acpi.c b/src/cpu/intel/haswell/acpi.c
+index fd47320d13..3216bbb695 100644
+--- a/src/cpu/intel/haswell/acpi.c
++++ b/src/cpu/intel/haswell/acpi.c
+@@ -332,6 +332,25 @@ static void generate_P_state_entries(int core, int cores_per_package)
+ 	acpigen_pop_len();
+ }
+ 
++/*
++ * The _DSM through which macOS takes device properties (Apple's UUID), on
++ * the first thread: plugin-type 1 there makes the kernel load the
++ * X86PlatformPlugin, thus XCPM, the CPU power management of macOS. It is
++ * what the SSDT-PLUG sample of OpenCore adds; no other OS asks with this
++ * UUID.
++ */
++#define APPLE_DSM_UUID	"a0b5b7c6-1318-441c-b0c9-fe695eaf949b"
++
++static void apple_dsm_plugin_type(void *arg)
++{
++	/* Return (Package () { "plugin-type", 1 }) */
++	acpigen_emit_byte(RETURN_OP);
++	acpigen_write_package(2);
++	acpigen_write_string("plugin-type");
++	acpigen_write_integer(1);
++	acpigen_write_package_end();
++}
++
+ static void generate_cpu_entry(const struct device *device, int cpu, int core,
+ 			       int cores_per_package, bool processor_op)
+ {
+@@ -357,6 +376,13 @@ static void generate_cpu_entry(const struct device *device, int cpu, int core,
+ 	/* Generate T-state tables */
+ 	generate_T_state_entries(cpu, cores_per_package);
+ 
++	/* macOS only finds Processor objects: plugin-type with them */
++	if (processor_op && index == 0) {
++		/* Function 0 lists function 1, the properties */
++		void (*callbacks[])(void *) = { NULL, apple_dsm_plugin_type };
++		acpigen_write_dsm(APPLE_DSM_UUID, callbacks, ARRAY_SIZE(callbacks), NULL);
++	}
++
+ 	if (processor_op)
+ 		acpigen_write_processor_end();
+ 	else
+diff --git a/src/cpu/intel/haswell/cfr.h b/src/cpu/intel/haswell/cfr.h
+index a64a76621e..bf8cc7504d 100644
+--- a/src/cpu/intel/haswell/cfr.h
++++ b/src/cpu/intel/haswell/cfr.h
+@@ -58,8 +58,11 @@ static const struct sm_object acpi_cpu_objects = SM_DECLARE_ENUM({
+ 	.ui_helptext	= "How the ACPI tables declare the CPU threads: as Device\n"
+ 			  "objects with _HID ACPI0007, the form ACPI asks for since\n"
+ 			  "version 6.3, or as Processor objects, the older form and\n"
+-			  "the only one macOS looks for. Linux and Windows work with\n"
+-			  "both.",
++			  "the only one macOS looks for, with plugin-type for XCPM on\n"
++			  "the first thread under macOS. Linux and Windows work with\n"
++			  "both.\n"
++			  "Default: Device. Processor for macOS, without the SSDTs\n"
++			  "that declare Processor objects and plugin-type.",
+ 	.default_value	= ACPI_CPU_OBJECTS_DEVICE,
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "Device (ACPI0007)",	ACPI_CPU_OBJECTS_DEVICE		},
+-- 
+2.43.0
+

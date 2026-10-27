@@ -116,3 +116,8 @@
 0120-ec-lenovo-h8-Read-no-EC-RAM-in-the-AC-adapter-_PSR-b.patch
 0121-mb-lenovo-haswell-Add-setup-options-for-the-SATA-por.patch
 0122-mb-lenovo-haswell-Add-a-setup-switch-for-the-Intel-d.patch
+0123-cpu-intel-haswell-Give-macOS-plugin-type-on-the-firs.patch
+0124-mb-lenovo-haswell-Add-the-backlight-device-of-macOS.patch
+0125-ec-lenovo-h8-Say-what-each-setup-option-does-and-its.patch
+0126-intel-haswell-lynxpoint-Say-the-default-in-the-help-.patch
+0127-mb-lenovo-haswell-Reorganize-the-setup-menu.patch

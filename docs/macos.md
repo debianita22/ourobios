@@ -10,8 +10,13 @@ stays in OpenCore.
 
 - [What the firmware does](#what-the-firmware-does)
 - [In the OpenCore configuration](#in-the-opencore-configuration)
+- [Native NVRAM](#native-nvram)
 - [Not done](#not-done)
 - [Linux and Windows](#linux-and-windows)
+
+From v1.3.10-rc12 the setup options for macOS are together in
+*Compatibility* → *macOS*, and the help of each says what it replaces in
+OpenCore.
 
 ## What the firmware does
 
@@ -22,28 +27,32 @@ renames `_OSI` to `XOSI` hides that answer from the firmware: see
 
 | | When | What OpenCore did for it |
 |---|---|---|
-| The CPU threads as `Processor` objects, `\_SB.CP00`-`\_SB.CP07` (patches 0090, 0091) | setup: *General* → *Advanced* → *ACPI processor objects*: *Processor* (default: *Device (ACPI0007)*, the form ACPI asks for since 6.3) | an SSDT that declares `Processor` objects for the ACPI0007 devices: without one, macOS finds no CPU and stops early in the boot |
-| CFG Lock off (0089, 0091) | setup: *Energy Saver* → *Processor* → *C-state configuration lock*: off (default: on) | the kernel quirk `AppleXcpmCfgLock` |
+| The CPU threads as `Processor` objects, `\_SB.CP00`-`\_SB.CP07` (patches 0090, 0091), and from rc12 `plugin-type` 1 on the first one, which turns XCPM on (0123) | setup: *Compatibility* → *macOS* → *ACPI processor objects*: *Processor* (default: *Device (ACPI0007)*, the form ACPI asks for since 6.3) | an SSDT that declares `Processor` objects for the ACPI0007 devices (without one, macOS finds no CPU and stops early in the boot), and `SSDT-PLUG` for `plugin-type` |
+| CFG Lock off (0089, 0091) | setup: *Compatibility* → *macOS* → *C-state configuration lock*: off (default: on) | the kernel quirk `AppleXcpmCfgLock` |
 | The HPET shown, with IRQ 0 and 8, and the 8254 timer without IRQ 0, as on a Mac (0095) | under macOS | renames and an SSDT for the HPET and the 8254: the IRQ fix (*FixHPET* of SSDTTime) |
+| The backlight device of macOS, `\_SB.PCI0.GFX0.PNLF` (`APP0002`, `_UID` 15), with the PWM of the panel set to the maximum of the Haswell Macs, 0xad9, the duty cycle scaled: at boot, and from rc12 after every wake, when the firmware has set up the PWM again (0124) | under macOS | `SSDT-PNLF`, OpenCore's sample: the same device and maximum, at boot only |
 | The last backlight level put back at wake (0096) | under macOS | nothing: the resume path starts the backlight at 50% and macOS kept it there until a brightness key |
 | The sleep LEDs (power button and logo pulsing, moon on) and the wake on lid opening, before S3 (0100) | under macOS | an SSDT that calls `\_SI._SST`, if the configuration had one: macOS does not call it |
 | Sleep on lid close on AC: the sleep button pressed for macOS, as Fn+4, since it takes the panel of the W541 for an external display and runs in desktop mode, in which it does not sleep on lid close on AC (0113); no clamshell mode on AC | under macOS, on AC | nothing: the lid did not sleep on AC, and the panel stayed lit inside the closed lid |
-| The Intel display audio controller (0:3.0) hidden, whose codec macOS waited 10 s for at every wake and sleep (0122) | setup: *Hardware* → *Graphics* → *Intel display audio*: off (default: on) | nothing: a wake took 10-20 s |
-| The NVIDIA GPU powered off, as macOS has no driver for it (Apple removed the Kepler drivers in Monterey): at boot, and again after a wake that powered it, as a resume from S4 does (0115) | under macOS, with *NVIDIA discrete GPU* on; setup: *Hardware* → *Graphics* → *NVIDIA GPU off under macOS* (default: on) | an SSDT that calls `_OFF` (the path of the OEM firmware, which this DSDT does not have), or `-wegnoegpu`, which only hides the GPU: it stays powered |
+| The Intel display audio controller (0:3.0) hidden, whose codec macOS waited 10 s for at every wake and sleep (0122) | setup: *Compatibility* → *macOS* → *Intel display audio*: off (default: on) | nothing: a wake took 10-20 s |
+| The empty slots turned off: the SATA ports besides the drive bay (0121), the ExpressCard slot and Thunderbolt (0033), for every OS: no port to wait for at every wake, no hot-plug path left open | setup: *Hardware* → *Storage* and *Hardware* → *Expansion ports* (default: on) | nothing: macOS waited for a link on each empty SATA port, about a second per port at every wake |
+| The NVIDIA GPU powered off, as macOS has no driver for it (Apple removed the Kepler drivers in Monterey): at boot, and again after a wake that powered it, as a resume from S4 does (0115) | under macOS, with *NVIDIA discrete GPU* on (*Hardware* → *NVIDIA graphics*); setup: *Compatibility* → *macOS* → *NVIDIA GPU off under macOS* (default: on) | an SSDT that calls `_OFF` (the path of the OEM firmware, which this DSDT does not have), or `-wegnoegpu`, which only hides the GPU: it stays powered |
 | The wake source left in PM1_STS and GPE0_STS at S3 resume, and to the OS by the SMI handler (0099, 0108; with rc3 and rc4, without 0108, every wake from S3 powered off) | always | nothing: the firmware cleared them, and macOS saw no reason for the wake |
 | The battery and the EC wake cause read one byte at a time (0103, 0094), and the battery, the lid and the AC adapter not before the EC driver of macOS (0109, 0114, 0120) | always | ECEnabler, or patches of the battery methods: the EC driver of macOS reads no wider field; nothing for the "No handler for Region [ERAM]" that macOS logged for `BAT0._STA`, `BAT1._STA`, `LID._LID` and `AC._PSR` at every boot (with the lid taken for closed until it read it again) |
 | The backlight registers and the MMIO of the xHCI controller at the BAR they have when the methods run, all 64 bits of it (0101, 0102) | always | the boot argument `npci=0x2000`, if the configuration has it, keeps macOS from moving the BARs |
-| The display left to the OS at wake: only the panel timings, the backlight PWM, the hotplug detection of the ports and power to the panel for its HPD, no mode set (0104, 0107, 0110, 0111); macOS does not power the panel up nor enable its backlight itself (see below) | setup: *Hardware* → *Graphics* → *Light the display up at wake*: off (default: on) | nothing: the firmware sets the panel up at 1920×1080 and macOS sets it up again; with the option off, the panel power-up and its backlight from a Lilu plugin for Azul, or from SSDT-PNLWAK |
-| The firmware screen at the 2880×1620 of the panel, for the OpenCore picker and the boot of macOS (0105-0107) | setup: *Hardware* → *Graphics* → *Firmware screen resolution*: *Panel, up to 2880 x 1620* (default: at most 1920 x 1080, scaled) | nothing |
+| The display left to the OS at wake: only the panel timings, the backlight PWM, the hotplug detection of the ports and power to the panel for its HPD, no mode set (0104, 0107, 0110, 0111); macOS does not power the panel up nor enable its backlight itself (see below) | setup: *Compatibility* → *macOS* → *Light the display up at wake*: off (default: on) | nothing: the firmware sets the panel up at 1920×1080 and macOS sets it up again; with the option off, the panel power-up and its backlight from a Lilu plugin for Azul, or from SSDT-PNLWAK |
+| The firmware screen at the 2880×1620 of the panel, for the OpenCore picker and the boot of macOS (0105-0107) | setup: *Hardware* → *Intel graphics* → *Firmware screen resolution*: *Panel, up to 2880 x 1620* (default: at most 1920 x 1080, scaled) | nothing |
 
 ## In the OpenCore configuration
 
 After the update, and with the setup options of the table set:
 
 - *ACPI processor objects* on *Processor*: remove the SSDT that declares
-  `Processor` objects, or the CPUs are declared twice. XCPM still needs
-  `plugin-type` on the first thread: OpenCore's `SSDT-PLUG` sample, with
-  the path of the first CPU set to `\_SB.CP00`;
+  `Processor` objects, or the CPUs are declared twice, and from rc12
+  `SSDT-PLUG` too: the firmware gives the first thread, `\_SB.CP00`,
+  the `_DSM` with `plugin-type`, and the one of `SSDT-PLUG` would be a
+  second `_DSM` there. Up to rc11, keep `SSDT-PLUG` with the path of the
+  first CPU set to `\_SB.CP00`;
 - *C-state configuration lock* off: `Kernel` → `Quirks` →
   `AppleXcpmCfgLock` to false;
 - the HPET: remove the renames and the SSDT of the IRQ fix;
@@ -69,11 +78,13 @@ After the update, and with the setup options of the table set:
 - with *Light the display up at wake* off: what powers the panel up and
   enables its backlight when macOS lights the display up, which macOS
   does not do (below);
-- still needed: the backlight device (`PNLF`), the USB map and the rest
-  of the configuration.
-
-The firmware's own `Processor` objects carry no `_DSM`: `plugin-type` is a
-macOS property and stays in OpenCore.
+- `SSDT-PNLF`, from rc12: the firmware has `\_SB.PCI0.GFX0.PNLF`,
+  with the same `_UID` and the same setup of the PWM, and the device of
+  the SSDT would be a second one. The renames of the GPU device are not
+  needed for it (WhateverGreen names it `IGPU` in the I/O Registry);
+- still needed: the USB map, the device properties (`DeviceProperties`:
+  the framebuffer, the `layout-id` of AppleALC) and the rest of the
+  configuration.
 
 Update the firmware, and change these options, with the OS shut down or
 restarted, not hibernated, whatever the OS: an OS resumed from
@@ -117,6 +128,32 @@ The two display options, which by default leave the display as before:
   The forced VDD stays until the next sleep: macOS does not touch the
   sequencer.
 
+## Native NVRAM
+
+macOS keeps its NVRAM variables (the startup disk, `boot-args`,
+`csr-active-config`, the Bluetooth pairings) as UEFI variables, and the
+firmware keeps those in the `SMMSTORE` region of the flash: 512 KiB, of
+which EDK2 uses 256 KiB for the variable store, written at runtime through
+SMM, the same path as `efivarfs` under Linux. An OpenCore configuration
+does not need emulated NVRAM there:
+
+- `NVRAM` → `WriteFlash`: true;
+- `NVRAM` → `LegacyEnable`: false;
+- no `LogoutHook` and no `nvram.plist` on the EFI partition.
+
+To check it under macOS:
+
+```sh
+sudo nvram ouro-test=1
+# restart, then:
+nvram ouro-test        # ouro-test 1
+sudo nvram -d ouro-test
+```
+
+EDK2 reclaims the space of deleted and replaced variables at boot, not
+while the OS runs: with the store full, a variable written under macOS is
+refused until the next boot. A store filled by macOS has not been tried.
+
 ## Not done
 
 - the EHCI controllers stay visible, with both variants. v1.3.10-rc1 hid
@@ -132,7 +169,9 @@ The parts under macOS do not apply to them. Linux answers `_OSI
 ignored the query.
 
 - With *ACPI processor objects* on *Processor*, Linux lists the CPUs as
-  `LNXCPU` devices instead of `ACPI0007`, with the same tables;
+  `LNXCPU` devices instead of `ACPI0007`, with the same tables; the
+  `_DSM` of the first one answers only Apple's UUID, which they do not
+  use, and `PNLF` is not there for them (`_STA` 0);
 - the CFG Lock: Linux and Windows do not need it either way;
 - what changes for every OS: the wake source stays in PM1_STS and
   GPE0_STS at S3 resume, as with the OEM firmware (Linux reads and clears

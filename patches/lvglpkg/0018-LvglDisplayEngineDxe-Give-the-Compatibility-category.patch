@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Tue, 27 Oct 2026 12:24:37 +0100
+Subject: [PATCH] LvglDisplayEngineDxe: Give the Compatibility category an icon
+
+The setup menu of ouroBIOS has a sixth category, Compatibility, with the
+options for macOS and the advanced ones: crossing arrows in orange on
+the front page, as the other categories have their own symbol.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ LvglDisplayEngineDxe/LvglFormRenderer.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/LvglDisplayEngineDxe/LvglFormRenderer.c b/LvglDisplayEngineDxe/LvglFormRenderer.c
+index e8b67ef..de5df29 100644
+--- a/LvglDisplayEngineDxe/LvglFormRenderer.c
++++ b/LvglDisplayEngineDxe/LvglFormRenderer.c
+@@ -581,6 +581,7 @@ LookupPromptIcon (
+     { "Console",              LV_SYMBOL_FILE,         THEME_COLOR_ICON_GRAY   },
+     { "Sound",                LV_SYMBOL_VOLUME_MAX,   THEME_COLOR_ICON_PINK   },
+     { "Graphics",             LV_SYMBOL_IMAGE,        THEME_COLOR_ICON_TEAL   },
++    { "Compatibility",        LV_SYMBOL_SHUFFLE,      THEME_COLOR_ICON_ORANGE },
+     { "Reboot",               LV_SYMBOL_POWER,     THEME_COLOR_ICON_RED    },
+     { "Commit",               LV_SYMBOL_OK,        THEME_COLOR_ICON_GREEN  },
+     { "Discard",              LV_SYMBOL_CLOSE,     THEME_COLOR_ICON_RED    },
+-- 
+2.43.0
+

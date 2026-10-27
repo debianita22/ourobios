@@ -25,3 +25,4 @@
 0025-UefiPayloadPkg-Refuse-CSMWrap-while-Secure-Boot-is-o.patch
 0026-UefiPayloadPkg-A-firmware-update-screen-with-the-our.patch
 0027-UefiPayloadPkg-Build-switches-for-UHCI-EBC-and-the-e.patch
+0028-UefiPayloadPkg-CfrSetupMenuDxe-Link-the-other-setup-.patch

@@ -1,0 +1,152 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Tue, 27 Oct 2026 12:29:21 +0100
+Subject: [PATCH] mb/lenovo/haswell: Add the backlight device of macOS
+
+macOS drives the panel backlight through AppleBacklight, which attaches
+to a device with _HID APP0002, PNLF: OpenCore configurations add it with
+an SSDT, OpenCore's SSDT-PNLF sample. For Haswell that sample also sets
+the maximum of the PWM of the PCH to 0xad9, the one of the Haswell
+Macs, with the duty cycle scaled to keep the brightness, and gives PNLF
+_UID 15, the backlight profile for that maximum.
+
+Add \_SB.PCI0.GFX0.PNLF to the DSDT, present under macOS only (_STA
+0x0b with _OSI ("Darwin"), 0 without), with _UID 15 and an _INI that
+sets the maximum as the sample does: in BLC_PWM_PCH_CTL2, at the BAR of
+the moment (GMMB()), 0xad9 in the upper half and the duty cycle scaled
+to it, capped at 0xad9; nothing when the maximum is 0 or already 0xad9.
+The enable, override and polarity bits of BLC_PWM_PCH_CTL1, which the
+sample overwrites with 0xc0000000, stay as coreboot set them.
+
+coreboot programs the PWM again at every resume from S3, at the
+frequency of the panel (backlight_pwm_hz) and 50% (gma_setup_panel()),
+and from S4 at boot: under macOS _WAK sets the maximum again, before it
+puts back after S3 the last level that _BCM set or _BQC read (BRLV).
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init. In
+acpiexec 20230628 with the DSDT: PNLF._STA returns 0 without Darwin and
+0x0b with it; PNLF._INI turns 0x12ba095d (220 Hz at 50%) into
+0x0ad9056c and leaves that as it is; under Darwin _WAK (3) with BRLV 77
+turns 0x12ba095d into 0x0ad9085a and _WAK (4) 0x12ba1000 into
+0x0ad90944, without Darwin both leave the register alone; a duty cycle
+above the maximum becomes 0xad9, a maximum of 0 stays, without a BAR
+nothing is written. The other ACPI checks of the series give the same
+results as before, but the level put back at _WAK, now on 0xad9.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ .../lenovo/haswell/acpi/platform.asl          | 13 ++--
+ src/mainboard/lenovo/haswell/acpi/pnlf.asl    | 60 +++++++++++++++++++
+ src/mainboard/lenovo/haswell/dsdt.asl         |  2 +
+ 3 files changed, 71 insertions(+), 4 deletions(-)
+ create mode 100644 src/mainboard/lenovo/haswell/acpi/pnlf.asl
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/platform.asl b/src/mainboard/lenovo/haswell/acpi/platform.asl
+index f570cfab8c..7e51a8dc61 100644
+--- a/src/mainboard/lenovo/haswell/acpi/platform.asl
++++ b/src/mainboard/lenovo/haswell/acpi/platform.asl
+@@ -11,12 +11,17 @@ Method(_WAK,1)
+ 	\_SB.PCI0.LPCB.EC.HKEY.WAKE (Arg0)
+ 
+ 	/*
+-	 * The resume path sets the backlight PWM to 50% (gma_setup_panel()).
++	 * The firmware sets the backlight PWM at the frequency of the panel and
++	 * at 50%, at boot and at every resume from S3 (gma_setup_panel()).
+ 	 * Linux and Windows set their own level again, macOS keeps that one:
+-	 * there, put back the last level that _BCM set or _BQC read (BRLV).
++	 * there, the maximum of the PWM as macOS takes it (PNLF), after S4 as
++	 * well, and after S3 the last level that _BCM set or _BQC read (BRLV).
+ 	 */
+-	If (Arg0 == 3 && \ISDW () && \_SB.PCI0.GFX0.BRVA) {
+-		\_SB.PCI0.GFX0.XBCM (\_SB.PCI0.GFX0.BRLV)
++	If (\ISDW ()) {
++		\_SB.PCI0.GFX0.PNLF.PWMX ()
++		If (Arg0 == 3 && \_SB.PCI0.GFX0.BRVA) {
++			\_SB.PCI0.GFX0.XBCM (\_SB.PCI0.GFX0.BRLV)
++		}
+ 	}
+ 
+ #if CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM)
+diff --git a/src/mainboard/lenovo/haswell/acpi/pnlf.asl b/src/mainboard/lenovo/haswell/acpi/pnlf.asl
+new file mode 100644
+index 0000000000..da5d08edc7
+--- /dev/null
++++ b/src/mainboard/lenovo/haswell/acpi/pnlf.asl
+@@ -0,0 +1,60 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * The backlight device of macOS, as the SSDT-PNLF sample of OpenCore has it
++ * for Haswell: AppleBacklight drives the panel backlight through PNLF and,
++ * from its _UID 15, takes 0xad9 for the maximum of the PWM, as on the
++ * Haswell Macs. Present under macOS only.
++ */
++Scope (\_SB.PCI0.GFX0)
++{
++	Device (PNLF)
++	{
++		Name (_HID, EisaId ("APP0002"))
++		Name (_CID, "backlight")
++		Name (_UID, 15)
++
++		Method (_STA)
++		{
++			If (\ISDW ()) {
++				Return (0x0b)
++			}
++			Return (0)
++		}
++
++		/*
++		 * Set the maximum of the PWM of the PCH to 0xad9, with the duty
++		 * cycle scaled to keep the brightness: coreboot sets it for the
++		 * frequency of the panel (backlight_pwm_hz) at boot and at every
++		 * resume from S3. The enable, override and polarity bits
++		 * (BLC_PWM_PCH_CTL1) stay as coreboot set them.
++		 */
++		Method (PWMX, 0, Serialized)
++		{
++			Local0 = ^^GMMB ()
++			If (Local0 == 0) {
++				Return ()
++			}
++			OperationRegion (PWMR, SystemMemory, Local0 + 0xc8254, 4)
++			Field (PWMR, DWordAcc, NoLock, Preserve)
++			{
++				LEVX, 32,	/* BLC_PWM_PCH_CTL2: maximum, duty cycle */
++			}
++			Local1 = LEVX
++			Local2 = Local1 >> 16
++			If (Local2 == 0 || Local2 == 0xad9) {
++				Return ()
++			}
++			Local3 = (Local1 & 0xffff) * 0xad9 / Local2
++			If (Local3 > 0xad9) {
++				Local3 = 0xad9
++			}
++			LEVX = (0xad9 << 16) | Local3
++		}
++
++		Method (_INI)
++		{
++			PWMX ()
++		}
++	}
++}
+diff --git a/src/mainboard/lenovo/haswell/dsdt.asl b/src/mainboard/lenovo/haswell/dsdt.asl
+index 1721a5356e..50f02122d5 100644
+--- a/src/mainboard/lenovo/haswell/dsdt.asl
++++ b/src/mainboard/lenovo/haswell/dsdt.asl
+@@ -79,6 +79,8 @@ DefinitionBlock(
+ 		Scope (RP05.PXSX) { Method (_RMV) { Return (1) } }
+ 	}
+ 
++	#include "acpi/pnlf.asl"
++
+ #if CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM)
+ 	#include "acpi/dgpu.asl"
+ #endif
+-- 
+2.43.0
+

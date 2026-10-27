@@ -14,7 +14,9 @@
 # fwupd (configs/fwupd/ourobios.conf), che li scarica dalla release latest.
 # tools/verify-rom.sh blocca la release se i primi 5 MiB non sono
 # identici a legacy/coreboot-4.22/coreboot.rom o la mappa non e' quella di
-# configs/w541.fmd. La blocca anche la prova di fumo (tools/build.sh smoke):
+# configs/w541.fmd. La blocca il menu di setup con un'opzione ripetuta o
+# mancante (tools/build.sh menu, il record CFR e il suo albero nell'artifact
+# smoke-<versione>). La blocca anche la prova di fumo (tools/build.sh smoke):
 # il payload EDK2 di ogni variante, in una ROM per QEMU q35, deve partire e
 # aprire il setup, che deve rispondere ai tasti; le schermate sono
 # nell'artifact smoke-<versione>. E la prova dell'aggiornamento (job
@@ -186,6 +188,11 @@ jobs:
           VBOOT_SIGNING_KEY: ${{ secrets.VBOOT_SIGNING_KEY }}
         run: ./tools/build.sh --release --version "${VERSION}" roms
 
+      # il menu di setup di ogni variante, costruito sull'host dal codice
+      # della build: ogni opzione in una scheda sola (tools/cfr-dump.sh)
+      - name: Menu del setup
+        run: ./tools/build.sh --release --version "${VERSION}" menu
+
       - name: Prova di fumo in QEMU
         run: ./tools/build.sh --release --version "${VERSION}" smoke
 
@@ -194,7 +201,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: smoke-${{ needs.setup.outputs.version }}
-          path: work/smoke-*/
+          path: |
+            work/smoke-*/
+            work/menu-*/
           retention-days: 14
           if-no-files-found: ignore
 

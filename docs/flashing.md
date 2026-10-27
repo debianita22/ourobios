@@ -315,7 +315,8 @@ image: flashrom, not a capsule.
   `failed to evaluate _DSM` with the path `\` for an Intel Wi-Fi card,
   which has no node in the ACPI tables (optional settings of `iwlwifi`).
   Up to v1.3.0-rc3, `mei mei0: hw_start failed` too: the ME's interface
-  was visible though *Intel Management Engine* was *Disabled*.
+  was visible though *Intel Management Engine* (now *Intel ME interface
+  (HECI)*) was *Disabled*.
 - VT-d: the firmware enables it and writes the DMAR table, but Linux
   kernels that leave the IOMMU off by default only use it for interrupt
   remapping: `intel_iommu=on` on the kernel command line turns on the DMA
@@ -349,53 +350,18 @@ image: flashrom, not a capsule.
 - Settings: Esc at power-on opens the setup menu, a grid of icons. Arrow
   keys, Enter and Esc, or the TrackPoint and touchpad, move around; F10
   saves, F9 loads the defaults of every category, not only the open one.
-  - *Hardware* → *Graphics* → *NVIDIA discrete GPU*: **off by default**.
-    When on, Linux can power the GPU down while it is unused, through the
-    ACPI power resource of the firmware, with nouveau or with no driver
-    bound to it; NVIDIA's own driver does that only for Turing and newer
-    GPUs, so with the 470 driver of this Kepler GPU it stays powered
-    ([Power at idle](#power-at-idle)). Under it, from v1.3.7, *NVIDIA
-    GPU link tuning*: how the firmware sets up the PCIe link to the GPU,
-    *As the Lenovo firmware* (the default), *AFE and 8 GT/s presets*,
-    *AFE* alone or *Off*, the hardware defaults as up to v1.3.6 ([The link
-    to the NVIDIA GPU](#the-link-to-the-nvidia-gpu)); from v1.3.10, *NVIDIA
-    GPU off under macOS*, on by default: macOS has no driver for this
-    GPU, and the firmware powers it off there, at boot and after a wake
-    ([docs/macos.md](macos.md)). *Hardware* also has the
-    graphics aperture and, with the native RAM init (`nri`), the graphics
-    stolen memory (DVMT), the ExpressCard and Thunderbolt ports, the
-    SATA ports besides the drive bay (from v1.3.10: a port turned off is
-    not probed by the OS at boot and at every wake) and the radios;
-  - *Energy Saver*: battery charge thresholds (*OS controlled* keeps what
-    TLP or `thinkpad_acpi` sets), SpeedStep, Turbo Boost, C-states, CPU
-    PL1/PL2 limits and lock, cooling policy, *Restore AC Power Loss*. From
-    v1.3.4 the OS can also stop charging or discharge the battery on AC
-    (`/sys/class/power_supply/BAT0/charge_behaviour`: `auto`,
-    `inhibit-charge`, `force-discharge`); unplugging the AC adapter ends a
-    forced discharge;
-  - *Security*: *BIOS Lock*, *Clear memory at power-on*, VT-x, VT-d,
-    *Intel Management Engine* and the supervisor password. *BIOS Lock*,
-    off by default, leaves the flash writable only by the firmware in SMM,
-    as the Lenovo firmware did: the settings are still saved, and signed
-    update capsules still install, but flashrom and any other program in
-    the OS can only read it, until it is turned off again. *Clear memory at power-on*, on by default, clears all the
-    memory at every boot but not on resume, so that nothing the previous
-    OS left in it can be read: about 1.7 s with 32 GB. The processor keeps
-    the VT-x setting until it is powered off, so after a change the next
-    boot switches the laptop off and on once by itself. With a password
-    set, Esc at power-on asks for it before the setup menu, boot entries
-    included, opens; without Esc the laptop boots as usual. A forgotten
-    password goes away when the image is flashed again from Linux, since
-    that also writes the empty `SMMSTORE` region: every setting and boot
-    entry resets too;
-  - *Keyboard*: Fn/Ctrl swap, F1-F12 or special keys, TrackPoint and
-    touchpad;
-  - *General*: what the laptop is (model, machine type, serial number and
-    UUID from the VPD, processor, memory, firmware and EC versions), beeps,
-    *Non-maskable Interrupts*; and, from v1.3.6, *Boot*: *Network boot
-    (iPXE)* and *Legacy boot (CSMWrap)*, both on by default. On, each is
-    an entry of the boot menu (*iPXE Network Boot*, *CSMWrap Legacy
-    Boot*), added at the end of the boot order, after the disks and the
+  From v1.3.10-rc12 there are six categories, each option is in one card
+  of one of them, and the help of each option says what it does, its
+  default and when to change it:
+  - *General*: *About this ThinkPad*, what the laptop is (model, machine
+    type, serial number and UUID from the VPD, processor, memory,
+    firmware and EC versions); *Sound*, the beeps of the EC and its
+    volume at power-on; links to *Time and Date Settings*, *Firmware
+    Update*, *Boot Splash Settings* and *Graphical UI Configuration*,
+    which *System Configuration* lists too; and, from v1.3.6, *Boot*:
+    *Network boot (iPXE)* and *Legacy boot (CSMWrap)*, both on by
+    default. On, each is an entry of the boot menu (*iPXE Network Boot*,
+    *CSMWrap Legacy Boot*), added at the end of the boot order, after the disks and the
     UEFI Shell: it starts when chosen in the boot menu (Esc at power-on)
     or moved up the boot order; off, the entry is deleted at the next
     boot. iPXE drives the Ethernet port itself (its Intel driver, for the
@@ -412,6 +378,56 @@ image: flashrom, not a capsule.
     threads of a quad-core i7. It runs unsigned code, so while Secure Boot
     is on its entry goes and the firmware refuses to start it, however it
     is chosen;
+  - *Energy Saver*: battery charge thresholds (*OS controlled* keeps what
+    TLP or `thinkpad_acpi` sets) and the battery charged first,
+    SpeedStep, Turbo Boost, C-states, CPU PL1/PL2 limits and lock, the
+    undervolting options if built in (*Processor voltage*), cooling
+    policy, *USB always on* and *After a power loss* (*Restore AC Power
+    Loss* up to v1.3.10-rc11). From v1.3.4 the OS can also stop charging
+    or discharge the battery on AC
+    (`/sys/class/power_supply/BAT0/charge_behaviour`: `auto`,
+    `inhibit-charge`, `force-discharge`); unplugging the AC adapter ends a
+    forced discharge;
+  - *Hardware* → *NVIDIA graphics* → *NVIDIA discrete GPU*: **off by
+    default**. When on, Linux can power the GPU down while it is unused,
+    through the ACPI power resource of the firmware, with nouveau or with
+    no driver bound to it; NVIDIA's own driver does that only for Turing
+    and newer GPUs, so with the 470 driver of this Kepler GPU it stays
+    powered ([Power at idle](#power-at-idle)). Under it, from v1.3.7,
+    *NVIDIA GPU link tuning*: how the firmware sets up the PCIe link to
+    the GPU, *As the Lenovo firmware* (the default), *AFE and 8 GT/s
+    presets*, *AFE* alone or *Off*, the hardware defaults as up to v1.3.6
+    ([The link to the NVIDIA GPU](#the-link-to-the-nvidia-gpu)).
+    *Hardware* also has *Intel graphics* (the graphics aperture, the
+    firmware screen resolution and, with the native RAM init (`nri`), the
+    graphics stolen memory, DVMT), *Storage* (the SATA ports besides the
+    drive bay, from v1.3.10: a port turned off is not probed by the OS at
+    boot and at every wake), *Expansion ports* (the ExpressCard and
+    Thunderbolt ports) and *Wireless* (the radios);
+  - *Keyboard*: Fn/Ctrl swap, F1-F12 or special keys, sticky Fn, the
+    keyboard light, TrackPoint and touchpad;
+  - *Security*: *Firmware protection* and *BIOS Lock*, *Clear memory at
+    power-on*, VT-x, VT-d, *Intel ME interface (HECI)* (*Intel Management
+    Engine* up to v1.3.10-rc11), and links to *Secure Boot Configuration*
+    (from v1.3.10) and the supervisor password. *BIOS Lock*,
+    off by default, leaves the flash writable only by the firmware in SMM,
+    as the Lenovo firmware did: the settings are still saved, and signed
+    update capsules still install, but flashrom and any other program in
+    the OS can only read it, until it is turned off again. *Clear memory at power-on*, on by default, clears all the
+    memory at every boot but not on resume, so that nothing the previous
+    OS left in it can be read: about 1.7 s with 32 GB. The processor keeps
+    the VT-x setting until it is powered off, so after a change the next
+    boot switches the laptop off and on once by itself. With a password
+    set, Esc at power-on asks for it before the setup menu, boot entries
+    included, opens; without Esc the laptop boots as usual. A forgotten
+    password goes away when the image is flashed again from Linux, since
+    that also writes the empty `SMMSTORE` region: every setting and boot
+    entry resets too;
+  - *Compatibility*, from v1.3.10: *macOS*, the options that take the
+    place of parts of an OpenCore configuration (*ACPI processor objects*,
+    *C-state configuration lock*, *NVIDIA GPU off under macOS*, *Light the
+    display up at wake*, *Intel display audio*; [docs/macos.md](macos.md)),
+    and *Advanced*, *Non-maskable interrupts*;
   - *Boot Manager* (second row): boot order, boot entries, *Boot Device
     Priority* and *Auto Boot Time-out*, the seconds the firmware waits
     for Esc before it boots: 2 by default, 0 boots at once and leaves

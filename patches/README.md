@@ -61,8 +61,12 @@ for upstream review (one change each, with the reasoning in the message).
 | 0118 | at wake with `gfx_resume_init` off, the firmware polls the live HPD (SDEISR) of the ports with their detection enabled whose HPD was low when VDD went on, with the power-up delay as the timeout, instead of waiting the whole delay (200 ms on the W541); logs `GMA: HPD up after N ms with VDD`. The `gfx_fb_limit` option is read once instead of twice |
 | 0119 | `gfx_aperture_size` read once per boot: with `mrc.bin` `haswell_igd_set_aperture()` runs before and after raminit, both in romstage |
 | 0120 | the `_PSR` of the AC adapter reads no EC RAM before `_REG` (3, 1), as the battery `_STA` (0109) and the lid `_LID` (0114): it returns `PWRS`, the last state known, and `_REG` notifies the AC device (0x80). The last two "No handler for Region [ERAM]" that macOS logged at boot |
-| 0121 | *Hardware* → *Expansion ports*: one switch per SATA port of the W541 besides the drive bay, port 1 (M.2 on the I/O subcard), 4 (M.2 WWAN/SSD) and 5 (Ultrabay), on by default. A port turned off is cleared from the port map before the controller is set up (PCS and AHCI PI): the OS does not probe it at boot and at every wake, about a second per empty port per wake |
-| 0122 | *Hardware* → *Graphics* → *Intel display audio*: the HD Audio controller of the digital display ports of the iGPU (0:3.0), on by default. Off, 0:3.0 is marked disabled before enumeration and the northbridge clears `DEVEN.D3EN`, at boot and at S3 resume: no OS sees it. On the W541 the iGPU drives the panel and the VGA port, neither with audio; macOS waited 10 s for its codec at every wake and at sleep (AppleHDAHDMI_DPDriver), 10-20 s of wake time |
+| 0121 | *Hardware* → *Storage* (*Expansion ports* up to v1.3.10-rc11): one switch per SATA port of the W541 besides the drive bay, port 1 (M.2 on the I/O subcard), 4 (M.2 WWAN/SSD) and 5 (Ultrabay), on by default. A port turned off is cleared from the port map before the controller is set up (PCS and AHCI PI): the OS does not probe it at boot and at every wake, about a second per empty port per wake |
+| 0122 | *Compatibility* → *macOS* → *Intel display audio*: the HD Audio controller of the digital display ports of the iGPU (0:3.0), on by default. Off, 0:3.0 is marked disabled before enumeration and the northbridge clears `DEVEN.D3EN`, at boot and at S3 resume: no OS sees it. On the W541 the iGPU drives the panel and the VGA port, neither with audio; macOS waited 10 s for its codec at every wake and at sleep (AppleHDAHDMI_DPDriver), 10-20 s of wake time |
+| 0123 | `plugin-type` 1 on the first `Processor` object for macOS, with *ACPI processor objects* on *Processor*: a `_DSM` on `\_SB.CP00` for Apple's UUID, function 0 listing function 1, which returns the property; XCPM runs without OpenCore's SSDT-PLUG, whose own `_DSM` there would be a second one |
+| 0124 | under macOS only (`_STA`): the backlight device `\_SB.PCI0.GFX0.PNLF` (`APP0002`, `_CID` "backlight", `_UID` 15), whose `_INI` sets the maximum of the PWM of the PCH to 0xad9 with the duty cycle scaled, as OpenCore's SSDT-PNLF does for Haswell; `_WAK` sets it again after every wake, before the level of 0096 |
+| 0125-0126 | the help of the setup options of the H8 EC, the Haswell CPU and northbridge and Lynx Point: what each does, its default and when to change it; *After a power loss* (was *Restore AC Power Loss*), *Intel ME interface (HECI)* (was *Intel Management Engine*), the H8 names in the case of the rest of the menu |
+| 0127 | the setup menu reorganized into six categories, each option in one card only, with the same option names: *General*, *Energy Saver* (with *Processor voltage*, a category of its own before), *Hardware* (*Intel graphics*, *NVIDIA graphics*, *Storage*, *Expansion ports*, *Wireless*), *Keyboard*, *Security*, *Compatibility* (*macOS*, *Advanced*); the help of the mainboard's options with their default |
 | 0077 | *General* → *Boot* in the setup: *Network boot (iPXE)* and *Legacy boot (CSMWrap)*, each shown only when built in, both on by default; coreboot does not read them, the payload's boot manager does (`edk2/0022`, `edk2/0023`) |
 | 0065 | vboot A/B: the payload can boot the other RW slot (`SMMSTORE_CMD_VBOOT_TRY_OTHER`: *try next* that slot, two tries, `RW_MRC_CACHE` erased, as after an update) until it sends `SMMSTORE_CMD_VBOOT_LOCK` before a boot option or an OS starts; ramstage sends the lock on S3 resume, when the payload does not run. The handler applies the rules of the setup itself, for the code that runs before the lock (`Driver####`, `SysPrep####`, option ROMs): the release in the other slot (`COREBOOT_EXTRA_VERSION` of its `revision` file) of the same variant, not below `CONFIG_DRIVERS_EFI_MAIN_FW_LSV`. For the *Firmware Update* page of the setup (`edk2/0020`) |
 | 0063 | Haswell VT-d: `SPCAPCTRL` set in the remapping engine for the devices other than the IGD also with the IGD present. Without it the engine reports 2 MiB and 1 GiB pages (`dmar1: ... cap d2008c20660462`, the same either way) but rejects them: with `intel_iommu=on` Linux mapped SATA reads with them and got `fault reason 0x0c non-zero reserved fields in PTE`, and btrfs found blocks of zeros. Tested on the W541: 21 faults without, none with |
@@ -104,6 +108,7 @@ a clean tree to the pinned commit but leaves a modified one alone.
 | `edk2/0025` | `CsmWrapSecureBootLib`, a Security2 handler in `SecurityStubDxe`: `csmwrap.efi` is refused (`EFI_ACCESS_DENIED`) while the `SecureBoot` variable is 1, however it is started (`Boot####`, `BootNext`, `SysPrep####` written from the OS), since a file of the firmware volume is not checked against the Secure Boot keys |
 | `edk2/0026` | the firmware update screen (UpdateScreenLib, the DisplayUpdateProgressLib of the payload): the ouroboros of the logo as the progress, the bar a map of the flash blocks of the region being written, versions and vboot slots, phase, sizes, time left, a wink and a countdown to the reset; FmpDeviceSmmLib publishes what it writes (`Protocol/FirmwareUpdateStatus.h`) and PlatformBootManagerLib puts its lines there; the font, Montserrat of LvglPkg, is made by `tools/ui-font.py` when the tree is prepared |
 | `edk2/0027` | build switches `UHCI_ENABLE`, `EBC_ENABLE` and `EXTRA_FS_DRIVERS` (all on by default, as `UFS_ENABLE`): the defconfigs turn them and UFS off, as the W541 has no UHCI or UFS controller, no EFI byte code option ROMs and no need to read NTFS, exFAT or ext2 from the firmware (FAT and ext4 stay); about 110 KiB less in each slot |
+| `edk2/0028` | the categories link to the other setup pages, after their options: *General* to *Time and Date Settings*, *Firmware Update*, *Boot Splash Settings* and *Graphical UI Configuration* (`PcdCfrSetupMenuGeneralCategory`), *Security* to *Secure Boot Configuration* before the password; each link added at EndOfDxe, only when its page is in the HII database, the password one too |
 | `lvglpkg/0001-0003` | a 1.25x UI scale, a PCD for the default scale, the stock LVGL widgets styled from `LvglTheme.h` |
 | `lvglpkg/0004` | the setup UI redesigned as System Preferences: menu bar, icon grid on the front page, windows with cards, switches and drop-down menus |
 | `lvglpkg/0005` | password questions in dialogs (current, new, confirmation), as the text UI does |
@@ -115,6 +120,7 @@ a clean tree to the pinned commit but leaves a modified one alone.
 | `lvglpkg/0014` | the ouroBIOS logo (`assets/ourobios.svg`, 16 x 16 pixel art as an LVGL image, enlarged by whole factors only) and the firmware name at the left of the menu bar, in place of the settings symbol |
 | `lvglpkg/0015` | the entries of the *Firmware Update* page to the other vboot slot (*Go back to*, *Switch to*) with the previous and next symbols, checked before the other words, which a release name could hold |
 | `lvglpkg/0016-0017` | the setup at 2880×1620: the fix of LVGL v9.6.0 to the circle mask, which for some radii from 922 px on wrote past its buffer (with the firmware screen at 2880×1620 of v1.3.10-rc3 the setup stopped on a page fault as it opened: a black screen), taken into the LVGL submodule of LvglLib; the orbs of the wallpaper, up to 1004 px of radius at that height, drawn without a circle mask, which only clipped pixels that their gradient leaves transparent |
+| `lvglpkg/0018` | the *Compatibility* category of the setup with its icon, crossing arrows in orange |
 
 ## Optional patches
 
@@ -143,6 +149,29 @@ W541: vboot's nvdata in the flash, written by verstage from the bootblock
 (on QEMU's pflash the write loops run from RAM), only the bootblock in the
 read-only CBFS, and the W541's map cut down to `RW_MRC_CACHE`, `SMMSTORE`,
 `RW_NVRAM`, the two RW slots and `WP_RO`.
+
+## The setup menu and its screenshots
+
+The W541 cannot be emulated, so neither can its ramstage, which writes the
+setup menu (the CFR record) into the coreboot table. `tools/cfr-dump.sh`
+builds the menu code of a W541 build on the host instead (the `cfr.c` of the
+mainboard and of the H8, with the `config.h` of the build and stubs for what
+reads the hardware: `tools/cfr-dump/stubs.c`), writes the record as the
+ramstage does, reads it back and checks it: its structure, the tree against
+the structures of the menu, every option in one card only, and every option
+that the compiled sources declare in some card. `tools/build.sh menu` runs it
+on each variant after `roms`, as build.yml does, and keeps the record and the
+tree in `work/menu-<variant>`.
+
+`test/q35-cfr-file.patch`, again never in a W541 ROM, makes q35 copy that
+record from the CBFS file `cfr.bin` into its coreboot table, so that the
+payload of the W541 shows the W541's menu in QEMU. In a git worktree of the
+coreboot tree with the patch applied (`git worktree add`, `git apply`, and
+`3rdparty/vboot` copied in), `tools/q35-cfr-rom.sh WORKTREE BUILD` builds
+that q35 ROM with the payload of the W541 build `BUILD`, and
+`tools/qemu-setup-shots.py --cfr cfr.bin ROM` takes a screenshot of the
+front page and of each category, scrolled when it is taller than the
+screen.
 
 ## Updating the series
 

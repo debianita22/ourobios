@@ -33,6 +33,9 @@
 #  10. i link dei .md: i file relativi e le ancore (#titolo, come le fa
 #      GitHub), anche quelli alla documentazione che tools/ci.sh mette nelle
 #      note delle release (i link al ramo principale, con un'ancora)
+#  11. il menu di setup delle build in work/coreboot, se ci sono (in locale,
+#      dopo tools/build.sh roms; nella CI lo fa build.yml): ogni opzione in
+#      una scheda sola (tools/build.sh menu)
 # L'applicazione delle patch e i .config li prova check.yml (job "patch").
 set -u
 O="$(cd "$(dirname "$0")/.." && pwd)"
@@ -370,8 +373,11 @@ if [ -n "${t}" ] && [ -f "${t}" ] && grep -q '^diff --git ' "${t}"; then
 else
 	bad "tools/build.sh: UPDATE_TEST_PATCH '${t}' non c'e' o non e' una patch"
 fi
+# e quella delle schermate del setup, che usa tools/q35-cfr-rom.sh
 for p in patches/test/*.patch; do
-	[ "${p}" = "${t}" ] || bad "${p}: in patches/test ma non usata da tools/build.sh"
+	[ "${p}" = "${t}" ] && continue
+	grep -qF "${p}" tools/q35-cfr-rom.sh \
+		|| bad "${p}: in patches/test ma non usata da tools/build.sh o tools/q35-cfr-rom.sh"
 done
 # i comandi SMMSTORE dei due slot di vboot: lo stesso numero in coreboot
 # (src/include/smmstore.h), in SmmStoreLib di EDK2 e nell'applicazione della
@@ -673,6 +679,27 @@ sys.exit(1 if bad else 0)
 else
 	while IFS= read -r line; do [ -n "${line}" ] && bad "${line}"; done <<< "${out}"
 fi
+
+step "menu del setup"
+# solo con le build in work/coreboot (tools/build.sh roms); le stesse
+# eccezioni di tools/build.sh menu
+n=0
+for v in mrc nri; do
+	b="${O}/work/coreboot/build-${v}"
+	[ -f "${b}/config.h" ] && [ -f "${b}/build.h" ] || continue
+	n=$((n + 1))
+	x=(-x ec_version)
+	grep -q '^#define CONFIG_INTEL_OC_MAILBOX_ENABLE_UNDERVOLTING 1$' "${b}/config.h" \
+		|| x+=(-x 'oc_undervolt_*')
+	tmp="$(mktemp)"
+	if out="$("${O}/tools/cfr-dump.sh" -q -o "${tmp}" "${x[@]}" "${O}/work/coreboot" "${b}" 2>&1)"; then
+		ok "${v}: $(tail -n 1 <<< "${out}")"
+	else
+		while IFS= read -r line; do [ -n "${line}" ] && bad "${v}: ${line}"; done <<< "${out}"
+	fi
+	rm -f "${tmp}"
+done
+[ "${n}" -gt 0 ] || ok "nessuna build in work/coreboot: lo controlla build.yml (tools/build.sh menu)"
 
 echo
 if [ "${fail}" = 0 ]; then

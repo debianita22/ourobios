@@ -28,6 +28,11 @@
 #                  iPXE) costruiti di nuovo da capo, confrontati bit a bit
 #                  con quelli di prepare e di roms in dist/; uguali, o le
 #                  regioni e i file CBFS diversi
+#   menu           dopo roms, il menu di setup di ogni variante, costruito
+#                  sull'host da tools/cfr-dump.sh come il ramstage lo scrive
+#                  (il record CFR) e controllato: ogni opzione in una scheda
+#                  sola, e nel menu ogni opzione che i sorgenti dichiarano.
+#                  Il record e l'albero del menu in WORK/menu-<variante>
 #   smoke          dopo roms, la prova di fumo del payload: per ogni variante
 #                  una ROM coreboot per QEMU q35 con lo stesso UEFIPAYLOAD.fd
 #                  (EDK2 non si ricompila), avviata in QEMU da
@@ -227,7 +232,7 @@ while [ $# -gt 0 ]; do
 		--dist)      DIST="$(realpath -m "${2:?--dist DIR}")"; shift 2 ;;
 		--jobs)      JOBS="${2:?--jobs N}"; shift 2 ;;
 		-h|--help)   sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
-		prepare|toolchain|config|roms|repro|smoke|update-test|keys|toolchain-key) CMDS+=("$1"); shift ;;
+		prepare|toolchain|config|roms|repro|menu|smoke|update-test|keys|toolchain-key) CMDS+=("$1"); shift ;;
 		*) die "argomento sconosciuto: $1 (tools/build.sh --help)" ;;
 	esac
 done
@@ -1139,6 +1144,32 @@ repro_diff() {
 	rm -rf "${tmp}"
 }
 
+# Il menu di setup della variante, dalla sua build: tools/cfr-dump.sh ne
+# compila il codice sull'host (con il config.h della build) e scrive il
+# record CFR che il ramstage mette nella tabella di coreboot, lo rilegge e lo
+# controlla. Fuori dal menu apposta: ec_version dell'H8, che la scheda About
+# della mainboard mostra come info_ec_firmware, e le opzioni di undervolting
+# senza INTEL_OC_MAILBOX_ENABLE_UNDERVOLTING
+cmd_menu() {
+	need_prepared
+	local v b
+	local -a x
+	for v in "${VARIANTS[@]}"; do
+		b="${TREE}/build-${v}"
+		[ -f "${b}/config.h" ] && [ -f "${b}/build.h" ] \
+			|| die "menu ${v}: ${b} non e' costruita, prima tools/build.sh roms"
+		x=(-x ec_version)
+		grep -q '^#define CONFIG_INTEL_OC_MAILBOX_ENABLE_UNDERVOLTING 1$' "${b}/config.h" \
+			|| x+=(-x 'oc_undervolt_*')
+		say "menu ${v}: il menu di setup e le sue opzioni"
+		mkdir -p "${WORK}/menu-${v}"
+		"${O}/tools/cfr-dump.sh" -o "${WORK}/menu-${v}/cfr.bin" "${x[@]}" "${TREE}" "${b}" \
+			> "${WORK}/menu-${v}/menu.txt" \
+			|| die "menu ${v}: il menu non passa i controlli (sopra; ${WORK}/menu-${v}/menu.txt)"
+		tail -n 2 "${WORK}/menu-${v}/menu.txt"
+	done
+}
+
 # La prova di fumo: il payload della variante, gia' costruito da roms, in una
 # ROM per QEMU q35. Del W541 non si emula niente: girano il payload (le patch
 # di EDK2 e LvglPkg) e il codice comune di coreboot. DRIVERS_EFI_FW_INFO con
@@ -1376,6 +1407,7 @@ for c in "${CMDS[@]}"; do
 		config)        cmd_config ;;
 		roms)          cmd_roms ;;
 		repro)         cmd_repro ;;
+		menu)          cmd_menu ;;
 		smoke)         cmd_smoke ;;
 		update-test)   cmd_update_test ;;
 		keys)          cmd_keys ;;
