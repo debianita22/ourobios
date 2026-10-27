@@ -1,0 +1,114 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 27 Oct 2026 17:25:24 +0100
+Subject: [PATCH] mb/lenovo/haswell: Follow the macOS panel option in GPU
+ properties
+
+The device properties of patch 0128 set the Intel GPU up for Panel under
+macOS on External display only: the desktop framebuffer 0x0D220003,
+with the panel as a DisplayPort sink. Built-in display (0129), now tried
+on the W541 with a laptop framebuffer, has macOS drive the panel as
+built in: AppleBacklightDisplay through PNLF, clamshell sleep, the panel
+back at wake. When \_SB.PCI0.GFX0.DWBI () is true the _DSM of GFX0 now
+gives the properties of that configuration (configs/macos/
+DeviceProperties-builtin.plist of ouroBIOS): AAPL,ig-platform-id
+0x0A260006, device-id 0x0412, the built-in connector con0 on DDI D
+(index 3, busId 0x06, pipe 8, LVDS, flags 0x30) and the pixel clock
+limit at 450 MHz, without force-online and the con2 patch. Written by
+tools/devprops2asl.py with --builtin; the other devices do not change.
+The help of the two options says so, and that Built-in display takes
+AzulFix 1.1.7 or later and Light the display up at wake off on the
+W541.
+
+TEST=Built lenovo/w541 with mrc.bin and with the native RAM init (the
+same DSDT). tools/devprops2asl.py without --builtin writes the
+devprops.asl of 0128 byte for byte. In acpiexec on the DSDT, under
+Darwin with DPRP 1, function 1 of the _DSM of GFX0 returns the
+properties of DeviceProperties-builtin.plist with MPBI 1, those of
+DeviceProperties.plist with MPBI 0 or without MPBI, and function 0
+Buffer { 0x03 }; without Darwin, with DPRP 0 or without DPRP, and for
+another UUID, Buffer { 0x00 }. HDEF, LPCB, RP01.PXSX and HDAU give the
+same as before in all 18 cases, and the other ACPI checks the same
+results as before.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ .../lenovo/haswell/acpi/devprops.asl          | 23 +++++++++++++++++++
+ src/mainboard/lenovo/haswell/cfr.c            | 12 ++++++----
+ 2 files changed, 31 insertions(+), 4 deletions(-)
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/devprops.asl b/src/mainboard/lenovo/haswell/acpi/devprops.asl
+index d15238505c..d09bb86ef9 100644
+--- a/src/mainboard/lenovo/haswell/acpi/devprops.asl
++++ b/src/mainboard/lenovo/haswell/acpi/devprops.asl
+@@ -5,6 +5,9 @@
+  * OpenCore configuration gives them, through the _DSM of each device for
+  * Apple's UUID: function 0 lists function 1, which returns them. Written
+  * by tools/devprops2asl.py of ouroBIOS from that DeviceProperties.
++ * With Panel under macOS on Built-in display (\_SB.PCI0.GFX0.DWBI,
++ * patch 0129), a device that has properties in the DeviceProperties
++ * for it gets those instead.
+  */
+ 
+ External (\_SB.PCI0.DPRP, IntObj)
+@@ -83,6 +86,26 @@ Scope (\_SB.PCI0.GFX0)
+ 		If (Arg2 == Zero) {
+ 			Return (Buffer (One) { 0x03 })
+ 		}
++		If (\_SB.PCI0.GFX0.DWBI ()) {
++			Return (Package () {
++				"AAPL,ig-platform-id", Buffer () { 0x06, 0x00, 0x26, 0x0a },
++				"device-id", Buffer () { 0x12, 0x04, 0x00, 0x00 },
++				"enable-max-pixel-clock-override", Buffer () {
++					0x01, 0x00, 0x00, 0x00
++				},
++				"framebuffer-con0-alldata", Buffer () {
++					0x03, 0x06, 0x08, 0x00, 0x02, 0x00, 0x00, 0x00,
++					0x30, 0x00, 0x00, 0x00
++				},
++				"framebuffer-con0-enable", Buffer () { 0x01, 0x00, 0x00, 0x00 },
++				"framebuffer-patch-enable", Buffer () {
++					0x01, 0x00, 0x00, 0x00
++				},
++				"max-pixel-clock-frequency", Buffer () {
++					0x80, 0x74, 0xd2, 0x1a
++				},
++			})
++		}
+ 		Return (Package () {
+ 			"AAPL,ig-platform-id", Buffer () { 0x03, 0x00, 0x22, 0x0d },
+ 			"device-id", Buffer () { 0x12, 0x04, 0x00, 0x00 },
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index a49bccd0ec..527ba6cb5b 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -677,9 +677,12 @@ static const struct sm_object macos_device_properties = SM_DECLARE_BOOL({
+ 	.opt_name	= "macos_device_properties",
+ 	.ui_name	= "Device properties for macOS",
+ 	.ui_helptext	= "The device properties of this W541 for macOS, through\n"
+-			  "_DSM: the framebuffer of the Intel GPU (0x0D220003 and its\n"
+-			  "patches), audio layout 28, the card reader and the LPC\n"
+-			  "bridge as Apple's, Intel display audio without a driver.\n"
++			  "_DSM: the framebuffer of the Intel GPU, as Panel under\n"
++			  "macOS has it (External display: 0x0D220003 and its\n"
++			  "patches; Built-in display: 0x0A260006 with its built-in\n"
++			  "connector on DDI D), audio layout 28, the card reader and\n"
++			  "the LPC bridge as Apple's, Intel display audio without a\n"
++			  "driver.\n"
+ 			  "They replace DeviceProperties in OpenCore: keep only one.\n"
+ 			  "Default: off.",
+ 	.default_value	= false,
+@@ -699,7 +702,8 @@ static const struct sm_object macos_panel = SM_DECLARE_ENUM({
+ 			  "Built-in display (a laptop framebuffer): the backlight\n"
+ 			  "device of macOS (PNLF) and an ambient light sensor (ALS0),\n"
+ 			  "the keys as ACPI events for BrightnessKeys.kext. Replaces\n"
+-			  "SSDT-PNLF and SSDT-ALS0.\n"
++			  "SSDT-PNLF and SSDT-ALS0. On the W541 it takes AzulFix\n"
++			  "1.1.7 or later and Light the display up at wake off.\n"
+ 			  "Default: External display on the W541, whose panel is on\n"
+ 			  "DDI D; Built-in display on the T440p.",
+ 	.default_value	= MACOS_PANEL_DEFAULT,
+-- 
+2.43.0
+
