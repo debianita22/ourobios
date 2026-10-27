@@ -35,6 +35,7 @@ renames `_OSI` to `XOSI` hides that answer from the firmware: see
 | The sleep LEDs (power button and logo pulsing, moon on) and the wake on lid opening, before S3 (0100) | under macOS | an SSDT that calls `\_SI._SST`, if the configuration had one: macOS does not call it |
 | Sleep on lid close on AC: the sleep button pressed for macOS, as Fn+4, since it takes the panel of the W541 for an external display and runs in desktop mode, in which it does not sleep on lid close on AC (0113); no clamshell mode on AC | under macOS, on AC | nothing: the lid did not sleep on AC, and the panel stayed lit inside the closed lid |
 | The Intel display audio controller (0:3.0) hidden, whose codec macOS waited 10 s for at every wake and sleep (0122) | setup: *Compatibility* → *macOS* → *Intel display audio*: off (default: on) | nothing: a wake took 10-20 s |
+| The device properties of the OpenCore configuration of this W541 (`DeviceProperties`: the framebuffer of the Intel GPU, `layout-id` 28, the card reader and the LPC bridge as Apple's, Intel display audio without a driver), through the `_DSM` of each device for Apple's UUID (0128; `configs/macos/DeviceProperties.plist`, written into the DSDT by `tools/devprops2asl.py`) | under macOS, setup: *Compatibility* → *macOS* → *Device properties for macOS*: on (default: off) | `DeviceProperties` → `Add` |
 | The empty slots turned off: the SATA ports besides the drive bay (0121), the ExpressCard slot and Thunderbolt (0033), for every OS: no port to wait for at every wake, no hot-plug path left open | setup: *Hardware* → *Storage* and *Hardware* → *Expansion ports* (default: on) | nothing: macOS waited for a link on each empty SATA port, about a second per port at every wake |
 | The NVIDIA GPU powered off, as macOS has no driver for it (Apple removed the Kepler drivers in Monterey): at boot, and again after a wake that powered it, as a resume from S4 does (0115) | under macOS, with *NVIDIA discrete GPU* on (*Hardware* → *NVIDIA graphics*); setup: *Compatibility* → *macOS* → *NVIDIA GPU off under macOS* (default: on) | an SSDT that calls `_OFF` (the path of the OEM firmware, which this DSDT does not have), or `-wegnoegpu`, which only hides the GPU: it stays powered |
 | The wake source left in PM1_STS and GPE0_STS at S3 resume, and to the OS by the SMI handler (0099, 0108; with rc3 and rc4, without 0108, every wake from S3 powered off) | always | nothing: the firmware cleared them, and macOS saw no reason for the wake |
@@ -82,9 +83,13 @@ After the update, and with the setup options of the table set:
   with the same `_UID` and the same setup of the PWM, and the device of
   the SSDT would be a second one. The renames of the GPU device are not
   needed for it (WhateverGreen names it `IGPU` in the I/O Registry);
-- still needed: the USB map, the device properties (`DeviceProperties`:
-  the framebuffer, the `layout-id` of AppleALC) and the rest of the
-  configuration.
+- `DeviceProperties` → `Add`, from rc12, with *Device properties for
+  macOS* on: the firmware gives the same properties (those of
+  `configs/macos/DeviceProperties.plist`). Leave the section empty: a
+  property from both, with different values, is not well defined, and to
+  try other values in OpenCore turn the option off. Other values for good
+  go in that file, and from there into a new patch (`tools/devprops2asl.py`);
+- still needed: the USB map and the rest of the configuration.
 
 Update the firmware, and change these options, with the OS shut down or
 restarted, not hibernated, whatever the OS: an OS resumed from
