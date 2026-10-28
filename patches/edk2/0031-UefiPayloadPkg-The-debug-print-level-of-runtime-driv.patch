@@ -1,0 +1,63 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 28 Oct 2026 19:27:28 +0100
+Subject: [PATCH] UefiPayloadPkg: The debug print level of runtime drivers from
+ the PCD
+
+DebugPrintErrorLevelLibHob looks for gEdkiiDebugPrintErrorLevelGuid in
+the HOB list at the first DEBUG() of a module, and keeps what it finds.
+A runtime driver can print for the first time after ExitBootServices():
+ResetSystemRuntimeDxe does in ResetSystem() ("DXE ResetSystem2:
+ResetType %s"), and walks the HOB list there, boot services memory,
+which macOS and Windows do not map for the runtime services. A build
+with DEBUG() then faults in ResetSystem() under them.
+
+Where DEBUG() is built in (DEBUG and NOOPT, and RELEASE with
+USE_CBMEM_FOR_CONSOLE, which does not define MDEPKG_NDEBUG), runtime
+drivers take BaseDebugPrintErrorLevelLib, which reads
+PcdDebugPrintErrorLevel. With coreboot as the boot loader no HOB has
+the level, so it stays the same; a universal payload boot loader that
+passes one keeps it for every module but the runtime drivers. A RELEASE
+build without CBMEM logging has no DEBUG() and does not change.
+
+TEST=A DEBUG payload in a q35 ROM, booting tools/efi/rt-reloc-test.c of
+ouroBIOS, which moves the runtime services code and data and calls the
+services as boot.efi of macOS does without OpenCore's
+AvoidRuntimeDefrag: every service answers and ResetSystem() resets,
+where the CPU triple-faulted in GetFirstGuidHob(), reached from the
+first DEBUG() of ResetSystemRuntimeDxe. The runtime drivers print the
+same messages at boot. The RELEASE payload of the W541 (nri) builds
+byte-identical.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ UefiPayloadPkg/UefiPayloadPkg.dsc | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
+index b4f6dd1..c6a536d 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dsc
++++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
+@@ -688,6 +688,18 @@
+   BaseCryptLib|CryptoPkg/Library/BaseCryptLib/RuntimeCryptLib.inf
+ !endif
+   PcdLib|MdePkg/Library/DxePcdLib/DxePcdLib.inf
++  #
++  # Not DebugPrintErrorLevelLibHob where DEBUG() is built in: a runtime driver
++  # can print for the first time after ExitBootServices(), as ResetSystemRuntimeDxe
++  # does in ResetSystem(), and that library looks for the level in the HOB list
++  # then, boot services memory that macOS and Windows do not map for the runtime
++  # services. With coreboot no HOB has the level: it is PcdDebugPrintErrorLevel
++  # either way. A release build without CBMEM logging has no DEBUG() (MDEPKG_NDEBUG
++  # above) and stays as it is.
++  #
++!if $(TARGET) != RELEASE || $(USE_CBMEM_FOR_CONSOLE) == TRUE
++  DebugPrintErrorLevelLib|MdePkg/Library/BaseDebugPrintErrorLevelLib/BaseDebugPrintErrorLevelLib.inf
++!endif
+   MemoryAllocationLib|MdePkg/Library/UefiMemoryAllocationLib/UefiMemoryAllocationLib.inf
+   ReportStatusCodeLib|MdeModulePkg/Library/RuntimeDxeReportStatusCodeLib/RuntimeDxeReportStatusCodeLib.inf
+   VariablePolicyLib|MdeModulePkg/Library/VariablePolicyLib/VariablePolicyLibRuntimeDxe.inf
+-- 
+2.43.0
+

@@ -28,3 +28,4 @@
 0028-UefiPayloadPkg-CfrSetupMenuDxe-Link-the-other-setup-.patch
 0029-UefiPayloadPkg-SmmStoreLib-The-com-buffer-as-runtime.patch
 0030-UefiPayloadPkg-Run-the-payload-from-1-GiB-with-its-H.patch
+0031-UefiPayloadPkg-The-debug-print-level-of-runtime-driv.patch
