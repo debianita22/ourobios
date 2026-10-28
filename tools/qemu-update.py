@@ -694,7 +694,9 @@ class UpdateTest:
         # 6. capsula A, poi lo slot A rovinato: vboot lo scarta e resta su B
         self.stage("A")
         self.capsule_boot("6-capsula-A", "A", "B")
-        off = f.areas["FW_MAIN_A"][0] + 0x100000
+        # un byte nel primo file del CBFS (la romstage, da 0x80): dentro
+        # il corpo che vboot verifica qualunque sia la dimensione dello slot
+        off = f.areas["FW_MAIN_A"][0] + 0x100
         f.write(off, bytes([f.data()[off] ^ 0xFF]))
         how, text = self.boot("6-A-rovinato")
         self.expect("6-A-rovinato", how, text, "reset")

@@ -228,8 +228,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   NVRAM of macOS needs no emulation either
   ([docs/macos.md](docs/macos.md#native-nvram)).
 - **From rc12, OpenCore needs the `Booter` quirks for the memory
-  attributes table of the firmware**: `RebuildAppleMemoryMap` and
-  `SyncRuntimePermissions` on, `EnableWriteUnprotector` off. With the
+  attributes table of the firmware**: `RebuildAppleMemoryMap` on and
+  `EnableWriteUnprotector` off (`SyncRuntimePermissions` on too, up to
+  rc15: see rc16 and rc17 below). With the
   quirks of the configuration of the W541 up to rc11
   (`EnableWriteUnprotector` on, the other two off) macOS restarts the
   laptop at the resume from S3, with no panic report, and `pmset -g log`
@@ -297,7 +298,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   checked in `acpiexec` on the DSDT of the W541.
 - From rc15, what trimming the OpenCore configuration of the W541 (rc14,
   OpenCore 1.0.8) found for the firmware. Checked in QEMU with the payload
-  of the W541; on the W541 still to be tried:
+  of the W541, then on the W541 with rc16 (below):
   - the com buffer of SMMSTORE, which the runtime variable services
     write, is runtime services data in the memory map (`edk2/0029`). It
     was reserved memory with `EFI_MEMORY_RUNTIME` (0x7F635000-0x7F644FFF
@@ -320,8 +321,8 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
     ([docs/update.md](docs/update.md#versions-variants-downgrades)).
 
   Without `ProtectMemoryRegions`, `ProvideCustomSlide` and
-  `EnableSafeModeSlide` OpenCore should boot macOS: try it
-  ([docs/macos.md](docs/macos.md#in-the-opencore-configuration)).
+  `EnableSafeModeSlide` OpenCore boots macOS (seen on the W541 with rc16;
+  [docs/macos.md](docs/macos.md#in-the-opencore-configuration)).
   `AvoidRuntimeDefrag` stays, as before: without it boot.efi moves the
   runtime services data, and the com buffer of SMMSTORE, which SMM
   writes at its physical address, is runtime services data from rc15.
@@ -339,7 +340,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   the com buffer of 68 KiB as runtime MMIO in the memory map, for Linux
   too, the variables that Linux writes at runtime with the arguments in
   that page (`DEBUG_SMI`) and read at the next boot; the smoke test. On
-  the W541 still to be tried
+  the W541 macOS boots without it, and its NVRAM works
   ([docs/macos.md](docs/macos.md#in-the-opencore-configuration)). Not
   with `DevirtualiseMmio` on, which takes `EFI_MEMORY_RUNTIME` away from
   MMIO, unless the com buffer is in `MmioWhitelist`.

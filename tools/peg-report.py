@@ -189,6 +189,8 @@ def report(name, bdf, c, out):
 def clear(bdf, c):
     """Azzera i bit RW1C d'errore: DevSta, LnkSta[15:14], AER, errori per lane"""
     p = pcie_cap(c)
+    if p is None:
+        sys.exit("%s: nessuna capability PCIe" % bdf)
     w = [(p + 0x0a, 2, 0x000f), (p + 0x12, 2, 0xc000)]
     ext = ext_caps(c)
     aer = PEG_UESTS - 4 if bdf == RP else ext.get(0x1)

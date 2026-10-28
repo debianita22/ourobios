@@ -1,6 +1,7 @@
 # Controlli veloci a ogni push e pull request: niente build delle ROM.
 #   scripts   tools/ci-check.sh: shellcheck, actionlint, SHA256SUMS dei blob,
-#             patches/series, chiave Optimus assente, defconfig coerenti
+#             patches/series, chiave Optimus solo in blobs/opvk.inc,
+#             defconfig coerenti
 #   patch     coreboot al commit pinnato + patches/series, EDK2 al commit dei
 #             defconfig + patches/edk2 e patches/lvglpkg, e i .config delle
 #             due varianti: ogni riga dei defconfig deve restare (Kconfig la

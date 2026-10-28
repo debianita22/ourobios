@@ -2,9 +2,10 @@
 
 Each release also has a signed UEFI capsule per variant,
 `w541-coreboot-vX.Y.Z-mrc.cap` and `-nri.cap`. A W541 that already runs
-v1.3.0 or later installs it from Linux, without flashrom (v1.2.x, with the
-flash map before vboot, installs the capsules of v1.2.x only: see
-[The first time](#the-first-time)):
+v1.3.9 or later installs it from Linux, without flashrom (v1.3.0-v1.3.8,
+with the read-only part before v1.3.9, install the capsules of
+v1.3.0-v1.3.8 only, and v1.2.x, with the flash map before vboot, those of
+v1.2.x: see [The first time](#the-first-time)):
 
 ```sh
 curl -LO https://raw.githubusercontent.com/debianita22/ourobios/main/tools/update.py
@@ -60,14 +61,18 @@ capsule itself, from SMM, and never `WP_RO`.
 
 ## The first time
 
-The capsules of v1.3.0 and later need a firmware with the same flash map,
-v1.3.0 or later. Install it once with flashrom: from v1.0.3-v1.2.x as in
-[docs/flashing.md](flashing.md#from-v12x-to-v130) (settings and VPD stay),
-from other firmware as in [docs/flashing.md](flashing.md#internal-update)
-(VPD copied into the image first, *BIOS Lock* off). From there on, every
-update can be a capsule. `update.py status` tells whether the running
-firmware applies them (*mappa*: *vboot*, or *senza vboot* for v1.2.x), and `stage` refuses a
-capsule for the other map.
+The capsules of v1.3.9 and later need a firmware with the same flash map
+and the same read-only part, v1.3.9 or later (the lowest version they
+accept, `CONFIG_DRIVERS_EFI_MAIN_FW_LSV` of the defconfigs, is v1.3.9:
+`update.py status` prints it). Install it once with flashrom: from
+v1.0.3-v1.3.8 as in [docs/flashing.md](flashing.md#from-v13x-to-v139)
+(settings, boot entries and VPD stay), from other firmware as in
+[docs/flashing.md](flashing.md#internal-update) (VPD copied into the image
+first, *BIOS Lock* off). From there on, every update can be a capsule.
+`update.py status` tells whether the running firmware applies them
+(*mappa*: *vboot*, or *senza vboot* for v1.2.x), and `stage` refuses a
+capsule for the other map or for the other read-only part (v1.3.0-v1.3.8
+have their own ESRT GUIDs, and install the capsules of those releases).
 
 v1.2.0 to v1.2.2 apply the capsules of v1.2.x, which rewrite the whole
 4 MiB chip, without A/B.
@@ -87,6 +92,8 @@ partition (ESP) mounted (`/boot/efi`, `/efi`; elsewhere: `--esp DIR`).
 | `other-slot flash.bin FILE.rom` | an image to write with flashrom, three regions only: the slot of a release in the slot that is not running, vboot asked to try it ([A release from its image](#a-release-from-its-image-in-the-other-slot)) |
 | `rollback FLASH.bin` | back to the release in the slot that is not running, the one before the last update: see [Going back](#going-back) |
 | `vboot FLASH.bin` | from a copy of the flash (`sudo flashrom -p internal -r FLASH.bin`): the slot of the next boot and its tries, the slot of this boot and of the one before, and whether vboot found one broken ([docs/vboot.md](vboot.md)) |
+| `vboot-work FILE` | what vboot decided at this boot, from its work buffer in CBMEM (`sudo cbmem -r 0x78007343 > FILE`; [docs/vboot.md](vboot.md)) |
+| `vars FLASH.bin` | the UEFI variables in the `SMMSTORE` region of a copy of the flash: names, GUIDs, attributes and sizes, never the data (`--grep REGEX`, `--all` for the deleted ones too) |
 
 `stage` checks what the firmware would check, so that a reboot is not
 wasted: the variant (an `nri` capsule is refused on `mrc`), the version (not
@@ -252,10 +259,9 @@ fwupdmgr get-updates
 With both on, a release is one package to fwupd (same `.cab`, same
 checksums), and each candidate, with its own version
 ([Versions, variants, downgrades](#versions-variants-downgrades)), comes
-from the testing remote alone. Until the first release with the four-byte
-version is the latest one (v1.3.6), the two remotes describe the version in
-different formats; whoever follows the candidates in the meantime keeps the
-other remote off, or installs the `.cab` by hand.
+from the testing remote alone. (Up to v1.3.6, the first release with the
+four-byte version, the two remotes described the version in different
+formats, and whoever followed the candidates kept the other remote off.)
 
 - The project remote offers releases; the candidates come from the testing
   remote, `update.py stage` or their `.cab` by hand. From v1.3.6 each

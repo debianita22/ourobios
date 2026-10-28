@@ -41,8 +41,9 @@
 #                  spostati come li sposta boot.efi di macOS senza
 #                  AvoidRuntimeDefrag (tools/efi/rt-reloc-test.c). Schermate
 #                  e seriale in WORK/smoke-<variante>.
-#                  Poi una seconda ROM a 2880x1620, la risoluzione del pannello
-#                  3K con gfx_fb_limit: solo il setup, in WORK/smoke-<variante>-2880x1620
+#                  Poi, per la prima variante, una seconda ROM a 2880x1620,
+#                  la risoluzione del pannello 3K con gfx_fb_limit: solo il
+#                  setup, in WORK/smoke-<variante>-2880x1620
 #   update-test    la prova dell'aggiornamento con le capsule (vboot A/B) in
 #                  QEMU q35, tools/qemu-update.py: un payload EDK2 DEBUG con
 #                  le patch del progetto, che si fida di una chiave creata per
@@ -344,7 +345,7 @@ fw_quad() {
 }
 fw_version() {
 	local x y z r v
-	if [[ "${VERSION}" =~ ^v([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})(-rc([1-9][0-9]{0,2}))?$ ]]; then
+	if [[ "${VERSION}" =~ ^v(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})(-rc([1-9][0-9]{0,2}))?$ ]]; then
 		x=$((10#${BASH_REMATCH[1]})); y=$((10#${BASH_REMATCH[2]})); z=$((10#${BASH_REMATCH[3]}))
 		r=$((10#${BASH_REMATCH[5]:-0}))
 		if [ "${x}" -le 255 ] && [ "${y}" -le 255 ] && [ "${z}" -le 255 ] && [ "${r}" -le 255 ]; then
@@ -370,7 +371,7 @@ fw_version() {
 # (firmware-revision in IODeviceTree:/efi, docs/update.md)
 fw_revision() {
 	local x y z r
-	if [[ "${VERSION}" =~ ^v([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})(-rc([1-9][0-9]{0,2}))?$ ]]; then
+	if [[ "${VERSION}" =~ ^v(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})(-rc([1-9][0-9]{0,2}))?$ ]]; then
 		x=$((10#${BASH_REMATCH[1]})); y=$((10#${BASH_REMATCH[2]})); z=$((10#${BASH_REMATCH[3]}))
 		r=$((10#${BASH_REMATCH[5]:-0}))
 		if [ "${x}" -le 255 ] && [ "${y}" -le 255 ] && [ "${z}" -le 255 ] && [ "${r}" -le 255 ]; then
@@ -973,8 +974,11 @@ install_vboot_key() {
 # nel primo minuto della CI, non dopo la toolchain (build.yml). Con --release
 # devono esserci (CAPSULE_SIGNING_KEY con una versione vX.Y.Z)
 cmd_keys() {
-	local tmp
 	say "chiavi di firma"
+	# in un sottoshell: la trap della cartella temporanea non prende il
+	# posto di quella di install_vboot_key (roms prima di keys)
+	(
+	local tmp
 	tmp="$(mktemp -d)"
 	chmod 700 "${tmp}"
 	trap 'rm -rf "${tmp}"' EXIT
@@ -997,8 +1001,7 @@ cmd_keys() {
 	else
 		echo "  --  VBOOT_SIGNING_KEY assente: slot firmati con le chiavi di prova di vboot"
 	fi
-	rm -rf "${tmp}"
-	trap - EXIT
+	) || exit $?
 }
 
 # Gli slot RW della ROM della variante $1 si verificano con la chiave root del
@@ -1014,7 +1017,8 @@ check_vboot() {
 		# gbb -g esporta tutta l'area della chiave root (con il riempimento
 		# a 0xFF dopo la chiave): si confrontano i byte della chiave
 		tmp="$(mktemp)"
-		"${f}" gbb -g --rootkey="${tmp}" "${b}/coreboot.rom" > /dev/null
+		"${f}" gbb -g --rootkey="${tmp}" "${b}/coreboot.rom" > /dev/null \
+			|| { rm -f "${tmp}"; die "${v}: futility gbb non legge la chiave root"; }
 		cmp -s -n "$(stat -c %s "${O}/keys/vboot/root_key.vbpubk")" "${tmp}" "${O}/keys/vboot/root_key.vbpubk" \
 			|| { rm -f "${tmp}"; die "${v}: la chiave root nel GBB non e' keys/vboot/root_key.vbpubk"; }
 		rm -f "${tmp}"
@@ -1243,8 +1247,10 @@ cmd_smoke() {
 		[ -n "${guid}" ] && [ -n "${lsv}" ] || die "smoke ${v}: GUID o LSV dell'ESRT non nel defconfig"
 		# 1920x1080 per tutta la prova; 2880x1620, il pannello 3K del W541 con
 		# gfx_fb_limit, per il setup soltanto: la VGA di QEMU con 32 MiB, il
-		# framebuffer e' di 18
+		# framebuffer e' di 18. Il setup a 2880x1620 (LvglPkg, lo stesso nei
+		# due payload) una volta sola, con la prima variante
 		for res in 1920x1080 2880x1620; do
+			if [ "${res}" != 1920x1080 ] && [ "${v}" != "${VARIANTS[0]}" ]; then continue; fi
 			x="${res%x*}"
 			y="${res#*x}"
 			q="q35-${v}"

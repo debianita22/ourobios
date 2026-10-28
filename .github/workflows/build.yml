@@ -31,15 +31,16 @@
 #
 # La capsula (e il .cab e i metadati fwupd) si firma con il secret
 # CAPSULE_SIGNING_KEY (Settings -> Secrets and variables -> Actions): la
-# chiave privata di keys/capsule-signing.pem, che arriva solo al passo ROM. Senza, una release vX.Y.Z si ferma; le build di
-# prova escono senza capsula.
+# chiave privata di keys/capsule-signing.pem, che arriva solo al controllo
+# delle chiavi del job setup e al passo ROM. Senza, una release vX.Y.Z si
+# ferma; le build di prova escono senza capsula.
 #
 # Gli slot RW di vboot (docs/vboot.md) si firmano con il secret
 # VBOOT_SIGNING_KEY: la chiave dati privata (firmware_data_key.vbprivk in
-# base64 su una riga) di keys/vboot/firmware_data_key.vbpubk, anche lei solo
-# al passo ROM. Senza, una release si ferma; le build di prova firmano con le
-# chiavi di test di vboot (e le capsule delle release non si installano su
-# quelle ROM).
+# base64 su una riga) di keys/vboot/firmware_data_key.vbpubk, agli stessi
+# due passi. Qui ogni build e' --release, anche quelle di prova: senza il
+# secret si ferma al job setup, nel primo minuto (un fork senza i secret
+# costruisce con tools/build.sh a mano, con le chiavi di test di vboot).
 #
 # Quale release e' cosa (tools/ci.sh):
 #   - mrc: RAM init con mrc.bin, come la 4.22. "latest" se non e' una
@@ -87,10 +88,11 @@ permissions:
   contents: read
 
 # Una release per versione alla volta: il push del tag e un Run workflow con
-# la stessa versione stanno nello stesso gruppo.
+# la stessa versione stanno nello stesso gruppo. Un push su un ramo
+# ci-test/** ferma la build di prova del push prima sullo stesso ramo.
 concurrency:
   group: build-${{ github.ref_type == 'tag' && github.ref_name || inputs.version || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.ref_type != 'tag' && inputs.version == '' }}
 
 jobs:
   setup:
@@ -125,10 +127,10 @@ jobs:
       - name: tools/ci-check.sh
         run: ./tools/ci-check.sh
 
-      # le chiavi dei secret, solo per una release: un secret incollato male
-      # si vede qui, in un minuto, non dopo la toolchain
+      # le chiavi dei secret, per ogni build (tutte --release): un secret
+      # incollato male o assente si vede qui, in un minuto, non dopo la
+      # toolchain
       - name: Chiavi di firma
-        if: steps.v.outputs.publish == 'true'
         env:
           CAPSULE_SIGNING_KEY: ${{ secrets.CAPSULE_SIGNING_KEY }}
           VBOOT_SIGNING_KEY: ${{ secrets.VBOOT_SIGNING_KEY }}
@@ -290,6 +292,12 @@ jobs:
     if: needs.setup.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # una pubblicazione alla volta, qualunque versione: "latest" e il remote
+    # testing si leggono e si riscrivono qui, e due release insieme
+    # potrebbero scambiarsi il risultato
+    concurrency:
+      group: release
+      cancel-in-progress: false
     permissions:
       contents: write
     env:

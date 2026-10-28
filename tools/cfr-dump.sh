@@ -107,7 +107,7 @@ fi
 
 # Le opzioni dell'H8 dal devicetree della build (default: quelle del W541)
 h8=(-DCFR_DUMP_H8_THINKLIGHT=0 -DCFR_DUMP_H8_KB_BACKLIGHT=1 -DCFR_DUMP_H8_UWB=0 -DCFR_DUMP_H8_PM_BEEPS=0)
-static_c="$(find "${build}/mainboard" -name static.c 2>/dev/null | head -n 1)"
+static_c="$(find "${build}/mainboard" -name static.c 2>/dev/null | head -n 1 || true)"
 if [ -n "${static_c}" ]; then
 	h8conf="$(sed -n '/struct ec_lenovo_h8_config ec_lenovo_h8_info_/,/^};/p' "${static_c}")"
 	if [ -n "${h8conf}" ]; then

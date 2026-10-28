@@ -132,8 +132,11 @@ its root key, and vboot keeps the old one).
   records the read-only part on the laptops (coreboot and cache-as-RAM of
   v1.3.9; of v1.3.0 before), and `tools/ci-check.sh` and `tools/verify-rom.sh`
   stop a build that differs. Moving the pin takes either checking that the
-  new slots still read what the old read-only part leaves, or a release
-  that writes the read-only part as well, with flashrom, as v1.3.9 does
+  new slots still read what the old read-only part leaves, which a
+  `rw-ok` line of `ro-interface.txt` with the new pin records (26.09-438,
+  the pin from v1.3.10-rc12, behind the read-only part of v1.3.9 from
+  26.09-280), or a release that writes the read-only part as well, with
+  flashrom, as v1.3.9 does
   ([The read-only part of v1.3.9](#the-read-only-part-of-v139)).
 - **No rollback protection for the slots.** vboot keeps its anti-rollback
   data in the TPM on Chromebooks; here it is mocked
@@ -183,9 +186,11 @@ it changes:
   one: a capsule installs only on a firmware with its GUID, so v1.3.9 goes
   in with flashrom and the releases after it with their capsule again
   ([docs/update.md](update.md#versions-variants-downgrades)).
-- **The coreboot pin** of the slots, 26.09-280, is now also the one of the
-  read-only part (v1.3.0 was built from 26.09-53): the bootblock and
-  verstage of the pin, which the slots of v1.3.1-v1.3.8 ran behind, now run.
+- **The coreboot pin** of the read-only part is 26.09-280, that of the
+  slots of v1.3.9 (v1.3.0 was built from 26.09-53): the bootblock and
+  verstage of that pin, which the slots of v1.3.1-v1.3.8 ran behind, now
+  run. From v1.3.10-rc12 the slots come from 26.09-438, checked to read
+  what that read-only part leaves (`rw-ok` in `configs/ro-interface.txt`).
 
 Tested in QEMU q35, with vboot's two slots: the read-only part of a build
 with a 16 KiB stack and the patch starts romstage, ramstage and the payload

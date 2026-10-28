@@ -1557,11 +1557,13 @@ def main():
     args = ap.parse_args()
     try:
         return args.func(args)
-    except Error as e:
+    except (Error, OSError) as e:
         print("errore: %s" % e, file=sys.stderr)
         return 1
-    except OSError as e:
-        print("errore: %s" % e, file=sys.stderr)
+    except (struct.error, ValueError) as e:
+        # un file tagliato o non del tipo atteso (una capsula, un .cab, uno
+        # store di variabili, un GUID scritto male): un errore, non un traceback
+        print("errore: file o valore non valido: %s" % e, file=sys.stderr)
         return 1
 
 
