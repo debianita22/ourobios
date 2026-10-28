@@ -378,10 +378,17 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   not executable, until runtime memory was allocated again. Now the
   table is installed again once the record is in: the code read-only,
   the header and the data not executable. Checked in QEMU with
-  OpenShell, MmapDump and a runtime driver loaded from the shell (with
-  OpenRuntime 1.0.8 a later allocation corrected the table anyway); on
-  the W541 still to be tried, with a sleep and wake
+  OpenShell, MmapDump and a runtime driver loaded from the shell. With
+  OpenRuntime 1.0.8 a later allocation corrected the table anyway, and
+  on the W541 the quirk is off with rc16 already; the patch takes away
+  the dependence on that allocation
   ([docs/macos.md](docs/macos.md#in-the-opencore-configuration)).
+- The OpenCore configuration of the W541 with rc16 (OpenCore 1.0.8): of
+  `Booter` → `Quirks` only `RebuildAppleMemoryMap` is on, and macOS
+  works. `AvoidRuntimeDefrag` (not needed from rc16),
+  `ProtectMemoryRegions`, `ProvideCustomSlide` and `EnableSafeModeSlide`
+  (from rc15), `SyncRuntimePermissions` and `EnableWriteUnprotector` are
+  off ([docs/macos.md](docs/macos.md#in-the-opencore-configuration)).
 
 ## v1.3.9
 
