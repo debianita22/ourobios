@@ -37,7 +37,10 @@
 #                  una ROM coreboot per QEMU q35 con lo stesso UEFIPAYLOAD.fd
 #                  (EDK2 non si ricompila), avviata in QEMU da
 #                  tools/qemu-smoke.py: il payload parte, il setup si apre e
-#                  risponde ai tasti. Schermate e seriale in WORK/smoke-<variante>.
+#                  risponde ai tasti; i servizi runtime funzionano anche
+#                  spostati come li sposta boot.efi di macOS senza
+#                  AvoidRuntimeDefrag (tools/efi/rt-reloc-test.c). Schermate
+#                  e seriale in WORK/smoke-<variante>.
 #                  Poi una seconda ROM a 2880x1620, la risoluzione del pannello
 #                  3K con gfx_fb_limit: solo il setup, in WORK/smoke-<variante>-2880x1620
 #   update-test    la prova dell'aggiornamento con le capsule (vboot A/B) in
@@ -1203,20 +1206,34 @@ cmd_menu() {
 	done
 }
 
+# Un'applicazione UEFI di tools/efi, senza librerie: $1 il sorgente, $2 il .efi
+efi_app() {
+	clang --target=x86_64-unknown-windows -std=c11 -O2 -Wall -Wextra -Werror -ffreestanding \
+		-fno-stack-protector -mno-red-zone -mgeneral-regs-only -nostdlib -fuse-ld=lld \
+		-Wl,-subsystem:efi_application -Wl,-entry:efi_main -o "$2" "$1"
+}
+
 # La prova di fumo: il payload della variante, gia' costruito da roms, in una
 # ROM per QEMU q35. Del W541 non si emula niente: girano il payload (le patch
 # di EDK2 e LvglPkg) e il codice comune di coreboot. DRIVERS_EFI_FW_INFO con
 # il GUID e la versione della variante, come sul W541: senza, FmpDxe del
 # payload non sa che firmware e' e si ferma (misconfiguration). Niente
 # USE_UEFI_VARIABLE_STORE: il romstage di q35 non ha il flash scrivibile.
+# Poi i servizi runtime spostati come da boot.efi di macOS
+# (tools/efi/rt-reloc-test.c, il passo 9 di tools/qemu-smoke.py)
 cmd_smoke() {
 	need_prepared
-	command -v qemu-system-x86_64 > /dev/null \
-		|| die "serve qemu-system-x86_64 (Debian/Ubuntu: apt install qemu-system-x86)"
+	local t
+	for t in qemu-system-x86_64 mformat mmd mcopy clang ld.lld; do
+		command -v "${t}" > /dev/null \
+			|| die "smoke: serve ${t} (Debian/Ubuntu: apt install qemu-system-x86 mtools clang lld)"
+	done
 	if [ "${TOOLCHAIN}" = crossgcc ]; then
 		xgcc_ok || die "crossgcc mancante in ${XGCC}: prima tools/build.sh toolchain"
 		export PATH="${XGCC}/bin:${PATH}"
 	fi
+	local reloc="${WORK}/rt-reloc-test.efi"
+	efi_app "${O}/tools/efi/rt-reloc-test.c" "${reloc}" || die "smoke: tools/efi/rt-reloc-test.c non compila"
 	local v q fd guid lsv res x y
 	for v in "${VARIANTS[@]}"; do
 		fd="${TREE}/build-${v}/UEFIPAYLOAD.fd"
@@ -1261,7 +1278,8 @@ cmd_smoke() {
 			fi
 			say "smoke ${v}: QEMU a ${res}"
 			if [ "${res}" = 1920x1080 ]; then
-				python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-${v}" "${TREE}/build-${q}/coreboot.rom" \
+				python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-${v}" --reloc-test "${reloc}" \
+					"${TREE}/build-${q}/coreboot.rom" \
 					|| die "smoke ${v}: il payload non passa la prova in QEMU (${WORK}/smoke-${v})"
 			else
 				python3 "${O}/tools/qemu-smoke.py" --setup-only --vga-mb 32 --size "${res}" \
@@ -1418,10 +1436,7 @@ update_test_build() {
 	done
 
 	say "update-test: l'applicazione UEFI che prova il blocco dell'altro slot"
-	clang --target=x86_64-unknown-windows -std=c11 -O2 -Wall -Wextra -Werror -ffreestanding \
-		-fno-stack-protector -mno-red-zone -mgeneral-regs-only -nostdlib -fuse-ld=lld \
-		-Wl,-subsystem:efi_application -Wl,-entry:efi_main \
-		-o "${ut}/slot-lock-test.efi" "${O}/tools/efi/slot-lock-test.c" \
+	efi_app "${O}/tools/efi/slot-lock-test.c" "${ut}/slot-lock-test.efi" \
 		|| die "update-test: tools/efi/slot-lock-test.c non compila"
 
 	say "update-test: capsule A, B, C e D, firmate con la chiave di prova"

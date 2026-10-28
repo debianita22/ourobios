@@ -18,9 +18,11 @@
 # mancante (tools/build.sh menu, il record CFR e il suo albero nell'artifact
 # smoke-<versione>). La blocca anche la prova di fumo (tools/build.sh smoke):
 # il payload EDK2 di ogni variante, in una ROM per QEMU q35, deve partire e
-# aprire il setup, che deve rispondere ai tasti; le schermate sono
-# nell'artifact smoke-<versione>. E la prova dell'aggiornamento (job
-# update-test, accanto alle ROM: tools/build.sh update-test): in QEMU q35,
+# aprire il setup, che deve rispondere ai tasti, e i suoi servizi runtime
+# devono funzionare spostati come li sposta boot.efi di macOS senza
+# AvoidRuntimeDefrag; le schermate sono nell'artifact smoke-<versione>. E
+# la prova dell'aggiornamento (job update-test, accanto alle ROM:
+# tools/build.sh update-test): in QEMU q35,
 # con vboot a due slot e il payload EDK2 di queste patch, le capsule devono
 # scrivere solo lo slot che non gira, vboot deve provarlo e tornare indietro
 # se non si verifica o non parte; dal setup si torna all'altro slot, e una
@@ -146,13 +148,14 @@ jobs:
       # gnat: Ada nel crossgcc (libgfxinit); imagemagick e uuid-dev: EDK2;
       # jcat: la firma del pacchetto fwupd; libssl-dev e pkg-config: futility
       # di vboot (libcrypto), che firma gli slot RW; qemu-system-x86: la prova
-      # di fumo del payload; nasm e xxd: CSMWrap (prepare) e iPXE
+      # di fumo del payload, con mtools (l'ESP), clang e lld (l'applicazione
+      # UEFI che sposta i servizi runtime); nasm e xxd: CSMWrap (prepare) e iPXE
       - name: Pacchetti
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential bison flex gnat libncurses-dev \
             zlib1g-dev m4 curl git python3 uuid-dev imagemagick jcat \
-            libssl-dev pkg-config qemu-system-x86 nasm xxd >/dev/null
+            libssl-dev pkg-config qemu-system-x86 mtools clang lld nasm xxd >/dev/null
           gcc --version | head -1
           gnatmake --version | head -1
 

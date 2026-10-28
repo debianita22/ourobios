@@ -4,7 +4,7 @@
 # prima di una release che il payload parte, disegna e risponde ai tasti.
 #
 #   python3 tools/qemu-smoke.py [--out DIR] [--timeout S] [--setup-only]
-#                               [--vga-mb N] [--size WxH] ROM
+#                               [--vga-mb N] [--size WxH] [--reloc-test EFI] ROM
 #
 # Controlla, in ordine:
 #   1. coreboot arriva al payload ("Jumping to boot code" sulla seriale);
@@ -30,7 +30,21 @@
 #   8. CSMWrap: la voce "CSMWrap Legacy Boot" in BootNext, poi un avvio con
 #      due CPU (CSMWrap ne tiene una per i suoi servizi BIOS) e un disco
 #      SATA il cui MBR scrive una riga sulla porta seriale: il BIOS legacy
-#      deve avviarlo (INT 13h di SeaBIOS, con il suo driver AHCI).
+#      deve avviarlo (INT 13h di SeaBIOS, con il suo driver AHCI);
+#   9. con --reloc-test, i servizi runtime spostati come li sposta boot.efi
+#      di macOS senza AvoidRuntimeDefrag di OpenCore: su una copia nuova
+#      della ROM, con un'ESP dalla prima accensione, il payload avvia
+#      tools/efi/rt-reloc-test.c (\EFI\BOOT\BOOTX64.EFI), che dopo
+#      ExitBootServices() e SetVirtualAddressMap() copia altrove il codice e
+#      i dati dei servizi runtime, riempie di 0xCC le copie di prima e li
+#      chiama solo dalle pagine virtuali. Ogni servizio deve rispondere,
+#      nessun triple fault (un indirizzo fisico che il payload usa ancora a
+#      runtime), nessun byte scritto nelle copie di prima, ResetSystem() deve
+#      riavviare; le due variabili scritte devono essere nello store del
+#      flash con i loro dati (SMM, che scrive il flash, non deve leggere le
+#      copie di prima). v1.3.10-rc15 non passa: SetVariable() falliva
+#      (EFI_DEVICE_ERROR), con gli argomenti di SMMSTORE dati dei servizi
+#      runtime.
 # Le schermate di ogni passo vanno in DIR (PNG), con la console seriale.
 # Un'eccezione del payload sulla seriale ("X64 Exception Type") ferma la
 # prova al passo in cui arriva, con la riga dell'eccezione e l'immagine.
@@ -44,12 +58,15 @@
 #
 # Il W541 non si emula: qui girano il payload (UEFIPayloadPkg, LvglPkg, le
 # patch di patches/edk2) e il codice comune di coreboot, non quello della
-# board. Solo la libreria standard di Python, e qemu-system-x86_64.
+# board. Solo la libreria standard di Python, qemu-system-x86_64 e, per il
+# passo 9, mtools (l'ESP).
 import argparse
 import json
 import os
+import re
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -365,9 +382,9 @@ def tftp_requests(pcap):
     return names
 
 
-def store_copies(flash):
-    """Le copie della variabile di prova nello store di SMMSTORE della ROM:
-    [(stato, attributi, dati)]."""
+def store_copies(flash, name=VAR_NAME, guid=VAR_GUID):
+    """Le copie di una variabile (quella di prova, se non si dice) nello
+    store di SMMSTORE della ROM: [(stato, attributi, dati)]."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import update                           # noqa: E402 (tools/update.py)
     with open(flash, "rb") as f:
@@ -378,12 +395,95 @@ def store_copies(flash):
     off, size = areas["SMMSTORE"]
     region = data[off:off + size]
     found, _ = update.var_store(region)
-    guid = uuid.UUID(VAR_GUID).bytes_le
+    guid = uuid.UUID(guid).bytes_le
     return [(v["state"], v["attrs"], region[v["data"]:v["data"] + v["size"]].hex().upper())
-            for v in found if v["name"] == VAR_NAME and v["guid"] == guid]
+            for v in found if v["name"] == name and v["guid"] == guid]
 
 
-def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None):
+# Il passo 9: le variabili che tools/efi/rt-reloc-test.c scrive, con i loro
+# dati, e il prefisso delle sue righe sulla seriale
+RELOC_GUID = "98fd63b7-d585-401b-9ad3-7bf5be115a84"
+RELOC_VARS = (("OuroRelocA", bytes(0x40 + i for i in range(16))),
+              ("OuroRelocB", bytes((7 * i + 3) & 0xFF for i in range(3000))))
+RELOC_MARK = "ouroBIOS reloc test: "
+# L'ESP del passo 9, come in tools/qemu-update.py: la partizione a 1 MiB,
+# 32 MiB, FAT16
+ESP_OFFSET = 1 << 20
+ESP_SECTORS = 65536
+
+
+def esp_image(path, efi):
+    """Un disco con una sola partizione, di sistema EFI (MBR, tipo 0xEF),
+    con efi come \\EFI\\BOOT\\BOOTX64.EFI: il payload lo avvia (mtools)."""
+    env = dict(os.environ, MTOOLS_SKIP_CHECK="1")
+    part = path + ".part"
+    for cmd in (["mformat", "-C", "-i", part, "-T", str(ESP_SECTORS), "-h", "64", "-s", "32",
+                 "-v", "ESP", "::"],
+                ["mmd", "-i", part, "::/EFI", "::/EFI/BOOT"],
+                ["mcopy", "-i", part, efi, "::/EFI/BOOT/BOOTX64.EFI"]):
+        r = subprocess.run(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if r.returncode != 0:
+            raise Fail("%s: %s" % (cmd[0], r.stdout.strip()))
+    mbr = bytearray(512)
+    mbr[446:462] = struct.pack("<B3sB3sII", 0, b"\xfe\xff\xff", 0xEF, b"\xfe\xff\xff",
+                               ESP_OFFSET // 512, ESP_SECTORS)
+    mbr[510:512] = b"\x55\xaa"
+    with open(path, "wb") as f, open(part, "rb") as p:
+        f.write(mbr)
+        f.write(bytes(ESP_OFFSET - len(mbr)))
+        shutil.copyfileobj(p, f)
+    os.remove(part)
+
+
+def reloc_test(rom, efi, out, timeout):
+    """Il passo 9, su una copia nuova della ROM: con l'ESP dalla prima
+    accensione, la voce di boot del disco e' la prima, e il payload avvia
+    efi senza passare dalla Shell. Torna la riga del riassunto."""
+    sm = Smoke(rom, out, timeout)
+    try:
+        disk = os.path.join(sm.tmp, "esp.img")
+        esp_image(disk, efi)
+        # con -no-reboot QEMU esce sia per ResetSystem() sia per un triple
+        # fault: -d cpu_reset (TCG) scrive "Triple fault" nel log
+        cpu = os.path.join(out, "qemu-reloc-cpu.log")
+        sm.boot("reloc", ["-drive", "file=%s,format=raw,if=none,id=esp" % disk,
+                          "-device", "ide-hd,drive=esp,bus=ide.0", "-d", "cpu_reset", "-D", cpu])
+        sm.wait("rt-reloc-test.efi non ha finito con un reset (serial-reloc.log)",
+                lambda: sm.proc.poll() is not None, timeout)
+        sm.halt()
+        lines = [line.split(RELOC_MARK, 1)[1].strip() for line in sm.serial_text().splitlines()
+                 if RELOC_MARK in line]
+        with open(cpu, errors="replace") as f:
+            triple = "Triple fault" in f.read()
+        last = lines[-1] if lines else "nessuna riga di rt-reloc-test.efi"
+        if "RESULT OK" not in lines:
+            failed = [line for line in lines if "FAIL" in line and not line.startswith("RESULT")]
+            raise Fail("servizi runtime spostati come da boot.efi di macOS: %s (serial-reloc.log)"
+                       % ("; ".join(failed) if failed else "triple fault dopo \"%s\"" % last if triple
+                          else "fermo dopo \"%s\"" % last))
+        if triple or last != "ResetSystem()":
+            raise Fail("ResetSystem() dalle pagine virtuali: %s (serial-reloc.log, qemu-reloc-cpu.log)"
+                       % ("triple fault" if triple else "\"%s\"" % last))
+        moved = [m for m in (re.match(r"moved (\d+) ranges of runtime code and data \((\d+) pages\), "
+                                      r"(\d+) other", line) for line in lines) if m]
+        if not moved or int(moved[0].group(1)) == 0:
+            raise Fail("rt-reloc-test.efi non ha spostato il codice e i dati dei servizi runtime")
+        for name, data in RELOC_VARS:
+            valid = [c for c in store_copies(sm.flash, name, RELOC_GUID) if c[0] in VAR_VALID]
+            if len(valid) != 1 or valid[0][2] != data.hex().upper() or valid[0][1] & 0x7 != 0x7:
+                raise Fail("%s non e' nello store del flash, una copia valida con i suoi %d byte "
+                           "(NV+BS+RT): SMM ha letto le copie di prima?" % (name, len(data)))
+        return ("servizi runtime spostati come da boot.efi di macOS senza AvoidRuntimeDefrag: %s aree di "
+                "codice e dati (%s pagine) copiate altrove e a 0xCC le copie di prima, %s MMIO al loro "
+                "posto; i servizi rispondono, %s nel flash con i loro dati, nessun byte nelle copie di "
+                "prima, ResetSystem() riavvia"
+                % (moved[0].group(1), moved[0].group(2), moved[0].group(3),
+                   " e ".join(n for n, _ in RELOC_VARS)))
+    finally:
+        sm.close()
+
+
+def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=None):
     os.makedirs(out, exist_ok=True)
     sm = Smoke(rom, out, timeout, vga_mb)
     steps = []
@@ -523,8 +623,14 @@ def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None):
         sm.wait("CSMWrap non ha avviato l'MBR del disco (niente %s sulla seriale)" % CSM_MARK.decode(),
                 lambda: (sm.alive(), CSM_MARK.decode() in sm.serial_text())[1], timeout)
         sm.shot("csmwrap")
+        sm.halt()
         steps.append("%s  CSMWrap (Boot%04X): il BIOS legacy ha avviato l'MBR del disco SATA, che ha scritto "
                      "sulla seriale" % (at(), n))
+
+        # 4. i servizi runtime spostati, come da boot.efi di macOS
+        if reloc_efi:
+            line = reloc_test(rom, reloc_efi, out, timeout)
+            steps.append("%s  %s" % (at(), line))
         return steps
     finally:
         sm.close()
@@ -538,6 +644,8 @@ def main():
     ap.add_argument("--setup-only", action="store_true", help="solo il setup (passi 1-5)")
     ap.add_argument("--vga-mb", type=int, default=16, help="MiB della VGA di QEMU (default 16)")
     ap.add_argument("--size", help="la risoluzione attesa del setup, LxA (es. 2880x1620)")
+    ap.add_argument("--reloc-test", metavar="EFI",
+                    help="tools/efi/rt-reloc-test.c compilato: il passo 9 (tools/build.sh smoke)")
     args = ap.parse_args()
     size = None
     if args.size:
@@ -548,8 +656,15 @@ def main():
             ap.error("--size: LxA, per esempio 2880x1620")
     if not shutil.which("qemu-system-x86_64"):
         sys.exit("serve qemu-system-x86_64 (Debian/Ubuntu: apt install qemu-system-x86)")
+    if args.reloc_test:
+        if not os.path.isfile(args.reloc_test):
+            sys.exit("--reloc-test: %s non c'e'" % args.reloc_test)
+        for tool in ("mformat", "mmd", "mcopy"):
+            if not shutil.which(tool):
+                sys.exit("serve %s per il passo 9 (Debian/Ubuntu: apt install mtools)" % tool)
     try:
-        steps = run(args.rom, args.out, args.timeout, args.setup_only, args.vga_mb, size)
+        steps = run(args.rom, args.out, args.timeout, args.setup_only, args.vga_mb, size,
+                    args.reloc_test)
     except Fail as e:
         print("smoke: FALLITO: %s (schermate e seriale in %s)" % (e, args.out))
         return 1

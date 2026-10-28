@@ -288,8 +288,18 @@ Shell: iPXE, with an e1000 on QEMU's user network, must get an address
 from its DHCP, download the script the DHCP names over TFTP and run it
 (the script chains a second one, whose TFTP request in the traffic dump
 is the proof); CSMWrap, with two CPUs and a SATA disk, must boot the
-disk's master boot record, which writes a line on the serial port. It
-needs `qemu-system-x86`; screenshots and the serial console go to
+disk's master boot record, which writes a line on the serial port. Last,
+on a fresh copy of the image with an EFI system partition, the payload
+boots `tools/efi/rt-reloc-test.c`, which does to the runtime services what
+boot.efi of macOS does without OpenCore's `AvoidRuntimeDefrag`: after
+`ExitBootServices()` and `SetVirtualAddressMap()` it copies their code and
+data elsewhere, fills the old copies with 0xCC and calls them only through
+page tables with the virtual addresses. Every service must answer, the two
+variables it writes must be in the store of the emulated flash with their
+data, nothing may write to the old copies, and `ResetSystem()` must reset;
+a physical address that the payload or SMM still used at runtime would
+fail it, as v1.3.10-rc15 does. It needs `qemu-system-x86`, `mtools`,
+`clang` and `lld`; screenshots and the serial console go to
 `work/smoke-<variant>`. Nothing of the W541 itself runs there: it checks the
 payload and coreboot's common code, not the board.
 
@@ -349,7 +359,7 @@ gh release edit v1.0.0-nri --repo debianita22/ourobios --prerelease=false --late
 | `assets/` | the logo, `ourobios.svg`, and the boot splash made from it (`tools/logo.py splash`) |
 | `configs/` | `w541-mrc.defconfig` and `w541-nri.defconfig`, the flash map `w541.fmd`, the interface of the read-only part already on the laptops (`ro-interface.txt`), the fwupd remotes (`fwupd/ourobios.conf`, the releases; `fwupd/ourobios-testing.conf`, the candidates too) |
 | `patches/` | the series applied to coreboot, optional patches, the patches to EDK2 and its LvglPkg, the q35 patch of the update test ([patches/README.md](patches/README.md)) |
-| `tools/` | build, verification, CI and upstream-check scripts; `update.py`, the capsule update from Linux; `fwupd-cab.py`, the fwupd package and the metadata of the remote; `vpd.py`, the serial number and machine type; `elog.py`, which reads the event log from a flash dump; `idle-report.py`, package C-states, power, memory traffic and device power states at idle; `pm-regs.py`, the power management registers the firmware left; `ddr-report.py`, the memory controller as the RAM init left it, and two of its dumps compared; `mem-latency.c`, how long a read from the memory takes; `peg-report.py`, the PCIe link to the NVIDIA GPU; `qemu-smoke.py`, the payload booted in QEMU; `qemu-update.py`, capsule updates with vboot A/B in QEMU (with `efi/slot-lock-test.c`, a UEFI application for it); `logo.py`, the logo as an LVGL image or a PNG |
+| `tools/` | build, verification, CI and upstream-check scripts; `update.py`, the capsule update from Linux; `fwupd-cab.py`, the fwupd package and the metadata of the remote; `vpd.py`, the serial number and machine type; `elog.py`, which reads the event log from a flash dump; `idle-report.py`, package C-states, power, memory traffic and device power states at idle; `pm-regs.py`, the power management registers the firmware left; `ddr-report.py`, the memory controller as the RAM init left it, and two of its dumps compared; `mem-latency.c`, how long a read from the memory takes; `peg-report.py`, the PCIe link to the NVIDIA GPU; `qemu-smoke.py`, the payload booted in QEMU (with `efi/rt-reloc-test.c`, the runtime services moved as boot.efi of macOS moves them); `qemu-update.py`, capsule updates with vboot A/B in QEMU (with `efi/slot-lock-test.c`, a UEFI application for it); `logo.py`, the logo as an LVGL image or a PNG |
 | `keys/` | the certificate of the key that signs the capsules, and vboot's public keys ([keys/README.md](keys/README.md)) |
 | `legacy/coreboot-4.22/` | the coreboot 4.22 image and configuration this project started from, built from the same blobs |
 | `docs/` | [flashing and recovery](docs/flashing.md), [updates with capsules](docs/update.md), [verified boot and A/B](docs/vboot.md), [the native RAM init](docs/raminit.md) |
