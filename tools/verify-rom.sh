@@ -45,7 +45,9 @@
 #      la RO minima, secdata finta e il TPM avviato da ramstage, protezione
 #      di WP_RO dal controller con l'opzione, aggiornamento con capsula (ESRT
 #      con il GUID del defconfig della variante e la versione X.Y.Z di
-#      CONFIG_LOCALVERSION, capsule su disco, il certificato di keys/)
+#      CONFIG_LOCALVERSION, capsule su disco, il certificato di keys/), e la
+#      revisione del firmware della tabella di sistema UEFI per EDK2
+#      (PcdFirmwareRevision, X.Y.Z.N di CONFIG_LOCALVERSION)
 #   7. gli slot vanno con la parte RO gia' sui portatili, che una capsula non
 #      riscrive (configs/ro-interface.txt): coreboot dello stesso commit (o
 #      di un pin "rw-ok", i cui slot leggono ancora quella parte RO) e,
@@ -132,6 +134,22 @@ fw_version_of() {
 				printf '0x%08x' $(( v - 256 + r ))
 				return
 			fi
+		fi
+	fi
+	printf '0x%08x' 0
+}
+
+# La revisione del firmware della tabella di sistema UEFI di un
+# CONFIG_LOCALVERSION ouroBIOS-vX.Y.Z[-rcN]-<variante>[+...] (come fw_revision
+# di tools/build.sh: X.Y.Z.N, N = 0 per vX.Y.Z), 0x00000000 per le altre
+fw_revision_of() {
+	local x y z r
+	if [[ "$1" =~ ^ouroBIOS-v([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})(-rc([1-9][0-9]{0,2}))?-${VARIANT}(\+.*)?$ ]]; then
+		x=$((10#${BASH_REMATCH[1]})); y=$((10#${BASH_REMATCH[2]})); z=$((10#${BASH_REMATCH[3]}))
+		r=$((10#${BASH_REMATCH[5]:-0}))
+		if [ "${x}" -le 255 ] && [ "${y}" -le 255 ] && [ "${z}" -le 255 ] && [ "${r}" -le 255 ]; then
+			printf '0x%08x' $(( (x << 24) | (y << 16) | (z << 8) | r ))
+			return
 		fi
 	fi
 	printf '0x%08x' 0
@@ -401,6 +419,13 @@ if extract config "${TMP}/config"; then
 	never CONFIG_DRIVERS_EFI_GENERATE_CAPSULE=y "la capsula la fa tools/build.sh, con la chiave fuori dal .config"
 	lv="$(sed -n 's/^CONFIG_LOCALVERSION="\(.*\)"$/\1/p' "${TMP}/config")"
 	want "CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=$(fw_version_of "${lv}")"
+	rev="$(fw_revision_of "${lv}")"
+	if grep -qE "^CONFIG_EDK2_CUSTOM_BUILD_PARAMS=\"(.* )?--pcd gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareRevision=${rev}\"\$" \
+		"${TMP}/config"; then
+		ok "config: PcdFirmwareRevision ${rev}"
+	else
+		bad "config: CONFIG_EDK2_CUSTOM_BUILD_PARAMS senza PcdFirmwareRevision=${rev} in fondo"
+	fi
 	if [ -n "${LOCALVERSION}" ]; then
 		if [ "${lv}" = "${LOCALVERSION}" ]; then ok "versione: ${lv}"; else bad "versione: '${lv}', attesa '${LOCALVERSION}'"; fi
 	else

@@ -93,7 +93,10 @@
 # vX.Y.Z-rcN (fw_version). Con le altre versioni (dev, ci-...) la capsula non
 # si fa e CONFIG_DRIVERS_EFI_MAIN_FW_VERSION e' 0: coreboot allora mette
 # nell'ESRT X << 16 | Y di un "X.Y" nella versione (v1.4-prova: 0x00010004),
-# 0 se non c'e' (dev-<commit>).
+# 0 se non c'e' (dev-<commit>). La revisione del firmware nella tabella di
+# sistema UEFI (PcdFirmwareRevision di EDK2, fw_revision) e' invece X.Y.Z.N
+# della release a cui porta, N = 0 per vX.Y.Z (v1.3.10-rc15: 0x01030a0f),
+# 0 con le altre versioni.
 set -euo pipefail
 O="$(cd "$(dirname "$0")/.." && pwd)"
 

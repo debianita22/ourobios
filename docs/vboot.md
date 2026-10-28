@@ -268,7 +268,11 @@ at every reset:
 - a boot option, a UEFI application in `\EFI\BOOT\BOOTX64.EFI`
   (`tools/efi/slot-lock-test.c`), asks coreboot for the other slot as a boot
   loader would, then after `ExitBootServices()` as an OS: refused both
-  times, `RW_NVRAM` stays on B;
+  times, `RW_NVRAM` stays on B. In the memory map it gets for
+  `ExitBootServices()`, the one an OS sees, no reserved range has
+  `EFI_MEMORY_RUNTIME` and all of the memory from 1 MiB to 1 GiB is free
+  (`edk2/0029`, `edk2/0030`: what macOS needs without OpenCore's
+  `ProtectMemoryRegions` and `ProvideCustomSlide`);
 - `RW_NVRAM` full (4096 records) before capsule C: it is erased and written
   again from the start, the request is the second record; vboot tries C in
   slot A for two boots and the payload confirms it;
