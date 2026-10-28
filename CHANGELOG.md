@@ -361,6 +361,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   ([README](README.md#building)). The payload of rc16 passes it; the one
   of rc15 does not (`SetVariable()` returns `EFI_DEVICE_ERROR`: the
   arguments of SMMSTORE were runtime services data).
+- From rc17, a DEBUG build of the payload, which no release is, no longer
+  faults in `ResetSystem()` under macOS or Windows: the first `DEBUG()`
+  of a runtime driver, which for ResetSystemRuntimeDxe came at runtime,
+  looked for the print level in the HOB list, boot services memory.
+  Runtime drivers read it from `PcdDebugPrintErrorLevel` (`edk2/0031`),
+  as every module does with coreboot, which passes no such HOB. The
+  release payload, without `DEBUG()`, builds byte for byte the same.
 
 ## v1.3.9
 
