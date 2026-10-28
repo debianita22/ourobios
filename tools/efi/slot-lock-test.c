@@ -6,8 +6,14 @@
  * l'altro slot di vboot (SMMSTORE_CMD_VBOOT_TRY_OTHER, patch 0065): prima di
  * ExitBootServices(), poi dopo. Il payload lo blocca prima di avviare una
  * voce di boot e a ExitBootServices() (patch edk2/0020): coreboot deve
- * rifiutarlo le due volte, e l'altro slot non deve cambiare. Scrive le
- * risposte sulla seriale (COM1) e si ferma; la prova legge seriale e flash.
+ * rifiutarlo le due volte, e l'altro slot non deve cambiare. Della mappa
+ * della memoria di ExitBootServices(), quella che vede il sistema
+ * operativo, conta le aree riservate con EFI_MEMORY_RUNTIME (nessuna: il
+ * com buffer di SMMSTORE e' dati dei servizi runtime, patch edk2/0029) e la
+ * memoria libera da 1 MiB a 1 GiB (tutta: il payload e la sua memoria HOB
+ * stanno sopra, edk2/0030, e ogni slide del kernel di macOS ci entra).
+ * Scrive le risposte sulla seriale (COM1) e si ferma; la prova legge seriale
+ * e flash.
  *
  * Nessuna libreria: tools/build.sh la compila con
  *   clang --target=x86_64-unknown-windows -ffreestanding -nostdlib -fuse-ld=lld
@@ -22,7 +28,19 @@
 #define APM_CNT_SMMSTORE		0xed
 #define SMMSTORE_CMD_VBOOT_TRY_OTHER	9
 
+#define EFI_RESERVED_MEMORY_TYPE	0
+#define EFI_CONVENTIONAL_MEMORY		7
+#define EFI_MEMORY_RUNTIME		(1ULL << 63)
+#define LOW_START			0x100000ULL	/* 1 MiB */
+#define LOW_END				0x40000000ULL	/* 1 GiB, dove comincia il payload */
+
 typedef uint64_t efi_status;
+
+/* EFI_MEMORY_DESCRIPTOR (UEFI 2.10, 7.2); nella mappa a passi di descriptor_size */
+struct memory_descriptor {
+	uint32_t type, pad;
+	uint64_t physical_start, virtual_start, number_of_pages, attribute;
+};
 
 struct table_header {
 	uint64_t signature;
@@ -58,7 +76,7 @@ _Static_assert(__builtin_offsetof(struct boot_services, get_memory_map) == 0x38,
 _Static_assert(__builtin_offsetof(struct boot_services, exit_boot_services) == 0xe8, "ExitBootServices");
 _Static_assert(__builtin_offsetof(struct system_table, boot_services) == 0x60, "BootServices");
 
-static uint8_t memory_map[64 * 1024];
+static uint8_t memory_map[64 * 1024] __attribute__((aligned(8)));
 static uint8_t smm_param[64];		/* un parametro qualsiasi, fuori dalla SMRAM */
 
 static inline void outb(uint16_t port, uint8_t value)
@@ -119,6 +137,48 @@ static uint32_t smmstore(uint8_t command, void *param)
 	return eax;
 }
 
+/* La mappa di ExitBootServices(): le aree riservate con EFI_MEMORY_RUNTIME,
+   la memoria libera tra 1 MiB e 1 GiB e la prima area non libera li' */
+static void check_memory_map(uint64_t size, uint64_t descriptor_size)
+{
+	uint64_t offset, free_bytes = 0, first_start = 0;
+	uint32_t reserved_runtime = 0, first_type = 0;
+	int taken = 0;
+
+	for (offset = 0; descriptor_size && offset + descriptor_size <= size;
+	     offset += descriptor_size) {
+		const struct memory_descriptor *d = (const void *)(memory_map + offset);
+		uint64_t start = d->physical_start, end = start + (d->number_of_pages << 12);
+		uint64_t lo = start > LOW_START ? start : LOW_START;
+		uint64_t hi = end < LOW_END ? end : LOW_END;
+
+		if (d->type == EFI_RESERVED_MEMORY_TYPE && (d->attribute & EFI_MEMORY_RUNTIME))
+			reserved_runtime++;
+		if (lo >= hi)
+			continue;
+		if (d->type == EFI_CONVENTIONAL_MEMORY) {
+			free_bytes += hi - lo;
+		} else if (!taken || start < first_start) {
+			taken = 1;
+			first_start = start;
+			first_type = d->type;
+		}
+	}
+	serial_puts("ouroBIOS slot lock test: memory map: reserved runtime ");
+	serial_putu(reserved_runtime);
+	serial_puts(", free from 1 MiB to 1 GiB: ");
+	serial_putu((uint32_t)(free_bytes >> 20));
+	serial_puts(" MiB");
+	if (taken) {
+		serial_puts(", type ");
+		serial_putu(first_type);
+		serial_puts(" at ");
+		serial_putu((uint32_t)(first_start >> 10));
+		serial_puts(" KiB");
+	}
+	serial_puts("\n");
+}
+
 static __attribute__((noreturn)) void stop(void)
 {
 	for (;;)
@@ -159,6 +219,7 @@ efi_status efi_main(void *image, struct system_table *st)
 		stop();
 	}
 
+	check_memory_map(size, descriptor_size);
 	try_other("after");
 	stop();
 }

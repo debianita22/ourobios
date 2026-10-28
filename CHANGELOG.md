@@ -322,6 +322,17 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   Without `ProtectMemoryRegions`, `ProvideCustomSlide` and
   `EnableSafeModeSlide` OpenCore should boot macOS: try it
   ([docs/macos.md](docs/macos.md#in-the-opencore-configuration)).
+- From rc16, after a review of rc15, the same memory map, with fewer
+  ways to go wrong (`edk2/0029`): the first module that links SmmStoreLib
+  converts the com buffer and marks it in the GCD, and the next ones
+  (FmpDxe, FirmwareUpdateDxe, BdsDxe) find the mark instead of allocating
+  it again, which a DEBUG build logged as an error three times; a com
+  buffer that a failed conversion leaves as system memory is allocated
+  as reserved memory, never left free. The tests check what rc15 brought:
+  the update test, in the memory map an OS gets at `ExitBootServices()`,
+  no reserved range with `EFI_MEMORY_RUNTIME` and all of the memory from
+  1 MiB to 1 GiB free; `tools/verify-rom.sh`, the firmware revision of a
+  release ROM ([docs/vboot.md](docs/vboot.md#how-it-is-tested)).
 
 ## v1.3.9
 

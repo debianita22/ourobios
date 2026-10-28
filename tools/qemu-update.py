@@ -41,7 +41,9 @@
 #   9. una voce di boot (slot-lock-test.efi, \EFI\BOOT\BOOTX64.EFI
 #      dell'ESP) chiede l'altro slot come un boot loader, poi chiama
 #      ExitBootServices() e lo chiede come un sistema operativo: coreboot
-#      rifiuta le due volte, l'altro slot resta quello di prima
+#      rifiuta le due volte, l'altro slot resta quello di prima; nella mappa
+#      della memoria che vede il sistema operativo nessuna area riservata con
+#      EFI_MEMORY_RUNTIME e libera tutta la memoria da 1 MiB a 1 GiB
 #  10. RW_NVRAM pieno prima di una capsula: cancellato e riscritto
 #      dall'inizio, la richiesta di provare il nuovo slot c'e'
 #  11. corrente tolta a meta' della scrittura di uno slot (riempito prima
@@ -584,7 +586,9 @@ class UpdateTest:
         di boot: chiede l'altro slot a coreboot prima di ExitBootServices(),
         come un boot loader, e dopo, come un sistema operativo. coreboot deve
         rifiutarlo le due volte (SMMSTORE_RET_FAILURE, 1); RW_NVRAM non deve
-        cambiare slot."""
+        cambiare slot. Nella mappa della memoria di ExitBootServices() nessuna
+        area riservata con EFI_MEMORY_RUNTIME (edk2/0029) e tutta libera la
+        memoria da 1 MiB a 1 GiB (edk2/0030)."""
         m = self.m
         mark = re.compile(r"ouroBIOS slot lock test: (TRY_OTHER (before|after) ExitBootServices: (\d+)|.*failed)\r?\n")
         def done():
@@ -610,6 +614,16 @@ class UpdateTest:
                            % (tag, {"before": "prima di", "after": "dopo"}[when], got[when]))
         if text.count("SMMSTORE: the other vboot slot is locked until reboot") != 2:
             raise Fail("%s: coreboot non dice due volte che l'altro slot e' bloccato" % tag)
+        mm = re.search(r"ouroBIOS slot lock test: memory map: reserved runtime (\d+), "
+                       r"free from 1 MiB to 1 GiB: (\d+) MiB(.*)\r?\n", text)
+        if not mm:
+            raise Fail("%s: slot-lock-test.efi non ha scritto la mappa della memoria" % tag)
+        if int(mm.group(1)) != 0:
+            raise Fail("%s: %s aree riservate con EFI_MEMORY_RUNTIME nella mappa della memoria "
+                       "(il com buffer di SMMSTORE deve essere dati runtime, edk2/0029)" % (tag, mm.group(1)))
+        if int(mm.group(2)) != 1023:
+            raise Fail("%s: libera da 1 MiB a 1 GiB solo %s MiB su 1023%s (edk2/0030)"
+                       % (tag, mm.group(2), mm.group(3)))
         st = self.flash.nv()
         if not st["valid"] or SLOTS[st["try_next"]] != running or SLOTS[st["tried"]] != running:
             raise Fail("%s: RW_NVRAM %s, atteso lo slot %s, quello che gira" % (tag, nv_str(st), running))
@@ -719,7 +733,8 @@ class UpdateTest:
         # 9. una voce di boot (boot loader, poi sistema operativo) non cambia slot
         self.os_boot("9-sistema", "B")
         self.ok("una voce di boot, prima e dopo ExitBootServices(): il payload ha bloccato il cambio "
-                "di slot, coreboot lo rifiuta, RW_NVRAM resta su B")
+                "di slot, coreboot lo rifiuta, RW_NVRAM resta su B; nella mappa della memoria nessuna "
+                "area riservata runtime, libera da 1 MiB a 1 GiB")
 
         # 10. RW_NVRAM pieno: chi scrive dopo (verstage o il payload con la
         # richiesta) lo cancella e riparte dall'inizio
