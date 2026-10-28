@@ -43,7 +43,8 @@
 #      ExitBootServices() e lo chiede come un sistema operativo: coreboot
 #      rifiuta le due volte, l'altro slot resta quello di prima; nella mappa
 #      della memoria che vede il sistema operativo nessuna area riservata con
-#      EFI_MEMORY_RUNTIME e libera tutta la memoria da 1 MiB a 1 GiB
+#      EFI_MEMORY_RUNTIME, libera tutta la memoria da 1 MiB a 1 GiB e il com
+#      buffer di SMMSTORE, con la pagina degli argomenti, MMIO runtime
 #  10. RW_NVRAM pieno prima di una capsula: cancellato e riscritto
 #      dall'inizio, la richiesta di provare il nuovo slot c'e'
 #  11. corrente tolta a meta' della scrittura di uno slot (riempito prima
@@ -587,8 +588,10 @@ class UpdateTest:
         come un boot loader, e dopo, come un sistema operativo. coreboot deve
         rifiutarlo le due volte (SMMSTORE_RET_FAILURE, 1); RW_NVRAM non deve
         cambiare slot. Nella mappa della memoria di ExitBootServices() nessuna
-        area riservata con EFI_MEMORY_RUNTIME (edk2/0029) e tutta libera la
-        memoria da 1 MiB a 1 GiB (edk2/0030)."""
+        area riservata con EFI_MEMORY_RUNTIME, tutta libera la memoria da 1 MiB
+        a 1 GiB (edk2/0030) e il com buffer di SMMSTORE, con la pagina degli
+        argomenti dopo il blocco, MMIO con EFI_MEMORY_RUNTIME (0134,
+        edk2/0029)."""
         m = self.m
         mark = re.compile(r"ouroBIOS slot lock test: (TRY_OTHER (before|after) ExitBootServices: (\d+)|.*failed)\r?\n")
         def done():
@@ -615,15 +618,26 @@ class UpdateTest:
         if text.count("SMMSTORE: the other vboot slot is locked until reboot") != 2:
             raise Fail("%s: coreboot non dice due volte che l'altro slot e' bloccato" % tag)
         mm = re.search(r"ouroBIOS slot lock test: memory map: reserved runtime (\d+), "
-                       r"free from 1 MiB to 1 GiB: (\d+) MiB(.*)\r?\n", text)
+                       r"free from 1 MiB to 1 GiB: (\d+) MiB([^\r\n]*)\r?\n", text)
         if not mm:
             raise Fail("%s: slot-lock-test.efi non ha scritto la mappa della memoria" % tag)
         if int(mm.group(1)) != 0:
-            raise Fail("%s: %s aree riservate con EFI_MEMORY_RUNTIME nella mappa della memoria "
-                       "(il com buffer di SMMSTORE deve essere dati runtime, edk2/0029)" % (tag, mm.group(1)))
+            raise Fail("%s: %s aree riservate con EFI_MEMORY_RUNTIME nella mappa della memoria"
+                       % (tag, mm.group(1)))
         if int(mm.group(2)) != 1023:
             raise Fail("%s: libera da 1 MiB a 1 GiB solo %s MiB su 1023%s (edk2/0030)"
                        % (tag, mm.group(2), mm.group(3)))
+        cb = re.search(r"ouroBIOS slot lock test: SMMSTORE com buffer: (\d+) KiB, block (\d+) KiB, "
+                       r"runtime MMIO (\d+) KiB([^\r\n]*)\r?\n", text)
+        if not cb:
+            raise Fail("%s: slot-lock-test.efi non ha trovato il com buffer di SMMSTORE nell'HOB" % tag)
+        size, block, mmio = int(cb.group(1)), int(cb.group(2)), int(cb.group(3))
+        if size < block + 4:
+            raise Fail("%s: com buffer di SMMSTORE di %d KiB, senza la pagina degli argomenti dopo il "
+                       "blocco di %d KiB (0134)" % (tag, size, block))
+        if mmio != size:
+            raise Fail("%s: del com buffer di SMMSTORE solo %d KiB su %d MMIO con EFI_MEMORY_RUNTIME%s "
+                       "(edk2/0029)" % (tag, mmio, size, cb.group(4)))
         st = self.flash.nv()
         if not st["valid"] or SLOTS[st["try_next"]] != running or SLOTS[st["tried"]] != running:
             raise Fail("%s: RW_NVRAM %s, atteso lo slot %s, quello che gira" % (tag, nv_str(st), running))
@@ -734,7 +748,7 @@ class UpdateTest:
         self.os_boot("9-sistema", "B")
         self.ok("una voce di boot, prima e dopo ExitBootServices(): il payload ha bloccato il cambio "
                 "di slot, coreboot lo rifiuta, RW_NVRAM resta su B; nella mappa della memoria nessuna "
-                "area riservata runtime, libera da 1 MiB a 1 GiB")
+                "area riservata runtime, libera da 1 MiB a 1 GiB, il com buffer di SMMSTORE MMIO runtime")
 
         # 10. RW_NVRAM pieno: chi scrive dopo (verstage o il payload con la
         # richiesta) lo cancella e riparte dall'inizio

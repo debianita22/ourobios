@@ -45,7 +45,7 @@ renames `_OSI` to `XOSI` hides that answer from the firmware: see
 | The battery and the EC wake cause read one byte at a time (0103, 0094), and the battery, the lid and the AC adapter not before the EC driver of macOS (0109, 0114, 0120), nor from rc13 the wake settings of the lid and the sleep button (`_PSW`, kept for `_REG`, 0132) | always | ECEnabler, or patches of the battery methods: the EC driver of macOS reads no wider field; nothing for the "No handler for Region [ERAM]" that macOS logged for `BAT0._STA`, `BAT1._STA`, `LID._LID`, `AC._PSR` and `LID._PSW` at every boot (with the lid taken for closed until it read it again) |
 | The backlight registers and the MMIO of the xHCI controller at the BAR they have when the methods run, all 64 bits of it (0101, 0102) | always | the boot argument `npci=0x2000`, if the configuration has it, keeps macOS from moving the BARs |
 | The display left to the OS at wake: only the panel timings, the backlight PWM, the hotplug detection of the ports and power to the panel for its HPD, no mode set (0104, 0107, 0110, 0111); macOS does not power the panel up nor enable its backlight itself (see below) | setup: *Compatibility* → *macOS* → *Light the display up at wake*: off (default: on) | nothing: the firmware sets the panel up at 1920×1080 and macOS sets it up again; with the option off, the panel power-up and its backlight from a Lilu plugin for Azul, or from SSDT-PNLWAK |
-| The com buffer of SMMSTORE, which the runtime variable services write, as runtime services data, which macOS maps, from rc15 (`edk2/0029`); up to rc14 it was reserved memory with `EFI_MEMORY_RUNTIME`, which macOS does not map | always | the booter quirk `ProtectMemoryRegions`: without it macOS restarted right after boot.efi |
+| The com buffer of SMMSTORE, which SMM and the runtime variable services write, as a type that macOS maps (`edk2/0029`): runtime services data in rc15; from rc16 MMIO with `EFI_MEMORY_RUNTIME`, which boot.efi does not move, with a page more for the arguments that the runtime driver passes to SMM (0134). Up to rc14 it was reserved memory with `EFI_MEMORY_RUNTIME`, which macOS does not map | always | the booter quirks `ProtectMemoryRegions` (from rc15; without it macOS restarted right after boot.efi) and `AvoidRuntimeDefrag` (from rc16) |
 | The memory from 1 MiB to 1 GiB free for boot.efi, from rc15: the payload and the memory where the DXE core starts are at 1 GiB (`edk2/0030`), and every slide of the kernel fits; up to rc14 the slides below 41 were taken | always | the booter quirks `ProvideCustomSlide` and `EnableSafeModeSlide` |
 | The release in the firmware revision of the UEFI system table, from rc15: X << 24 \| Y << 16 \| Z << 8 \| N for vX.Y.Z-rcN; `ioreg -p IODeviceTree -n efi -l \| grep firmware-revision` reads it little-endian, `<0f0a0301>` for v1.3.10-rc15 ([docs/update.md](update.md#versions-variants-downgrades)) | always | nothing: OpenCore replaces the SMBIOS, whose BIOS version names the release, and the system table said 0x00010000 for every release |
 | The firmware screen at the 2880×1620 of the panel, for the OpenCore picker and the boot of macOS (0105-0107) | setup: *Hardware* → *Intel graphics* → *Firmware screen resolution*: *Panel, up to 2880 x 1620* (default: at most 1920 x 1080, scaled) | nothing |
@@ -125,10 +125,25 @@ After the update, and with the setup options of the table set:
   handle setPowerState` (seen on the W541 with rc12);
 - `Booter` → `Quirks` → `ProtectMemoryRegions`, from rc15: the one
   reserved range with `EFI_MEMORY_RUNTIME`, the com buffer of SMMSTORE,
-  which the runtime variable services write, is runtime services data
-  (`edk2/0029`), which macOS maps. Up to rc14, without the quirk, macOS
-  restarted right after boot.efi, with no panic report. Try without it,
-  keeping `AvoidRuntimeDefrag` (below);
+  which SMM and the runtime variable services write, is a type that
+  macOS maps (`edk2/0029`): runtime services data in rc15, MMIO from
+  rc16. Up to rc14, without the quirk, macOS restarted right after
+  boot.efi, with no panic report. Try without it; with rc15 keep
+  `AvoidRuntimeDefrag` (below);
+- `Booter` → `Quirks` → `AvoidRuntimeDefrag`, from rc16: boot.efi moves
+  the runtime services code and data after `ExitBootServices()`, and SMM
+  reads and writes its buffers at the physical address of boot. From
+  rc16 those buffers, the com buffer of SMMSTORE and the arguments that
+  the runtime driver passes there (patch 0134, `edk2/0029`), are MMIO
+  with `EFI_MEMORY_RUNTIME`, which boot.efi leaves in place: try without
+  the quirk, then write a variable (`sudo nvram ouro-test=1`) and read it
+  after a restart. Up to rc15 keep it: the arguments, and in rc15 the com
+  buffer too, were runtime services data, and the NVRAM of macOS would
+  break (OpenCore's documentation: most firmware other than Apple's needs
+  it). With `DevirtualiseMmio` on, put the address of the com buffer in
+  `MmioWhitelist` (`memmap` of a UEFI shell: the MMIO range of 68 KiB in
+  CBMEM, below 4 GiB): the quirk takes `EFI_MEMORY_RUNTIME` away from
+  MMIO;
 - `Booter` → `Quirks` → `ProvideCustomSlide` and `EnableSafeModeSlide`,
   from rc15: the payload and the memory where the DXE core starts are at
   1 GiB (`edk2/0030`), and the memory from 1 MiB to 1 GiB is free, so
@@ -141,13 +156,8 @@ After the update, and with the setup options of the table set:
 - `UEFI` → `Quirks` → `ReleaseUsbOwnership`: not needed, EDK2 hands the
   USB controllers over at ExitBootServices. Try it with a configuration
   that boots at hand;
-- still needed: `Booter` → `Quirks` → `AvoidRuntimeDefrag`, as on most
-  PC firmware: without it boot.efi moves the runtime services data, and
-  SMM reaches its buffers there at the physical address of boot, the
-  argument buffer of SMMSTORE and, from rc15, its com buffer: the NVRAM
-  of macOS would break (OpenCore's documentation: most firmware other
-  than Apple's needs it); the MAT quirks above, the USB map and the
-  rest of the configuration.
+- still needed: the MAT quirks above, the USB map and the rest of the
+  configuration.
 
 Update the firmware, and change these options, with the OS shut down or
 restarted, not hibernated, whatever the OS: an OS resumed from
