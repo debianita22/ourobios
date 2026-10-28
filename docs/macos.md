@@ -46,17 +46,19 @@ renames `_OSI` to `XOSI` hides that answer from the firmware: see
 | The backlight registers and the MMIO of the xHCI controller at the BAR they have when the methods run, all 64 bits of it (0101, 0102) | always | the boot argument `npci=0x2000`, if the configuration has it, keeps macOS from moving the BARs |
 | The display left to the OS at wake: only the panel timings, the backlight PWM, the hotplug detection of the ports and power to the panel for its HPD, no mode set (0104, 0107, 0110, 0111); macOS does not power the panel up nor enable its backlight itself (see below) | setup: *Compatibility* → *macOS* → *Light the display up at wake*: off (default: on) | nothing: the firmware sets the panel up at 1920×1080 and macOS sets it up again; with the option off, the panel power-up and its backlight from a Lilu plugin for Azul, or from SSDT-PNLWAK |
 | The com buffer of SMMSTORE, which SMM and the runtime variable services write, as a type that macOS maps (`edk2/0029`): runtime services data in rc15; from rc16 MMIO with `EFI_MEMORY_RUNTIME`, which boot.efi does not move, with a page more for the arguments that the runtime driver passes to SMM (0134). Up to rc14 it was reserved memory with `EFI_MEMORY_RUNTIME`, which macOS does not map | always | the booter quirks `ProtectMemoryRegions` (from rc15; without it macOS restarted right after boot.efi) and `AvoidRuntimeDefrag` (from rc16) |
-| The memory attributes table (MAT) updated for a runtime driver loaded after ReadyToBoot, as OpenCore loads OpenRuntime, from rc17 (`edk2/0032`): its code RO, its header and data XP. Up to rc16 the table described it as runtime code without an image, RO and XP, until runtime memory was allocated again | always | the booter quirk `SyncRuntimePermissions` |
+| The memory attributes table (MAT) updated for a runtime driver loaded after ReadyToBoot, as OpenCore loads OpenRuntime, from rc17 (`edk2/0032`): its code RO, its header and data XP. Up to rc16 the table described it as runtime code without an image, RO and XP, until runtime memory was allocated again, which for OpenRuntime 1.0.8 happens anyway | always | the booter quirk `SyncRuntimePermissions` (off on the W541 with rc16 already) |
 | The memory from 1 MiB to 1 GiB free for boot.efi, from rc15: the payload and the memory where the DXE core starts are at 1 GiB (`edk2/0030`), and every slide of the kernel fits; up to rc14 the slides below 41 were taken | always | the booter quirks `ProvideCustomSlide` and `EnableSafeModeSlide` |
 | The release in the firmware revision of the UEFI system table, from rc15: X << 24 \| Y << 16 \| Z << 8 \| N for vX.Y.Z-rcN; `ioreg -p IODeviceTree -n efi -l \| grep firmware-revision` reads it little-endian, `<0f0a0301>` for v1.3.10-rc15 ([docs/update.md](update.md#versions-variants-downgrades)) | always | nothing: OpenCore replaces the SMBIOS, whose BIOS version names the release, and the system table said 0x00010000 for every release |
 | The firmware screen at the 2880×1620 of the panel, for the OpenCore picker and the boot of macOS (0105-0107) | setup: *Hardware* → *Intel graphics* → *Firmware screen resolution*: *Panel, up to 2880 x 1620* (default: at most 1920 x 1080, scaled) | nothing |
 
 ## In the OpenCore configuration
 
-**From rc12, `Booter` → `Quirks` needs `RebuildAppleMemoryMap` and
-`SyncRuntimePermissions` on and `EnableWriteUnprotector` off**: without
-them macOS restarts the laptop at the resume from S3 (below). From rc17
-`SyncRuntimePermissions` should not be needed: try it off.
+**From rc16, of `Booter` → `Quirks` only `RebuildAppleMemoryMap` is
+needed**: on the W541 with rc16 and OpenCore 1.0.8 every other booter
+quirk is off (`AvoidRuntimeDefrag`, `SyncRuntimePermissions`,
+`ProtectMemoryRegions`, `ProvideCustomSlide`, `EnableSafeModeSlide`,
+`EnableWriteUnprotector`) and macOS works. With the quirks up to rc11
+macOS restarted the laptop at the resume from S3 (below).
 
 After the update, and with the setup options of the table set:
 
@@ -115,35 +117,37 @@ After the update, and with the setup options of the table set:
   property from both, with different values, is not well defined, and to
   try other values in OpenCore turn the option off. Other values for good
   go in that file, and from there into a new patch (`tools/devprops2asl.py`);
-- `Booter` → `Quirks`, needed from rc12: `RebuildAppleMemoryMap` and
-  `SyncRuntimePermissions` on, `EnableWriteUnprotector` off. The firmware
-  has a memory attributes table (MAT; `OCABC: MAT support is 1` in the
-  log of a DEBUG OpenCore, seen with the payload of rc12 in QEMU), for
-  which OpenCore's documentation has these. With the quirks of the
-  configuration up to rc11 (`EnableWriteUnprotector` on, the other two
-  off) macOS restarts the laptop at the resume from S3, with no panic
-  report, and `pmset -g log` reads `Failure during wake:
-  IGPU(),HDEF(),SATA(AppleIntelPchSeriesAHCI) : Some drivers failed to
-  handle setPowerState` (seen on the W541 with rc12). From rc17 the
-  firmware updates the MAT itself for a runtime driver loaded after
-  ReadyToBoot, as OpenCore loads OpenRuntime (`edk2/0032`), which
-  `SyncRuntimePermissions` did for it: try that quirk off, with
-  `RebuildAppleMemoryMap` still on, and check a sleep and wake too;
+- `Booter` → `Quirks`, needed from rc12: `RebuildAppleMemoryMap` on,
+  `EnableWriteUnprotector` off. The firmware has a memory attributes
+  table (MAT; `OCABC: MAT support is 1` in the log of a DEBUG OpenCore,
+  seen with the payload of rc12 in QEMU), for which OpenCore's
+  documentation has these. With the quirks of the configuration up to
+  rc11 (`EnableWriteUnprotector` on, `RebuildAppleMemoryMap` and
+  `SyncRuntimePermissions` off) macOS restarts the laptop at the resume
+  from S3, with no panic report, and `pmset -g log` reads `Failure during
+  wake: IGPU(),HDEF(),SATA(AppleIntelPchSeriesAHCI) : Some drivers failed
+  to handle setPowerState` (seen on the W541 with rc12).
+  `SyncRuntimePermissions`, on from rc12 to rc15, is off on the W541 with
+  rc16: the MAT already describes OpenRuntime 1.0.8 right, because runtime
+  memory is allocated after it is loaded (seen in QEMU), and from rc17 the
+  firmware updates the MAT itself for any runtime driver loaded after
+  ReadyToBoot, as OpenCore loads OpenRuntime (`edk2/0032`);
 - `Booter` → `Quirks` → `ProtectMemoryRegions`, from rc15: the one
   reserved range with `EFI_MEMORY_RUNTIME`, the com buffer of SMMSTORE,
   which SMM and the runtime variable services write, is a type that
   macOS maps (`edk2/0029`): runtime services data in rc15, MMIO from
   rc16. Up to rc14, without the quirk, macOS restarted right after
-  boot.efi, with no panic report. Try without it; with rc15 keep
-  `AvoidRuntimeDefrag` (below);
+  boot.efi, with no panic report. Not needed from rc15 (off on the W541
+  with rc16); with rc15 keep `AvoidRuntimeDefrag` (below);
 - `Booter` → `Quirks` → `AvoidRuntimeDefrag`, from rc16: boot.efi moves
   the runtime services code and data after `ExitBootServices()`, and SMM
   reads and writes its buffers at the physical address of boot. From
   rc16 those buffers, the com buffer of SMMSTORE and the arguments that
   the runtime driver passes there (patch 0134, `edk2/0029`), are MMIO
-  with `EFI_MEMORY_RUNTIME`, which boot.efi leaves in place: try without
-  the quirk, then write a variable (`sudo nvram ouro-test=1`) and read it
-  after a restart. Up to rc15 keep it: the arguments, and in rc15 the com
+  with `EFI_MEMORY_RUNTIME`, which boot.efi leaves in place: the quirk is
+  off on the W541 with rc16. To check the NVRAM without it, write a
+  variable (`sudo nvram ouro-test=1`) and read it after a restart. Up to
+  rc15 keep it: the arguments, and in rc15 the com
   buffer too, were runtime services data, and the NVRAM of macOS would
   break (OpenCore's documentation: most firmware other than Apple's needs
   it). From rc17 the smoke test of every build moves the runtime services
@@ -160,9 +164,9 @@ After the update, and with the setup options of the table set:
   every slide of the kernel fits (boot.efi puts the kernel collection,
   about 100 MB, at 1 MiB plus 2 MiB times a slide of 0 to 255): a DEBUG
   OpenCore should log "All slides are usable! You can disable
-  ProvideCustomSlide!". Try without both, in safe mode too (`-x`, or
-  Shift at the picker), where boot.efi takes slide 0. Up to rc14 the
-  slides below 41 were taken;
+  ProvideCustomSlide!". Both are off on the W541 with rc16; check safe
+  mode too (`-x`, or Shift at the picker), where boot.efi takes slide 0.
+  Up to rc14 the slides below 41 were taken;
 - `UEFI` → `Quirks` → `ReleaseUsbOwnership`: not needed, EDK2 hands the
   USB controllers over at ExitBootServices. Try it with a configuration
   that boots at hand;
