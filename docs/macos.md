@@ -140,10 +140,14 @@ After the update, and with the setup options of the table set:
   after a restart. Up to rc15 keep it: the arguments, and in rc15 the com
   buffer too, were runtime services data, and the NVRAM of macOS would
   break (OpenCore's documentation: most firmware other than Apple's needs
-  it). With `DevirtualiseMmio` on, put the address of the com buffer in
-  `MmioWhitelist` (`memmap` of a UEFI shell: the MMIO range of 68 KiB in
-  CBMEM, below 4 GiB): the quirk takes `EFI_MEMORY_RUNTIME` away from
-  MMIO;
+  it). From rc17 the smoke test of every build moves the runtime services
+  the way boot.efi does and fails if a service, or SMM, still uses them
+  where they were (`tools/efi/rt-reloc-test.c`): the payload of rc16
+  passes it, the one of rc15 does not (`SetVariable()` returns
+  `EFI_DEVICE_ERROR`). With `DevirtualiseMmio` on, put the address of
+  the com buffer in `MmioWhitelist` (`memmap` of a UEFI shell: the MMIO
+  range of 68 KiB in CBMEM, below 4 GiB): the quirk takes
+  `EFI_MEMORY_RUNTIME` away from MMIO;
 - `Booter` → `Quirks` → `ProvideCustomSlide` and `EnableSafeModeSlide`,
   from rc15: the payload and the memory where the DXE core starts are at
   1 GiB (`edk2/0030`), and the memory from 1 MiB to 1 GiB is free, so

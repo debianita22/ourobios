@@ -349,6 +349,18 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   the com buffer of SMMSTORE runtime MMIO with its page of arguments;
   `tools/verify-rom.sh`, the firmware revision of a release ROM
   ([docs/vboot.md](docs/vboot.md#how-it-is-tested)).
+- From rc17, the smoke test of each variant does to the runtime services
+  of the payload what boot.efi of macOS does without OpenCore's
+  `AvoidRuntimeDefrag` (`tools/efi/rt-reloc-test.c`): after
+  `ExitBootServices()` and `SetVirtualAddressMap()` their code and data go
+  elsewhere, the old copies are filled with 0xCC, and the services are
+  called only at their virtual addresses. Every service must answer, the
+  two variables written must be in the flash with their data, nothing may
+  write to the old copies, and `ResetSystem()` must reset: a physical
+  address that the payload or SMM still uses at runtime fails it
+  ([README](README.md#building)). The payload of rc16 passes it; the one
+  of rc15 does not (`SetVariable()` returns `EFI_DEVICE_ERROR`: the
+  arguments of SMMSTORE were runtime services data).
 
 ## v1.3.9
 
