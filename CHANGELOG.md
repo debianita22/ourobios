@@ -325,17 +325,30 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `AvoidRuntimeDefrag` stays, as before: without it boot.efi moves the
   runtime services data, and the com buffer of SMMSTORE, which SMM
   writes at its physical address, is runtime services data from rc15.
-- From rc16, after a review of rc15, the same memory map, with fewer
-  ways to go wrong (`edk2/0029`): the first module that links SmmStoreLib
-  converts the com buffer and marks it in the GCD, and the next ones
-  (FmpDxe, FirmwareUpdateDxe, BdsDxe) find the mark instead of allocating
-  it again, which a DEBUG build logged as an error three times; a com
-  buffer that a failed conversion leaves as system memory is allocated
-  as reserved memory, never left free. The tests check what rc15 brought:
-  the update test, in the memory map an OS gets at `ExitBootServices()`,
-  no reserved range with `EFI_MEMORY_RUNTIME` and all of the memory from
-  1 MiB to 1 GiB free; `tools/verify-rom.sh`, the firmware revision of a
-  release ROM ([docs/vboot.md](docs/vboot.md#how-it-is-tested)).
+- From rc16, OpenCore's `AvoidRuntimeDefrag` should not be needed either
+  (patch 0134, `edk2/0029`). boot.efi of macOS moves the runtime services
+  code and data after `ExitBootServices()`, and leaves MMIO in place: SMM
+  read the arguments of SMMSTORE, and from rc15 its com buffer, where
+  they had been (the quirk hides the runtime services from boot.efi). The
+  com buffer is now MMIO with `EFI_MEMORY_RUNTIME`, as
+  `ProtectMemoryRegions` made it up to rc14, which every OS maps for the
+  runtime services, with one page more in CBMEM after the block, where
+  the runtime driver puts the arguments once the OS has called
+  `SetVirtualAddressMap()`. Nothing that SMM reads or writes is runtime
+  services code or data. Checked in QEMU with the payload of the W541:
+  the com buffer of 68 KiB as runtime MMIO in the memory map, for Linux
+  too, the variables that Linux writes at runtime with the arguments in
+  that page (`DEBUG_SMI`) and read at the next boot; the smoke test. On
+  the W541 still to be tried
+  ([docs/macos.md](docs/macos.md#in-the-opencore-configuration)). Not
+  with `DevirtualiseMmio` on, which takes `EFI_MEMORY_RUNTIME` away from
+  MMIO, unless the com buffer is in `MmioWhitelist`.
+- From rc16, the tests check what rc15 brought: the update test, in the
+  memory map an OS gets at `ExitBootServices()`, no reserved range with
+  `EFI_MEMORY_RUNTIME`, all of the memory from 1 MiB to 1 GiB free and
+  the com buffer of SMMSTORE runtime MMIO with its page of arguments;
+  `tools/verify-rom.sh`, the firmware revision of a release ROM
+  ([docs/vboot.md](docs/vboot.md#how-it-is-tested)).
 
 ## v1.3.9
 

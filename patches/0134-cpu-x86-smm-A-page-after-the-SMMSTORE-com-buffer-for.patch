@@ -1,0 +1,57 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 28 Oct 2026 15:15:40 +0100
+Subject: [PATCH] cpu/x86/smm: A page after the SMMSTORE com buffer for the
+ arguments
+
+SMM reads the arguments of an SMMSTORE command at the physical address
+that the payload passes in EBX, and the data at the com buffer, both in
+memory that the payload owns. EDK2 kept the arguments in runtime
+services data, and macOS's boot loader moves runtime services code and
+data after ExitBootServices(): SMM then read arguments, and from
+ouroBIOS rc15 data too, where they were no longer. OpenCore's
+AvoidRuntimeDefrag hid them from it. MMIO with EFI_MEMORY_RUNTIME stays
+where it is.
+
+The CBMEM entry of the com buffer is one page longer, for the arguments
+that the payload passes at runtime: the payload reports the whole entry,
+which the coreboot table gives it, as runtime MMIO. SMM gets the data
+buffer as before, the size of a block.
+
+TEST=QEMU q35 with SMMSTORE, DEBUG_SMI and the payload of the W541
+(with edk2/0029): the CBMEM entry SMM COMBUFFER is 0x11000 bytes, which
+the payload reports as MMIO with EFI_MEMORY_RUNTIME (memmap of a UEFI
+shell, Linux 6.8 with efi=debug). Linux writes a variable through
+efivarfs at runtime: SMM logs the raw writes with param = the com
+buffer + 0x10000, and the next boot reads the variable. The W541 nri
+ROM builds.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ src/cpu/x86/smm/smm_module_loader.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/src/cpu/x86/smm/smm_module_loader.c b/src/cpu/x86/smm/smm_module_loader.c
+index cd5017ca6a..6ceca2816c 100644
+--- a/src/cpu/x86/smm/smm_module_loader.c
++++ b/src/cpu/x86/smm/smm_module_loader.c
+@@ -359,7 +359,14 @@ static void setup_smihandler_params(struct smm_runtime *mod_params,
+ 			return;
+ 		}
+ 
+-		void *ptr = cbmem_add(CBMEM_ID_SMM_COMBUFFER, info.block_size);
++		/*
++		 * One page more than the data buffer that SMM gets: the payload puts its
++		 * arguments there at runtime, in the same region, which it reports as
++		 * runtime MMIO. The boot loader of macOS moves the runtime services data,
++		 * not MMIO, and SMM reads the arguments at their physical address. The
++		 * coreboot table gives the payload the whole entry.
++		 */
++		void *ptr = cbmem_add(CBMEM_ID_SMM_COMBUFFER, info.block_size + 4 * KiB);
+ 		if (!ptr) {
+ 			printk(BIOS_ERR, "SMMSTORE: Failed to add com buffer\n");
+ 			return;
+-- 
+2.43.0
+

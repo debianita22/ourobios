@@ -1,92 +1,110 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Tue, 27 Oct 2026 20:19:06 +0100
-Subject: [PATCH] UefiPayloadPkg/SmmStoreLib: The com buffer as runtime
- services data
+Subject: [PATCH] UefiPayloadPkg/SmmStoreLib: The com buffer as runtime MMIO
 
-The runtime variable services write the com buffer of SMMSTORE, which
-coreboot places in CBMEM, DRAM that the payload holds as reserved
-memory: SmmStoreLib gave the range EFI_MEMORY_RUNTIME, and the memory
-map showed it as EfiReservedMemoryType with the runtime attribute (the
-memmap of the W541: Reserved 0x7F635000-0x7F644FFF, attributes
-0x800000000000000F). Linux maps such a range for the runtime services.
-XNU maps the EfiRuntimeServices types and runtime MMIO only: macOS
-restarted right after boot.efi handed over to the kernel, likely at its
-first variable write, unless OpenCore's ProtectMemoryRegions retyped
-the range.
+SMM reads and writes the com buffer of SMMSTORE, which coreboot places
+in CBMEM, at its physical address, and so do the runtime variable
+services, through the virtual address an OS gives it. SmmStoreLib gave
+the range EFI_MEMORY_RUNTIME, and the memory map showed it as
+EfiReservedMemoryType with the runtime attribute (the memmap of the
+W541: Reserved 0x7F635000-0x7F644FFF, attributes 0x800000000000000F).
+Linux maps such a range for the runtime services. XNU maps the runtime
+services code and data and runtime MMIO only: macOS restarted right
+after boot.efi handed over to the kernel, unless OpenCore's
+ProtectMemoryRegions retyped the range as MMIO. boot.efi also moves the
+runtime services code and data after ExitBootServices(), and leaves
+MMIO in place: SMM read the arguments of a command, which the library
+keeps in runtime services data, where they no longer were, unless
+OpenCore's AvoidRuntimeDefrag hid the runtime services from boot.efi.
 
-The range now becomes system memory in the GCD, allocated as
-EfiRuntimeServicesData at its address: runtime data of the memory map
-and of the memory attributes table (XP), which an OS keeps out of its
-own allocations as it does reserved memory. The modules that link the
-library call it in turn: the first one converts the range and marks it
-EFI_MEMORY_RUNTIME in the GCD, an attribute that reaches neither the
-CPU nor the memory map of system memory; the next ones find the mark,
-and do not allocate the range again, which a DEBUG build logs as an
-error. When the range is not page aligned, not in one range of the GCD,
-or cannot be converted, the old marking stays; a range that a failure
-leaves system memory is allocated as reserved memory, so that nothing
-is handed out where SMM writes.
+The range now becomes MMIO with EFI_MEMORY_RUNTIME in the GCD, as
+ProtectMemoryRegions made it: every OS maps it for the runtime services
+and keeps it out of its own memory, and boot.efi leaves it in place. The
+modules that link the library call it in turn: the first one converts
+the range, the next ones find it converted. When the com buffer has
+room after the block, a page that coreboot gives it (patch 0134), the
+runtime driver passes the arguments there once the OS has called
+SetVirtualAddressMap(): SMM then reads and writes nothing that boot.efi
+moves. When the range cannot be converted, the old marking stays.
 
-TEST=The W541 payload (nri) in a q35 ROM, QEMU with 2 GiB: the memmap
-of OpenShell shows the com buffer, 0x7FD80000-0x7FD8FFFF, as RT_Data
-with 0x800000000000000F (Reserved with the payload of rc14), and
-OpenCore's MmapDump finds it in the memory attributes table as runtime
-data with XP (absent before); no reserved range with EFI_MEMORY_RUNTIME
-is left, also in the memory map of ExitBootServices()
-(tools/efi/slot-lock-test.c). setvar in the shell writes a variable
-that the next boot reads. Linux 6.8 with efi=debug maps the range as
-Runtime Data, writes a variable through efivarfs without a fault, and
-the next boot reads it. A DEBUG build with the capsule modules, which
-link the library too (FmpDxe, FirmwareUpdateDxe, BdsDxe): no
-"Incompatible memory types" in its log, three with the version of this
-patch in v1.3.10-rc15, which allocated the range again in each module.
-The smoke test of the payload (tools/qemu-smoke.py) passes.
+TEST=The W541 payload (nri) in a q35 ROM with patch 0134, QEMU with
+2 GiB: the memmap of OpenShell shows the com buffer, 0x7FD7F000-
+0x7FD8FFFF (68 KiB), as MMIO with 0x800000000000000F (Reserved with the
+payload of rc14), as does Linux 6.8 with efi=debug; no reserved range
+with EFI_MEMORY_RUNTIME is left, also in the memory map of
+ExitBootServices() (tools/efi/slot-lock-test.c). setvar in the shell
+writes a variable that the next boot reads. Linux writes a variable
+through efivarfs at runtime without a fault: with DEBUG_SMI, the raw
+writes before SetVirtualAddressMap() pass their arguments in runtime
+services data, those after it at the com buffer plus 0x10000, and the
+next boot reads the variable. A DEBUG build with the modules that link
+the library (SmmStoreFvbRuntimeDxe, FmpDxe, FirmwareUpdateDxe, BdsDxe)
+logs no error and no assert. The smoke test of the payload
+(tools/qemu-smoke.py) passes.
 
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
- UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c | 190 +++++++++++++++---
- 1 file changed, 164 insertions(+), 26 deletions(-)
+ UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c | 153 +++++++++++++++---
+ 1 file changed, 133 insertions(+), 20 deletions(-)
 
 diff --git a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
-index 98f282b..45119bc 100644
+index 98f282b..808eb19 100644
 --- a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
 +++ b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
-@@ -504,6 +504,128 @@ SmmStoreLibVirtualAddressChange (
+@@ -495,6 +495,19 @@ SmmStoreLibVirtualAddressChange (
+   IN CONVERT_POINTER_CALLBACK  ConvertPointer
+   )
+ {
++  //
++  // At runtime the arguments go after the data, where the com buffer has
++  // room for them (coreboot gives a page more than a block): macOS's boot
++  // loader moves the runtime services data, where they were, and SMM reads
++  // them at their physical address
++  //
++  if ((mSmmStoreInfo != NULL) &&
++      (mSmmStoreInfo->ComBufferSize >= mSmmStoreInfo->BlockSize + sizeof (SMM_STORE_COM_BUF)))
++  {
++    mArgComBufPhys = mSmmStoreInfo->ComBuffer + mSmmStoreInfo->BlockSize;
++    mArgComBuf     = (SMM_STORE_COM_BUF *)(UINTN)mArgComBufPhys;
++  }
++
+   ConvertPointer (0x0, (VOID **)&mArgComBuf);
+   if (mSmmStoreInfo != NULL) {
+     ConvertPointer (0x0, (VOID **)&mSmmStoreInfo->ComBuffer);
+@@ -504,6 +517,91 @@ SmmStoreLibVirtualAddressChange (
    return;
  }
  
 +/**
-+  Makes the com buffer runtime services data of the memory map.
++  Makes the com buffer runtime MMIO of the memory map.
 +
-+  The runtime services write the com buffer.  For them an OS maps the
-+  EfiRuntimeServicesCode and EfiRuntimeServicesData ranges and the MMIO
-+  ranges with EFI_MEMORY_RUNTIME, not reserved memory with it: XNU leaves
-+  it unmapped and faults at the first variable write.  coreboot puts the
-+  buffer in CBMEM, DRAM that the GCD holds as reserved memory: the range
-+  becomes system memory, allocated as EfiRuntimeServicesData, which an OS
-+  keeps out of its own allocations as it does reserved memory.  The modules
-+  that link this library call this in turn: the first one converts the
-+  range and marks it EFI_MEMORY_RUNTIME in the GCD, which reaches neither
-+  the CPU nor the memory map; the next ones find the mark.
++  SMM reads and writes the com buffer at its physical address, and so do the
++  runtime services, through the virtual address an OS gives it.  An OS maps
++  the runtime services code and data and the MMIO ranges with
++  EFI_MEMORY_RUNTIME, not reserved memory with it: XNU leaves that unmapped
++  and faults at the first variable write.  The boot loader of macOS also moves
++  the runtime services code and data after ExitBootServices(), where SMM
++  would no longer find the buffer, and leaves MMIO where it is.  coreboot puts
++  the buffer in CBMEM, DRAM that the GCD holds as reserved memory: the range
++  becomes MMIO with EFI_MEMORY_RUNTIME, which an OS maps for the runtime
++  services and keeps out of its own memory.  The modules that link this
++  library call this in turn: the first one converts the range, the next ones
++  find it converted.
 +
-+  @retval EFI_SUCCESS  The com buffer is EfiRuntimeServicesData.
-+  @retval others       It is not.  The GCD is as it was, unless the range
-+                       became system memory and could not be allocated as
-+                       EfiRuntimeServicesData: then it is
-+                       EfiReservedMemoryType, which an OS does not map.
++  @retval EFI_SUCCESS  The com buffer is runtime MMIO.
++  @retval others       It is not, and the GCD is as it was.
 +
 +**/
 +STATIC
 +EFI_STATUS
-+SmmStoreLibComBufferAsRuntimeData (
++SmmStoreLibComBufferAsRuntimeMmio (
 +  VOID
 +  )
 +{
 +  EFI_STATUS                       Status;
 +  EFI_GCD_MEMORY_SPACE_DESCRIPTOR  Descriptor;
-+  EFI_GCD_MEMORY_SPACE_DESCRIPTOR  Added;
 +  EFI_PHYSICAL_ADDRESS             Base;
 +  UINT64                           Length;
 +  UINT64                           Capabilities;
@@ -109,15 +127,8 @@ index 98f282b..45119bc 100644
 +    return EFI_UNSUPPORTED;
 +  }
 +
-+  if (Descriptor.GcdMemoryType == EfiGcdMemoryTypeSystemMemory) {
-+    //
-+    // Converted by a module that came before
-+    //
-+    if ((Descriptor.Attributes & EFI_MEMORY_RUNTIME) != 0) {
-+      return EFI_SUCCESS;
-+    }
-+  } else if ((Descriptor.GcdMemoryType == EfiGcdMemoryTypeReserved) ||
-+             (Descriptor.GcdMemoryType == EfiGcdMemoryTypeNonExistent))
++  if ((Descriptor.GcdMemoryType == EfiGcdMemoryTypeReserved) ||
++      (Descriptor.GcdMemoryType == EfiGcdMemoryTypeNonExistent))
 +  {
 +    Capabilities = Descriptor.Capabilities &
 +                   (EFI_MEMORY_UC | EFI_MEMORY_WC | EFI_MEMORY_WT | EFI_MEMORY_WB);
@@ -132,122 +143,87 @@ index 98f282b..45119bc 100644
 +      }
 +    }
 +
-+    //
-+    // The add can fail once the range is system memory, in the allocation
-+    // to the DXE core that comes with it: then the range goes on
-+    //
-+    Status = gDS->AddMemorySpace (EfiGcdMemoryTypeSystemMemory, Base, Length, Capabilities);
-+    if (EFI_ERROR (Status) &&
-+        (EFI_ERROR (gDS->GetMemorySpaceDescriptor (Base, &Added)) ||
-+         (Added.GcdMemoryType != EfiGcdMemoryTypeSystemMemory)))
-+    {
++    Status = gDS->AddMemorySpace (EfiGcdMemoryTypeMemoryMappedIo, Base, Length, Capabilities);
++    if (EFI_ERROR (Status)) {
 +      if (Descriptor.GcdMemoryType == EfiGcdMemoryTypeReserved) {
 +        gDS->AddMemorySpace (EfiGcdMemoryTypeReserved, Base, Length, Descriptor.Capabilities);
 +      }
 +
 +      return Status;
 +    }
-+  } else {
++  } else if (Descriptor.GcdMemoryType != EfiGcdMemoryTypeMemoryMappedIo) {
 +    return EFI_UNSUPPORTED;
 +  }
 +
-+  Status = gBS->AllocatePages (
-+                  AllocateAddress,
-+                  EfiRuntimeServicesData,
-+                  EFI_SIZE_TO_PAGES (Length),
-+                  &Base
-+                  );
-+  if (EFI_ERROR (Status)) {
-+    //
-+    // Free memory now, if this call made it system memory: keep it from
-+    // being handed out, as SMM writes it
-+    //
-+    if ((Descriptor.GcdMemoryType != EfiGcdMemoryTypeSystemMemory) &&
-+        EFI_ERROR (gBS->AllocatePages (AllocateAddress, EfiReservedMemoryType, EFI_SIZE_TO_PAGES (Length), &Base)))
-+    {
-+      DEBUG ((DEBUG_ERROR, "%a: com buffer at 0x%lx left as free memory\n", __func__, Base));
-+      ASSERT (FALSE);
-+    }
-+
-+    return Status;
-+  }
-+
 +  //
-+  // The mark for the modules that come after
++  // EFI_MEMORY_RUNTIME, without cache attributes, reaches the memory map,
++  // not the CPU
 +  //
-+  gDS->SetMemorySpaceAttributes (Base, Length, EFI_MEMORY_RUNTIME);
-+  return EFI_SUCCESS;
++  return gDS->SetMemorySpaceAttributes (Base, Length, EFI_MEMORY_RUNTIME);
 +}
 +
  /**
    Initializes SmmStore support
  
-@@ -586,38 +708,54 @@ SmmStoreLibInitialize (
+@@ -586,38 +684,53 @@ SmmStoreLibInitialize (
    mArgComBuf = (VOID *)mArgComBufPhys;
  
    //
 -  // Finally mark the SMM communication buffer provided by CB or SBL as runtime memory
 +  // Finally mark the SMM communication buffer provided by CB or SBL as runtime memory:
-+  // runtime services data if it can be, else reserved memory with EFI_MEMORY_RUNTIME,
-+  // unless the range is system memory now, where the attribute does not reach the
-+  // memory map
++  // runtime MMIO if it can be, else EFI_MEMORY_RUNTIME on what it is
    //
 -  Status = gDS->GetMemorySpaceDescriptor (mSmmStoreInfo->ComBuffer, &GcdDescriptor);
 -  if (EFI_ERROR (Status) || (GcdDescriptor.GcdMemoryType != EfiGcdMemoryTypeReserved)) {
-+  Status = SmmStoreLibComBufferAsRuntimeData ();
++  Status = SmmStoreLibComBufferAsRuntimeMmio ();
 +  if (EFI_ERROR (Status)) {
      DEBUG ((
 -      DEBUG_INFO,
 -      "%a: No memory space descriptor for com buffer found\n",
 -      __func__
 +      DEBUG_WARN,
-+      "%a: com buffer at 0x%lx not runtime services data: %r\n",
++      "%a: com buffer at 0x%lx not runtime MMIO: %r\n",
 +      __func__,
 +      mSmmStoreInfo->ComBuffer,
 +      Status
        ));
  
--    //
--    // Add a new entry if not covered by existing mapping
--    //
--    Status = gDS->AddMemorySpace (
--                    EfiGcdMemoryTypeReserved,
--                    mSmmStoreInfo->ComBuffer,
--                    mSmmStoreInfo->ComBufferSize,
--                    EFI_MEMORY_WB | EFI_MEMORY_RUNTIME
--                    );
--    ASSERT_EFI_ERROR (Status);
 +    Status = gDS->GetMemorySpaceDescriptor (mSmmStoreInfo->ComBuffer, &GcdDescriptor);
-+    if (EFI_ERROR (Status) || (GcdDescriptor.GcdMemoryType != EfiGcdMemoryTypeSystemMemory)) {
-+      if (EFI_ERROR (Status) || (GcdDescriptor.GcdMemoryType != EfiGcdMemoryTypeReserved)) {
-+        DEBUG ((
-+          DEBUG_INFO,
-+          "%a: No memory space descriptor for com buffer found\n",
-+          __func__
-+          ));
-+
-+        //
-+        // Add a new entry if not covered by existing mapping
-+        //
-+        Status = gDS->AddMemorySpace (
-+                        EfiGcdMemoryTypeReserved,
-+                        mSmmStoreInfo->ComBuffer,
-+                        mSmmStoreInfo->ComBufferSize,
-+                        EFI_MEMORY_WB | EFI_MEMORY_RUNTIME
-+                        );
-+        ASSERT_EFI_ERROR (Status);
-+      }
++    if (EFI_ERROR (Status) ||
++        ((GcdDescriptor.GcdMemoryType != EfiGcdMemoryTypeReserved) &&
++         (GcdDescriptor.GcdMemoryType != EfiGcdMemoryTypeMemoryMappedIo)))
++    {
++      DEBUG ((
++        DEBUG_INFO,
++        "%a: No memory space descriptor for com buffer found\n",
++        __func__
++        ));
 +
 +      //
-+      // Mark as runtime service
++      // Add a new entry if not covered by existing mapping
 +      //
-+      Status = gDS->SetMemorySpaceAttributes (
++      Status = gDS->AddMemorySpace (
++                      EfiGcdMemoryTypeReserved,
 +                      mSmmStoreInfo->ComBuffer,
 +                      mSmmStoreInfo->ComBufferSize,
-+                      EFI_MEMORY_RUNTIME
++                      EFI_MEMORY_WB | EFI_MEMORY_RUNTIME
 +                      );
 +      ASSERT_EFI_ERROR (Status);
 +    }
++
+     //
+-    // Add a new entry if not covered by existing mapping
++    // Mark as runtime service
+     //
+-    Status = gDS->AddMemorySpace (
+-                    EfiGcdMemoryTypeReserved,
++    Status = gDS->SetMemorySpaceAttributes (
+                     mSmmStoreInfo->ComBuffer,
+                     mSmmStoreInfo->ComBufferSize,
+-                    EFI_MEMORY_WB | EFI_MEMORY_RUNTIME
++                    EFI_MEMORY_RUNTIME
+                     );
+     ASSERT_EFI_ERROR (Status);
    }
  
 -  //
