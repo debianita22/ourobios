@@ -196,8 +196,9 @@ ls /path/to/ourobios/patches/0*.patch | xargs -n1 basename > /path/to/ourobios/p
 One commit at a time, with `--start-number` the number after the last
 one of the series: the numbers stay as they are, and the series keeps
 its order. The numbers 0064, 0097, 0098 and 0112 stay unused: patches of
-earlier release candidates, dropped (0064 of v1.3.2-rc1, 0112 of
-v1.3.10-rc8, the CHANGELOG mentions them).
+earlier release candidates, dropped since (0064 of v1.3.2-rc1; 0097 and
+0098, the EHCI hiding of v1.3.10-rc1, and 0112, the panel power-up at
+wake, dropped in v1.3.10: the CHANGELOG tells).
 
 The same for EDK2 (a tree at `CONFIG_EDK2_TAG_OR_REV`) and for its LvglPkg
 submodule (at the commit EDK2 pins), into `edk2/` and `lvglpkg/`, each with
