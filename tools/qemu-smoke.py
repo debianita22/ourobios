@@ -91,6 +91,10 @@ class Qmp:
                 if time.monotonic() > end:
                     raise Fail("QMP: niente socket %s" % path)
                 time.sleep(0.2)
+        # una risposta che non arriva (QEMU fermo) non blocca la prova oltre
+        # il suo timeout: socket.timeout e' un OSError, che halt() tratta
+        # come QEMU che non risponde
+        self.s.settimeout(timeout)
         self.f = self.s.makefile("rwb")
         self.read()                     # il saluto
         self.cmd("qmp_capabilities")
@@ -121,20 +125,31 @@ def ppm(path):
     with open(path, "rb") as f:
         data = f.read()
     fields, pos = [], 0
+    # un file vuoto o tagliato (QEMU ucciso a meta' screendump, disco pieno)
+    # finisce qui, non in un ciclo senza fine
     while len(fields) < 4:
-        while data[pos:pos + 1].isspace():
+        while pos < len(data) and data[pos:pos + 1].isspace():
             pos += 1
         if data[pos:pos + 1] == b"#":
-            pos = data.index(b"\n", pos)
+            pos = data.find(b"\n", pos)
+            if pos < 0:
+                raise Fail("screendump: PPM tagliato")
             continue
         end = pos
-        while not data[end:end + 1].isspace():
+        while end < len(data) and not data[end:end + 1].isspace():
             end += 1
+        if end == pos or end >= len(data):
+            raise Fail("screendump: PPM tagliato")
         fields.append(data[pos:end])
         pos = end
     if fields[0] != b"P6" or fields[3] != b"255":
         raise Fail("screendump: non e' un PPM P6")
-    w, h = int(fields[1]), int(fields[2])
+    try:
+        w, h = int(fields[1]), int(fields[2])
+    except ValueError:
+        raise Fail("screendump: PPM senza dimensioni") from None
+    if len(data) < pos + 1 + 3 * w * h:
+        raise Fail("screendump: PPM tagliato (%d byte per %dx%d)" % (len(data), w, h))
     return w, h, data[pos + 1:pos + 1 + 3 * w * h]
 
 
@@ -201,7 +216,8 @@ class Smoke:
     def halt(self):
         if self.proc is None:
             return
-        if self.proc.poll() is None:
+        # senza QMP (il socket non e' mai arrivato) resta kill()
+        if self.proc.poll() is None and self.qmp is not None:
             try:
                 self.qmp.cmd("quit")
             except (Fail, OSError):
@@ -313,23 +329,42 @@ VAR_DATA = ("4F55524F", "424F4F5432")      # "OURO", "BOOT2"
 VAR_VALID = (0x3F, 0x3E)                   # VAR_ADDED, e in cancellazione
 
 
-def boot_option_number(flash, description):
-    """Il numero della voce Boot#### dello store con quella descrizione
-    (UCS-2 dopo gli 6 byte di attributi e lunghezza del device path)."""
+def store_vars(flash):
+    """Le variabili dello store di SMMSTORE della ROM e la regione, per i
+    dati: ([record di update.var_store], regione)."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import update                           # noqa: E402 (tools/update.py)
     with open(flash, "rb") as f:
         data = f.read()
     areas = update.fmap_areas(data)
+    if not areas or "SMMSTORE" not in areas:
+        raise Fail("la ROM non ha una regione SMMSTORE")
     off, size = areas["SMMSTORE"]
     region = data[off:off + size]
     found, _ = update.var_store(region)
+    return found, region
+
+
+def boot_option_number(flash, description):
+    """Il numero della voce Boot#### dello store con quella descrizione
+    (UCS-2 dopo gli 6 byte di attributi e lunghezza del device path)."""
+    found, region = store_vars(flash)
     want = description.encode("utf-16-le") + b"\0\0"
     for v in found:
         if v["state"] == VAR_VALID[0] and len(v["name"]) == 8 and v["name"].startswith("Boot") \
                 and v["name"][4:].isalnum() and v["guid"] == GLOBAL_GUID:
             if region[v["data"] + 6:v["data"] + 6 + len(want)] == want:
                 return int(v["name"][4:], 16)
+    return None
+
+
+def boot_next_number(flash):
+    """Il valore di BootNext (UINT16) nello store della ROM, None se non c'e'."""
+    found, region = store_vars(flash)
+    for v in found:
+        if v["name"] == "BootNext" and v["guid"] == GLOBAL_GUID and v["state"] in VAR_VALID \
+                and v["size"] == 2:
+            return int.from_bytes(region[v["data"]:v["data"] + 2], "little")
     return None
 
 
@@ -377,24 +412,16 @@ def tftp_requests(pcap):
         if len(pkt) > 42 and pkt[12:14] == b"\x08\x00" and pkt[23] == 17:
             ihl = (pkt[14] & 0xf) * 4
             udp = pkt[14 + ihl:]
-            if len(udp) > 10 and udp[8:10] == b"\x00\x01":
-                names.append(udp[10:udp.index(b"\0", 10)].decode("ascii", "replace"))
+            end = udp.find(b"\0", 10) if len(udp) > 10 and udp[8:10] == b"\x00\x01" else -1
+            if end > 10:                # un pacchetto scritto a meta' si salta
+                names.append(udp[10:end].decode("ascii", "replace"))
     return names
 
 
 def store_copies(flash, name=VAR_NAME, guid=VAR_GUID):
     """Le copie di una variabile (quella di prova, se non si dice) nello
     store di SMMSTORE della ROM: [(stato, attributi, dati)]."""
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import update                           # noqa: E402 (tools/update.py)
-    with open(flash, "rb") as f:
-        data = f.read()
-    areas = update.fmap_areas(data)
-    if not areas or "SMMSTORE" not in areas:
-        raise Fail("la ROM non ha una regione SMMSTORE")
-    off, size = areas["SMMSTORE"]
-    region = data[off:off + size]
-    found, _ = update.var_store(region)
+    found, region = store_vars(flash)
     guid = uuid.UUID(guid).bytes_le
     return [(v["state"], v["attrs"], region[v["data"]:v["data"] + v["size"]].hex().upper())
             for v in found if v["name"] == name and v["guid"] == guid]
@@ -554,11 +581,14 @@ def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=Non
                 raise Fail("senza dischi il payload non si e' fermato nella Shell (%d colori)"
                            % shell.colors())
             sm.type("setvar %s -guid %s -bs -rt -nv =%s\n" % (VAR_NAME, VAR_GUID, value))
-            # setvar torna al prompt quando la variabile e' nel flash; poi si
-            # chiude QEMU, che scrive su disco il flash emulato. Niente reset
-            # -s: il PM di ICH9 in QEMU spegne con SLP_TYP 0, coreboot da' a
-            # S5 il 7 dei PCH Intel
-            sm.stable("dopo setvar la Shell non e' tornata al prompt", timeout)
+            # QEMU scrive il flash emulato su disco appena il firmware lo
+            # programma: si aspetta la variabile li', non una schermata ferma
+            # (la Shell lo e' anche prima di setvar). Poi si chiude QEMU.
+            # Niente reset -s: il PM di ICH9 in QEMU spegne con SLP_TYP 0,
+            # coreboot da' a S5 il 7 dei PCH Intel
+            sm.wait("setvar non ha scritto %s nel flash" % VAR_NAME,
+                    lambda: (sm.alive(), any(c[0] in VAR_VALID and c[2] == value
+                                             for c in store_copies(sm.flash)))[1], timeout)
             sm.shot("shell-%d" % (i + 1))
             sm.halt()
             copies = store_copies(sm.flash)
@@ -589,8 +619,10 @@ def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=Non
             shell = sm.stable("il payload non e' arrivato alla Shell UEFI", timeout)
             if shell.colors() > 8:
                 raise Fail("senza dischi il payload non si e' fermato nella Shell (%d colori)" % shell.colors())
-            sm.type("setvar BootNext -guid %s -bs -rt -nv =%02X00\n" % (str(uuid.UUID(bytes_le=GLOBAL_GUID)), n))
-            sm.stable("dopo setvar la Shell non e' tornata al prompt", timeout)
+            sm.type("setvar BootNext -guid %s -bs -rt -nv =%02X%02X\n"
+                    % (str(uuid.UUID(bytes_le=GLOBAL_GUID)), n & 0xFF, n >> 8))
+            sm.wait("setvar non ha scritto BootNext nel flash",
+                    lambda: (sm.alive(), boot_next_number(sm.flash) == n)[1], timeout)
             sm.halt()
             return n
 
@@ -606,8 +638,8 @@ def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=Non
         sm.boot("ipxe", ["-netdev", "user,id=n0,tftp=%s,bootfile=%s" % (tftp, IPXE_SCRIPT),
                          "-device", "e1000,netdev=n0", "-object", "filter-dump,id=d0,netdev=n0,file=" + pcap])
         to_payload()
-        got = sm.wait("iPXE non ha chiesto in TFTP %s, poi %s (pcap in %s)" % (IPXE_SCRIPT, IPXE_SCRIPT_2, pcap),
-                      lambda: (sm.alive(), IPXE_SCRIPT_2 in tftp_requests(pcap))[1], timeout)
+        sm.wait("iPXE non ha chiesto in TFTP %s, poi %s (pcap in %s)" % (IPXE_SCRIPT, IPXE_SCRIPT_2, pcap),
+                lambda: (sm.alive(), IPXE_SCRIPT_2 in tftp_requests(pcap))[1], timeout)
         sm.shot("ipxe")
         sm.halt()
         steps.append("%s  iPXE (Boot%04X): DHCP dalla rete di QEMU, %s scaricato in TFTP ed eseguito, "

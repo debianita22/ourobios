@@ -123,7 +123,7 @@ def load(path):
                          r"\.unicode_list = (\w+), \.glyph_id_ofs_list = (\w+), \.list_length = (\d+), "
                          r"\.type = (\w+)", src):
         start, length, gid0 = int(m[1]), int(m[2]), int(m[3])
-        ulist, olist, n, kind = m[4], m[5], int(m[6]), m[7]
+        ulist, n, kind = m[4], int(m[6]), m[7]       # m[5], glyph_id_ofs_list, non serve
         if kind == "LV_FONT_FMT_TXT_CMAP_FORMAT0_TINY":
             for i in range(length):
                 cmap[start + i] = gid0 + i

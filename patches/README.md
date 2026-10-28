@@ -189,14 +189,15 @@ screen.
 After a change in a coreboot tree based on `COREBOOT_COMMIT`:
 
 ```sh
-git format-patch --zero-commit -o /path/to/ourobios/patches/ <COREBOOT_COMMIT>..HEAD~2
-git format-patch --zero-commit --start-number 65 -o /path/to/ourobios/patches/ -2 HEAD
+git format-patch --zero-commit -N --start-number <N> -o /path/to/ourobios/patches/ -1 HEAD
 ls /path/to/ourobios/patches/0*.patch | xargs -n1 basename > /path/to/ourobios/patches/series
 ```
 
-The number 0064 stays unused: it was the patch of v1.3.2-rc1 that the
-CHANGELOG mentions. So the patches after 0063 (now two, the last commits)
-start from 65.
+One commit at a time, with `--start-number` the number after the last
+one of the series: the numbers stay as they are, and the series keeps
+its order. The numbers 0064, 0097, 0098 and 0112 stay unused: patches of
+earlier release candidates, dropped (0064 of v1.3.2-rc1, 0112 of
+v1.3.10-rc8, the CHANGELOG mentions them).
 
 The same for EDK2 (a tree at `CONFIG_EDK2_TAG_OR_REV`) and for its LvglPkg
 submodule (at the commit EDK2 pins), into `edk2/` and `lvglpkg/`, each with

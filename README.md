@@ -53,7 +53,7 @@ firmware reports itself as `ouroBIOS-vX.Y.Z-<variant>` (coreboot's
 | `w541-coreboot-<version>-<variant>.rom` | complete 12 MiB flash image: descriptor, GbE, Intel ME and coreboot |
 | `…-4mb-chip.rom` | last 4 MiB of the image: the read-only part and slot B (up to v1.2.x all of coreboot), enough to boot, for an external programmer on the 4 MiB chip |
 | `…-8mb-chip.rom` | first 8 MiB of the image: descriptor, GbE and ME **of the machine the blobs come from**, for the 8 MiB chip |
-| `….cap` | signed UEFI capsule (from v1.2.0): updates a laptop that runs a release with the same flash map (v1.3.0 or later; v1.2.x for v1.2.x) from Linux, without flashrom ([docs/update.md](docs/update.md)) |
+| `….cap` | signed UEFI capsule (from v1.2.0): updates a laptop that runs a release with the same flash map and read-only part (v1.3.9 or later; v1.3.0-v1.3.8 install the capsules of v1.3.0-v1.3.8, v1.2.x those of v1.2.x) from Linux, without flashrom ([docs/update.md](docs/update.md)) |
 | `….cab` | the same capsule as an fwupd package (from v1.2.2), signed for fwupd with the same key ([docs/update.md](docs/update.md#fwupd)) |
 | `….config` | the complete coreboot configuration |
 | `…-layout.txt` | flash map (FMAP) and CBFS contents |
@@ -116,11 +116,12 @@ Inside coreboot:
 
   | Category | Settings |
   |---|---|
-  | *General* | model, machine type, serial number and UUID (from the VPD), processor, memory and firmware versions; the iPXE and CSMWrap boot entries; beeps and volume; NMI; the form of the ACPI processor objects (*Processor* for macOS) |
-  | *Energy Saver* | battery charge thresholds (OS controlled, 100%, 80%, 60%), Intel SpeedStep, Turbo Boost, C-states, the C-state configuration lock (CFG Lock), CPU PL1/PL2 limits, cooling policy (active or passive), USB always on, power-on after power failure |
-  | *Security* | BIOS Lock (flash writable only by the firmware, off by default), Firmware protection (the read-only part locked at every boot, on by default), memory cleared at power-on, Intel VT-x, VT-d, Intel ME, supervisor password (asked for before the setup menu opens) |
+  | *General* | *About this ThinkPad*: model, machine type, serial number and UUID (from the VPD), processor, memory, firmware and EC versions; *Boot*: the iPXE and CSMWrap boot entries; *Sound*: beeps and volume; links to the time and date, firmware update, boot splash and UI pages |
+  | *Energy Saver* | battery charge thresholds (OS controlled, 100%, 80%, 60%), Intel SpeedStep, Turbo Boost, C-states, CPU PL1/PL2 limits, cooling policy (active or passive), USB always on, power-on after power failure |
+  | *Security* | *Flash protection*: BIOS Lock (flash writable only by the firmware, off by default) and Firmware protection (the read-only part locked at every boot, on by default); memory cleared at power-on, Intel VT-x, VT-d, the Intel ME interface, Secure Boot, supervisor password (asked for before the setup menu opens) |
   | *Keyboard* | Fn/Ctrl swap, F1-F12 or special keys, sticky Fn, keyboard backlight, TrackPoint, touchpad |
-  | *Hardware* | NVIDIA GPU and the tuning of its PCIe link, graphics stolen memory (native RAM init only: `mrc.bin` reserves a fixed 32 MiB) and aperture, ExpressCard and Thunderbolt ports, Wi-Fi, Bluetooth, WWAN |
+  | *Hardware* | *NVIDIA graphics*: the GPU and the tuning of its PCIe link; *Intel graphics*: graphics stolen memory (native RAM init only: `mrc.bin` reserves a fixed 32 MiB), aperture and the firmware screen resolution; *Storage*: the SATA ports besides the drive bay; *Expansion ports*: ExpressCard and Thunderbolt; *Wireless*: Wi-Fi, Bluetooth, WWAN |
+  | *Compatibility* | *macOS*: the options that take the place of parts of an OpenCore configuration (ACPI processor objects as *Processor*, the C-state configuration lock, the NVIDIA GPU off under macOS, the panel, the display audio, the device properties; [docs/macos.md](docs/macos.md)); *Advanced*: NMI |
 
   Settings live in UEFI variables in the `SMMSTORE` flash region and apply
   at the next boot. XMP memory profiles are not supported: the memory runs
@@ -204,23 +205,27 @@ Inside coreboot:
 ## Flashing
 
 On a W541 that already runs coreboot with an unlocked flash (as the 4.22 image
-in `legacy/`), from Linux:
+in `legacy/`), from Linux, the whole BIOS region:
 
 ```sh
 sha256sum -c SHA256SUMS --ignore-missing
 sudo modprobe -r spi_intel_platform spi_intel             # flashrom must not go through /dev/mtd0
 sudo flashrom -p internal -r backup-$(date +%F).rom      # whole 12 MiB: keep it off the laptop
 ls -l backup-*.rom                                        # must be 12582912 bytes
-sudo flashrom -p internal --ifd -i bios -w w541-coreboot-v1.3.0-mrc.rom
+sudo flashrom -p internal --ifd -i bios -w w541-coreboot-v1.3.9-nri.rom
 ```
 
-The UEFI settings and boot entries start from scratch after flashing (from
-v1.0.3-v1.2.x to v1.3.0 they can stay: [docs/flashing.md](docs/flashing.md#from-v12x-to-v130)). Before
-you reboot, read [docs/flashing.md](docs/flashing.md): boot loader fallback
-path, serial number and machine type in the VPD (and how to keep them
-across updates), external flashing and recovery.
+The UEFI settings and boot entries start from scratch after that. A laptop
+that already runs ouroBIOS v1.0.3 or later keeps them with the command of
+[docs/flashing.md](docs/flashing.md#from-v12x-to-v130), which writes every
+region but the ones with the settings; v1.3.9, the first release with the
+current read-only part, goes in that way too, once, with *Firmware
+protection* off ([docs/flashing.md](docs/flashing.md#from-v13x-to-v139)).
+Before you reboot, read [docs/flashing.md](docs/flashing.md): boot loader
+fallback path, serial number and machine type in the VPD (and how to keep
+them across updates), external flashing and recovery.
 
-From v1.3.0 on the laptop, the next releases install with their capsule,
+From v1.3.9 on the laptop, the next releases install with their capsule,
 keeping settings, boot entries and VPD, with *BIOS Lock* on or off
 ([docs/update.md](docs/update.md)):
 
@@ -234,7 +239,7 @@ Debian or Ubuntu:
 
 ```sh
 sudo apt install build-essential bison flex gnat libncurses-dev zlib1g-dev m4 \
-    curl git python3 uuid-dev imagemagick nasm xxd
+    curl git python3 uuid-dev imagemagick libssl-dev pkg-config nasm xxd
 git clone https://github.com/debianita22/ourobios.git
 cd ourobios
 tools/build.sh                      # both variants, into dist/
@@ -255,10 +260,12 @@ the first time (30-60 minutes, then reused), builds each variant and runs
 tools/build.sh --variant mrc                  # one variant
 tools/build.sh --version v1.0.0-local         # version string and file names
 tools/build.sh --with NAME roms               # plus patches/optional/NAME.patch
+tools/build.sh prepare config                 # the trees, the patches and the .config only
+tools/build.sh menu                           # after roms: the setup menu, each option in one card
 tools/build.sh smoke                          # after roms: the payload in QEMU
 tools/build.sh update-test                    # capsule updates with vboot A/B in QEMU
 tools/build.sh repro                          # after roms: built again, compared bit by bit
-tools/build.sh --help
+tools/build.sh --help                         # the other commands and the options
 ```
 
 The builds are reproducible (from v1.3.6): the date in the ROM is the date
@@ -329,7 +336,7 @@ and finishes the update; the ESRT is checked at every boot
 | Workflow | When | What |
 |---|---|---|
 | [`check.yml`](.github/workflows/check.yml) | every push and pull request | `tools/ci-check.sh` (shellcheck, actionlint, blob checksums, patch series, defconfigs); the series applied to the pinned coreboot and EDK2, and both configurations checked |
-| [`build.yml`](.github/workflows/build.yml) | tag `vX.Y.Z`, *Run workflow*, push to `ci-test/**` | both ROMs with the coreboot toolchain (cached), verified, their payloads booted in QEMU (`smoke`), each built a second time and compared bit by bit (`repro`), the capsule update with vboot A/B in QEMU (`update-test`, in parallel), their capsules signed, published as `vX.Y.Z-mrc` and `vX.Y.Z-nri` |
+| [`build.yml`](.github/workflows/build.yml) | tag `vX.Y.Z`, *Run workflow*, push to `ci-test/**` | both ROMs with the coreboot toolchain (cached), verified, their setup menu checked (`menu`), their payloads booted in QEMU (`smoke`), each built a second time and compared bit by bit (`repro`), the capsule update with vboot A/B in QEMU (`update-test`, in parallel), their capsules signed, published as `vX.Y.Z-mrc` and `vX.Y.Z-nri` |
 | [`upstream.yml`](.github/workflows/upstream.yml) | every Monday | opens an issue when the series no longer applies on coreboot `main`, a patch was merged upstream, a coreboot release is out, or MrChromebox's EDK2 branch moved |
 
 A release is made by pushing a version tag (`git tag v1.0.0 && git push origin
@@ -357,12 +364,12 @@ gh release edit v1.0.0-nri --repo debianita22/ourobios --prerelease=false --late
 | `CHANGELOG.md` | what changes in each release |
 | `blobs/` | IFD, GbE, ME, `mrc.bin` and VBIOS images ([blobs/README.md](blobs/README.md)) |
 | `assets/` | the logo, `ourobios.svg`, and the boot splash made from it (`tools/logo.py splash`) |
-| `configs/` | `w541-mrc.defconfig` and `w541-nri.defconfig`, the flash map `w541.fmd`, the interface of the read-only part already on the laptops (`ro-interface.txt`), the fwupd remotes (`fwupd/ourobios.conf`, the releases; `fwupd/ourobios-testing.conf`, the candidates too) |
-| `patches/` | the series applied to coreboot, optional patches, the patches to EDK2 and its LvglPkg, the q35 patch of the update test ([patches/README.md](patches/README.md)) |
-| `tools/` | build, verification, CI and upstream-check scripts; `update.py`, the capsule update from Linux; `fwupd-cab.py`, the fwupd package and the metadata of the remote; `vpd.py`, the serial number and machine type; `elog.py`, which reads the event log from a flash dump; `idle-report.py`, package C-states, power, memory traffic and device power states at idle; `pm-regs.py`, the power management registers the firmware left; `ddr-report.py`, the memory controller as the RAM init left it, and two of its dumps compared; `mem-latency.c`, how long a read from the memory takes; `peg-report.py`, the PCIe link to the NVIDIA GPU; `qemu-smoke.py`, the payload booted in QEMU (with `efi/rt-reloc-test.c`, the runtime services moved as boot.efi of macOS moves them); `qemu-update.py`, capsule updates with vboot A/B in QEMU (with `efi/slot-lock-test.c`, a UEFI application for it); `logo.py`, the logo as an LVGL image or a PNG |
+| `configs/` | `w541-mrc.defconfig` and `w541-nri.defconfig`, the flash map `w541.fmd`, the interface of the read-only part already on the laptops (`ro-interface.txt`), the OpenCore device properties of this W541 for patches 0128 and 0133 (`macos/`), the fwupd remotes (`fwupd/ourobios.conf`, the releases; `fwupd/ourobios-testing.conf`, the candidates too) |
+| `patches/` | the series applied to coreboot, the patches to EDK2 and its LvglPkg, the q35 patches of the update test and of the setup screenshots; `optional/` for patches to build in with `--with`, none at the moment ([patches/README.md](patches/README.md)) |
+| `tools/` | `build.sh`, the build; `verify-rom.sh`, the checks on a ROM; `ci-check.sh`, `ci.sh` and `upstream.sh`, the CI, the releases and the upstream check; `cfr-dump.sh` and `q35-cfr-rom.sh`, the setup menu of a build (`build.sh menu`) and its screenshots (`qemu-setup-shots.py`); `update.py`, the capsule update from Linux; `fwupd-cab.py`, the fwupd package and the metadata of the remote; `vpd.py`, the serial number and machine type; `elog.py`, which reads the event log from a flash dump; `idle-report.py`, package C-states, power, memory traffic and device power states at idle; `pm-regs.py`, the power management registers the firmware left; `ddr-report.py`, the memory controller as the RAM init left it, and two of its dumps compared; `mem-latency.c`, how long a read from the memory takes; `peg-report.py`, the PCIe link to the NVIDIA GPU; `qemu-smoke.py`, the payload booted in QEMU (with `efi/rt-reloc-test.c`, the runtime services moved as boot.efi of macOS moves them); `qemu-update.py`, capsule updates with vboot A/B in QEMU (with `efi/slot-lock-test.c`, a UEFI application for it); `logo.py`, the logo as an LVGL image or a PNG |
 | `keys/` | the certificate of the key that signs the capsules, and vboot's public keys ([keys/README.md](keys/README.md)) |
 | `legacy/coreboot-4.22/` | the coreboot 4.22 image and configuration this project started from, built from the same blobs |
-| `docs/` | [flashing and recovery](docs/flashing.md), [updates with capsules](docs/update.md), [verified boot and A/B](docs/vboot.md), [the native RAM init](docs/raminit.md) |
+| `docs/` | [flashing and recovery](docs/flashing.md), [updates with capsules](docs/update.md), [verified boot and A/B](docs/vboot.md), [the native RAM init](docs/raminit.md), [macOS with OpenCore](docs/macos.md) |
 
 ## Binary blobs
 

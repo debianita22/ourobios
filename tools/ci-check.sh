@@ -24,19 +24,19 @@
 #      scrivibili nel chip da 8 MiB; i GUID e le regioni delle capsule uguali
 #      in tools/update.py e tools/build.sh; il remote fwupd
 #      (configs/fwupd/ourobios.conf) sui metadati di build.sh e ci.sh
-#   9. le chiavi: in keys/ solo certificati e chiavi pubbliche di vboot, il
-#      keyblock con la chiave dati di keys/vboot, nessuna chiave privata nei
-#      file del repository
 #   8. il pin di coreboot in tools/build.sh: commit intero e describe coerente,
 #      lo stesso della parte RO gia' sui portatili (configs/ro-interface.txt:
 #      gli slot di una capsula partono dopo quella)
+#   9. le chiavi: in keys/ solo certificati e chiavi pubbliche di vboot, il
+#      keyblock con la chiave dati di keys/vboot, nessuna chiave privata nei
+#      file del repository
 #  10. i link dei .md: i file relativi e le ancore (#titolo, come le fa
 #      GitHub), anche quelli alla documentazione che tools/ci.sh mette nelle
 #      note delle release (i link al ramo principale, con un'ancora)
 #  11. il menu di setup delle build in work/coreboot, se ci sono (in locale,
 #      dopo tools/build.sh roms; nella CI lo fa build.yml): ogni opzione in
 #      una scheda sola (tools/build.sh menu)
-# L'applicazione delle patch e i .config li prova check.yml (job "patch").
+# L'applicazione delle patch e i .config li prova check.yml (job "patches").
 set -u
 O="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${O}" || exit 1

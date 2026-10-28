@@ -134,7 +134,7 @@ def as_splash(grid):
 
 
 def main(argv):
-    if len(argv) < 2 or argv[1] not in ("c", "png", "splash"):
+    if len(argv) < 2 or argv[1] not in ("c", "png", "splash") or (argv[1] != "c" and len(argv) < 3):
         sys.exit(__doc__)
     if argv[1] == "splash":
         as_splash(pixels(open("assets/ourobios.svg").read())).save(argv[2], "BMP")

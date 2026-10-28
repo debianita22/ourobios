@@ -148,10 +148,10 @@ check_edk2() {
 		settle "EDK2:" "EDK2: ${branch} e' al commit pinnato (${rev:0:12})"
 		return 0
 	fi
-	cmp="$(gh api "repos/mrchromebox/edk2/compare/${rev}...${head}" --jq '"\(.status) \(.ahead_by) \(.behind_by)"')"
-	read -r status ahead behind <<< "${cmp}"
-	last="$(gh api "repos/mrchromebox/edk2/compare/${rev}...${head}" \
-		--jq '.commits[-15:] | reverse | .[] | "- `\(.sha[0:12])` \(.commit.message | split("\n")[0])"')"
+	cmp="$(gh api "repos/mrchromebox/edk2/compare/${rev}...${head}" \
+		--jq '"\(.status) \(.ahead_by) \(.behind_by)\n" + ([.commits[-15:] | reverse | .[] | "- `\(.sha[0:12])` \(.commit.message | split("\n")[0])"] | join("\n"))')"
+	read -r status ahead behind <<< "$(head -n 1 <<< "${cmp}")"
+	last="$(tail -n +2 <<< "${cmp}")"
 	local title body
 	if [ "${status}" = ahead ]; then
 		title="EDK2: ${branch}, ${ahead} commit dopo il pin"

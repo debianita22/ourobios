@@ -115,7 +115,7 @@ newer() {
 # le altre da' 0 e niente capsula). Una rc non di v0.0.0
 release_version_ok() {
 	local x y z r
-	[[ "$1" =~ ^v([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})(-rc([1-9][0-9]{0,2}))?$ ]] || return 1
+	[[ "$1" =~ ^v(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})(-rc([1-9][0-9]{0,2}))?$ ]] || return 1
 	x=$((10#${BASH_REMATCH[1]})); y=$((10#${BASH_REMATCH[2]})); z=$((10#${BASH_REMATCH[3]}))
 	r=$((10#${BASH_REMATCH[5]:-0}))
 	[ "${x}" -le 255 ] && [ "${y}" -le 255 ] && [ "${z}" -le 255 ] && [ "${r}" -le 255 ] \
@@ -125,7 +125,7 @@ release_version_ok() {
 # Job setup: versione, se si pubblica, se e' una pre-release
 cmd_version() {
 	: "${GITHUB_EVENT_NAME:?}" "${GITHUB_REF_NAME:?}" "${GITHUB_RUN_NUMBER:?}" "${GITHUB_REPOSITORY:?}" "${DEFAULT_BRANCH:?}"
-	local version publish=false prerelease=false v t rels
+	local version publish=false prerelease=false v t c rels
 	if [ "${GITHUB_EVENT_NAME}" = push ] && [ "${GITHUB_REF_TYPE:-}" = tag ]; then
 		version="${GITHUB_REF_NAME}"; publish=true
 	elif [ "${GITHUB_EVENT_NAME}" = workflow_dispatch ] && [ -n "${IN_VERSION:-}" ]; then
@@ -152,8 +152,13 @@ cmd_version() {
 			|| fail "Versione" "CHANGELOG.md non ha la sezione ## ${version%%-*}: le note della release la riportano"
 		for v in "${VARIANTS[@]}"; do
 			t="${version}-${v}"
+			c="$(tag_commit "${t}")" || fail "Versione" "origin non risponde (git ls-remote)"
 			if [ "${GITHUB_EVENT_NAME}" = workflow_dispatch ]; then
-				[ -z "$(tag_commit "${t}")" ] || fail "Versione" "il tag ${t} esiste gia': un'altra versione"
+				[ -z "${c}" ] || fail "Versione" "il tag ${t} esiste gia': un'altra versione"
+			elif [ -n "${c}" ] && [ "${c}" != "$(git -C "${O}" rev-parse "${GITHUB_SHA:-HEAD}^{commit}")" ]; then
+				# un tag di prima su un altro commit: il job release si fermerebbe
+				# dopo la build (cmd_publish); qui costa un minuto
+				fail "Versione" "il tag ${t} e' su ${c:0:12}, non sul commit della build"
 			fi
 			rels="$(release_ids "${t}")" || fail "Versione" "elenco delle release illeggibile"
 			if grep -q ' false$' <<< "${rels}"; then fail "Versione" "la release ${t} esiste gia'"; fi
