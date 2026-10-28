@@ -127,20 +127,27 @@ After the update, and with the setup options of the table set:
   reserved range with `EFI_MEMORY_RUNTIME`, the com buffer of SMMSTORE,
   which the runtime variable services write, is runtime services data
   (`edk2/0029`), which macOS maps. Up to rc14, without the quirk, macOS
-  restarted right after boot.efi, with no panic report. Try without it;
+  restarted right after boot.efi, with no panic report. Try without it,
+  keeping `AvoidRuntimeDefrag` (below);
 - `Booter` → `Quirks` → `ProvideCustomSlide` and `EnableSafeModeSlide`,
   from rc15: the payload and the memory where the DXE core starts are at
   1 GiB (`edk2/0030`), and the memory from 1 MiB to 1 GiB is free, so
   every slide of the kernel fits (boot.efi puts the kernel collection,
   about 100 MB, at 1 MiB plus 2 MiB times a slide of 0 to 255): a DEBUG
   OpenCore should log "All slides are usable! You can disable
-  ProvideCustomSlide!". Try
-  without both, in safe mode too (`-x`, or Shift at the picker), where
-  boot.efi takes slide 0. Up to rc14 the slides below 41 were taken;
+  ProvideCustomSlide!". Try without both, in safe mode too (`-x`, or
+  Shift at the picker), where boot.efi takes slide 0. Up to rc14 the
+  slides below 41 were taken;
 - `UEFI` → `Quirks` → `ReleaseUsbOwnership`: not needed, EDK2 hands the
   USB controllers over at ExitBootServices. Try it with a configuration
   that boots at hand;
-- still needed: the USB map and the rest of the configuration.
+- still needed: `Booter` → `Quirks` → `AvoidRuntimeDefrag`, as on most
+  PC firmware: without it boot.efi moves the runtime services data, and
+  SMM reaches its buffers there at the physical address of boot, the
+  argument buffer of SMMSTORE and, from rc15, its com buffer: the NVRAM
+  of macOS would break (OpenCore's documentation: most firmware other
+  than Apple's needs it); the MAT quirks above, the USB map and the
+  rest of the configuration.
 
 Update the firmware, and change these options, with the OS shut down or
 restarted, not hibernated, whatever the OS: an OS resumed from

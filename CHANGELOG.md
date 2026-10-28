@@ -322,6 +322,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   Without `ProtectMemoryRegions`, `ProvideCustomSlide` and
   `EnableSafeModeSlide` OpenCore should boot macOS: try it
   ([docs/macos.md](docs/macos.md#in-the-opencore-configuration)).
+  `AvoidRuntimeDefrag` stays, as before: without it boot.efi moves the
+  runtime services data, and the com buffer of SMMSTORE, which SMM
+  writes at its physical address, is runtime services data from rc15.
 - From rc16, after a review of rc15, the same memory map, with fewer
   ways to go wrong (`edk2/0029`): the first module that links SmmStoreLib
   converts the com buffer and marks it in the GCD, and the next ones
