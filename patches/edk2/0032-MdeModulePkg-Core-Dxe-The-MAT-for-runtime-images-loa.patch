@@ -1,0 +1,59 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 28 Oct 2026 19:53:25 +0100
+Subject: [PATCH] MdeModulePkg/Core/Dxe: The MAT for runtime images loaded late
+
+After ReadyToBoot the memory attributes table is installed again at
+every allocation of runtime memory. A runtime driver loaded then gets
+its pages, its fixup data and its EFI_RUNTIME_IMAGE_ENTRY that way, and
+only after them InsertImageRecord() adds the record of its sections:
+the table describes the image as runtime code without an image, RO and
+XP, until some later allocation of runtime memory installs it again.
+An OS that applies the table, as macOS does, can then neither run the
+code of the driver nor write its data. OpenCore loads OpenRuntime after
+ReadyToBoot, and its SyncRuntimePermissions quirk corrects the table
+for it. edk2 master has the same code.
+
+InsertImageRecord() installs the table again once the record is in,
+after ReadyToBoot only: before it nothing changes, and a record that
+cannot be made leaves the table as it was.
+
+TEST=OpenShell from an ESP, on the W541 payload in a q35 ROM: after
+"load" of a runtime driver with .text and .data that allocates nothing
+as it starts, MmapDump of OpenCore 1.0.8 lists its pages in the table
+as runtime code RO|XP, merged with the unused pages of the runtime code
+bin; with the patch, its header and .data are XP and its .text RO.
+OpenRuntime of OpenCore 1.0.8 comes out split without the patch too,
+by an allocation of runtime memory that follows its record. The smoke
+test of the payload passes, the runtime services moved as boot.efi of
+macOS moves them included.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ MdeModulePkg/Core/Dxe/Misc/MemoryAttributesTable.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/MdeModulePkg/Core/Dxe/Misc/MemoryAttributesTable.c b/MdeModulePkg/Core/Dxe/Misc/MemoryAttributesTable.c
+index 7f4d703..4a9e469 100644
+--- a/MdeModulePkg/Core/Dxe/Misc/MemoryAttributesTable.c
++++ b/MdeModulePkg/Core/Dxe/Misc/MemoryAttributesTable.c
+@@ -656,6 +656,15 @@ InsertImageRecord (
+ 
+   SortImageRecord (&mImagePropertiesPrivateData.ImageRecordList);
+ 
++  //
++  // After ReadyToBoot the table was installed again when the pages of this
++  // image were allocated, before its record existed: without this, the image
++  // keeps the attributes of runtime code without an image (RO | XP).
++  //
++  if (mMemoryAttributesTableReadyToBoot) {
++    InstallMemoryAttributesTable ();
++  }
++
+ Finish:
+   if (EFI_ERROR (Status) && (ImageRecord != NULL)) {
+     DeleteImagePropertiesRecord (ImageRecord);
+-- 
+2.43.0
+

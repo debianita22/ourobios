@@ -368,6 +368,20 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   Runtime drivers read it from `PcdDebugPrintErrorLevel` (`edk2/0031`),
   as every module does with coreboot, which passes no such HOB. The
   release payload, without `DEBUG()`, builds byte for byte the same.
+- From rc17, OpenCore's `SyncRuntimePermissions` should not be needed
+  (`edk2/0032`). The memory attributes table (MAT), from which macOS
+  sets what the runtime services may run and write, did not describe a
+  runtime driver loaded after ReadyToBoot, as OpenCore loads
+  OpenRuntime: the table was installed again at each runtime allocation
+  of the load, before the DXE core had the record of the sections of
+  the driver, which stayed runtime code without an image, read-only and
+  not executable, until runtime memory was allocated again. Now the
+  table is installed again once the record is in: the code read-only,
+  the header and the data not executable. Checked in QEMU with
+  OpenShell, MmapDump and a runtime driver loaded from the shell (with
+  OpenRuntime 1.0.8 a later allocation corrected the table anyway); on
+  the W541 still to be tried, with a sleep and wake
+  ([docs/macos.md](docs/macos.md#in-the-opencore-configuration)).
 
 ## v1.3.9
 
