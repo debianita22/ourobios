@@ -1,0 +1,74 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 23:36:44 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Wake on LAN after a shutdown, as the
+ OEM does
+
+The OEM firmware has Intel's "Wake on LAN Enable" on by default, the
+override of the PCH that takes the wake of the LAN from S4 and S5
+(WOL_EN_OVRD). coreboot leaves it off: the GbE device has its wake up
+to S4 in the ACPI tables, so Linux does not arm it for S5, and a
+shut-down M920x does not wake on LAN. On the machine running this
+tree, GEN_PMCON_B reads 0x00060210, without the override.
+
+Turn it on in the devicetree and offer the "wake_on_lan" option in
+Energy Saver > Power, on by default.
+
+TEST=Built lenovo/m920x: WolEnableOverride is true in static.c. The
+wake itself is for the hardware test: shut down, then a magic packet
+to the MAC address of the port.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/cfr.c         | 16 ++++++++++++++++
+ src/mainboard/lenovo/m720q_m920q/devicetree.cb |  3 +++
+ 2 files changed, 19 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index 7db7c87419..6ae81352d1 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -322,10 +322,26 @@ static const struct sm_object energy_processor = SM_DECLARE_FORM({
+ 	},
+ });
+ 
++/* Read by FSP-S parameters (soc/intel/cannonlake/fsp_params.c) */
++static const struct sm_object wake_on_lan = SM_DECLARE_BOOL({
++	.opt_name	= "wake_on_lan",
++	.ui_name	= "Wake on LAN from off",
++	.ui_helptext	= "Turn the computer on when a Wake-on-LAN packet comes to\n"
++			  "the Ethernet port after a shutdown (S5), as the OEM\n"
++			  "firmware does: the ACPI tables give the wake of the LAN up\n"
++			  "to S4, so the OS does not arm it for S5, and the PCH takes\n"
++			  "it anyway. The OS still arms the port itself (ethtool:\n"
++			  "Wake-on g).\n"
++			  "Default: on. Off: no wake on LAN after a shutdown; from\n"
++			  "sleep and hibernation the OS decides.",
++	.default_value	= true,
++});
++
+ static const struct sm_object energy_power = SM_DECLARE_FORM({
+ 	.ui_name	= "Power",
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&power_on_after_fail,
++		&wake_on_lan,
+ 		NULL
+ 	},
+ });
+diff --git a/src/mainboard/lenovo/m720q_m920q/devicetree.cb b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+index 2bc9c1a97e..59efe115a1 100644
+--- a/src/mainboard/lenovo/m720q_m920q/devicetree.cb
++++ b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+@@ -8,6 +8,9 @@ chip soc/intel/cannonlake
+ 	# Enhanced Intel SpeedStep, as the OEM firmware: P-states for the OS
+ 	register "eist_enable" = "true"
+ 
++	# Wake on LAN from S4 and S5, as the OEM firmware (the "wake_on_lan" option)
++	register "WolEnableOverride" = "true"
++
+ 	# Unmap unused CLKREQ lines, otherwise CLKSRC #0 won't work
+ 	register "PcieClkSrcClkReq[1]"	= "PCIE_CLK_NOTUSED"
+ 	register "PcieClkSrcClkReq[5]"	= "PCIE_CLK_NOTUSED"
+-- 
+2.47.3
+

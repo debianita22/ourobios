@@ -52,6 +52,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   power-loss policy), so that it loads its profile for it (0150-0153).
   The ICE mode of the OEM setup is in *Hardware* → *Cooling*: *Better
   acoustics* (the default), *Better cooling*, *Full speed*.
+- From rc3, the M920x wakes on LAN after a shutdown, as with the OEM
+  firmware: the override of the PCH for the wake of the LAN from S4 and
+  S5 is on, *Energy Saver* → *Wake on LAN from off* (0154-0155). Without
+  it Linux arms the port up to S4 only, as the ACPI tables say.
 
 ## v1.3.10
 
