@@ -5,8 +5,10 @@
  * on the same flash.
  *
  * Boot 1 (the variable store is fresh: EnrollDefaultKeys has put the Microsoft
- * keys in, SecureBootEnable is 0): the ESRT is printed; LoadImage() of every
- * embedded image with Secure Boot off, all accepted; then, in custom mode as
+ * keys in, SecureBootEnable is 0): the ESRT is printed, and SHA-256 and the
+ * PBKDF2 of the setup password computed through the crypto protocol of
+ * CryptoDxe, for the harness to compare; LoadImage() of every embedded image
+ * with Secure Boot off, all accepted; then, in custom mode as
  * EnrollDefaultKeys does, the CA certificate the signature of this application
  * leads to is appended to db, SecureBootEnable is set to 1, a marker variable is
  * written and the machine resets.
@@ -55,7 +57,22 @@ struct boot_services {
 	efi_status (*start_image)(void *image, uint64_t *exit_data_size, uint16_t **exit_data);
 	void *exit;
 	efi_status (*unload_image)(void *image);
+	void *exit_boot_services, *get_next_monotonic_count, *stall, *set_watchdog_timer, *connect_controller,
+	     *disconnect_controller, *open_protocol, *close_protocol, *open_protocol_information,
+	     *protocols_per_handle, *locate_handle_buffer;
+	efi_status (*locate_protocol)(struct guid *protocol, void *registration, void **interface);
 };
+/* The EDK II crypto protocol (CryptoPkg/Private/Protocol/Crypto.h): a table of
+ * function pointers, the ones used here at their index */
+struct crypto_protocol { void *fn[300]; };
+#define CRYPTO_GET_VERSION 0
+#define CRYPTO_PKCS5_HASH_PASSWORD 32
+#define CRYPTO_SHA256_HASH_ALL 72
+typedef uint64_t (*crypto_get_version)(void);
+typedef uint8_t (*crypto_pkcs5)(uint64_t password_size, const char *password, uint64_t salt_size,
+				const uint8_t *salt, uint64_t iterations, uint64_t digest_size, uint64_t out_size,
+				uint8_t *out);
+typedef uint8_t (*crypto_sha256_all)(const void *data, uint64_t size, uint8_t *hash);
 struct runtime_services {
 	struct table_header hdr;
 	efi_status (*get_time)(struct efi_time *t, void *caps);
@@ -86,6 +103,7 @@ struct esrt_entry {
 struct esrt { uint32_t count, max, version_hi, version_lo; struct esrt_entry entries[]; };
 _Static_assert(offsetof(struct boot_services, load_image) == 0xc8, "LoadImage");
 _Static_assert(offsetof(struct boot_services, unload_image) == 0xe0, "UnloadImage");
+_Static_assert(offsetof(struct boot_services, locate_protocol) == 0x140, "LocateProtocol");
 _Static_assert(offsetof(struct runtime_services, get_variable) == 0x48, "GetVariable");
 _Static_assert(offsetof(struct runtime_services, set_variable) == 0x58, "SetVariable");
 _Static_assert(offsetof(struct runtime_services, reset_system) == 0x68, "ResetSystem");
@@ -103,6 +121,7 @@ static struct guid custom_mode = { 0xc076ec0c, 0x7028, 0x4399, { 0xa0, 0x72, 0x7
 static struct guid cert_x509 = { 0xa5c059a1, 0x94e4, 0x4aa7, { 0x87, 0xb5, 0xab, 0x15, 0x5c, 0x2b, 0xf0, 0x72 } };
 static struct guid cert_pkcs7 = { 0x4aafd29d, 0x68df, 0x49ee, { 0x8a, 0xa9, 0x34, 0x7d, 0x37, 0x56, 0x65, 0xa7 } };
 static struct guid esrt_guid = { 0xb122a263, 0x3661, 0x4f68, { 0x99, 0x29, 0x78, 0xf8, 0xb0, 0xd6, 0x21, 0x80 } };
+static struct guid crypto_guid = { 0x2c2275c9, 0x3a7b, 0x426f, { 0xbe, 0x54, 0x2d, 0x22, 0xbd, 0x9d, 0x10, 0x92 } };
 /* the marker variable and the owner of the certificate: a GUID of this test */
 static struct guid test_guid = { 0x5b2c5e0a, 0x0b5f, 0x4e0e, { 0x9c, 0x41, 0x2d, 0x6f, 0x8a, 0x3b, 0x7e, 0x51 } };
 
@@ -270,6 +289,39 @@ static efi_status enroll_cert(void)
 				    (uint64_t)(p - data), data);
 }
 
+/* The crypto protocol of CryptoDxe, as UserAuthenticationDxe hashes the setup
+ * password (PBKDF2-HMAC-SHA256, 1000 iterations, a 32 byte salt, 32 bytes out)
+ * and as everything hashes: the values on the serial line, for the harness */
+static void crypto_protocol_test(void)
+{
+	static const char password[] = "ouroBIOS";
+	uint8_t salt[32], out[32];
+	struct crypto_protocol *cp = (void *)0;
+	efi_status s;
+	int i;
+	for (i = 0; i < 32; i++) salt[i] = (uint8_t)i;
+	s = st->bs->locate_protocol(&crypto_guid, (void *)0, (void **)&cp);
+	if (EFI_ERR(s) || !cp) {
+		puts_(MARK "crypto protocol: absent\n");
+		return;
+	}
+	puts_(MARK "crypto protocol: version "); putdec(((crypto_get_version)cp->fn[CRYPTO_GET_VERSION])());
+	puts_("\n" MARK "sha256 abc = ");
+	if (((crypto_sha256_all)cp->fn[CRYPTO_SHA256_HASH_ALL])("abc", 3, out)) {
+		for (i = 0; i < 32; i++) puthex(out[i], 2);
+	} else {
+		puts_("FALSE");
+	}
+	puts_("\n" MARK "pbkdf2 sha256 ouroBIOS salt 0..31 1000 = ");
+	if (((crypto_pkcs5)cp->fn[CRYPTO_PKCS5_HASH_PASSWORD])(sizeof password - 1, password, sizeof salt, salt,
+							       1000, 32, sizeof out, out)) {
+		for (i = 0; i < 32; i++) puthex(out[i], 2);
+	} else {
+		puts_("FALSE");
+	}
+	puts_("\n");
+}
+
 __attribute__((ms_abi)) efi_status efi_main(void *image, struct system_table *table)
 {
 	uint8_t marker = 0, secure_boot = 0;
@@ -284,6 +336,7 @@ __attribute__((ms_abi)) efi_status efi_main(void *image, struct system_table *ta
 	show_u8("SecureBootEnable", name_sb_enable, &sb_enable);
 	show_u8("CustomMode", name_custom, &custom_mode);
 	if (get_u8(name_marker, &test_guid, &marker) < 0) {
+		crypto_protocol_test();
 		puts_(MARK "boot 1: Secure Boot off, every image loads\n");
 		try_load("shim-ms", blob_shim_ms, blob_shim_ms_end, "SUCCESS");
 		try_load("signed-other", blob_signed_other, blob_signed_other_end, "SUCCESS");
