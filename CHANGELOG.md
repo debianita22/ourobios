@@ -457,7 +457,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   ESRT (`tools/efi/secure-boot-test.c`): the payload must verify the
   signature of a test application against a CA put in db, accept a shim
   signed by Microsoft, refuse an image signed by a certificate in no
-  database and an unsigned one, and the ESRT must carry the entry of the
+  database, an unsigned one and one whose hash is in dbx despite a good
+  signature, compute SHA-256 and the PBKDF2 of the setup password right
+  through CryptoDxe, and the ESRT must carry the entry of the
   variant with the GUID from the coreboot table. The second variant,
   whose payload is the first one's, runs this step on its own q35 image:
   since rc19 nothing booted the nri payload in the CI.
