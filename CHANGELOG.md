@@ -429,6 +429,15 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   in 96 (the Kconfig default of 0053, a string, excepted); the ones
   renamed keep their numbers. What the patches do does not change: 23
   lines of the coreboot series are wrapped, nothing else.
+- From rc19, one OpenSSL in the payload: the Secure Boot, capsule,
+  password and TPM drivers used a copy each (five, 800-1000 KiB apiece);
+  they now share the one of CryptoDxe through its protocol
+  (`CRYPTO_PROTOCOL_SUPPORT` of EDK2, which patch `edk2/0034` makes
+  reach them). The modules of the payload go from 9.8 to 7.5 MiB in
+  memory and the compressed payload in flash loses 115 KiB in each slot;
+  the variable driver keeps its own OpenSSL, as runtime code must. Verified in QEMU: the smoke test
+  and the capsule update, whose signature check goes through the
+  protocol.
 
 ## v1.3.9
 
