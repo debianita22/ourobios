@@ -222,7 +222,9 @@ EOF
 		bad "tools/update.py: la capsula di prova non si legge come atteso, o tools/fwupd-cab.py metadata sbaglia"
 	fi
 	# I tag di GitHub si ordinano (stage --latest), e rollback trova nello
-	# slot che non gira la release a cui tornare, solo se e' piu' vecchia
+	# slot che non gira la release a cui tornare, solo se e' piu' vecchia,
+	# anche con i nomi del M920x; una copia del solo primo chip (flashrom
+	# passato da /dev/mtd0) dice il modulo del kernel della sua board
 	if python3 - <<'EOF'
 import struct
 import sys
@@ -255,11 +257,28 @@ for a, b in ((b"ouroBIOS-v1.3.3-mrc", b"ouroBIOS-v1.3.2-mrc"), (b"ouroBIOS-v1.3.
     except update.Error:
         continue
     raise AssertionError("rollback accettato: %r" % a)
+plan = update.rollback_plan(flash(b"ouroBIOS-v1.4.0-rc1-m920x-fsp", b"ouroBIOS-v1.4.0-rc2-m920x-fsp"),
+                            "ouroBIOS-v1.4.0-rc2-m920x-fsp")
+assert plan["tag"] == "v1.4.0-rc1-m920x-fsp", plan["tag"]
+try:
+    update.rollback_plan(flash(b"ouroBIOS-v1.4.0-rc1-m920x-fsp", b"ouroBIOS-v1.4.0-rc1-m920x-fsp"),
+                         "ouroBIOS-v1.4.0-rc2-m920x-fsp")
+except update.Error as e:
+    assert "un altro avvio" in str(e), e
+else:
+    raise AssertionError("rollback accettato con un'altra release nello slot che gira")
+for size, module in ((8 << 20, "spi_intel_platform"), (16 << 20, "spi_intel_pci")):
+    try:
+        update.need_whole_flash("dump.rom", b"\xff" * size, None)
+    except update.Error as e:
+        assert module in str(e), e
+    else:
+        raise AssertionError("copia del solo primo chip accettata: %d MiB" % (size >> 20))
 EOF
 	then
-		ok "tools/update.py: release di GitHub in ordine, rollback verso la release dell'altro slot"
+		ok "tools/update.py: release di GitHub in ordine, rollback verso la release dell'altro slot (W541 e M920x), copia del solo primo chip riconosciuta"
 	else
-		bad "tools/update.py: release_key o rollback_plan non fanno quello che devono"
+		bad "tools/update.py: release_key, rollback_plan o need_whole_flash non fanno quello che devono"
 	fi
 	# tools/qemu-update.py senza QEMU: le variabili che scrive nello store del
 	# flash (OsIndications) come le legge tools/update.py, FmpState, l'ESRT

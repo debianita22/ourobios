@@ -1071,13 +1071,24 @@ def region_releases(data, area):
     return found
 
 
+# Il primo chip del flash di ogni board, il solo che flashrom legge quando passa da
+# /dev/mtd0: la board, il modulo del kernel che tiene il controller SPI (sul M920x
+# e' un dispositivo PCI, 00:1f.5) e il flash intero, in MiB
+FIRST_CHIPS = {
+    8 << 20: ("W541", "spi_intel_platform", 12),
+    16 << 20: ("M920x", "spi_intel_pci", 24),
+}
+
+
 def need_whole_flash(path, data, areas):
-    """Una copia da 8 MiB senza FMAP e' solo il primo chip: flashrom e' passato
-    da /dev/mtd0 perche' il driver del kernel teneva il controller SPI."""
-    if areas is None and len(data) == 8 << 20:
-        raise Error("%s: 8 MiB, solo il primo chip: flashrom e' passato da /dev/mtd0 (driver "
-                    "spi_intel caricato). sudo modprobe -r spi_intel_platform spi_intel, poi "
-                    "rileggi: deve venire di 12 MiB" % path)
+    """Una copia senza FMAP grande quanto il primo chip di una board e' solo quel
+    chip: flashrom e' passato da /dev/mtd0 perche' il driver del kernel teneva il
+    controller SPI."""
+    if areas is None and len(data) in FIRST_CHIPS:
+        board, module, whole = FIRST_CHIPS[len(data)]
+        raise Error("%s: %d MiB, solo il primo chip del %s: flashrom e' passato da /dev/mtd0 "
+                    "(driver spi_intel caricato). sudo modprobe -r %s spi_intel, poi rileggi: "
+                    "deve venire di %d MiB" % (path, len(data) >> 20, board, module, whole))
 
 
 def flash_image(path):
@@ -1190,7 +1201,7 @@ def cmd_vboot(args):
 # capsula non vi riscrive niente (i blocchi sono gia' quelli) e chiede a vboot
 # di provarlo, con due tentativi: il payload fa il resto come per ogni capsula.
 
-TAG_RE = re.compile(r"v\d+\.\d+\.\d+(?:-rc\d+)?-(?:mrc|nri)")
+TAG_RE = re.compile(r"v\d+\.\d+\.\d+(?:-rc\d+)?-(?:[a-z0-9]+-)?(?:mrc|nri|fsp)")
 
 
 def rollback_plan(data, running):
@@ -1209,7 +1220,8 @@ def rollback_plan(data, running):
     slot = "AB"
     cur, other = st["tried"], 1 - st["tried"]
     found = {s: region_releases(data, areas["FW_MAIN_" + slot[s]]) for s in (0, 1)}
-    # confrontate per tag (v1.3.1-mrc): il prefisso, w541- o ouroBIOS-, e' cambiato
+    # confrontate per tag (v1.3.1-mrc, v1.4.0-m920x-fsp): il prefisso, w541- o
+    # ouroBIOS-, e' cambiato
     tag = lambda name: TAG_RE.search(name or "").group() if TAG_RE.search(name or "") else None
     if running is None or [tag(n) for n in found[cur]] != [tag(running)]:
         raise Error("nello slot %s, quello di questo avvio secondo RW_NVRAM, c'e' %s e gira %s: "
@@ -1508,7 +1520,8 @@ def cmd_vboot_work(args):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Aggiornamento del firmware del W541 con una capsula UEFI")
+    ap = argparse.ArgumentParser(description="Aggiornamento di ouroBIOS (W541, ThinkCentre M920x) con una "
+                                             "capsula UEFI")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("status", help="firmware, versione, ultimo aggiornamento, capsula in attesa")
