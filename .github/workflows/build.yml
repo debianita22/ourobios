@@ -27,7 +27,11 @@
 # scrivere solo lo slot che non gira, vboot deve provarlo e tornare indietro
 # se non si verifica o non parte; dal setup si torna all'altro slot, e una
 # voce di boot (boot loader, sistema operativo) non puo'; seriale e
-# schermate del setup nell'artifact update-test-<versione>.
+# schermate del setup nell'artifact update-test-<versione>. E la build
+# riproducibile (job repro, anche lui accanto alle ROM, e il job compare dopo
+# tutti e due): un altro runner costruisce le due ROM da capo, coreboot, EDK2,
+# iPXE e CSMWrap compresi, e devono essere uguali bit a bit a quelle del job
+# build (tools/ci.sh compare: se no, le regioni diverse e i compilatori).
 #
 # La capsula (e il .cab e i metadati fwupd) si firma con il secret
 # CAPSULE_SIGNING_KEY (Settings -> Secrets and variables -> Actions): la
@@ -212,12 +216,6 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-      # ogni variante di nuovo da capo, uguale bit a bit alla ROM di roms
-      - name: Build riproducibile
-        env:
-          VBOOT_SIGNING_KEY: ${{ secrets.VBOOT_SIGNING_KEY }}
-        run: ./tools/build.sh --release --version "${VERSION}" repro
-
       - name: Riepilogo
         run: |
           shopt -s nullglob
@@ -235,6 +233,86 @@ jobs:
           path: dist/
           retention-days: 14
           if-no-files-found: error
+
+  # In parallelo alle ROM: le due ROM un'altra volta, da capo, su un altro
+  # runner (lo stesso albero, il crossgcc dalla cache, che salva il job
+  # build); senza la chiave delle capsule, che non servono (gli slot si
+  # firmano con la chiave di vboot, come nel job build: senza, la ROM
+  # sarebbe un'altra). Le confronta il job compare
+  repro:
+    name: ROM da capo su un altro runner
+    needs: setup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      VERSION: ${{ needs.setup.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # come il job build, senza jcat e QEMU
+      - name: Pacchetti
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential bison flex gnat libncurses-dev \
+            zlib1g-dev m4 curl git python3 uuid-dev imagemagick \
+            libssl-dev pkg-config nasm xxd >/dev/null
+          gcc --version | head -1
+          gnatmake --version | head -1
+
+      - name: coreboot ed EDK2 pinnati, submodule, patch e blob
+        run: ./tools/build.sh prepare
+
+      - name: Chiave del crossgcc
+        id: tc
+        run: echo "key=$(./tools/build.sh toolchain-key)" >> "${GITHUB_OUTPUT}"
+
+      - name: crossgcc dalla cache
+        uses: actions/cache/restore@v6
+        with:
+          path: work/coreboot/util/crossgcc/xgcc
+          key: ${{ steps.tc.outputs.key }}
+
+      - name: crossgcc
+        run: ./tools/build.sh toolchain
+
+      - name: ROM
+        env:
+          VBOOT_SIGNING_KEY: ${{ secrets.VBOOT_SIGNING_KEY }}
+        run: ./tools/build.sh --version "${VERSION}" roms
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: repro-${{ needs.setup.outputs.version }}
+          path: |
+            dist/*.rom
+            dist/*.config
+            dist/*-layout.txt
+          retention-days: 14
+          if-no-files-found: error
+
+  # Le ROM del job build e quelle del job repro uguali bit a bit
+  compare:
+    name: Build riproducibile
+    needs: [setup, build, repro]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ needs.setup.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: w541-coreboot-${{ needs.setup.outputs.version }}
+          path: dist
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: repro-${{ needs.setup.outputs.version }}
+          path: repro
+
+      - name: Confronto
+        run: ./tools/ci.sh compare dist repro
 
   # In parallelo alle ROM: lo stesso albero, il crossgcc dalla cache (lo
   # salva il job build), un payload EDK2 DEBUG e quattro ROM per q35
@@ -288,7 +366,7 @@ jobs:
 
   release:
     name: Release
-    needs: [setup, build, update-test]
+    needs: [setup, build, compare, update-test]
     if: needs.setup.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15

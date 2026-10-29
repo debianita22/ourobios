@@ -406,6 +406,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   FILE_GUID, so the first boot with rc18 shows no last attempt, until the
   next capsule; the variables under the old GUID stay in the store,
   unused ([docs/update.md](docs/update.md#how-it-works)).
+- From rc18, the CI builds each release a second time from scratch on
+  another runner, in parallel with the first build, and compares the two
+  bit by bit (jobs `repro` and `compare`, `tools/ci.sh compare`: on a
+  difference, the regions of the flash map and the compilers of the two)
+  instead of building again on the same runner after the first build:
+  the run is shorter, and two machines agree on the ROM, not one with
+  itself. `tools/build.sh repro` still does it on one machine.
 
 ## v1.3.9
 

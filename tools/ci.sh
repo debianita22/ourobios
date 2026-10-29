@@ -6,6 +6,10 @@
 #                                    (in GITHUB_OUTPUT)
 #   tools/ci.sh notes DIST VARIANTE  le note della release di quella variante
 #                                    (stdout, in inglese come il README)
+#   tools/ci.sh compare DIST REPRO   job compare: le ROM di DIST (job build) e
+#                                    di REPRO (job repro, un altro runner)
+#                                    uguali bit a bit; se no le regioni
+#                                    diverse e i compilatori delle due
 #   tools/ci.sh publish DIST         job release: <versione>-mrc e
 #                                    <versione>-nri, con i file di DIST
 #
@@ -561,9 +565,55 @@ publish_testing() {
 	summ "Remote testing: ${VERSION}${cur:+ (era ${cur})}."
 }
 
+# Le ROM del job build (DIST) e quelle del job repro (REPRO, un runner che
+# ha costruito tutto da capo: coreboot, EDK2, iPXE, CSMWrap) uguali bit a
+# bit, con i loro .config. Se no, le regioni della mappa che differiscono
+# (tools/update.py) e i compilatori delle due build, dai file del layout: due
+# runner con immagini di versioni diverse (gcc, binutils) danno payload diversi
+cmd_compare() {
+	: "${VERSION:?}"
+	local a="$1" b="$2" v f n bad=0
+	for v in "${VARIANTS[@]}"; do
+		n="w541-coreboot-${VERSION}-${v}"
+		for f in "${n}.rom" "${n}.config" "${n}-layout.txt"; do
+			[ -f "${a}/${f}" ] || fail "Build riproducibile" "manca ${a}/${f} (job build)"
+			[ -f "${b}/${f}" ] || fail "Build riproducibile" "manca ${b}/${f} (job repro)"
+		done
+		if ! cmp -s "${a}/${n}.config" "${b}/${n}.config"; then
+			bad=1
+			echo "  NO  ${v}: i .config delle due build sono diversi"
+			diff "${a}/${n}.config" "${b}/${n}.config" || true
+		fi
+		if cmp -s "${a}/${n}.rom" "${b}/${n}.rom"; then
+			echo "  ok  ${v}: la ROM del job repro e' uguale a quella del job build ($(sha256sum "${a}/${n}.rom" | cut -c1-16)...)"
+			continue
+		fi
+		bad=1
+		echo "  NO  ${v}: la ROM del job repro e' diversa da quella del job build"
+		python3 - "${O}/tools" "${a}/${n}.rom" "${b}/${n}.rom" <<-'EOF'
+			import sys
+			sys.path.insert(0, sys.argv[1])
+			import update
+			a = open(sys.argv[2], "rb").read()
+			b = open(sys.argv[3], "rb").read()
+			if len(a) != len(b):
+			    print("      %d e %d byte" % (len(a), len(b)))
+			areas = update.fmap_areas(a) or {}
+			for name, (off, size) in sorted(areas.items(), key=lambda i: i[1]):
+			    if a[off:off + size] != b[off:off + size]:
+			        print("      regione %s diversa" % name)
+		EOF
+		diff <(grep '^toolchain: ' "${a}/${n}-layout.txt") <(grep '^toolchain: ' "${b}/${n}-layout.txt") > /dev/null \
+			|| { echo "      compilatori diversi:"; grep '^toolchain: ' "${a}/${n}-layout.txt" "${b}/${n}-layout.txt"; }
+	done
+	[ "${bad}" = 0 ] || fail "Build riproducibile" "le ROM del job repro non sono uguali a quelle del job build (regioni e compilatori nel log)"
+	summ "Build riproducibile: le ROM del job repro, costruite da capo su un altro runner, uguali a quelle del job build."
+}
+
 case "${1:-}" in
 	version) cmd_version ;;
 	notes)   shift; cmd_notes "$@" ;;
+	compare) shift; cmd_compare "$@" ;;
 	publish) shift; cmd_publish "$@" ;;
-	*) die "uso: ci.sh version | notes DIST VARIANTE | publish DIST" ;;
+	*) die "uso: ci.sh version | notes DIST VARIANTE | compare DIST REPRO | publish DIST" ;;
 esac
