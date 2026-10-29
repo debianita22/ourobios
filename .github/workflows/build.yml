@@ -27,7 +27,10 @@
 # scrivere solo lo slot che non gira, vboot deve provarlo e tornare indietro
 # se non si verifica o non parte; dal setup si torna all'altro slot, e una
 # voce di boot (boot loader, sistema operativo) non puo'; seriale e
-# schermate del setup nell'artifact update-test-<versione>. E la build
+# schermate del setup nell'artifact update-test-<versione>. Le prove in QEMU
+# vanno in KVM (i runner Linux di GitHub lo hanno); una prova fallita in KVM
+# si ripete in TCG, e se cosi' passa resta un avviso, con la prova in KVM
+# nell'artifact (smoke-*-kvm, update-test/out-kvm). E la build
 # riproducibile (job repro, anche lui accanto alle ROM, e il job compare dopo
 # tutti e due): un altro runner costruisce le due ROM da capo, coreboot, EDK2,
 # iPXE e CSMWrap compresi, e devono essere uguali bit a bit a quelle del job
@@ -164,6 +167,17 @@ jobs:
             libssl-dev pkg-config qemu-system-x86 mtools clang lld nasm xxd >/dev/null
           gcc --version | head -1
           gnatmake --version | head -1
+
+      # KVM per le prove in QEMU (i runner Linux di GitHub lo hanno; senza,
+      # tools/qemu-smoke.py va in TCG, quattro volte piu' lento): /dev/kvm
+      # leggibile e scrivibile anche dall'utente del runner
+      - name: KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm || echo "niente /dev/kvm: QEMU in TCG"
 
       - name: coreboot ed EDK2 pinnati, submodule, patch e blob
         run: ./tools/build.sh prepare
@@ -334,6 +348,15 @@ jobs:
             zlib1g-dev m4 curl git python3 uuid-dev imagemagick \
             libssl-dev pkg-config qemu-system-x86 mtools clang lld nasm xxd >/dev/null
 
+      # come nel job build
+      - name: KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm || echo "niente /dev/kvm: QEMU in TCG"
+
       - name: coreboot ed EDK2 pinnati, submodule, patch e blob
         run: ./tools/build.sh prepare
 
@@ -360,6 +383,7 @@ jobs:
           name: update-test-${{ needs.setup.outputs.version }}
           path: |
             work/update-test/out/
+            work/update-test/out-kvm/
             work/update-test/qemu-update.log
           retention-days: 14
           if-no-files-found: ignore

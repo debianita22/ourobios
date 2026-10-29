@@ -42,10 +42,12 @@
 #                  risponde ai tasti; i servizi runtime funzionano anche
 #                  spostati come li sposta boot.efi di macOS senza
 #                  AvoidRuntimeDefrag (tools/efi/rt-reloc-test.c). Schermate
-#                  e seriale in WORK/smoke-<variante>.
+#                  e seriale in WORK/smoke-<variante>. Una variante con il
+#                  payload, byte per byte, di una gia' provata non si riprova.
 #                  Poi, per la prima variante, una seconda ROM a 2880x1620,
 #                  la risoluzione del pannello 3K con gfx_fb_limit: solo il
-#                  setup, in WORK/smoke-<variante>-2880x1620
+#                  setup, in WORK/smoke-<variante>-2880x1620. In KVM se c'e'
+#                  (qemu_test), se no in TCG
 #   update-test    la prova dell'aggiornamento con le capsule (vboot A/B) in
 #                  QEMU q35, tools/qemu-update.py: un payload EDK2 DEBUG con
 #                  le patch del progetto, che si fida di una chiave creata per
@@ -53,7 +55,8 @@
 #                  C e D, che ha anche lo schermo per il setup), costruite in
 #                  un worktree dell'albero con patches/test/q35-update-test.patch;
 #                  le loro capsule, fatte come quelle delle release. Le ROM del
-#                  W541 non c'entrano. Seriale in WORK/update-test/out
+#                  W541 non c'entrano. Seriale in WORK/update-test/out. In
+#                  KVM se c'e' (qemu_test), se no in TCG
 #   keys           controlla le chiavi di firma dell'ambiente (CAPSULE_SIGNING_KEY,
 #                  VBOOT_SIGNING_KEY) senza build: con --release devono esserci
 #   toolchain-key  stampa la chiave della cache del crossgcc (build.yml)
@@ -1251,6 +1254,27 @@ efi_app() {
 		-Wl,-subsystem:efi_application -Wl,-entry:efi_main -o "$2" "$1"
 }
 
+# Una prova in QEMU (tools/qemu-smoke.py, tools/qemu-update.py): la cartella
+# della prova in $1, il nome in $2, il log in $3 (/dev/null: niente), poi il
+# comando. Le prove vanno in KVM se c'e' (/dev/kvm leggibile e scrivibile:
+# nella CI, con i permessi che build.yml da'; in TCG dura quattro volte
+# tanto). Fallita in KVM, la stessa prova di nuovo in TCG, con la cartella
+# della prova in KVM messa da parte ($1-kvm): se in TCG passa, e' KVM della
+# macchina, non il firmware, e lo dice un avviso; la build va avanti.
+# OUROBIOS_QEMU_ACCEL (kvm o tcg) nell'ambiente toglie scelta e ripetizione
+qemu_test() {
+	local out="$1" what="$2" log="$3"; shift 3
+	if "$@" 2>&1 | tee "${log}"; then return 0; fi
+	if [ -n "${OUROBIOS_QEMU_ACCEL:-}" ] || ! [ -r /dev/kvm ] || ! [ -w /dev/kvm ]; then return 1; fi
+	rm -rf "${out}-kvm"
+	mv "${out}" "${out}-kvm" 2>/dev/null || true
+	[ "${log}" = /dev/null ] || cp "${log}" "${out}-kvm/" 2>/dev/null || true
+	say "${what}: fallita in KVM, di nuovo in TCG (la prova in KVM in ${out}-kvm)"
+	if ! OUROBIOS_QEMU_ACCEL=tcg "$@" 2>&1 | tee "${log}"; then return 1; fi
+	note warning "${what}" "fallita in KVM, passata in TCG: KVM della macchina, non il firmware? La prova in KVM e' in ${out}-kvm"
+	echo "  !!  ${what}: fallita in KVM, passata in TCG (${out}-kvm)"
+}
+
 # La prova di fumo: il payload della variante, gia' costruito da roms, in una
 # ROM per QEMU q35. Del W541 non si emula niente: girano il payload (le patch
 # di EDK2 e LvglPkg) e il codice comune di coreboot. DRIVERS_EFI_FW_INFO con
@@ -1272,7 +1296,7 @@ cmd_smoke() {
 	fi
 	local reloc="${WORK}/rt-reloc-test.efi"
 	efi_app "${O}/tools/efi/rt-reloc-test.c" "${reloc}" || die "smoke: tools/efi/rt-reloc-test.c non compila"
-	local v q fd guid lsv res x y
+	local v q fd guid lsv res x y tested="" tested_v=""
 	for v in "${VARIANTS[@]}"; do
 		fd="${TREE}/build-${v}/UEFIPAYLOAD.fd"
 		[ -f "${fd}" ] || die "smoke ${v}: manca ${fd}, prima tools/build.sh roms"
@@ -1285,6 +1309,13 @@ cmd_smoke() {
 		# due payload) una volta sola, con la prima variante
 		for res in 1920x1080 2880x1620; do
 			if [ "${res}" != 1920x1080 ] && [ "${v}" != "${VARIANTS[0]}" ]; then continue; fi
+			# lo stesso payload, byte per byte, di una variante gia' provata
+			# (before_build): la prova e' la stessa, con un altro GUID nella
+			# tabella di coreboot
+			if [ "${res}" = 1920x1080 ] && [ -n "${tested}" ] && cmp -s "${tested}" "${fd}"; then
+				echo "  ok  smoke ${v}: il payload e' quello di ${tested_v}, gia' provato a ${res}"
+				continue
+			fi
 			x="${res%x*}"
 			y="${res#*x}"
 			q="q35-${v}"
@@ -1318,11 +1349,15 @@ cmd_smoke() {
 			fi
 			say "smoke ${v}: QEMU a ${res}"
 			if [ "${res}" = 1920x1080 ]; then
-				python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-${v}" --reloc-test "${reloc}" \
+				qemu_test "${WORK}/smoke-${v}" "smoke ${v}" /dev/null \
+					python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-${v}" --reloc-test "${reloc}" \
 					"${TREE}/build-${q}/coreboot.rom" \
 					|| die "smoke ${v}: il payload non passa la prova in QEMU (${WORK}/smoke-${v})"
+				tested="${fd}"
+				tested_v="${v}"
 			else
-				python3 "${O}/tools/qemu-smoke.py" --setup-only --vga-mb 32 --size "${res}" \
+				qemu_test "${WORK}/smoke-${v}-${res}" "smoke ${v} a ${res}" /dev/null \
+					python3 "${O}/tools/qemu-smoke.py" --setup-only --vga-mb 32 --size "${res}" \
 					--out "${WORK}/smoke-${v}-${res}" "${TREE}/build-${q}/coreboot.rom" \
 					|| die "smoke ${v}: il setup a ${res} non passa la prova in QEMU (${WORK}/smoke-${v}-${res})"
 			fi
@@ -1374,8 +1409,9 @@ cmd_update_test() {
 	say "update-test: QEMU"
 	for rom in "${UPDATE_TEST_ROMS[@]}"; do caps+=("${ut}/${rom%% *}.cap"); done
 	local rc=0 last
-	python3 "${O}/tools/qemu-update.py" --out "${ut}/out" --lock-test "${ut}/slot-lock-test.efi" "${caps[@]}" \
-		2>&1 | tee "${ut}/qemu-update.log" || rc=$?
+	qemu_test "${ut}/out" update-test "${ut}/qemu-update.log" \
+		python3 "${O}/tools/qemu-update.py" --out "${ut}/out" --lock-test "${ut}/slot-lock-test.efi" "${caps[@]}" \
+		|| rc=$?
 	if [ "${rc}" != 0 ]; then
 		# nella CI il log del job non si legge sempre: l'esito di ogni passo,
 		# il motivo e la fine della seriale dell'ultimo avvio in un'annotazione

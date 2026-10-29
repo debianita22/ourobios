@@ -60,6 +60,14 @@
 # patch di patches/edk2) e il codice comune di coreboot, non quello della
 # board. Solo la libreria standard di Python, qemu-system-x86_64 e, per il
 # passo 9, mtools (l'ESP).
+#
+# QEMU va con KVM se c'e' (/dev/kvm leggibile e scrivibile: i runner di
+# GitHub ce l'hanno, con i permessi che build.yml da'), se no con TCG, come
+# in un container o su un'altra architettura; la prova e' la stessa, in KVM
+# dura un quarto. OUROBIOS_QEMU_ACCEL=tcg (o kvm) lo impone: tools/build.sh
+# rifa' in TCG una prova fallita in KVM, per dire se e' il firmware o KVM.
+# La CPU resta Haswell-noTSX anche in KVM: QEMU toglie quello che l'host
+# non ha e lo scrive nel suo log.
 import argparse
 import json
 import os
@@ -72,6 +80,16 @@ import sys
 import tempfile
 import time
 import uuid
+
+
+def accel():
+    want = os.environ.get("OUROBIOS_QEMU_ACCEL", "")
+    if want in ("kvm", "tcg"):
+        return want
+    return "kvm" if os.access("/dev/kvm", os.R_OK | os.W_OK) else "tcg"
+
+
+ACCEL = accel()
 
 
 class Fail(Exception):
@@ -190,7 +208,8 @@ class Smoke:
         reset di vboot nel bootblock, non chiude QEMU prima del socket."""
         self.halt()
         self.serial = os.path.join(self.out, "serial-%s.log" % tag)
-        cmd = ["qemu-system-x86_64", "-M", "q35,acpi=off", "-cpu", "Haswell-noTSX,stepping=3",
+        cmd = ["qemu-system-x86_64", "-M", "q35,acpi=off", "-accel", ACCEL,
+               "-cpu", "Haswell-noTSX,stepping=3",
                "-smp", "1", "-m", "2048", "-drive", "if=pflash,format=raw,file=" + self.flash,
                "-serial", "file:" + self.serial, "-qmp", "unix:%s,server=on,wait=off" % self.sock,
                "-display", "none", "-vga", "std", "-no-reboot", "-S"]
@@ -698,11 +717,11 @@ def main():
         steps = run(args.rom, args.out, args.timeout, args.setup_only, args.vga_mb, size,
                     args.reloc_test)
     except Fail as e:
-        print("smoke: FALLITO: %s (schermate e seriale in %s)" % (e, args.out))
+        print("smoke: FALLITO (%s): %s (schermate e seriale in %s)" % (ACCEL.upper(), e, args.out))
         return 1
     for s in steps:
         print("  ok  %s" % s)
-    print("smoke: passato (schermate in %s)" % args.out)
+    print("smoke: passato (%s; schermate in %s)" % (ACCEL.upper(), args.out))
     return 0
 
 

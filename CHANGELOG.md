@@ -413,6 +413,12 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   instead of building again on the same runner after the first build:
   the run is shorter, and two machines agree on the ROM, not one with
   itself. `tools/build.sh repro` still does it on one machine.
+- From rc19, the QEMU tests (`smoke`, `update-test`) run with KVM where
+  `/dev/kvm` is usable, as on GitHub's runners, and with TCG otherwise;
+  a test that fails with KVM is run again with TCG, and if it passes
+  there the build goes on with a warning and keeps the KVM run next to
+  the artifacts. The smoke test runs once per payload: the two variants
+  share one since rc18.
 
 ## v1.3.9
 

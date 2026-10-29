@@ -864,14 +864,14 @@ def main():
         test.run()
         passed = True
     except (Fail, update.Error) as e:
-        print("update-test: FALLITO: %s (seriale in %s)" % (e, args.out))
+        print("update-test: FALLITO (%s): %s (seriale in %s)" % (smoke.ACCEL.upper(), e, args.out))
     finally:
         test.close(keep_flash=not passed)
         with open(os.path.join(args.out, "riassunto.txt"), "w") as f:
             f.write("\n".join(test.steps + ([] if passed else ["FALLITO"])) + "\n")
     if not passed:
         return 1
-    print("update-test: passato (seriale in %s)" % args.out)
+    print("update-test: passato (%s; seriale in %s)" % (smoke.ACCEL.upper(), args.out))
     return 0
 
 
