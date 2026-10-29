@@ -1315,7 +1315,11 @@ efi_app() {
 # nella cartella $1 e firmato. Le chiavi nascono qui, a ogni giro: una CA di
 # prova, che l'applicazione mette in db, il suo certificato figlio che la
 # firma (sbsign), un altro certificato, di nessuna catena, che firma una
-# copia di $2 (l'immagine da rifiutare); $2 anche senza firma. Lo shim
+# copia di $2 (l'immagine da rifiutare); $2 anche senza firma; un secondo
+# figlio della CA che firma un'altra copia di $2, il cui hash Authenticode
+# (tools/pe-hash.py) l'applicazione mette in dbx: la firma buona non basta,
+# l'immagine va rifiutata; lo stesso figlio firma $2 con un altro
+# TimeDateStamp, un altro hash, da accettare. Lo shim
 # firmato da Microsoft, se c'e' nel sistema (shim-signed di Debian/Ubuntu,
 # o scaricabile con apt-get), e' l'immagine da accettare con le chiavi
 # Microsoft di EnrollDefaultKeys; senza, quel caso resta fuori. Stampa il
@@ -1335,9 +1339,27 @@ smoke_sb_app() {
 		openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 -subj "/CN=ouroBIOS smoke other" \
 			-keyout other.key -out other.pem > /dev/null 2>&1 || exit 1
 		openssl x509 -in ca.pem -outform DER -out cert-ca.der > /dev/null 2>&1 || exit 1
+		openssl req -newkey rsa:2048 -sha256 -nodes -subj "/CN=ouroBIOS smoke leaf 2" \
+			-keyout leaf2.key -out leaf2.csr > /dev/null 2>&1 || exit 1
+		openssl x509 -req -in leaf2.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 3650 -sha256 \
+			-out leaf2.pem > /dev/null 2>&1 || exit 1
 		cp "${pe}" unsigned.efi || exit 1
 		sbsign --key other.key --cert other.pem --output signed-other.efi unsigned.efi > /dev/null 2>&1 || exit 1
-	) || { echo "  NO  smoke: le chiavi e le immagini di prova di Secure Boot (openssl, sbsign) in ${d}" >&2; return 1; }
+		# firmata da un altro figlio della CA, ma con l'hash in dbx
+		sbsign --key leaf2.key --cert leaf2.pem --output signed-revoked.efi unsigned.efi > /dev/null 2>&1 || exit 1
+		python3 "${O}/tools/pe-hash.py" --raw signed-revoked.efi > revoked.hash || exit 1
+		[ "$(stat -c %s revoked.hash)" = 32 ] || exit 1
+		# la stessa immagine con un altro TimeDateStamp (un altro hash, non in
+		# dbx), firmata dallo stesso figlio: la controprova, da accettare
+		python3 -I - unsigned.efi other-stamp.efi <<-'PY' || exit 1
+			import struct, sys
+			d = bytearray(open(sys.argv[1], "rb").read())
+			pe = struct.unpack_from("<I", d, 0x3c)[0]
+			struct.pack_into("<I", d, pe + 8, struct.unpack_from("<I", d, pe + 8)[0] ^ 0x5a5a5a5a)
+			open(sys.argv[2], "wb").write(d)
+		PY
+		sbsign --key leaf2.key --cert leaf2.pem --output signed-ok.efi other-stamp.efi > /dev/null 2>&1 || exit 1
+	) || { echo "  NO  smoke: le chiavi e le immagini di prova di Secure Boot (openssl, sbsign, tools/pe-hash.py) in ${d}" >&2; return 1; }
 	for f in /usr/lib/shim/shimx64.efi.signed.latest /usr/lib/shim/shimx64.efi.signed /usr/share/shim-signed/shimx64.efi; do
 		[ -f "${f}" ] && { shim="${f}"; break; }
 	done

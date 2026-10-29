@@ -10,21 +10,27 @@
  * CryptoDxe, for the harness to compare; LoadImage() of every embedded image
  * with Secure Boot off, all accepted; then, in custom mode as
  * EnrollDefaultKeys does, the CA certificate the signature of this application
- * leads to is appended to db, SecureBootEnable is set to 1, a marker variable is
- * written and the machine resets.
+ * leads to is appended to db and the Authenticode hash of signed-revoked.efi to
+ * dbx, SecureBootEnable is set to 1, a marker variable is written and the
+ * machine resets.
  *
  * Boot 2 (SecureBoot 1): this application runs only if the payload verified its
  * signature: a leaf certificate in the image, its CA in db, the chain built by
  * the crypto of the payload. The ESRT again, then LoadImage() of each embedded
  * image: the shim signed by Microsoft must pass (the CA of its signature is in
  * db since the first boot), the image signed by a certificate that is in no
- * database and the unsigned image must be refused. "RESULT OK" closes.
+ * database, the unsigned image and the image signed by another child of the CA
+ * whose Authenticode hash the first boot put in dbx must be refused; the same
+ * image with another TimeDateStamp, another hash, signed by that child, must
+ * pass. "RESULT OK" closes.
  *
- * The images and the certificate come in through .incbin from the directory
- * tools/build.sh smoke compiles this in: cert-ca.der, shim-ms.efi (empty when
- * no shim signed by Microsoft is at hand: the case is skipped), signed-other.efi,
- * unsigned.efi. No library: clang --target=x86_64-unknown-windows, as the other
- * applications of tools/efi; sbsign signs it with the leaf certificate.
+ * The images, the certificate and the hash come in through .incbin from the
+ * directory tools/build.sh smoke compiles this in: cert-ca.der, shim-ms.efi
+ * (empty when no shim signed by Microsoft is at hand: the case is skipped),
+ * signed-other.efi, unsigned.efi, signed-revoked.efi and revoked.hash (its
+ * Authenticode SHA-256, tools/pe-hash.py), signed-ok.efi. No library: clang
+ * --target=x86_64-unknown-windows, as the other applications of tools/efi;
+ * sbsign signs it with the leaf certificate.
  */
 #include <stdint.h>
 #include <stddef.h>
@@ -120,6 +126,7 @@ static struct guid sb_enable = { 0xf0a30bc7, 0xaf08, 0x4556, { 0x99, 0xc4, 0x00,
 static struct guid custom_mode = { 0xc076ec0c, 0x7028, 0x4399, { 0xa0, 0x72, 0x71, 0xee, 0x5c, 0x44, 0x8b, 0x9f } };
 static struct guid cert_x509 = { 0xa5c059a1, 0x94e4, 0x4aa7, { 0x87, 0xb5, 0xab, 0x15, 0x5c, 0x2b, 0xf0, 0x72 } };
 static struct guid cert_pkcs7 = { 0x4aafd29d, 0x68df, 0x49ee, { 0x8a, 0xa9, 0x34, 0x7d, 0x37, 0x56, 0x65, 0xa7 } };
+static struct guid cert_sha256 = { 0xc1c41626, 0x504c, 0x4092, { 0xac, 0xa9, 0x41, 0xf9, 0x36, 0x93, 0x43, 0x28 } };
 static struct guid esrt_guid = { 0xb122a263, 0x3661, 0x4f68, { 0x99, 0x29, 0x78, 0xf8, 0xb0, 0xd6, 0x21, 0x80 } };
 static struct guid crypto_guid = { 0x2c2275c9, 0x3a7b, 0x426f, { 0xbe, 0x54, 0x2d, 0x22, 0xbd, 0x9d, 0x10, 0x92 } };
 /* the marker variable and the owner of the certificate: a GUID of this test */
@@ -130,6 +137,7 @@ static uint16_t name_secure_boot[] = u"SecureBoot";
 static uint16_t name_sb_enable[] = u"SecureBootEnable";
 static uint16_t name_custom[] = u"CustomMode";
 static uint16_t name_db[] = u"db";
+static uint16_t name_dbx[] = u"dbx";
 static uint16_t name_marker[] = u"OuroSbTest";
 
 /* the embedded images and the certificate (the files of the build directory) */
@@ -140,6 +148,9 @@ static uint16_t name_marker[] = u"OuroSbTest";
 BLOB(blob_shim_ms, "shim-ms.efi")
 BLOB(blob_signed_other, "signed-other.efi")
 BLOB(blob_unsigned, "unsigned.efi")
+BLOB(blob_signed_revoked, "signed-revoked.efi")
+BLOB(blob_signed_ok, "signed-ok.efi")
+BLOB(blob_revoked_hash, "revoked.hash")
 BLOB(blob_cert, "cert-ca.der")
 
 static inline void outb(uint16_t port, uint8_t v) { __asm__ volatile("outb %0, %1" : : "a"(v), "Nd"(port)); }
@@ -248,13 +259,13 @@ static void set_u8(const char *label, uint16_t *name, struct guid *vendor, uint3
 		failures++;
 }
 
-/* db <- the CA certificate, in custom mode: an EFI_VARIABLE_AUTHENTICATION_2
- * without a signature and an EFI_SIGNATURE_LIST with one X.509 certificate, as
- * EnrollDefaultKeys writes the Microsoft keys */
-static efi_status enroll_cert(void)
+/* name (db or dbx) <- one signature of the given type (an X.509 certificate, a
+ * SHA-256), appended in custom mode: an EFI_VARIABLE_AUTHENTICATION_2 without a
+ * signature and an EFI_SIGNATURE_LIST with one entry, as EnrollDefaultKeys
+ * writes the Microsoft keys */
+static efi_status enroll(uint16_t *name, const struct guid *type, const uint8_t *blob, uint64_t cert_size)
 {
 	static uint8_t data[8192];
-	uint64_t cert_size = (uint64_t)(blob_cert_end - blob_cert);
 	uint8_t *p = data;
 	struct efi_time t;
 	uint64_t i;
@@ -275,16 +286,16 @@ static efi_status enroll_cert(void)
 	for (i = 0; i < 16; i++) p[8 + i] = ((uint8_t *)&cert_pkcs7)[i];
 	p += 24;
 	/* EFI_SIGNATURE_LIST */
-	for (i = 0; i < 16; i++) p[i] = ((uint8_t *)&cert_x509)[i];
+	for (i = 0; i < 16; i++) p[i] = ((const uint8_t *)type)[i];
 	*(uint32_t *)(p + 16) = (uint32_t)(28 + 16 + cert_size);	/* SignatureListSize */
 	*(uint32_t *)(p + 20) = 0;					/* SignatureHeaderSize */
 	*(uint32_t *)(p + 24) = (uint32_t)(16 + cert_size);		/* SignatureSize */
 	p += 28;
 	for (i = 0; i < 16; i++) p[i] = ((uint8_t *)&test_guid)[i];	/* SignatureOwner */
 	p += 16;
-	for (i = 0; i < cert_size; i++) p[i] = blob_cert[i];
+	for (i = 0; i < cert_size; i++) p[i] = blob[i];
 	p += cert_size;
-	return st->rt->set_variable(name_db, &image_db,
+	return st->rt->set_variable(name, &image_db,
 				    ATTR_NV | ATTR_BS | ATTR_RT | ATTR_TIME_AUTH | ATTR_APPEND,
 				    (uint64_t)(p - data), data);
 }
@@ -341,11 +352,20 @@ __attribute__((ms_abi)) efi_status efi_main(void *image, struct system_table *ta
 		try_load("shim-ms", blob_shim_ms, blob_shim_ms_end, "SUCCESS");
 		try_load("signed-other", blob_signed_other, blob_signed_other_end, "SUCCESS");
 		try_load("unsigned", blob_unsigned, blob_unsigned_end, "SUCCESS");
-		puts_(MARK "boot 1: the test CA into db in custom mode, Secure Boot on\n");
+		try_load("signed-revoked", blob_signed_revoked, blob_signed_revoked_end, "SUCCESS");
+		try_load("signed-ok", blob_signed_ok, blob_signed_ok_end, "SUCCESS");
+		puts_(MARK "boot 1: the test CA into db and the hash of signed-revoked into dbx, in custom "
+		      "mode; Secure Boot on\n");
 		set_u8("CustomMode", name_custom, &custom_mode, ATTR_NV | ATTR_BS, 1);
-		s = enroll_cert();
+		s = enroll(name_db, &cert_x509, blob_cert, (uint64_t)(blob_cert_end - blob_cert));
 		puts_(MARK "SetVariable db append, "); putdec((uint64_t)(blob_cert_end - blob_cert));
 		puts_(" byte certificate: "); status_name(s); puts_("\n");
+		if (EFI_ERR(s))
+			failures++;
+		s = enroll(name_dbx, &cert_sha256, blob_revoked_hash,
+			   (uint64_t)(blob_revoked_hash_end - blob_revoked_hash));
+		puts_(MARK "SetVariable dbx append, "); putdec((uint64_t)(blob_revoked_hash_end - blob_revoked_hash));
+		puts_(" byte hash: "); status_name(s); puts_("\n");
 		if (EFI_ERR(s))
 			failures++;
 		set_u8("CustomMode", name_custom, &custom_mode, ATTR_NV | ATTR_BS, 0);
@@ -367,6 +387,8 @@ __attribute__((ms_abi)) efi_status efi_main(void *image, struct system_table *ta
 	try_load("shim-ms", blob_shim_ms, blob_shim_ms_end, "SUCCESS");
 	try_load("signed-other", blob_signed_other, blob_signed_other_end, "ACCESS_DENIED");
 	try_load("unsigned", blob_unsigned, blob_unsigned_end, "ACCESS_DENIED");
+	try_load("signed-revoked", blob_signed_revoked, blob_signed_revoked_end, "ACCESS_DENIED");
+	try_load("signed-ok", blob_signed_ok, blob_signed_ok_end, "SUCCESS");
 	puts_(failures ? MARK "RESULT FAIL\n" : MARK "RESULT OK\n");
 	for (;;) { }
 	return EFI_SUCCESS;
