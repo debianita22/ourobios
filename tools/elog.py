@@ -3,11 +3,12 @@
 # del flash, senza elogtool: avvii, wake, entrate in S3/S5 e, se un avvio si
 # e' bloccato, l'ultimo codice POST che aveva scritto in CMOS.
 #
-#   sudo modprobe -r spi_intel_platform spi_intel
+#   sudo modprobe -r spi_intel_platform spi_intel     # W541; M920x: spi_intel_pci
 #   sudo flashrom -p internal -r dump.rom
 #   python3 tools/elog.py dump.rom
 #
-# Il file puo' essere l'immagine intera (12 MiB), il chip da 8 MiB o solo la
+# Il file puo' essere l'immagine intera (12 MiB sul W541, 24 sul M920x), il
+# primo chip, quello con RW_ELOG (8 MiB sul W541, 16 sul M920x), o solo la
 # regione RW_ELOG (flashrom --fmap -i RW_ELOG -r). Gli orari sono quelli
 # dell'RTC, senza fuso: in UTC se l'RTC e' in UTC (Linux), in ora locale se
 # l'ha scritto Windows.
@@ -113,7 +114,7 @@ def find_elog(data):
         except struct.error:
             pass
         i = data.find(b"__FMAP__", i + 1)
-    # senza FMAP (il chip da 8 MiB): l'intestazione in un blocco da 4 KiB
+    # senza FMAP (il primo chip da solo): l'intestazione in un blocco da 4 KiB
     for off in range(0, len(data) - 8, 0x1000):
         if data[off:off + 4] == b"ELOG" and data[off + 4] == 1 and data[off + 5] == 8:
             return off
