@@ -13,9 +13,10 @@ BOARD_FLAVOUR_PREFIX=""
 BOARD_TREE=w541
 # il defconfig della variante $1
 board_defconfig() { printf 'configs/w541-%s.defconfig' "$1"; }
-# i file che vanno nella cartella dell'albero, "sorgente[:nome]"
+# i file che vanno nella cartella dell'albero, "sorgente[:nome]"; il boot
+# splash nomina la macchina (tools/logo.py splash, THINKPAD W541)
 BOARD_TREE_FILES=(blobs/ifd.bin blobs/gbe.bin blobs/me.bin blobs/mrc.bin
-	blobs/vbios_10de_11fc_1.rom configs/w541.fmd)
+	blobs/vbios_10de_11fc_1.rom configs/w541.fmd assets/bootsplash.bmp)
 # i checksum dei blob (sha256sum -c dalla loro cartella)
 BOARD_SUMS=(blobs/SHA256SUMS)
 # il flash: dimensione e chip, "nome offset dimensione" (i file
