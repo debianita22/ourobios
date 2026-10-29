@@ -7,8 +7,13 @@ The setup menu of ouroBIOS has a sixth category, Compatibility, with the
 options for macOS and the advanced ones: crossing arrows in orange on
 the front page, as the other categories have their own symbol.
 
+TEST=tools/build.sh menu and tools/qemu-smoke.py of ouroBIOS at every
+build; the screenshots of tools/qemu-setup-shots.py; the setup of the
+W541 since v1.3.10-rc12.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  LvglDisplayEngineDxe/LvglFormRenderer.c | 1 +
  1 file changed, 1 insertion(+)

@@ -106,10 +106,10 @@ index bed1217185..f570cfab8c 100644
  }
  
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 5f41ce9b1c..61d03cd126 100644
+index 591cd39e1a..9cdd115e5f 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
-@@ -491,6 +491,18 @@ static const struct sm_object enable_dual_graphics = SM_DECLARE_BOOL({
+@@ -493,6 +493,18 @@ static const struct sm_object enable_dual_graphics = SM_DECLARE_BOOL({
  	.default_value	= false,
  });
  
@@ -128,7 +128,7 @@ index 5f41ce9b1c..61d03cd126 100644
  /* What coreboot programs on the PEG port before its link trains */
  static const struct sm_object peg_link_tuning = SM_DECLARE_ENUM({
  	.flags		= CONFIG(USE_NATIVE_RAMINIT) || CONFIG(HASWELL_HIDE_PEG_FROM_MRC) ?
-@@ -535,6 +547,7 @@ static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
+@@ -537,6 +549,7 @@ static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
  	.ui_name	= "Graphics",
  	.obj_list	= (const struct sm_object *[]) {
  		&enable_dual_graphics,

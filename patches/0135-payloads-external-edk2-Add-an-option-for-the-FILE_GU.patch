@@ -72,7 +72,7 @@ index da0e5236aa..acb29c5b37 100644
  	bool "Include iPXE in edk2 payload"
  	depends on !EDK2_REPO_OFFICIAL
 diff --git a/payloads/external/edk2/Makefile b/payloads/external/edk2/Makefile
-index 3f42d93ed4..e4a2987de6 100644
+index 70da7e9d31..5695181144 100644
 --- a/payloads/external/edk2/Makefile
 +++ b/payloads/external/edk2/Makefile
 @@ -140,7 +140,7 @@ endif

@@ -54,10 +54,10 @@ index 3917ba1b73..a1d0259945 100644
 +
  #endif /* NB_INTEL_HASWELL_CFR_H */
 diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
-index 37742a523d..f58a7b04f4 100644
+index 2430ebf54e..545e640955 100644
 --- a/src/northbridge/intel/haswell/early_init.c
 +++ b/src/northbridge/intel/haswell/early_init.c
-@@ -152,6 +152,12 @@ static void northbridge_setup_iommu(void)
+@@ -153,6 +153,12 @@ static void northbridge_setup_iommu(void)
  	if (capid0_a & VTD_DISABLE)
  		return;
  

@@ -173,10 +173,10 @@ index 0000000000..d15238505c
 +	}
 +}
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 6fb62ccb12..3753492762 100644
+index 8d925927d0..6651c5de8e 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
-@@ -671,6 +671,20 @@ static const struct sm_object hardware_wireless = SM_DECLARE_FORM({
+@@ -673,6 +673,20 @@ static const struct sm_object hardware_wireless = SM_DECLARE_FORM({
  
  /* Compatibility */
  
@@ -197,7 +197,7 @@ index 6fb62ccb12..3753492762 100644
  static const struct sm_object macos_ports_note = SM_DECLARE_COMMENT({
  	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
  	.ui_name	= "Unused slots: Hardware > Storage and Expansion ports",
-@@ -691,6 +705,7 @@ static const struct sm_object compatibility_macos = SM_DECLARE_FORM({
+@@ -693,6 +707,7 @@ static const struct sm_object compatibility_macos = SM_DECLARE_FORM({
  		&dgpu_macos_off,
  		&gfx_resume_init,
  		&minihd_audio,

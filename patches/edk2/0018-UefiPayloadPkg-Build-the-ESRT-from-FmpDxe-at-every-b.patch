@@ -22,8 +22,15 @@ version and capsule flags; the lowest supported version is the one
 FmpDxe checks capsules against. Without an FMP instance EsrtFmpDxe
 installs nothing, and BlSupportDxe's ESRT stays.
 
+TEST=QEMU q35 with the A/B capsules, and tools/qemu-update.py of
+ouroBIOS at every build: after each update the ESRT has the version of
+the slot that runs and, as last attempt, the version of the capsule with
+status 0. On the W541 with v1.3.0-rc1, before this, update.py status saw
+no last attempt after three updates that FmpDxe had recorded.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  UefiPayloadPkg/UefiPayloadPkg.dsc | 6 +++++-
  UefiPayloadPkg/UefiPayloadPkg.fdf | 2 +-

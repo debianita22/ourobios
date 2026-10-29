@@ -8,6 +8,10 @@ Firmware protection, next to BIOS Lock under Security, Flash protection:
 on by default, off for a boot that writes the protected region with
 flashrom.
 
+TEST=tools/build.sh menu (the CI of ouroBIOS): the card is in the
+Security category of the W541 menu; the setup of the W541 shows it
+(docs/flashing.md of ouroBIOS).
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
@@ -15,10 +19,10 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 21 insertions(+), 1 deletion(-)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 61e15a0448..94aaed170e 100644
+index cedc47f063..9e19274f8a 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
-@@ -340,6 +340,24 @@ static const struct sm_object bios_lock = SM_DECLARE_BOOL({
+@@ -341,6 +341,24 @@ static const struct sm_object bios_lock = SM_DECLARE_BOOL({
  	.default_value	= CONFIG(BOOTMEDIA_SMM_BWP),
  }, WITH_CALLBACK(update_bios_lock));
  
@@ -43,7 +47,7 @@ index 61e15a0448..94aaed170e 100644
  /* Read by security_clear_dram_request() (security/memory/memory.c) */
  static const struct sm_object clear_dram_on_boot = SM_DECLARE_BOOL({
  	.opt_name	= "clear_dram_on_boot",
-@@ -351,9 +369,11 @@ static const struct sm_object clear_dram_on_boot = SM_DECLARE_BOOL({
+@@ -352,9 +370,11 @@ static const struct sm_object clear_dram_on_boot = SM_DECLARE_BOOL({
  });
  
  static const struct sm_object security_flash = SM_DECLARE_FORM({

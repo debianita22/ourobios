@@ -24,8 +24,8 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
  payloads/external/Makefile.mk   |  9 ++++++++-
  payloads/external/edk2/Kconfig  | 26 ++++++++++++++++++++++++++
- payloads/external/edk2/Makefile | 15 ++++++++++++++-
- 3 files changed, 48 insertions(+), 2 deletions(-)
+ payloads/external/edk2/Makefile | 16 +++++++++++++++-
+ 3 files changed, 49 insertions(+), 2 deletions(-)
 
 diff --git a/payloads/external/Makefile.mk b/payloads/external/Makefile.mk
 index 6f4e8e650d..8ca7962513 100644
@@ -85,22 +85,23 @@ index 860627a5fa..da0e5236aa 100644
 +
  endif
 diff --git a/payloads/external/edk2/Makefile b/payloads/external/edk2/Makefile
-index 0c4816efbd..3f42d93ed4 100644
+index 0c0c687aa2..70da7e9d31 100644
 --- a/payloads/external/edk2/Makefile
 +++ b/payloads/external/edk2/Makefile
-@@ -223,6 +223,11 @@ ifeq ($(CONFIG_EDK2_IPXE),y)
+@@ -224,6 +224,12 @@ ifeq ($(CONFIG_EDK2_IPXE),y)
  BUILD_STR += -D NETWORK_IPXE=TRUE
  BUILD_STR += --pcd gUefiPayloadPkgTokenSpaceGuid.PcdiPXEOptionName=L"$(CONFIG_EDK2_IPXE_OPTION_NAME)"
  endif
 +# CSMWRAP                       = FALSE
 +ifeq ($(CONFIG_EDK2_CSMWRAP),y)
 +BUILD_STR += -D CSMWRAP=TRUE
-+BUILD_STR += --pcd gUefiPayloadPkgTokenSpaceGuid.PcdCsmWrapOptionName=L"$(CONFIG_EDK2_CSMWRAP_OPTION_NAME)"
++BUILD_STR += --pcd \
++	gUefiPayloadPkgTokenSpaceGuid.PcdCsmWrapOptionName=L"$(CONFIG_EDK2_CSMWRAP_OPTION_NAME)"
 +endif
  # EDK2_USE_LVGL_RENDERER		= FALSE
  ifeq ($(CONFIG_EDK2_USE_LVGL_RENDERER),y)
  BUILD_STR += -D LVGL_ENABLE=TRUE
-@@ -319,6 +324,14 @@ ipxe_rom: $(EDK2_PATH)
+@@ -320,6 +326,14 @@ ipxe_rom: $(EDK2_PATH)
  			$(EDK2_PATH)/UefiPayloadPkg/NetworkDrivers/ipxe.efi; \
  	fi \
  
@@ -115,7 +116,7 @@ index 0c4816efbd..3f42d93ed4 100644
  checktools:
  	echo -n "EDK2: Checking uuid-dev:"
  	echo "#include <uuid/uuid.h>" > libtest.c
-@@ -377,7 +390,7 @@ print:
+@@ -378,7 +392,7 @@ print:
  		-e 's/s /Build:          Silent/' \
  		-e 's/t /Toolchain:      /'
  

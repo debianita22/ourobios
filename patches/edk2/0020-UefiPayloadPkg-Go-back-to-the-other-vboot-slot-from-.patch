@@ -29,8 +29,16 @@ older than the lowest supported one. vboot checks the signature of the
 slot at the next boot, and comes back if it does not verify or does not
 boot twice.
 
+TEST=tools/qemu-update.py of ouroBIOS at every build: from the setup of
+ROM D, "Go back to" the release of B (keys sent by QEMU, the pages
+followed on the serial port) switches the slot without writing it;
+tools/efi/slot-lock-test.c started from the ESP is refused before and
+after ExitBootServices(); the page shows the slots and the release in
+each.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../FirmwareUpdateDxe/FirmwareUpdate.c        | 606 +++++++++++++++++-
  .../FirmwareUpdateDxe/FirmwareUpdate.uni      |  13 +-

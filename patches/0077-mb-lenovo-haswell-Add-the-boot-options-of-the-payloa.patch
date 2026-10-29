@@ -21,10 +21,10 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 38 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 94aaed170e..db38ee470f 100644
+index 9e19274f8a..7464587402 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
-@@ -203,6 +203,43 @@ static const struct sm_object general_about = SM_DECLARE_FORM({
+@@ -204,6 +204,43 @@ static const struct sm_object general_about = SM_DECLARE_FORM({
  	},
  });
  
@@ -68,7 +68,7 @@ index 94aaed170e..db38ee470f 100644
  static const struct sm_object general_sound = SM_DECLARE_FORM({
  	.ui_name	= "Sound",
  	.obj_list	= (const struct sm_object *[]) {
-@@ -510,6 +547,7 @@ static struct sm_obj_form general = {
+@@ -512,6 +549,7 @@ static struct sm_obj_form general = {
  	.ui_name = "General",
  	.obj_list = (const struct sm_object *[]) {
  		&general_about,

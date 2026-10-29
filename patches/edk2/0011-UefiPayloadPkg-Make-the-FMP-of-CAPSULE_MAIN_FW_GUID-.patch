@@ -13,8 +13,13 @@ Set the PCD to CAPSULE_MAIN_FW_GUID when capsules are supported. As a
 patchable PCD: the DSC parser evaluates a fixed value before replacing
 the macros in it, and GUID() of the macro name fails.
 
+TEST=QEMU q35 and tools/qemu-update.py of ouroBIOS at every build: the
+ESRT row of the firmware has type 1, System FW, with the GUID of the
+coreboot table, as fwupd expects of a platform firmware.
+
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  UefiPayloadPkg/UefiPayloadPkg.dsc | 7 +++++++
  1 file changed, 7 insertions(+)

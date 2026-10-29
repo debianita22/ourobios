@@ -39,6 +39,7 @@ FmpState under the fixed FILE_GUID.
 
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c | 21 +++++++++++++++++++
  .../FmpDeviceSmmLib/FmpDeviceSmmLib.inf       |  4 ++++

@@ -13,8 +13,13 @@ its pixels stay square at any UI scale; then PcdLvglAptioHeaderVendor,
 the firmware name, in the text color, before the setup title and the
 device model.
 
+TEST=QEMU q35 (the screenshots of tools/qemu-smoke.py at every build of
+ouroBIOS): the logo and the name at the left of the menu bar; the setup
+of the W541.
+
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  Include/LvglTheme.h                           |  8 +--
  LvglDisplayEngineDxe/LvglAptioChrome.c        | 33 ++++++++----

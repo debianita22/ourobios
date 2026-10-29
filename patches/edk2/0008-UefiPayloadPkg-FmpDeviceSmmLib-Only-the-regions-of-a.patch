@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sat, 10 Oct 2026 23:58:31 +0200
-Subject: [PATCH] UefiPayloadPkg/FmpDeviceSmmLib: Write only the regions of a
+Subject: [PATCH] UefiPayloadPkg/FmpDeviceSmmLib: Only the regions of a
  manifest that fits
 
 The library writes the regions named by the manifest of an image; with
@@ -21,8 +21,14 @@ layout changes is installed with an external tool, which can carry
 those regions over. Report why in the last attempt status of the ESRT,
 with the codes of this library: the image, the layout, or the writing.
 
+TEST=QEMU q35: a capsule without a manifest is refused without writing,
+with the reason in the ESRT (tools/update.py status of ouroBIOS); the
+capsules of ouroBIOS, whose manifest fits, are applied by
+tools/qemu-update.py at every build and on the W541 since v1.2.0.
+
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c | 856 +++++-------------
  1 file changed, 224 insertions(+), 632 deletions(-)

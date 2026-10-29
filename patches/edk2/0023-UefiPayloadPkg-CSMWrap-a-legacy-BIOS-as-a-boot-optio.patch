@@ -16,8 +16,15 @@ Boot is off: with the SecureBoot variable at 1 the boot manager deletes
 it, as it does when the "csmwrap_boot" switch of the coreboot setup menu
 is off.
 
+TEST=tools/qemu-smoke.py of ouroBIOS at every build: CSMWrap started
+from the boot manager, with two CPUs and a SATA disk, boots the master
+boot record of the disk, which writes on the serial port; the option
+deleted with Secure Boot on, or with the switch off, has no recorded
+test (edk2/0025 refuses the file with Secure Boot on).
+
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../PlatformBootManager.c                     | 41 +++++++++++++++++++
  .../PlatformBootManager.h                     |  2 +

@@ -16,8 +16,13 @@ browser reports nothing: after the usual prompt about unsaved changes,
 if any, selecting the link silently leaves the setup menu for the
 previous formset, as for any goto to a missing formset.
 
+TEST=QEMU q35: from the Security category the link opens the password
+formset of UserAuthenticationDxe, and a 64-character password set there
+opens the setup after a reboot; the setup of the W541 in the releases.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../CfrSetupMenuDxe/CfrSetupMenuDxe.inf       |  4 +
  UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuCfr.c | 88 ++++++++++++++++++-

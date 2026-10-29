@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Fri, 16 Oct 2026 17:45:00 +0200
-Subject: [PATCH] UefiPayloadPkg: A firmware update screen with the ouroboros
- and a flash map
+Subject: [PATCH] UefiPayloadPkg: A firmware update screen: the ouroboros and a
+ flash map
 
 A capsule update showed a white bar under the boot logo and one line of
 text at the bottom of the screen.  UpdateScreenLib, now the
@@ -29,8 +29,14 @@ files by tools/ui-font.py of ouroBIOS when the tree is prepared, with the
 glyphs each size draws (the titles at 32 px, the versions line at 20, the
 rest at 16), checked against the strings of UpdateScreenLib.c.
 
+TEST=QEMU q35 at 1920x1080, ROM D of the update test applying capsule C,
+and tools/qemu-update.py of ouroBIOS at every build; the drawing on the
+host at 1920x1080 and 1024x768; the W541 installs the releases through
+it since v1.3.6.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../Include/Library/UpdateScreenLib.h         |  54 +
  .../Include/Protocol/FirmwareUpdateStatus.h   |  77 ++

@@ -13,6 +13,11 @@ Read the option "clear_dram_on_boot", on by default, so that a setup
 menu can offer the choice at runtime. Boards without the option, or
 without an option backend, keep clearing it as before.
 
+TEST=Builds for the W541; the ouroBIOS releases run on it with the
+option at its default and clear the memory as before, 1.7 s of the boot
+with 32 GiB (measured). The off setting has no recorded test on
+hardware.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---

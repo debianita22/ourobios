@@ -42,7 +42,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 159 insertions(+), 68 deletions(-)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 33222042a4..6fb62ccb12 100644
+index 71e5ac511f..8d925927d0 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -21,7 +21,9 @@
@@ -56,7 +56,7 @@ index 33222042a4..6fb62ccb12 100644
   */
  
  /* General: what this machine is */
-@@ -211,9 +213,9 @@ static const struct sm_object ipxe_boot = SM_DECLARE_BOOL({
+@@ -212,9 +214,9 @@ static const struct sm_object ipxe_boot = SM_DECLARE_BOOL({
  	.flags		= CONFIG(EDK2_ENABLE_IPXE) ? 0 : CFR_OPTFLAG_SUPPRESS,
  	.opt_name	= "ipxe_boot",
  	.ui_name	= "Network boot (iPXE)",
@@ -69,7 +69,7 @@ index 33222042a4..6fb62ccb12 100644
  	.default_value	= true,
  });
  
-@@ -222,10 +224,10 @@ static const struct sm_object csmwrap_boot = SM_DECLARE_BOOL({
+@@ -223,10 +225,10 @@ static const struct sm_object csmwrap_boot = SM_DECLARE_BOOL({
  	.opt_name	= "csmwrap_boot",
  	.ui_name	= "Legacy boot (CSMWrap)",
  	.ui_helptext	= "The CSMWrap entry of the boot menu: a legacy BIOS (the\n"
@@ -84,7 +84,7 @@ index 33222042a4..6fb62ccb12 100644
  	.default_value	= true,
  });
  
-@@ -250,23 +252,17 @@ static const struct sm_object general_sound = SM_DECLARE_FORM({
+@@ -251,23 +253,17 @@ static const struct sm_object general_sound = SM_DECLARE_FORM({
  	},
  });
  
@@ -112,8 +112,8 @@ index 33222042a4..6fb62ccb12 100644
 +			  "thinkpad_acpi) stays.",
  	.default_value	= BATTERY_CHARGE_LIMIT_OS,
  	.values		= (const struct sm_enum_value[]) {
- 				{ "OS controlled",		BATTERY_CHARGE_LIMIT_OS		},
-@@ -283,8 +279,8 @@ static const struct sm_object battery_charge_limit = SM_DECLARE_ENUM({
+ 				{ "OS controlled",		BATTERY_CHARGE_LIMIT_OS },
+@@ -284,8 +280,8 @@ static const struct sm_object battery_charge_limit = SM_DECLARE_ENUM({
  static const struct sm_object tdp_pl1_override = SM_DECLARE_NUMBER({
  	.opt_name	= "tdp_pl1_override",
  	.ui_name	= "CPU PL1 power limit (W)",
@@ -124,7 +124,7 @@ index 33222042a4..6fb62ccb12 100644
  	.default_value	= 0,
  	.min		= 0,
  	.max		= 75,
-@@ -295,9 +291,9 @@ static const struct sm_object tdp_pl1_override = SM_DECLARE_NUMBER({
+@@ -296,9 +292,9 @@ static const struct sm_object tdp_pl1_override = SM_DECLARE_NUMBER({
  static const struct sm_object tdp_pl2_override = SM_DECLARE_NUMBER({
  	.opt_name	= "tdp_pl2_override",
  	.ui_name	= "CPU PL2 power limit (W)",
@@ -137,7 +137,7 @@ index 33222042a4..6fb62ccb12 100644
  	.default_value	= 0,
  	.min		= 0,
  	.max		= 95,
-@@ -312,7 +308,8 @@ static const struct sm_object cooling_policy = SM_DECLARE_ENUM({
+@@ -313,7 +309,8 @@ static const struct sm_object cooling_policy = SM_DECLARE_ENUM({
  			  "throttles the CPU from 90 C.\n"
  			  "Passive: the OS throttles the CPU from 90 C and forces the\n"
  			  "fan to full speed only from 95 C; below that the EC runs\n"
@@ -147,7 +147,7 @@ index 33222042a4..6fb62ccb12 100644
  	.default_value	= COOLING_POLICY_ACTIVE,
  	.values		= (const struct sm_enum_value[]) {
  				{ "Active",	COOLING_POLICY_ACTIVE	},
-@@ -335,7 +332,6 @@ static const struct sm_object energy_processor = SM_DECLARE_FORM({
+@@ -336,7 +333,6 @@ static const struct sm_object energy_processor = SM_DECLARE_FORM({
  		&eist,
  		&turbo_mode,
  		&c_states,
@@ -155,7 +155,7 @@ index 33222042a4..6fb62ccb12 100644
  		&tdp_pl1_override,
  		&tdp_pl2_override,
  		&cpu_power_limit_lock,
-@@ -343,6 +339,25 @@ static const struct sm_object energy_processor = SM_DECLARE_FORM({
+@@ -344,6 +340,25 @@ static const struct sm_object energy_processor = SM_DECLARE_FORM({
  	},
  });
  
@@ -181,7 +181,7 @@ index 33222042a4..6fb62ccb12 100644
  static const struct sm_object energy_thermal = SM_DECLARE_FORM({
  	.ui_name	= "Thermal",
  	.obj_list	= (const struct sm_object *[]) {
-@@ -374,8 +389,10 @@ static const struct sm_object bios_lock = SM_DECLARE_BOOL({
+@@ -375,8 +390,10 @@ static const struct sm_object bios_lock = SM_DECLARE_BOOL({
  	.ui_name	= "BIOS Lock",
  	.ui_helptext	= "Only the firmware, in System Management Mode, can write\n"
  			  "the flash: flashrom and the other tools of the OS can only\n"
@@ -194,7 +194,7 @@ index 33222042a4..6fb62ccb12 100644
  	.default_value	= CONFIG(BOOTMEDIA_SMM_BWP),
  }, WITH_CALLBACK(update_bios_lock));
  
-@@ -392,7 +409,8 @@ static const struct sm_object bootmedia_lock = SM_DECLARE_BOOL({
+@@ -393,7 +410,8 @@ static const struct sm_object bootmedia_lock = SM_DECLARE_BOOL({
  	.ui_helptext	= "Write-protect the read-only part of the firmware (the\n"
  			  "bootblock and the keys of verified boot) from power-on, so\n"
  			  "that no program can change it. Updates with a capsule still\n"
@@ -204,7 +204,7 @@ index 33222042a4..6fb62ccb12 100644
  			  "flashrom, then on again.",
  	.default_value	= true,
  }, WITH_CALLBACK(update_bootmedia_lock));
-@@ -403,7 +421,8 @@ static const struct sm_object clear_dram_on_boot = SM_DECLARE_BOOL({
+@@ -404,7 +422,8 @@ static const struct sm_object clear_dram_on_boot = SM_DECLARE_BOOL({
  	.ui_name	= "Clear memory at power-on",
  	.ui_helptext	= "Clear all the memory at every boot (not when resuming\n"
  			  "from sleep), so that what the previous OS left in it\n"
@@ -214,7 +214,7 @@ index 33222042a4..6fb62ccb12 100644
  	.default_value	= true,
  });
  
-@@ -437,7 +456,7 @@ static const struct sm_object security_virtualization = SM_DECLARE_FORM({
+@@ -439,7 +458,7 @@ static const struct sm_object security_virtualization = SM_DECLARE_FORM({
  });
  
  static const struct sm_object security_me = SM_DECLARE_FORM({
@@ -223,7 +223,7 @@ index 33222042a4..6fb62ccb12 100644
  	.obj_list	= (const struct sm_object *[]) {
  		&me_disable,
  		NULL
-@@ -453,7 +472,8 @@ static const struct sm_object f1_to_f12_mode = SM_DECLARE_ENUM({
+@@ -455,7 +474,8 @@ static const struct sm_object f1_to_f12_mode = SM_DECLARE_ENUM({
  	.ui_name	= "F1-F12 keys",
  	.ui_helptext	= "Function keys: F1-F12 by default, the special functions\n"
  			  "(volume, brightness...) with Fn.\n"
@@ -233,7 +233,7 @@ index 33222042a4..6fb62ccb12 100644
  	.default_value	= 1,
  	.values		= (const struct sm_enum_value[]) {
  				{ "Function keys (F1-F12)",	1	},
-@@ -462,7 +482,7 @@ static const struct sm_object f1_to_f12_mode = SM_DECLARE_ENUM({
+@@ -464,7 +484,7 @@ static const struct sm_object f1_to_f12_mode = SM_DECLARE_ENUM({
  });
  
  static const struct sm_object keyboard_keys = SM_DECLARE_FORM({
@@ -242,7 +242,7 @@ index 33222042a4..6fb62ccb12 100644
  	.obj_list	= (const struct sm_object *[]) {
  		&h8_cfr_fn_ctrl_swap,
  		&f1_to_f12_mode,
-@@ -486,8 +506,12 @@ static const struct sm_object keyboard_pointing = SM_DECLARE_FORM({
+@@ -488,8 +508,12 @@ static const struct sm_object keyboard_pointing = SM_DECLARE_FORM({
  static const struct sm_object enable_dual_graphics = SM_DECLARE_BOOL({
  	.opt_name	= "enable_dual_graphics",
  	.ui_name	= "NVIDIA discrete GPU",
@@ -257,7 +257,7 @@ index 33222042a4..6fb62ccb12 100644
  	.default_value	= false,
  });
  
-@@ -497,9 +521,11 @@ static const struct sm_object dgpu_macos_off = SM_DECLARE_BOOL({
+@@ -499,9 +523,11 @@ static const struct sm_object dgpu_macos_off = SM_DECLARE_BOOL({
  	.opt_name	= "dgpu_macos_off",
  	.ui_name	= "NVIDIA GPU off under macOS",
  	.ui_helptext	= "Since Monterey, macOS has no driver for this GPU: power it\n"
@@ -272,7 +272,7 @@ index 33222042a4..6fb62ccb12 100644
  	.default_value	= true,
  }, WITH_DEP_VALUES(&enable_dual_graphics, true));
  
-@@ -513,7 +539,8 @@ static const struct sm_object peg_link_tuning = SM_DECLARE_ENUM({
+@@ -515,7 +541,8 @@ static const struct sm_object peg_link_tuning = SM_DECLARE_ENUM({
  			  "front-end (AFE) settings and the transmitter presets for\n"
  			  "8 GT/s (PCIe 3.0) before the link trains, then the 8 GT/s\n"
  			  "equalization of the Lenovo firmware. Off: the hardware\n"
@@ -282,7 +282,7 @@ index 33222042a4..6fb62ccb12 100644
  	.default_value	= PEG_TUNING_DEFAULT,
  	.values		= (const struct sm_enum_value[]) {
  				{ "Off",			PEG_TUNING_OFF		},
-@@ -527,9 +554,10 @@ static const struct sm_object expresscard = SM_DECLARE_BOOL({
+@@ -529,9 +556,10 @@ static const struct sm_object expresscard = SM_DECLARE_BOOL({
  	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
  	.opt_name	= "expresscard",
  	.ui_name	= "ExpressCard slot",
@@ -296,7 +296,7 @@ index 33222042a4..6fb62ccb12 100644
  	.default_value	= true,
  });
  
-@@ -537,9 +565,11 @@ static const struct sm_object thunderbolt = SM_DECLARE_BOOL({
+@@ -539,9 +567,11 @@ static const struct sm_object thunderbolt = SM_DECLARE_BOOL({
  	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
  	.opt_name	= "thunderbolt",
  	.ui_name	= "Thunderbolt",
@@ -311,7 +311,7 @@ index 33222042a4..6fb62ccb12 100644
  	.default_value	= true,
  });
  
-@@ -549,32 +579,39 @@ static const struct sm_object minihd_audio = SM_DECLARE_BOOL({
+@@ -551,32 +581,39 @@ static const struct sm_object minihd_audio = SM_DECLARE_BOOL({
  	.opt_name	= "minihd_audio",
  	.ui_name	= "Intel display audio",
  	.ui_helptext	= "The audio controller of the display ports of the Intel GPU:\n"
@@ -364,7 +364,7 @@ index 33222042a4..6fb62ccb12 100644
  
  static const struct sm_object sata_port1 = SM_DECLARE_BOOL({
  	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
-@@ -600,15 +637,23 @@ static const struct sm_object sata_port5 = SM_DECLARE_BOOL({
+@@ -602,15 +639,23 @@ static const struct sm_object sata_port5 = SM_DECLARE_BOOL({
  	.default_value	= true,
  });
  
@@ -391,7 +391,7 @@ index 33222042a4..6fb62ccb12 100644
  		NULL
  	},
  });
-@@ -624,6 +669,41 @@ static const struct sm_object hardware_wireless = SM_DECLARE_FORM({
+@@ -626,6 +671,41 @@ static const struct sm_object hardware_wireless = SM_DECLARE_FORM({
  	},
  });
  
@@ -433,7 +433,7 @@ index 33222042a4..6fb62ccb12 100644
  /* The categories */
  
  static struct sm_obj_form general = {
-@@ -632,7 +712,6 @@ static struct sm_obj_form general = {
+@@ -634,7 +714,6 @@ static struct sm_obj_form general = {
  		&general_about,
  		&general_boot,
  		&general_sound,
@@ -441,7 +441,7 @@ index 33222042a4..6fb62ccb12 100644
  		NULL
  	},
  };
-@@ -642,6 +721,9 @@ static struct sm_obj_form energy_saver = {
+@@ -644,6 +723,9 @@ static struct sm_obj_form energy_saver = {
  	.obj_list = (const struct sm_object *[]) {
  		&energy_battery,
  		&energy_processor,
@@ -451,7 +451,7 @@ index 33222042a4..6fb62ccb12 100644
  		&energy_thermal,
  		&energy_power,
  		NULL
-@@ -671,22 +753,31 @@ static struct sm_obj_form keyboard = {
+@@ -673,22 +755,31 @@ static struct sm_obj_form keyboard = {
  static struct sm_obj_form hardware = {
  	.ui_name = "Hardware",
  	.obj_list = (const struct sm_object *[]) {

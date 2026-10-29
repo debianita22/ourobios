@@ -28,11 +28,11 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 42 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 9200dae614..520fa66119 100644
+index ee163d5f1f..31f288420c 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -75,6 +75,26 @@ static const struct sm_object battery_charge_limit = SM_DECLARE_ENUM({
- 				SM_ENUM_VALUE_END						},
+ 				SM_ENUM_VALUE_END					},
  });
  
 +static const struct sm_object expresscard = SM_DECLARE_BOOL({

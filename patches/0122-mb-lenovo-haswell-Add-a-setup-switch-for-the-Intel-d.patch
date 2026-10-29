@@ -32,10 +32,10 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 30 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 2f40c0734a..33222042a4 100644
+index e080dc0a03..71e5ac511f 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
-@@ -543,6 +543,18 @@ static const struct sm_object thunderbolt = SM_DECLARE_BOOL({
+@@ -545,6 +545,18 @@ static const struct sm_object thunderbolt = SM_DECLARE_BOOL({
  	.default_value	= true,
  });
  
@@ -54,7 +54,7 @@ index 2f40c0734a..33222042a4 100644
  static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
  	.ui_name	= "Graphics",
  	.obj_list	= (const struct sm_object *[]) {
-@@ -554,6 +566,7 @@ static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
+@@ -556,6 +568,7 @@ static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
  		&gfx_aperture_size,
  		&gfx_fb_limit,
  		&gfx_resume_init,

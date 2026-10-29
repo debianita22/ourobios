@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sun, 25 Oct 2026 19:55:50 +0100
-Subject: [PATCH] nb/intel/haswell: Add an option for a firmware framebuffer up
- to 2880x1620
+Subject: [PATCH] nb/intel/haswell: Add an option for a framebuffer up to
+ 2880x1620
 
 With libgfxinit the firmware framebuffer is the mode of the panel, at
 most LINEAR_FRAMEBUFFER_MAX_WIDTH x _HEIGHT: a build for a panel of

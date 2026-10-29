@@ -47,15 +47,15 @@ and UBSan, with valid, cut and corrupt slots.
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
- src/drivers/smmstore/ramstage.c |  18 +++
- src/drivers/smmstore/smi.c      | 252 +++++++++++++++++++++++++++++++-
+ src/drivers/smmstore/ramstage.c |  19 +++
+ src/drivers/smmstore/smi.c      | 256 +++++++++++++++++++++++++++++++-
  src/include/smmstore.h          |  29 ++++
  src/security/vboot/vbnv.c       |  45 ++++++
  src/security/vboot/vbnv.h       |  14 ++
- 5 files changed, 357 insertions(+), 1 deletion(-)
+ 5 files changed, 362 insertions(+), 1 deletion(-)
 
 diff --git a/src/drivers/smmstore/ramstage.c b/src/drivers/smmstore/ramstage.c
-index 507678754c..bff99df0ec 100644
+index 507678754c..2c4e329e37 100644
 --- a/src/drivers/smmstore/ramstage.c
 +++ b/src/drivers/smmstore/ramstage.c
 @@ -1,5 +1,7 @@
@@ -66,7 +66,7 @@ index 507678754c..bff99df0ec 100644
  #include <cpu/x86/smm.h>
  #include <commonlib/helpers.h>
  #include <commonlib/region.h>
-@@ -37,3 +39,19 @@ void lb_smmstorev2(struct lb_header *header)
+@@ -37,3 +39,20 @@ void lb_smmstorev2(struct lb_header *header)
  	store->block_size = info.block_size;
  	store->apm_cmd = APM_CNT_SMMSTORE;
  }
@@ -82,12 +82,13 @@ index 507678754c..bff99df0ec 100644
 +		return;
 +
 +	if (call_smm(APM_CNT_SMMSTORE, SMMSTORE_CMD_VBOOT_LOCK, NULL) != SMMSTORE_RET_SUCCESS)
-+		printk(BIOS_ERR, "SMMSTORE: failed to lock the switch to the other vboot slot\n");
++		printk(BIOS_ERR,
++		       "SMMSTORE: failed to lock the switch to the other vboot slot\n");
 +}
 +
 +BOOT_STATE_INIT_ENTRY(BS_OS_RESUME, BS_ON_ENTRY, lock_vboot_try_other, NULL);
 diff --git a/src/drivers/smmstore/smi.c b/src/drivers/smmstore/smi.c
-index 09ffbf5cb7..bce7b9b67b 100644
+index 09ffbf5cb7..2ef77c597f 100644
 --- a/src/drivers/smmstore/smi.c
 +++ b/src/drivers/smmstore/smi.c
 @@ -1,12 +1,18 @@
@@ -110,7 +111,7 @@ index 09ffbf5cb7..bce7b9b67b 100644
  
  /*
   * Check that the given range is legal.
-@@ -24,6 +30,239 @@ static int range_check(void *start, size_t size)
+@@ -24,6 +30,243 @@ static int range_check(void *start, size_t size)
  	return 0;
  }
  
@@ -152,7 +153,8 @@ index 09ffbf5cb7..bce7b9b67b 100644
 +			continue;
 +		for (p += key_len; p < end && *p == '-'; p++)
 +			;
-+		while (p + n < end && n + 1 < name_size && p[n] >= ' ' && p[n] <= '~' && p[n] != '"') {
++		while (p + n < end && n + 1 < name_size && p[n] >= ' ' && p[n] <= '~' &&
++		       p[n] != '"') {
 +			name[n] = p[n];
 +			n++;
 +		}
@@ -314,7 +316,9 @@ index 09ffbf5cb7..bce7b9b67b 100644
 +	}
 +#if CONFIG(DRIVERS_EFI_FW_INFO)
 +	if (version < CONFIG_DRIVERS_EFI_MAIN_FW_LSV) {
-+		printk(BIOS_WARNING, "SMMSTORE: %s, in slot %c, is older than the lowest supported version, %u.%u.%u.%u\n",
++		printk(BIOS_WARNING,
++		       "SMMSTORE: %s, in slot %c, is older than the lowest supported "
++		       "version, %u.%u.%u.%u\n",
 +		       other, letter, (unsigned int)(CONFIG_DRIVERS_EFI_MAIN_FW_LSV >> 24),
 +		       (unsigned int)((CONFIG_DRIVERS_EFI_MAIN_FW_LSV >> 16) & 0xff),
 +		       (unsigned int)((CONFIG_DRIVERS_EFI_MAIN_FW_LSV >> 8) & 0xff),
@@ -323,7 +327,8 @@ index 09ffbf5cb7..bce7b9b67b 100644
 +	}
 +	return true;
 +#else
-+	printk(BIOS_WARNING, "SMMSTORE: no lowest supported version to check %s against\n", other);
++	printk(BIOS_WARNING, "SMMSTORE: no lowest supported version to check %s against\n",
++	       other);
 +	return false;
 +#endif
 +}
@@ -350,7 +355,7 @@ index 09ffbf5cb7..bce7b9b67b 100644
  uint32_t smmstore_exec(uint8_t command, void *param)
  {
  	uint32_t ret = SMMSTORE_RET_FAILURE;
-@@ -32,6 +271,14 @@ uint32_t smmstore_exec(uint8_t command, void *param)
+@@ -32,6 +275,14 @@ uint32_t smmstore_exec(uint8_t command, void *param)
  	if (smmstore_preprocess_cmd(&command, param))
  		return SMMSTORE_RET_SUCCESS;
  
@@ -365,7 +370,7 @@ index 09ffbf5cb7..bce7b9b67b 100644
  	if (!param)
  		return SMMSTORE_RET_FAILURE;
  
-@@ -89,6 +336,9 @@ uint32_t smmstore_exec(uint8_t command, void *param)
+@@ -89,6 +340,9 @@ uint32_t smmstore_exec(uint8_t command, void *param)
  		vbnv_mark_tried_slot_good();
  		ret = SMMSTORE_RET_SUCCESS;
  		break;

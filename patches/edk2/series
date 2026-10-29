@@ -5,9 +5,9 @@
 0005-UefiPayloadPkg-Name-the-graphical-setup-System-Prefe.patch
 0006-UefiPayloadPkg-UserAuthenticationDxe-Show-the-messag.patch
 0007-MdeModulePkg-Ps2MouseDxe-Report-at-100-Hz-and-8-coun.patch
-0008-UefiPayloadPkg-FmpDeviceSmmLib-Write-only-the-region.patch
+0008-UefiPayloadPkg-FmpDeviceSmmLib-Only-the-regions-of-a.patch
 0009-UefiPayloadPkg-SmmStoreLib-Let-the-caller-end-the-wh.patch
-0010-UefiPayloadPkg-PlatformBootManagerLib-Apply-capsules.patch
+0010-UefiPayloadPkg-PlatformBootManagerLib-Capsules-on-di.patch
 0011-UefiPayloadPkg-Make-the-FMP-of-CAPSULE_MAIN_FW_GUID-.patch
 0012-UefiPayloadPkg-PlatformBootManagerLib-Capsules-on-di.patch
 0013-UefiPayloadPkg-Add-a-Firmware-Update-setup-page.patch
@@ -23,9 +23,9 @@
 0023-UefiPayloadPkg-CSMWrap-a-legacy-BIOS-as-a-boot-optio.patch
 0024-UefiPayloadPkg-An-11-MiB-FD-for-a-release-build-12-M.patch
 0025-UefiPayloadPkg-Refuse-CSMWrap-while-Secure-Boot-is-o.patch
-0026-UefiPayloadPkg-A-firmware-update-screen-with-the-our.patch
+0026-UefiPayloadPkg-A-firmware-update-screen-the-ouroboro.patch
 0027-UefiPayloadPkg-Build-switches-for-UHCI-EBC-and-the-e.patch
-0028-UefiPayloadPkg-CfrSetupMenuDxe-Link-the-other-setup-.patch
+0028-UefiPayloadPkg-CfrSetupMenuDxe-Link-the-other-pages-.patch
 0029-UefiPayloadPkg-SmmStoreLib-The-com-buffer-as-runtime.patch
 0030-UefiPayloadPkg-Run-the-payload-from-1-GiB-with-its-H.patch
 0031-UefiPayloadPkg-The-debug-print-level-of-runtime-driv.patch

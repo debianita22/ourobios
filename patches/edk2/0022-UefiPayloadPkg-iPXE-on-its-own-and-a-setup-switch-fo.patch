@@ -17,8 +17,15 @@ setup menu, which CfrSetupMenuDxe keeps as a variable of
 gEficorebootNvDataGuid: off, the option is deleted instead; absent or
 on, as before.
 
+TEST=tools/qemu-smoke.py of ouroBIOS at every build: iPXE started from
+the boot manager gets an address from QEMU's DHCP and runs the script of
+its TFTP server, with nothing of NetworkPkg in the volume; the
+"ipxe_boot" switch is in the setup of the W541 (tools/build.sh menu),
+the option deleted with it off has no recorded test.
+
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../PlatformBootManager.c                     | 81 +++++++++++++++++--
  .../PlatformBootManagerLib.inf                |  1 +

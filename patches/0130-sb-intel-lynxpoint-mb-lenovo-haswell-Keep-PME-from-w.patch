@@ -67,10 +67,10 @@ index 0000000000..947add4abd
 +	Return (1)
 +}
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index e628b5eddc..a49bccd0ec 100644
+index bb6b55b750..32e30ff28a 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
-@@ -709,6 +709,20 @@ static const struct sm_object macos_panel = SM_DECLARE_ENUM({
+@@ -711,6 +711,20 @@ static const struct sm_object macos_panel = SM_DECLARE_ENUM({
  				SM_ENUM_VALUE_END				},
  });
  
@@ -91,7 +91,7 @@ index e628b5eddc..a49bccd0ec 100644
  static const struct sm_object macos_ports_note = SM_DECLARE_COMMENT({
  	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
  	.ui_name	= "Unused slots: Hardware > Storage and Expansion ports",
-@@ -730,6 +744,7 @@ static const struct sm_object compatibility_macos = SM_DECLARE_FORM({
+@@ -732,6 +746,7 @@ static const struct sm_object compatibility_macos = SM_DECLARE_FORM({
  		&gfx_resume_init,
  		&macos_panel,
  		&minihd_audio,

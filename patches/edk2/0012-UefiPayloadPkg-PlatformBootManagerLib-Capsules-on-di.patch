@@ -15,8 +15,13 @@ FmpDxe as before; this only widens the files that a boot with the
 capsule-on-disk request reads and deletes. The message when there is
 none names both places.
 
+TEST=tools/qemu-update.py of ouroBIOS at every build: a capsule on a USB
+drive (qemu-xhci, usb-storage) is applied like one on the ESP, and the
+drive is empty afterwards.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../PlatformBootManagerLib/PlatformCapsule.c  | 47 +++++++++++++++++--
  1 file changed, 42 insertions(+), 5 deletions(-)

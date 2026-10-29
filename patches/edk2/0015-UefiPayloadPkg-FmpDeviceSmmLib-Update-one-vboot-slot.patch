@@ -20,8 +20,16 @@ tries run out. A full RW_NVRAM is erased first, which needs it to be
 whole flash blocks; otherwise the capsule is refused before anything is
 written.
 
+TEST=tools/qemu-update.py of ouroBIOS at every build: a capsule writes
+only the slot that does not run (QEMU's pflash trace: no byte in the
+running slot) and RW_MRC_CACHE, then two tries for the new slot in
+RW_NVRAM; a full RW_NVRAM is erased first; a power cut halfway through
+the slot leaves the old one booting. On the W541 the releases install
+this way since v1.3.0.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c | 194 ++++++++++++++++++
  .../FmpDeviceSmmLib/FmpDeviceSmmLib.inf       |   2 +

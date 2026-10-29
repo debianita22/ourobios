@@ -15,8 +15,13 @@ CsmWrapSecureBootLib, linked into SecurityStubDxe with -D CSMWRAP=TRUE,
 registers a Security2 handler that denies the file (EFI_ACCESS_DENIED)
 while the SecureBoot variable is 1, however it is started.
 
+TEST=QEMU q35 with Secure Boot forced on: csmwrap.efi started from a
+boot option is refused, "Access Denied"; with Secure Boot off
+tools/qemu-smoke.py of ouroBIOS boots it at every build.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../CsmWrapSecureBootLib.c                    | 127 ++++++++++++++++++
  .../CsmWrapSecureBootLib.inf                  |  39 ++++++

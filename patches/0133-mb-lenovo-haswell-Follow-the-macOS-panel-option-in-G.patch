@@ -80,10 +80,10 @@ index d15238505c..d09bb86ef9 100644
  			"AAPL,ig-platform-id", Buffer () { 0x03, 0x00, 0x22, 0x0d },
  			"device-id", Buffer () { 0x12, 0x04, 0x00, 0x00 },
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index a49bccd0ec..527ba6cb5b 100644
+index 32e30ff28a..83760de4b8 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
-@@ -677,9 +677,12 @@ static const struct sm_object macos_device_properties = SM_DECLARE_BOOL({
+@@ -679,9 +679,12 @@ static const struct sm_object macos_device_properties = SM_DECLARE_BOOL({
  	.opt_name	= "macos_device_properties",
  	.ui_name	= "Device properties for macOS",
  	.ui_helptext	= "The device properties of this W541 for macOS, through\n"
@@ -99,7 +99,7 @@ index a49bccd0ec..527ba6cb5b 100644
  			  "They replace DeviceProperties in OpenCore: keep only one.\n"
  			  "Default: off.",
  	.default_value	= false,
-@@ -699,7 +702,8 @@ static const struct sm_object macos_panel = SM_DECLARE_ENUM({
+@@ -701,7 +704,8 @@ static const struct sm_object macos_panel = SM_DECLARE_ENUM({
  			  "Built-in display (a laptop framebuffer): the backlight\n"
  			  "device of macOS (PNLF) and an ambient light sensor (ALS0),\n"
  			  "the keys as ACPI events for BrightnessKeys.kext. Replaces\n"

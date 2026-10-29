@@ -23,9 +23,9 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  src/cpu/intel/haswell/cfr.h              |  8 ++++++
  src/cpu/intel/haswell/haswell.h          |  3 +++
  src/cpu/intel/haswell/haswell_init.c     | 11 +++++---
- src/cpu/intel/haswell/romstage.c         | 32 ++++++++++++++++++++++++
+ src/cpu/intel/haswell/romstage.c         | 33 ++++++++++++++++++++++++
  src/northbridge/intel/haswell/romstage.c |  5 ++++
- 5 files changed, 55 insertions(+), 4 deletions(-)
+ 5 files changed, 56 insertions(+), 4 deletions(-)
 
 diff --git a/src/cpu/intel/haswell/cfr.h b/src/cpu/intel/haswell/cfr.h
 index c00a059865..477eaffd7a 100644
@@ -98,7 +98,7 @@ index 78606aeebf..5acf9cfa4d 100644
  	set_aesni_lock();
  
 diff --git a/src/cpu/intel/haswell/romstage.c b/src/cpu/intel/haswell/romstage.c
-index c74549438a..b54cb62045 100644
+index c74549438a..30e63f7d81 100644
 --- a/src/cpu/intel/haswell/romstage.c
 +++ b/src/cpu/intel/haswell/romstage.c
 @@ -1,8 +1,12 @@
@@ -114,7 +114,7 @@ index c74549438a..b54cb62045 100644
  
  void set_max_freq(void)
  {
-@@ -27,3 +31,31 @@ void set_max_freq(void)
+@@ -27,3 +31,32 @@ void set_max_freq(void)
  	printk(BIOS_DEBUG, "CPU: frequency set to %d MHz\n",
  	       ((perf_ctl.lo >> 8) & 0xff) * CPU_BCLK);
  }
@@ -142,7 +142,8 @@ index c74549438a..b54cb62045 100644
 +	if (enabled == wanted)
 +		return;
 +
-+	printk(BIOS_INFO, "VT-x: IA32_FEATURE_CONTROL locked with VMX %s, full reset to %s it\n",
++	printk(BIOS_INFO, "VT-x: IA32_FEATURE_CONTROL locked with VMX %s, "
++	       "full reset to %s it\n",
 +	       enabled ? "on" : "off", wanted ? "enable" : "disable");
 +	full_reset();
 +}

@@ -13,8 +13,13 @@ command that enables it and a zero argument.
 Add SmmStoreLibEndAnyBlockAccess() for it, so that a boot that ends up
 writing nothing to the flash can go on without a reset.
 
+TEST=QEMU q35 with the capsule options and the payload of the W541
+build: a boot with the capsule-on-disk bit and no capsule boots on
+without a reset.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  UefiPayloadPkg/Include/Library/SmmStoreLib.h  | 15 +++++++++++
  UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c | 25 +++++++++++++++++++

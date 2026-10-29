@@ -26,10 +26,10 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 13 insertions(+), 4 deletions(-)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 506c4a69f9..88631ef42d 100644
+index d40f965a68..e81dcf7130 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
-@@ -495,15 +495,17 @@ static const struct sm_object peg_link_tuning = SM_DECLARE_ENUM({
+@@ -497,15 +497,17 @@ static const struct sm_object peg_link_tuning = SM_DECLARE_ENUM({
  			  0 : CFR_OPTFLAG_SUPPRESS,
  	.opt_name	= "peg_link_tuning",
  	.ui_name	= "NVIDIA GPU link tuning",

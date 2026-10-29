@@ -91,7 +91,7 @@ index e525b72814..66c6f7c65a 100644
  
  romstage-$(CONFIG_DEBUG_RAM_SETUP) += info_dumps.c
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
-index c6305ba231..c69f2367c6 100644
+index 2ee883fd10..acb99371cd 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 @@ -133,6 +133,7 @@ static const struct task_entry cold_boot[] = {
@@ -102,9 +102,9 @@ index c6305ba231..c69f2367c6 100644
  	{ activate_mc,                                            true, "ACTIVATE",   },
  	{ save_training_values,                                   true, "SAVE_TRAIN", },
  	{ save_non_training,                                      true, "SAVE_NONT",  },
-@@ -293,6 +294,8 @@ void raminit_main(const enum raminit_boot_mode bootmode)
- 		if (attempt) {
- 			printk(BIOS_WARNING, "Memory training failed (%u), trying again\n", status);
+@@ -294,6 +295,8 @@ void raminit_main(const enum raminit_boot_mode bootmode)
+ 			printk(BIOS_WARNING, "Memory training failed (%u), trying again\n",
+ 			       status);
  			initialize_ctrl(&mighty_ctrl);
 +			/* As trained: the optimisations are the first suspects */
 +			mighty_ctrl.no_latency_optimisation = true;

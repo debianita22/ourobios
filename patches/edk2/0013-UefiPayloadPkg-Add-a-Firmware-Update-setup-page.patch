@@ -22,8 +22,15 @@ in OsIndications and restarts, so that the next boot applies the capsule
 like one staged by an OS, signature check included. Nothing is written
 here.
 
+TEST=QEMU q35: the page shows the version, the lowest accepted version
+and the last attempt, and "Update from a USB drive" checks the capsule
+and requests it for the next boot; tools/qemu-update.py of ouroBIOS
+reads the page at every build (edk2/0020); the setup of the W541 in the
+releases.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../FirmwareUpdateDxe/FirmwareUpdate.c        | 886 ++++++++++++++++++
  .../FirmwareUpdateDxe/FirmwareUpdate.uni      |  37 +

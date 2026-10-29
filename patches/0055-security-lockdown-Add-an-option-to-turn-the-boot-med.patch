@@ -14,13 +14,17 @@ that a setup menu can turn it off for a boot that writes the region with
 flashrom. This mirrors BOOTMEDIA_SMM_BWP_RUNTIME_OPTION for the BIOS
 lock.
 
+TEST=W541: Firmware protection on, the default, write-protects the
+read-only part at every boot; off for one boot, flashrom writes it
+(docs/vboot.md and docs/flashing.md of ouroBIOS).
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
  src/security/lockdown/Kconfig    | 10 ++++++++++
- src/security/lockdown/lockdown.c |  6 ++++++
+ src/security/lockdown/lockdown.c |  7 +++++++
  src/security/lockdown/lockdown.h |  7 +++++++
- 3 files changed, 23 insertions(+)
+ 3 files changed, 24 insertions(+)
 
 diff --git a/src/security/lockdown/Kconfig b/src/security/lockdown/Kconfig
 index 22e97c68b2..49ac27415e 100644
@@ -44,7 +48,7 @@ index 22e97c68b2..49ac27415e 100644
  	bool "Boot media only writable in SMM"
  	depends on !CONSOLE_SPI_FLASH
 diff --git a/src/security/lockdown/lockdown.c b/src/security/lockdown/lockdown.c
-index 6a75111f6b..11a52ecdce 100644
+index 6a75111f6b..e672dfde44 100644
 --- a/src/security/lockdown/lockdown.c
 +++ b/src/security/lockdown/lockdown.c
 @@ -5,6 +5,7 @@
@@ -55,12 +59,13 @@ index 6a75111f6b..11a52ecdce 100644
  
  /*
   * Enables read- /write protection of the bootmedia.
-@@ -15,6 +16,11 @@ void boot_device_security_lockdown(void)
+@@ -15,6 +16,12 @@ void boot_device_security_lockdown(void)
  	struct region_device dev;
  	enum bootdev_prot_type lock_type;
  
 +	if (!enable_bootmedia_lock()) {
-+		printk(BIOS_INFO, "BM-LOCKDOWN: Boot media protection off (option bootmedia_lock)\n");
++		printk(BIOS_INFO,
++		       "BM-LOCKDOWN: Boot media protection off (option bootmedia_lock)\n");
 +		return;
 +	}
 +

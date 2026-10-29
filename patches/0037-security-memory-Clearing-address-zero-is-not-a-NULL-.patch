@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sat, 10 Oct 2026 11:18:44 +0200
-Subject: [PATCH] security/memory: Do not report clearing address zero as a
- NULL dereference
+Subject: [PATCH] security/memory: Clearing address zero is not a NULL
+ dereference
 
 With SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT and the default
 DEBUG_NULL_DEREF_BREAKPOINTS, every regular boot logs

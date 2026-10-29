@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sat, 10 Oct 2026 16:03:35 +0200
-Subject: [PATCH 11/12] LvglDisplayEngineDxe: Draw a dynamic wallpaper, blur
- the bars over it
+Subject: [PATCH] LvglDisplayEngineDxe: Draw a dynamic wallpaper, blur the bars
+ over it
 
 The desktop was a flat #121212. Draw a wallpaper instead, like a dynamic
 desktop: a vertical sky gradient across the screen and three soft orbs
@@ -21,8 +21,12 @@ shaded from top to bottom; the tiles of the front page and the key caps
 of the dock are lit from the top; the colored squares of the menu
 symbols darken towards the bottom, like app icons.
 
+TEST=QEMU q35 (the screenshots of tools/qemu-smoke.py at every build of
+ouroBIOS, at 1920x1080 and 2880x1620); the setup of the W541.
+
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  Include/LvglTheme.h                           |  75 ++++--
  Library/LvglLib/lv_conf.h                     |   2 +-

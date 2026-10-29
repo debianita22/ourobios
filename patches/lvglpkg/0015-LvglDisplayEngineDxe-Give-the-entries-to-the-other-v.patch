@@ -12,8 +12,13 @@ could hold a word of the table.
 Show them with the previous and next symbols on orange, before any other
 word.
 
+TEST=tools/qemu-update.py of ouroBIOS at every build: the "Go back to"
+entry of the Firmware Update page, with its icon, selected with the
+keys; the setup of the W541 shows the entries (docs/update.md).
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  LvglDisplayEngineDxe/LvglFormRenderer.c | 7 +++++++
  1 file changed, 7 insertions(+)

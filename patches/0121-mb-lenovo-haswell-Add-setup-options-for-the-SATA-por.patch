@@ -25,10 +25,10 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 66 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 61d03cd126..2f40c0734a 100644
+index 9cdd115e5f..e080dc0a03 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
-@@ -558,12 +558,44 @@ static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
+@@ -560,12 +560,44 @@ static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
  	},
  });
  

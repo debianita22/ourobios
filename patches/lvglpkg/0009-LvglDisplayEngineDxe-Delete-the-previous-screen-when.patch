@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sat, 10 Oct 2026 08:46:23 +0200
-Subject: [PATCH 09/12] LvglDisplayEngineDxe: Delete the previous screen when a
- form is drawn
+Subject: [PATCH] LvglDisplayEngineDxe: Delete the previous screen when a form
+ is drawn
 
 Every call of FormDisplay() builds the form on a new screen and a new
 group, and only the last pair is deleted, at ExitDisplay(). The browser
@@ -14,8 +14,13 @@ Delete the previous screen and its group once the new ones are in place.
 The group goes first, so that its objects are detached before the screen
 is deleted and no focus moves around in the old form.
 
+TEST=QEMU q35: 60 toggles of a switch in a row, the screen redrawn each
+time; tools/qemu-smoke.py of ouroBIOS opens and closes a page at every
+build.
+
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  LvglDisplayEngineDxe/LvglFormRenderer.c | 20 +++++++++++++++++++-
  1 file changed, 19 insertions(+), 1 deletion(-)

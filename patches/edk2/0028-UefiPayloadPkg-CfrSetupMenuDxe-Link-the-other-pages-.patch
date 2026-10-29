@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Tue, 27 Oct 2026 12:23:44 +0100
-Subject: [PATCH] UefiPayloadPkg/CfrSetupMenuDxe: Link the other setup pages
- from the categories
+Subject: [PATCH] UefiPayloadPkg/CfrSetupMenuDxe: Link the other pages from the
+ categories
 
 The categories of the CFR setup menu now also lead to the setup pages of
 the other drivers, after their options: the category named by the new
@@ -20,8 +20,15 @@ the same rule. The forms themselves are still built in the entry point:
 the variable policies of the read-only options have to be registered
 before EndOfDxe, when the variable driver locks the policy engine.
 
+TEST=QEMU q35 (tools/qemu-setup-shots.py of ouroBIOS): General links to
+the time and date, firmware update, boot splash and graphical UI pages,
+Security to Secure Boot and the password; tools/qemu-smoke.py and
+tools/build.sh menu at every build; the setup of the W541 since
+v1.3.10-rc12.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../CfrSetupMenuDxe/CfrSetupMenuDxe.inf       |   2 +
  UefiPayloadPkg/CfrSetupMenuDxe/SetupMenu.c    |  10 +

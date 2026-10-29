@@ -10,8 +10,14 @@ or a need to read NTFS, exFAT and ext2 volumes from the firmware can
 leave those drivers out, as UFS_ENABLE already allows for UFS. The ext4
 driver stays in: it reads a Linux boot volume.
 
+TEST=The payload of the W541 builds with the four switches off
+(CONFIG_EDK2_CUSTOM_BUILD_PARAMS of the ouroBIOS defconfigs), about 110
+KiB smaller in each slot, and passes tools/qemu-smoke.py and
+tools/qemu-update.py; the defaults have no recorded test.
+
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  UefiPayloadPkg/UefiPayloadPkg.dsc |  7 +++++++
  UefiPayloadPkg/UefiPayloadPkg.fdf | 12 ++++++++++--

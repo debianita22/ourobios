@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sun, 18 Oct 2026 21:32:19 +0200
-Subject: [PATCH] mb/lenovo/haswell: Equalize the dGPU link again after a
- power-up by the OS
+Subject: [PATCH] mb/lenovo/haswell: Equalize the dGPU link again after an OS
+ power-up
 
 northbridge_peg_equalize() runs once, in romstage. When the OS powers
 the dGPU off and on again through the power resource, _ON retrains the

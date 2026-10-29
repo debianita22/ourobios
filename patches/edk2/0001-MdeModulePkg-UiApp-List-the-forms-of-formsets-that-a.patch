@@ -16,9 +16,15 @@ them. A package list with several formsets gets the forms of those
 with the class GUID, each pointing to its own formset. The entries come
 first, followed by an empty line.
 
+TEST=QEMU q35 (tools/qemu-smoke.py of ouroBIOS, at every build): the
+front page of the setup lists the categories of the CFR menu, Down and
+Enter open one and Esc comes back; the setup of the W541 in the
+releases.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../Application/UiApp/FrontPageCustomizedUi.c |   8 +
  .../UiApp/FrontPageCustomizedUiSupport.c      | 201 ++++++++++++++++++
