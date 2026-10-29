@@ -184,8 +184,9 @@ CSMWRAP_NAME=csmwrap.efi
 
 # I file comuni a tutte le board che vanno nella cartella della board
 # nell'albero (<board>/<nome>), accanto a quelli di BOARD_TREE_FILES di
-# boards/<board>/board.sh: i defconfig li cercano li'.
-COMMON_TREE_FILES=(assets/bootsplash.bmp keys/capsule-signing.pem)
+# boards/<board>/board.sh: i defconfig li cercano li'. Il boot splash no:
+# nomina la macchina, e ogni board ha il suo in BOARD_TREE_FILES.
+COMMON_TREE_FILES=(keys/capsule-signing.pem)
 # Le regioni che una capsula riscrive: il training della RAM, che il codice
 # nuovo rifa' al primo avvio, e lo slot RW di vboot che non gira (la capsula
 # li porta tutti e due, il payload sceglie: edk2 0015). Le altre restano:

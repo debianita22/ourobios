@@ -11,8 +11,10 @@ BOARD_FLAVOUR_PREFIX="m920x-"
 BOARD_SINCE=v1.4.0
 BOARD_TREE=m920x
 board_defconfig() { printf 'boards/m920x/%s.defconfig' "$1"; }
+# il boot splash con la macchina: tools/logo.py splash OUT "THINKCENTRE M920X"
 BOARD_TREE_FILES=(boards/m920x/blobs/ifd.bin boards/m920x/blobs/gbe.bin
-	boards/m920x/blobs/me.bin boards/m920x/flash.fmd:m920x.fmd)
+	boards/m920x/blobs/me.bin boards/m920x/flash.fmd:m920x.fmd
+	assets/bootsplash-m920x.bmp:bootsplash.bmp)
 BOARD_SUMS=(boards/m920x/blobs/SHA256SUMS)
 # W25Q128JV (BIOS1) e W25Q64JV (BIOS2): la RO e lo slot B nel secondo
 BOARD_ROM_SIZE=$((24 << 20))

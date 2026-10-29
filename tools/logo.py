@@ -7,10 +7,12 @@
   tools/logo.py png OUT.png [SCALA] [SFONDO] un PNG, pixel ingranditi di SCALA
                                             (default 32), sfondo esadecimale
                                             (default trasparente)
-  tools/logo.py splash OUT.bmp               il boot splash (assets/bootsplash.bmp):
-                                            logo, nome e motto su nero, BMP 24 bit
-                                            che EDK2 centra sullo schermo (serve
-                                            Pillow, con i font DejaVu)
+  tools/logo.py splash OUT.bmp [MACCHINA]    il boot splash di una board: logo, nome,
+                                            motto e la macchina (default THINKPAD
+                                            W541, assets/bootsplash.bmp; THINKCENTRE
+                                            M920X, assets/bootsplash-m920x.bmp) su
+                                            nero, BMP 24 bit che EDK2 centra sullo
+                                            schermo (serve Pillow, con i font DejaVu)
 
 Il logo e' pixel art 16x16: nel SVG ogni <rect> e' un pixel (o una fila di
 pixel) con il suo colore. Solo la libreria standard, piu' zlib per il PNG.
@@ -31,7 +33,9 @@ SPLASH_NAME = "ouroBIOS"
 SPLASH_NAME_COLOR = 0xF5F5F7
 SPLASH_TAGLINE = "REBORN BY DESIGN."
 SPLASH_TAGLINE_COLOR = 0xA1A1A6
-SPLASH_LINE = "COREBOOT  \u00b7  EDK II  \u00b7  THINKPAD W541"
+# l'ultima riga, con la macchina della board
+SPLASH_LINE = "COREBOOT  \u00b7  EDK II  \u00b7  %s"
+SPLASH_MACHINE = "THINKPAD W541"
 SPLASH_LINE_COLOR = 0x636366
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
@@ -105,7 +109,7 @@ def spaced(draw, xy, text, font, fill, spacing):
         x += w + spacing
 
 
-def as_splash(grid):
+def as_splash(grid, machine=SPLASH_MACHINE):
     from PIL import Image, ImageDraw, ImageFont
 
     def rgb(c):
@@ -129,7 +133,7 @@ def as_splash(grid):
     y += 56 + 22
     spaced(draw, (SPLASH_W / 2, y), SPLASH_TAGLINE, tag, rgb(SPLASH_TAGLINE_COLOR), 4)
     y += 18 + 18
-    spaced(draw, (SPLASH_W / 2, y), SPLASH_LINE, line, rgb(SPLASH_LINE_COLOR), 2)
+    spaced(draw, (SPLASH_W / 2, y), SPLASH_LINE % machine, line, rgb(SPLASH_LINE_COLOR), 2)
     return img
 
 
@@ -137,7 +141,8 @@ def main(argv):
     if len(argv) < 2 or argv[1] not in ("c", "png", "splash") or (argv[1] != "c" and len(argv) < 3):
         sys.exit(__doc__)
     if argv[1] == "splash":
-        as_splash(pixels(open("assets/ourobios.svg").read())).save(argv[2], "BMP")
+        machine = argv[3] if len(argv) > 3 else SPLASH_MACHINE
+        as_splash(pixels(open("assets/ourobios.svg").read()), machine).save(argv[2], "BMP")
     elif argv[1] == "c":
         svg = argv[2] if len(argv) > 2 else "assets/ourobios.svg"
         sys.stdout.write(as_c(pixels(open(svg).read())))
