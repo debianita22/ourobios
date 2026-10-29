@@ -413,12 +413,16 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   instead of building again on the same runner after the first build:
   the run is shorter, and two machines agree on the ROM, not one with
   itself. `tools/build.sh repro` still does it on one machine.
-- From rc19, the QEMU tests (`smoke`, `update-test`) run with KVM where
-  `/dev/kvm` is usable, as on GitHub's runners, and with TCG otherwise;
-  a test that fails with KVM is run again with TCG, and if it passes
-  there the build goes on with a warning and keeps the KVM run next to
-  the artifacts. The smoke test runs once per payload: the two variants
-  share one since rc18.
+- From rc19, the smoke test runs once per payload (the two variants share
+  one since rc18), and `tools/build.sh prepare` fetches of EDK2 only the
+  submodules the payload uses (OpenSSL without its own, the brotli of
+  BaseTools, LvglPkg with LVGL: 0.9 GB instead of 2.8, a third of the
+  time), keeping coreboot's EDK2 Makefile from fetching the others. KVM
+  for the QEMU tests was tried on GitHub's runners and is not used: under
+  nested virtualization every SMI of SMMSTORE costs an exit to the
+  hypervisor, and the update test, which writes the flash through SMM,
+  took longer than with TCG (`OUROBIOS_QEMU_ACCEL=kvm` turns it on by
+  hand).
 
 ## v1.3.9
 

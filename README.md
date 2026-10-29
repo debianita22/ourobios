@@ -247,8 +247,10 @@ tools/build.sh                      # both variants, into dist/
 
 `tools/build.sh` fetches coreboot at the pinned commit into `work/coreboot`,
 applies `patches/series`, copies the blobs (checked against their
-`SHA256SUMS`), fetches MrChromebox's EDK2 at the commit of the defconfigs and
-applies `patches/edk2` and `patches/lvglpkg`, writes the font of the
+`SHA256SUMS`), fetches MrChromebox's EDK2 at the commit of the defconfigs
+(with the submodules the payload uses: OpenSSL, the brotli of BaseTools,
+LvglPkg and its LVGL) and applies `patches/edk2` and `patches/lvglpkg`,
+writes the font of the
 update screen from those of LvglPkg (`tools/ui-font.py`), fetches iPXE at
 the commit coreboot pins (which must be `IPXE_COMMIT` of `tools/build.sh`)
 and CSMWrap at the commit `tools/build.sh` pins and builds the latter with
@@ -292,8 +294,7 @@ key.
 `smoke` puts the EDK2 payload of each variant, as built, into a coreboot
 image for QEMU's q35 and boots it with `tools/qemu-smoke.py` (once per
 payload: a variant with the same payload, byte for byte, as one already
-tested is not tested again; QEMU runs with KVM when `/dev/kvm` is usable,
-with TCG otherwise, four times slower): coreboot must
+tested is not tested again): coreboot must
 reach the payload, the payload must draw, Esc must open the setup, and the
 setup must open a page and go back, without a reset. Then, in two more
 boots, the UEFI Shell writes a test variable with `setvar`: it must be in
