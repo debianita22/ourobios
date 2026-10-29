@@ -85,6 +85,7 @@
 # dell'aggiornamento, che scrive il flash a blocchi via SMM, ci mette di
 # piu' che in TCG, e il setup a 2880x1620 non ha passato la prova.
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -594,13 +595,27 @@ def secure_boot_test(rom, efi, out, timeout, esrt):
                 or len(got) != 2 or not all(l.startswith(want) for l in got)):
             raise Fail("ESRT: attesa una voce \"%s\" a ogni avvio, trovate: %s"
                        % (want, "; ".join(got) or "nessuna"))
+        # il protocollo crypto di CryptoDxe: SHA-256 e il PBKDF2 della password
+        # del setup (UserAuthenticationDxe), calcolati qui per confronto
+        expected = {"sha256 abc": hashlib.sha256(b"abc").hexdigest(),
+                    "pbkdf2 sha256 ouroBIOS salt 0..31 1000":
+                        hashlib.pbkdf2_hmac("sha256", b"ouroBIOS", bytes(range(32)), 1000, 32).hex()}
+        version = [l for l in lines if l.startswith("crypto protocol: version ")]
+        if len(version) != 1:
+            raise Fail("il protocollo crypto di CryptoDxe: %s (serial-sb-1.log)"
+                       % ("; ".join(l for l in lines if l.startswith("crypto protocol")) or "nessuna riga"))
+        for what, want in expected.items():
+            got = [l.split(" = ", 1)[1] for l in lines if l.startswith(what + " = ")]
+            if got != [want]:
+                raise Fail("%s dal protocollo crypto: %s, atteso %s" % (what, got[0] if got else "assente", want))
         skipped = [l.split()[1] for l in loads if "skipped" in l]
         verdicts = ", ".join("%s %s" % (l.split()[1], l.split(": ")[1].split(",")[0])
                              for l in loads if "skipped" not in l)
-        return ("ESRT con la voce della variante (%s, 0x%08x); Secure Boot: la CA di prova messa in "
-                "db in custom mode e SecureBootEnable=1 scritti, al riavvio SecureBoot=1 e il payload "
-                "ha avviato secure-boot-test.efi, firmato da un certificato figlio della CA; %s%s"
-                % (guid, version, verdicts,
+        return ("ESRT con la voce della variante (%s, 0x%08x); il protocollo crypto di CryptoDxe "
+                "(%s): SHA-256 e il PBKDF2 della password del setup giusti; Secure Boot: la CA di prova "
+                "messa in db in custom mode e SecureBootEnable=1 scritti, al riavvio SecureBoot=1 e il "
+                "payload ha avviato secure-boot-test.efi, firmato da un certificato figlio della CA; %s%s"
+                % (guid, esrt[1], version[0].split(": ", 1)[1], verdicts,
                    "" if not skipped else " (%s senza immagine, saltato)" % ", ".join(skipped)))
     finally:
         sm.close()
