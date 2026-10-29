@@ -1,0 +1,152 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 09:38:21 +0100
+Subject: [PATCH] UefiPayloadPkg: Take the system firmware GUID of the ESRT
+ from coreboot
+
+PcdSystemFmpCapsuleImageTypeIdGuid, which makes the FMP of FmpDxe the
+system firmware of the ESRT (EsrtFmpDxe) and of the Firmware Update page
+(FirmwareUpdateDxe), was patchable, built in as CAPSULE_MAIN_FW_GUID:
+the FILE_GUID of FmpDxe, which coreboot sets to the GUID of the firmware
+it builds the payload for. FmpDxe itself takes the GUID it publishes
+from the coreboot table (FmpDeviceSmmLib), so the payload depended on
+its firmware only through that PCD and the FILE_GUID: the two variants
+of the W541, which differ in their RAM init and their GUID, got two
+payloads that differed in those bytes alone, each built from scratch.
+
+Make the PCD dynamic and set it in the constructor of FmpDeviceSmmLib,
+when FmpDxe loads, to the GUID FmpDxe will publish: the one of the
+coreboot table, or the FILE_GUID of FmpDxe without it, as FmpDxe falls
+back. EsrtFmpDxe reads the PCD at ReadyToBoot, FirmwareUpdateDxe when
+its page opens: both after FmpDxe is dispatched. Until set, the PCD has
+one byte, no GUID, and no FMP is the system firmware.
+
+With this a payload built with one CAPSULE_MAIN_FW_GUID serves every
+firmware coreboot describes: with a fixed FILE_GUID for FmpDxe (the
+EDK2_CAPSULE_MAIN_FW_GUID option of the coreboot tree) the two variants
+share one payload, byte for byte. FmpDxe keeps its variables (FmpState:
+the last attempt of the ESRT) under its FILE_GUID, so the first boot
+with a new FILE_GUID starts from no last attempt; the variables under
+the old GUID stay in the store, unused.
+
+TEST=The W541 payloads of mrc and nri, built with the same fixed
+CAPSULE_MAIN_FW_GUID, are byte-identical; in QEMU q35 with coreboot
+giving the nri GUID, the ESRT has that GUID as the system firmware
+(FwType 1), with the version and LSV of the coreboot table; the
+relocation test of the runtime services (tools/efi/rt-reloc-test.c)
+passes; the update test of the CI (tools/qemu-update.py) passes, with
+FmpState under the fixed FILE_GUID.
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ .../Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c | 21 +++++++++++++++++++
+ .../FmpDeviceSmmLib/FmpDeviceSmmLib.inf       |  4 ++++
+ UefiPayloadPkg/UefiPayloadPkg.dsc             | 16 +++++++-------
+ 3 files changed, 34 insertions(+), 7 deletions(-)
+
+diff --git a/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c
+index 901e213..2e7c347 100644
+--- a/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c
++++ b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c
+@@ -35,6 +35,7 @@
+ #include <Library/FmpDeviceLib.h>
+ #include <Library/HobLib.h>
+ #include <Library/MemoryAllocationLib.h>
++#include <Library/PcdLib.h>
+ #include <Library/SmmStoreLib.h>
+ #include <Library/UefiBootServicesTableLib.h>
+ #include <Library/UefiRuntimeServicesTableLib.h>
+@@ -2372,6 +2373,12 @@ FmpDeviceLock (
+ /**
+   Constructor that performs required initialization.
+ 
++  Also tells the ESRT (EsrtFmpDxe) and the setup (FirmwareUpdateDxe) which
++  FMP instance is the system firmware: this one, with the GUID FmpDxe
++  publishes, from the same places FmpDxe takes it from (coreboot's table,
++  the FILE_GUID of FmpDxe without it).  Set here rather than built in, the
++  same payload serves every firmware coreboot describes.
++
+   @param ImageHandle  The image handle of the process.
+   @param SystemTable  The EFI System Table pointer.
+ 
+@@ -2384,7 +2391,21 @@ FmpDeviceSmmLibConstructor (
+   IN EFI_SYSTEM_TABLE  *SystemTable
+   )
+ {
++  EFI_STATUS     Status;
++  FIRMWARE_INFO  *FwInfo;
++  EFI_GUID       *Guid;
++  UINTN          Size;
++
+   SmmStoreLibInitialize ();
+   FmpStatusInstall ();
++
++  Guid = &gEfiCallerIdGuid;
++  if (!EFI_ERROR (GetFwInfo (&FwInfo))) {
++    Guid = &FwInfo->Type;
++  }
++
++  Size   = sizeof (EFI_GUID);
++  Status = PcdSetPtrS (PcdSystemFmpCapsuleImageTypeIdGuid, &Size, Guid);
++  ASSERT_EFI_ERROR (Status);
+   return EFI_SUCCESS;
+ }
+diff --git a/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.inf b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.inf
+index b39342d..b67aa2f 100644
+--- a/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.inf
++++ b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.inf
+@@ -37,6 +37,7 @@
+   DebugLib
+   HobLib
+   MemoryAllocationLib
++  PcdLib
+   SmmStoreLib
+   UefiBootServicesTableLib
+   UefiRuntimeServicesTableLib
+@@ -50,5 +51,8 @@
+ [Guids]
+   gEfiFirmwareInfoHobGuid
+ 
++[Pcd]
++  gEfiMdeModulePkgTokenSpaceGuid.PcdSystemFmpCapsuleImageTypeIdGuid  ## PRODUCES
++
+ [Protocols]
+   gFirmwareUpdateStatusProtocolGuid    ## PRODUCES
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
+index c6a536d..36302f1 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dsc
++++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
+@@ -966,13 +966,6 @@
+   gEfiMdeModulePkgTokenSpaceGuid.PcdSerialRegisterStride|1
+ 
+ [PcdsPatchableInModule.common]
+-!if $(CAPSULE_SUPPORT) == TRUE
+-  ## The firmware of FmpDxe is the system firmware of the ESRT (FwType 1),
+-  #  not a device: that is what fwupd expects of a platform firmware.
+-  #  Patchable, not fixed: the parser replaces a macro in a fixed value only
+-  #  after trying to evaluate it, and GUID() of the macro name fails first.
+-  gEfiMdeModulePkgTokenSpaceGuid.PcdSystemFmpCapsuleImageTypeIdGuid|{GUID("$(CAPSULE_MAIN_FW_GUID)")}|VOID*|0x10
+-!endif
+   gEfiMdeModulePkgTokenSpaceGuid.PcdBootManagerMenuFile|{ 0x21, 0xaa, 0x2c, 0x46, 0x14, 0x76, 0x03, 0x45, 0x83, 0x6e, 0x8a, 0xb6, 0xf4, 0x66, 0x23, 0x31 }
+   gEfiMdePkgTokenSpaceGuid.PcdReportStatusCodePropertyMask|0x7
+   gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel|0x8000004F
+@@ -1031,6 +1024,15 @@
+   gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut|L"Timeout"|gEfiGlobalVariableGuid|0x0|$(PLATFORM_BOOT_TIMEOUT)
+ 
+ [PcdsDynamicExDefault]
++!if $(CAPSULE_SUPPORT) == TRUE
++  ## The firmware of FmpDxe is the system firmware of the ESRT (FwType 1),
++  #  not a device: that is what fwupd expects of a platform firmware.  Its
++  #  GUID is the one FmpDxe publishes, which FmpDeviceSmmLib sets here when
++  #  FmpDxe loads: the one coreboot gives, or the FILE_GUID of FmpDxe
++  #  without it.  The payload does not depend on the firmware it is in;
++  #  until set, no FMP instance is the system firmware.
++  gEfiMdeModulePkgTokenSpaceGuid.PcdSystemFmpCapsuleImageTypeIdGuid|{0x0}|VOID*|0x10
++!endif
+   gEfiMdePkgTokenSpaceGuid.PcdDefaultTerminalType|$(DEFAULT_TERMINAL_TYPE)
+   gEfiMdeModulePkgTokenSpaceGuid.PcdAriSupport|TRUE
+   gEfiMdeModulePkgTokenSpaceGuid.PcdSrIovSupport|TRUE
+-- 
+2.43.0
+

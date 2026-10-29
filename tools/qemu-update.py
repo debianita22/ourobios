@@ -22,8 +22,9 @@
 #   2. capsula B: il payload scrive lo slot B, che non gira, e RW_MRC_CACHE,
 #      poi chiede a vboot di provare B per due avvii e riavvia. Restano la
 #      parte RO, lo slot A e le variabili UEFI; la capsula sparisce dall'ESP,
-#      il bit da OsIndications. FmpState (l'ultimo tentativo dell'ESRT):
-#      la versione di B, riuscito
+#      il bit da OsIndications. FmpState (l'ultimo tentativo dell'ESRT,
+#      sotto il FILE_GUID di FmpDxe, FMP_DXE_GUID): la versione di B,
+#      riuscito
 #   3. vboot avvia B e il payload lo conferma
 #   4. capsula C: scritto lo slot A, che ora non gira; vboot avvia A (C)
 #   5. capsula B, cioe' la release dell'altro slot (update.py rollback): con
@@ -94,6 +95,12 @@ smoke = load_smoke()
 Fail = smoke.Fail
 
 EFI_GLOBAL = uuid.UUID("8be4df61-93ca-11d2-aa0d-00e098032b8c").bytes_le
+# Il FILE_GUID di FmpDxe (CONFIG_EDK2_CAPSULE_MAIN_FW_GUID dei defconfig, da
+# cui il payload della prova prende le opzioni EDK2): FmpDxe ci tiene sotto le
+# sue variabili (FmpState). Il GUID del firmware nell'ESRT, quello delle
+# capsule, e' un altro: UPDATE_TEST_GUID di tools/build.sh, dalla tabella di
+# coreboot
+FMP_DXE_GUID = uuid.UUID("c9405485-0c3d-40b8-88bf-d2a07e5c3edd").bytes_le
 # Una variabile di prova, mai usata dal firmware: scritta prima del primo
 # aggiornamento, deve esserci ancora alla fine (le capsule non toccano SMMSTORE)
 MARK_NAME = "OuroUpdateTest"
@@ -462,7 +469,7 @@ class UpdateTest:
                 raise Fail("%s: la capsula e' ancora %s: %s" % (tag, where, drive.files()))
         if self.flash.os_indications() & update.FILE_CAPSULE_DELIVERY:
             raise Fail("%s: il bit delle capsule su disco e' ancora in OsIndications" % tag)
-        fmp = self.flash.fmp_state(self.guid)
+        fmp = self.flash.fmp_state(FMP_DXE_GUID)
         want = self.caps[key]["cap"]["version"]
         if not fmp or fmp["status"] != 0 or fmp["attempt"] != want:
             raise Fail("%s: FmpState %s, atteso l'ultimo tentativo %s riuscito"

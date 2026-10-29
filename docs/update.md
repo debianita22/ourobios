@@ -526,7 +526,12 @@ The event log (`tools/elog.py`, `elogtool`) shows the reboots of an update.
   shows it in `/sys/firmware/efi/esrt`. The ESRT is built again at every
   boot (EsrtFmpDxe, patch `edk2/0018`), with the version and the result of
   the last capsule (`last_attempt_version`, `last_attempt_status`), which
-  FmpDxe keeps in its `FmpState` variable.
+  FmpDxe keeps in its `FmpState` variable, under its own FILE_GUID. From
+  v1.3.10-rc18 that FILE_GUID is one fixed GUID for both variants
+  (`EDK2_CAPSULE_MAIN_FW_GUID` of the defconfigs, patch 0135: the payload
+  no longer depends on the variant, which the ESRT takes from the coreboot
+  table, patch `edk2/0033`); until rc17 it was the GUID of the variant, so
+  the first boot of rc18 shows no last attempt, until the next capsule.
 - `OsIndicationsSupported` announces capsules on disk. When `OsIndications`
   asks for them, coreboot (`DRIVERS_EFI_CAPSULE_ON_DISK_SUPPORT`) switches
   its SMMSTORE handler to the whole flash for that boot only.

@@ -124,6 +124,12 @@ CONFIG_DRIVERS_EFI_UPDATE_CAPSULES=y
 CONFIG_DRIVERS_EFI_CAPSULE_ON_DISK_SUPPORT=y
 # relativo all'albero di EDK2 (payloads/external/edk2/workspace/mrchromebox)
 CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT="../../../../../w541/capsule-signing.pem"
+# FmpDxe del payload con un FILE_GUID fisso, lo stesso nelle due varianti
+# (patch 0135): il GUID dell'ESRT lo legge dalla tabella di coreboot a ogni
+# avvio (edk2/0033), e il payload della mrc e' lo stesso della nri, byte
+# per byte (tools/build.sh lo compila una volta). Sotto questo GUID FmpDxe
+# tiene l'esito dell'ultimo aggiornamento (FmpState)
+CONFIG_EDK2_CAPSULE_MAIN_FW_GUID="c9405485-0c3d-40b8-88bf-d2a07e5c3edd"
 
 # Grafica: libgfxinit per l'iGPU, framebuffer limitato al pannello FHD
 CONFIG_MAINBOARD_USE_LIBGFXINIT=y

@@ -23,11 +23,13 @@
 #                  e il .cab di ogni variante, e i metadati firmati del
 #                  remote fwupd (docs/update.md). Gli slot RW di vboot si
 #                  firmano con la chiave in VBOOT_SIGNING_KEY (docs/vboot.md);
-#                  senza, con le chiavi di prova di vboot: build di prova
-#   repro          dopo roms: CSMWrap e ogni variante (coreboot, EDK2,
-#                  iPXE) costruiti di nuovo da capo, confrontati bit a bit
-#                  con quelli di prepare e di roms in dist/; uguali, o le
-#                  regioni e i file CBFS diversi
+#                  senza, con le chiavi di prova di vboot: build di prova.
+#                  EDK2 (con iPXE dentro) si compila una volta: il payload
+#                  della prima variante vale anche per l'altra (before_build)
+#   repro          dopo roms: CSMWrap e ogni variante (coreboot, e EDK2 con
+#                  iPXE una volta, come roms) costruiti di nuovo da capo,
+#                  confrontati bit a bit con quelli di prepare e di roms in
+#                  dist/; uguali, o le regioni e i file CBFS diversi
 #   menu           dopo roms, il menu di setup di ogni variante, costruito
 #                  sull'host da tools/cfr-dump.sh come il ramstage lo scrive
 #                  (il record CFR) e controllato: ogni opzione in una scheda
@@ -541,6 +543,32 @@ make_csmwrap() {
 clean_ipxe() {
 	git -C "${TREE}/${IPXE_SUBDIR}" clean -q -fdx
 }
+# Il payload (UEFIPAYLOAD.fd) di una variante vale per l'altra: i due .config
+# differiscono solo nella RAM init, nel nome e nel GUID dell'ESRT, e il
+# payload non dipende da quelle righe. Il GUID lo legge dalla tabella di
+# coreboot a ogni avvio (edk2/0033); FmpDxe ha il FILE_GUID di
+# CONFIG_EDK2_CAPSULE_MAIN_FW_GUID (patch 0135), uguale nei due defconfig.
+# Allora la FD della variante gia' costruita va in build-<variante>, e make
+# non la rifa' (-o: ne' iPXE, che ci sta dentro): EDK2 una volta per build.
+# Ogni altra differenza tra i .config ricostruisce tutto, da capo.
+PAYLOAD_FREE_RE='^(# )?CONFIG_(LOCALVERSION|PAYLOAD_FILE|DRIVERS_EFI_MAIN_FW_GUID|DCACHE_RAM_SIZE|DCACHE_BSP_STACK_SIZE|DCACHE_RAM_MRC_VAR_SIZE|HAVE_MRC|MRC_FILE|USE_NATIVE_RAMINIT|HASWELL_NRI_MEMORY_TEST|HASWELL_NRI_ROUND_TRIP|USE_BROADWELL_MRC|HASWELL_HIDE_PEG_FROM_MRC|HAVE_DEBUG_RAM_SETUP|DEBUG_RAM_SETUP)[= ]'
+# Prima della build della variante $1 (dopo variant_config): il payload
+# della variante $2, se c'e' e vale anche per $1, con le opzioni di make in
+# MK_EXTRA; se no iPXE pulito, per ricompilare tutto
+before_build() {
+	local v="$1" from="${2:-}"
+	MK_EXTRA=()
+	if [ -n "${from}" ] && [ -f "${TREE}/build-${from}/UEFIPAYLOAD.fd" ] \
+		&& cmp -s <(grep -Ev "${PAYLOAD_FREE_RE}" "${TREE}/build-${from}/.config") \
+			<(grep -Ev "${PAYLOAD_FREE_RE}" "${TREE}/build-${v}/.config"); then
+		echo "  ok  ${v}: il payload e' quello di ${from} (i .config uguali fuori dalla RAM init, dal nome e dal GUID)"
+		cp "${TREE}/build-${from}/UEFIPAYLOAD.fd" "${TREE}/build-${v}/UEFIPAYLOAD.fd"
+		MK_EXTRA=(-o "build-${v}/UEFIPAYLOAD.fd")
+	else
+		[ -z "${from}" ] || echo "  !!  ${v}: i .config diversi fuori dalla RAM init, dal nome e dal GUID: payload ricostruito"
+		clean_ipxe
+	fi
+}
 # I compilatori, nel file del layout, per chi rifa' la build: coreboot con
 # il crossgcc (il suo pin ne fissa le versioni), il payload, iPXE e CSMWrap
 # con gcc e binutils del sistema
@@ -798,11 +826,13 @@ collect() {
 
 # Il certificato di cui si fida la ROM appena costruita: quello compilato
 # in FmpDxe (il PCD che scrive capsule_keys di payloads/external/edk2,
-# nell'AutoGen.c della build di EDK2 della variante $1) deve essere
-# keys/capsule-signing.pem, e solo quello
+# nell'AutoGen.c della build di EDK2 della variante $1, nella cartella
+# del FILE_GUID di FmpDxe: CONFIG_EDK2_CAPSULE_MAIN_FW_GUID, patch 0135)
+# deve essere keys/capsule-signing.pem, e solo quello
 check_trusted_cert() {
 	local v="$1" guid build autogen
-	guid="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_GUID="\(.*\)"$/\1/p' "${TREE}/build-${v}/.config")"
+	guid="$(sed -n 's/^CONFIG_EDK2_CAPSULE_MAIN_FW_GUID="\(.*\)"$/\1/p' "${TREE}/build-${v}/.config")"
+	[ -n "${guid}" ] || die "${v}: CONFIG_EDK2_CAPSULE_MAIN_FW_GUID non nel .config"
 	build=RELEASE
 	if grep -qx 'CONFIG_EDK2_DEBUG=y' "${TREE}/build-${v}/.config"; then build=DEBUG; fi
 	autogen="${TREE}/payloads/external/edk2/workspace/Build/UefiPayloadPkgX64/${build}_GCC/X64/FmpDevicePkg/FmpDxe/${guid}/DEBUG/AutoGen.c"
@@ -1055,17 +1085,19 @@ cmd_roms() {
 		export PATH="${XGCC}/bin:${PATH}"
 	fi
 	mkdir -p "${DIST}"
+	local built=""
 	for v in "${VARIANTS[@]}"; do
 		say ".config ${v}"
 		variant_config "${v}"
 		say "build ${v} ($(localversion "${v}"))"
-		clean_ipxe
-		if ! mk "${v}" -j"${JOBS}" 2>&1 | tee "${TREE}/build-${v}/make.log"; then
+		before_build "${v}" "${built}"
+		if ! mk "${v}" -j"${JOBS}" ${MK_EXTRA[@]+"${MK_EXTRA[@]}"} 2>&1 | tee "${TREE}/build-${v}/make.log"; then
 			# con -j l'errore non e' per forza in fondo: anche le righe con "rror"
 			grep -n -i -B2 -A6 'error' "${TREE}/build-${v}/make.log" | tail -n 60 > "${TREE}/build-${v}/errors.log" || true
 			failure_report "build ${v}" "${TREE}/build-${v}/errors.log" "${TREE}/build-${v}/make.log"
 			die "${v}: build fallita (build-${v}/make.log nell'albero)"
 		fi
+		built="${v}"
 		# i file di questa variante di un giro precedente, anche di altre versioni
 		rm -f "${DIST}"/w541-coreboot-*-"${v}"[.+-]*
 		collect "${v}"
@@ -1101,12 +1133,12 @@ cmd_roms() {
 # La build e' riproducibile? CSMWrap di nuovo da capo, confrontato con quello
 # di prepare nell'albero; poi ogni variante di nuovo da capo (coreboot, EDK2
 # e iPXE: la cartella di build si rifa', il workspace di EDK2 si pulisce da
-# solo, iPXE lo pulisce clean_ipxe) e la ROM confrontata bit a bit con
-# quella di roms in DIST. La data e' quella del commit, i PE del payload
-# sono senza la directory di debug (patches/edk2/0021): con gli stessi
-# compilatori (il crossgcc, a versioni fisse; gcc e binutils del sistema per
-# EDK2, iPXE e CSMWrap) le due devono essere uguali. Se no, le regioni
-# diverse e, negli slot, i file CBFS diversi.
+# solo, iPXE lo pulisce clean_ipxe; EDK2 una volta, come in roms) e la ROM
+# confrontata bit a bit con quella di roms in DIST. La data e' quella del
+# commit, i PE del payload sono senza la directory di debug
+# (patches/edk2/0021): con gli stessi compilatori (il crossgcc, a versioni
+# fisse; gcc e binutils del sistema per EDK2, iPXE e CSMWrap) le due devono
+# essere uguali. Se no, le regioni diverse e, negli slot, i file CBFS diversi.
 cmd_repro() {
 	need_prepared
 	local v first again b bad=0
@@ -1129,18 +1161,20 @@ cmd_repro() {
 		xgcc_ok || die "crossgcc mancante in ${XGCC}: prima tools/build.sh toolchain"
 		export PATH="${XGCC}/bin:${PATH}"
 	fi
+	local built=""
 	for v in "${VARIANTS[@]}"; do
 		first="${DIST}/$(romname "${v}").rom"
 		[ -f "${first}" ] || die "repro: manca ${first}: prima tools/build.sh roms"
 		b="${TREE}/build-${v}"
 		say "seconda build ${v} ($(localversion "${v}"))"
 		variant_config "${v}"
-		clean_ipxe
-		if ! mk "${v}" -j"${JOBS}" > "${b}/make-again.log" 2>&1; then
+		before_build "${v}" "${built}"
+		if ! mk "${v}" -j"${JOBS}" ${MK_EXTRA[@]+"${MK_EXTRA[@]}"} > "${b}/make-again.log" 2>&1; then
 			grep -n -i -B2 -A6 'error' "${b}/make-again.log" | tail -n 60 > "${b}/errors.log" || true
 			failure_report "seconda build ${v}" "${b}/errors.log" "${b}/make-again.log"
 			die "${v}: seconda build fallita (build-${v}/make-again.log nell'albero)"
 		fi
+		built="${v}"
 		again="${b}/coreboot.rom"
 		if cmp -s "${first}" "${again}"; then
 			echo "  ok  ${v}: la seconda build e' uguale alla prima ($(sha256sum "${first}" | cut -c1-16)...)"

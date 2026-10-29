@@ -22,8 +22,9 @@
 #      completa), EDK2 pinnato a un commit, i file in w541/ che
 #      tools/build.sh copia davvero; la mappa configs/w541.fmd con le regioni
 #      scrivibili nel chip da 8 MiB; i GUID e le regioni delle capsule uguali
-#      in tools/update.py e tools/build.sh; il remote fwupd
-#      (configs/fwupd/ourobios.conf) sui metadati di build.sh e ci.sh
+#      in tools/update.py e tools/build.sh, il FILE_GUID di FmpDxe in
+#      tools/qemu-update.py; il remote fwupd (configs/fwupd/ourobios.conf)
+#      sui metadati di build.sh e ci.sh
 #   8. il pin di coreboot in tools/build.sh: commit intero e describe coerente,
 #      lo stesso della parte RO gia' sui portatili (configs/ro-interface.txt:
 #      gli slot di una capsula partono dopo quella)
@@ -451,6 +452,16 @@ if [ -f configs/w541-mrc.defconfig ] && [ -f configs/w541-nri.defconfig ]; then
 		grep -qE "^ +\"${v}\": uuid\.UUID\(\"${!g}\"\),$" tools/update.py \
 			|| bad "tools/update.py: VARIANTS[\"${v}\"] non e' ${!g}"
 	done
+	# il FILE_GUID di FmpDxe (patch 0135): uno solo, non quello di una
+	# variante, e quello sotto cui tools/qemu-update.py legge FmpState
+	g_fmp="$(sed -n 's/^CONFIG_EDK2_CAPSULE_MAIN_FW_GUID="\(.*\)"$/\1/p' configs/w541-mrc.defconfig)"
+	if [[ "${g_fmp}" =~ ${guid_re} ]] && [ "${g_fmp}" != "${g_mrc}" ] && [ "${g_fmp}" != "${g_nri}" ]; then
+		ok "FILE_GUID di FmpDxe ${g_fmp}"
+	else
+		bad "CONFIG_EDK2_CAPSULE_MAIN_FW_GUID: un GUID minuscolo, non quello di una variante ('${g_fmp}')"
+	fi
+	grep -qE "^FMP_DXE_GUID = uuid\.UUID\(\"${g_fmp}\"\)\.bytes_le$" tools/qemu-update.py \
+		|| bad "tools/qemu-update.py: FMP_DXE_GUID non e' ${g_fmp}"
 	# La versione minima (LSV) fino a v1.3.0 o da v1.3.6 in su: in mezzo i
 	# numeri del formato di prima (fino a v1.3.6-rc1, 0x0103000Z) e quelli
 	# X.Y.Z.R si mescolano, e con 0x01030500 (v1.3.5) la v1.3.5 di prima,

@@ -1,0 +1,89 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 09:38:05 +0100
+Subject: [PATCH] payloads/external/edk2: Add an option for the FILE_GUID of
+ FmpDxe
+
+CAPSULE_MAIN_FW_GUID, the FILE_GUID of FmpDxe in the payload, is
+DRIVERS_EFI_MAIN_FW_GUID: the GUID of the firmware in the ESRT, which
+FmpDxe reads from the coreboot table at every boot anyway. Two firmwares
+that differ only in their GUID get two payloads that differ only in
+that FILE_GUID (the copies of it in the firmware volume and a checksum),
+each built from scratch.
+
+Add EDK2_CAPSULE_MAIN_FW_GUID, the FILE_GUID of FmpDxe, defaulting to
+DRIVERS_EFI_MAIN_FW_GUID as before, and pass it to the payload build.
+FmpDxe keeps the result of its last update in UEFI variables under its
+FILE_GUID; with one fixed GUID in both configurations, the payload built
+for one firmware serves the other, byte for byte, while the capsules
+keep carrying the GUID of their firmware (GenerateCapsule still takes
+DRIVERS_EFI_MAIN_FW_GUID). The ESRT of the payload then has to take the
+GUID of the firmware from the coreboot table too, as the payload of
+this tree does, instead of from the FILE_GUID of FmpDxe.
+
+TEST=The two W541 variants, with EDK2_CAPSULE_MAIN_FW_GUID set to the
+same GUID, build byte-identical UEFIPAYLOAD.fd; the ESRT in QEMU q35
+has the GUID of DRIVERS_EFI_MAIN_FW_GUID as the system firmware; the
+capsule update test of the CI passes.
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ payloads/external/Makefile.mk   |  1 +
+ payloads/external/edk2/Kconfig  | 14 ++++++++++++++
+ payloads/external/edk2/Makefile |  2 +-
+ 3 files changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/payloads/external/Makefile.mk b/payloads/external/Makefile.mk
+index 8ca7962513..2ad8a9d679 100644
+--- a/payloads/external/Makefile.mk
++++ b/payloads/external/Makefile.mk
+@@ -247,6 +247,7 @@ EDK2_PAYLOAD_ARGS = \
+ 	CONFIG_SOC_AMD_COMMON_BLOCK_PSP_GEN2=$(CONFIG_SOC_AMD_COMMON_BLOCK_PSP_GEN2) \
+ 	CONFIG_DRIVERS_EFI_UPDATE_CAPSULES=$(CONFIG_DRIVERS_EFI_UPDATE_CAPSULES) \
+ 	CONFIG_DRIVERS_EFI_MAIN_FW_GUID=$(CONFIG_DRIVERS_EFI_MAIN_FW_GUID) \
++	CONFIG_EDK2_CAPSULE_MAIN_FW_GUID=$(CONFIG_EDK2_CAPSULE_MAIN_FW_GUID) \
+ 	CONFIG_DRIVERS_EFI_CAPSULE_ACCEPT_EMBEDDED_DRIVERS=$(CONFIG_DRIVERS_EFI_CAPSULE_ACCEPT_EMBEDDED_DRIVERS) \
+ 	CONFIG_DRIVERS_EFI_CAPSULE_ON_DISK_SUPPORT=$(CONFIG_DRIVERS_EFI_CAPSULE_ON_DISK_SUPPORT) \
+ 	CONFIG_DRIVERS_EFI_CAPSULE_EMBED_FMP_DXE=$(CONFIG_DRIVERS_EFI_CAPSULE_EMBED_FMP_DXE) \
+diff --git a/payloads/external/edk2/Kconfig b/payloads/external/edk2/Kconfig
+index da0e5236aa..acb29c5b37 100644
+--- a/payloads/external/edk2/Kconfig
++++ b/payloads/external/edk2/Kconfig
+@@ -347,6 +347,20 @@ config EDK2_CUSTOM_BUILD_PARAMS
+ 
+ 	  This option can support both macros `-D` and Pcds `--pcd`.
+ 
++config EDK2_CAPSULE_MAIN_FW_GUID
++	string "GUID of FmpDxe in the payload"
++	default DRIVERS_EFI_MAIN_FW_GUID
++	depends on DRIVERS_EFI_UPDATE_CAPSULES
++	help
++	  The FILE_GUID of FmpDxe, under which it keeps the result of its
++	  last update in UEFI variables. The GUID of the firmware in the ESRT,
++	  the one its capsules carry, is DRIVERS_EFI_MAIN_FW_GUID: FmpDxe
++	  reads it from the coreboot table at every boot.
++
++	  With the default, the payload of each firmware is built for it. A
++	  fixed GUID here builds the same payload for every firmware whose
++	  other options are equal: a build for one serves the others.
++
+ config EDK2_ENABLE_IPXE
+ 	bool "Include iPXE in edk2 payload"
+ 	depends on !EDK2_REPO_OFFICIAL
+diff --git a/payloads/external/edk2/Makefile b/payloads/external/edk2/Makefile
+index 3f42d93ed4..e4a2987de6 100644
+--- a/payloads/external/edk2/Makefile
++++ b/payloads/external/edk2/Makefile
+@@ -140,7 +140,7 @@ endif
+ # CAPSULE_MAIN_FW_GUID	=
+ ifeq ($(CONFIG_DRIVERS_EFI_UPDATE_CAPSULES),y)
+ BUILD_STR += -D CAPSULE_SUPPORT=TRUE
+-BUILD_STR += -D CAPSULE_MAIN_FW_GUID=$(CONFIG_DRIVERS_EFI_MAIN_FW_GUID)
++BUILD_STR += -D CAPSULE_MAIN_FW_GUID=$(CONFIG_EDK2_CAPSULE_MAIN_FW_GUID)
+ endif
+ ifeq ($(CONFIG_DRIVERS_EFI_CAPSULE_ACCEPT_EMBEDDED_DRIVERS),y)
+ BUILD_STR += --pcd gEfiMdeModulePkgTokenSpaceGuid.PcdCapsuleEmbeddedDriverSupport=TRUE
+-- 
+2.43.0
+

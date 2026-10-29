@@ -128,3 +128,4 @@
 0132-ec-lenovo-h8-Write-no-EC-RAM-in-_PSW-before-_REG.patch
 0133-mb-lenovo-haswell-Follow-the-macOS-panel-option-in-G.patch
 0134-cpu-x86-smm-A-page-after-the-SMMSTORE-com-buffer-for.patch
+0135-payloads-external-edk2-Add-an-option-for-the-FILE_GU.patch
