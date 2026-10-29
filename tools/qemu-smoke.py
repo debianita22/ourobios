@@ -4,7 +4,8 @@
 # prima di una release che il payload parte, disegna e risponde ai tasti.
 #
 #   python3 tools/qemu-smoke.py [--out DIR] [--timeout S] [--setup-only]
-#                               [--vga-mb N] [--size WxH] [--reloc-test EFI] ROM
+#                               [--vga-mb N] [--size WxH] [--reloc-test EFI]
+#                               [--sb-test EFI --esrt GUID:VERSIONE:LSV [--sb-only]] ROM
 #
 # Controlla, in ordine:
 #   1. coreboot arriva al payload ("Jumping to boot code" sulla seriale);
@@ -44,7 +45,23 @@
 #      flash con i loro dati (SMM, che scrive il flash, non deve leggere le
 #      copie di prima). v1.3.10-rc15 non passa: SetVariable() falliva
 #      (EFI_DEVICE_ERROR), con gli argomenti di SMMSTORE dati dei servizi
-#      runtime.
+#      runtime;
+#  10. con --sb-test, l'ESRT e Secure Boot: su un'altra copia nuova della
+#      ROM, con un'ESP dalla prima accensione, il payload avvia due volte
+#      tools/efi/secure-boot-test.c, firmato con un certificato figlio di una
+#      CA di prova. Al primo avvio (la variante fresca: EnrollDefaultKeys ha
+#      messo le chiavi Microsoft, Secure Boot spento) stampa l'ESRT, carica
+#      le immagini incorporate (tutte accettate), mette la CA in db in custom
+#      mode come fa EnrollDefaultKeys, scrive SecureBootEnable=1 e riavvia.
+#      Al secondo avvio parte solo se il payload ha verificato la sua firma
+#      (la catena foglia -> CA, con l'OpenSSL di CryptoDxe): poi LoadImage()
+#      deve accettare lo shim firmato da Microsoft (se c'era da incorporare)
+#      e rifiutare l'immagine firmata da un certificato che non e' in db e
+#      quella senza firma. L'ESRT, a ogni avvio, deve avere la sola voce
+#      della variante (--esrt): e' il GUID che il payload legge dalla tabella
+#      di coreboot (patches/edk2/0033). --sb-only fa questo passo soltanto:
+#      tools/build.sh smoke lo usa per la variante il cui payload e' gia'
+#      stato provato con l'altra (lo stesso, byte per byte).
 # Le schermate di ogni passo vanno in DIR (PNG), con la console seriale.
 # Un'eccezione del payload sulla seriale ("X64 Exception Type") ferma la
 # prova al passo in cui arriva, con la riga dell'eccezione e l'immagine.
@@ -525,8 +542,77 @@ def reloc_test(rom, efi, out, timeout):
         sm.close()
 
 
-def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=None):
+# Il passo 10: le righe di tools/efi/secure-boot-test.c sulla seriale
+SB_MARK = "ouroBIOS sb test: "
+
+
+def secure_boot_test(rom, efi, out, timeout, esrt):
+    """Il passo 10, su una copia nuova della ROM, con un'ESP dalla prima
+    accensione: il payload avvia efi due volte sullo stesso flash. Il primo
+    avvio mette la CA di prova in db e accende Secure Boot, il secondo parte
+    solo se la firma di efi passa, e prova LoadImage() delle immagini
+    incorporate. esrt e' (guid, versione, lsv) attesi nell'ESRT, che efi
+    stampa a ogni avvio. Torna la riga del riassunto."""
+    sm = Smoke(rom, out, timeout)
+    try:
+        disk = os.path.join(sm.tmp, "esp.img")
+        esp_image(disk, efi)
+        drive = ["-drive", "file=%s,format=raw,if=none,id=esp" % disk,
+                 "-device", "ide-hd,drive=esp,bus=ide.0"]
+
+        def marks():
+            return [line.split(SB_MARK, 1)[1].strip() for line in sm.serial_text().splitlines()
+                    if SB_MARK in line]
+
+        # il primo avvio finisce con ResetSystem(): -no-reboot chiude QEMU
+        sm.boot("sb-1", drive)
+        sm.wait("secure-boot-test.efi non ha finito il primo avvio con un reset (serial-sb-1.log)",
+                lambda: sm.proc.poll() is not None or any(l.startswith("RESULT") for l in marks()),
+                timeout)
+        sm.halt()
+        lines = marks()
+        if not lines:
+            raise Fail("il payload non ha avviato secure-boot-test.efi dall'ESP (serial-sb-1.log)")
+        if lines[-1] != "reset":
+            raise Fail("secure-boot-test.efi al primo avvio: %s (serial-sb-1.log)" % lines[-1])
+        sm.boot("sb-2", drive)
+        sm.wait("secure-boot-test.efi non ha finito il secondo avvio (serial-sb-2.log): la sua "
+                "firma non passa con Secure Boot acceso?",
+                lambda: (sm.alive(), any(l.startswith("RESULT") for l in marks()))[1], timeout)
+        second = marks()
+        sm.halt()
+        lines += second
+        wrong = [l for l in lines if "WRONG" in l or (l.startswith("SetVariable") and "SUCCESS" not in l)]
+        if second[-1] != "RESULT OK" or wrong:
+            raise Fail("Secure Boot: %s (serial-sb-*.log)" % ("; ".join(wrong) if wrong else second[-1]))
+        loads = [l for l in second if l.startswith("LoadImage")]
+        # l'ESRT: una voce, quella della variante, a tutti e due gli avvii
+        guid, version, lsv = esrt
+        want = "esrt %s type 1 version 0x%08x lsv 0x%08x" % (guid.lower(), version, lsv)
+        got = [l for l in lines if l.startswith("esrt ") and not l.startswith("esrt entries")]
+        if ([l for l in lines if l.startswith("esrt entries")] != ["esrt entries 1"] * 2
+                or len(got) != 2 or not all(l.startswith(want) for l in got)):
+            raise Fail("ESRT: attesa una voce \"%s\" a ogni avvio, trovate: %s"
+                       % (want, "; ".join(got) or "nessuna"))
+        skipped = [l.split()[1] for l in loads if "skipped" in l]
+        verdicts = ", ".join("%s %s" % (l.split()[1], l.split(": ")[1].split(",")[0])
+                             for l in loads if "skipped" not in l)
+        return ("ESRT con la voce della variante (%s, 0x%08x); Secure Boot: la CA di prova messa in "
+                "db in custom mode e SecureBootEnable=1 scritti, al riavvio SecureBoot=1 e il payload "
+                "ha avviato secure-boot-test.efi, firmato da un certificato figlio della CA; %s%s"
+                % (guid, version, verdicts,
+                   "" if not skipped else " (%s senza immagine, saltato)" % ", ".join(skipped)))
+    finally:
+        sm.close()
+
+
+def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=None, sb_efi=None,
+        esrt=None, sb_only=False):
     os.makedirs(out, exist_ok=True)
+    if sb_only:
+        t0 = time.monotonic()
+        line = secure_boot_test(rom, sb_efi, out, timeout, esrt)
+        return ["%3.0f s  %s" % (time.monotonic() - t0, line)]
     sm = Smoke(rom, out, timeout, vga_mb)
     steps = []
     t0 = time.monotonic()
@@ -678,6 +764,10 @@ def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=Non
         if reloc_efi:
             line = reloc_test(rom, reloc_efi, out, timeout)
             steps.append("%s  %s" % (at(), line))
+        # 5. l'ESRT e Secure Boot, su un'altra copia nuova della ROM
+        if sb_efi:
+            line = secure_boot_test(rom, sb_efi, out, timeout, esrt)
+            steps.append("%s  %s" % (at(), line))
         return steps
     finally:
         sm.close()
@@ -693,7 +783,24 @@ def main():
     ap.add_argument("--size", help="la risoluzione attesa del setup, LxA (es. 2880x1620)")
     ap.add_argument("--reloc-test", metavar="EFI",
                     help="tools/efi/rt-reloc-test.c compilato: il passo 9 (tools/build.sh smoke)")
+    ap.add_argument("--sb-test", metavar="EFI",
+                    help="tools/efi/secure-boot-test.c compilato e firmato: il passo 10 (tools/build.sh smoke)")
+    ap.add_argument("--esrt", metavar="GUID:VERSIONE:LSV",
+                    help="la voce attesa nell'ESRT al passo 10 (versione e LSV esadecimali)")
+    ap.add_argument("--sb-only", action="store_true", help="solo il passo 10 (con --sb-test e --esrt)")
     args = ap.parse_args()
+    esrt = None
+    if args.sb_test:
+        if not os.path.isfile(args.sb_test):
+            sys.exit("--sb-test: %s non c'e'" % args.sb_test)
+        try:
+            guid, version, lsv = args.esrt.split(":")
+            esrt = (str(uuid.UUID(guid)), int(version, 16), int(lsv, 16))
+        except (AttributeError, ValueError):
+            ap.error("--sb-test vuole --esrt GUID:VERSIONE:LSV, per esempio "
+                     "70eab79a-675a-42ef-9543-43abcad96275:0x01030a14:0x01030900")
+    elif args.sb_only:
+        ap.error("--sb-only vuole --sb-test")
     size = None
     if args.size:
         try:
@@ -706,12 +813,13 @@ def main():
     if args.reloc_test:
         if not os.path.isfile(args.reloc_test):
             sys.exit("--reloc-test: %s non c'e'" % args.reloc_test)
+    if args.reloc_test or args.sb_test:
         for tool in ("mformat", "mmd", "mcopy"):
             if not shutil.which(tool):
-                sys.exit("serve %s per il passo 9 (Debian/Ubuntu: apt install mtools)" % tool)
+                sys.exit("serve %s per i passi 9 e 10 (Debian/Ubuntu: apt install mtools)" % tool)
     try:
         steps = run(args.rom, args.out, args.timeout, args.setup_only, args.vga_mb, size,
-                    args.reloc_test)
+                    args.reloc_test, args.sb_test, esrt, args.sb_only)
     except Fail as e:
         print("smoke: FALLITO (%s): %s (schermate e seriale in %s)" % (ACCEL.upper(), e, args.out))
         return 1

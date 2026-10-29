@@ -453,6 +453,14 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   of the ones the payload uses applies to that tree too, and a
   placeholder folder left in the path of a submodule is removed before
   the submodule is fetched.
+- From rc21, the smoke test of the CI also checks Secure Boot and the
+  ESRT (`tools/efi/secure-boot-test.c`): the payload must verify the
+  signature of a test application against a CA put in db, accept a shim
+  signed by Microsoft, refuse an image signed by a certificate in no
+  database and an unsigned one, and the ESRT must carry the entry of the
+  variant with the GUID from the coreboot table. The second variant,
+  whose payload is the first one's, runs this step on its own q35 image:
+  since rc19 nothing booted the nri payload in the CI.
 
 ## v1.3.9
 

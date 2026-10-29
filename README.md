@@ -318,10 +318,24 @@ page tables with the virtual addresses. Every service must answer, the two
 variables it writes must be in the store of the emulated flash with their
 data, nothing may write to the old copies, and `ResetSystem()` must reset;
 a physical address that the payload or SMM still used at runtime would
-fail it, as v1.3.10-rc15 does. It needs `qemu-system-x86`, `mtools`,
-`clang` and `lld`; screenshots and the serial console go to
-`work/smoke-<variant>`. Nothing of the W541 itself runs there: it checks the
-payload and coreboot's common code, not the board.
+fail it, as v1.3.10-rc15 does. Then, on another fresh copy with an EFI
+system partition, `tools/efi/secure-boot-test.c`, signed with a certificate
+issued by a CA made for the run: at the first boot (the Microsoft keys just
+enrolled, Secure Boot off) it prints the ESRT, loads the embedded images
+(all accepted), puts the CA in db in custom mode as EnrollDefaultKeys does,
+sets `SecureBootEnable` and resets; the second boot happens only if the
+payload verified its signature (the chain to the CA, through CryptoDxe),
+and then the shim signed by Microsoft (Debian's or Ubuntu's `shim-signed`,
+found in the system or downloaded with `apt-get download`; without it the
+case is skipped) must load, an image signed by a certificate in no
+database and an unsigned one must be refused. The ESRT must carry the one
+entry of the variant, with the GUID the payload reads from the coreboot
+table: the second variant, whose payload is the first one's byte for byte,
+runs this step only, on its own q35 image. It needs `qemu-system-x86`,
+`mtools`, `clang`, `lld`, `openssl` and `sbsign` (`sbsigntool`);
+screenshots and the serial console go to `work/smoke-<variant>`. Nothing
+of the W541 itself runs there: it checks the payload and coreboot's common
+code, not the board.
 
 `update-test` checks the update path the same way, with
 `tools/qemu-update.py`: four coreboot images for q35 with vboot's two RW
@@ -379,7 +393,7 @@ gh release edit v1.0.0-nri --repo debianita22/ourobios --prerelease=false --late
 | `assets/` | the logo, `ourobios.svg`, and the boot splash made from it (`tools/logo.py splash`) |
 | `configs/` | `w541-mrc.defconfig` and `w541-nri.defconfig`, the flash map `w541.fmd`, the interface of the read-only part already on the laptops (`ro-interface.txt`), the OpenCore device properties of this W541 for patches 0128 and 0133 (`macos/`), the fwupd remotes (`fwupd/ourobios.conf`, the releases; `fwupd/ourobios-testing.conf`, the candidates too) |
 | `patches/` | the series applied to coreboot, the patches to EDK2 and its LvglPkg, the q35 patches of the update test and of the setup screenshots; `optional/` for patches to build in with `--with`, none at the moment ([patches/README.md](patches/README.md)) |
-| `tools/` | `build.sh`, the build; `verify-rom.sh`, the checks on a ROM; `ci-check.sh`, `ci.sh` and `upstream.sh`, the CI, the releases and the upstream check; `cfr-dump.sh` and `q35-cfr-rom.sh`, the setup menu of a build (`build.sh menu`) and its screenshots (`qemu-setup-shots.py`); `update.py`, the capsule update from Linux; `fwupd-cab.py`, the fwupd package and the metadata of the remote; `vpd.py`, the serial number and machine type; `elog.py`, which reads the event log from a flash dump; `idle-report.py`, package C-states, power, memory traffic and device power states at idle; `pm-regs.py`, the power management registers the firmware left; `ddr-report.py`, the memory controller as the RAM init left it, and two of its dumps compared; `mem-latency.c`, how long a read from the memory takes; `peg-report.py`, the PCIe link to the NVIDIA GPU; `qemu-smoke.py`, the payload booted in QEMU (with `efi/rt-reloc-test.c`, the runtime services moved as boot.efi of macOS moves them); `qemu-update.py`, capsule updates with vboot A/B in QEMU (with `efi/slot-lock-test.c`, a UEFI application for it); `logo.py`, the logo as an LVGL image or a PNG |
+| `tools/` | `build.sh`, the build; `verify-rom.sh`, the checks on a ROM; `ci-check.sh`, `ci.sh` and `upstream.sh`, the CI, the releases and the upstream check; `cfr-dump.sh` and `q35-cfr-rom.sh`, the setup menu of a build (`build.sh menu`) and its screenshots (`qemu-setup-shots.py`); `update.py`, the capsule update from Linux; `fwupd-cab.py`, the fwupd package and the metadata of the remote; `vpd.py`, the serial number and machine type; `elog.py`, which reads the event log from a flash dump; `idle-report.py`, package C-states, power, memory traffic and device power states at idle; `pm-regs.py`, the power management registers the firmware left; `ddr-report.py`, the memory controller as the RAM init left it, and two of its dumps compared; `mem-latency.c`, how long a read from the memory takes; `peg-report.py`, the PCIe link to the NVIDIA GPU; `qemu-smoke.py`, the payload booted in QEMU (with `efi/rt-reloc-test.c`, the runtime services moved as boot.efi of macOS moves them, and `efi/secure-boot-test.c`, the ESRT and Secure Boot image verification); `qemu-update.py`, capsule updates with vboot A/B in QEMU (with `efi/slot-lock-test.c`, a UEFI application for it); `logo.py`, the logo as an LVGL image or a PNG |
 | `keys/` | the certificate of the key that signs the capsules, and vboot's public keys ([keys/README.md](keys/README.md)) |
 | `legacy/coreboot-4.22/` | the coreboot 4.22 image and configuration this project started from, built from the same blobs |
 | `docs/` | [flashing and recovery](docs/flashing.md), [updates with capsules](docs/update.md), [verified boot and A/B](docs/vboot.md), [the native RAM init](docs/raminit.md), [macOS with OpenCore](docs/macos.md) |
