@@ -61,13 +61,12 @@
 # board. Solo la libreria standard di Python, qemu-system-x86_64 e, per il
 # passo 9, mtools (l'ESP).
 #
-# QEMU va con KVM se c'e' (/dev/kvm leggibile e scrivibile: i runner di
-# GitHub ce l'hanno, con i permessi che build.yml da'), se no con TCG, come
-# in un container o su un'altra architettura; la prova e' la stessa, in KVM
-# dura un quarto. OUROBIOS_QEMU_ACCEL=tcg (o kvm) lo impone: tools/build.sh
-# rifa' in TCG una prova fallita in KVM, per dire se e' il firmware o KVM.
-# La CPU resta Haswell-noTSX anche in KVM: QEMU toglie quello che l'host
-# non ha e lo scrive nel suo log.
+# QEMU va in TCG; OUROBIOS_QEMU_ACCEL=kvm lo mette in KVM, con la stessa CPU
+# Haswell-noTSX (QEMU toglie quello che l'host non ha e lo scrive nel suo
+# log). Sui runner di GitHub (virtualizzazione annidata) KVM non conviene:
+# ogni SMI di SMMSTORE costa un'uscita all'hypervisor, la prova
+# dell'aggiornamento, che scrive il flash a blocchi via SMM, ci mette di
+# piu' che in TCG, e il setup a 2880x1620 non ha passato la prova.
 import argparse
 import json
 import os
@@ -83,10 +82,7 @@ import uuid
 
 
 def accel():
-    want = os.environ.get("OUROBIOS_QEMU_ACCEL", "")
-    if want in ("kvm", "tcg"):
-        return want
-    return "kvm" if os.access("/dev/kvm", os.R_OK | os.W_OK) else "tcg"
+    return "kvm" if os.environ.get("OUROBIOS_QEMU_ACCEL") == "kvm" else "tcg"
 
 
 ACCEL = accel()

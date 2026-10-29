@@ -46,8 +46,7 @@
 #                  payload, byte per byte, di una gia' provata non si riprova.
 #                  Poi, per la prima variante, una seconda ROM a 2880x1620,
 #                  la risoluzione del pannello 3K con gfx_fb_limit: solo il
-#                  setup, in WORK/smoke-<variante>-2880x1620. In KVM se c'e'
-#                  (qemu_test), se no in TCG
+#                  setup, in WORK/smoke-<variante>-2880x1620
 #   update-test    la prova dell'aggiornamento con le capsule (vboot A/B) in
 #                  QEMU q35, tools/qemu-update.py: un payload EDK2 DEBUG con
 #                  le patch del progetto, che si fida di una chiave creata per
@@ -55,8 +54,7 @@
 #                  C e D, che ha anche lo schermo per il setup), costruite in
 #                  un worktree dell'albero con patches/test/q35-update-test.patch;
 #                  le loro capsule, fatte come quelle delle release. Le ROM del
-#                  W541 non c'entrano. Seriale in WORK/update-test/out. In
-#                  KVM se c'e' (qemu_test), se no in TCG
+#                  W541 non c'entrano. Seriale in WORK/update-test/out
 #   keys           controlla le chiavi di firma dell'ambiente (CAPSULE_SIGNING_KEY,
 #                  VBOOT_SIGNING_KEY) senza build: con --release devono esserci
 #   toolchain-key  stampa la chiave della cache del crossgcc (build.yml)
@@ -132,6 +130,14 @@ SUBMODULES=(
 # lo lascia com'e' ("Working directory not clean; will not overwrite").
 EDK2_REPO="https://github.com/mrchromebox/edk2"
 EDK2_SUBDIR="payloads/external/edk2/workspace/mrchromebox"
+# I submodule di EDK2 che la build usa: OpenSSL (senza i suoi, prove e
+# provider, 1.5 GiB), brotli di BaseTools (BrotliCompress si compila con gli
+# altri strumenti) e LvglPkg con la sua LVGL. Gli altri (mbedtls, libspdm,
+# mipisyst, jansson, oniguruma, libfdt, cmocka, googletest, il TPM...)
+# restano fuori: submodule.active nel .git/config di EDK2 li toglie anche al
+# "git submodule update --init --recursive" del Makefile di coreboot, che
+# li clonerebbe tutti (2.8 GiB, tre volte il tempo di prepare)
+EDK2_SUBMODULES=(CryptoPkg/Library/OpensslLib/openssl BaseTools/Source/C/BrotliCompress/brotli LvglPkg)
 # I font della schermata di aggiornamento del firmware (patches/edk2/0026):
 # tools/ui-font.py li fa da quelli di LVGL nell'albero di EDK2, dopo le patch
 UI_FONT_LVGL="LvglPkg/Library/LvglLib/lvgl/src/font"
@@ -207,9 +213,11 @@ die()  { note error "$*"; printf '\033[31m[x] %s\033[0m\n' "$*" >&2; exit 1; }
 # un'annotazione del job, se gira nella CI (si legge anche dall'API)
 note() {
 	[ -n "${GITHUB_ACTIONS:-}" ] || return 0
-	local msg="$2"
+	local title="build.sh" msg="$2"
+	if [ $# -ge 3 ]; then title="$2"; msg="$3"; fi
 	msg="${msg//'%'/'%25'}"; msg="${msg//$'\r'/}"; msg="${msg//$'\n'/'%0A'}"
-	echo "::$1 title=build.sh::${msg}"
+	title="${title//'%'/'%25'}"; title="${title//:/'%3A'}"; title="${title//,/'%2C'}"
+	echo "::$1 title=${title}::${msg}"
 }
 # Dopo un errore: le ultime righe dei log $2... in un'annotazione ($1 il
 # titolo). Il log intero di un job non sempre si scarica, le annotazioni si'.
@@ -610,10 +618,45 @@ prepare_edk2() {
 	# file ignorati (BaseTools compilati).
 	git -C "${EDK2_DIR}" checkout -q --force --detach "${rev}" || die "EDK2: ${rev} non c'e' in ${EDK2_REPO}"
 	git -C "${EDK2_DIR}" clean -q -fd
-	git -C "${EDK2_DIR}" submodule update -q --init --force --recursive --filter=blob:none \
+	git -C "${EDK2_DIR}" config --unset-all submodule.active 2>/dev/null || true
+	for p in "${EDK2_SUBMODULES[@]}"; do
+		git -C "${EDK2_DIR}" config --add submodule.active "${p}"
+	done
+	git -C "${EDK2_DIR}" submodule update -q --init --force --filter=blob:none "${EDK2_SUBMODULES[@]}" \
 		|| die "EDK2: submodule"
+	# dentro OpenSSL nessun submodule (un pathspec che non c'e'); LvglPkg
+	# con la sua LVGL
+	git -C "${EDK2_DIR}/CryptoPkg/Library/OpensslLib/openssl" config submodule.active "__none__"
+	git -C "${EDK2_DIR}/LvglPkg" submodule update -q --init --force --filter=blob:none || die "EDK2: LvglPkg/lvgl"
 	git -C "${EDK2_DIR}" submodule foreach -q --recursive 'git clean -q -fd'
 	[ -d "${EDK2_DIR}/LvglPkg/.git" ] || [ -f "${EDK2_DIR}/LvglPkg/.git" ] || die "EDK2: senza il submodule LvglPkg"
+	# Le cartelle di include che i .dec dei pacchetti elencano nei submodule
+	# lasciati fuori (mipisyst, mbedtls, libspdm...): BaseTools si ferma su
+	# una cartella che non c'e' ("error 000E"), anche se nessun modulo la
+	# usa. Vuote, nei percorsi dei submodule non inizializzati
+	python3 - "${EDK2_DIR}" "${EDK2_SUBMODULES[@]}" <<-'EOF' || die "EDK2: cartelle di include dei .dec"
+		import os, re, subprocess, sys
+		root, active = sys.argv[1], sys.argv[2:]
+		paths = subprocess.run(["git", "-C", root, "config", "-f", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$"],
+		                       capture_output=True, text=True, check=True).stdout.split()[1::2]
+		off = [p for p in paths if p not in active]
+		made = 0
+		for dec in sorted(d for d in os.listdir(root) if os.path.isfile(os.path.join(root, d, d + ".dec"))):
+		    section = None
+		    for line in open(os.path.join(root, dec, dec + ".dec"), errors="replace"):
+		        line = line.split("#")[0].strip()
+		        if line.startswith("["):
+		            section = line.lower()
+		            continue
+		        if not line or section is None or not section.startswith("[includes"):
+		            continue
+		        rel = os.path.join(dec, line.split("|")[0].strip())
+		        if any(rel == s or rel.startswith(s + "/") for s in off) and not os.path.isdir(os.path.join(root, rel)):
+		            os.makedirs(os.path.join(root, rel))
+		            made += 1
+		print("  %d cartelle di include dei .dec nei submodule lasciati fuori" % made)
+	EOF
+	echo "  submodule: ${EDK2_SUBMODULES[*]}, LvglPkg/Library/LvglLib/lvgl"
 
 	# --whitespace=nowarn: le righe CRLF dei file di EDK2 per git apply sono
 	# spazi in fondo alla riga
@@ -1254,27 +1297,6 @@ efi_app() {
 		-Wl,-subsystem:efi_application -Wl,-entry:efi_main -o "$2" "$1"
 }
 
-# Una prova in QEMU (tools/qemu-smoke.py, tools/qemu-update.py): la cartella
-# della prova in $1, il nome in $2, il log in $3 (/dev/null: niente), poi il
-# comando. Le prove vanno in KVM se c'e' (/dev/kvm leggibile e scrivibile:
-# nella CI, con i permessi che build.yml da'; in TCG dura quattro volte
-# tanto). Fallita in KVM, la stessa prova di nuovo in TCG, con la cartella
-# della prova in KVM messa da parte ($1-kvm): se in TCG passa, e' KVM della
-# macchina, non il firmware, e lo dice un avviso; la build va avanti.
-# OUROBIOS_QEMU_ACCEL (kvm o tcg) nell'ambiente toglie scelta e ripetizione
-qemu_test() {
-	local out="$1" what="$2" log="$3"; shift 3
-	if "$@" 2>&1 | tee "${log}"; then return 0; fi
-	if [ -n "${OUROBIOS_QEMU_ACCEL:-}" ] || ! [ -r /dev/kvm ] || ! [ -w /dev/kvm ]; then return 1; fi
-	rm -rf "${out}-kvm"
-	mv "${out}" "${out}-kvm" 2>/dev/null || true
-	[ "${log}" = /dev/null ] || cp "${log}" "${out}-kvm/" 2>/dev/null || true
-	say "${what}: fallita in KVM, di nuovo in TCG (la prova in KVM in ${out}-kvm)"
-	if ! OUROBIOS_QEMU_ACCEL=tcg "$@" 2>&1 | tee "${log}"; then return 1; fi
-	note warning "${what}" "fallita in KVM, passata in TCG: KVM della macchina, non il firmware? La prova in KVM e' in ${out}-kvm"
-	echo "  !!  ${what}: fallita in KVM, passata in TCG (${out}-kvm)"
-}
-
 # La prova di fumo: il payload della variante, gia' costruito da roms, in una
 # ROM per QEMU q35. Del W541 non si emula niente: girano il payload (le patch
 # di EDK2 e LvglPkg) e il codice comune di coreboot. DRIVERS_EFI_FW_INFO con
@@ -1349,15 +1371,13 @@ cmd_smoke() {
 			fi
 			say "smoke ${v}: QEMU a ${res}"
 			if [ "${res}" = 1920x1080 ]; then
-				qemu_test "${WORK}/smoke-${v}" "smoke ${v}" /dev/null \
-					python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-${v}" --reloc-test "${reloc}" \
+				python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-${v}" --reloc-test "${reloc}" \
 					"${TREE}/build-${q}/coreboot.rom" \
 					|| die "smoke ${v}: il payload non passa la prova in QEMU (${WORK}/smoke-${v})"
 				tested="${fd}"
 				tested_v="${v}"
 			else
-				qemu_test "${WORK}/smoke-${v}-${res}" "smoke ${v} a ${res}" /dev/null \
-					python3 "${O}/tools/qemu-smoke.py" --setup-only --vga-mb 32 --size "${res}" \
+				python3 "${O}/tools/qemu-smoke.py" --setup-only --vga-mb 32 --size "${res}" \
 					--out "${WORK}/smoke-${v}-${res}" "${TREE}/build-${q}/coreboot.rom" \
 					|| die "smoke ${v}: il setup a ${res} non passa la prova in QEMU (${WORK}/smoke-${v}-${res})"
 			fi
@@ -1409,9 +1429,8 @@ cmd_update_test() {
 	say "update-test: QEMU"
 	for rom in "${UPDATE_TEST_ROMS[@]}"; do caps+=("${ut}/${rom%% *}.cap"); done
 	local rc=0 last
-	qemu_test "${ut}/out" update-test "${ut}/qemu-update.log" \
-		python3 "${O}/tools/qemu-update.py" --out "${ut}/out" --lock-test "${ut}/slot-lock-test.efi" "${caps[@]}" \
-		|| rc=$?
+	python3 "${O}/tools/qemu-update.py" --out "${ut}/out" --lock-test "${ut}/slot-lock-test.efi" "${caps[@]}" \
+		2>&1 | tee "${ut}/qemu-update.log" || rc=$?
 	if [ "${rc}" != 0 ]; then
 		# nella CI il log del job non si legge sempre: l'esito di ogni passo,
 		# il motivo e la fine della seriale dell'ultimo avvio in un'annotazione
