@@ -590,7 +590,7 @@ cmd_compare() {
 		fi
 		bad=1
 		echo "  NO  ${v}: la ROM del job repro e' diversa da quella del job build"
-		python3 - "${O}/tools" "${a}/${n}.rom" "${b}/${n}.rom" <<-'EOF'
+		python3 - "${O}/tools" "${a}/${n}.rom" "${b}/${n}.rom" <<-'EOF' || echo "      (regioni non confrontate)"
 			import sys
 			sys.path.insert(0, sys.argv[1])
 			import update

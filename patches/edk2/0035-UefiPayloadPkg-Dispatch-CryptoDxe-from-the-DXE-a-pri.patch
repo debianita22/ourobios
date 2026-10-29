@@ -1,0 +1,63 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 14:15:51 +0100
+Subject: [PATCH] UefiPayloadPkg: Dispatch CryptoDxe from the DXE a priori list
+
+With CRYPTO_PROTOCOL_SUPPORT every DXE module that links DxeCryptLib
+carries gEdkiiCryptoProtocolGuid in its depex. The DXE dispatcher
+evaluates the depex of all the drivers of the volume before it runs
+the ones it found ready, so CryptoDxe, whose depex is TRUE, runs in
+the first pass and all of its clients wait for the second one:
+SecurityStubDxe, TcgDxe, Tcg2Dxe, SecureBootConfigDxe, FmpDxe,
+UserAuthenticationDxe. Without the protocol they were all in the
+first pass, in the order of the volume.
+
+TcgDxe, the TPM 1.2 driver, has no dependency and used to be up before
+the variable write service. When EnrollDefaultKeys provisions the
+Secure Boot keys of a fresh variable store, VariableRuntimeDxe
+measures PK, KEK, db, dbx and SecureBoot in PCR 7 through
+DxeTpmMeasurementLib, which looks the TCG protocol up at every call
+and returns quietly when it is not there yet. With TcgDxe in the
+second pass the measurements of that boot are lost: on a TPM 1.2
+machine PCR 7 holds the separator only and the event log misses the
+seven EV_EFI_VARIABLE_DRIVER_CONFIG events. Tcg2Dxe measures all the
+Secure Boot variables itself once the write service is up, TcgDxe
+does not.
+
+List CryptoDxe in the DXE a priori file, after PcdDxe: the a priori
+drivers run before the depex of the others is evaluated, so the crypto
+protocol is there from the start and every client is dispatched in
+the first pass, where it was. CryptoDxe needs the PCD protocol only,
+for DxePcdLib, and PcdDxe comes first in the list.
+
+TEST=coreboot q35 with the TPM 1.2 of swtpm in QEMU, the nri payload
+of ouroBIOS: the TCPA log has the 21 events of the payload without
+the crypto protocol again, the seven PCR 7 measurements of the Secure
+Boot variables included, with the same digests; 14 before the change.
+tools/qemu-smoke.py passes.
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ UefiPayloadPkg/UefiPayloadPkg.fdf | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
+index 6ddc86f..81aa063 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.fdf
++++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
+@@ -155,6 +155,11 @@ APRIORI DXE {
+   INF  MdeModulePkg/Universal/ReportStatusCodeRouter/RuntimeDxe/ReportStatusCodeRouterRuntimeDxe.inf
+   INF  MdeModulePkg/Universal/StatusCodeHandler/RuntimeDxe/StatusCodeHandlerRuntimeDxe.inf
+   INF  UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf
++!if $(CRYPTO_PROTOCOL_SUPPORT) == TRUE
++  !if $(CRYPTO_DRIVER_EXTERNAL_SUPPORT) == FALSE
++  INF  CryptoPkg/Driver/CryptoDxe.inf
++  !endif
++!endif
+ !if $(CAPSULE_SUPPORT) == TRUE
+ 
+     # This is a verbatim copy from below, make sure to keep it in sync
+-- 
+2.43.0
+
