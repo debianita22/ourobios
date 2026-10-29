@@ -42,6 +42,16 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   (0145-0147, 0149); under macOS only, an embedded controller by name,
   `\_SB.USBX` and the PMC of the PCH, as the SSDT-EC, SSDT-USBX and
   SSDT-PMC samples of OpenCore (0148).
+- From rc3, the fan of the M920x follows the temperature
+  ([docs/m920x.md](docs/m920x.md#fan)). Up to rc2 it stayed at about 850
+  rpm whatever the load, and the CPU went to 95-100 °C: coreboot's
+  NCT6687D driver cleared the temperature sources of the EC, with none
+  in the devicetree, so its firmware read 0 °C everywhere. The board now
+  sets the sources the EC firmware has itself, and at every boot tells
+  the EC the platform as Lenovo's firmware does (PEG card, TDP class,
+  power-loss policy), so that it loads its profile for it (0150-0153).
+  The ICE mode of the OEM setup is in *Hardware* → *Cooling*: *Better
+  acoustics* (the default), *Better cooling*, *Full speed*.
 
 ## v1.3.10
 

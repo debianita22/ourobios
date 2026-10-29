@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 29 Oct 2026 23:21:17 +0100
+Subject: [PATCH] superio/nuvoton/nct6687d: Let a board turn on the filter of a
+ sensor
+
+init_sensors() writes the source of each sensor with its bit 7 masked
+off: that bit (FILTER_EN) makes the EC average the readings of the
+sensor, and EC firmwares turn it on for the thermal diodes and PECI.
+The Lenovo firmware of the NCT6686D in the ThinkCentre Tiny boards
+loads 0xa0, 0x82 and 0x83 into SENSOR_CFG for PECI 0.0 and the diodes
+TD0P and TD1P.
+
+Add sensor_filter[], one per sensor, off by default, so that the
+boards that set none program what they program today.
+
+TEST=Built lenovo/m920x, whose devicetree sets it on four sensors.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/superio/nuvoton/nct6687d/chip.h         | 2 ++
+ src/superio/nuvoton/nct6687d/nct6687d_hwm.c | 3 ++-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/src/superio/nuvoton/nct6687d/chip.h b/src/superio/nuvoton/nct6687d/chip.h
+index 44e28b6d19..ef222644a4 100644
+--- a/src/superio/nuvoton/nct6687d/chip.h
++++ b/src/superio/nuvoton/nct6687d/chip.h
+@@ -332,6 +332,8 @@ struct nct6687d_fan_config {
+ struct superio_nuvoton_nct6687d_config {
+ 	struct nct6687d_fan_config fans[MAX_NUM_FANS];
+ 	enum nct6687d_sensor_src_select sensors[MAX_NUM_SENSORS];
++	/* Average the readings of the sensor, as EC firmwares do for the diodes */
++	bool sensor_filter[MAX_NUM_SENSORS];
+ 
+ 	enum nct6687d_peci_speed peci_speed;
+ 
+diff --git a/src/superio/nuvoton/nct6687d/nct6687d_hwm.c b/src/superio/nuvoton/nct6687d/nct6687d_hwm.c
+index e7d80f493d..6001f38431 100644
+--- a/src/superio/nuvoton/nct6687d/nct6687d_hwm.c
++++ b/src/superio/nuvoton/nct6687d/nct6687d_hwm.c
+@@ -220,7 +220,8 @@ static void init_sensors(const struct superio_nuvoton_nct6687d_config *conf)
+ 	hwm_reg_set_bits(HWM_CONFIG_REG, HWM_EN);
+ 
+ 	for (i = 0; i < MAX_NUM_SENSORS; i++) {
+-		hwm_reg_write(SENSOR_CFG_REG(i), sensors[i] & SENSOR_SRC_SEL_MASK);
++		hwm_reg_write(SENSOR_CFG_REG(i), (sensors[i] & SENSOR_SRC_SEL_MASK) |
++			      (conf->sensor_filter[i] ? FILTER_EN : 0));
+ 
+ 		if (sensors[i] >= PECI_AGENT0_DOMAIN0 &&
+ 		    sensors[i] <= PECI_AGENT3_DOMAIN1) {
+-- 
+2.47.3
+

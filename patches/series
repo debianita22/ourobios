@@ -143,3 +143,7 @@
 0147-soc-intel-common-block-acpi-Give-macOS-plugin-type-o.patch
 0148-mb-lenovo-m720q_m920q-Add-what-macOS-looks-for-on-th.patch
 0149-mb-lenovo-m720q_m920q-Put-CFG-Lock-and-the-processor.patch
+0150-superio-nuvoton-nct6687d-Let-a-board-turn-on-the-fil.patch
+0151-superio-nuvoton-nct6687d-Add-a-function-for-configur.patch
+0152-mb-lenovo-m720q_m920q-Give-the-EC-the-temperatures-o.patch
+0153-mb-lenovo-m720q_m920q-Report-the-platform-to-the-EC-.patch
