@@ -1,0 +1,74 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 29 Oct 2026 22:02:44 +0100
+Subject: [PATCH] soc/intel/common/block/acpi: Give macOS plugin-type on the
+ first CPU
+
+With the CPU threads declared as Processor objects (acpi_cpu_objects),
+macOS finds them, but its kernel runs XCPM, its CPU power management,
+only when the first thread carries the property plugin-type 1, which
+makes it load the X86PlatformPlugin. OpenCore configurations add it with
+an SSDT, OpenCore's SSDT-PLUG sample, that defines _DSM on the first
+CPU.
+
+Add that _DSM to the first Processor object: for Apple's UUID
+(a0b5b7c6-1318-441c-b0c9-fe695eaf949b) function 0 lists function 1,
+which returns Package () { "plugin-type", 1 }; other functions and other
+UUIDs get Buffer () { 0 }. No other OS asks with Apple's UUID. The
+Device (ACPI0007) objects, the default, get no _DSM: macOS does not find
+CPUs declared that way.
+
+TEST=Built lenovo/m920x.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/soc/intel/common/block/acpi/acpi.c | 26 ++++++++++++++++++++++++++
+ 1 file changed, 26 insertions(+)
+
+diff --git a/src/soc/intel/common/block/acpi/acpi.c b/src/soc/intel/common/block/acpi/acpi.c
+index 63adbd8a0d..2d3be28786 100644
+--- a/src/soc/intel/common/block/acpi/acpi.c
++++ b/src/soc/intel/common/block/acpi/acpi.c
+@@ -358,6 +358,25 @@ __weak void soc_power_states_generation(int core_id,
+ {
+ }
+ 
++/*
++ * The _DSM through which macOS takes device properties (Apple's UUID), on
++ * the first thread: plugin-type 1 there makes the kernel load the
++ * X86PlatformPlugin, thus XCPM, the CPU power management of macOS. It is
++ * what the SSDT-PLUG sample of OpenCore adds; no other OS asks with this
++ * UUID.
++ */
++#define APPLE_DSM_UUID	"a0b5b7c6-1318-441c-b0c9-fe695eaf949b"
++
++static void apple_dsm_plugin_type(void *arg)
++{
++	/* Return (Package () { "plugin-type", 1 }) */
++	acpigen_emit_byte(RETURN_OP);
++	acpigen_write_package(2);
++	acpigen_write_string("plugin-type");
++	acpigen_write_integer(1);
++	acpigen_write_package_end();
++}
++
+ static void generate_cpu_entry(int cpu, int core, int cores_per_package, bool processor_op)
+ {
+ 	const unsigned int index = cpu * cores_per_package + core;
+@@ -380,6 +399,13 @@ static void generate_cpu_entry(int cpu, int core, int cores_per_package, bool pr
+ 	/* Soc specific power states generation */
+ 	soc_power_states_generation(core, cores_per_package);
+ 
++	/* macOS only finds Processor objects: plugin-type with them */
++	if (processor_op && index == 0) {
++		/* Function 0 lists function 1, the properties */
++		void (*callbacks[])(void *) = { NULL, apple_dsm_plugin_type };
++		acpigen_write_dsm(APPLE_DSM_UUID, callbacks, ARRAY_SIZE(callbacks), NULL);
++	}
++
+ 	if (processor_op)
+ 		acpigen_write_processor_end();
+ 	else
+-- 
+2.47.3
+

@@ -1,0 +1,116 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 29 Oct 2026 22:02:08 +0100
+Subject: [PATCH] soc/intel/common/block/acpi: Option to declare the CPUs as
+ Processor
+
+The SSDT declares each CPU thread as a Device with _HID ACPI0007
+(acpigen_write_processor_device()), the form the ACPI specification asks
+for since version 6.3, which deprecated the Processor operator. macOS
+only looks for Processor objects: with none it finds no CPU and stops
+early in the boot, unless an SSDT loaded by OpenCore wraps the devices
+in Processor objects of its own.
+
+Add an acpi_cpu_objects option, the name the Haswell CPU code of this
+tree reads, that writes Processor(\_SB.CPxx, xx, 0, 0) instead, with the
+same names, processor IDs (the UIDs of the MADT) and contents. No
+processor block: _CST and _PSS go through MWAIT and the MSRs. It
+defaults to Device objects, which is what the code does today; Linux and
+Windows work with both.
+
+TEST=On an M920x with the build before this, the SSDT declares its four
+threads as Device (\_SB.CP00) to (\_SB.CP03), _HID ACPI0007. Built
+lenovo/m920x.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/soc/intel/common/block/acpi/acpi.c        | 32 +++++++++++++++----
+ .../common/block/include/intelblocks/acpi.h   |  4 +++
+ 2 files changed, 29 insertions(+), 7 deletions(-)
+
+diff --git a/src/soc/intel/common/block/acpi/acpi.c b/src/soc/intel/common/block/acpi/acpi.c
+index 325720326f..63adbd8a0d 100644
+--- a/src/soc/intel/common/block/acpi/acpi.c
++++ b/src/soc/intel/common/block/acpi/acpi.c
+@@ -18,6 +18,7 @@
+ #include <intelblocks/sgx.h>
+ #include <intelblocks/tco.h>
+ #include <intelblocks/uart.h>
++#include <option.h>
+ #include <soc/gpio.h>
+ #include <soc/intel/common/tco.h>
+ #include <soc/iomap.h>
+@@ -357,10 +358,19 @@ __weak void soc_power_states_generation(int core_id,
+ {
+ }
+ 
+-static void generate_cpu_entry(int cpu, int core, int cores_per_package)
++static void generate_cpu_entry(int cpu, int core, int cores_per_package, bool processor_op)
+ {
+-	/* Generate processor \_SB.CPUx */
+-	acpigen_write_processor_device(cpu * cores_per_package + core);
++	const unsigned int index = cpu * cores_per_package + core;
++
++	/*
++	 * Generate processor \_SB.CPUx: a Device with _HID ACPI0007, or Processor,
++	 * deprecated since ACPI 6.3, without a processor block: the _CST and _PSS
++	 * below go through MWAIT and the MSRs.
++	 */
++	if (processor_op)
++		acpigen_write_processor(index, 0, 0);
++	else
++		acpigen_write_processor_device(index);
+ 
+ 	/* Generate C-state tables */
+ 	generate_c_state_entries();
+@@ -370,7 +380,10 @@ static void generate_cpu_entry(int cpu, int core, int cores_per_package)
+ 	/* Soc specific power states generation */
+ 	soc_power_states_generation(core, cores_per_package);
+ 
+-	acpigen_write_processor_device_end();
++	if (processor_op)
++		acpigen_write_processor_end();
++	else
++		acpigen_write_processor_device_end();
+ }
+ 
+ void generate_cpu_entries(const struct device *device)
+@@ -384,12 +397,17 @@ void generate_cpu_entries(const struct device *device)
+ 
+ 	int numcpus = totalcores / num_virt;
+ 
+-	printk(BIOS_DEBUG, "Found %d CPU(s) with %d/%d physical/logical core(s) each.\n",
+-	       numcpus, num_phys, num_virt);
++	/* macOS only finds CPUs declared with Processor */
++	const bool processor_op = get_uint_option("acpi_cpu_objects", ACPI_CPU_OBJECTS_DEVICE)
++				  == ACPI_CPU_OBJECTS_PROCESSOR;
++
++	printk(BIOS_DEBUG, "Found %d CPU(s) with %d/%d physical/logical core(s) each, "
++	       "as %s objects.\n", numcpus, num_phys, num_virt,
++	       processor_op ? "Processor" : "Device");
+ 
+ 	for (cpu_id = 0; cpu_id < numcpus; cpu_id++)
+ 		for (core_id = 0; core_id < num_virt; core_id++)
+-			generate_cpu_entry(cpu_id, core_id, num_virt);
++			generate_cpu_entry(cpu_id, core_id, num_virt, processor_op);
+ 
+ 	/* PPKG is usually used for thermal management
+ 	   of the first and only package. */
+diff --git a/src/soc/intel/common/block/include/intelblocks/acpi.h b/src/soc/intel/common/block/include/intelblocks/acpi.h
+index fd3d03684a..90c3a6b1fe 100644
+--- a/src/soc/intel/common/block/include/intelblocks/acpi.h
++++ b/src/soc/intel/common/block/include/intelblocks/acpi.h
+@@ -18,6 +18,10 @@ enum core_type {
+ 	CPUID_UNKNOWN = 0xff,
+ };
+ 
++/* The acpi_cpu_objects option: how the SSDT declares the CPU threads */
++#define ACPI_CPU_OBJECTS_DEVICE		0	/* Device, with _HID ACPI0007 */
++#define ACPI_CPU_OBJECTS_PROCESSOR	1	/* Processor, deprecated since ACPI 6.3 */
++
+ /* CPU Performance Type */
+ enum cpu_perf_eff_type {
+ 	CPU_TYPE_EFF,
+-- 
+2.47.3
+

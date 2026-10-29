@@ -34,6 +34,14 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   the four lanes of DDI-A, which has no panel on this desktop: the VBT has
   a DisplayPort on DDI-E, most likely for the VGA option, and i915 warned
   at every boot that it had no lanes (0144).
+- From rc3, on the M920x, what macOS needs of the firmware on a Coffee
+  Lake desktop, as for the W541, not yet tried with macOS
+  ([docs/macos.md](docs/macos.md#thinkcentre-m920x)): the setup options
+  *ACPI processor objects* (`Processor`, with `plugin-type` on the
+  first) and *C-state configuration lock*, in *Compatibility* → *macOS*
+  (0145-0147, 0149); under macOS only, an embedded controller by name,
+  `\_SB.USBX` and the PMC of the PCH, as the SSDT-EC, SSDT-USBX and
+  SSDT-PMC samples of OpenCore (0148).
 
 ## v1.3.10
 

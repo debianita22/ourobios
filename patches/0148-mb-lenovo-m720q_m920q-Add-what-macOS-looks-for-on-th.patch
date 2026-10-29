@@ -1,0 +1,161 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 29 Oct 2026 22:04:17 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Add what macOS looks for on this
+ desktop
+
+OpenCore configurations for Coffee Lake desktops with a 300 series
+chipset add three SSDT samples: SSDT-EC, an embedded controller by name,
+which macOS wants for its USB power management and a desktop does not
+have; SSDT-USBX, the USB power properties that macOS reads with the
+SMBIOS of a Mac from Skylake on; SSDT-PMC, the power management
+controller of the PCH at PWRMBASE (APP9876), for the NVRAM of macOS.
+
+Add them to the DSDT, each with _STA 0 unless the OS answers _OSI
+("Darwin") (ISDW): Linux and Windows do not see them. The EC has the
+_HID of no driver (ACID0001), so that no OS binds an EC driver to it;
+the USB power properties are those of the OpenCore sample: 5100 mA of
+supply and 2100 mA of current limit, in sleep and awake.
+
+TEST=iasl 20250404 compiles the file, with \_SB.PCI0.LPCB and the
+PWRMBASE of soc/iomap.h. In acpiexec, without "Darwin" in _OSI the _STA
+of EC, PMCR and USBX return 0, with it 0x0f, 0x0b and 0x0f; USBX._DSM
+returns Buffer {0x03} for function 0 of Apple's UUID, the four
+properties for function 1 and Buffer {0} for another UUID; PMCR._CRS is
+0xfe000000, 64 KiB. Built lenovo/m920x.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../lenovo/m720q_m920q/acpi/macos.asl         | 106 ++++++++++++++++++
+ src/mainboard/lenovo/m720q_m920q/dsdt.asl     |   3 +
+ 2 files changed, 109 insertions(+)
+ create mode 100644 src/mainboard/lenovo/m720q_m920q/acpi/macos.asl
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/acpi/macos.asl b/src/mainboard/lenovo/m720q_m920q/acpi/macos.asl
+new file mode 100644
+index 0000000000..734f2f4c8d
+--- /dev/null
++++ b/src/mainboard/lenovo/m720q_m920q/acpi/macos.asl
+@@ -0,0 +1,106 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <soc/iomap.h>
++
++/*
++ * What macOS looks for on a desktop of this generation and this board does
++ * not otherwise have, which OpenCore configurations add with the SSDT-EC,
++ * SSDT-USBX and SSDT-PMC samples: an embedded controller by name, the USB
++ * power properties and the power management controller of the PCH. Under
++ * macOS only: no other OS sees these devices.
++ */
++
++/*
++ * 1 when the OS answers _OSI ("Darwin"): macOS; Linux only on Apple
++ * hardware, Windows never.
++ */
++Method (ISDW, 0, NotSerialized)
++{
++	If (CondRefOf (\_OSI)) {
++		If (\_OSI ("Darwin")) {
++			Return (1)
++		}
++	}
++	Return (0)
++}
++
++Scope (\_SB.PCI0.LPCB)
++{
++	/*
++	 * An embedded controller by name, which this desktop does not have:
++	 * macOS wants one for its USB power management. Its _HID is no EC's,
++	 * so that no OS binds an EC driver to it.
++	 */
++	Device (EC)
++	{
++		Name (_HID, "ACID0001")
++
++		Method (_STA)
++		{
++			If (\ISDW ()) {
++				Return (0x0f)
++			}
++			Return (0)
++		}
++	}
++
++	/*
++	 * The power management controller of the PCH, at PWRMBASE, which the
++	 * OpenCore guides add on the 300 series chipsets for the NVRAM of
++	 * macOS.
++	 */
++	Device (PMCR)
++	{
++		Name (_HID, EisaId ("APP9876"))
++
++		Method (_STA)
++		{
++			If (\ISDW ()) {
++				Return (0x0b)
++			}
++			Return (0)
++		}
++
++		Name (_CRS, ResourceTemplate () {
++			Memory32Fixed (ReadWrite, PCH_PWRM_BASE_ADDRESS, PCH_PWRM_BASE_SIZE)
++		})
++	}
++}
++
++/*
++ * The USB power properties of macOS, which it reads from this device with
++ * the SMBIOS of a Mac from Skylake on: the supply and the current limit of
++ * the ports, in sleep and awake, in mA. The values of the SSDT-EC-USBX
++ * sample of OpenCore.
++ */
++Scope (\_SB)
++{
++	Device (USBX)
++	{
++		Name (_ADR, 0)
++
++		Method (_STA)
++		{
++			If (\ISDW ()) {
++				Return (0x0f)
++			}
++			Return (0)
++		}
++
++		Method (_DSM, 4, Serialized)
++		{
++			If (Arg0 != ToUUID ("a0b5b7c6-1318-441c-b0c9-fe695eaf949b")) {
++				Return (Buffer (One) { 0x00 })
++			}
++			If (Arg2 == Zero) {
++				Return (Buffer (One) { 0x03 })
++			}
++			Return (Package () {
++				"kUSBSleepPowerSupply", 5100,
++				"kUSBSleepPortCurrentLimit", 2100,
++				"kUSBWakePowerSupply", 5100,
++				"kUSBWakePortCurrentLimit", 2100,
++			})
++		}
++	}
++}
+diff --git a/src/mainboard/lenovo/m720q_m920q/dsdt.asl b/src/mainboard/lenovo/m720q_m920q/dsdt.asl
+index 2985d3a3b8..777df2d431 100644
+--- a/src/mainboard/lenovo/m720q_m920q/dsdt.asl
++++ b/src/mainboard/lenovo/m720q_m920q/dsdt.asl
+@@ -21,5 +21,8 @@ DefinitionBlock(
+ 		#include <soc/intel/cannonlake/acpi/southbridge.asl>
+ 	}
+ 
++	/* What macOS looks for on this desktop, under macOS only */
++	#include "acpi/macos.asl"
++
+ 	#include <southbridge/intel/common/acpi/sleepstates.asl>
+ }
+-- 
+2.47.3
+
