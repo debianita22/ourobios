@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 22:05:12 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Put CFG Lock and the processor objects
+ in setup
+
+Add a macOS form to the Compatibility category of the setup menu, as on
+the W541, with the two options that replace parts of an OpenCore
+configuration: "ACPI processor objects" (acpi_cpu_objects: Device
+(ACPI0007), or Processor, the first one with plugin-type) and "C-state
+configuration lock" (cfg_lock). Both default to what the code did
+before.
+
+TEST=Built lenovo/m920x.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/cfr.c | 45 ++++++++++++++++++++++++++
+ 1 file changed, 45 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index 0daea7fdf0..c160d3193f 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -7,6 +7,7 @@
+ #include <cpu/x86/name.h>
+ #include <drivers/option/cfr_frontend.h>
+ #include <drivers/vpd/vpd.h>
++#include <intelblocks/acpi.h>
+ #include <intelblocks/pmclib.h>
+ #include <memory_info.h>
+ #include <soc/soc_chip.h>
+@@ -512,6 +513,49 @@ static const struct sm_object security_me = SM_DECLARE_FORM({
+ 
+ /* Compatibility */
+ 
++/* Read by the SSDT generator (soc/intel/common/block/acpi/acpi.c) */
++static const struct sm_object acpi_cpu_objects = SM_DECLARE_ENUM({
++	.opt_name	= "acpi_cpu_objects",
++	.ui_name	= "ACPI processor objects",
++	.ui_helptext	= "How the ACPI tables declare the CPU threads: as Device\n"
++			  "objects with _HID ACPI0007, the form ACPI asks for since\n"
++			  "version 6.3, or as Processor objects, the older form and\n"
++			  "the only one macOS looks for, the first one with the\n"
++			  "plugin-type of its CPU power management. Linux and\n"
++			  "Windows work with both.\n"
++			  "Default: Device (ACPI0007).",
++	.default_value	= ACPI_CPU_OBJECTS_DEVICE,
++	.values		= (const struct sm_enum_value[]) {
++				{ "Device (ACPI0007)",	ACPI_CPU_OBJECTS_DEVICE		},
++				{ "Processor",		ACPI_CPU_OBJECTS_PROCESSOR	},
++				SM_ENUM_VALUE_END					},
++});
++
++/* Read by the CPU code (soc/intel/cannonlake/cpu.c) and FSP-S parameters */
++static const struct sm_object cfg_lock = SM_DECLARE_BOOL({
++	.opt_name	= "cfg_lock",
++	.ui_name	= "C-state configuration lock",
++	.ui_helptext	= "Lock the package C-state configuration (MSR 0xE2, CFG\n"
++			  "Lock) once the firmware has set it, so that the OS cannot\n"
++			  "change it. macOS writes it: with the lock, it only boots\n"
++			  "with the OpenCore quirk AppleXcpmCfgLock.\n"
++			  "Default: on.",
++	.default_value	= true,
++});
++
++/*
++ * What an OpenCore configuration did for macOS, with an option: the help of
++ * each says what it replaces. The other macOS fixes need no option.
++ */
++static const struct sm_object compatibility_macos = SM_DECLARE_FORM({
++	.ui_name	= "macOS",
++	.obj_list	= (const struct sm_object *[]) {
++		&acpi_cpu_objects,
++		&cfg_lock,
++		NULL
++	},
++});
++
+ /* Read by FSP-S parameters (soc/intel/cannonlake/fsp_params.c) */
+ static const struct sm_object legacy_8254_timer = SM_DECLARE_BOOL({
+ 	.opt_name	= "legacy_8254_timer",
+@@ -574,6 +618,7 @@ static struct sm_obj_form security = {
+ static struct sm_obj_form compatibility = {
+ 	.ui_name = "Compatibility",
+ 	.obj_list = (const struct sm_object *[]) {
++		&compatibility_macos,
+ 		&compatibility_legacy,
+ 		NULL
+ 	},
+-- 
+2.47.3
+

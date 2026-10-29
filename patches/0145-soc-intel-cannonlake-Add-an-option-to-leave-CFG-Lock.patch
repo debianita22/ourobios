@@ -1,0 +1,61 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 22:01:07 +0100
+Subject: [PATCH] soc/intel/cannonlake: Add an option to leave CFG Lock off
+
+configure_c_states() always sets bit 15 of MSR_PKG_CST_CONFIG_CONTROL,
+which locks bits 15:0 of that MSR (CFG Lock) until the next reset, and
+FSP-S has PmgCstCfgCtrlLock on by default. The power management of
+macOS (XCPM) writes the MSR: with the lock set, macOS only boots with
+the OpenCore quirk AppleXcpmCfgLock, which patches the kernel to skip
+the write.
+
+Read the "cfg_lock" option, the name the Haswell CPU code of this tree
+reads, in both places. It defaults to enabled, which is what the code
+does today.
+
+TEST=On an M920x with the build before this, MSR 0xE2 reads 0x00008008
+on all four threads. Built lenovo/m920x.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/soc/intel/cannonlake/cpu.c        | 8 +++++++-
+ src/soc/intel/cannonlake/fsp_params.c | 3 +++
+ 2 files changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/src/soc/intel/cannonlake/cpu.c b/src/soc/intel/cannonlake/cpu.c
+index 52b5e7ee96..ed211e011a 100644
+--- a/src/soc/intel/cannonlake/cpu.c
++++ b/src/soc/intel/cannonlake/cpu.c
+@@ -83,7 +83,13 @@ static void configure_c_states(const config_t *const cfg)
+ 	if (cfg->max_package_c_state && (msr.lo & 0xf) >= cfg->max_package_c_state) {
+ 		msr.lo = (msr.lo & ~0xf) | ((cfg->max_package_c_state - 1) & 0xf);
+ 	}
+-	msr.lo |= CST_CFG_LOCK_MASK;
++	/*
++	 * CFG Lock, which locks bits 15:0 until the next reset: the "cfg_lock"
++	 * option, on by default. macOS writes this MSR, and with the lock it
++	 * only boots with the OpenCore quirk AppleXcpmCfgLock.
++	 */
++	if (get_uint_option("cfg_lock", 1))
++		msr.lo |= CST_CFG_LOCK_MASK;
+ 	wrmsr(MSR_PKG_CST_CONFIG_CONTROL, msr);
+ 
+ 	/* C-state Interrupt Response Latency Control 0 - package C3 latency */
+diff --git a/src/soc/intel/cannonlake/fsp_params.c b/src/soc/intel/cannonlake/fsp_params.c
+index b2dda7fc90..3ddd704d0e 100644
+--- a/src/soc/intel/cannonlake/fsp_params.c
++++ b/src/soc/intel/cannonlake/fsp_params.c
+@@ -448,6 +448,9 @@ void platform_fsp_silicon_init_params_cb(FSPS_UPD *supd)
+ 	s_cfg->Enable8254ClockGating = !use_8254;
+ 	s_cfg->Enable8254ClockGatingOnS3 = !use_8254;
+ 
++	/* CFG Lock of MSR_PKG_CST_CONFIG_CONTROL, which FSP-S sets by default (cpu.c) */
++	s_cfg->PmgCstCfgCtrlLock = get_uint_option("cfg_lock", 1);
++
+ 	/*
+ 	 * Legacy PM ACPI Timer (and TCO Timer)
+ 	 * This *must* be 1 in any case to keep FSP from
+-- 
+2.47.3
+

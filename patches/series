@@ -138,3 +138,8 @@
 0142-mb-lenovo-m720q_m920q-Enable-LTR-on-the-PCIe-root-po.patch
 0143-mb-lenovo-m720q_m920q-Program-the-ALC233-as-the-OEM-.patch
 0144-mb-lenovo-m720q_m920q-Split-the-eDP-lanes-between-DD.patch
+0145-soc-intel-cannonlake-Add-an-option-to-leave-CFG-Lock.patch
+0146-soc-intel-common-block-acpi-Option-to-declare-the-CP.patch
+0147-soc-intel-common-block-acpi-Give-macOS-plugin-type-o.patch
+0148-mb-lenovo-m720q_m920q-Add-what-macOS-looks-for-on-th.patch
+0149-mb-lenovo-m720q_m920q-Put-CFG-Lock-and-the-processor.patch

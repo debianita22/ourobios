@@ -6,12 +6,15 @@ about them. Part of what an OpenCore configuration for the W541 adds,
 though, makes up for choices of the firmware. From v1.3.10 the firmware
 does some of it itself, always, under macOS only or behind a setup option,
 so that the configuration can drop it. This page lists what, and what
-stays in OpenCore.
+stays in OpenCore. From v1.4.0-rc3 the ThinkCentre M920x firmware does
+the same for a desktop of its generation:
+[ThinkCentre M920x](#thinkcentre-m920x).
 
 - [What the firmware does](#what-the-firmware-does)
 - [In the OpenCore configuration](#in-the-opencore-configuration)
 - [The panel as built-in display](#the-panel-as-built-in-display)
 - [Native NVRAM](#native-nvram)
+- [ThinkCentre M920x](#thinkcentre-m920x)
 - [Not done](#not-done)
 - [Linux and Windows](#linux-and-windows)
 
@@ -291,6 +294,32 @@ sudo nvram -d ouro-test
 EDK2 reclaims the space of deleted and replaced variables at boot, not
 while the OS runs: with the store full, a variable written under macOS is
 refused until the next boot. A store filled by macOS has not been tried.
+
+## ThinkCentre M920x
+
+From v1.4.0-rc3 the M920x firmware does for macOS what a Coffee Lake
+desktop with a 300 series chipset needs, behind the same setup options
+as on the W541 or under macOS only. None of it has been tried with macOS
+yet. The payload is the one of the W541, so what the table at the top
+does always in the payload (the com buffer of SMMSTORE, the memory
+attributes table, the memory for boot.efi, the firmware revision) holds
+on the M920x too, and so does [Native NVRAM](#native-nvram).
+
+| | When | What OpenCore does for it |
+|---|---|---|
+| The CPU threads as `Processor` objects, `\_SB.CP00` onwards, with `plugin-type` 1 on the first one (patches 0146, 0147) | setup: *Compatibility* → *macOS* → *ACPI processor objects*: *Processor* (default: *Device (ACPI0007)*) | an SSDT that declares `Processor` objects for the ACPI0007 devices, and `SSDT-PLUG` |
+| CFG Lock off, in coreboot and in FSP-S (0145) | setup: *Compatibility* → *macOS* → *C-state configuration lock*: off (default: on) | the kernel quirk `AppleXcpmCfgLock` |
+| An embedded controller by name, `\_SB.PCI0.LPCB.EC`, which this desktop does not have; its `_HID`, `ACID0001`, is no EC's, so no OS binds an EC driver to it (0148) | under macOS | `SSDT-EC` |
+| The USB power properties in `\_SB.USBX`, as on the W541 (0148) | under macOS | `SSDT-USBX` |
+| The power management controller of the PCH, `\_SB.PCI0.LPCB.PMCR` (`APP9876`, at 0xFE000000), which the OpenCore guides add on the 300 series chipsets for the NVRAM (0148) | under macOS | `SSDT-PMC` |
+
+Not done, since it wants macOS running to choose and try: the device
+properties (the framebuffer of the UHD 630, the `layout-id` of the
+ALC233), the map of the USB ports, sleep. The HPET and 8254 fix of the
+W541 is not there either: the OpenCore guides do not ask for it on
+Coffee Lake. *Hardware* → *Intel graphics* → *Graphics stolen memory*
+goes up to 128 MB for the framebuffer. The Samsung PM981 SSD that some
+M920x carry is a known trouble for macOS: install it on another drive.
 
 ## Not done
 
