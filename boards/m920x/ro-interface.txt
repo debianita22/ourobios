@@ -1,0 +1,36 @@
+# L'interfaccia tra la parte di sola lettura sui M920x e gli slot RW che una
+# capsula ci scrive sopra (docs/vboot.md#limits), come configs/ro-interface.txt
+# per il W541 (il formato e' spiegato li').
+#
+# La parte RO del M920x e' quella della prima release scritta con flashrom
+# (docs/m920x.md#first-install): bootblock con verstage e microcode. Lascia
+# il suo stato nella cache-as-RAM per la romstage dello slot (buffer di
+# lavoro di vboot, console prima della RAM, timestamp, cache di FMAP e CBFS):
+# gli slot devono trovarli agli stessi indirizzi. Finche' nessuna release del
+# M920x e' uscita, questo file segue il pin di coreboot; dopo, si cambia solo
+# con una release che riscrive anche la parte RO, o con una riga rw-ok
+# controllata a mano.
+#
+#   coreboot DESCRIBE           da cosa e' costruita la parte RO sulle macchine
+#   rw-ok DESCRIBE              un pin piu' nuovo i cui slot leggono ancora quello
+#                               che lascia quella parte RO
+#   VARIANTE SIMBOLO INDIRIZZO  una regione della cache-as-RAM (car.ld), come la scrive nm
+coreboot 26.09-438-g206078d6d990
+fsp _car_region_start fef00000
+fsp _vboot2_work fef00000
+fsp _car_stack fef03000
+fsp _evboot2_work fef03000
+fsp _ecar_stack fef23400
+fsp _preram_cbmem_console fef23400
+fsp _epreram_cbmem_console fef24200
+fsp _timestamp fef24200
+fsp _cbfs_mcache fef24400
+fsp _etimestamp fef24400
+fsp _ecbfs_mcache fef28400
+fsp _fmap_cache fef28400
+fsp _efmap_cache fef2887c
+fsp _preram_cbfs_cache fef28880
+fsp _car_ehci_dbg_info fef2c880
+fsp _epreram_cbfs_cache fef2c880
+fsp _ecar_ehci_dbg_info fef2c8d0
+fsp _car_region_end fef40000

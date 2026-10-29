@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# cfr-dump.sh - il menu di setup (CFR) di una build coreboot del W541,
-# costruito sull'host: il record lb_cfr esattamente come il ramstage lo mette
-# nella tabella di coreboot, per darlo al payload senza il W541 (tools/
-# qemu-setup-shots.py: in QEMU q35, con patches/test/q35-cfr-file.patch).
+# cfr-dump.sh - il menu di setup (CFR) di una build coreboot di una board del
+# progetto (W541, M920x), costruito sull'host: il record lb_cfr esattamente
+# come il ramstage lo mette nella tabella di coreboot, per darlo al payload
+# senza la macchina (tools/qemu-setup-shots.py: in QEMU q35, con
+# patches/test/q35-cfr-file.patch).
 #
 #   tools/cfr-dump.sh [-o FILE] [-q] [-x NOME]... ALBERO BUILD
 #   tools/cfr-dump.sh -c FILE
 #
 # ALBERO e' l'albero coreboot (i sorgenti: si legge e basta), BUILD una sua
-# build del W541 configurata (build-nri, build-mrc): config.h, build.h, il
+# build configurata (build-nri, build-mrc, build-m920x-fsp): config.h, build.h, il
 # static.c del devicetree e, se c'e', l'elenco dei cfr.o del ramstage, cioe'
 # quali sorgenti CFR la build compila. Nella BUILD non si scrive niente.
 #
@@ -137,6 +138,34 @@ cflags=("${arch[@]}" -std="${std}" -O1 -g -nostdinc -ffreestanding -fno-builtin 
 	-I"${tree}/3rdparty/vboot/firmware/include" -I"${tree}/3rdparty"
 	-include "${tree}/src/include/kconfig.h" -include "${tree}/src/include/rules.h"
 	-include "${tree}/src/commonlib/bsd/include/commonlib/bsd/compiler.h")
+# Con un SoC Intel (il M920x: cannonlake), i suoi header e quelli del codice
+# comune e di FSP, dopo gli altri come nel Makefile di coreboot: il cfr.c
+# della board usa i suoi enum (soc/soc_chip.h, intelblocks/)
+for d in "${tree}"/src/soc/intel/*/include; do
+	n="$(basename "$(dirname "${d}")")"
+	if grep -Eq "^#define CONFIG_SOC_INTEL_${n^^}(_BASE)? 1$" "${build}/config.h"; then
+		cflags+=(-I"${d}" -I"${tree}/src/soc/intel/common/block/include"
+			-I"${tree}/src/soc/intel/common/basecode/include" -I"${tree}/src/soc/intel/common/pch/include")
+	fi
+done
+fsp="$(sed -n 's/^#define CONFIG_FSP_HEADER_PATH "\(.*\)"$/\1/p' "${build}/config.h")"
+if [ -n "${fsp}" ]; then
+	cflags+=(-I"${tree}/${fsp}" -I"${tree}/src/drivers/intel/fsp2_0/include")
+	# gli header di EDK2 della versione di FSP (UDK_*_BINDING), come li
+	# aggiunge src/vendorcode/intel/Makefile.mk per l'architettura scelta
+	mkarch=x86_32
+	[ "${arch[0]}" = -m32 ] || mkarch=x86_64
+	mapfile -t udk < <(awk -v tree="${tree}" -v a="CPPFLAGS_${mkarch}" '
+		NR == FNR { if ($1 == "#define" && $3 == "1") set[$2] = 1; next }
+		/^(else )?ifeq \(\$\(CONFIG_[A-Z0-9_]+\),y\)/ {
+			match($0, /CONFIG_[A-Z0-9_]+/); on = (substr($0, RSTART, RLENGTH) in set); next
+		}
+		/^endif/ { on = 0; next }
+		on && ($1 == "CPPFLAGS_common" || $1 == a) && $2 == "+=" {
+			for (i = 3; i <= NF; i++) { f = $i; gsub(/\$\(src\)/, tree "/src", f); print f }
+		}' "${build}/config.h" "${tree}/src/vendorcode/intel/Makefile.mk")
+	cflags+=("${udk[@]}")
+fi
 
 objs=()
 compile() {

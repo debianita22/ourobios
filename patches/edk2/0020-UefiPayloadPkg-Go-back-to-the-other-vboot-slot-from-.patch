@@ -24,7 +24,8 @@ of the "revision" file in the CBFS of the slot, read through the flash
 window. "Go back to <release>" asks for a confirmation and restarts into
 the other slot, after the checks of a capsule that can be made here: a
 release that is not the one that runs, of the same variant (mrc or nri,
-whose cache-as-RAM layouts differ; both must be known), with a version not
+whose cache-as-RAM layouts differ, or fsp on the M920x; both must be
+known), with a version not
 older than the lowest supported one. vboot checks the signature of the
 slot at the next boot, and comes back if it does not verify or does not
 boot twice.
@@ -474,8 +475,8 @@ index 7eecc9735..e43ee3444 100644
 +}
 +
 +/**
-+  The variant in the name of a release: "mrc" or "nri" after a dash, at the
-+  end or before the optional patches ("+...").
++  The variant in the name of a release: "mrc", "nri" or "fsp" after a dash,
++  at the end or before the optional patches ("+...").
 +
 +  @return The variant, or NULL.
 +**/
@@ -485,7 +486,7 @@ index 7eecc9735..e43ee3444 100644
 +  IN CONST CHAR16  *Name
 +  )
 +{
-+  STATIC CONST CHAR16  *Variants[] = { L"mrc", L"nri" };
++  STATIC CONST CHAR16  *Variants[] = { L"mrc", L"nri", L"fsp" };
 +  CONST CHAR16         *Text;
 +  UINTN                Index;
 +  UINTN                Length;
@@ -633,7 +634,7 @@ index 7eecc9735..e43ee3444 100644
 +    ShowPopup (
 +      EfiHiiPopupStyleError,
 +      EfiHiiPopupTypeOk,
-+      L"The variant of %s (mrc or nri) is not known: it may not start after the read-only part of this firmware.",
++      L"The variant of %s (mrc, nri or fsp) is not known: it may not start after the read-only part of this firmware.",
 +      (OtherVariant == NULL) ? Slots.OtherName : Slots.RunningName
 +      );
 +    return;

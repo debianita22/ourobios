@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-# update.py - aggiorna ouroBIOS, il firmware del W541, da Linux con una capsula UEFI
-# (docs/update.md). Ogni release ha, per variante, una capsula firmata
-# (w541-coreboot-vX.Y.Z-mrc.cap): la si copia in \EFI\UpdateCapsule
+# update.py - aggiorna ouroBIOS, il firmware del W541 e del ThinkCentre
+# M920x, da Linux con una capsula UEFI (docs/update.md). Ogni release ha,
+# per variante, una capsula firmata (w541-coreboot-vX.Y.Z-mrc.cap,
+# m920x-coreboot-vX.Y.Z-fsp.cap): la si copia in \EFI\UpdateCapsule
 # dell'ESP, si accende il bit "capsule su disco" di OsIndications e al
 # riavvio il firmware la verifica e la scrive, anche con il BIOS Lock acceso.
 # Dalla v1.3.0 (vboot, docs/vboot.md) scrive solo lo slot RW che non gira e
@@ -55,6 +56,16 @@ REPO = "debianita22/ourobios"
 VARIANTS = {
     "mrc": uuid.UUID("70eab79a-675a-42ef-9543-43abcad96275"),
     "nri": uuid.UUID("5379c75b-87f2-4669-8d87-6fdd92a50ed4"),
+    # ThinkCentre M920x (boards/m920x), dalla sua prima release
+    "m920x-fsp": uuid.UUID("2e0b05d4-27d0-4faa-929d-93989c01fee8"),
+}
+# La board e la variante di ogni nome di release (vX.Y.Z-<nome>): i file
+# della release sono <board>-coreboot-vX.Y.Z-<variante>.cap, e l'immagine
+# nella capsula e' grande quanto il flash della board
+FLAVOURS = {
+    "mrc": ("w541", "mrc", 12 * 1024 * 1024),
+    "nri": ("w541", "nri", 12 * 1024 * 1024),
+    "m920x-fsp": ("m920x", "fsp", 24 * 1024 * 1024),
 }
 #   v1.3.0-v1.3.8: la prima parte RO con vboot, con la cache-as-RAM della sua variante
 RO1_VARIANTS = {
@@ -494,8 +505,9 @@ def check_capsule(cap, fw=None):
     want = LEGACY_REGIONS if legacy else REGIONS
     if cap["regions"] != want:
         raise Error("la capsula scrive %s, attese %s" % (cap["regions"] or "tutto il flash", want))
-    if len(cap["image"]) != ROM_SIZE:
-        raise Error("immagine di %d byte, attesi %d" % (len(cap["image"]), ROM_SIZE))
+    size = FLAVOURS[variant][2] if variant in FLAVOURS else ROM_SIZE
+    if len(cap["image"]) != size:
+        raise Error("immagine di %d byte, attesi %d" % (len(cap["image"]), size))
 
 
 # --- il sistema --------------------------------------------------------------
@@ -669,9 +681,16 @@ def http_get(url, accept=None):
         return r.read()
 
 
+# Il nome di una release nel tag: vX.Y.Z[-rcN]-<nome> -> <nome> (mrc,
+# m920x-fsp), None se non e' un nome di FLAVOURS
+def release_flavour(tag):
+    m = re.match(r"^v\d+\.\d+\.\d+(?:-rc\d+)?-([a-z0-9-]+)$", tag)
+    return m.group(1) if m and m.group(1) in FLAVOURS else None
+
+
 def release_key(tag):
-    m = re.match(r"^v(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.]+)?-(mrc|nri)$", tag)
-    if not m:
+    m = re.match(r"^v(\d+)\.(\d+)\.(\d+)(-rc\d+)?-([a-z0-9-]+)$", tag)
+    if not m or m.group(5) not in FLAVOURS:
         return None
     # a parita' di numeri la release vera viene dopo le -rcN; i numeri del
     # suffisso come numeri (-rc10 dopo -rc9): re.split alterna testo e cifre
@@ -684,7 +703,11 @@ def download_capsule(rel, dest):
     con il suo SHA256SUMS."""
     tag = rel["tag_name"]
     assets = {a["name"]: a["browser_download_url"] for a in rel.get("assets", [])}
-    cap_name = "w541-coreboot-%s.cap" % tag
+    flavour = release_flavour(tag)
+    if flavour is None:
+        raise Error("%s: non e' il tag di una release di ouroBIOS" % tag)
+    board, variant, _ = FLAVOURS[flavour]
+    cap_name = "%s-coreboot-%s-%s.cap" % (board, tag[:-len(flavour) - 1], variant)
     if cap_name not in assets or "SHA256SUMS" not in assets:
         raise Error("%s: senza %s o SHA256SUMS (le capsule ci sono dalla v1.2.0)" % (tag, cap_name))
     print("release %s: scarico %s" % (tag, cap_name))
@@ -711,7 +734,7 @@ def download_latest(variant, pre, dest):
     best = None
     for r in rels:
         tag = r.get("tag_name", "")
-        if r.get("draft") or not tag.endswith("-" + variant) or release_key(tag) is None:
+        if r.get("draft") or release_flavour(tag) != variant or release_key(tag) is None:
             continue
         # le candidate (vX.Y.Z-rcN) solo con --pre; la nri fino alla v1.3.8
         # usciva pre-release anche come release: quelle contano come release
@@ -1018,12 +1041,12 @@ def nv_coreboot_current(region):
 # La release scritta in una regione: coreboot mette la sua versione, con
 # CONFIG_LOCALVERSION, nel banner del bootblock e di ogni stage. Due release
 # nella stessa regione: una scrittura rimasta a meta'.
-RELEASE_RE = re.compile(rb"(?:ouroBIOS|w541)-v\d+\.\d+\.\d+(?:-rc\d+)?-(?:mrc|nri)")
+RELEASE_RE = re.compile(rb"(?:ouroBIOS|w541)-v\d+\.\d+\.\d+(?:-rc\d+)?-(?:[a-z0-9]+-)?(?:mrc|nri|fsp)")
 
 
 # (X, Y, Z, rc) di una release come la scrive la build (ouroBIOS-vX.Y.Z-rcN-mrc),
 # con la release finale dopo tutte le sue rc; release_key e' quella dei tag
-RELEASE_KEY_RE = re.compile(r"(?:ouroBIOS|w541)-v(\d+)\.(\d+)\.(\d+)(?:-rc(\d+))?-(?:mrc|nri)")
+RELEASE_KEY_RE = re.compile(r"(?:ouroBIOS|w541)-v(\d+)\.(\d+)\.(\d+)(?:-rc(\d+))?-(?:[a-z0-9]+-)?(?:mrc|nri|fsp)")
 
 
 # la prima release la cui parte RO parte gli slot di tutte e due le varianti

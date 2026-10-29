@@ -5,10 +5,11 @@
 <h1 align="center">ouroBIOS</h1>
 
 <p align="center"><b>REBORN BY DESIGN.</b><br>
-<sub>COREBOOT &middot; EDK II &middot; THINKPAD W541</sub></p>
+<sub>COREBOOT &middot; EDK II &middot; THINKPAD W541 &middot; THINKCENTRE M920X</sub></p>
 
 [![MRC release](https://img.shields.io/github/v/release/debianita22/ourobios?include_prereleases&sort=semver&filter=*-mrc&style=flat-square&label=mrc)](https://github.com/debianita22/ourobios/releases)
 [![NRI release](https://img.shields.io/github/v/release/debianita22/ourobios?include_prereleases&sort=semver&filter=*-nri&style=flat-square&label=nri)](https://github.com/debianita22/ourobios/releases)
+[![M920x release](https://img.shields.io/github/v/release/debianita22/ourobios?include_prereleases&sort=semver&filter=*-m920x-fsp&style=flat-square&label=m920x)](https://github.com/debianita22/ourobios/releases)
 [![Check](https://img.shields.io/github/actions/workflow/status/debianita22/ourobios/check.yml?branch=main&style=flat-square&label=check)](https://github.com/debianita22/ourobios/actions/workflows/check.yml)
 [![Build](https://img.shields.io/github/actions/workflow/status/debianita22/ourobios/build.yml?style=flat-square&label=build)](https://github.com/debianita22/ourobios/actions/workflows/build.yml)
 [![License](https://img.shields.io/github/license/debianita22/ourobios?style=flat-square)](LICENSE)
@@ -27,6 +28,14 @@ repository and publishes two complete flash images per version:
 | `vX.Y.Z-nri` | coreboot's native RAM init (NRI), no `mrc.bin` ([docs/raminit.md](docs/raminit.md)) | a release with the `mrc` one from v1.3.9 (a pre-release before), although upstream still labels it *[NOT COMPLETE]*: how it compares with `mrc.bin` on the W541 is in [docs/raminit.md](docs/raminit.md#on-the-w541) ([Libreboot](https://libreboot.org/docs/install/w541_external.html) ships it on the W541 too) |
 
 Everything else is the same in the two variants.
+
+From v1.4.0 each version also has a release for the **Lenovo ThinkCentre
+M920x Tiny** (Intel Coffee Lake, Q370), `vX.Y.Z-m920x-fsp`: RAM
+initialized by Intel's FSP-M, the same payload, setup menu, vboot slots and
+capsule updates, a pre-release until it is confirmed on the machine. Its
+board, flash map and blobs are in [`boards/m920x`](boards/m920x), how to
+install, update and recover it in [docs/m920x.md](docs/m920x.md); the rest
+of this page is about the W541.
 
 The name: *ouro* is the ouroboros, the snake that bites its own tail, a cycle
 of transformation and renewal; *BIOS* is what it replaces, the firmware that
@@ -57,7 +66,7 @@ firmware reports itself as `ouroBIOS-vX.Y.Z-<variant>` (coreboot's
 | `….cab` | the same capsule as an fwupd package (from v1.2.2), signed for fwupd with the same key ([docs/update.md](docs/update.md#fwupd)) |
 | `….config` | the complete coreboot configuration |
 | `…-layout.txt` | flash map (FMAP) and CBFS contents |
-| `ourobios.xml.gz`, `….jcat` | mrc release only (from v1.3.4): the signed metadata of the project's fwupd remote, with the `.cab` of both variants ([docs/update.md](docs/update.md#the-fwupd-remote)) |
+| `ourobios.xml.gz`, `….jcat` | mrc release only (from v1.3.4): the signed metadata of the project's fwupd remote, with the `.cab` of both variants (from v1.4.0 also of the M920x) ([docs/update.md](docs/update.md#the-fwupd-remote)) |
 | `SHA256SUMS` | checksums |
 
 The W541 flash is two chips seen as one 12 MiB space. The layout is
@@ -242,7 +251,8 @@ sudo apt install build-essential bison flex gnat libncurses-dev zlib1g-dev m4 \
     curl git python3 uuid-dev imagemagick libssl-dev pkg-config nasm xxd
 git clone https://github.com/debianita22/ourobios.git
 cd ourobios
-tools/build.sh                      # both variants, into dist/
+tools/build.sh                      # both W541 variants, into dist/
+tools/build.sh --board m920x        # the M920x (docs/m920x.md); --board all: every board
 ```
 
 `tools/build.sh` fetches coreboot at the pinned commit into `work/coreboot`,
@@ -372,8 +382,8 @@ and finishes the update; the ESRT is checked at every boot
 
 | Workflow | When | What |
 |---|---|---|
-| [`check.yml`](.github/workflows/check.yml) | every push and pull request | `tools/ci-check.sh` (shellcheck, actionlint, blob checksums, patch series, defconfigs); the series applied to the pinned coreboot and EDK2, and both configurations checked |
-| [`build.yml`](.github/workflows/build.yml) | tag `vX.Y.Z`, *Run workflow*, push to `ci-test/**` | both ROMs with the coreboot toolchain (cached), verified, their setup menu checked (`menu`), their payloads booted in QEMU (`smoke`), their capsules signed; in parallel, both ROMs built a second time from scratch on another runner (`repro`) and compared bit by bit with the first (`compare`), and the capsule update with vboot A/B in QEMU (`update-test`); published as `vX.Y.Z-mrc` and `vX.Y.Z-nri` |
+| [`check.yml`](.github/workflows/check.yml) | every push and pull request | `tools/ci-check.sh` (shellcheck, actionlint, blob checksums, patch series, defconfigs); the series applied to the pinned coreboot and EDK2, and the configuration of every board and variant checked |
+| [`build.yml`](.github/workflows/build.yml) | tag `vX.Y.Z`, *Run workflow*, push to `ci-test/**` | the ROMs of every board with the coreboot toolchain (cached), verified, their setup menu checked (`menu`), their payloads booted in QEMU (`smoke`), their capsules signed; in parallel, the ROMs built a second time from scratch on another runner (`repro`) and compared bit by bit with the first (`compare`), and the capsule update with vboot A/B in QEMU (`update-test`); the files of each release checked (`tools/ci.sh check`) and published as `vX.Y.Z-mrc`, `vX.Y.Z-nri` and, from v1.4.0, `vX.Y.Z-m920x-fsp` |
 | [`upstream.yml`](.github/workflows/upstream.yml) | every Monday | opens an issue when the series no longer applies on coreboot `main`, a patch was merged upstream, a coreboot release is out, or MrChromebox's EDK2 branch moved |
 
 A release is made by pushing a version tag (`git tag v1.0.0 && git push origin
@@ -382,16 +392,17 @@ v1.0.0`) or with *Run workflow* and a version. It needs the repository secret
 `VBOOT_SIGNING_KEY`, the one that signs the RW slots
 ([keys/README.md](keys/README.md)); test builds go without them (vboot's
 test keys). Versions with a hyphen
-(`v1.1.0-rc1`) or the *prerelease* box give two pre-releases. The notes of
-both include the section of [`CHANGELOG.md`](CHANGELOG.md) for the version
+(`v1.1.0-rc1`) or the *prerelease* box give pre-releases only. The notes of
+each include the section of [`CHANGELOG.md`](CHANGELOG.md) for the version
 (`## v1.1.0` for `v1.1.0-rc1` too), and a release build stops at once without it.
-The `nri` release is never the latest: the fwupd remote takes its metadata
-from the latest release, the `mrc` one. A pre-release that works on the
-laptop becomes a release without rebuilding it:
+Only the `mrc` release can be the latest: the fwupd remote takes its metadata,
+with the `.cab` of every board, from the latest release. A pre-release that
+works on the machines becomes a release without rebuilding it:
 
 ```sh
 gh release edit v1.0.0-mrc --repo debianita22/ourobios --prerelease=false --latest
 gh release edit v1.0.0-nri --repo debianita22/ourobios --prerelease=false --latest=false
+gh release edit v1.4.0-m920x-fsp --repo debianita22/ourobios --prerelease=false --latest=false
 ```
 
 ## Repository layout
@@ -399,22 +410,26 @@ gh release edit v1.0.0-nri --repo debianita22/ourobios --prerelease=false --late
 | Path | Contents |
 |---|---|
 | `CHANGELOG.md` | what changes in each release |
-| `blobs/` | IFD, GbE, ME, `mrc.bin` and VBIOS images ([blobs/README.md](blobs/README.md)) |
+| `blobs/` | IFD, GbE, ME, `mrc.bin` and VBIOS images of the W541 ([blobs/README.md](blobs/README.md)) |
+| `boards/` | one folder per board for `tools/build.sh --board`: `board.sh` (variants, flash, chips, the checks of `verify-rom.sh`); the W541 one points at `configs/` and `blobs/`, the M920x one has its defconfig, flash map, blobs, the hash of its first 12 MiB and the interface of its read-only part ([docs/m920x.md](docs/m920x.md)) |
 | `assets/` | the logo, `ourobios.svg`, and the boot splash made from it (`tools/logo.py splash`) |
 | `configs/` | `w541-mrc.defconfig` and `w541-nri.defconfig`, the flash map `w541.fmd`, the interface of the read-only part already on the laptops (`ro-interface.txt`), the OpenCore device properties of this W541 for patches 0128 and 0133 (`macos/`), the fwupd remotes (`fwupd/ourobios.conf`, the releases; `fwupd/ourobios-testing.conf`, the candidates too) |
 | `patches/` | the series applied to coreboot, the patches to EDK2 and its LvglPkg, the q35 patches of the update test and of the setup screenshots; `optional/` for patches to build in with `--with`, none at the moment ([patches/README.md](patches/README.md)) |
 | `tools/` | `build.sh`, the build; `verify-rom.sh`, the checks on a ROM; `ci-check.sh`, `ci.sh` and `upstream.sh`, the CI, the releases and the upstream check; `cfr-dump.sh` and `q35-cfr-rom.sh`, the setup menu of a build (`build.sh menu`) and its screenshots (`qemu-setup-shots.py`); `update.py`, the capsule update from Linux; `fwupd-cab.py`, the fwupd package and the metadata of the remote; `vpd.py`, the serial number and machine type; `elog.py`, which reads the event log from a flash dump; `idle-report.py`, package C-states, power, memory traffic and device power states at idle; `pm-regs.py`, the power management registers the firmware left; `ddr-report.py`, the memory controller as the RAM init left it, and two of its dumps compared; `mem-latency.c`, how long a read from the memory takes; `peg-report.py`, the PCIe link to the NVIDIA GPU; `qemu-smoke.py`, the payload booted in QEMU (with `efi/rt-reloc-test.c`, the runtime services moved as boot.efi of macOS moves them, and `efi/secure-boot-test.c`, the ESRT and Secure Boot image verification, with `pe-hash.py`, the Authenticode hash of a PE image; the TPM 1.2 of swtpm and its measurement log); `qemu-update.py`, capsule updates with vboot A/B in QEMU (with `efi/slot-lock-test.c`, a UEFI application for it); `logo.py`, the logo as an LVGL image or a PNG |
 | `keys/` | the certificate of the key that signs the capsules, and vboot's public keys ([keys/README.md](keys/README.md)) |
 | `legacy/coreboot-4.22/` | the coreboot 4.22 image and configuration this project started from, built from the same blobs |
-| `docs/` | [flashing and recovery](docs/flashing.md), [updates with capsules](docs/update.md), [verified boot and A/B](docs/vboot.md), [the native RAM init](docs/raminit.md), [macOS with OpenCore](docs/macos.md) |
+| `docs/` | [flashing and recovery](docs/flashing.md), [updates with capsules](docs/update.md), [verified boot and A/B](docs/vboot.md), [the native RAM init](docs/raminit.md), [macOS with OpenCore](docs/macos.md), [the ThinkCentre M920x](docs/m920x.md) |
 
 ## Binary blobs
 
 The images contain proprietary binaries that are not covered by the GPL: the
 Intel flash descriptor, ME firmware and `mrc.bin`, the GbE configuration and
 the NVIDIA VBIOS and the NVIDIA Optimus key (`blobs/opvk.inc`, from the
-Lenovo DSDT). They are published here by the owner of the laptop they come
-from; their redistribution terms are those of Intel, Lenovo and NVIDIA.
+Lenovo DSDT); on the M920x the descriptor, GbE configuration and CSME
+firmware (`boards/m920x/blobs/`) and Intel's FSP, from coreboot's
+`3rdparty/fsp`. They are published here by the owner of the machines they
+come from; their redistribution terms are those of Intel, Lenovo and
+NVIDIA.
 
 ## License
 

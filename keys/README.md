@@ -8,7 +8,11 @@ capsule installs only if it is signed by its private key. The same key
 signs, with `jcat-tool`, the fwupd package of each capsule (`.cab`) and the
 metadata of the fwupd remote (`ourobios.xml.gz`): fwupd trusts them with
 this certificate in `/etc/pki/fwupd`
-([docs/update.md](../docs/update.md#fwupd)).
+([docs/update.md](../docs/update.md#fwupd)). The keys of this folder, the
+certificate and vboot's, are those of every board: `tools/build.sh` copies
+them into the folder of each board in the coreboot tree (`w541/`,
+`m920x/`), and each board tells its capsules apart by the GUID of its
+firmware, not by the key.
 
 | | |
 |---|---|

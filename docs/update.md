@@ -366,7 +366,10 @@ layouts overlap (v1.3.5 was `0x01030005`, below v1.3.5 in the new one,
 `0x01030500`), and `tools/ci-check.sh` refuses such a value.
 
 `mrc` and `nri` are different firmware for the ESRT (each its own GUID):
-a capsule installs only on its own variant. The GUIDs change whenever a
+a capsule installs only on its own variant. The ThinkCentre M920x
+(`m920x-fsp`, from v1.4.0) is one more, with its own GUID: a W541 capsule
+is refused there and the other way round, and the rest of this page applies
+to it with its `m920x-coreboot-vX.Y.Z-fsp` files ([docs/m920x.md](m920x.md)). The GUIDs change whenever a
 release needs something a capsule does not write: with the flash map in
 v1.3.0, and with the read-only part in v1.3.9 (one cache-as-RAM layout for
 both variants, [docs/flashing.md](flashing.md#from-v13x-to-v139)), so

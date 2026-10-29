@@ -1,20 +1,26 @@
-# La build delle due ROM e le due release.
+# La build delle ROM di ogni board (boards/*/board.sh) e le loro release.
 #
-#   tag vX.Y.Z o vX.Y.Z-rcN    build e release vX.Y.Z-mrc e vX.Y.Z-nri
+#   tag vX.Y.Z o vX.Y.Z-rcN    build e release: una per variante di ogni
+#                              board, vX.Y.Z-mrc e vX.Y.Z-nri (W541),
+#                              vX.Y.Z-m920x-fsp (M920x)
 #                              (git tag v1.0.0 && git push origin v1.0.0)
-#   Run workflow, "version"    lo stesso senza tag a mano: i tag vX.Y.Z-mrc e
-#                              vX.Y.Z-nri li crea la release
+#   Run workflow, "version"    lo stesso senza tag a mano: i tag delle
+#                              release li crea il job release
 #   Run workflow, version      build di prova: niente release, le ROM negli
 #   vuota, o push su ci-test/** artifact del run (14 giorni)
 #
-# Ogni release ha l'immagine completa da 12 MiB (IFD, GbE, ME, coreboot), le
-# immagini dei due chip per un programmatore esterno, la capsula firmata per
-# l'aggiornamento da Linux (docs/update.md) e il suo pacchetto fwupd (.cab), il
-# .config, il layout e SHA256SUMS; la mrc anche i metadati firmati del remote
-# fwupd (configs/fwupd/ourobios.conf), che li scarica dalla release latest.
-# tools/verify-rom.sh blocca la release se i primi 5 MiB non sono
-# identici a legacy/coreboot-4.22/coreboot.rom o la mappa non e' quella di
-# configs/w541.fmd. La blocca il menu di setup con un'opzione ripetuta o
+# Ogni release ha l'immagine completa del flash della board (W541 12 MiB,
+# M920x 24 MiB: IFD, GbE, ME, coreboot), le immagini dei due chip per un
+# programmatore esterno, la capsula firmata per l'aggiornamento da Linux
+# (docs/update.md) e il suo pacchetto fwupd (.cab), il .config, il layout e
+# SHA256SUMS; la mrc anche i metadati firmati del remote fwupd
+# (configs/fwupd/ourobios.conf), con i .cab di tutte le board, che il remote
+# scarica dalla release latest.
+# tools/verify-rom.sh blocca la release se i byte prima della regione BIOS
+# non sono quelli attesi dalla board (W541: i primi 5 MiB identici a
+# legacy/coreboot-4.22/coreboot.rom; M920x: lo SHA-256 dei primi 12 MiB in
+# boards/m920x/intel.sha256) o la mappa non e' quella della board. La blocca
+# il menu di setup con un'opzione ripetuta o
 # mancante (tools/build.sh menu, il record CFR e il suo albero nell'artifact
 # smoke-<versione>). La blocca anche la prova di fumo (tools/build.sh smoke):
 # il payload EDK2 di ogni variante, in una ROM per QEMU q35, deve partire e
@@ -29,7 +35,7 @@
 # voce di boot (boot loader, sistema operativo) non puo'; seriale e
 # schermate del setup nell'artifact update-test-<versione>. E la build
 # riproducibile (job repro, anche lui accanto alle ROM, e il job compare dopo
-# tutti e due): un altro runner costruisce le due ROM da capo, coreboot, EDK2,
+# tutti e due): un altro runner costruisce le ROM da capo, coreboot, EDK2,
 # iPXE e CSMWrap compresi, e devono essere uguali bit a bit a quelle del job
 # build (tools/ci.sh compare: se no, le regioni diverse e i compilatori).
 #
@@ -47,19 +53,22 @@
 # costruisce con tools/build.sh a mano, con le chiavi di test di vboot).
 #
 # Quale release e' cosa (tools/ci.sh):
-#   - mrc: RAM init con mrc.bin, come la 4.22. "latest" se non e' una
+#   - mrc: W541, RAM init con mrc.bin, come la 4.22. "latest" se non e' una
 #     pre-release ed e' la versione piu' alta.
-#   - nri: RAM init nativa (upstream "[NOT COMPLETE]"): release o
+#   - nri: W541, RAM init nativa (upstream "[NOT COMPLETE]"): release o
 #     pre-release insieme alla mrc dalla v1.3.9 (prima sempre pre-release),
 #     mai latest: i metadati del remote fwupd sono nella mrc.
-#   - pre-release tutte e due con la casella "prerelease" o un trattino nella
+#   - m920x-fsp: ThinkCentre M920x Tiny, RAM init con FSP-M di Intel; mai
+#     latest, come la nri.
+#   - pre-release tutte con la casella "prerelease" o un trattino nella
 #     versione (v1.1.0-rc1); le release vere solo dal ramo principale. Una
-#     pre-release provata sul portatile diventa release senza ricostruirla:
+#     pre-release provata sulle macchine diventa release senza ricostruirla:
 #       gh release edit v1.0.0-mrc --repo debianita22/ourobios --prerelease=false --latest
 #       gh release edit v1.0.0-nri --repo debianita22/ourobios --prerelease=false --latest=false
+#       gh release edit v1.0.0-m920x-fsp --repo debianita22/ourobios --prerelease=false --latest=false
 #   - il job Release si puo' rilanciare: le bozze di un tentativo fallito si
 #     cancellano e si rifanno; un tag che c'e' gia' deve essere sul commit della
-#     build; con le due release gia' pubblicate da quel commit resta solo
+#     build; con tutte le release gia' pubblicate da quel commit resta solo
 #     l'aggiornamento del remote testing.
 #
 # Il crossgcc di coreboot (i386 con Ada, iasl, nasm: 30-60 minuti) sta nella
@@ -73,8 +82,8 @@ run-name: >-
 
 on:
   push:
-    # solo la versione: i tag delle release (v1.0.0-mrc, v1.0.0-nri) non
-    # combaciano e non ripartono da soli
+    # solo la versione: i tag delle release (v1.0.0-mrc, v1.0.0-m920x-fsp,
+    # ...) non combaciano e non ripartono da soli
     tags: ['v[0-9]+.[0-9]+.[0-9]+', 'v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+']
     branches: ['ci-test/**']
   workflow_dispatch:
@@ -84,7 +93,7 @@ on:
         type: string
         default: ""
       prerelease:
-        description: "Pre-release, mrc e nri (con un trattino nella versione lo sono comunque)"
+        description: "Pre-release, tutte le varianti (con un trattino nella versione lo sono comunque)"
         type: boolean
         default: false
 
@@ -142,7 +151,7 @@ jobs:
         run: ./tools/build.sh --release --version "${VERSION}" keys
 
   build:
-    name: ROM mrc e nri
+    name: ROM di ogni board
     needs: setup
     runs-on: ubuntu-24.04
     timeout-minutes: 240
@@ -198,15 +207,15 @@ jobs:
         env:
           CAPSULE_SIGNING_KEY: ${{ secrets.CAPSULE_SIGNING_KEY }}
           VBOOT_SIGNING_KEY: ${{ secrets.VBOOT_SIGNING_KEY }}
-        run: ./tools/build.sh --release --version "${VERSION}" roms
+        run: ./tools/build.sh --release --board all --version "${VERSION}" roms
 
       # il menu di setup di ogni variante, costruito sull'host dal codice
       # della build: ogni opzione in una scheda sola (tools/cfr-dump.sh)
       - name: Menu del setup
-        run: ./tools/build.sh --release --version "${VERSION}" menu
+        run: ./tools/build.sh --release --board all --version "${VERSION}" menu
 
       - name: Prova di fumo in QEMU
-        run: ./tools/build.sh --release --version "${VERSION}" smoke
+        run: ./tools/build.sh --release --board all --version "${VERSION}" smoke
 
       - name: Schermate della prova di fumo
         if: always()
@@ -232,12 +241,12 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: w541-coreboot-${{ needs.setup.outputs.version }}
+          name: ourobios-${{ needs.setup.outputs.version }}
           path: dist/
           retention-days: 14
           if-no-files-found: error
 
-  # In parallelo alle ROM: le due ROM un'altra volta, da capo, su un altro
+  # In parallelo alle ROM: le ROM un'altra volta, da capo, su un altro
   # runner (lo stesso albero, il crossgcc dalla cache, che salva il job
   # build); senza la chiave delle capsule, che non servono (gli slot si
   # firmano con la chiave di vboot, come nel job build: senza, la ROM
@@ -281,7 +290,7 @@ jobs:
       - name: ROM
         env:
           VBOOT_SIGNING_KEY: ${{ secrets.VBOOT_SIGNING_KEY }}
-        run: ./tools/build.sh --version "${VERSION}" roms
+        run: ./tools/build.sh --board all --version "${VERSION}" roms
 
       - uses: actions/upload-artifact@v7
         with:
@@ -306,7 +315,7 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          name: w541-coreboot-${{ needs.setup.outputs.version }}
+          name: ourobios-${{ needs.setup.outputs.version }}
           path: dist
 
       - uses: actions/download-artifact@v8
@@ -394,35 +403,14 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          name: w541-coreboot-${{ needs.setup.outputs.version }}
+          name: ourobios-${{ needs.setup.outputs.version }}
           path: dist
 
+      # i file di ogni release, quelli scaricati che si pubblicano: checksum,
+      # IFD/GbE/ME della board, capsula e .cab firmati da keys/ e con la ROM,
+      # i metadati del remote fwupd con tutti i .cab (tools/ci.sh check)
       - name: Controlli
-        run: |
-          set -eu
-          cd dist
-          sha256sum -c SHA256SUMS
-          for v in mrc nri; do
-            for f in "w541-coreboot-${VERSION}-${v}.rom" "w541-coreboot-${VERSION}-${v}-8mb-chip.rom" \
-              "w541-coreboot-${VERSION}-${v}-4mb-chip.rom" "w541-coreboot-${VERSION}-${v}.cap" \
-              "w541-coreboot-${VERSION}-${v}.cab" "w541-coreboot-${VERSION}-${v}.config" "w541-coreboot-${VERSION}-${v}-layout.txt"; do
-              test -s "${f}" || { echo "manca ${f}"; exit 1; }
-            done
-            # i primi 5 MiB (IFD, GbE, ME): quelli della 4.22 (verify-rom.sh li
-            # ha gia' controllati nel job build; qui sui file che si pubblicano)
-            cmp -n 5242880 "w541-coreboot-${VERSION}-${v}.rom" ../legacy/coreboot-4.22/coreboot.rom
-            # la capsula: la ROM di questa release, firmata dalla chiave di keys/
-            python3 ../tools/update.py info --cert ../keys/capsule-signing.pem \
-              --rom "w541-coreboot-${VERSION}-${v}.rom" "w541-coreboot-${VERSION}-${v}.cap"
-            # il pacchetto fwupd: quella capsula, metainfo e firma jcat
-            python3 ../tools/update.py info --cert ../keys/capsule-signing.pem \
-              --same-as "w541-coreboot-${VERSION}-${v}.cap" "w541-coreboot-${VERSION}-${v}.cab"
-          done
-          # i metadati del remote fwupd (nella release mrc): firmati dalla
-          # chiave di keys/, con i due .cab di questa release e nient'altro
-          python3 ../tools/fwupd-cab.py check-metadata --cert ../keys/capsule-signing.pem ourobios.xml.gz \
-            "w541-coreboot-${VERSION}-mrc.cab" "w541-coreboot-${VERSION}-nri.cab"
-          ls -la
+        run: ./tools/ci.sh check dist
 
       - name: Pubblica
         run: ./tools/ci.sh publish dist

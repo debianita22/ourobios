@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 29 Oct 2026 15:41:49 +0100
+Subject: [PATCH] soc/intel/cannonlake: Let a mainboard keep vboot's nvdata in
+ flash
+
+With VBOOT the SoC selects VBOOT_VBNV_CMOS and its backup to flash: the
+nvdata (the slot to try, the tries left) lives in CMOS, and only the
+firmware itself reads and writes it. A mainboard whose payload updates
+the RW slots, and then asks vboot to try the new one, writes the nvdata
+from SMM or from the payload into the RW_NVRAM region of the flash, as
+VBOOT_VBNV_FLASH keeps it; it cannot use the CMOS copy.
+
+Select the CMOS storage and its flash backup only when the mainboard
+does not select VBOOT_VBNV_FLASH, as the Haswell ThinkPads do. Nothing
+changes for the boards that do not.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TnH4v9ZgSCT6oudGt6KtJL
+---
+ src/soc/intel/cannonlake/Kconfig | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/soc/intel/cannonlake/Kconfig b/src/soc/intel/cannonlake/Kconfig
+index fa0242624f..df2af90ca6 100644
+--- a/src/soc/intel/cannonlake/Kconfig
++++ b/src/soc/intel/cannonlake/Kconfig
+@@ -293,8 +293,8 @@ config SOC_INTEL_COMMON_LPSS_UART_CLK_N_VAL
+ config VBOOT
+ 	select VBOOT_MUST_REQUEST_DISPLAY
+ 	select VBOOT_STARTS_IN_BOOTBLOCK
+-	select VBOOT_VBNV_CMOS
+-	select VBOOT_VBNV_CMOS_BACKUP_TO_FLASH
++	select VBOOT_VBNV_CMOS if !VBOOT_VBNV_FLASH
++	select VBOOT_VBNV_CMOS_BACKUP_TO_FLASH if !VBOOT_VBNV_FLASH
+ 
+ config CBFS_SIZE
+ 	default 0x200000
+-- 
+2.43.0
+

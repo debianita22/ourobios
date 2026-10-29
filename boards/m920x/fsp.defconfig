@@ -1,0 +1,117 @@
+# ThinkCentre M920x Tiny (Coffee Lake, Q370), RAM init con FSP-M di Intel
+# (3rdparty/fsp, CoffeeLakeFspBinPkg): una sola variante, "fsp".
+# Immagine completa da 24 MiB: IFD, GbE e ME di boards/m920x/blobs/ piu'
+# coreboot. I file in m920x/ li copia tools/build.sh da boards/m920x/,
+# assets/ e keys/.
+CONFIG_VENDOR_LENOVO=y
+CONFIG_BOARD_LENOVO_M920X=y
+# Mappa del flash: boards/m920x/flash.fmd (le regioni scritte a ogni avvio
+# in testa alla regione BIOS, i due slot RW di vboot, la regione RO in cima
+# al chip da 8 MiB).
+CONFIG_FMDFILE="m920x/m920x.fmd"
+
+# vboot come sul W541 (docs/vboot.md): la regione RO (bootblock con
+# verstage e microcode) verifica la firma di uno dei due slot RW (romstage,
+# FSP-M, FSP-S, ramstage, payload) e lo avvia; se non si verifica, o non
+# arriva al payload per due avvii dopo un aggiornamento, avvia l'altro.
+# Nessun recovery: la RO minima non ha un payload.
+CONFIG_VBOOT=y
+CONFIG_VBOOT_SLOTS_RW_AB=y
+CONFIG_LENOVO_M920_VBOOT_MINIMAL_RO=y
+# Niente dati di vboot nel TPM (anti-rollback degli slot): il TPM 2.0 lo
+# avvia ramstage come senza vboot
+CONFIG_VBOOT_MOCK_SECDATA=y
+CONFIG_VBOOT_MOCK_SECDATA_NO_TPM=y
+# Con vboot il codice grafico comune di Intel accende lo schermo solo se
+# vboot lo chiede (recovery, modo sviluppatore): qui sempre
+CONFIG_VBOOT_ALWAYS_ENABLE_DISPLAY=y
+# Le chiavi del progetto, le stesse del W541 (keys/vboot, che tools/build.sh
+# copia in m920x/vboot/). La chiave privata degli slot arriva solo dal
+# secret VBOOT_SIGNING_KEY; senza, tools/build.sh usa le chiavi di prova.
+CONFIG_VBOOT_ROOT_KEY="m920x/vboot/root_key.vbpubk"
+CONFIG_VBOOT_RECOVERY_KEY="m920x/vboot/recovery_key.vbpubk"
+CONFIG_VBOOT_KERNEL_KEY="m920x/vboot/kernel_subkey.vbpubk"
+CONFIG_VBOOT_KEYBLOCK="m920x/vboot/firmware.keyblock"
+CONFIG_VBOOT_FIRMWARE_PRIVKEY="m920x/vboot/firmware_data_key.vbprivk"
+
+# IFD, GbE e ME dell'immagine coreboot che girava sul M920x (MAC
+# 00:2b:67:0b:91:73, CSME 12.0.35.1427 completa): regioni sbloccate, ME
+# leggibile dalla CPU. La ME resta intera: lo stato si sceglie dal menu
+# (Security -> Management Engine, comando HECI), senza me_cleaner.
+CONFIG_HAVE_IFD_BIN=y
+CONFIG_IFD_BIN_PATH="m920x/ifd.bin"
+CONFIG_HAVE_ME_BIN=y
+CONFIG_ME_BIN_PATH="m920x/me.bin"
+CONFIG_HAVE_GBE_BIN=y
+CONFIG_GBE_BIN_PATH="m920x/gbe.bin"
+CONFIG_UNLOCK_FLASH_REGIONS=y
+CONFIG_ME_REGION_ALLOW_CPU_READ_ACCESS=y
+CONFIG_VALIDATE_INTEL_DESCRIPTOR=y
+
+# Memoria azzerata a ogni avvio (non alla ripresa da S3); si spegne dal
+# menu, Security -> Memory protection.
+CONFIG_SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT=y
+
+# PCIe: Resizable BAR per una scheda grafica sul riser, come nella build
+# coreboot che girava sul M920x
+CONFIG_PCIEXP_SUPPORT_RESIZABLE_BARS=y
+
+# Registro degli eventi nel flash (RW_ELOG), anche l'entrata in S3 e S5
+CONFIG_ELOG=y
+CONFIG_ELOG_GSMI=y
+# I codici POST anche in CMOS (byte 0x70-0x7A, liberi nella cmos.layout
+# della board): l'avvio dopo un blocco mette nel registro dove era arrivato
+CONFIG_CMOS_POST=y
+CONFIG_CMOS_POST_OFFSET=0x70
+
+# I dati di questa macchina dalla VPD (RO_VPD, vuota nelle release, si
+# scrive con tools/vpd.py): numero di serie, UUID, Machine Type Model, SKU
+# e famiglia nelle tabelle SMBIOS e nel menu, come col BIOS Lenovo.
+CONFIG_VPD=y
+CONFIG_SMBIOS_SERIAL_FROM_VPD=y
+CONFIG_SMBIOS_UUID_FROM_VPD=y
+CONFIG_SMBIOS_SYSTEM_DATA_FROM_VPD=y
+
+# BIOS Lock e Firmware protection nel menu (Security -> Flash protection),
+# come sul W541: BIOS Lock spento di default, la protezione di WP_RO dai
+# Protected Range Register accesa.
+CONFIG_BOOTMEDIA_SMM_BWP_RUNTIME_OPTION=y
+CONFIG_BOOTMEDIA_LOCK_CONTROLLER=y
+CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO=y
+CONFIG_BOOTMEDIA_LOCK_RUNTIME_OPTION=y
+
+# Aggiornamento con capsula UEFI (docs/update.md): il GUID dell'ESRT e' del
+# M920x, una capsula del W541 non si applica qui ne' viceversa. LSV: la
+# release piu' vecchia di cui il firmware accetta una capsula, quella della
+# parte RO di oggi (da alzare con una release che riscrive la RO).
+CONFIG_DRIVERS_EFI_FW_INFO=y
+CONFIG_DRIVERS_EFI_MAIN_FW_GUID="2e0b05d4-27d0-4faa-929d-93989c01fee8"
+CONFIG_DRIVERS_EFI_MAIN_FW_LSV=0x01030900
+CONFIG_DRIVERS_EFI_UPDATE_CAPSULES=y
+CONFIG_DRIVERS_EFI_CAPSULE_ON_DISK_SUPPORT=y
+# relativo all'albero di EDK2 (payloads/external/edk2/workspace/mrchromebox)
+CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT="../../../../../m920x/capsule-signing.pem"
+# FmpDxe con lo stesso FILE_GUID del W541 (patch 0135): ogni macchina ha le
+# sue variabili; il GUID dell'ESRT arriva dalla tabella di coreboot
+CONFIG_EDK2_CAPSULE_MAIN_FW_GUID="c9405485-0c3d-40b8-88bf-d2a07e5c3edd"
+
+# Grafica: libgfxinit per l'iGPU (DisplayPort e HDMI), framebuffer del
+# firmware al massimo 1920x1080 come nella build che girava sul M920x
+CONFIG_MAINBOARD_USE_LIBGFXINIT=y
+CONFIG_LINEAR_FRAMEBUFFER_MAX_WIDTH=1920
+CONFIG_LINEAR_FRAMEBUFFER_MAX_HEIGHT=1080
+
+# Payload: EDK2 di MrChromebox allo stesso commit del W541
+CONFIG_PAYLOAD_EDK2=y
+CONFIG_EDK2_TAG_OR_REV="ddf612165c8b36e94d5454f01a38e87cf101533f"
+CONFIG_EDK2_BOOTSPLASH_FILE="m920x/bootsplash.bmp"
+CONFIG_EDK2_BOOT_MANAGER_ESCAPE=y
+CONFIG_EDK2_FOLLOW_BGRT_SPEC=y
+# iPXE con il solo driver Intel (patch 0075: la I219-LM, 8086:15bb) e
+# CSMWrap, come sul W541; il setup li spegne (General -> Boot)
+CONFIG_EDK2_ENABLE_IPXE=y
+CONFIG_IPXE_EFI_IMAGE="intel.efi"
+CONFIG_EDK2_ENABLE_CSMWRAP=y
+CONFIG_EDK2_CSMWRAP_FILE="m920x/csmwrap.efi"
+# Le stesse opzioni di EDK2 del W541 (patch edk2/0027, edk2/0034)
+CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D UFS_ENABLE=FALSE -D UHCI_ENABLE=FALSE -D EBC_ENABLE=FALSE -D EXTRA_FS_DRIVERS=FALSE -D CRYPTO_PROTOCOL_SUPPORT=TRUE"
