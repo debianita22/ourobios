@@ -1,0 +1,73 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 12:12:41 +0100
+Subject: [PATCH] UefiPayloadPkg: Let CRYPTO_PROTOCOL_SUPPORT reach the DXE
+ modules
+
+With CRYPTO_PROTOCOL_SUPPORT the first [LibraryClasses] section maps
+BaseCryptLib and TlsLib to DxeCryptLib, the client of the crypto
+protocol of CryptoDxe, so that one copy of OpenSSL serves every DXE
+module. Three later sections, [LibraryClasses.common] and the X64
+DXE_CORE and DXE_DRIVER ones, map BaseCryptLib back to the static
+library unconditionally, and they win: the build added CryptoDxe, with
+its OpenSSL, to five modules that kept their own.
+
+Keep those three mappings for CRYPTO_PROTOCOL_SUPPORT == FALSE only.
+Runtime drivers keep RuntimeCryptLib, as the protocol is not there at
+runtime, and CryptoDxe itself keeps the static library through its
+component override.
+
+For the payload of the W541: the modules of the volume go from 9.8 to
+7.5 MiB, SecurityStubDxe, FmpDxe, SecureBootConfigDxe and
+UserAuthenticationDxe from 800-1000 KiB each to 30-90 KiB, and the
+compressed payload in flash from 2147 to 2032 KiB, since LZMA was
+already finding most of the repeated OpenSSL code.
+
+TEST=The nri payload of ouroBIOS built with -D CRYPTO_PROTOCOL_SUPPORT=TRUE
+passes tools/qemu-smoke.py in QEMU q35 (the setup, the SMMSTORE
+variables, iPXE, CSMWrap, the runtime services relocated); the capsule
+update through the protocol, tools/qemu-update.py, in the CI.
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+---
+ UefiPayloadPkg/UefiPayloadPkg.dsc | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
+index 36302f1..bf390fe 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dsc
++++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
+@@ -530,7 +530,9 @@
+   CpuPageTableLib|UefiCpuPkg/Library/CpuPageTableLib/CpuPageTableLib.inf
+ 
+ [LibraryClasses.common]
++!if $(CRYPTO_PROTOCOL_SUPPORT) == FALSE
+   BaseCryptLib|CryptoPkg/Library/BaseCryptLib/BaseCryptLib.inf
++!endif
+ 
+ !if $(TPM_ENABLE) == TRUE
+   Tpm12CommandLib|SecurityPkg/Library/Tpm12CommandLib/Tpm12CommandLib.inf
+@@ -638,7 +640,9 @@
+   AuthVariableLib|MdeModulePkg/Library/AuthVariableLibNull/AuthVariableLibNull.inf
+ !endif
+ 
++!if $(CRYPTO_PROTOCOL_SUPPORT) == FALSE
+   BaseCryptLib|CryptoPkg/Library/BaseCryptLib/BaseCryptLib.inf
++!endif
+   IntrinsicLib|CryptoPkg/Library/IntrinsicLib/IntrinsicLib.inf
+   OpensslLib|CryptoPkg/Library/OpensslLib/OpensslLib.inf
+ 
+@@ -672,7 +676,9 @@
+   AuthVariableLib|MdeModulePkg/Library/AuthVariableLibNull/AuthVariableLibNull.inf
+ !endif
+ 
++!if $(CRYPTO_PROTOCOL_SUPPORT) == FALSE
+   BaseCryptLib|CryptoPkg/Library/BaseCryptLib/BaseCryptLib.inf
++!endif
+   IntrinsicLib|CryptoPkg/Library/IntrinsicLib/IntrinsicLib.inf
+   OpensslLib|CryptoPkg/Library/OpensslLib/OpensslLib.inf
+   RngLib|MdeModulePkg/Library/BaseRngLibTimerLib/BaseRngLibTimerLib.inf
+-- 
+2.43.0
+
