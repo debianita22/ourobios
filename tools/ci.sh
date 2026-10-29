@@ -520,9 +520,9 @@ From an ouroBIOS release, turn off *Firmware protection* (setup menu,
 
 \`\`\`sh
 sha256sum -c SHA256SUMS --ignore-missing
-sudo modprobe -r spi_intel_platform spi_intel               # flashrom must not go through /dev/mtd0
+sudo modprobe -r spi_intel_pci spi_intel                    # flashrom must not go through /dev/mtd0
 sudo flashrom -p internal -r backup-\$(date +%F).rom        # whole 24 MiB, keep it off the machine
-ls -l backup-*.rom                                        # 25165824 bytes
+ls -l backup-*.rom                                        # 25165824 bytes (16777216: it went through /dev/mtd0)
 sudo flashrom -p internal --ifd -i bios -w ${rom}
 \`\`\`
 
@@ -531,9 +531,15 @@ boots (read-only part and slot B); leave the 16 MiB chip (BIOS1) as it is.
 \`${chip16}\` would give the machine the descriptor, ME and MAC address of
 another machine: see [docs/m920x.md](https://github.com/${repo}/blob/main/docs/m920x.md#recovery).
 
-If flashrom says "Opened /dev/mtd0", the kernel owns the SPI controller: run
-\`sudo modprobe -r spi_intel_platform spi_intel\` first. If flashrom cannot
-map the flash, boot once with \`iomem=relaxed\` on the kernel command line.
+If flashrom says "Opened /dev/mtd0" and finds a 16384 kB "Opaque flash chip",
+the kernel owns the SPI controller: run \`sudo modprobe -r spi_intel_pci
+spi_intel\` first. If flashrom cannot map the flash, boot once with
+\`iomem=relaxed\` on the kernel command line; with Secure Boot on, the
+kernel's lockdown keeps flashrom out altogether, so turn it off for the
+flash. Over a coreboot built for the M920q (\`lenovo/m720q_m920q\`),
+flashrom refuses the image as one for another board: write it with
+\`-p internal:boardmismatch=force\`
+([details](https://github.com/${repo}/blob/main/docs/m920x.md#first-install)).
 Flashing resets the UEFI settings and boot entries: the firmware then boots
 \`\\EFI\\BOOT\\BOOTX64.EFI\` from each disk, so install your boot loader at that
 path too (Debian: \`sudo grub-install --removable\`), or pick it once with
