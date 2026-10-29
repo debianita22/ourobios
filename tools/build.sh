@@ -1397,16 +1397,17 @@ smoke_sb_app() {
 # payload non sa che firmware e' e si ferma (misconfiguration). Niente
 # USE_UEFI_VARIABLE_STORE: il romstage di q35 non ha il flash scrivibile.
 # Poi i servizi runtime spostati come da boot.efi di macOS
-# (tools/efi/rt-reloc-test.c, il passo 9 di tools/qemu-smoke.py) e l'ESRT con
-# Secure Boot (tools/efi/secure-boot-test.c, il passo 10): per la variante il
-# cui payload e' gia' stato provato con l'altra resta solo il passo 10, con
-# la sua ROM q35, perche' il GUID dell'ESRT e' nella tabella di coreboot
+# (tools/efi/rt-reloc-test.c, il passo 9 di tools/qemu-smoke.py), l'ESRT con
+# Secure Boot (tools/efi/secure-boot-test.c, il passo 10) e il TPM 1.2 di
+# swtpm con il log delle misure (il passo 11): per la variante il cui
+# payload e' gia' stato provato con l'altra resta solo il passo 10, con la
+# sua ROM q35, perche' il GUID dell'ESRT e' nella tabella di coreboot
 cmd_smoke() {
 	need_prepared
 	local t
-	for t in qemu-system-x86_64 mformat mmd mcopy clang ld.lld openssl sbsign; do
+	for t in qemu-system-x86_64 mformat mmd mcopy clang ld.lld openssl sbsign swtpm; do
 		command -v "${t}" > /dev/null \
-			|| die "smoke: serve ${t} (Debian/Ubuntu: apt install qemu-system-x86 mtools clang lld openssl sbsigntool)"
+			|| die "smoke: serve ${t} (Debian/Ubuntu: apt install qemu-system-x86 mtools clang lld openssl sbsigntool swtpm)"
 	done
 	if [ "${TOOLCHAIN}" = crossgcc ]; then
 		xgcc_ok || die "crossgcc mancante in ${XGCC}: prima tools/build.sh toolchain"
@@ -1450,6 +1451,11 @@ cmd_smoke() {
 				echo "CONFIG_DRIVERS_EFI_MAIN_FW_GUID=\"${guid}\""
 				echo "CONFIG_DRIVERS_EFI_MAIN_FW_LSV=${lsv}"
 				echo "CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=$(fw_version)"
+				# il TPM 1.2 come sul W541 (il passo 11: swtpm); senza il
+				# dispositivo in QEMU coreboot non lo trova e va avanti
+				echo "CONFIG_TPM1=y"
+				echo "CONFIG_MEMORY_MAPPED_TPM=y"
+				echo "CONFIG_TPM_INIT_RAMSTAGE=y"
 				echo "CONFIG_LOCALVERSION=\"$(localversion "${v}")-q35\""
 				if [ "${TOOLCHAIN}" = host ]; then echo "CONFIG_ANY_TOOLCHAIN=y"; fi
 			} > "${TREE}/build-${q}/defconfig"
@@ -1472,7 +1478,7 @@ cmd_smoke() {
 					|| die "smoke ${v}: l'ESRT o Secure Boot non passano la prova in QEMU (${WORK}/smoke-${v})"
 			elif [ "${res}" = 1920x1080 ]; then
 				python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-${v}" --reloc-test "${reloc}" \
-					--sb-test "${sb}" --esrt "${esrt}" "${TREE}/build-${q}/coreboot.rom" \
+					--sb-test "${sb}" --esrt "${esrt}" --tpm "${TREE}/build-${q}/coreboot.rom" \
 					|| die "smoke ${v}: il payload non passa la prova in QEMU (${WORK}/smoke-${v})"
 				tested="${fd}"
 				tested_v="${v}"

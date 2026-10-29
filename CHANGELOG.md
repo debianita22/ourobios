@@ -462,7 +462,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   through CryptoDxe, and the ESRT must carry the entry of the
   variant with the GUID from the coreboot table. The second variant,
   whose payload is the first one's, runs this step on its own q35 image:
-  since rc19 nothing booted the nri payload in the CI.
+  since rc19 nothing booted the nri payload in the CI. With the TPM 1.2
+  of swtpm, the measurement log must have the Secure Boot keys measured
+  in PCR 7 at the first boot, with the right digests: the check that
+  would have caught the rc19 regression.
 
 ## v1.3.9
 

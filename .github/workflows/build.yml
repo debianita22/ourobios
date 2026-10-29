@@ -157,14 +157,14 @@ jobs:
       # di fumo del payload, con mtools (l'ESP), clang e lld (le applicazioni
       # UEFI che spostano i servizi runtime e provano Secure Boot), sbsigntool
       # (la firma di quest'ultima; lo shim firmato da Microsoft lo scarica
-      # build.sh con apt-get download shim-signed); nasm e xxd: CSMWrap
-      # (prepare) e iPXE
+      # build.sh con apt-get download shim-signed), swtpm (il TPM 1.2 e il
+      # log delle misure); nasm e xxd: CSMWrap (prepare) e iPXE
       - name: Pacchetti
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential bison flex gnat libncurses-dev \
             zlib1g-dev m4 curl git python3 uuid-dev imagemagick jcat \
-            libssl-dev pkg-config qemu-system-x86 mtools clang lld nasm xxd sbsigntool >/dev/null
+            libssl-dev pkg-config qemu-system-x86 mtools clang lld nasm xxd sbsigntool swtpm >/dev/null
           gcc --version | head -1
           gnatmake --version | head -1
 
