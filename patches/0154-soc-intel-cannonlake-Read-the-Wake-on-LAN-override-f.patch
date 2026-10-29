@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 29 Oct 2026 23:35:46 +0100
+Subject: [PATCH] soc/intel/cannonlake: Read the Wake on LAN override from an
+ option
+
+PchPmWolEnableOverride makes FSP-S set WOL_EN_OVRD in GEN_PMCON_B: the
+PCH then takes the wake of its LAN from S4 and S5 whatever PME_EN says.
+The ACPI tables of the SoC give the GbE device wakes up to S4
+(pch_glan.asl, _PRW with 4), so an OS that honours them, as Linux does,
+does not arm it for S5, and without the override a computer that was
+shut down does not wake on LAN. The reference code of Intel has it as
+the "Wake on LAN Enable" setup option, on by default.
+
+Read the "wake_on_lan" option, with the devicetree setting as its
+default, so that the boards that do not offer it keep what they set.
+
+TEST=Built lenovo/m920x, which offers it.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/soc/intel/cannonlake/fsp_params.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/soc/intel/cannonlake/fsp_params.c b/src/soc/intel/cannonlake/fsp_params.c
+index 8aed7b2c2c..bd2e808c33 100644
+--- a/src/soc/intel/cannonlake/fsp_params.c
++++ b/src/soc/intel/cannonlake/fsp_params.c
+@@ -436,9 +436,9 @@ void platform_fsp_silicon_init_params_cb(FSPS_UPD *supd)
+ 	s_cfg->DdiPortDDdc = config->DdiPortDDdc;
+ 	s_cfg->DdiPortFDdc = config->DdiPortFDdc;
+ 
+-	/* WOL */
++	/* WOL: the override, from S4 and S5, is the "wake_on_lan" option */
+ 	s_cfg->PchPmPcieWakeFromDeepSx = config->LanWakeFromDeepSx;
+-	s_cfg->PchPmWolEnableOverride = config->WolEnableOverride;
++	s_cfg->PchPmWolEnableOverride = get_uint_option("wake_on_lan", config->WolEnableOverride);
+ 
+ 	/* disable Legacy PME */
+ 	memset(s_cfg->PcieRpPmSci, 0, sizeof(s_cfg->PcieRpPmSci));
+-- 
+2.47.3
+
