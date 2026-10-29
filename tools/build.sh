@@ -1311,6 +1311,59 @@ efi_app() {
 		-Wl,-subsystem:efi_application -Wl,-entry:efi_main -o "$2" "$1"
 }
 
+# Il passo 10 della prova di fumo: tools/efi/secure-boot-test.c compilato
+# nella cartella $1 e firmato. Le chiavi nascono qui, a ogni giro: una CA di
+# prova, che l'applicazione mette in db, il suo certificato figlio che la
+# firma (sbsign), un altro certificato, di nessuna catena, che firma una
+# copia di $2 (l'immagine da rifiutare); $2 anche senza firma. Lo shim
+# firmato da Microsoft, se c'e' nel sistema (shim-signed di Debian/Ubuntu,
+# o scaricabile con apt-get), e' l'immagine da accettare con le chiavi
+# Microsoft di EnrollDefaultKeys; senza, quel caso resta fuori. Stampa il
+# percorso dell'applicazione firmata
+smoke_sb_app() {
+	local d="$1" pe="$2" shim="" f
+	rm -rf "${d}"
+	mkdir -p "${d}"
+	(
+		cd "${d}" || exit 1
+		openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 -subj "/CN=ouroBIOS smoke CA" \
+			-keyout ca.key -out ca.pem > /dev/null 2>&1 || exit 1
+		openssl req -newkey rsa:2048 -sha256 -nodes -subj "/CN=ouroBIOS smoke leaf" \
+			-keyout leaf.key -out leaf.csr > /dev/null 2>&1 || exit 1
+		openssl x509 -req -in leaf.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 3650 -sha256 \
+			-out leaf.pem > /dev/null 2>&1 || exit 1
+		openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 -subj "/CN=ouroBIOS smoke other" \
+			-keyout other.key -out other.pem > /dev/null 2>&1 || exit 1
+		openssl x509 -in ca.pem -outform DER -out cert-ca.der > /dev/null 2>&1 || exit 1
+		cp "${pe}" unsigned.efi || exit 1
+		sbsign --key other.key --cert other.pem --output signed-other.efi unsigned.efi > /dev/null 2>&1 || exit 1
+	) || { echo "  NO  smoke: le chiavi e le immagini di prova di Secure Boot (openssl, sbsign) in ${d}" >&2; return 1; }
+	for f in /usr/lib/shim/shimx64.efi.signed.latest /usr/lib/shim/shimx64.efi.signed /usr/share/shim-signed/shimx64.efi; do
+		[ -f "${f}" ] && { shim="${f}"; break; }
+	done
+	if [ -z "${shim}" ] && command -v apt-get > /dev/null && command -v dpkg-deb > /dev/null; then
+		mkdir -p "${d}/shim"
+		if (cd "${d}/shim" && apt-get download shim-signed > /dev/null 2>&1 \
+				&& dpkg-deb -x shim-signed_*.deb x > /dev/null 2>&1); then
+			for f in "${d}"/shim/x/usr/lib/shim/shimx64.efi.signed.latest "${d}"/shim/x/usr/lib/shim/shimx64.efi.signed; do
+				[ -f "${f}" ] && { shim="${f}"; break; }
+			done
+		fi
+	fi
+	if [ -n "${shim}" ]; then
+		cp "${shim}" "${d}/shim-ms.efi" || return 1
+		echo "  --  smoke: lo shim firmato da Microsoft da accettare: ${shim}" >&2
+	else
+		: > "${d}/shim-ms.efi"
+		echo "  --  smoke: nessuno shim firmato da Microsoft (shim-signed): quel caso resta fuori" >&2
+	fi
+	(cd "${d}" && efi_app "${O}/tools/efi/secure-boot-test.c" "${d}/sb-test.efi") \
+		|| { echo "  NO  smoke: tools/efi/secure-boot-test.c non compila" >&2; return 1; }
+	sbsign --key "${d}/leaf.key" --cert "${d}/leaf.pem" --output "${d}/sb-test-signed.efi" "${d}/sb-test.efi" > /dev/null 2>&1 \
+		|| { echo "  NO  smoke: sbsign non firma sb-test.efi" >&2; return 1; }
+	echo "${d}/sb-test-signed.efi"
+}
+
 # La prova di fumo: il payload della variante, gia' costruito da roms, in una
 # ROM per QEMU q35. Del W541 non si emula niente: girano il payload (le patch
 # di EDK2 e LvglPkg) e il codice comune di coreboot. DRIVERS_EFI_FW_INFO con
@@ -1318,13 +1371,16 @@ efi_app() {
 # payload non sa che firmware e' e si ferma (misconfiguration). Niente
 # USE_UEFI_VARIABLE_STORE: il romstage di q35 non ha il flash scrivibile.
 # Poi i servizi runtime spostati come da boot.efi di macOS
-# (tools/efi/rt-reloc-test.c, il passo 9 di tools/qemu-smoke.py)
+# (tools/efi/rt-reloc-test.c, il passo 9 di tools/qemu-smoke.py) e l'ESRT con
+# Secure Boot (tools/efi/secure-boot-test.c, il passo 10): per la variante il
+# cui payload e' gia' stato provato con l'altra resta solo il passo 10, con
+# la sua ROM q35, perche' il GUID dell'ESRT e' nella tabella di coreboot
 cmd_smoke() {
 	need_prepared
 	local t
-	for t in qemu-system-x86_64 mformat mmd mcopy clang ld.lld; do
+	for t in qemu-system-x86_64 mformat mmd mcopy clang ld.lld openssl sbsign; do
 		command -v "${t}" > /dev/null \
-			|| die "smoke: serve ${t} (Debian/Ubuntu: apt install qemu-system-x86 mtools clang lld)"
+			|| die "smoke: serve ${t} (Debian/Ubuntu: apt install qemu-system-x86 mtools clang lld openssl sbsigntool)"
 	done
 	if [ "${TOOLCHAIN}" = crossgcc ]; then
 		xgcc_ok || die "crossgcc mancante in ${XGCC}: prima tools/build.sh toolchain"
@@ -1332,7 +1388,9 @@ cmd_smoke() {
 	fi
 	local reloc="${WORK}/rt-reloc-test.efi"
 	efi_app "${O}/tools/efi/rt-reloc-test.c" "${reloc}" || die "smoke: tools/efi/rt-reloc-test.c non compila"
-	local v q fd guid lsv res x y tested="" tested_v=""
+	local sb
+	sb="$(smoke_sb_app "${WORK}/sb-test" "${reloc}")" || die "smoke: tools/efi/secure-boot-test.c"
+	local v q fd guid lsv res x y tested="" tested_v="" esrt
 	for v in "${VARIANTS[@]}"; do
 		fd="${TREE}/build-${v}/UEFIPAYLOAD.fd"
 		[ -f "${fd}" ] || die "smoke ${v}: manca ${fd}, prima tools/build.sh roms"
@@ -1345,13 +1403,6 @@ cmd_smoke() {
 		# due payload) una volta sola, con la prima variante
 		for res in 1920x1080 2880x1620; do
 			if [ "${res}" != 1920x1080 ] && [ "${v}" != "${VARIANTS[0]}" ]; then continue; fi
-			# lo stesso payload, byte per byte, di una variante gia' provata
-			# (before_build): la prova e' la stessa, con un altro GUID nella
-			# tabella di coreboot
-			if [ "${res}" = 1920x1080 ] && [ -n "${tested}" ] && cmp -s "${tested}" "${fd}"; then
-				echo "  ok  smoke ${v}: il payload e' quello di ${tested_v}, gia' provato a ${res}"
-				continue
-			fi
 			x="${res%x*}"
 			y="${res#*x}"
 			q="q35-${v}"
@@ -1384,9 +1435,18 @@ cmd_smoke() {
 				die "smoke ${v}: build per q35 fallita (build-${q}/make.log nell'albero)"
 			fi
 			say "smoke ${v}: QEMU a ${res}"
-			if [ "${res}" = 1920x1080 ]; then
+			esrt="${guid}:$(fw_version):${lsv}"
+			if [ "${res}" = 1920x1080 ] && [ -n "${tested}" ] && cmp -s "${tested}" "${fd}"; then
+				# lo stesso payload, byte per byte, di una variante gia'
+				# provata (before_build): la prova e' la stessa, salvo il
+				# GUID nella tabella di coreboot, che l'ESRT deve riportare
+				echo "  ok  smoke ${v}: il payload e' quello di ${tested_v}, gia' provato a ${res}: solo il passo 10"
+				python3 "${O}/tools/qemu-smoke.py" --sb-only --sb-test "${sb}" --esrt "${esrt}" \
+					--out "${WORK}/smoke-${v}" "${TREE}/build-${q}/coreboot.rom" \
+					|| die "smoke ${v}: l'ESRT o Secure Boot non passano la prova in QEMU (${WORK}/smoke-${v})"
+			elif [ "${res}" = 1920x1080 ]; then
 				python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-${v}" --reloc-test "${reloc}" \
-					"${TREE}/build-${q}/coreboot.rom" \
+					--sb-test "${sb}" --esrt "${esrt}" "${TREE}/build-${q}/coreboot.rom" \
 					|| die "smoke ${v}: il payload non passa la prova in QEMU (${WORK}/smoke-${v})"
 				tested="${fd}"
 				tested_v="${v}"
