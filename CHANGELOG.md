@@ -30,7 +30,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   stayed at PC3 while the cores sat in C10 (0142). The audio codec, a
   Realtek ALC233, gets the whole verb table of the OEM firmware, with its
   Realtek coefficients and the speaker path; coreboot's page for the board
-  lists the front audio jacks as not working (0143).
+  lists the front audio jacks as not working (0143). DDI-E gets two of
+  the four lanes of DDI-A, which has no panel on this desktop: the VBT has
+  a DisplayPort on DDI-E, most likely for the VGA option, and i915 warned
+  at every boot that it had no lanes (0144).
 
 ## v1.3.10
 

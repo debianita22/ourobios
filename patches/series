@@ -137,3 +137,4 @@
 0141-mb-lenovo-m720q_m920q-Add-a-setup-menu.patch
 0142-mb-lenovo-m720q_m920q-Enable-LTR-on-the-PCIe-root-po.patch
 0143-mb-lenovo-m720q_m920q-Program-the-ALC233-as-the-OEM-.patch
+0144-mb-lenovo-m720q_m920q-Split-the-eDP-lanes-between-DD.patch

@@ -1,0 +1,40 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 21:13:12 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Split the eDP lanes between DDI-A and
+ DDI-E
+
+The VBT has a DisplayPort on DDI-E, but coreboot sets DDI_A_4_LANES,
+which leaves DDI-E no lanes: i915 warns with a backtrace at every boot
+("Not enough lanes (0) for DP on [ENCODER:140:DDI E/PHY E]") and gives
+the port no connector. The board has no eDP panel on DDI-A. The OEM
+firmware has a DP on DDI-E in the VBTs of some configurations of the
+optional rear port, where it most likely feeds the DP-to-VGA adapter of
+the VGA option. Select SOC_INTEL_GFX_ENABLE_DDI_E_BIFURCATION, so that
+DDI-A and DDI-E get two lanes each.
+
+TEST=On an M920x running the build before this, DDI_BUF_CTL_A reads
+0x00000090, with DDI_A_4_LANES, i915 warns as above, and SFUSE_STRAP
+shows DDI-B, DDI-C and DDI-D present; HDMI, on one of those, works in
+the firmware. Built lenovo/m920x.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/Kconfig | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/Kconfig b/src/mainboard/lenovo/m720q_m920q/Kconfig
+index f733c132ad..159820afb2 100644
+--- a/src/mainboard/lenovo/m720q_m920q/Kconfig
++++ b/src/mainboard/lenovo/m720q_m920q/Kconfig
+@@ -21,6 +21,7 @@ config BOARD_SPECIFIC_OPTIONS
+ 	select SOC_INTEL_CANNONLAKE_PCH_H
+ 	select SOC_INTEL_COFFEELAKE
+ 	select SOC_INTEL_COMMON_BLOCK_HDA_VERB
++	select SOC_INTEL_GFX_ENABLE_DDI_E_BIFURCATION
+ 	select SUPERIO_NUVOTON_NCT6687D
+ 
+ config MAINBOARD_DIR
+-- 
+2.47.3
+
