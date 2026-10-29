@@ -1,0 +1,63 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 29 Oct 2026 21:07:12 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Program the ALC233 as the OEM firmware
+ does
+
+The verb table of the ALC233 (subsystem 17aa:3136) sets the same pin
+configuration as the OEM firmware, and nothing else of the OEM table
+for this codec and subsystem: the function reset, the Realtek
+coefficients of the widgets 0x20 and 0x57, among them those the Linux
+driver writes for the headset jack, and the speaker path (mixer gains,
+pin 0x14 output and EAPD). The front audio jacks are listed as not
+working on this board. Take the whole OEM table, in its order: 23 sets
+of four verbs instead of 11.
+
+TEST=The table, with the macros expanded, matches dword for dword the
+one the OEM firmware of an M920x (machine type 10S2) holds for the
+ALC233 and subsystem 17aa:3136, with the internal speaker. Built
+lenovo/m920x.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/hda_verb.c | 16 +++++++++++++++-
+ 1 file changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/hda_verb.c b/src/mainboard/lenovo/m720q_m920q/hda_verb.c
+index 6e6d679e26..8601470ae3 100644
+--- a/src/mainboard/lenovo/m720q_m920q/hda_verb.c
++++ b/src/mainboard/lenovo/m720q_m920q/hda_verb.c
+@@ -5,8 +5,9 @@
+ const u32 cim_verb_data[] = {
+ 	0x10ec0235,	/* Codec Vendor / Device ID: Realtek ALC233 */
+ 	0x17aa3136,	/* Subsystem ID */
+-	11,		/* Number of 4 dword sets */
++	23,		/* Number of 4 dword sets */
+ 	AZALIA_SUBVENDOR(0, 0x17aa3136),
++	AZALIA_RESET(1),
+ 	AZALIA_PIN_CFG(0, 0x12, 0x40000000),
+ 	AZALIA_PIN_CFG(0, 0x14, 0x90170110),
+ 	AZALIA_PIN_CFG(0, 0x17, AZALIA_PIN_CFG_NC(0)),
+@@ -17,6 +18,19 @@ const u32 cim_verb_data[] = {
+ 	AZALIA_PIN_CFG(0, 0x1d, 0x40400001),
+ 	AZALIA_PIN_CFG(0, 0x1e, AZALIA_PIN_CFG_NC(0)),
+ 	AZALIA_PIN_CFG(0, 0x21, 0x0221101f),
++	/* Realtek coefficients (widgets 0x20 and 0x57), as the OEM firmware */
++	0x02050038, 0x02046991, 0x0205000d, 0x02042810,
++	0x05750003, 0x057486a6, 0x02050034, 0x02048204,
++	0x02050009, 0x0204e003, 0x0205004b, 0x02045555,
++	0x0205004a, 0x02043fc0, 0x0205003d, 0x020482ba,
++	0x02050039, 0x0204110f, 0x02050031, 0x0204e000,
++	0x02050037, 0x02044a05, 0x0205001b, 0x02040a0b,
++	0x02050046, 0x02040004, 0x02050010, 0x02040020,
++	0x02050040, 0x02041800, 0x02050008, 0x02046a0c,
++	0x05750003, 0x057486a6, 0x05750003, 0x057486a6,
++	/* The speaker: mixer gains, pin 0x14 output and EAPD, as the OEM firmware */
++	0x00b3f417, 0x00c3f11f, 0x00c3f001, 0x01470740,
++	0x01470740, 0x0143b000, 0x01470c02, 0x01470c02,
+ 
+ 	0x8086280b,	/* Codec Vendor / Device ID: Intel Kabylake HDMI */
+ 	0x80860101,	/* Subsystem ID */
+-- 
+2.47.3
+

@@ -24,6 +24,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   the fwupd metadata of the `mrc` release carries the `.cab` of every board,
   and fwupd offers each machine its own.
 - `tools/vpd.py`: the machine types and SKU of the M920x, `--sku`.
+- From rc2, on the M920x: Latency Tolerance Reporting on the PCIe root
+  ports in use, as with the OEM firmware. Without it the NVMe SSD and the
+  Wi-Fi card could not use LTR nor ASPM L1.2, and at idle the package
+  stayed at PC3 while the cores sat in C10 (0142). The audio codec, a
+  Realtek ALC233, gets the whole verb table of the OEM firmware, with its
+  Realtek coefficients and the speaker path; coreboot's page for the board
+  lists the front audio jacks as not working (0143).
 
 ## v1.3.10
 
