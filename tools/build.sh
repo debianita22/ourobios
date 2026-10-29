@@ -1353,6 +1353,10 @@ smoke_sb_app() {
 	if [ -n "${shim}" ]; then
 		cp "${shim}" "${d}/shim-ms.efi" || return 1
 		echo "  --  smoke: lo shim firmato da Microsoft da accettare: ${shim}" >&2
+	elif [ -n "${GITHUB_ACTIONS:-}" ]; then
+		# nella CI il caso ci deve essere: il runner Ubuntu ha apt-get
+		echo "  NO  smoke: nessuno shim firmato da Microsoft (apt-get download shim-signed)" >&2
+		return 1
 	else
 		: > "${d}/shim-ms.efi"
 		echo "  --  smoke: nessuno shim firmato da Microsoft (shim-signed): quel caso resta fuori" >&2
@@ -1572,6 +1576,8 @@ update_test_build() {
 		|| die "update-test: 3rdparty/vboot nel worktree"
 	if [ "${TOOLCHAIN}" = crossgcc ]; then ln -s "${XGCC}" "${ab}/util/crossgcc/xgcc"; fi
 
+	local -a pids=()
+	local i
 	for rom in "${UPDATE_TEST_ROMS[@]}"; do
 		read -r n ver <<< "${rom}"
 		say "update-test: ROM ${n} per q35 con vboot A/B, versione ${ver}"
@@ -1597,7 +1603,17 @@ update_test_build() {
 		mk_in "${ab}" "${n}" defconfig KBUILD_DEFCONFIG="build-${n}/defconfig" > "${d}/defconfig.log" 2>&1 \
 			|| { cat "${d}/defconfig.log"; die "update-test: make defconfig della ROM ${n} fallito"; }
 		defconfig_kept "${d}" || die "update-test: il .config della ROM ${n} non ha tutto il defconfig"
-		if ! mk_in "${ab}" "${n}" -j"${JOBS}" > "${d}/make.log" 2>&1; then
+		# le quattro ROM insieme: ogni build sta nella sua build-${n} e
+		# una build di coreboot ha tratti a un solo processo
+		mk_in "${ab}" "${n}" -j"${JOBS}" > "${d}/make.log" 2>&1 &
+		pids+=("$!")
+	done
+	for i in "${!pids[@]}"; do
+		read -r n ver <<< "${UPDATE_TEST_ROMS[i]}"
+		d="${ab}/build-${n}"
+		if ! wait "${pids[i]}"; then
+			kill "${pids[@]}" 2> /dev/null || true
+			wait || true
 			failure_report "update-test: ROM ${n}" "${d}/make.log"
 			grep -n -i -B2 -A6 'error' "${d}/make.log" | tail -n 40 || true
 			die "update-test: build della ROM ${n} fallita (${d}/make.log)"
