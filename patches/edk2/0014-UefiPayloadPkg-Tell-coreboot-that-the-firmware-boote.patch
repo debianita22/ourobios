@@ -14,8 +14,14 @@ PlatformBootManagerAfterConsole(): a slot that boots the payload to its
 console is kept. Without vboot, coreboot answers that the command is
 unsupported, and nothing changes.
 
+TEST=tools/qemu-update.py of ouroBIOS at every build: after a capsule
+the payload reports the new slot good ("firmware slot marked good:
+Success") and vboot keeps it; the releases installed with capsules on
+the W541 stay on the new slot.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  UefiPayloadPkg/Include/Library/SmmStoreLib.h  | 15 ++++++++++++
  .../PlatformBootManager.c                     |  5 ++++

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Fri, 9 Oct 2026 21:37:46 +0200
-Subject: [PATCH 03/12] LvglLib: Style the stock widgets from LvglTheme.h
+Subject: [PATCH] LvglLib: Style the stock widgets from LvglTheme.h
 
 Drop-downs, text areas, check boxes, buttons and lists get their look
 from LVGL's default theme, which lv_display_create() initializes in
@@ -11,8 +11,13 @@ primary and secondary color and dark mode, with the scaled body font.
 The defaults are LVGL's own values, so the look does not change unless
 the theme sets them.
 
+TEST=tools/qemu-smoke.py of ouroBIOS at every build: the setup draws and
+answers the keys; the screenshots of tools/qemu-setup-shots.py in its
+docs; the setup of the W541.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  Include/LvglTheme.h       | 12 ++++++++++++
  Library/LvglLib/LvglLib.c | 14 ++++++++++++++

@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sat, 10 Oct 2026 19:06:54 +0200
-Subject: [PATCH] mb/lenovo/haswell: Report the machine type and serial as the
- OEM firmware
+Subject: [PATCH] mb/lenovo/haswell: Report machine type and serial as the OEM
+ firmware
 
 The OEM firmware has the machine type model and the serial number of
 the ThinkPad in its own flash. With coreboot they can be stored in the
@@ -23,15 +23,20 @@ Show what the VPD holds in the About card of the setup menu too, as the
 OEM setup does: machine type, serial number, system board serial
 number and UUID, each hidden when the VPD does not have it.
 
+TEST=W541 with the VPD written as docs/flashing.md of ouroBIOS says:
+dmidecode shows the machine type model as product name and the serial
+number for the system and the chassis; the About card of the setup shows
+machine type, serial number and UUID.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
- src/mainboard/lenovo/haswell/cfr.c       | 80 ++++++++++++++++++++++++
+ src/mainboard/lenovo/haswell/cfr.c       | 81 ++++++++++++++++++++++++
  src/mainboard/lenovo/haswell/mainboard.c | 23 +++++++
- 2 files changed, 103 insertions(+)
+ 2 files changed, 104 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 4d9010d5dd..61e15a0448 100644
+index 9dab466fb5..cedc47f063 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -8,6 +8,7 @@
@@ -42,7 +47,7 @@ index 4d9010d5dd..61e15a0448 100644
  #include <ec/lenovo/h8/cfr.h>
  #include <ec/lenovo/h8/h8.h>
  #include <memory_info.h>
-@@ -32,6 +33,81 @@ static const struct sm_object info_model = SM_DECLARE_VARCHAR({
+@@ -32,6 +33,82 @@ static const struct sm_object info_model = SM_DECLARE_VARCHAR({
  	.default_value	= CONFIG_MAINBOARD_PART_NUMBER,
  });
  
@@ -87,7 +92,8 @@ index 4d9010d5dd..61e15a0448 100644
 +		return;
 +	}
 +	/* The first three fields are little-endian, as in SMBIOS */
-+	snprintf(text, 37, "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
++	snprintf(text, 37, "%02X%02X%02X%02X-%02X%02X-%02X%02X-"
++		 "%02X%02X-%02X%02X%02X%02X%02X%02X",
 +		 u[3], u[2], u[1], u[0], u[5], u[4], u[7], u[6],
 +		 u[8], u[9], u[10], u[11], u[12], u[13], u[14], u[15]);
 +	new->sm_varchar.default_value = text;
@@ -124,7 +130,7 @@ index 4d9010d5dd..61e15a0448 100644
  static void update_processor(struct sm_object *new)
  {
  	char *name = malloc(49);
-@@ -114,6 +190,10 @@ static const struct sm_object general_about = SM_DECLARE_FORM({
+@@ -114,6 +191,10 @@ static const struct sm_object general_about = SM_DECLARE_FORM({
  	.ui_name	= "About this ThinkPad",
  	.obj_list	= (const struct sm_object *[]) {
  		&info_model,

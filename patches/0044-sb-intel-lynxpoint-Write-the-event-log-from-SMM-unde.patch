@@ -17,6 +17,12 @@ Move the SMMSTORE code into a pair of helpers and use them around the
 event log writes as well. Without the lock BIOSWE is set and the helpers
 change nothing.
 
+TEST=Builds for the W541 (the CI of ouroBIOS). Its releases run with the
+BIOS lock off, the default, where the helpers set nothing and the event
+log keeps its entries (tools/elog.py: one at each S3 wake). With the
+lock on there is no recorded test on hardware; the helpers are the ones
+the SMMSTORE handler already writes the variables with under it.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---

@@ -9,8 +9,13 @@ letter for an icon.
 
 Show it under General, with an upload symbol on green.
 
+TEST=QEMU q35: the page under General with its icon
+(tools/qemu-update.py of ouroBIOS follows it at every build,
+tools/qemu-setup-shots.py takes its screenshot); the setup of the W541.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  LvglDisplayEngineDxe/LvglFormRenderer.c | 2 ++
  1 file changed, 2 insertions(+)

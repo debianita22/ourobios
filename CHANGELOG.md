@@ -423,6 +423,12 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   hypervisor, and the update test, which writes the flash through SMM,
   took longer than with TCG (`OUROBIOS_QEMU_ACCEL=kvm` turns it on by
   hand).
+- From rc19, every patch of the three series says how it was tested
+  (`TEST=`: the tests of the CI, QEMU, the W541, or that there is no
+  recorded test), its subject fits in 72 columns and the lines it adds
+  in 96 (the Kconfig default of 0053, a string, excepted); the ones
+  renamed keep their numbers. What the patches do does not change: 23
+  lines of the coreboot series are wrapped, nothing else.
 
 ## v1.3.9
 

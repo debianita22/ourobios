@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Fri, 9 Oct 2026 23:04:14 +0200
-Subject: [PATCH 04/12] LvglDisplayEngineDxe: Redesign the setup UI as System
+Subject: [PATCH] LvglDisplayEngineDxe: Redesign the setup UI as System
  Preferences
 
 Lay the setup UI out like the System Preferences of macOS, in a dark
@@ -36,8 +36,14 @@ Only the built-in Montserrat fonts and LVGL symbols are used, without
 images or blur: the shadows of the windows, the dock and the icons are
 LVGL box shadows.
 
+TEST=tools/qemu-smoke.py of ouroBIOS at every build: the front page, a
+category opened with Down and Enter and closed with Esc; the screenshots
+of tools/qemu-setup-shots.py in its docs; the setup of the W541 in every
+release since.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  Include/Library/LvglThemeLib.h                |   38 +
  Include/LvglTheme.h                           |  292 ++-

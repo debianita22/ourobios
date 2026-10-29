@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sat, 24 Oct 2026 17:40:41 +0200
-Subject: [PATCH] nb/intel/haswell/nri: Test the memory after training, and
- train again once
+Subject: [PATCH] nb/intel/haswell/nri: Test the memory after training, retrain
+ once
 
 The MRC ends a training with a memory test (MEMTST) and a margin check
 that redo the training when it is not good enough; the native RAM init
@@ -33,10 +33,10 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
  src/northbridge/intel/haswell/Kconfig         |   9 +
  .../intel/haswell/native_raminit/Makefile.mk  |   1 +
- .../haswell/native_raminit/memory_test.c      | 171 ++++++++++++++++++
- .../haswell/native_raminit/raminit_main.c     |  16 +-
+ .../haswell/native_raminit/memory_test.c      | 174 ++++++++++++++++++
+ .../haswell/native_raminit/raminit_main.c     |  17 +-
  .../haswell/native_raminit/raminit_native.h   |   2 +
- 5 files changed, 195 insertions(+), 4 deletions(-)
+ 5 files changed, 199 insertions(+), 4 deletions(-)
  create mode 100644 src/northbridge/intel/haswell/native_raminit/memory_test.c
 
 diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
@@ -73,10 +73,10 @@ index 87fba9f4ec..e525b72814 100644
  romstage-y += ranges.c
 diff --git a/src/northbridge/intel/haswell/native_raminit/memory_test.c b/src/northbridge/intel/haswell/native_raminit/memory_test.c
 new file mode 100644
-index 0000000000..d815d931c8
+index 0000000000..3e845a216e
 --- /dev/null
 +++ b/src/northbridge/intel/haswell/native_raminit/memory_test.c
-@@ -0,0 +1,171 @@
+@@ -0,0 +1,174 @@
 +/* SPDX-License-Identifier: GPL-2.0-or-later */
 +
 +#include <console/console.h>
@@ -212,8 +212,10 @@ index 0000000000..d815d931c8
 +				reut_addr.row.inc_rate = cl_per_row;
 +				program_seq_addr(channel, &reut_addr, false);
 +
-+				/* Cachelines in the bank: a power of two, as the row and column counts */
-+				const uint8_t num_cl = log2_ceil(row_size) + log2_ceil(cl_per_row);
++				/* Cachelines in the bank: a power of two, as the row and
++				 * column counts */
++				const uint8_t num_cl = log2_ceil(row_size) +
++						       log2_ceil(cl_per_row);
 +				const union reut_subseq_ctl_reg subseq_a = {
 +					.num_cachelines_with_scale     = num_cl,
 +					.subseq_type                   = SUBSEQ_B_WR,
@@ -229,7 +231,8 @@ index 0000000000..d815d931c8
 +			}
 +			status = run_bank_test(ctrl, chanmask);
 +			if (status) {
-+				printk(BIOS_ERR, "Memory test failed on rank %u bank %u\n", rank, bank);
++				printk(BIOS_ERR, "Memory test failed on rank %u bank %u\n",
++				       rank, bank);
 +				break;
 +			}
 +		}
@@ -249,7 +252,7 @@ index 0000000000..d815d931c8
 +	return status;
 +}
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
-index 8e29f4c4a9..c6305ba231 100644
+index 8e29f4c4a9..2ee883fd10 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 @@ -138,6 +138,7 @@ static const struct task_entry cold_boot[] = {
@@ -260,7 +263,7 @@ index 8e29f4c4a9..c6305ba231 100644
  	{ raminit_done,                                           true, "RAMINITEND", },
  };
  
-@@ -287,9 +288,16 @@ void raminit_main(const enum raminit_boot_mode bootmode)
+@@ -287,9 +288,17 @@ void raminit_main(const enum raminit_boot_mode bootmode)
  		}
  	}
  
@@ -269,7 +272,8 @@ index 8e29f4c4a9..c6305ba231 100644
 +	/* Train again once if a training step or the memory test fails */
 +	for (uint8_t attempt = 0; attempt < 2; attempt++) {
 +		if (attempt) {
-+			printk(BIOS_WARNING, "Memory training failed (%u), trying again\n", status);
++			printk(BIOS_WARNING, "Memory training failed (%u), trying again\n",
++			       status);
 +			initialize_ctrl(&mighty_ctrl);
 +		}
 +		status = try_raminit(&mighty_ctrl, cold_boot, ARRAY_SIZE(cold_boot));

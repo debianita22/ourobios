@@ -16,6 +16,12 @@ zero argument disable it until the next boot, so that the payload can
 give it up and boot on when it has written nothing. The handler only
 loses access with it.
 
+TEST=QEMU q35 with the capsule options and the payload of the W541 build
+(the first capsule release of ouroBIOS): a boot with the capsule-on-disk
+bit and no capsule, or with OsIndications read differently by coreboot
+and the payload, boots on without a reset once the payload gives the
+access up (docs/update.md of ouroBIOS).
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---

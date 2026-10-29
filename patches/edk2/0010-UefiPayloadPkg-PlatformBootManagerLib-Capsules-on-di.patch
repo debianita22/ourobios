@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sat, 10 Oct 2026 23:58:48 +0200
-Subject: [PATCH] UefiPayloadPkg/PlatformBootManagerLib: Apply capsules on
- disk, keep the flash safe
+Subject: [PATCH] UefiPayloadPkg/PlatformBootManagerLib: Capsules on disk,
+ flash kept safe
 
 With DRIVERS_EFI_CAPSULE_ON_DISK_SUPPORT, coreboot sees the capsules on
 disk announced in OsIndications and lets the SMMSTORE handler write the
@@ -37,8 +37,18 @@ Capsules that need a second pass after EndOfDxe, for device firmware
 with embedded drivers, are no longer processed: the only FMP instance is
 the system firmware, locked by FmpDxe at EndOfDxe anyway.
 
+TEST=QEMU q35, by hand and then tools/qemu-update.py of ouroBIOS at
+every build: capsules from the ESP applied before EndOfDxe and the
+firmware reset, the bit cleared; capsules signed by another key or older
+than the lowest supported version refused without writing; no capsule,
+or OsIndications read differently by coreboot and the payload, booting
+on without a reset. On the W541 the releases of ouroBIOS install with
+capsules since v1.2.0 (docs/update.md). The wait for the battery has no
+recorded test.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../PlatformBootManager.c                     |  45 +-
  .../PlatformBootManager.h                     |  13 +

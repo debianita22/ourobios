@@ -27,8 +27,14 @@ in circular mask cache calculation (#9864)", by Kreedb). Take the same
 change into the LVGL submodule of LvglLib: the file is then the one of
 that commit.
 
+TEST=QEMU q35 at 2880x1620 (tools/qemu-smoke.py --setup-only --size
+2880x1620 of ouroBIOS, at every build): the setup opens and answers the
+keys at the four UI scales, where v1.3.10-rc3 faulted; at 1920x1080 the
+wallpaper differs from rc3's by at most 2 levels per color.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  Library/LvglLib/lvgl/src/draw/sw/lv_draw_sw_mask.c | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)

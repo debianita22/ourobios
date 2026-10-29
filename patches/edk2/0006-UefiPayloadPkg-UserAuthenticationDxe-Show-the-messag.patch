@@ -18,8 +18,13 @@ protocol, the text boxes stay.
 The help of the password question said 8 to 32 characters: the formset
 and the driver accept 64.
 
+TEST=QEMU q35: a wrong password, a 63-character one refused and a
+64-character one set show as popups of the LVGL setup, which keep the
+keys from the form; the password set opens the setup after a reboot.
+
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../UserAuthenticationDxe.c                   | 79 ++++++++++++++++++-
  .../UserAuthenticationDxe.h                   |  1 +

@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sat, 10 Oct 2026 23:58:04 +0200
-Subject: [PATCH] drivers/smmstore: Don't leave the full flash decision to the
- OS on S3 resume
+Subject: [PATCH] drivers/smmstore: Decide the full flash access on S3 resume
+ too
 
 The SMI handler serves the whole flash once the firmware has asked for
 it with SMMSTORE_CMD_USE_FULL_FLASH, and the firmware asks, for or
@@ -17,6 +17,11 @@ Decide on S3 resume as well, before jumping to the OS, and in the
 handler take any other command that arrives before the decision as the
 decision against: the firmware always decides first, so such a command
 is from the payload or the OS.
+
+TEST=QEMU q35 with the DEBUG payload and with the payload of the v1.2.1
+build of ouroBIOS: capsules applied and refused as before, no capsule or
+a divergent OsIndications booting on. The command sent by the OS after
+an S3 resume has no recorded test.
 
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv

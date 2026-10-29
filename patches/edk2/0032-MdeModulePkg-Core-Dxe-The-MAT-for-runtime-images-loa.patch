@@ -30,6 +30,7 @@ macOS moves them included.
 
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  MdeModulePkg/Core/Dxe/Misc/MemoryAttributesTable.c | 9 +++++++++
  1 file changed, 9 insertions(+)

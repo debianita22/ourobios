@@ -45,6 +45,7 @@ logs no error and no assert. The smoke test of the payload
 
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c | 153 +++++++++++++++---
  1 file changed, 133 insertions(+), 20 deletions(-)

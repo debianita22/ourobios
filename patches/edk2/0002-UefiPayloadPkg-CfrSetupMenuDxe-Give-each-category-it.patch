@@ -25,8 +25,14 @@ options into categories:
   the 32-bit variable, which holds 0 or 1, and RouteConfig keeps the
   variable size, so existing variables and the bootloader are unaffected.
 
+TEST=QEMU q35 (tools/qemu-smoke.py of ouroBIOS, at every build): the
+setup opens on the categories, one form each, and a category opens and
+closes with the keys; tools/build.sh menu checks the CFR record of the
+W541, every option in one card; the setup of the W541 in the releases.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuCfr.c | 657 +++++++++++++-----
  .../CfrSetupMenuDxe/SetupMenuNVDataStruc.h    |  12 +

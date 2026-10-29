@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sat, 10 Oct 2026 08:40:41 +0200
-Subject: [PATCH 08/12] LvglDisplayEngineDxe: Keep the form out of the keys
- while an HII popup is up
+Subject: [PATCH] LvglDisplayEngineDxe: Keep the form out of the keys while a
+ popup is up
 
 The handlers of the form check mPopupOverlay, which the F9/F10 popups and
 the password dialogs set, to leave the keys to the popup. A popup of
@@ -16,8 +16,12 @@ the keypad cannot reach.
 Check both overlays, through IsModalOpen(), wherever the form handlers
 checked mPopupOverlay.
 
+TEST=QEMU q35: keys pressed while a popup of the password driver is up
+leave the form alone.
+
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  LvglDisplayEngineDxe/LvglFormRenderer.c | 29 +++++++++++++++++++------
  1 file changed, 22 insertions(+), 7 deletions(-)

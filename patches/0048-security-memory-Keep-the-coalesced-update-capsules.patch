@@ -11,6 +11,10 @@ capsules were, and the update fails.
 
 Leave the buffer out of the ranges to clear, as CBMEM.
 
+TEST=Builds (the CI of ouroBIOS). No recorded test with a capsule left
+in memory by the OS: ouroBIOS stages its capsules on disk
+(tools/update.py), which this does not touch.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---

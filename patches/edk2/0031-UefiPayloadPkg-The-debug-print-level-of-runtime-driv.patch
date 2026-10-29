@@ -31,6 +31,7 @@ byte-identical.
 
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  UefiPayloadPkg/UefiPayloadPkg.dsc | 12 ++++++++++++
  1 file changed, 12 insertions(+)

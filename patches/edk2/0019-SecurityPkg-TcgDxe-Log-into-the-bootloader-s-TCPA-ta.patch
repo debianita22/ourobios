@@ -28,6 +28,7 @@ and the boot action in PCR 5, the separators.
 
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  SecurityPkg/Tcg/TcgDxe/TcgDxe.c   | 147 +++++++++++++++++++++++++++++-
  SecurityPkg/Tcg/TcgDxe/TcgDxe.inf |   1 +

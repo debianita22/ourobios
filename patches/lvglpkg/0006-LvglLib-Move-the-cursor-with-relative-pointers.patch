@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sat, 10 Oct 2026 01:22:07 +0200
-Subject: [PATCH 06/12] LvglLib: Move the cursor with relative pointers
+Subject: [PATCH] LvglLib: Move the cursor with relative pointers
 
 The pointer input device reads EFI_ABSOLUTE_POINTER_PROTOCOL only: USB
 mice through UsbMouseAbsolutePointerDxe, and touch screens. The
@@ -16,8 +16,12 @@ mm, twice as fast for the part of a read beyond 6 pixels; the fraction
 of a pixel is kept for the next read. The left button clicks. The
 cursor still appears only once a pointer moves or clicks.
 
+TEST=W541: the TrackPoint and the touchpad move the cursor of the setup
+(README of ouroBIOS); QEMU q35 with its PS/2 mouse.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  Library/LvglLib/LvglLib.inf     |   1 +
  Library/LvglLib/lv_port_indev.c | 158 +++++++++++++++++++++++++++++---

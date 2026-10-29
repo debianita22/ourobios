@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sun, 11 Oct 2026 14:34:27 +0200
-Subject: [PATCH] security/vboot: Add an option to leave the TPM to ramstage
- with mocked secdata
+Subject: [PATCH] security/vboot: Option to leave the TPM to ramstage with mock
+ secdata
 
 With VBOOT_MOCK_SECDATA, vboot keeps no secdata in the TPM, yet
 verstage still starts the TPM, extends three PCRs with the boot mode,
@@ -14,6 +14,11 @@ same firmware without vboot, which breaks what the OS sealed to them.
 Add VBOOT_MOCK_SECDATA_NO_TPM: verstage neither starts the TPM nor
 extends PCRs, and TPM_INIT_RAMSTAGE starts it in ramstage, as without
 vboot.
+
+TEST=W541 with vboot and its TPM 1.2 (VBOOT_MOCK_SECDATA_NO_TPM=y in the
+ouroBIOS defconfigs): verstage boots without the TPM, ramstage starts
+it, and Linux reads one TCPA log with coreboot's and the payload's
+events (ouroBIOS v1.3.1).
 
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv

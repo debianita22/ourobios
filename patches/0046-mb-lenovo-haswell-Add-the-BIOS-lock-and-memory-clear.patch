@@ -20,17 +20,21 @@ card of its own:
   reads, on by default. Clearing 32 GiB takes 1.7 s on the W541. The
   card is hidden without SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT.
 
+TEST=tools/build.sh menu (the CI of ouroBIOS): the CFR record of the
+W541 holds both cards, each option in one card; the setup of the W541
+shows them under Security (docs/flashing.md of ouroBIOS).
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
- src/mainboard/lenovo/haswell/cfr.c | 47 ++++++++++++++++++++++++++++++
- 1 file changed, 47 insertions(+)
+ src/mainboard/lenovo/haswell/cfr.c | 48 ++++++++++++++++++++++++++++++
+ 1 file changed, 48 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index a71f96bac5..4d9010d5dd 100644
+index fec58c6333..9dab466fb5 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
-@@ -243,6 +243,51 @@ static const struct sm_object energy_power = SM_DECLARE_FORM({
+@@ -243,6 +243,52 @@ static const struct sm_object energy_power = SM_DECLARE_FORM({
  
  /* Security */
  
@@ -71,7 +75,8 @@ index a71f96bac5..4d9010d5dd 100644
 +});
 +
 +static const struct sm_object security_memory = SM_DECLARE_FORM({
-+	.flags		= CONFIG(SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.flags		= CONFIG(SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT)
++			  ? 0 : CFR_OPTFLAG_SUPPRESS,
 +	.ui_name	= "Memory protection",
 +	.obj_list	= (const struct sm_object *[]) {
 +		&clear_dram_on_boot,
@@ -82,7 +87,7 @@ index a71f96bac5..4d9010d5dd 100644
  static const struct sm_object security_virtualization = SM_DECLARE_FORM({
  	.ui_name	= "Virtualization",
  	.obj_list	= (const struct sm_object *[]) {
-@@ -385,6 +430,8 @@ static struct sm_obj_form energy_saver = {
+@@ -385,6 +431,8 @@ static struct sm_obj_form energy_saver = {
  static struct sm_obj_form security = {
  	.ui_name = "Security",
  	.obj_list = (const struct sm_object *[]) {

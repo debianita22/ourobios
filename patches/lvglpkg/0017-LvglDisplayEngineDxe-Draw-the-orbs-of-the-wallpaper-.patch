@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sun, 25 Oct 2026 21:56:00 +0100
-Subject: [PATCH] LvglDisplayEngineDxe: Draw the orbs of the wallpaper without
- a circle mask
+Subject: [PATCH] LvglDisplayEngineDxe: Draw the orbs of the wallpaper with no
+ circle mask
 
 The orbs of the wallpaper are squares of twice their radius with
 LV_RADIUS_CIRCLE, filled with a radial gradient from their center, in
@@ -18,8 +18,14 @@ The other rounded objects of the setup, and their shadows, have a
 radius of at most 16 px at 1x and 32 px at 2x (THEME_RADIUS_TILE,
 THEME_RADIUS_DOCK).
 
+TEST=QEMU q35 at 2880x1620 (tools/qemu-smoke.py --setup-only --size
+2880x1620 of ouroBIOS, at every build): the setup opens and answers the
+keys at the four UI scales; at 1920x1080 the wallpaper differs from
+v1.3.10-rc3's by at most 2 levels per color.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  LvglDisplayEngineDxe/LvglDesktop.c | 10 ++++++----
  1 file changed, 6 insertions(+), 4 deletions(-)

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sat, 10 Oct 2026 16:03:36 +0200
-Subject: [PATCH 12/12] LvglLib: Scale relative pointer motion by its speed
+Subject: [PATCH] LvglLib: Scale relative pointer motion by its speed
 
 The motion of a relative pointer moved the cursor 8 pixels per mm, and
 twice as fast for the part of a read beyond 6 pixels. A read is 10 ms,
@@ -17,8 +17,12 @@ move then counts the same whether it comes in one read or in several. A
 read with more motion than a hand makes in 100 ms (40 mm) is a packet
 read out of step by the PS/2 driver and is dropped.
 
+TEST=W541: the TrackPoint and the touchpad move the cursor precisely
+when slow and across the screen when fast; QEMU q35 with its PS/2 mouse.
+
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  Library/LvglLib/lv_port_indev.c | 163 +++++++++++++++++++++++++++-----
  1 file changed, 138 insertions(+), 25 deletions(-)

@@ -18,10 +18,10 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 2 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 88631ef42d..31c3756e4e 100644
+index e81dcf7130..2e8fc3e085 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
-@@ -254,6 +254,7 @@ static const struct sm_object general_advanced = SM_DECLARE_FORM({
+@@ -255,6 +255,7 @@ static const struct sm_object general_advanced = SM_DECLARE_FORM({
  	.ui_name	= "Advanced",
  	.obj_list	= (const struct sm_object *[]) {
  		&nmi,
@@ -29,7 +29,7 @@ index 88631ef42d..31c3756e4e 100644
  		NULL
  	},
  });
-@@ -334,6 +335,7 @@ static const struct sm_object energy_processor = SM_DECLARE_FORM({
+@@ -335,6 +336,7 @@ static const struct sm_object energy_processor = SM_DECLARE_FORM({
  		&eist,
  		&turbo_mode,
  		&c_states,

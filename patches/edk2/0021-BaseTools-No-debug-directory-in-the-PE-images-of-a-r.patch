@@ -11,6 +11,12 @@ directory (116 such paths in the payload of ouroBIOS), and a build is
 reproducible only from the same path. --zero, which GenFw has for this,
 drops the directory for the release builds; the debug builds keep it,
 where the loader names the modules in its messages from it.
+
+TEST=The release payload of ouroBIOS has no debug directory in its
+modules, and the ROM builds the same bit for bit from another directory
+and on another machine (tools/build.sh repro, the compare job of its
+CI).
+
 ---
  BaseTools/Conf/tools_def.template | 4 ++++
  1 file changed, 4 insertions(+)

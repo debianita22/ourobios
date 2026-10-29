@@ -30,7 +30,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  3 files changed, 88 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index d614c7dc19..9200dae614 100644
+index d614c7dc19..ee163d5f1f 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -60,12 +60,28 @@ static const struct sm_object cooling_policy = SM_DECLARE_ENUM({
@@ -45,11 +45,11 @@ index d614c7dc19..9200dae614 100644
 +			  "OS controlled: keep what the OS sets (TLP, thinkpad_acpi).",
 +	.default_value	= BATTERY_CHARGE_LIMIT_OS,
 +	.values		= (const struct sm_enum_value[]) {
-+				{ "OS controlled",		BATTERY_CHARGE_LIMIT_OS		},
-+				{ "Full charge (100%)",		BATTERY_CHARGE_LIMIT_FULL	},
-+				{ "Stop at 80% (start 75%)",	BATTERY_CHARGE_LIMIT_80		},
-+				{ "Stop at 60% (start 50%)",	BATTERY_CHARGE_LIMIT_60		},
-+				SM_ENUM_VALUE_END						},
++				{ "OS controlled",		BATTERY_CHARGE_LIMIT_OS },
++				{ "Full charge (100%)",		BATTERY_CHARGE_LIMIT_FULL },
++				{ "Stop at 80% (start 75%)",	BATTERY_CHARGE_LIMIT_80 },
++				{ "Stop at 60% (start 50%)",	BATTERY_CHARGE_LIMIT_60 },
++				SM_ENUM_VALUE_END					},
 +});
 +
  static struct sm_obj_form system = {

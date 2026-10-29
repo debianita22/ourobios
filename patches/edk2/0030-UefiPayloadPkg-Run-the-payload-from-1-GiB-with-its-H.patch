@@ -31,6 +31,7 @@ a variable across a restart, iPXE, CSMWrap booting an MBR); OpenCore
 
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  .../UefiPayloadEntry/UefiPayloadEntry.c       | 36 +++++++++++--------
  UefiPayloadPkg/UefiPayloadPkg.fdf             |  9 ++++-

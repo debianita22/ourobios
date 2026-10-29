@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sat, 10 Oct 2026 21:32:39 +0200
-Subject: [PATCH] payloads/external/edk2: Pass
- PcdCapsuleOnDiskConnectBootDevice where it exists
+Subject: [PATCH] payloads/external/edk2: Pass the capsule on disk connect PCD
+ if there
 
 DRIVERS_EFI_CAPSULE_ON_DISK_SUPPORT sets the PCD for every edk2 tree,
 but the tree of MrChromebox, the default one, doesn't declare it, and
@@ -14,23 +14,28 @@ the edk2 build stops:
 Pass it only when MdeModulePkg.dec declares it, checked when the build
 runs, after the tree is checked out.
 
+TEST=The payload of ouroBIOS builds with the MrChromebox tree, which
+does not declare the PCD, and DRIVERS_EFI_CAPSULE_ON_DISK_SUPPORT=y (its
+CI); a tree that declares it has no recorded test.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
- payloads/external/edk2/Makefile | 4 +++-
- 1 file changed, 3 insertions(+), 1 deletion(-)
+ payloads/external/edk2/Makefile | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
 
 diff --git a/payloads/external/edk2/Makefile b/payloads/external/edk2/Makefile
-index f2c80183b4..f09b00080d 100644
+index f2c80183b4..f29f023910 100644
 --- a/payloads/external/edk2/Makefile
 +++ b/payloads/external/edk2/Makefile
-@@ -147,7 +147,9 @@ BUILD_STR += --pcd gEfiMdeModulePkgTokenSpaceGuid.PcdCapsuleEmbeddedDriverSuppor
+@@ -147,7 +147,10 @@ BUILD_STR += --pcd gEfiMdeModulePkgTokenSpaceGuid.PcdCapsuleEmbeddedDriverSuppor
  endif
  ifeq ($(CONFIG_DRIVERS_EFI_CAPSULE_ON_DISK_SUPPORT),y)
  BUILD_STR += --pcd gEfiMdeModulePkgTokenSpaceGuid.PcdCapsuleOnDiskSupport=TRUE
 -BUILD_STR += --pcd gEfiMdeModulePkgTokenSpaceGuid.PcdCapsuleOnDiskConnectBootDevice=TRUE
 +# Only for trees that declare it: build stops at a PCD missing from the DEC files
-+BUILD_STR += $$(grep -qs PcdCapsuleOnDiskConnectBootDevice $(EDK2_PATH)/MdeModulePkg/MdeModulePkg.dec && \
++BUILD_STR += $$(grep -qs PcdCapsuleOnDiskConnectBootDevice \
++	$(EDK2_PATH)/MdeModulePkg/MdeModulePkg.dec && \
 +	echo --pcd gEfiMdeModulePkgTokenSpaceGuid.PcdCapsuleOnDiskConnectBootDevice=TRUE)
  endif
  ifeq ($(CONFIG_DRIVERS_EFI_CAPSULE_EMBED_FMP_DXE),y)

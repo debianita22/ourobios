@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sat, 10 Oct 2026 08:39:31 +0200
-Subject: [PATCH 07/12] LvglDisplayEngineDxe: Decode the UTF-8 of text fields
- into UCS-2
+Subject: [PATCH] LvglDisplayEngineDxe: Decode the UTF-8 of text fields into
+ UCS-2
 
 The keypad driver hands LVGL the UnicodeChar of every key, and LVGL
 stores it in the field as UTF-8. The string and password fields were
@@ -16,8 +16,12 @@ bytes. A string field now stores MaxSize characters, as the text display
 engine does; it kept one less, and the field did not limit the typing
 either, so it is capped at MaxSize too.
 
+TEST=QEMU q35: a 64-character password typed in the dialogs is the one
+that opens the setup after a reboot.
+
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  LvglDisplayEngineDxe/LvglFormRenderer.c | 78 ++++++++++++++++++-------
  1 file changed, 56 insertions(+), 22 deletions(-)

@@ -19,10 +19,10 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 19 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index db38ee470f..506c4a69f9 100644
+index 7464587402..d40f965a68 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
-@@ -489,6 +489,24 @@ static const struct sm_object enable_dual_graphics = SM_DECLARE_BOOL({
+@@ -491,6 +491,24 @@ static const struct sm_object enable_dual_graphics = SM_DECLARE_BOOL({
  	.default_value	= false,
  });
  
@@ -47,7 +47,7 @@ index db38ee470f..506c4a69f9 100644
  static const struct sm_object expresscard = SM_DECLARE_BOOL({
  	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
  	.opt_name	= "expresscard",
-@@ -513,6 +531,7 @@ static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
+@@ -515,6 +533,7 @@ static const struct sm_object hardware_graphics = SM_DECLARE_FORM({
  	.ui_name	= "Graphics",
  	.obj_list	= (const struct sm_object *[]) {
  		&enable_dual_graphics,

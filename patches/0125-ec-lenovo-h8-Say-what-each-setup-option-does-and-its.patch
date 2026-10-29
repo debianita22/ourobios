@@ -17,11 +17,11 @@ TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
- src/ec/lenovo/h8/cfr.c | 76 ++++++++++++++++++++++++++++--------------
- 1 file changed, 51 insertions(+), 25 deletions(-)
+ src/ec/lenovo/h8/cfr.c | 77 ++++++++++++++++++++++++++++--------------
+ 1 file changed, 52 insertions(+), 25 deletions(-)
 
 diff --git a/src/ec/lenovo/h8/cfr.c b/src/ec/lenovo/h8/cfr.c
-index a315c34bd7..431cec2d66 100644
+index a315c34bd7..64701a8041 100644
 --- a/src/ec/lenovo/h8/cfr.c
 +++ b/src/ec/lenovo/h8/cfr.c
 @@ -33,7 +33,9 @@ static void update_bluetooth(struct sm_object *new)
@@ -35,13 +35,14 @@ index a315c34bd7..431cec2d66 100644
  	.default_value	= true,
  }, WITH_CALLBACK(update_bluetooth));
  
-@@ -69,13 +71,14 @@ static void update_backlight(struct sm_object *new)
+@@ -69,13 +71,15 @@ static void update_backlight(struct sm_object *new)
  
  	if (has_thinklight && has_kb_backlight) {
  		new->sm_enum.values = kic_values_both;
 -		new->sm_enum.ui_helptext = "Select illumination device(s)";
-+		new->sm_enum.ui_helptext = "Which lights the light key (Fn+Space) turns on: the\n"
-+					   "ThinkLight, the keyboard backlight, both or none.";
++		new->sm_enum.ui_helptext = "Which lights the light key (Fn+Space) turns on: "
++					   "the\nThinkLight, the keyboard backlight, "
++					   "both or none.";
  	} else if (has_thinklight) {
  		new->sm_enum.values = kic_values_thinklight_only;
 -		new->sm_enum.ui_helptext = "Enable or disable ThinkLight";
@@ -53,7 +54,7 @@ index a315c34bd7..431cec2d66 100644
  	}
  
  	new->sm_enum.default_value = h8_illumination_default();
-@@ -84,21 +87,24 @@ static void update_backlight(struct sm_object *new)
+@@ -84,21 +88,24 @@ static void update_backlight(struct sm_object *new)
  /* Illumination Control (ThinkLight and/or keyboard backlight) */
  const struct sm_object h8_cfr_backlight = SM_DECLARE_ENUM({
  	.opt_name	= "backlight",
@@ -83,7 +84,7 @@ index a315c34bd7..431cec2d66 100644
  				SM_ENUM_VALUE_END				},
  });
  
-@@ -112,7 +118,8 @@ static void update_uwb(struct sm_object *new)
+@@ -112,7 +119,8 @@ static void update_uwb(struct sm_object *new)
  const struct sm_object h8_cfr_uwb = SM_DECLARE_BOOL({
  	.opt_name	= "uwb",
  	.ui_name	= "Ultrawideband",
@@ -93,7 +94,7 @@ index a315c34bd7..431cec2d66 100644
  	.default_value	= true,
  }, WITH_CALLBACK(update_uwb));
  
-@@ -124,8 +131,9 @@ enum {
+@@ -124,8 +132,9 @@ enum {
  /* Battery charge priority */
  const struct sm_object h8_cfr_first_battery = SM_DECLARE_ENUM({
  	.opt_name	= "first_battery",
@@ -105,7 +106,7 @@ index a315c34bd7..431cec2d66 100644
  	.default_value	= H8_PRIMARY_BATTERY,
  	.values		= (const struct sm_enum_value[]) {
  				{ "Secondary", H8_SECONDARY_BATTERY	},
-@@ -137,7 +145,9 @@ const struct sm_object h8_cfr_first_battery = SM_DECLARE_ENUM({
+@@ -137,7 +146,9 @@ const struct sm_object h8_cfr_first_battery = SM_DECLARE_ENUM({
  const struct sm_object h8_cfr_volume = SM_DECLARE_NUMBER({
  	.opt_name	= "volume",
  	.ui_name	= "Volume",
@@ -116,7 +117,7 @@ index a315c34bd7..431cec2d66 100644
  	.default_value	= 3,
  	.min		= 0,
  	.max		= 0xff,
-@@ -149,7 +159,8 @@ const struct sm_object h8_cfr_volume = SM_DECLARE_NUMBER({
+@@ -149,7 +160,8 @@ const struct sm_object h8_cfr_volume = SM_DECLARE_NUMBER({
  const struct sm_object h8_cfr_wlan = SM_DECLARE_BOOL({
  	.opt_name	= "wlan",
  	.ui_name	= "WLAN",
@@ -126,7 +127,7 @@ index a315c34bd7..431cec2d66 100644
  	.default_value	= true,
  });
  
-@@ -163,7 +174,9 @@ static void update_wwan(struct sm_object *new)
+@@ -163,7 +175,9 @@ static void update_wwan(struct sm_object *new)
  const struct sm_object h8_cfr_wwan = SM_DECLARE_BOOL({
  	.opt_name	= "wwan",
  	.ui_name	= "WWAN",
@@ -137,7 +138,7 @@ index a315c34bd7..431cec2d66 100644
  	.default_value	= true,
  }, WITH_CALLBACK(update_wwan));
  
-@@ -176,24 +189,33 @@ static void update_beep(struct sm_object *new)
+@@ -176,24 +190,33 @@ static void update_beep(struct sm_object *new)
  
  const struct sm_object h8_cfr_pm_beeps = SM_DECLARE_BOOL({
  	.opt_name	= "power_management_beeps",
@@ -177,7 +178,7 @@ index a315c34bd7..431cec2d66 100644
  	.default_value	= CONFIG(H8_FN_CTRL_SWAP),
  });
  
-@@ -201,7 +223,9 @@ const struct sm_object h8_cfr_fn_ctrl_swap = SM_DECLARE_BOOL({
+@@ -201,7 +224,9 @@ const struct sm_object h8_cfr_fn_ctrl_swap = SM_DECLARE_BOOL({
  const struct sm_object h8_cfr_sticky_fn = SM_DECLARE_BOOL({
  	.opt_name	= "sticky_fn",
  	.ui_name	= "Sticky Fn key",
@@ -188,7 +189,7 @@ index a315c34bd7..431cec2d66 100644
  	.default_value	= false,
  });
  
-@@ -218,7 +242,8 @@ const struct sm_object h8_cfr_f1_to_f12_as_primary = SM_DECLARE_BOOL({
+@@ -218,7 +243,8 @@ const struct sm_object h8_cfr_f1_to_f12_as_primary = SM_DECLARE_BOOL({
  const struct sm_object h8_cfr_touchpad = SM_DECLARE_BOOL({
  	.opt_name	= "touchpad",
  	.ui_name	= "Touchpad",
@@ -198,7 +199,7 @@ index a315c34bd7..431cec2d66 100644
  	.default_value	= true,
  	.flags		= CONFIG(EC_LENOVO_PMH7) ? 0 : CFR_OPTFLAG_SUPPRESS,
  });
-@@ -226,8 +251,9 @@ const struct sm_object h8_cfr_touchpad = SM_DECLARE_BOOL({
+@@ -226,8 +252,9 @@ const struct sm_object h8_cfr_touchpad = SM_DECLARE_BOOL({
  /* Trackpoint - Controlled by PMH7 */
  const struct sm_object h8_cfr_trackpoint = SM_DECLARE_BOOL({
  	.opt_name	= "trackpoint",

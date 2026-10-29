@@ -23,14 +23,14 @@ TEST=Built for lenovo/w541. Not tested on hardware yet.
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
- src/southbridge/intel/common/pmclib.c | 13 +++++++++++++
- 1 file changed, 13 insertions(+)
+ src/southbridge/intel/common/pmclib.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
 
 diff --git a/src/southbridge/intel/common/pmclib.c b/src/southbridge/intel/common/pmclib.c
-index 34a449b2b3..638203af6e 100644
+index 34a449b2b3..abfa2b77f5 100644
 --- a/src/southbridge/intel/common/pmclib.c
 +++ b/src/southbridge/intel/common/pmclib.c
-@@ -19,6 +19,19 @@ int southbridge_detect_s3_resume(void)
+@@ -19,6 +19,20 @@ int southbridge_detect_s3_resume(void)
  {
  	if (platform_is_resuming()) {
  		clear_power_state();
@@ -43,7 +43,8 @@ index 34a449b2b3..638203af6e 100644
 +		 * resume.
 +		 */
 +		if (read_pmbase16(PM1_STS) & PRBTNOR_STS) {
-+			printk(BIOS_DEBUG, "SB: Power button override after S3, not resuming.\n");
++			printk(BIOS_DEBUG,
++			       "SB: Power button override after S3, not resuming.\n");
 +			return 0;
 +		}
 +

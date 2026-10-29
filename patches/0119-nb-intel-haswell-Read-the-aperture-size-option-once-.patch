@@ -12,14 +12,14 @@ TEST=Built lenovo/w541 with mrc.bin and with the native RAM init.
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
- src/northbridge/intel/haswell/early_init.c | 17 +++++++++++------
- 1 file changed, 11 insertions(+), 6 deletions(-)
+ src/northbridge/intel/haswell/early_init.c | 18 +++++++++++-------
+ 1 file changed, 11 insertions(+), 7 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
-index 779ff23c51..d3625f12a0 100644
+index 8c01f0dc95..59d334fad0 100644
 --- a/src/northbridge/intel/haswell/early_init.c
 +++ b/src/northbridge/intel/haswell/early_init.c
-@@ -104,12 +104,17 @@ static unsigned int igd_aperture_mib(enum igd_aperture_size size)
+@@ -104,13 +104,17 @@ static unsigned int igd_aperture_mib(enum igd_aperture_size size)
  void haswell_igd_set_aperture(void)
  {
  	const pci_devfn_t igd = PCI_DEV(0, 2, 0);
@@ -27,7 +27,8 @@ index 779ff23c51..d3625f12a0 100644
 -
 -	if (size != IGD_APERTURE_128MB && size != IGD_APERTURE_256MB &&
 -	    size != IGD_APERTURE_512MB) {
--		printk(BIOS_WARNING, "IGD: invalid gfx_aperture_size %u, using 256 MiB\n", size);
+-		printk(BIOS_WARNING,
+-		       "IGD: invalid gfx_aperture_size %u, using 256 MiB\n", size);
 -		size = IGD_APERTURE_256MB;
 +	/* Read once: the option store is in flash, and MRC calls for a second run */
 +	static unsigned int size = ~0U;
@@ -36,8 +37,8 @@ index 779ff23c51..d3625f12a0 100644
 +		size = get_uint_option("gfx_aperture_size", IGD_APERTURE_256MB);
 +		if (size != IGD_APERTURE_128MB && size != IGD_APERTURE_256MB &&
 +		    size != IGD_APERTURE_512MB) {
-+			printk(BIOS_WARNING, "IGD: invalid gfx_aperture_size %u, using 256 MiB\n",
-+			       size);
++			printk(BIOS_WARNING,
++			       "IGD: invalid gfx_aperture_size %u, using 256 MiB\n", size);
 +			size = IGD_APERTURE_256MB;
 +		}
  	}

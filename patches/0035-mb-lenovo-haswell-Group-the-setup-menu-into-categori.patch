@@ -51,7 +51,7 @@ index a4d5e8d5dd..ca8cf3c7dc 100644
  	select H8_HAS_BAT_INFO_EXTENDED
  	select H8_HAS_LEDLOGO
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 520fa66119..a71f96bac5 100644
+index 31f288420c..fec58c6333 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -1,13 +1,163 @@
@@ -208,11 +208,11 @@ index 520fa66119..a71f96bac5 100644
 +			  "OS controlled: keep what the OS sets (TLP, thinkpad_acpi).",
 +	.default_value	= BATTERY_CHARGE_LIMIT_OS,
 +	.values		= (const struct sm_enum_value[]) {
-+				{ "OS controlled",		BATTERY_CHARGE_LIMIT_OS		},
-+				{ "Full charge (100%)",		BATTERY_CHARGE_LIMIT_FULL	},
-+				{ "Stop at 80% (start 75%)",	BATTERY_CHARGE_LIMIT_80		},
-+				{ "Stop at 60% (start 50%)",	BATTERY_CHARGE_LIMIT_60		},
-+				SM_ENUM_VALUE_END						},
++				{ "OS controlled",		BATTERY_CHARGE_LIMIT_OS },
++				{ "Full charge (100%)",		BATTERY_CHARGE_LIMIT_FULL },
++				{ "Stop at 80% (start 75%)",	BATTERY_CHARGE_LIMIT_80 },
++				{ "Stop at 60% (start 50%)",	BATTERY_CHARGE_LIMIT_60 },
++				SM_ENUM_VALUE_END					},
 +});
 +
  /*
@@ -314,11 +314,11 @@ index 520fa66119..a71f96bac5 100644
 +			  "Special keys: the other way around.",
 +	.default_value	= 1,
  	.values		= (const struct sm_enum_value[]) {
--				{ "OS controlled",		BATTERY_CHARGE_LIMIT_OS		},
--				{ "Full charge (100%)",		BATTERY_CHARGE_LIMIT_FULL	},
--				{ "Stop at 80% (start 75%)",	BATTERY_CHARGE_LIMIT_80		},
--				{ "Stop at 60% (start 50%)",	BATTERY_CHARGE_LIMIT_60		},
--				SM_ENUM_VALUE_END						},
+-				{ "OS controlled",		BATTERY_CHARGE_LIMIT_OS },
+-				{ "Full charge (100%)",		BATTERY_CHARGE_LIMIT_FULL },
+-				{ "Stop at 80% (start 75%)",	BATTERY_CHARGE_LIMIT_80 },
+-				{ "Stop at 60% (start 50%)",	BATTERY_CHARGE_LIMIT_60 },
+-				SM_ENUM_VALUE_END					},
 +				{ "Function keys (F1-F12)",	1	},
 +				{ "Special keys",		0	},
 +				SM_ENUM_VALUE_END			},

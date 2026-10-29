@@ -69,7 +69,7 @@ index 7548a45609..3917ba1b73 100644
 +
  #endif /* NB_INTEL_HASWELL_CFR_H */
 diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
-index 4b0e4acaee..37742a523d 100644
+index 02f26b348e..2430ebf54e 100644
 --- a/src/northbridge/intel/haswell/early_init.c
 +++ b/src/northbridge/intel/haswell/early_init.c
 @@ -36,6 +36,27 @@ static void haswell_setup_bars(void)

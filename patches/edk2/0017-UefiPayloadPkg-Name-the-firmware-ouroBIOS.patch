@@ -8,8 +8,13 @@ shows next to its logo in the menu bar (PcdLvglAptioHeaderVendor) and
 the vendor of the UEFI system table (PcdFirmwareVendor, "EDK II" by
 default; Linux prints it at boot, "efi: EFI v2.x by ouroBIOS").
 
+TEST=QEMU q35 (the screenshots of tools/qemu-smoke.py, at every build of
+ouroBIOS): the menu bar of the setup shows ouroBIOS next to the logo;
+the setup of the W541 in the releases.
+
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  UefiPayloadPkg/UefiPayloadPkg.dsc | 3 ++-
  1 file changed, 2 insertions(+), 1 deletion(-)

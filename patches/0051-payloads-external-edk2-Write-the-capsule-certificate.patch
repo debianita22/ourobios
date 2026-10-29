@@ -15,6 +15,10 @@ builds a payload that trusts another certificate, without an error.
 Run capsule_keys after clean, and give the DSC the absolute path of the
 file, so that only the one just written can be used.
 
+TEST=Every build of ouroBIOS checks that the AutoGen.c of FmpDxe holds
+the certificate of keys/capsule-signing.pem and only that
+(tools/build.sh), under parallel make.
+
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
@@ -22,10 +26,10 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 6 insertions(+), 3 deletions(-)
 
 diff --git a/payloads/external/edk2/Makefile b/payloads/external/edk2/Makefile
-index f09b00080d..0c4816efbd 100644
+index f29f023910..0c0c687aa2 100644
 --- a/payloads/external/edk2/Makefile
 +++ b/payloads/external/edk2/Makefile
-@@ -166,13 +166,15 @@ CAPSULE_SIGNER_PRIVATE_CERT_PATH := $(call edk2_abspath,$(CAPSULE_SIGNER_PRIVATE
+@@ -167,13 +167,15 @@ CAPSULE_SIGNER_PRIVATE_CERT_PATH := $(call edk2_abspath,$(CAPSULE_SIGNER_PRIVATE
  CAPSULE_OTHER_PUBLIC_CERT_PATH := $(call edk2_abspath,$(CAPSULE_OTHER_PUBLIC_CERT))
  CAPSULE_TRUSTED_PUBLIC_CERT_PATH := $(call edk2_abspath,$(CAPSULE_TRUSTED_PUBLIC_CERT))
  
@@ -43,7 +47,7 @@ index f09b00080d..0c4816efbd 100644
  endif
  endif
  
-@@ -339,7 +341,8 @@ checktools:
+@@ -340,7 +342,8 @@ checktools:
  	fi
  
  ifeq ($(CONFIG_DRIVERS_EFI_UPDATE_CAPSULES),y)

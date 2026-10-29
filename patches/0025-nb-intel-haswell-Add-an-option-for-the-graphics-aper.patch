@@ -30,10 +30,10 @@ Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
  src/northbridge/intel/haswell/cfr.h        | 27 +++++++++++
- src/northbridge/intel/haswell/early_init.c | 52 +++++++++++++++++++++-
+ src/northbridge/intel/haswell/early_init.c | 53 +++++++++++++++++++++-
  src/northbridge/intel/haswell/haswell.h    | 11 +++++
  src/northbridge/intel/haswell/romstage.c   |  9 ++++
- 4 files changed, 97 insertions(+), 2 deletions(-)
+ 4 files changed, 98 insertions(+), 2 deletions(-)
  create mode 100644 src/northbridge/intel/haswell/cfr.h
 
 diff --git a/src/northbridge/intel/haswell/cfr.h b/src/northbridge/intel/haswell/cfr.h
@@ -70,7 +70,7 @@ index 0000000000..7548a45609
 +
 +#endif /* NB_INTEL_HASWELL_CFR_H */
 diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
-index 6a5ce53a40..4b0e4acaee 100644
+index 6a5ce53a40..02f26b348e 100644
 --- a/src/northbridge/intel/haswell/early_init.c
 +++ b/src/northbridge/intel/haswell/early_init.c
 @@ -5,6 +5,7 @@
@@ -81,7 +81,7 @@ index 6a5ce53a40..4b0e4acaee 100644
  #include <types.h>
  
  #include "haswell.h"
-@@ -59,8 +60,55 @@ static void haswell_setup_igd(void)
+@@ -59,8 +60,56 @@ static void haswell_setup_igd(void)
  		return;
  	}
  
@@ -114,7 +114,8 @@ index 6a5ce53a40..4b0e4acaee 100644
 +
 +	if (size != IGD_APERTURE_128MB && size != IGD_APERTURE_256MB &&
 +	    size != IGD_APERTURE_512MB) {
-+		printk(BIOS_WARNING, "IGD: invalid gfx_aperture_size %u, using 256 MiB\n", size);
++		printk(BIOS_WARNING,
++		       "IGD: invalid gfx_aperture_size %u, using 256 MiB\n", size);
 +		size = IGD_APERTURE_256MB;
 +	}
 +

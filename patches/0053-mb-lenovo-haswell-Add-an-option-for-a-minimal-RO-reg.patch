@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
 Date: Sun, 11 Oct 2026 14:01:18 +0200
-Subject: [PATCH] mb/lenovo/haswell: Add an option to keep the RO region
- minimal with vboot
+Subject: [PATCH] mb/lenovo/haswell: Add an option for a minimal RO region with
+ vboot
 
 With vboot, every CBFS file goes to the RO region and to both RW slots,
 except for the few the RO region alone needs. The 7 MiB BIOS region of
@@ -14,6 +14,11 @@ romstage, postcar, ramstage, the DSDT, the VBT and the payload go to the
 RW slots only. The RO region keeps the bootblock with verstage, mrc.bin
 (at its fixed address) and the microcode, which is enough to verify and
 start a slot; if neither slot verifies, the boot stops.
+
+TEST=tools/verify-rom.sh of ouroBIOS on every W541 ROM (its CI): the
+read-only CBFS holds no stage after verstage and no payload, each RW
+slot the stages, the payload, the DSDT, the VBT and the microcode; the
+W541 boots the releases from the slots since v1.3.0.
 
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv

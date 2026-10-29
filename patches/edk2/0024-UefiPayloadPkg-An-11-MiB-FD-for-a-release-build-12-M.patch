@@ -14,9 +14,13 @@ iPXE and CSMWrap left out, no longer fits in 11 MiB. 11 MiB for a
 release build and 12 for a debug one: it is memory the payload takes
 while it runs, not flash, which holds the compressed image.
 
+TEST=The release payload of ouroBIOS (11 MiB) and the DEBUG payload of
+tools/qemu-update.py (12 MiB) build and boot at every build of its CI.
+
 Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
 ---
  UefiPayloadPkg/UefiPayloadPkg.fdf | 6 +++---
  1 file changed, 3 insertions(+), 3 deletions(-)
