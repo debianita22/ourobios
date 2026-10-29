@@ -274,8 +274,10 @@ tools/build.sh --help                         # the other commands and the optio
 
 The builds are reproducible (from v1.3.6): the date in the ROM is the date
 of the commit, the payload has no debug directory in its PE images, and
-CI builds each release twice from scratch, CSMWrap and iPXE included, and
-compares the two (`repro`). The same ROM needs the same compilers:
+CI builds each release a second time from scratch, CSMWrap and iPXE
+included, on another runner, and compares the two bit by bit
+(`tools/ci.sh compare`; `tools/build.sh repro` does the same on one
+machine). The same ROM needs the same compilers:
 coreboot's cross toolchain, whose versions the coreboot commit fixes, and
 for the payload, iPXE and CSMWrap the GCC and binutils of the build
 machine, GitHub's Ubuntu 24.04 runner (the `-layout.txt` of a release
@@ -340,7 +342,7 @@ and finishes the update; the ESRT is checked at every boot
 | Workflow | When | What |
 |---|---|---|
 | [`check.yml`](.github/workflows/check.yml) | every push and pull request | `tools/ci-check.sh` (shellcheck, actionlint, blob checksums, patch series, defconfigs); the series applied to the pinned coreboot and EDK2, and both configurations checked |
-| [`build.yml`](.github/workflows/build.yml) | tag `vX.Y.Z`, *Run workflow*, push to `ci-test/**` | both ROMs with the coreboot toolchain (cached), verified, their setup menu checked (`menu`), their payloads booted in QEMU (`smoke`), each built a second time and compared bit by bit (`repro`), the capsule update with vboot A/B in QEMU (`update-test`, in parallel), their capsules signed, published as `vX.Y.Z-mrc` and `vX.Y.Z-nri` |
+| [`build.yml`](.github/workflows/build.yml) | tag `vX.Y.Z`, *Run workflow*, push to `ci-test/**` | both ROMs with the coreboot toolchain (cached), verified, their setup menu checked (`menu`), their payloads booted in QEMU (`smoke`), their capsules signed; in parallel, both ROMs built a second time from scratch on another runner (`repro`) and compared bit by bit with the first (`compare`), and the capsule update with vboot A/B in QEMU (`update-test`); published as `vX.Y.Z-mrc` and `vX.Y.Z-nri` |
 | [`upstream.yml`](.github/workflows/upstream.yml) | every Monday | opens an issue when the series no longer applies on coreboot `main`, a patch was merged upstream, a coreboot release is out, or MrChromebox's EDK2 branch moved |
 
 A release is made by pushing a version tag (`git tag v1.0.0 && git push origin
