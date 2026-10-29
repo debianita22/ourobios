@@ -6,6 +6,9 @@ BOARD_NAME="ThinkCentre M920x Tiny"
 # una variante, la RAM init di FSP-M; le release: vX.Y.Z-m920x-fsp
 BOARD_VARIANTS=(fsp)
 BOARD_FLAVOUR_PREFIX="m920x-"
+# la prima versione con la board, rc comprese: la v1.3.10 e le sue rc, gia'
+# in corso, restano del solo W541 (tools/build.sh --board all, tools/ci.sh)
+BOARD_SINCE=v1.4.0
 BOARD_TREE=m920x
 board_defconfig() { printf 'boards/m920x/%s.defconfig' "$1"; }
 BOARD_TREE_FILES=(boards/m920x/blobs/ifd.bin boards/m920x/blobs/gbe.bin

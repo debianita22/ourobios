@@ -8,6 +8,7 @@ BOARD_NAME="ThinkPad W541"
 # le varianti (RAM init), e il nome delle release: vX.Y.Z-<prefisso><variante>
 BOARD_VARIANTS=(mrc nri)
 BOARD_FLAVOUR_PREFIX=""
+# la prima versione con la board (BOARD_SINCE): il W541 c'e' da sempre
 # la cartella dell'albero coreboot dove li cercano i defconfig
 BOARD_TREE=w541
 # il defconfig della variante $1

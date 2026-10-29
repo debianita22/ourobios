@@ -17,7 +17,9 @@
 #
 # Le release: una per variante di ogni board (boards/<board>/board.sh), con
 # il tag <versione>-<prefisso della board><variante>, il "flavour": mrc e nri
-# del W541 (prefisso vuoto: i tag di sempre), m920x-fsp del M920x.
+# del W541 (prefisso vuoto: i tag di sempre), m920x-fsp del M920x. Una board
+# con BOARD_SINCE e' nelle release da quella versione (il M920x dalla
+# v1.4.0, rc comprese).
 #
 # Regole (le stesse dei commenti di build.yml):
 #   - versione vX.Y.Z o vX.Y.Z-qualcosa; con un trattino, o con la casella
@@ -87,6 +89,26 @@ for b in $(boards); do
 done
 unset b p v
 [ ${#FLAVOURS[@]} -gt 0 ] || die "nessuna board in boards/*/board.sh"
+# La board $1 e' nelle release della versione $2? BOARD_SINCE di board.sh: la
+# prima versione con la board, sue rc comprese (lo stesso conto di
+# tools/build.sh --board all); le versioni che non sono di release (ci-...)
+# hanno ogni board
+board_in_version() {
+	local since
+	since="$(board_get "$1" BOARD_SINCE)"
+	[ -n "${since}" ] || return 0
+	[[ "$2" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]] || return 0
+	[ "$(printf '%s\n' "${since}" "${2%%-*}" | sort -V | sed -n 1p)" = "${since}" ]
+}
+# FLAVOURS: solo quelli delle board nelle release della versione $1
+flavours_for() {
+	local f keep=()
+	for f in "${FLAVOURS[@]}"; do
+		if board_in_version "${FL_BOARD[${f}]}" "$1"; then keep+=("${f}"); fi
+	done
+	[ ${#keep[@]} -gt 0 ] || die "nessuna board nelle release di $1"
+	FLAVOURS=("${keep[@]}")
+}
 # Il nome dei file del flavour $1 nella versione VERSION, senza estensione:
 # <board>-coreboot-<versione>-<variante>, come romname di tools/build.sh
 fl_name() { printf '%s-coreboot-%s-%s' "${FL_BOARD[$1]}" "${VERSION}" "${FL_VARIANT[$1]}"; }
@@ -208,6 +230,7 @@ cmd_version() {
 	else
 		version="ci-${GITHUB_RUN_NUMBER}-$(git -C "${O}" rev-parse --short=7 HEAD)"
 	fi
+	flavours_for "${version}"
 	if [ "${publish}" = true ]; then
 		release_version_ok "${version}" \
 			|| fail "Versione" "versione '${version}': vX.Y.Z o vX.Y.Z-rcN, numeri fino a 255 (la versione dell'ESRT ne ha un byte ciascuno)"
@@ -553,6 +576,8 @@ cmd_notes() {
 	local d="${1:?cartella con le ROM}" fl="${2:?flavour}" board v n f version rom cap cab cfg lay repo sha cb cbdesc ipxe csm edk2 npatch nedk2 pre=no machine=laptop
 	: "${VERSION:?}"
 	[ -n "${FL_BOARD[${fl}]:-}" ] || die "flavour '${fl}': uno di ${FLAVOURS[*]}"
+	flavours_for "${VERSION}"
+	[[ " ${FLAVOURS[*]} " == *" ${fl} "* ]] || die "flavour ${fl}: non nelle release di ${VERSION} (${FLAVOURS[*]})"
 	board="${FL_BOARD[${fl}]}"
 	v="${FL_VARIANT[${fl}]}"
 	declare -F "notes_${board}" > /dev/null || die "${fl}: nessuna funzione notes_${board} in tools/ci.sh"
@@ -627,6 +652,7 @@ EOF
 cmd_publish() {
 	local d="${1:?cartella con le ROM}" sha v t tag rels id draft cur latest=false pre
 	: "${VERSION:?}" "${GITHUB_REPOSITORY:?}" "${GITHUB_SHA:?}" "${DEFAULT_BRANCH:?}"
+	flavours_for "${VERSION}"
 	sha="$(git -C "${O}" rev-parse --verify -q "${GITHUB_SHA}^{commit}")" || fail "Pubblica" "commit ${GITHUB_SHA} non trovato"
 	pre="${PRERELEASE:-false}"
 	case "${VERSION}" in *-*) pre=true ;; esac
@@ -784,6 +810,7 @@ publish_testing() {
 cmd_check() {
 	local d="${1:?cartella con le ROM}" v b n f ref size want have cabs=()
 	: "${VERSION:?}"
+	flavours_for "${VERSION}"
 	[ -f "${d}/SHA256SUMS" ] || fail "Controlli" "${d}/SHA256SUMS non c'e'"
 	(cd "${d}" && sha256sum -c --quiet SHA256SUMS) || fail "Controlli" "i file di ${d} non sono quelli di SHA256SUMS"
 	for v in "${FLAVOURS[@]}"; do
@@ -833,6 +860,7 @@ cmd_check() {
 # runner con immagini di versioni diverse (gcc, binutils) danno payload diversi
 cmd_compare() {
 	: "${VERSION:?}"
+	flavours_for "${VERSION}"
 	local a="$1" b="$2" v f n bad=0
 	for v in "${FLAVOURS[@]}"; do
 		n="$(fl_name "${v}")"
