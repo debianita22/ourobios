@@ -249,7 +249,10 @@ tools/build.sh                      # both variants, into dist/
 applies `patches/series`, copies the blobs (checked against their
 `SHA256SUMS`), fetches MrChromebox's EDK2 at the commit of the defconfigs
 (with the submodules the payload uses: OpenSSL, the brotli of BaseTools,
-LvglPkg and its LVGL) and applies `patches/edk2` and `patches/lvglpkg`,
+LvglPkg and its LVGL; in the paths of the others it leaves the empty
+include folders their `.dec` files list, which BaseTools wants to find,
+so a `prepare` of a release before rc19 on that tree needs those folders
+removed first) and applies `patches/edk2` and `patches/lvglpkg`,
 writes the font of the
 update screen from those of LvglPkg (`tools/ui-font.py`), fetches iPXE at
 the commit coreboot pins (which must be `IPXE_COMMIT` of `tools/build.sh`)

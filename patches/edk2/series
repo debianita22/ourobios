@@ -32,3 +32,4 @@
 0032-MdeModulePkg-Core-Dxe-The-MAT-for-runtime-images-loa.patch
 0033-UefiPayloadPkg-Take-the-system-firmware-GUID-of-the-.patch
 0034-UefiPayloadPkg-Let-CRYPTO_PROTOCOL_SUPPORT-reach-the.patch
+0035-UefiPayloadPkg-Dispatch-CryptoDxe-from-the-DXE-a-pri.patch

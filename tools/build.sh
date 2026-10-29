@@ -302,6 +302,7 @@ state() {
 		while read -r p; do sha256sum "patches/${p}"; done < <(series)
 		for p in "${WITH[@]}"; do sha256sum "patches/optional/${p}.patch"; done
 		edk2_rev
+		printf '%s\n' "${EDK2_SUBMODULES[@]}"
 		while read -r p; do sha256sum "patches/edk2/${p}"; done < <(series edk2)
 		while read -r p; do sha256sum "patches/lvglpkg/${p}"; done < <(series lvglpkg)
 		sha256sum tools/ui-font.py
@@ -618,15 +619,28 @@ prepare_edk2() {
 	# file ignorati (BaseTools compilati).
 	git -C "${EDK2_DIR}" checkout -q --force --detach "${rev}" || die "EDK2: ${rev} non c'e' in ${EDK2_REPO}"
 	git -C "${EDK2_DIR}" clean -q -fd
+	# Solo i submodule della lista sono attivi: via i submodule.<nome>.active
+	# che un init di tutti (prima di rc19) aveva scritto uno per uno, perche'
+	# vincono sul pathspec di submodule.active
 	git -C "${EDK2_DIR}" config --unset-all submodule.active 2>/dev/null || true
+	for p in $(git -C "${EDK2_DIR}" config --name-only --get-regexp '^submodule\..*\.active$' 2>/dev/null); do
+		git -C "${EDK2_DIR}" config --unset-all "${p}"
+	done
 	for p in "${EDK2_SUBMODULES[@]}"; do
 		git -C "${EDK2_DIR}" config --add submodule.active "${p}"
+		# Nel percorso di un submodule da prendere ci puo' essere la cartella
+		# di include vuota lasciata da un giro con un'altra lista (sotto):
+		# il clone non parte in una cartella piena
+		[ -e "${EDK2_DIR}/${p}/.git" ] || rm -rf "${EDK2_DIR:?}/${p}"
 	done
 	git -C "${EDK2_DIR}" submodule update -q --init --force --filter=blob:none "${EDK2_SUBMODULES[@]}" \
 		|| die "EDK2: submodule"
 	# dentro OpenSSL nessun submodule (un pathspec che non c'e'); LvglPkg
 	# con la sua LVGL
 	git -C "${EDK2_DIR}/CryptoPkg/Library/OpensslLib/openssl" config submodule.active "__none__"
+	for p in $(git -C "${EDK2_DIR}/CryptoPkg/Library/OpensslLib/openssl" config --name-only --get-regexp '^submodule\..*\.active$' 2>/dev/null); do
+		git -C "${EDK2_DIR}/CryptoPkg/Library/OpensslLib/openssl" config --unset-all "${p}"
+	done
 	git -C "${EDK2_DIR}/LvglPkg" submodule update -q --init --force --filter=blob:none || die "EDK2: LvglPkg/lvgl"
 	git -C "${EDK2_DIR}" submodule foreach -q --recursive 'git clean -q -fd'
 	[ -d "${EDK2_DIR}/LvglPkg/.git" ] || [ -f "${EDK2_DIR}/LvglPkg/.git" ] || die "EDK2: senza il submodule LvglPkg"
@@ -635,7 +649,7 @@ prepare_edk2() {
 	# una cartella che non c'e' ("error 000E"), anche se nessun modulo la
 	# usa. Vuote, nei percorsi dei submodule non inizializzati
 	python3 - "${EDK2_DIR}" "${EDK2_SUBMODULES[@]}" <<-'EOF' || die "EDK2: cartelle di include dei .dec"
-		import os, re, subprocess, sys
+		import os, subprocess, sys
 		root, active = sys.argv[1], sys.argv[2:]
 		paths = subprocess.run(["git", "-C", root, "config", "-f", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$"],
 		                       capture_output=True, text=True, check=True).stdout.split()[1::2]

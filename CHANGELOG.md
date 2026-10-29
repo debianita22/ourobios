@@ -435,9 +435,24 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   (`CRYPTO_PROTOCOL_SUPPORT` of EDK2, which patch `edk2/0034` makes
   reach them). The modules of the payload go from 9.8 to 7.5 MiB in
   memory and the compressed payload in flash loses 115 KiB in each slot;
-  the variable driver keeps its own OpenSSL, as runtime code must. Verified in QEMU: the smoke test
-  and the capsule update, whose signature check goes through the
-  protocol.
+  the variable driver keeps its own OpenSSL, as runtime code must.
+  Verified in QEMU: the smoke test and the capsule update, whose
+  signature check goes through the protocol.
+- rc20 fixes what the shared OpenSSL of rc19 changed in the order the
+  DXE drivers come up: the drivers that use it now wait for CryptoDxe,
+  so the TPM driver started after the Secure Boot keys of a fresh
+  variable store had been written, and their measurements in PCR 7 (PK,
+  KEK, db, dbx, SecureBoot: seven events of the TPM log) were dropped
+  on that first boot of a TPM 1.2 machine. Patch `edk2/0035` starts
+  CryptoDxe from the a priori list, before every other driver, and the
+  order is the one of rc18 again. Verified with a TPM 1.2 in QEMU: the
+  TPM log of rc18, 21 events, digest for digest. Nothing changes for
+  the boots after the first, where no key is written. In
+  `tools/build.sh prepare`, the submodules of EDK2 a tree prepared
+  before rc19 had marked active one by one are unmarked, so the list
+  of the ones the payload uses applies to that tree too, and a
+  placeholder folder left in the path of a submodule is removed before
+  the submodule is fetched.
 
 ## v1.3.9
 
