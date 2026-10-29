@@ -1,0 +1,258 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 23:25:10 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Report the platform to the EC as the
+ OEM does
+
+The EC firmware of the NCT6687D (Lenovo M1UCT17A on the M920x) loads
+its profile, the temperature sources and the fan tables, for the
+platform that the BIOS writes into EC 0xa7d-0xa7f in a configuration
+phase, when 0xa7f has its boot flag set. The OEM firmware does it at
+every boot (OemDxe), and the EC also reloads the sources then, locked
+or not. Never told, the EC keeps the profile of its defaults: 02 43 00,
+which is a 35 W processor.
+
+Do as OemDxe does on the Tiny boards (IDs 0x30-0x35), at the end of
+device init: 0xa7d is 0x42, or 0x52 with a card on the PEG slot and
+0x16 with an NVIDIA one; 0xa7e has ICE Thermal Alert on, as the OEM
+setup does by default, the ICE mode and the TDP class of the processor
+(from MSR_PKG_POWER_SKU: over 65 W, up to 45, up to 65, up to 35 W);
+0xa7f has the boot flag and the policy after a power loss, the
+power_on_after_fail option that the PMC and the Super I/O apply. Not
+when resuming from S3: the EC keeps its profile in S3, and the OEM
+firmware does not write it then, in DXE.
+
+Add the ICE Performance Mode of the OEM setup as the "ice_mode" option,
+Hardware > Cooling: Better acoustics (the default), Better cooling and
+Full speed.
+
+TEST=On an M920x with an i3-8100, writing 42 42 07 this way at runtime
+makes the EC load its sources and 65 W tables: under a 4-thread load
+the fan follows the CPU, 834 to about 3000 rpm from 45 to 94 C, and
+back to the floor after. Better cooling: about 1400 rpm at idle, 3700
+at 94 C. Full speed: PWM 255, about 7500 rpm. Built lenovo/m920x.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/Makefile.mk  |   1 +
+ src/mainboard/lenovo/m720q_m920q/cfr.c        |  29 +++++
+ src/mainboard/lenovo/m720q_m920q/ec.c         | 120 ++++++++++++++++++
+ .../lenovo/m720q_m920q/include/mainboard/ec.h |  13 ++
+ 4 files changed, 163 insertions(+)
+ create mode 100644 src/mainboard/lenovo/m720q_m920q/ec.c
+ create mode 100644 src/mainboard/lenovo/m720q_m920q/include/mainboard/ec.h
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/Makefile.mk b/src/mainboard/lenovo/m720q_m920q/Makefile.mk
+index 249b20dfd5..43f0995f09 100644
+--- a/src/mainboard/lenovo/m720q_m920q/Makefile.mk
++++ b/src/mainboard/lenovo/m720q_m920q/Makefile.mk
+@@ -11,6 +11,7 @@ romstage-y += romstage.c
+ romstage-$(CONFIG_VBOOT) += vboot.c
+ 
+ ramstage-$(CONFIG_DRIVERS_OPTION_CFR) += cfr.c
++ramstage-y += ec.c
+ ramstage-y += gpio.c
+ ramstage-y += hda_verb.c
+ ramstage-y += ramstage.c
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index c160d3193f..7db7c87419 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -9,6 +9,7 @@
+ #include <drivers/vpd/vpd.h>
+ #include <intelblocks/acpi.h>
+ #include <intelblocks/pmclib.h>
++#include <mainboard/ec.h>
+ #include <memory_info.h>
+ #include <soc/soc_chip.h>
+ #include <stdio.h>
+@@ -383,6 +384,33 @@ static const struct sm_object hardware_intel_graphics = SM_DECLARE_FORM({
+ 	},
+ });
+ 
++/* Read by ec.c, which reports it to the EC firmware with the platform */
++static const struct sm_object ice_mode = SM_DECLARE_ENUM({
++	.opt_name	= "ice_mode",
++	.ui_name	= "Fan mode (ICE)",
++	.ui_helptext	= "How the EC runs the fan, as the Intelligent Cooling Engine\n"
++			  "of the OEM setup. Better acoustics: slow until the\n"
++			  "processor is hot, which lets it run warm under a long load.\n"
++			  "Better cooling: a few hundred rpm faster at every step.\n"
++			  "Full speed: the fan at its top speed, about 7500 rpm, all\n"
++			  "the time.\n"
++			  "Default: Better acoustics, as in the OEM setup.",
++	.default_value	= ICE_BETTER_ACOUSTIC,
++	.values		= (const struct sm_enum_value[]) {
++				{ "Better acoustics",	ICE_BETTER_ACOUSTIC	},
++				{ "Better cooling",	ICE_BETTER_THERMAL	},
++				{ "Full speed",		ICE_FULL_SPEED		},
++				SM_ENUM_VALUE_END				},
++});
++
++static const struct sm_object hardware_cooling = SM_DECLARE_FORM({
++	.ui_name	= "Cooling",
++	.obj_list	= (const struct sm_object *[]) {
++		&ice_mode,
++		NULL
++	},
++});
++
+ /* Security */
+ 
+ static void update_bios_lock(struct sm_object *new)
+@@ -600,6 +628,7 @@ static struct sm_obj_form hardware = {
+ 	.ui_name = "Hardware",
+ 	.obj_list = (const struct sm_object *[]) {
+ 		&hardware_intel_graphics,
++		&hardware_cooling,
+ 		NULL
+ 	},
+ };
+diff --git a/src/mainboard/lenovo/m720q_m920q/ec.c b/src/mainboard/lenovo/m720q_m920q/ec.c
+new file mode 100644
+index 0000000000..30f5b4628c
+--- /dev/null
++++ b/src/mainboard/lenovo/m720q_m920q/ec.c
+@@ -0,0 +1,120 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <acpi/acpi.h>
++#include <bootstate.h>
++#include <commonlib/helpers.h>
++#include <console/console.h>
++#include <cpu/x86/msr.h>
++#include <device/device.h>
++#include <device/pci_ids.h>
++#include <device/pnp.h>
++#include <intelblocks/msr.h>
++#include <intelblocks/pmclib.h>
++#include <mainboard/ec.h>
++#include <option.h>
++#include <superio/nuvoton/nct6687d/chip.h>
++#include <superio/nuvoton/nct6687d/nct6687d.h>
++#include <types.h>
++
++/*
++ * The EC firmware of the NCT6687D (Lenovo M1UCTxxA) runs the fans. It loads
++ * its profile, the temperature sources and the fan tables, for the platform
++ * that the BIOS reports in three registers of page 10, written in a
++ * configuration phase with the boot flag set. The OEM firmware does it at
++ * every boot (OemDxe), with this encoding on the Tiny boards; until then the
++ * EC keeps the profile of its defaults, for a 35 W processor.
++ */
++#define EC_PLATFORM			0x0a7d
++#define  PLATFORM_TINY			0x42
++#define  PLATFORM_TINY_PEG		0x52	/* a card on the PEG slot */
++#define  PLATFORM_TINY_NVIDIA		0x16	/* an NVIDIA card there */
++#define EC_COOLING			0x0a7e
++#define  COOLING_THERMAL_ALERT		(1 << 6)	/* ICE Thermal Alert, on in the OEM setup */
++#define  COOLING_ICE_ACOUSTIC		(0 << 4)
++#define  COOLING_ICE_FULL_SPEED		(1 << 4)
++#define  COOLING_ICE_THERMAL		(2 << 4)
++#define  COOLING_TDP_OVER_65W		0
++#define  COOLING_TDP_45W		1	/* over 35 W, up to 45 W */
++#define  COOLING_TDP_65W		2	/* over 45 W, up to 65 W */
++#define  COOLING_TDP_35W		3	/* up to 35 W */
++#define EC_BOOT				0x0a7f
++#define  BOOT_FULL			(1 << 0)	/* a boot, not a resume */
++#define  BOOT_POWER_LOSS_OFF		(1 << 1)
++#define  BOOT_POWER_LOSS_PREVIOUS	(2 << 1)
++#define  BOOT_POWER_LOSS_ON		(3 << 1)
++
++static uint8_t ec_platform(void)
++{
++	const struct device *peg = pcidev_on_root(1, 0);
++	const struct device *card = NULL;
++
++	if (peg && peg->enabled && peg->downstream)
++		card = peg->downstream->children;
++	if (!card)
++		return PLATFORM_TINY;
++	return card->vendor == PCI_VID_NVIDIA ? PLATFORM_TINY_NVIDIA : PLATFORM_TINY_PEG;
++}
++
++static uint8_t ec_cooling(unsigned int *tdp)
++{
++	const unsigned int unit = rdmsr(MSR_PKG_POWER_SKU_UNIT).lo & 0xf;
++	uint8_t cooling = COOLING_THERMAL_ALERT;
++
++	*tdp = (rdmsr(MSR_PKG_POWER_SKU).lo & 0x7fff) >> unit;
++	if (*tdp > 65)
++		cooling |= COOLING_TDP_OVER_65W;
++	else if (*tdp > 45)
++		cooling |= COOLING_TDP_65W;
++	else if (*tdp > 35)
++		cooling |= COOLING_TDP_45W;
++	else
++		cooling |= COOLING_TDP_35W;
++
++	switch (get_uint_option("ice_mode", ICE_BETTER_ACOUSTIC)) {
++	case ICE_BETTER_THERMAL:
++		return cooling | COOLING_ICE_THERMAL;
++	case ICE_FULL_SPEED:
++		return cooling | COOLING_ICE_FULL_SPEED;
++	default:
++		return cooling | COOLING_ICE_ACOUSTIC;
++	}
++}
++
++/* With the policy after a power loss that the PMC and the Super I/O apply */
++static uint8_t ec_boot(void)
++{
++	switch (get_uint_option("power_on_after_fail", CONFIG_MAINBOARD_POWER_FAILURE_STATE)) {
++	case MAINBOARD_POWER_STATE_OFF:
++		return BOOT_FULL | BOOT_POWER_LOSS_OFF;
++	case MAINBOARD_POWER_STATE_ON:
++		return BOOT_FULL | BOOT_POWER_LOSS_ON;
++	default:
++		return BOOT_FULL | BOOT_POWER_LOSS_PREVIOUS;
++	}
++}
++
++static void ec_report_platform(void *unused)
++{
++	const struct device *ec = dev_find_slot_pnp(0x2e, NCT6687D_EC);
++	const struct resource *res;
++	unsigned int tdp;
++
++	/* The EC keeps its profile in S3, and the OEM firmware does not write it then */
++	if (acpi_is_wakeup_s3() || !ec || !ec->enabled)
++		return;
++	res = probe_resource(ec, PNP_IDX_IO0);
++	if (!res)
++		return;
++
++	const struct nct6687d_reg_value regs[] = {
++		{ EC_PLATFORM, ec_platform() },
++		{ EC_COOLING, ec_cooling(&tdp) },
++		{ EC_BOOT, ec_boot() },
++	};
++
++	printk(BIOS_INFO, "EC: platform %02x %02x %02x (TDP %u W)\n",
++	       regs[0].value, regs[1].value, regs[2].value, tdp);
++	nct6687d_hwm_write_config(res->base, regs, ARRAY_SIZE(regs));
++}
++
++BOOT_STATE_INIT_ENTRY(BS_DEV_INIT, BS_ON_EXIT, ec_report_platform, NULL);
+diff --git a/src/mainboard/lenovo/m720q_m920q/include/mainboard/ec.h b/src/mainboard/lenovo/m720q_m920q/include/mainboard/ec.h
+new file mode 100644
+index 0000000000..f6f045486f
+--- /dev/null
++++ b/src/mainboard/lenovo/m720q_m920q/include/mainboard/ec.h
+@@ -0,0 +1,13 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef MAINBOARD_EC_H
++#define MAINBOARD_EC_H
++
++/* The "ice_mode" option: the ICE Performance Mode of the OEM setup */
++enum ice_mode {
++	ICE_BETTER_ACOUSTIC	= 0,
++	ICE_BETTER_THERMAL	= 1,
++	ICE_FULL_SPEED		= 2,
++};
++
++#endif /* MAINBOARD_EC_H */
+-- 
+2.47.3
+

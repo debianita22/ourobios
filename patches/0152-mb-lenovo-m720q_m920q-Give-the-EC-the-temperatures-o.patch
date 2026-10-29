@@ -1,0 +1,56 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 23:22:08 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Give the EC the temperatures of its
+ fan tables
+
+The fan of the Tiny runs at its lowest speed, about 850 rpm, whatever
+the load: the CPU reaches 95-100 C and throttles. The EC firmware
+(Lenovo M1UCT17A on the M920x) drives FAN2 from temperature channel 0
+and takes channel 3 as the ambient one, but the NCT6687D driver writes
+the devicetree sources into all 32 SENSOR_CFG registers and locks
+them, and with none set here they are all disabled: every channel
+reads 0 C.
+
+Set the sources that the EC firmware loads itself (its default image,
+and what it loads for the platform the OEM firmware reports): PECI 0.0,
+PCH CHIP, the diodes TD0P, TD1P and TD2P in current mode, filtered, and
+PECI at 1.2 MHz, as the firmware has it.
+
+TEST=On an M920x, with the EC loading these sources at runtime, channel
+0 follows x86_pkg_temp, channel 1 pch_cannonlake, and under a
+4-thread load the fan goes from 834 to about 3000 rpm as the CPU goes
+from 45 to 94 C, and back once the load stops. Built lenovo/m920x.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/devicetree.cb | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/devicetree.cb b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+index 8aab48aa70..2bc9c1a97e 100644
+--- a/src/mainboard/lenovo/m720q_m920q/devicetree.cb
++++ b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+@@ -99,6 +99,19 @@ chip soc/intel/cannonlake
+ 
+ 		device ref lpc_espi	on
+ 			chip superio/nuvoton/nct6687d
++				# The temperatures that the EC firmware (Lenovo M1UCTxxA)
++				# runs the fans on, as it loads them itself: PECI 0.0 for
++				# the CPU fan, diode TD1P as the ambient one.
++				register "sensors[0]"		= "PECI_AGENT0_DOMAIN0"
++				register "sensors[1]"		= "PCH_CHIP"
++				register "sensors[2]"		= "TD0P_CURRENT_MODE"
++				register "sensors[3]"		= "TD1P_CURRENT_MODE"
++				register "sensors[7]"		= "TD2P_CURRENT_MODE"
++				register "sensor_filter[0]"	= "true"
++				register "sensor_filter[2]"	= "true"
++				register "sensor_filter[3]"	= "true"
++				register "sensor_filter[7]"	= "true"
++				register "peci_speed"		= "PECI_1200KHZ"
+ 				device pnp 2e.1 off	end	# Parallel port
+ 				device pnp 2e.2 off	end	# UARTA (USB debug port?)
+ 				device pnp 2e.3 on		# UARTB - COM1 header - optional sub-board
+-- 
+2.47.3
+

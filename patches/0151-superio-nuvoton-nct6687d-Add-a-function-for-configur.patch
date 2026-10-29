@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 23:21:49 +0100
+Subject: [PATCH] superio/nuvoton/nct6687d: Add a function for configuration
+ writes
+
+The registers of the fan engine are written in a configuration phase:
+the BIOS requests it in FAN_CFG_CTRL_REG, waits for the EC firmware to
+unlock the register set, writes and says it is done, and the firmware
+checks the configuration and locks it again. nct6687d_hwm_init() does
+this for the devicetree settings, with static helpers.
+
+Some vendor EC firmwares take more from the BIOS through the same
+phase: the Lenovo firmware of the ThinkCentre Tiny boards loads its
+fan profile for the platform that the OEM firmware writes into page
+10 that way at every boot. Export nct6687d_hwm_write_config(), which
+writes a list of registers with those helpers, for the mainboards.
+
+TEST=Built lenovo/m920x, which calls it after the EC is initialized.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/superio/nuvoton/nct6687d/chip.h         | 17 +++++++++++++++++
+ src/superio/nuvoton/nct6687d/nct6687d_hwm.c | 21 +++++++++++++++++++++
+ 2 files changed, 38 insertions(+)
+
+diff --git a/src/superio/nuvoton/nct6687d/chip.h b/src/superio/nuvoton/nct6687d/chip.h
+index ef222644a4..60e8cab422 100644
+--- a/src/superio/nuvoton/nct6687d/chip.h
++++ b/src/superio/nuvoton/nct6687d/chip.h
+@@ -4,6 +4,8 @@
+ #define SUPERIO_NUVOTON_NCT6687D_CHIP_H
+ 
+ #include <stdbool.h>
++#include <stddef.h>
++#include <stdint.h>
+ 
+ #define MAX_TEMP_SPEED_LEVELS 7
+ #define MAX_TEMP_SRC 4
+@@ -358,6 +360,21 @@ struct superio_nuvoton_nct6687d_config {
+ #define FAN9	fans[8]
+ #define FAN10	fans[9]
+ 
++/* A register of the EC space (page << 8 | index) and its value */
++struct nct6687d_reg_value {
++	uint16_t reg;
++	uint8_t value;
++};
++
+ void nct6687d_hwm_init(uint16_t hwm_base, const struct superio_nuvoton_nct6687d_config *conf);
+ 
++/*
++ * Write registers of the EC space in a configuration phase of the fan
++ * engine, for the EC firmware to check and apply them, as
++ * nct6687d_hwm_init() does with the devicetree settings. For the vendor
++ * EC firmwares that take more than that from the BIOS.
++ */
++bool nct6687d_hwm_write_config(uint16_t hwm_base, const struct nct6687d_reg_value *regs,
++			       size_t count);
++
+ #endif /* SUPERIO_NUVOTON_NCT6687D_CHIP_H */
+diff --git a/src/superio/nuvoton/nct6687d/nct6687d_hwm.c b/src/superio/nuvoton/nct6687d/nct6687d_hwm.c
+index 6001f38431..681b226572 100644
+--- a/src/superio/nuvoton/nct6687d/nct6687d_hwm.c
++++ b/src/superio/nuvoton/nct6687d/nct6687d_hwm.c
+@@ -959,3 +959,24 @@ void nct6687d_hwm_init(uint16_t hwm_base, const struct superio_nuvoton_nct6687d_
+ 	lock_sensor_config();
+ 	print_fan_engine_status();
+ }
++
++bool nct6687d_hwm_write_config(uint16_t hwm_base, const struct nct6687d_reg_value *regs,
++			       size_t count)
++{
++	size_t i;
++
++	nct6687d_hwm_base = hwm_base;
++
++	if (!unlock_fan_register_set()) {
++		printk(BIOS_ERR, "NCT6687D failed to unlock registers, "
++				 "skipping configuration writes\n");
++		return false;
++	}
++
++	for (i = 0; i < count; i++)
++		hwm_reg_write(regs[i].reg, regs[i].value);
++
++	lock_fan_register_set_and_check(FAN_NO_ERROR);
++
++	return true;
++}
+-- 
+2.47.3
+
