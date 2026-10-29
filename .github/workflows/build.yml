@@ -58,8 +58,9 @@
 #   - nri: W541, RAM init nativa (upstream "[NOT COMPLETE]"): release o
 #     pre-release insieme alla mrc dalla v1.3.9 (prima sempre pre-release),
 #     mai latest: i metadati del remote fwupd sono nella mrc.
-#   - m920x-fsp: ThinkCentre M920x Tiny, RAM init con FSP-M di Intel; mai
-#     latest, come la nri.
+#   - m920x-fsp: ThinkCentre M920x Tiny, RAM init con FSP-M di Intel, dalla
+#     v1.4.0 (BOARD_SINCE in boards/m920x/board.sh: con una versione prima
+#     --board all lo lascia fuori); mai latest, come la nri.
 #   - pre-release tutte con la casella "prerelease" o un trattino nella
 #     versione (v1.1.0-rc1); le release vere solo dal ramo principale. Una
 #     pre-release provata sulle macchine diventa release senza ricostruirla:

@@ -698,6 +698,15 @@ rows="$(mktemp)"
 for b in $(boards); do
 	prefix="$(board_get "${b}" BOARD_FLAVOUR_PREFIX)"
 	size="$(board_get "${b}" BOARD_ROM_SIZE)"
+	# la prima versione con la board, se non c'e' da sempre: vX.Y.Z
+	since="$(board_get "${b}" BOARD_SINCE)"
+	if [ -n "${since}" ]; then
+		if [[ "${since}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+			ok "${b}: nelle release dalla ${since}"
+		else
+			bad "boards/${b}/board.sh: BOARD_SINCE '${since}', non vX.Y.Z"
+		fi
+	fi
 	for v in $(board_get "${b}" BOARD_VARIANTS); do
 		g="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_GUID="\(.*\)"$/\1/p' "$(board_get "${b}" defconfig "${v}")" 2>/dev/null)"
 		echo "${b} ${v} ${prefix}${v} $((size)) ${g:--}" >> "${rows}"

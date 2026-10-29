@@ -68,7 +68,10 @@
 # Opzioni:
 #   --board B       la board, ripetibile, o all (default: w541): le sue
 #                   varianti, la mappa, i blob e i nomi in boards/B/board.sh.
-#                   prepare prepara l'albero per tutte le board
+#                   prepare prepara l'albero per tutte le board. Con una
+#                   versione di release (vX.Y.Z, -rcN), all lascia fuori le
+#                   board che arrivano dopo (BOARD_SINCE: il M920x dalla
+#                   v1.4.0), e --release non le costruisce
 #   --variant V     una variante delle board scelte (mrc, nri; fsp),
 #                   ripetibile (default: tutte)
 #   --version V     nella versione di coreboot e nei nomi dei file (default:
@@ -315,7 +318,7 @@ BOARD=""
 load_board() {
 	local f="${O}/boards/$1/board.sh"
 	[ -f "${f}" ] || die "board '$1': manca boards/$1/board.sh"
-	unset BOARD_NAME BOARD_VARIANTS BOARD_FLAVOUR_PREFIX BOARD_TREE BOARD_TREE_FILES \
+	unset BOARD_NAME BOARD_VARIANTS BOARD_FLAVOUR_PREFIX BOARD_SINCE BOARD_TREE BOARD_TREE_FILES \
 		BOARD_SUMS BOARD_ROM_SIZE BOARD_CHIPS BOARD_BOOT_CHIP BOARD_INTEL_SIZE \
 		BOARD_REFERENCE BOARD_RO_INTERFACE BOARD_CPUIDS BOARD_SMOKE_SIZES \
 		BOARD_SLOT_FILES BOARD_GBE BOARD_VBIOS BOARD_OPVK BOARD_CONFIG_WANT
@@ -348,13 +351,33 @@ use_board() {
 }
 # Le board di --board: all per tutte, w541 senza --board
 REQ_VARIANTS=("${VARIANTS[@]}")
+# La board $1 e' nelle release di VERSION? BOARD_SINCE di board.sh: la prima
+# versione con la board, sue rc comprese (tools/ci.sh fa lo stesso conto);
+# le versioni che non sono di release (dev-..., ci-...) hanno ogni board
+board_in_version() {
+	local since
+	since="$(load_board "$1"; printf '%s' "${BOARD_SINCE:-}")"
+	[ -n "${since}" ] || return 0
+	[[ "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]] || return 0
+	[ "$(printf '%s\n' "${since}" "${VERSION%%-*}" | sort -V | sed -n 1p)" = "${since}" ]
+}
 if [ ${#BOARDS[@]} -eq 0 ]; then
 	BOARDS=(w541)
 elif [ "${BOARDS[*]}" = all ]; then
-	mapfile -t BOARDS < <(all_boards)
+	BOARDS=()
+	for b in $(all_boards); do
+		if board_in_version "${b}"; then
+			BOARDS+=("${b}")
+		else
+			echo "  --  board ${b}: non nelle release di ${VERSION} (BOARD_SINCE in boards/${b}/board.sh)" >&2
+		fi
+	done
 fi
 for b in "${BOARDS[@]}"; do
 	[ -f "${O}/boards/${b}/board.sh" ] || die "board '${b}': non c'e' boards/${b}/board.sh ($(all_boards | paste -sd ' '))"
+	if [ "${RELEASE}" = yes ] && ! board_in_version "${b}"; then
+		die "--release ${VERSION}: la board ${b} non e' nelle release di questa versione (BOARD_SINCE in boards/${b}/board.sh)"
+	fi
 done
 # ogni --variant deve essere di qualche board scelta
 for w in "${REQ_VARIANTS[@]}"; do
