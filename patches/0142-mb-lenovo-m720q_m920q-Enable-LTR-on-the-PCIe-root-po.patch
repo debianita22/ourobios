@@ -1,0 +1,59 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 21:05:56 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Enable LTR on the PCIe root ports
+
+The devicetree does not set PcieRpLtrEnable, so FSP-S leaves Latency
+Tolerance Reporting off on the root ports: the devices behind them (the
+NVMe SSD, the Wi-Fi card) support LTR but cannot enable it, ASPM L1.2
+stays off with it, and the package does not go below PC3 at idle while
+the cores sit in C10. The OEM firmware enables LTR on every port (its
+setup has "Enable LTR"). Enable it on the four ports in use.
+
+TEST=On an M920x running the build before this, DevCap2 shows LTR- on
+the root ports 00:1b.0 and 00:1c.0, and LTR+ but disabled on the NVMe
+SSD and the Wi-Fi card behind them, L1.2 off; in 20 s at idle the
+package spends 93% in PC3 and none in PC6 to PC10, with the cores 96%
+in C10. Built lenovo/m920x.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/devicetree.cb | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/devicetree.cb b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+index c299a380a7..8aab48aa70 100644
+--- a/src/mainboard/lenovo/m720q_m920q/devicetree.cb
++++ b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+@@ -71,24 +71,28 @@ chip soc/intel/cannonlake
+ 
+ 		device ref pcie_rp6	on # WLAN
+ 			register "PcieRpSlotImplemented[5]"	= "true"
++			register "PcieRpLtrEnable[5]"		= "true"
+ 			register "PcieClkSrcUsage[3]"		= "5"
+ 			register "PcieClkSrcClkReq[3]"		= "3"
+ 		end
+ 
+ 		device ref pcie_rp9	on # PCIe x4
+ 			register "PcieRpSlotImplemented[8]"	= "true"
++			register "PcieRpLtrEnable[8]"		= "true"
+ 			register "PcieClkSrcUsage[2]"		= "8"
+ 			register "PcieClkSrcClkReq[2]"		= "2"
+ 		end
+ 
+ 		device ref pcie_rp17 on # M.2 SSD #2
+ 			register "PcieRpSlotImplemented[16]"	= "true"
++			register "PcieRpLtrEnable[16]"		= "true"
+ 			register "PcieClkSrcUsage[10]"		= "16"
+ 			register "PcieClkSrcClkReq[10]"		= "10"
+ 		end
+ 
+ 		device ref pcie_rp21 on # M.2 SSD #1
+ 			register "PcieRpSlotImplemented[20]"	= "true"
++			register "PcieRpLtrEnable[20]"		= "true"
+ 			register "PcieClkSrcUsage[4]"		= "20"
+ 			register "PcieClkSrcClkReq[4]"		= "4"
+ 		end
+-- 
+2.47.3
+

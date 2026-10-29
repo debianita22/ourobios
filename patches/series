@@ -135,3 +135,5 @@
 0139-soc-intel-cannonlake-Add-options-for-SpeedStep-and-T.patch
 0140-mb-lenovo-m720q_m920q-Enable-Enhanced-Intel-SpeedSte.patch
 0141-mb-lenovo-m720q_m920q-Add-a-setup-menu.patch
+0142-mb-lenovo-m720q_m920q-Enable-LTR-on-the-PCIe-root-po.patch
+0143-mb-lenovo-m720q_m920q-Program-the-ALC233-as-the-OEM-.patch
