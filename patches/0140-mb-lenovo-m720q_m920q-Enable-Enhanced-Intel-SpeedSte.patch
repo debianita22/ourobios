@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 15:51:50 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Enable Enhanced Intel SpeedStep
+
+The devicetree does not set eist_enable, so coreboot clears EIST in
+IA32_MISC_ENABLE and the SSDT has no P-state tables, unlike the OEM
+firmware: the OS cannot change the frequency of the processor through
+ACPI, and the processor stays at its base frequency without Speed
+Shift. Enable it, as the other Coffee Lake desktops do.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TnH4v9ZgSCT6oudGt6KtJL
+---
+ src/mainboard/lenovo/m720q_m920q/devicetree.cb | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/devicetree.cb b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+index 9e704b4471..c299a380a7 100644
+--- a/src/mainboard/lenovo/m720q_m920q/devicetree.cb
++++ b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+@@ -5,6 +5,9 @@ chip soc/intel/cannonlake
+ 		.tdp_pl2_override = 65,
+ 	}"
+ 
++	# Enhanced Intel SpeedStep, as the OEM firmware: P-states for the OS
++	register "eist_enable" = "true"
++
+ 	# Unmap unused CLKREQ lines, otherwise CLKSRC #0 won't work
+ 	register "PcieClkSrcClkReq[1]"	= "PCIE_CLK_NOTUSED"
+ 	register "PcieClkSrcClkReq[5]"	= "PCIE_CLK_NOTUSED"
+-- 
+2.43.0
+

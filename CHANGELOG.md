@@ -5,6 +5,26 @@ GitHub include its section; release candidates take the section of the
 version they lead to. For the releases before v1.3.0, see their notes on
 the [releases page](https://github.com/debianita22/ourobios/releases).
 
+## v1.4.0
+
+- **ThinkCentre M920x Tiny** (Intel Coffee Lake, Q370): a release of its
+  own in every version, `vX.Y.Z-m920x-fsp`, built from coreboot's
+  `lenovo/m720q_m920q` board with Intel's FSP-M RAM init and the rest of
+  the W541 releases: the EDK II payload and its setup menu, vboot with two
+  signed RW slots and a minimal read-only part, signed capsules and fwupd,
+  with an ESRT GUID of its own ([docs/m920x.md](docs/m920x.md)). A
+  pre-release until it is confirmed on the machine. Patches 0136-0141:
+  vboot's data in flash on Cannon Lake, the M920x with its 24 MiB flash,
+  vboot with two RW slots, SpeedStep and Turbo Boost as setup options, the
+  setup menu; patch 0065 and `edk2/0020` take the `fsp` slots too.
+- More than one board in the repository: `boards/<board>/board.sh`
+  describes each (variants, flash and chips, blobs, the checks of
+  `tools/verify-rom.sh`), and `tools/build.sh --board w541|m920x|all`
+  builds them. The W541 files, release names and GUIDs stay as they were;
+  the fwupd metadata of the `mrc` release carries the `.cab` of every board,
+  and fwupd offers each machine its own.
+- `tools/vpd.py`: the machine types and SKU of the M920x, `--sku`.
+
 ## v1.3.10
 
 - macOS with OpenCore ([docs/macos.md](docs/macos.md)): two setup options,

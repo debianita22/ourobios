@@ -1,16 +1,19 @@
 #!/bin/bash
-# build.sh - le ROM coreboot del ThinkPad W541: "mrc" (RAM init con mrc.bin)
-# e "nri" (RAM init nativa di coreboot). Lo stesso script a mano e nella CI
-# (.github/workflows/build.yml e check.yml).
+# build.sh - le ROM coreboot di ouroBIOS, una board alla volta (boards/):
+# il ThinkPad W541, varianti "mrc" (RAM init con mrc.bin) e "nri" (RAM init
+# nativa di coreboot), e il ThinkCentre M920x, variante "fsp" (FSP-M di
+# Intel). Lo stesso script a mano e nella CI (.github/workflows/build.yml e
+# check.yml).
 #
 #   tools/build.sh [opzioni] [comando ...]
 #
 # Comandi (default: prepare toolchain roms):
 #   prepare        coreboot al commit pinnato (solo quel commit), i submodule
 #                  che servono dai mirror GitHub, le patch di patches/series,
-#                  i blob controllati con SHA256SUMS nella cartella w541/
-#                  dell'albero (e' li' che li cercano i defconfig) e la
-#                  chiave Optimus dove la include il DSDT; EDK2 al
+#                  i blob di ogni board controllati con i loro SHA256SUMS
+#                  nella cartella della board nell'albero (w541/, m920x/:
+#                  e' li' che li cercano i defconfig) e la chiave Optimus
+#                  dove la include il DSDT; EDK2 al
 #                  commit dei defconfig con le patch di patches/edk2/series
 #                  e di patches/lvglpkg/series (il submodule LvglPkg)
 #   toolchain      il crossgcc di coreboot: i386 con Ada (libgfxinit), iasl e
@@ -41,11 +44,14 @@
 #                  tools/qemu-smoke.py: il payload parte, il setup si apre e
 #                  risponde ai tasti; i servizi runtime funzionano anche
 #                  spostati come li sposta boot.efi di macOS senza
-#                  AvoidRuntimeDefrag (tools/efi/rt-reloc-test.c). Schermate
+#                  AvoidRuntimeDefrag (tools/efi/rt-reloc-test.c); l'ESRT
+#                  e Secure Boot (tools/efi/secure-boot-test.c); il TPM 1.2
+#                  di swtpm con il log delle misure. Schermate
 #                  e seriale in WORK/smoke-<variante>. Una variante con il
-#                  payload, byte per byte, di una gia' provata non si riprova.
-#                  Poi, per la prima variante, una seconda ROM a 2880x1620,
-#                  la risoluzione del pannello 3K con gfx_fb_limit: solo il
+#                  payload, byte per byte, di una gia' provata rifa' solo
+#                  l'ESRT e Secure Boot, con la sua ROM q35. Poi, per la
+#                  prima variante del W541, una seconda ROM a 2880x1620, la
+#                  risoluzione del pannello 3K con gfx_fb_limit: solo il
 #                  setup, in WORK/smoke-<variante>-2880x1620
 #   update-test    la prova dell'aggiornamento con le capsule (vboot A/B) in
 #                  QEMU q35, tools/qemu-update.py: un payload EDK2 DEBUG con
@@ -60,7 +66,11 @@
 #   toolchain-key  stampa la chiave della cache del crossgcc (build.yml)
 #
 # Opzioni:
-#   --variant V     mrc o nri, ripetibile (default: tutte e due)
+#   --board B       la board, ripetibile, o all (default: w541): le sue
+#                   varianti, la mappa, i blob e i nomi in boards/B/board.sh.
+#                   prepare prepara l'albero per tutte le board
+#   --variant V     una variante delle board scelte (mrc, nri; fsp),
+#                   ripetibile (default: tutte)
 #   --version V     nella versione di coreboot e nei nomi dei file (default:
 #                   dev-<commit corto di questo repository>)
 #   --toolchain T   crossgcc (default, l'unico per le release) oppure host:
@@ -75,15 +85,20 @@
 #   --dist DIR      i file finali (default: dist/ in questo repository)
 #   --jobs N        default: nproc
 #
-# Ogni ROM e' un'immagine completa del flash da 12 MiB (chip da 8 MiB + chip
-# da 4 MiB), con la mappa di configs/w541.fmd: IFD, GbE e ME di blobs/ nei
+# Ogni ROM e' un'immagine completa del flash della board. Sul W541 12 MiB
+# (chip da 8 MiB + chip da 4 MiB), con la mappa di configs/w541.fmd: IFD, GbE e ME di blobs/ nei
 # primi 5 MiB (identici a legacy/coreboot-4.22/coreboot.rom), poi le regioni
 # scritte a ogni avvio (training della RAM, variabili UEFI, VPD, registro,
 # dati di vboot), vuote, nel chip da 8 MiB; i due slot RW di vboot (A a
 # cavallo dei chip, B nel chip da 4 MiB) e la regione RO in cima al chip da
 # 4 MiB. In dist/ anche le immagini dei due chip, per un programmatore
 # esterno. Dall'interno si scrive con flashrom (docs/flashing.md), o, dalla
-# v1.3.0, con la capsula, che scrive uno slot (docs/update.md).
+# v1.3.0, con la capsula, che scrive uno slot (docs/update.md). Sul M920x
+# 24 MiB (16 + 8), con la mappa di boards/m920x/flash.fmd (docs/m920x.md).
+#
+# I file in dist/: <board>-coreboot-<versione>-<variante>.rom, e il nome
+# della release: vX.Y.Z-<variante> sul W541, vX.Y.Z-<board>-<variante> per
+# le altre (boards/<board>/board.sh, BOARD_FLAVOUR_PREFIX).
 #
 # La capsula (w541-coreboot-<versione>-<variante>.cap): la ROM con il
 # manifest RMAP delle regioni che il firmware riscrive (CAPSULE_REGIONS: i
@@ -121,6 +136,8 @@ SUBMODULES=(
 	"libhwbase 3rdparty/libhwbase https://github.com/coreboot/libhwbase.git"
 	"libgfxinit 3rdparty/libgfxinit https://github.com/coreboot/libgfxinit.git"
 	"intel-microcode 3rdparty/intel-microcode https://github.com/coreboot/intel-microcode.git"
+	# FSP-M e FSP-S di Coffee Lake (CoffeeLakeFspBinPkg), per il M920x
+	"3rdparty/fsp 3rdparty/fsp https://github.com/coreboot/fsp.git"
 )
 
 # EDK2: il repository di MrChromebox (quello di CONFIG_EDK2_REPO_MRCHROMEBOX)
@@ -150,21 +167,22 @@ UI_FONT_OUT="UefiPayloadPkg/Library/UpdateScreenLib/UpdateScreenFont.c"
 # nuovo pin di coreboot che lo cambia si ferma li', e IPXE_COMMIT va nelle
 # note delle release (tools/ci.sh) e nel file del layout. CSMWrap (patch 0076,
 # CONFIG_EDK2_ENABLE_CSMWRAP): un BIOS legacy come voce di boot, compilato
-# da prepare al commit pinnato con i suoi submodule e messo in w541/
-# dell'albero; la versione che scrive nel binario e' il commit, non la
-# data, e SeaBIOS non ci mette ora e host perche' l'albero e' pulito.
+# da prepare al commit pinnato con i suoi submodule e messo nella cartella
+# di ogni board dell'albero; la versione che scrive nel binario e' il
+# commit, non la data, e SeaBIOS non ci mette ora e host perche' l'albero
+# e' pulito.
 IPXE_REPO="https://github.com/ipxe/ipxe.git"
 IPXE_COMMIT="7c39c04a537ce29dccc6f2bae9749d1d371429c1"
 IPXE_SUBDIR="payloads/external/iPXE/ipxe"
 CSMWRAP_REPO="https://github.com/CSMWrap/CSMWrap.git"
 CSMWRAP_COMMIT="008f141f419db566f6f4ee23bfe394f6a4e638d7"
-CSMWRAP_TREE=w541/csmwrap.efi
+# csmwrap.efi nella cartella di ogni board dell'albero (<board>/csmwrap.efi)
+CSMWRAP_NAME=csmwrap.efi
 
-# I file di blobs/, assets/ e configs/ che vanno nell'albero (w541/<nome>): i
-# defconfig li cercano li'. mrc.bin lo usa solo la variante mrc.
-TREE_FILES=(blobs/ifd.bin blobs/gbe.bin blobs/me.bin blobs/mrc.bin
-	blobs/vbios_10de_11fc_1.rom assets/bootsplash.bmp configs/w541.fmd
-	keys/capsule-signing.pem)
+# I file comuni a tutte le board che vanno nella cartella della board
+# nell'albero (<board>/<nome>), accanto a quelli di BOARD_TREE_FILES di
+# boards/<board>/board.sh: i defconfig li cercano li'.
+COMMON_TREE_FILES=(assets/bootsplash.bmp keys/capsule-signing.pem)
 # Le regioni che una capsula riscrive: il training della RAM, che il codice
 # nuovo rifa' al primo avvio, e lo slot RW di vboot che non gira (la capsula
 # li porta tutti e due, il payload sceglie: edk2 0015). Le altre restano:
@@ -190,14 +208,15 @@ UPDATE_TEST_ROMS=("A 0x01000100" "B 0x01000101" "C 0x01000200" "D 0x01010000")
 UPDATE_TEST_LSV=0x01000100
 UPDATE_TEST_SCREEN=D
 UPDATE_TEST_PATCH=patches/test/q35-update-test.patch
-# Le chiavi pubbliche di vboot (tools/vboot-keys.sh), in w541/vboot/
-# dell'albero. La chiave privata della chiave dati (firmware_data_key.vbprivk)
-# arriva solo da VBOOT_SIGNING_KEY (base64) e sta nell'albero solo durante le
-# build: senza, i defconfig puntano alle chiavi di prova di vboot.
+# Le chiavi pubbliche di vboot (tools/vboot-keys.sh), le stesse per tutte le
+# board, in <board>/vboot/ dell'albero. La chiave privata della chiave dati
+# (firmware_data_key.vbprivk) arriva solo da VBOOT_SIGNING_KEY (base64) e sta
+# nell'albero solo durante le build: senza, i defconfig puntano alle chiavi
+# di prova di vboot.
 VBOOT_KEYS=(keys/vboot/root_key.vbpubk keys/vboot/recovery_key.vbpubk
 	keys/vboot/kernel_subkey.vbpubk keys/vboot/firmware.keyblock
 	keys/vboot/firmware_data_key.vbpubk)
-VBOOT_PRIVKEY_TREE=w541/vboot/firmware_data_key.vbprivk
+VBOOT_PRIVKEY_NAME=vboot/firmware_data_key.vbprivk
 # La chiave Optimus (patch 0036, CONFIG_LENOVO_HASWELL_NVIDIA_OPVK): il DSDT
 # la include da questo file, che la patch fa ignorare a git
 OPVK_FILE=blobs/opvk.inc
@@ -232,6 +251,7 @@ failure_report() {
 	return 0
 }
 
+BOARDS=()
 VARIANTS=()
 VERSION=""
 TOOLCHAIN=crossgcc
@@ -243,7 +263,8 @@ JOBS="$(nproc 2>/dev/null || echo 2)"
 CMDS=()
 while [ $# -gt 0 ]; do
 	case "$1" in
-		--variant)   VARIANTS+=("${2:?--variant mrc|nri}"); shift 2 ;;
+		--board)     BOARDS+=("${2:?--board w541|m920x|all}"); shift 2 ;;
+		--variant)   VARIANTS+=("${2:?--variant mrc|nri|fsp}"); shift 2 ;;
 		--version)   VERSION="${2:?--version V}"; shift 2 ;;
 		--toolchain) TOOLCHAIN="${2:?--toolchain crossgcc|host}"; shift 2 ;;
 		--with)      WITH+=("${2:?--with NOME}"); shift 2 ;;
@@ -256,11 +277,7 @@ while [ $# -gt 0 ]; do
 		*) die "argomento sconosciuto: $1 (tools/build.sh --help)" ;;
 	esac
 done
-[ ${#VARIANTS[@]} -gt 0 ] || VARIANTS=(mrc nri)
 [ ${#CMDS[@]} -gt 0 ] || CMDS=(prepare toolchain roms)
-for v in "${VARIANTS[@]}"; do
-	case "${v}" in mrc|nri) ;; *) die "variante '${v}': mrc o nri" ;; esac
-done
 case "${TOOLCHAIN}" in crossgcc|host) ;; *) die "toolchain '${TOOLCHAIN}': crossgcc o host" ;; esac
 case "${JOBS}" in ''|*[!0-9]*|0) die "--jobs ${JOBS}: un numero" ;; esac
 if [ -z "${VERSION}" ]; then
@@ -268,7 +285,7 @@ if [ -z "${VERSION}" ]; then
 fi
 case "${VERSION}" in
 	''|*[!A-Za-z0-9._-]*) die "versione '${VERSION}': solo lettere, cifre e . _ -" ;;
-	*-mrc|*-nri) die "versione '${VERSION}': senza -mrc/-nri, la variante la aggiunge lo script" ;;
+	*-mrc|*-nri|*-fsp) die "versione '${VERSION}': senza la variante, la aggiunge lo script" ;;
 esac
 for w in "${WITH[@]}"; do
 	case "${w}" in ''|*[!A-Za-z0-9._-]*) die "--with '${w}': il nome di un file di patches/optional/ senza .patch" ;; esac
@@ -284,12 +301,112 @@ XGCC="${TREE}/util/crossgcc/xgcc"
 STAMP="${WORK}/prepared"
 EDK2_DIR="${TREE}/${EDK2_SUBDIR}"
 
+# Le board: boards/<board>/board.sh, una per cartella
+all_boards() {
+	local f
+	for f in "${O}"/boards/*/board.sh; do
+		[ -f "${f}" ] || continue
+		f="${f%/board.sh}"
+		printf '%s\n' "${f##*/}"
+	done | LC_ALL=C sort
+}
+# La board $1: le variabili BOARD_* del suo board.sh
+BOARD=""
+load_board() {
+	local f="${O}/boards/$1/board.sh"
+	[ -f "${f}" ] || die "board '$1': manca boards/$1/board.sh"
+	unset BOARD_NAME BOARD_VARIANTS BOARD_FLAVOUR_PREFIX BOARD_TREE BOARD_TREE_FILES \
+		BOARD_SUMS BOARD_ROM_SIZE BOARD_CHIPS BOARD_BOOT_CHIP BOARD_INTEL_SIZE \
+		BOARD_REFERENCE BOARD_RO_INTERFACE BOARD_CPUIDS BOARD_SMOKE_SIZES \
+		BOARD_SLOT_FILES BOARD_GBE BOARD_VBIOS BOARD_OPVK BOARD_CONFIG_WANT
+	unset -f board_defconfig
+	# shellcheck source=/dev/null
+	. "${f}"
+	BOARD="$1"
+	: "${BOARD_FLAVOUR_PREFIX:=}"
+	if [ -z "${BOARD_SMOKE_SIZES+x}" ]; then BOARD_SMOKE_SIZES=(1920x1080); fi
+}
+# La board $1, e VARIANTS: le varianti da costruire (quelle di --variant
+# che la board ha, o tutte)
+use_board() {
+	local v w found
+	load_board "$1"
+	VARIANTS=()
+	for v in "${BOARD_VARIANTS[@]}"; do
+		if [ ${#REQ_VARIANTS[@]} -eq 0 ]; then
+			VARIANTS+=("${v}")
+			continue
+		fi
+		for w in "${REQ_VARIANTS[@]}"; do
+			if [ "${w}" = "${v}" ]; then VARIANTS+=("${v}"); fi
+		done
+	done
+	if [ ${#VARIANTS[@]} -eq 0 ]; then
+		found="$(printf '%s ' "${BOARD_VARIANTS[@]}")"
+		die "board ${BOARD}: nessuna delle varianti chieste (${REQ_VARIANTS[*]}); ha: ${found% }"
+	fi
+}
+# Le board di --board: all per tutte, w541 senza --board
+REQ_VARIANTS=("${VARIANTS[@]}")
+if [ ${#BOARDS[@]} -eq 0 ]; then
+	BOARDS=(w541)
+elif [ "${BOARDS[*]}" = all ]; then
+	mapfile -t BOARDS < <(all_boards)
+fi
+for b in "${BOARDS[@]}"; do
+	[ -f "${O}/boards/${b}/board.sh" ] || die "board '${b}': non c'e' boards/${b}/board.sh ($(all_boards | paste -sd ' '))"
+done
+# ogni --variant deve essere di qualche board scelta
+for w in "${REQ_VARIANTS[@]}"; do
+	found=no
+	for b in "${BOARDS[@]}"; do
+		load_board "${b}"
+		for v in "${BOARD_VARIANTS[@]}"; do
+			if [ "${v}" = "${w}" ]; then found=yes; fi
+		done
+	done
+	[ "${found}" = yes ] || die "variante '${w}': non e' di ${BOARDS[*]}"
+done
+use_board "${BOARDS[0]}"
+
+# La chiave di una variante $1 della board: la sua cartella di build
+# nell'albero (build-<chiave>) e il suo nome nelle release, senza le patch
+# opzionali: mrc, nri sul W541; m920x-fsp
+bkey() { printf '%s%s' "${BOARD_FLAVOUR_PREFIX}" "$1"; }
+# Il defconfig della variante $1 della board
+defconfig() { printf '%s/%s' "${O}" "$(board_defconfig "$1")"; }
+
+# I file che prepare mette nelle cartelle delle board nell'albero, per tutte
+# le board: "sorgente destinazione", uno per riga (la destinazione relativa
+# all'albero: <cartella della board>/<nome>)
+tree_files() {
+	local b p src name
+	for b in $(all_boards); do
+		(
+			load_board "${b}"
+			for p in "${BOARD_TREE_FILES[@]}" "${COMMON_TREE_FILES[@]}"; do
+				src="${p%%:*}"
+				name="${p#*:}"
+				[ "${name}" != "${p}" ] || name="$(basename "${src}")"
+				printf '%s %s/%s\n' "${src}" "${BOARD_TREE}" "${name}"
+			done
+			for p in "${VBOOT_KEYS[@]}"; do
+				printf '%s %s/vboot/%s\n' "${p}" "${BOARD_TREE}" "$(basename "${p}")"
+			done
+		)
+	done
+}
+# Le cartelle delle board nell'albero, e i file SHA256SUMS dei loro blob
+board_trees() { local b; for b in $(all_boards); do (load_board "${b}"; echo "${BOARD_TREE}"); done; }
+board_sums()  { local b; for b in $(all_boards); do (load_board "${b}"; printf '%s\n' "${BOARD_SUMS[@]}"); done; }
+
 # Le patch di patches/series (o di patches/$1/series), una per riga (vuote e
 # # saltate)
 series() { sed -e 's/#.*//' -e 's/[[:space:]]*$//' "${O}/patches/${1:+$1/}series" | sed '/^$/d'; }
 
-# Il commit di EDK2, lo stesso nei due defconfig (ci-check.sh lo controlla)
-edk2_rev() { sed -n 's/^CONFIG_EDK2_TAG_OR_REV="\([0-9a-f]\{40\}\)"$/\1/p' "${O}/configs/w541-mrc.defconfig"; }
+# Il commit di EDK2, lo stesso in tutti i defconfig di tutte le board
+# (ci-check.sh lo controlla): quello del primo defconfig della board scelta
+edk2_rev() { sed -n 's/^CONFIG_EDK2_TAG_OR_REV="\([0-9a-f]\{40\}\)"$/\1/p' "$(defconfig "${BOARD_VARIANTS[0]}")"; }
 
 # L'impronta di cio' che prepare mette nell'albero: commit, patch, blob. Le
 # altre fasi la confrontano con quella scritta da prepare.
@@ -306,7 +423,8 @@ state() {
 		while read -r p; do sha256sum "patches/edk2/${p}"; done < <(series edk2)
 		while read -r p; do sha256sum "patches/lvglpkg/${p}"; done < <(series lvglpkg)
 		sha256sum tools/ui-font.py
-		for p in "${TREE_FILES[@]}" "${VBOOT_KEYS[@]}"; do sha256sum "${p}"; done
+		local src dst
+		while read -r src dst; do echo "${dst}"; sha256sum "${src}"; done < <(tree_files)
 		sha256sum "${OPVK_FILE}"
 		echo "${IPXE_COMMIT}"
 		echo "${CSMWRAP_COMMIT}"
@@ -337,15 +455,18 @@ defconfig_kept() {
 	return "${miss}"
 }
 
-# Il nome della variante $1 con le patch opzionali: mrc, mrc+NOME
-flavour() {
-	local f="$1" w
-	for w in "${WITH[@]}"; do f+="+${w}"; done
-	printf '%s' "${f}"
+# Le patch opzionali nei nomi: +NOME
+withs() {
+	local w
+	for w in "${WITH[@]}"; do printf '+%s' "${w}"; done
 }
-# CONFIG_LOCALVERSION della variante $1, e il nome dei suoi file in dist/
+# Il nome della variante $1 nelle release, con le patch opzionali: mrc,
+# mrc+NOME sul W541; m920x-fsp
+flavour() { printf '%s%s' "$(bkey "$1")" "$(withs)"; }
+# CONFIG_LOCALVERSION della variante $1, e il nome dei suoi file in dist/:
+# <board>-coreboot-<versione>-<variante>
 localversion() { printf 'ouroBIOS-%s-%s' "${VERSION}" "$(flavour "$1")"; }
-romname()      { printf 'w541-coreboot-%s-%s' "${VERSION}" "$(flavour "$1")"; }
+romname()      { printf '%s-coreboot-%s-%s%s' "${BOARD}" "${VERSION}" "$1" "$(withs)"; }
 
 # La versione per l'ESRT e la capsula, X.Y.Z.R un byte ciascuno (il "quad"
 # di fwupd): vX.Y.Z -> X.Y.Z.0; vX.Y.Z-rcN -> la release prima con R = N
@@ -400,7 +521,7 @@ fw_revision() {
 # suo defconfig e la revisione del firmware (fw_revision)
 edk2_params() {
 	local p
-	p="$(sed -n 's/^CONFIG_EDK2_CUSTOM_BUILD_PARAMS="\(.*\)"$/\1/p' "${O}/configs/w541-$1.defconfig")"
+	p="$(sed -n 's/^CONFIG_EDK2_CUSTOM_BUILD_PARAMS="\(.*\)"$/\1/p' "$(defconfig "$1")")"
 	printf 'CONFIG_EDK2_CUSTOM_BUILD_PARAMS="%s--pcd gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareRevision=%s"\n' \
 		"${p:+${p} }" "$(fw_revision)"
 }
@@ -434,7 +555,10 @@ cmd_prepare() {
 	# il workspace di EDK2 (ignorati, o qui sotto in info/exclude).
 	git -C "${TREE}" am --abort >/dev/null 2>&1 || true
 	git -C "${TREE}" checkout -q --force --detach "${COREBOOT_COMMIT}"
-	printf '%s\n' '/build-*/' '/w541/' "/${IPXE_SUBDIR}/" > "${TREE}/.git/info/exclude"
+	{
+		printf '%s\n' '/build-*/' "/${IPXE_SUBDIR}/"
+		board_trees | sed 's|^\(.*\)$|/\1/|'
+	} > "${TREE}/.git/info/exclude"
 	git -C "${TREE}" clean -q -fd
 
 	say "submodule"
@@ -470,19 +594,18 @@ cmd_prepare() {
 	git -C "${TREE}" log --oneline -1
 
 	say "blob"
-	(cd "${O}/blobs" && sha256sum --quiet -c SHA256SUMS) || die "blobs/: i file non corrispondono a SHA256SUMS"
+	local sums src dst
+	while read -r sums; do
+		(cd "${O}/$(dirname "${sums}")" && sha256sum --quiet -c "$(basename "${sums}")") \
+			|| die "${sums}: i file non corrispondono"
+	done < <(board_sums)
 	(cd "${O}/assets" && sha256sum --quiet -c SHA256SUMS) || die "assets/: i file non corrispondono a SHA256SUMS"
-	rm -rf "${TREE}/w541"
-	mkdir -p "${TREE}/w541"
-	for p in "${TREE_FILES[@]}"; do
-		cp "${O}/${p}" "${TREE}/w541/"
-		echo "  w541/$(basename "${p}")"
-	done
-	mkdir -p "${TREE}/w541/vboot"
-	for p in "${VBOOT_KEYS[@]}"; do
-		cp "${O}/${p}" "${TREE}/w541/vboot/"
-		echo "  w541/vboot/$(basename "${p}")"
-	done
+	while read -r p; do rm -rf "${TREE:?}/${p}"; done < <(board_trees)
+	while read -r src dst; do
+		mkdir -p "$(dirname "${TREE}/${dst}")"
+		cp "${O}/${src}" "${TREE}/${dst}"
+		echo "  ${dst}"
+	done < <(tree_files)
 	cp "${O}/${OPVK_FILE}" "${TREE}/${OPVK_TREE}"
 	echo "  ${OPVK_TREE}"
 
@@ -532,8 +655,12 @@ prepare_csmwrap() {
 		git -C "${d}" fetch -q origin || die "CSMWrap: fetch da ${CSMWRAP_REPO} fallito"
 	fi
 	git -C "${d}" checkout -q --force --detach "${CSMWRAP_COMMIT}" || die "CSMWrap: ${CSMWRAP_COMMIT} non c'e'"
-	make_csmwrap "${TREE}/${CSMWRAP_TREE}"
-	echo "  ${CSMWRAP_TREE} ($(stat -c%s "${TREE}/${CSMWRAP_TREE}") byte, SeaBIOS $(git -C "${d}/seabios" rev-parse --short=7 HEAD))"
+	make_csmwrap "${WORK}/${CSMWRAP_NAME}"
+	local t
+	while read -r t; do
+		cp "${WORK}/${CSMWRAP_NAME}" "${TREE}/${t}/${CSMWRAP_NAME}"
+		echo "  ${t}/${CSMWRAP_NAME} ($(stat -c%s "${TREE}/${t}/${CSMWRAP_NAME}") byte, SeaBIOS $(git -C "${d}/seabios" rev-parse --short=7 HEAD))"
+	done < <(board_trees)
 }
 # CSMWrap da capo in WORK/csmwrap (l'albero e i submodule puliti), il
 # binario in $1; prepare e repro, con il PATH del sistema (non il crossgcc)
@@ -570,12 +697,12 @@ PAYLOAD_FREE_RE='^(# )?CONFIG_(LOCALVERSION|PAYLOAD_FILE|DRIVERS_EFI_MAIN_FW_GUI
 before_build() {
 	local v="$1" from="${2:-}"
 	MK_EXTRA=()
-	if [ -n "${from}" ] && [ -f "${TREE}/build-${from}/UEFIPAYLOAD.fd" ] \
-		&& cmp -s <(grep -Ev "${PAYLOAD_FREE_RE}" "${TREE}/build-${from}/.config") \
-			<(grep -Ev "${PAYLOAD_FREE_RE}" "${TREE}/build-${v}/.config"); then
+	if [ -n "${from}" ] && [ -f "${TREE}/build-$(bkey "${from}")/UEFIPAYLOAD.fd" ] \
+		&& cmp -s <(grep -Ev "${PAYLOAD_FREE_RE}" "${TREE}/build-$(bkey "${from}")/.config") \
+			<(grep -Ev "${PAYLOAD_FREE_RE}" "${TREE}/build-$(bkey "${v}")/.config"); then
 		echo "  ok  ${v}: il payload e' quello di ${from} (i .config uguali fuori dalla RAM init, dal nome e dal GUID)"
-		cp "${TREE}/build-${from}/UEFIPAYLOAD.fd" "${TREE}/build-${v}/UEFIPAYLOAD.fd"
-		MK_EXTRA=(-o "build-${v}/UEFIPAYLOAD.fd")
+		cp "${TREE}/build-$(bkey "${from}")/UEFIPAYLOAD.fd" "${TREE}/build-$(bkey "${v}")/UEFIPAYLOAD.fd"
+		MK_EXTRA=(-o "build-$(bkey "${v}")/UEFIPAYLOAD.fd")
 	else
 		[ -z "${from}" ] || echo "  !!  ${v}: i .config diversi fuori dalla RAM init, dal nome e dal GUID: payload ricostruito"
 		clean_ipxe
@@ -603,7 +730,7 @@ toolchain_line() {
 prepare_edk2() {
 	local rev p n
 	rev="$(edk2_rev)"
-	[ -n "${rev}" ] || die "configs/w541-mrc.defconfig: CONFIG_EDK2_TAG_OR_REV non e' un commit intero"
+	[ -n "${rev}" ] || die "$(board_defconfig "${BOARD_VARIANTS[0]}"): CONFIG_EDK2_TAG_OR_REV non e' un commit intero"
 	say "EDK2 ${rev:0:12}"
 	if [ ! -d "${EDK2_DIR}/.git" ]; then
 		rm -rf "${EDK2_DIR}"
@@ -805,16 +932,17 @@ cmd_toolchain_key() {
 # CONFIG_ del defconfig deve esserci uguale (un simbolo con le dipendenze non
 # soddisfatte sparisce senza errori)
 variant_config() {
-	local v="$1" obj="build-$1" line sym have miss=0
+	local v="$1" obj line sym have miss=0
+	obj="build-$(bkey "$1")"
 	: "${VBOOT_KEYS_REAL:=no}"
 	rm -rf "${TREE:?}/${obj}"
 	mkdir -p "${TREE}/${obj}"
 	{
 		if [ "${VBOOT_KEYS_REAL}" = yes ]; then
-			cat "${O}/configs/w541-${v}.defconfig"
+			cat "$(defconfig "${v}")"
 		else
 			grep -v -E '^CONFIG_VBOOT_(ROOT_KEY|RECOVERY_KEY|KERNEL_KEY|KEYBLOCK|FIRMWARE_PRIVKEY)=' \
-				"${O}/configs/w541-${v}.defconfig"
+				"$(defconfig "${v}")"
 		fi | grep -v '^CONFIG_EDK2_CUSTOM_BUILD_PARAMS='
 		echo "CONFIG_LOCALVERSION=\"$(localversion "${v}")\""
 		echo "CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=$(fw_version)"
@@ -830,7 +958,7 @@ variant_config() {
 			done
 		fi
 	} > "${TREE}/${obj}/defconfig"
-	mk "${v}" defconfig KBUILD_DEFCONFIG="${obj}/defconfig" > "${TREE}/${obj}/defconfig.log" 2>&1 \
+	mk "$(bkey "${v}")" defconfig KBUILD_DEFCONFIG="${obj}/defconfig" > "${TREE}/${obj}/defconfig.log" 2>&1 \
 		|| { cat "${TREE}/${obj}/defconfig.log"; die "${v}: make defconfig fallito"; }
 	while IFS= read -r line; do
 		case "${line}" in CONFIG_*=*) ;; *) continue ;; esac
@@ -855,14 +983,21 @@ cmd_config() {
 
 # I file della variante $1 in dist/
 collect() {
-	local v="$1" b="${TREE}/build-$1" n
+	local v="$1" b n
+	b="${TREE}/build-$(bkey "$1")"
 	n="$(romname "${v}")"
 	cp "${b}/coreboot.rom" "${DIST}/${n}.rom"
-	# i due chip per un programmatore esterno: 0x000000-0x7FFFFF (IFD, GbE,
-	# ME e le regioni scrivibili, vuote) e 0x800000-0xBFFFFF (FMAP e CBFS:
-	# tutto coreboot)
-	head -c 8388608 "${b}/coreboot.rom" > "${DIST}/${n}-8mb-chip.rom"
-	tail -c 4194304 "${b}/coreboot.rom" > "${DIST}/${n}-4mb-chip.rom"
+	# i chip per un programmatore esterno (BOARD_CHIPS): sul W541
+	# 0x000000-0x7FFFFF (IFD, GbE, ME e le regioni scrivibili, vuote) e
+	# 0x800000-0xBFFFFF (FMAP e CBFS: tutto coreboot)
+	local c name off size
+	for c in "${BOARD_CHIPS[@]}"; do
+		read -r name off size <<< "${c}"
+		# dd, non tail | head: con pipefail il SIGPIPE di tail fermerebbe lo script
+		dd if="${b}/coreboot.rom" of="${DIST}/${n}-${name}-chip.rom" bs=64K \
+			iflag=skip_bytes,count_bytes skip="${off}" count="${size}" status=none \
+			|| die "${v}: chip ${name} non estratto"
+	done
 	cp "${b}/.config" "${DIST}/${n}.config"
 	{
 		echo "${n}"
@@ -891,10 +1026,10 @@ collect() {
 # deve essere keys/capsule-signing.pem, e solo quello
 check_trusted_cert() {
 	local v="$1" guid build autogen
-	guid="$(sed -n 's/^CONFIG_EDK2_CAPSULE_MAIN_FW_GUID="\(.*\)"$/\1/p' "${TREE}/build-${v}/.config")"
+	guid="$(sed -n 's/^CONFIG_EDK2_CAPSULE_MAIN_FW_GUID="\(.*\)"$/\1/p' "${TREE}/build-$(bkey "${v}")/.config")"
 	[ -n "${guid}" ] || die "${v}: CONFIG_EDK2_CAPSULE_MAIN_FW_GUID non nel .config"
 	build=RELEASE
-	if grep -qx 'CONFIG_EDK2_DEBUG=y' "${TREE}/build-${v}/.config"; then build=DEBUG; fi
+	if grep -qx 'CONFIG_EDK2_DEBUG=y' "${TREE}/build-$(bkey "${v}")/.config"; then build=DEBUG; fi
 	autogen="${TREE}/payloads/external/edk2/workspace/Build/UefiPayloadPkgX64/${build}_GCC/X64/FmpDevicePkg/FmpDxe/${guid}/DEBUG/AutoGen.c"
 	[ -f "${autogen}" ] || die "${v}: ${autogen#"${TREE}/"} non c'e': FmpDxe non costruito?"
 	openssl x509 -in "${O}/${CAPSULE_CERT}" -outform der \
@@ -937,8 +1072,8 @@ generate_capsule() {
 make_capsule() {
 	local v="$1" n guid lsv fwv tmp f date repo
 	n="${DIST}/$(romname "${v}")"
-	guid="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_GUID="\(.*\)"$/\1/p' "${TREE}/build-${v}/.config")"
-	lsv="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_LSV=\(0x[0-9a-fA-F]*\)$/\1/p' "${TREE}/build-${v}/.config")"
+	guid="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_GUID="\(.*\)"$/\1/p' "${TREE}/build-$(bkey "${v}")/.config")"
+	lsv="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_LSV=\(0x[0-9a-fA-F]*\)$/\1/p' "${TREE}/build-$(bkey "${v}")/.config")"
 	fwv="$(fw_version)"
 	[ -n "${guid}" ] && [ -n "${lsv}" ] || die "${v}: GUID o LSV mancanti nel .config"
 	# la data del commit, non quella della build
@@ -960,7 +1095,7 @@ make_capsule() {
 		# il pacchetto fwupd: la capsula, il metainfo e la loro firma
 		mkdir "${tmp}/cab"
 		cp "${n}.cap" "${tmp}/cab/firmware.bin"
-		python3 "${O}/tools/fwupd-cab.py" metainfo --variant "${v}" --guid "${guid}" \
+		python3 "${O}/tools/fwupd-cab.py" metainfo --board "${BOARD}" --variant "${v}" --guid "${guid}" \
 			--version "$(fw_quad)" --date "${date}" \
 			--url "https://github.com/${repo}/releases/tag/${VERSION}-$(flavour "${v}")" \
 			> "${tmp}/cab/firmware.metainfo.xml" || die "${v}: metainfo fallito"
@@ -983,17 +1118,27 @@ make_capsule() {
 }
 
 # I metadati del remote fwupd (configs/fwupd/ourobios.conf) in dist/: i
-# .cab delle varianti, ciascuno con l'indirizzo che avra' nella sua release,
-# e la firma jcat con CAPSULE_SIGNING_KEY. Li pubblica la release mrc (ci.sh
-# publish); il remote li prende dall'ultima, releases/latest/download/
+# .cab di questa versione in dist/, di ogni board e variante costruita
+# (anche da un roms prima, con un'altra --board), ciascuno con l'indirizzo
+# che avra' nella sua release, e la firma jcat con CAPSULE_SIGNING_KEY. Li
+# pubblica la release mrc (ci.sh publish); il remote li prende dall'ultima,
+# releases/latest/download/
 make_fwupd_metadata() {
-	local v n repo tmp args=() cabs=()
+	local b v n repo tmp args=() cabs=()
 	repo="${GITHUB_REPOSITORY:-debianita22/ourobios}"
-	for v in "${VARIANTS[@]}"; do
-		n="$(romname "${v}").cab"
-		args+=(--cab "${DIST}/${n}" "https://github.com/${repo}/releases/download/${VERSION}-$(flavour "${v}")/${n}")
-		cabs+=("${DIST}/${n}")
+	for b in $(all_boards); do
+		while read -r n v; do
+			[ -f "${DIST}/${n}" ] || continue
+			args+=(--cab "${DIST}/${n}" "https://github.com/${repo}/releases/download/${VERSION}-${v}/${n}")
+			cabs+=("${DIST}/${n}")
+		done < <(
+			load_board "${b}"
+			for v in "${BOARD_VARIANTS[@]}"; do
+				printf '%s.cab %s\n' "$(romname "${v}")" "$(flavour "${v}")"
+			done
+		)
 	done
+	[ ${#cabs[@]} -gt 0 ] || die "metadati fwupd: nessun .cab di ${VERSION} in ${DIST}"
 	rm -f "${DIST}/${FWUPD_METADATA}" "${DIST}/${FWUPD_METADATA}.jcat"
 	python3 "${O}/tools/fwupd-cab.py" metadata -o "${DIST}/${FWUPD_METADATA}" "${args[@]}" \
 		|| die "metadati fwupd non fatti (tools/fwupd-cab.py metadata)"
@@ -1053,10 +1198,15 @@ EOF
 )" || die "VBOOT_SIGNING_KEY: ${why:-non valida} (base64 -w0 firmware_data_key.vbprivk, una riga; docs/vboot.md)"
 }
 
-# La chiave degli slot nell'albero per la build, e solo per la build
+# La chiave degli slot nell'albero, nella cartella di ogni board, per la
+# build e solo per la build
+VBOOT_PRIVKEYS=()
 install_vboot_key() {
-	vboot_key_to "${TREE}/${VBOOT_PRIVKEY_TREE}"
-	trap 'rm -f "${TREE}/${VBOOT_PRIVKEY_TREE}"' EXIT
+	local t
+	[ ${#VBOOT_PRIVKEYS[@]} -eq 0 ] || return 0
+	while read -r t; do VBOOT_PRIVKEYS+=("${TREE}/${t}/${VBOOT_PRIVKEY_NAME}"); done < <(board_trees)
+	trap 'rm -f "${VBOOT_PRIVKEYS[@]}"' EXIT
+	for t in "${VBOOT_PRIVKEYS[@]}"; do vboot_key_to "${t}"; done
 	echo "  ok  VBOOT_SIGNING_KEY: la chiave di keys/vboot/firmware_data_key.vbpubk"
 }
 
@@ -1097,7 +1247,8 @@ cmd_keys() {
 # Gli slot RW della ROM della variante $1 si verificano con la chiave root del
 # suo GBB, e in una build con la chiave del progetto quella root e' la nostra
 check_vboot() {
-	local v="$1" b="${TREE}/build-$1" f out tmp
+	local v="$1" b f out tmp
+	b="${TREE}/build-$(bkey "$1")"
 	f="${b}/util/futility/futility"
 	[ -x "${f}" ] || die "${v}: futility non c'e' (${f#"${TREE}/"})"
 	out="$("${f}" verify "${b}/coreboot.rom" 2>&1)" || { echo "${out}" | tail -n 20; die "${v}: futility verify fallito"; }
@@ -1151,25 +1302,26 @@ cmd_roms() {
 		variant_config "${v}"
 		say "build ${v} ($(localversion "${v}"))"
 		before_build "${v}" "${built}"
-		if ! mk "${v}" -j"${JOBS}" ${MK_EXTRA[@]+"${MK_EXTRA[@]}"} 2>&1 | tee "${TREE}/build-${v}/make.log"; then
+		if ! mk "$(bkey "${v}")" -j"${JOBS}" ${MK_EXTRA[@]+"${MK_EXTRA[@]}"} 2>&1 | tee "${TREE}/build-$(bkey "${v}")/make.log"; then
 			# con -j l'errore non e' per forza in fondo: anche le righe con "rror"
-			grep -n -i -B2 -A6 'error' "${TREE}/build-${v}/make.log" | tail -n 60 > "${TREE}/build-${v}/errors.log" || true
-			failure_report "build ${v}" "${TREE}/build-${v}/errors.log" "${TREE}/build-${v}/make.log"
-			die "${v}: build fallita (build-${v}/make.log nell'albero)"
+			grep -n -i -B2 -A6 'error' "${TREE}/build-$(bkey "${v}")/make.log" | tail -n 60 > "${TREE}/build-$(bkey "${v}")/errors.log" || true
+			failure_report "build ${v}" "${TREE}/build-$(bkey "${v}")/errors.log" "${TREE}/build-$(bkey "${v}")/make.log"
+			die "${v}: build fallita (build-$(bkey "${v}")/make.log nell'albero)"
 		fi
 		built="${v}"
 		# i file di questa variante di un giro precedente, anche di altre versioni
-		rm -f "${DIST}"/w541-coreboot-*-"${v}"[.+-]*
+		rm -f "${DIST}/${BOARD}-coreboot-"*-"${v}"[.+-]*
 		collect "${v}"
 		say "verifica ${v}"
-		local n args=(--variant "${v}" --localversion "$(localversion "${v}")"
-			--cbfstool "${TREE}/build-${v}/cbfstool")
+		local n c chips=() args=(--board "${BOARD}" --variant "${v}" --localversion "$(localversion "${v}")"
+			--cbfstool "${TREE}/build-$(bkey "${v}")/cbfstool")
 		n="${DIST}/$(romname "${v}")"
-		if [ -x "${TREE}/build-${v}/util/cbfstool/ifittool" ]; then
-			args+=(--ifittool "${TREE}/build-${v}/util/cbfstool/ifittool")
+		if [ -x "${TREE}/build-$(bkey "${v}")/util/cbfstool/ifittool" ]; then
+			args+=(--ifittool "${TREE}/build-$(bkey "${v}")/util/cbfstool/ifittool")
 		fi
 		if [ "${RELEASE}" = yes ]; then args+=(--release); fi
-		"${O}/tools/verify-rom.sh" "${args[@]}" "${n}.rom" "${n}-8mb-chip.rom" "${n}-4mb-chip.rom" \
+		for c in "${BOARD_CHIPS[@]}"; do chips+=("${n}-${c%% *}-chip.rom"); done
+		"${O}/tools/verify-rom.sh" "${args[@]}" "${n}.rom" "${chips[@]}" \
 			|| die "${v}: la ROM non passa tools/verify-rom.sh"
 		check_trusted_cert "${v}"
 		check_vboot "${v}"
@@ -1184,7 +1336,7 @@ cmd_roms() {
 	else
 		rm -f "${DIST}/${FWUPD_METADATA}" "${DIST}/${FWUPD_METADATA}.jcat"
 	fi
-	(cd "${DIST}" && find . -maxdepth 1 -type f \( -name 'w541-coreboot-*' -o -name "${FWUPD_METADATA}*" \) \
+	(cd "${DIST}" && find . -maxdepth 1 -type f \( -name '*-coreboot-*' -o -name "${FWUPD_METADATA}*" \) \
 		-printf '%f\n' | LC_ALL=C sort | xargs -r sha256sum > SHA256SUMS)
 	say "dist"
 	ls -l "${DIST}"
@@ -1210,11 +1362,11 @@ cmd_repro() {
 	# prima del crossgcc nel PATH: CSMWrap si compila con nasm del sistema
 	say "seconda build di CSMWrap ${CSMWRAP_COMMIT:0:12}"
 	make_csmwrap "${WORK}/csmwrap-again.efi"
-	if cmp -s "${TREE}/${CSMWRAP_TREE}" "${WORK}/csmwrap-again.efi"; then
+	if cmp -s "${WORK}/${CSMWRAP_NAME}" "${WORK}/csmwrap-again.efi"; then
 		echo "  ok  csmwrap.efi uguale a quello di prepare ($(sha256sum "${WORK}/csmwrap-again.efi" | cut -c1-16)...)"
 	else
 		bad=1
-		echo "  NO  csmwrap.efi diverso da quello di prepare ($(stat -c%s "${TREE}/${CSMWRAP_TREE}") e $(stat -c%s "${WORK}/csmwrap-again.efi") byte)"
+		echo "  NO  csmwrap.efi diverso da quello di prepare ($(stat -c%s "${WORK}/${CSMWRAP_NAME}") e $(stat -c%s "${WORK}/csmwrap-again.efi") byte)"
 	fi
 	rm -f "${WORK}/csmwrap-again.efi"
 	if [ "${TOOLCHAIN}" = crossgcc ]; then
@@ -1225,14 +1377,14 @@ cmd_repro() {
 	for v in "${VARIANTS[@]}"; do
 		first="${DIST}/$(romname "${v}").rom"
 		[ -f "${first}" ] || die "repro: manca ${first}: prima tools/build.sh roms"
-		b="${TREE}/build-${v}"
+		b="${TREE}/build-$(bkey "${v}")"
 		say "seconda build ${v} ($(localversion "${v}"))"
 		variant_config "${v}"
 		before_build "${v}" "${built}"
-		if ! mk "${v}" -j"${JOBS}" ${MK_EXTRA[@]+"${MK_EXTRA[@]}"} > "${b}/make-again.log" 2>&1; then
+		if ! mk "$(bkey "${v}")" -j"${JOBS}" ${MK_EXTRA[@]+"${MK_EXTRA[@]}"} > "${b}/make-again.log" 2>&1; then
 			grep -n -i -B2 -A6 'error' "${b}/make-again.log" | tail -n 60 > "${b}/errors.log" || true
 			failure_report "seconda build ${v}" "${b}/errors.log" "${b}/make-again.log"
-			die "${v}: seconda build fallita (build-${v}/make-again.log nell'albero)"
+			die "${v}: seconda build fallita (build-$(bkey "${v}")/make-again.log nell'albero)"
 		fi
 		built="${v}"
 		again="${b}/coreboot.rom"
@@ -1253,7 +1405,8 @@ cmd_repro() {
 
 # Le regioni della mappa e, negli slot, i file CBFS in cui $2 e $3 differiscono
 repro_diff() {
-	local v="$1" a="$2" c="$3" cb="${TREE}/build-$1/cbfstool" name size off r f tmp
+	local v="$1" a="$2" c="$3" cb name size off r f tmp
+	cb="${TREE}/build-$(bkey "$1")/cbfstool"
 	tmp="$(mktemp -d)"
 	"${cb}" "${a}" layout -w 2>/dev/null | sed -n "s/^'\([A-Z_0-9]*\)' (.*size \([0-9]*\), offset \([0-9]*\))$/\1 \2 \3/p" \
 		| while read -r name size off; do
@@ -1289,18 +1442,18 @@ cmd_menu() {
 	local v b
 	local -a x
 	for v in "${VARIANTS[@]}"; do
-		b="${TREE}/build-${v}"
+		b="${TREE}/build-$(bkey "${v}")"
 		[ -f "${b}/config.h" ] && [ -f "${b}/build.h" ] \
 			|| die "menu ${v}: ${b} non e' costruita, prima tools/build.sh roms"
 		x=(-x ec_version)
 		grep -q '^#define CONFIG_INTEL_OC_MAILBOX_ENABLE_UNDERVOLTING 1$' "${b}/config.h" \
 			|| x+=(-x 'oc_undervolt_*')
 		say "menu ${v}: il menu di setup e le sue opzioni"
-		mkdir -p "${WORK}/menu-${v}"
-		"${O}/tools/cfr-dump.sh" -o "${WORK}/menu-${v}/cfr.bin" "${x[@]}" "${TREE}" "${b}" \
-			> "${WORK}/menu-${v}/menu.txt" \
-			|| die "menu ${v}: il menu non passa i controlli (sopra; ${WORK}/menu-${v}/menu.txt)"
-		tail -n 2 "${WORK}/menu-${v}/menu.txt"
+		mkdir -p "${WORK}/menu-$(bkey "${v}")"
+		"${O}/tools/cfr-dump.sh" -o "${WORK}/menu-$(bkey "${v}")/cfr.bin" "${x[@]}" "${TREE}" "${b}" \
+			> "${WORK}/menu-$(bkey "${v}")/menu.txt" \
+			|| die "menu ${v}: il menu non passa i controlli (sopra; ${WORK}/menu-$(bkey "${v}")/menu.txt)"
+		tail -n 2 "${WORK}/menu-$(bkey "${v}")/menu.txt"
 	done
 }
 
@@ -1419,21 +1572,22 @@ cmd_smoke() {
 	sb="$(smoke_sb_app "${WORK}/sb-test" "${reloc}")" || die "smoke: tools/efi/secure-boot-test.c"
 	local v q fd guid lsv res x y tested="" tested_v="" esrt
 	for v in "${VARIANTS[@]}"; do
-		fd="${TREE}/build-${v}/UEFIPAYLOAD.fd"
+		fd="${TREE}/build-$(bkey "${v}")/UEFIPAYLOAD.fd"
 		[ -f "${fd}" ] || die "smoke ${v}: manca ${fd}, prima tools/build.sh roms"
-		guid="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_GUID="\(.*\)"$/\1/p' "${O}/configs/w541-${v}.defconfig")"
-		lsv="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_LSV=\(.*\)$/\1/p' "${O}/configs/w541-${v}.defconfig")"
+		guid="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_GUID="\(.*\)"$/\1/p' "$(defconfig "${v}")")"
+		lsv="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_LSV=\(.*\)$/\1/p' "$(defconfig "${v}")")"
 		[ -n "${guid}" ] && [ -n "${lsv}" ] || die "smoke ${v}: GUID o LSV dell'ESRT non nel defconfig"
-		# 1920x1080 per tutta la prova; 2880x1620, il pannello 3K del W541 con
-		# gfx_fb_limit, per il setup soltanto: la VGA di QEMU con 32 MiB, il
+		# 1920x1080 per tutta la prova; le altre risoluzioni della board
+		# (BOARD_SMOKE_SIZES: sul W541 2880x1620, il pannello 3K con
+		# gfx_fb_limit) per il setup soltanto: la VGA di QEMU con 32 MiB, il
 		# framebuffer e' di 18. Il setup a 2880x1620 (LvglPkg, lo stesso nei
 		# due payload) una volta sola, con la prima variante
-		for res in 1920x1080 2880x1620; do
+		for res in "${BOARD_SMOKE_SIZES[@]}"; do
 			if [ "${res}" != 1920x1080 ] && [ "${v}" != "${VARIANTS[0]}" ]; then continue; fi
 			x="${res%x*}"
 			y="${res#*x}"
-			q="q35-${v}"
-			[ "${res}" = 1920x1080 ] || q="q35-${v}-${res}"
+			q="q35-$(bkey "${v}")"
+			[ "${res}" = 1920x1080 ] || q="q35-$(bkey "${v}")-${res}"
 			say "smoke ${v}: coreboot per QEMU q35 a ${res} con il payload di ${v}"
 			rm -rf "${TREE:?}/build-${q}"
 			mkdir -p "${TREE}/build-${q}"
@@ -1474,18 +1628,18 @@ cmd_smoke() {
 				# GUID nella tabella di coreboot, che l'ESRT deve riportare
 				echo "  ok  smoke ${v}: il payload e' quello di ${tested_v}, gia' provato a ${res}: solo il passo 10"
 				python3 "${O}/tools/qemu-smoke.py" --sb-only --sb-test "${sb}" --esrt "${esrt}" \
-					--out "${WORK}/smoke-${v}" "${TREE}/build-${q}/coreboot.rom" \
-					|| die "smoke ${v}: l'ESRT o Secure Boot non passano la prova in QEMU (${WORK}/smoke-${v})"
+					--out "${WORK}/smoke-$(bkey "${v}")" "${TREE}/build-${q}/coreboot.rom" \
+					|| die "smoke ${v}: l'ESRT o Secure Boot non passano la prova in QEMU (${WORK}/smoke-$(bkey "${v}"))"
 			elif [ "${res}" = 1920x1080 ]; then
-				python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-${v}" --reloc-test "${reloc}" \
+				python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-$(bkey "${v}")" --reloc-test "${reloc}" \
 					--sb-test "${sb}" --esrt "${esrt}" --tpm "${TREE}/build-${q}/coreboot.rom" \
-					|| die "smoke ${v}: il payload non passa la prova in QEMU (${WORK}/smoke-${v})"
+					|| die "smoke ${v}: il payload non passa la prova in QEMU (${WORK}/smoke-$(bkey "${v}"))"
 				tested="${fd}"
 				tested_v="${v}"
 			else
 				python3 "${O}/tools/qemu-smoke.py" --setup-only --vga-mb 32 --size "${res}" \
-					--out "${WORK}/smoke-${v}-${res}" "${TREE}/build-${q}/coreboot.rom" \
-					|| die "smoke ${v}: il setup a ${res} non passa la prova in QEMU (${WORK}/smoke-${v}-${res})"
+					--out "${WORK}/smoke-$(bkey "${v}")-${res}" "${TREE}/build-${q}/coreboot.rom" \
+					|| die "smoke ${v}: il setup a ${res} non passa la prova in QEMU (${WORK}/smoke-$(bkey "${v}")-${res})"
 			fi
 		done
 	done
@@ -1661,15 +1815,25 @@ update_test_build() {
 	done
 }
 
+# I comandi di una board (config, roms, repro, menu, smoke) per ogni board
+# di --board; gli altri una volta, per tutte
+each_board() {
+	local b
+	for b in "${BOARDS[@]}"; do
+		use_board "${b}"
+		[ ${#BOARDS[@]} -eq 1 ] || say "board ${b} (${BOARD_NAME})"
+		"$@"
+	done
+}
 for c in "${CMDS[@]}"; do
 	case "${c}" in
 		prepare)       cmd_prepare ;;
 		toolchain)     cmd_toolchain ;;
-		config)        cmd_config ;;
-		roms)          cmd_roms ;;
-		repro)         cmd_repro ;;
-		menu)          cmd_menu ;;
-		smoke)         cmd_smoke ;;
+		config)        each_board cmd_config ;;
+		roms)          each_board cmd_roms ;;
+		repro)         each_board cmd_repro ;;
+		menu)          each_board cmd_menu ;;
+		smoke)         each_board cmd_smoke ;;
 		update-test)   cmd_update_test ;;
 		keys)          cmd_keys ;;
 		toolchain-key) cmd_toolchain_key ;;

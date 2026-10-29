@@ -1,0 +1,83 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 15:51:50 +0100
+Subject: [PATCH] soc/intel/cannonlake: Add options for SpeedStep and Turbo
+ Boost
+
+Enhanced Intel SpeedStep and Turbo Boost come from the devicetree only
+(eist_enable, cpu_turbo_disable). Let the option backend change them,
+with the names the Haswell CPU code reads ("eist", "turbo_mode"):
+
+- "eist" sets EIST in IA32_MISC_ENABLE and decides whether the SSDT
+  gets the P-state tables, defaulting to eist_enable;
+- "turbo_mode" off disables Turbo Boost; on, the devicetree still can
+  (cpu_turbo_disable).
+
+Without the options set nothing changes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TnH4v9ZgSCT6oudGt6KtJL
+---
+ src/soc/intel/cannonlake/acpi.c | 5 +++--
+ src/soc/intel/cannonlake/cpu.c  | 8 +++++---
+ 2 files changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/src/soc/intel/cannonlake/acpi.c b/src/soc/intel/cannonlake/acpi.c
+index 23918eeee2..002293f67a 100644
+--- a/src/soc/intel/cannonlake/acpi.c
++++ b/src/soc/intel/cannonlake/acpi.c
+@@ -12,6 +12,7 @@
+ #include <intelblocks/pmclib.h>
+ #include <intelblocks/acpi.h>
+ #include <intelblocks/p2sb.h>
++#include <option.h>
+ #include <soc/cpu.h>
+ #include <soc/iomap.h>
+ #include <soc/nvs.h>
+@@ -142,8 +143,8 @@ void soc_power_states_generation(int core_id, int cores_per_package)
+ {
+ 	config_t *config = config_of_soc();
+ 
+-	/* Generate P-state tables */
+-	if (config->eist_enable)
++	/* Generate P-state tables, with EIST on (cpu.c) */
++	if (get_uint_option("eist", config->eist_enable))
+ 		generate_p_state_entries(core_id, cores_per_package);
+ }
+ 
+diff --git a/src/soc/intel/cannonlake/cpu.c b/src/soc/intel/cannonlake/cpu.c
+index 888db5cdff..52b5e7ee96 100644
+--- a/src/soc/intel/cannonlake/cpu.c
++++ b/src/soc/intel/cannonlake/cpu.c
+@@ -8,6 +8,7 @@
+ #include <cpu/intel/turbo.h>
+ #include <intelblocks/cpulib.h>
+ #include <intelblocks/mp_init.h>
++#include <option.h>
+ #include <soc/cpu.h>
+ #include <soc/msr.h>
+ #include <soc/pci_devs.h>
+@@ -53,8 +54,8 @@ static void configure_misc(void)
+ 	msr.lo |= (1 << 3);	/* TM1/TM2/EMTTM enable */
+ 	wrmsr(IA32_MISC_ENABLE, msr);
+ 
+-	/* Set EIST status */
+-	cpu_set_eist(conf->eist_enable);
++	/* Set EIST status: the "eist" option, or the devicetree without it */
++	cpu_set_eist(get_uint_option("eist", conf->eist_enable));
+ 
+ 	/* Disable Thermal interrupts */
+ 	msr.lo = 0;
+@@ -145,7 +146,8 @@ void soc_core_init(struct device *cpu)
+ 	/* Set energy policy */
+ 	set_energy_perf_bias(ENERGY_POLICY_NORMAL);
+ 
+-	if (cfg->cpu_turbo_disable)
++	/* The "turbo_mode" option can turn off what the devicetree enables */
++	if (cfg->cpu_turbo_disable || !get_uint_option("turbo_mode", 1))
+ 		disable_turbo();
+ 	else
+ 		enable_turbo();
+-- 
+2.43.0
+

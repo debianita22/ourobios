@@ -11,23 +11,29 @@
 #      GenerateCapsule, il suo pacchetto fwupd e i metadati del remote
 #      fwupd (tools/fwupd-cab.py)
 #   3. i workflow (actionlint, se c'e')
-#   4. blobs/, assets/ e legacy/: i file corrispondono ai loro SHA256SUMS
+#   4. blobs/, assets/, legacy/ e i blob delle altre board (boards/*/blobs):
+#      i file corrispondono ai loro SHA256SUMS
 #   5. patches/series, patches/edk2/series e patches/lvglpkg/series: ogni
 #      patch elencata c'e', ogni .patch della cartella e' elencata, ognuna e'
 #      una mail di git format-patch
 #   6. la chiave Optimus NVIDIA solo in blobs/opvk.inc (lista di byte con la
 #      firma della chiave): non nelle patch ne' in altri file
-#   7. i due defconfig: diversi solo nella RAM init e nel GUID dell'ESRT
-#      (cosi' mrc e nri differiscono solo li'), con IFD, ME e GbE (immagine
-#      completa), EDK2 pinnato a un commit, i file in w541/ che
+#   7. i due defconfig del W541: diversi solo nella RAM init e nel GUID
+#      dell'ESRT (cosi' mrc e nri differiscono solo li'), con IFD, ME e GbE
+#      (immagine completa), EDK2 pinnato a un commit, i file in w541/ che
 #      tools/build.sh copia davvero; la mappa configs/w541.fmd con le regioni
 #      scrivibili nel chip da 8 MiB; i GUID e le regioni delle capsule uguali
 #      in tools/update.py e tools/build.sh, il FILE_GUID di FmpDxe in
 #      tools/qemu-update.py; il remote fwupd (configs/fwupd/ourobios.conf)
-#      sui metadati di build.sh e ci.sh
+#      sui metadati di build.sh e ci.sh. Le altre board (boards/*/board.sh):
+#      i loro defconfig con un GUID dell'ESRT ciascuno, lo stesso commit di
+#      EDK2 del W541, IFD, ME e GbE, i file della loro cartella che
+#      tools/build.sh copia davvero, e la mappa con le regioni scrivibili
+#      nel primo chip, lo slot B e la regione RO in quello che avvia da solo
 #   8. il pin di coreboot in tools/build.sh: commit intero e describe coerente,
-#      lo stesso della parte RO gia' sui portatili (configs/ro-interface.txt:
-#      gli slot di una capsula partono dopo quella)
+#      lo stesso della parte RO gia' sulle macchine di ogni board
+#      (configs/ro-interface.txt, BOARD_RO_INTERFACE: gli slot di una
+#      capsula partono dopo quella)
 #   9. le chiavi: in keys/ solo certificati e chiavi pubbliche di vboot, il
 #      keyblock con la chiave dati di keys/vboot, nessuna chiave privata nei
 #      file del repository
@@ -45,6 +51,28 @@ fail=0
 step() { printf '\n== %s\n' "$*"; }
 bad()  { printf '  NO  %s\n' "$*"; fail=1; }
 ok()   { printf '  ok  %s\n' "$*"; }
+
+# Le board (boards/<board>/board.sh), e una variabile $2 (array: i suoi
+# elementi, uno per riga) o la funzione board_defconfig $2 della board $1
+boards() {
+	local f
+	for f in boards/*/board.sh; do
+		[ -f "${f}" ] || continue
+		f="${f%/board.sh}"
+		echo "${f##*/}"
+	done | LC_ALL=C sort
+}
+board_get() {
+	(
+		# shellcheck source=/dev/null
+		. "boards/$1/board.sh" || exit 1
+		if [ "$2" = defconfig ]; then
+			board_defconfig "$3"
+		else
+			eval "printf '%s\\n' \"\${${2}[@]}\""
+		fi
+	)
+}
 
 # i file del repository: quelli di git se c'e', altrimenti tutto tranne .git
 files() {
@@ -312,8 +340,31 @@ else
 	echo "  (actionlint non installato: salto. pip install actionlint-py)"
 fi
 
+# I nomi dei file che tools/build.sh mette nella cartella della board $1
+# nell'albero: BOARD_TREE_FILES ("sorgente[:nome]"), COMMON_TREE_FILES, le
+# chiavi di vboot in vboot/, la chiave privata degli slot e csmwrap.efi
+tree_names() {
+	local p
+	{
+		board_get "$1" BOARD_TREE_FILES
+		sed -n '/^COMMON_TREE_FILES=(/,/)/p' tools/build.sh | tr ' \t()' '\n\n\n\n' | grep /
+	} | while read -r p; do
+		[ -n "${p}" ] || continue
+		case "${p}" in *:*) echo "${p#*:}" ;; *) basename "${p}" ;; esac
+	done
+	sed -n '/^VBOOT_KEYS=(/,/)/p' tools/build.sh | tr ' \t()' '\n\n\n\n' | sed -n 's|^keys/vboot/|vboot/|p'
+	sed -n 's|^VBOOT_PRIVKEY_NAME=||p' tools/build.sh
+	sed -n 's|^CSMWRAP_NAME=||p' tools/build.sh
+}
+
 step "SHA256SUMS"
-for d in blobs assets legacy/coreboot-4.22; do
+board_blob_dirs=()
+for b in $(boards); do
+	while read -r f; do
+		[ "${f}" = blobs/SHA256SUMS ] || board_blob_dirs+=("$(dirname "${f}")")
+	done < <(board_get "${b}" BOARD_SUMS)
+done
+for d in blobs assets legacy/coreboot-4.22 "${board_blob_dirs[@]}"; do
 	if [ ! -f "${d}/SHA256SUMS" ]; then bad "${d}/SHA256SUMS non c'e'"; continue; fi
 	if (cd "${d}" && sha256sum --quiet -c SHA256SUMS); then
 		ok "${d}: $(wc -l < "${d}/SHA256SUMS") file"
@@ -512,8 +563,8 @@ if [ -f configs/w541-mrc.defconfig ] && [ -f configs/w541-nri.defconfig ]; then
 		grep -qx 'CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT="../../../../../w541/capsule-signing.pem"' \
 			"configs/w541-${v}.defconfig" || bad "w541-${v}: CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT non e' w541/capsule-signing.pem"
 	done
-	grep -qxF capsule-signing.pem <<< "$(sed -n '/^TREE_FILES=(/,/)/p' tools/build.sh | tr ' \t()' '\n\n\n\n' | sed -n 's|^.*/||p')" \
-		|| bad "keys/capsule-signing.pem non e' in TREE_FILES di tools/build.sh"
+	grep -qxF capsule-signing.pem <<< "$(sed -n '/^COMMON_TREE_FILES=(/,/)/p' tools/build.sh | tr ' \t()' '\n\n\n\n' | sed -n 's|^.*/||p')" \
+		|| bad "keys/capsule-signing.pem non e' in COMMON_TREE_FILES di tools/build.sh"
 	grep -qx 'CONFIG_HAVE_MRC=y' configs/w541-mrc.defconfig || bad "w541-mrc: senza CONFIG_HAVE_MRC=y"
 	grep -qx 'CONFIG_USE_NATIVE_RAMINIT=y' configs/w541-nri.defconfig || bad "w541-nri: senza CONFIG_USE_NATIVE_RAMINIT=y"
 	grep -q '^CONFIG_HAVE_MRC=y' configs/w541-nri.defconfig && bad "w541-nri: con CONFIG_HAVE_MRC=y"
@@ -523,23 +574,21 @@ if [ -f configs/w541-mrc.defconfig ] && [ -f configs/w541-nri.defconfig ]; then
 				|| bad "w541-${v}: senza CONFIG_${sym}=y (l'immagine deve essere completa)"
 		done
 	done
-	grep -q '^CONFIG_LOCALVERSION=' configs/*.defconfig && bad "CONFIG_LOCALVERSION nel defconfig: la mette tools/build.sh"
+	grep -q '^CONFIG_LOCALVERSION=' configs/*.defconfig boards/*/*.defconfig && bad "CONFIG_LOCALVERSION nel defconfig: la mette tools/build.sh"
 	if grep -Eq '^CONFIG_EDK2_TAG_OR_REV="[0-9a-f]{40}"$' configs/w541-mrc.defconfig; then
 		ok "EDK2 pinnato a un commit"
 	else
 		bad "CONFIG_EDK2_TAG_OR_REV: un commit intero, non un ramo"
 	fi
 	# i file che i defconfig cercano in w541/ sono quelli che build.sh copia
-	# (TREE_FILES in w541/, VBOOT_KEYS in w541/vboot/) o vi scrive (la chiave
-	# privata degli slot, il CSMWrap compilato)
-	tree_files="$(sed -n '/^TREE_FILES=(/,/)/p' tools/build.sh | tr ' \t()' '\n\n\n\n' | sed -n 's|^.*/||p'
-		sed -n '/^VBOOT_KEYS=(/,/)/p' tools/build.sh | tr ' \t()' '\n\n\n\n' | sed -n 's|^keys/vboot/|vboot/|p'
-		sed -n 's|^VBOOT_PRIVKEY_TREE=w541/||p' tools/build.sh
-		sed -n 's|^CSMWRAP_TREE=w541/||p' tools/build.sh)"
-	for f in $(sed -n 's/^CONFIG_[A-Z0-9_]*="w541\/\([^"]*\)"$/\1/p' configs/*.defconfig | sort -u); do
-		grep -qxF "${f}" <<< "${tree_files}" || bad "w541/${f} nei defconfig ma non in TREE_FILES di tools/build.sh"
+	# (BOARD_TREE_FILES di boards/w541/board.sh e COMMON_TREE_FILES in w541/,
+	# VBOOT_KEYS in w541/vboot/) o vi scrive (la chiave privata degli slot,
+	# il CSMWrap compilato)
+	tree_files="$(tree_names w541)"
+	for f in $(sed -n 's/^CONFIG_[A-Z0-9_]*="w541\/\([^"]*\)"$/\1/p' configs/w541-*.defconfig | sort -u); do
+		grep -qxF "${f}" <<< "${tree_files}" || bad "w541/${f} nei defconfig ma tools/build.sh non lo mette in w541/"
 	done
-	ok "file in w541/: $(sed -n 's/^CONFIG_[A-Z0-9_]*="w541\/\([^"]*\)"$/\1/p' configs/*.defconfig | sort -u | tr '\n' ' ')"
+	ok "file in w541/: $(sed -n 's/^CONFIG_[A-Z0-9_]*="w541\/\([^"]*\)"$/\1/p' configs/w541-*.defconfig | sort -u | tr '\n' ' ')"
 	# la mappa del flash: le regioni scritte a ogni avvio nel chip da 8 MiB
 	# (0x500000-0x7FFFFF, in SI_BIOS sotto 0x300000), lo slot B e la regione
 	# RO nel chip da 4 MiB, la RO in fondo a SI_BIOS (il vettore di reset)
@@ -563,6 +612,137 @@ if [ -f configs/w541-mrc.defconfig ] && [ -f configs/w541-nri.defconfig ]; then
 		bad "configs/w541.fmd non c'e'"
 	fi
 fi
+
+step "le altre board"
+# boards/<board>/board.sh oltre al W541 (che ha i controlli qui sopra): i
+# defconfig, i GUID, i file nella cartella dell'albero e la mappa del flash
+guid_re='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+edk2_w541="$(sed -n 's/^CONFIG_EDK2_TAG_OR_REV="\(.*\)"$/\1/p' configs/w541-mrc.defconfig)"
+fmp_w541="$(sed -n 's/^CONFIG_EDK2_CAPSULE_MAIN_FW_GUID="\(.*\)"$/\1/p' configs/w541-mrc.defconfig)"
+all_guids="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_GUID="\(.*\)"$/\1/p' configs/w541-*.defconfig)"
+for b in $(boards); do
+	[ "${b}" = w541 ] && continue
+	tree="$(board_get "${b}" BOARD_TREE)"
+	prefix="$(board_get "${b}" BOARD_FLAVOUR_PREFIX)"
+	[ -n "${tree}" ] && [ -n "${prefix}" ] || { bad "boards/${b}/board.sh: senza BOARD_TREE o BOARD_FLAVOUR_PREFIX"; continue; }
+	tree_files="$(tree_names "${b}")"
+	for v in $(board_get "${b}" BOARD_VARIANTS); do
+		dc="$(board_get "${b}" defconfig "${v}")"
+		if [ ! -f "${dc}" ]; then bad "${b}-${v}: ${dc} non c'e'"; continue; fi
+		g="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_GUID="\(.*\)"$/\1/p' "${dc}")"
+		if [[ "${g}" =~ ${guid_re} ]] && ! grep -qxF "${g}" <<< "${all_guids}"; then
+			ok "${b}-${v}: GUID dell'ESRT ${g}"
+		else
+			bad "${b}-${v}: CONFIG_DRIVERS_EFI_MAIN_FW_GUID '${g}': un GUID minuscolo, diverso da quello di ogni altra variante"
+		fi
+		all_guids+=$'\n'"${g}"
+		grep -qE "^ +\"${prefix}${v}\": uuid\.UUID\(\"${g}\"\),$" tools/update.py \
+			|| bad "tools/update.py: VARIANTS[\"${prefix}${v}\"] non e' ${g}"
+		[ "$(sed -n 's/^CONFIG_EDK2_TAG_OR_REV="\(.*\)"$/\1/p' "${dc}")" = "${edk2_w541}" ] \
+			|| bad "${b}-${v}: CONFIG_EDK2_TAG_OR_REV non e' quello del W541 (${edk2_w541:0:12})"
+		[ "$(sed -n 's/^CONFIG_EDK2_CAPSULE_MAIN_FW_GUID="\(.*\)"$/\1/p' "${dc}")" = "${fmp_w541}" ] \
+			|| bad "${b}-${v}: CONFIG_EDK2_CAPSULE_MAIN_FW_GUID non e' il FILE_GUID di FmpDxe del W541 (${fmp_w541})"
+		lsv="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_LSV=\(0x[0-9a-fA-F]\{1,8\}\)$/\1/p' "${dc}")"
+		{ [ -n "${lsv}" ] && { [ $((lsv)) -le $((0x01030000)) ] || [ $((lsv)) -ge $((0x01030600)) ]; }; } \
+			|| bad "${b}-${v}: CONFIG_DRIVERS_EFI_MAIN_FW_LSV '${lsv}': fino a 0x01030000 o da 0x01030600"
+		for sym in HAVE_IFD_BIN HAVE_ME_BIN HAVE_GBE_BIN; do
+			grep -qx "CONFIG_${sym}=y" "${dc}" || bad "${b}-${v}: senza CONFIG_${sym}=y (l'immagine deve essere completa)"
+		done
+		grep -qx "CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT=\"../../../../../${tree}/capsule-signing.pem\"" "${dc}" \
+			|| bad "${b}-${v}: CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT non e' ${tree}/capsule-signing.pem"
+		for f in $(sed -n "s/^CONFIG_[A-Z0-9_]*=\"${tree}\/\([^\"]*\)\"$/\1/p" "${dc}" | sort -u); do
+			grep -qxF "${f}" <<< "${tree_files}" || bad "${b}-${v}: ${tree}/${f} nel defconfig ma tools/build.sh non lo mette in ${tree}/"
+		done
+		ok "${b}-${v}: $(basename "${dc}"), EDK2 ${edk2_w541:0:12}, file in ${tree}/: $(sed -n "s/^CONFIG_[A-Z0-9_]*=\"${tree}\/\([^\"]*\)\"$/\1/p" "${dc}" | sort -u | tr '\n' ' ')"
+	done
+	# la mappa: le regioni scritte a ogni avvio nel primo chip, lo slot B e
+	# la regione RO nel chip che avvia da solo, la RO in fondo alla regione
+	# BIOS (il vettore di reset), RW_NVRAM in blocchi da 64 KiB
+	fmdfile="$(board_get "${b}" BOARD_TREE_FILES | sed -n 's/^\([^:]*\.fmd\)\(:.*\)\{0,1\}$/\1/p' | head -n 1)"
+	intel="$(board_get "${b}" BOARD_INTEL_SIZE)"
+	romsize="$(board_get "${b}" BOARD_ROM_SIZE)"
+	bootchip="$(board_get "${b}" BOARD_BOOT_CHIP)"
+	read -r _ c0off c0size <<< "$(board_get "${b}" BOARD_CHIPS | head -n 1)"
+	read -r _ boff bsize <<< "$(board_get "${b}" BOARD_CHIPS | awk -v n="${bootchip}" '$1 == n')"
+	if [ -z "${fmdfile}" ] || [ ! -f "${fmdfile}" ] || [ -z "${boff}" ]; then
+		bad "${b}: la mappa (.fmd in BOARD_TREE_FILES) o il chip ${bootchip} non ci sono"
+		continue
+	fi
+	fmd() { sed -n "s/^[[:space:]]*${1}@\(0x[0-9a-f]*\) \(0x[0-9a-f]*\).*/\1 \2/p" "${fmdfile}"; }
+	read -r off size <<< "$(fmd SI_BIOS)"
+	[ $(( off )) = $(( intel )) ] && [ $(( off + size )) = $(( romsize )) ] \
+		|| bad "${fmdfile}: SI_BIOS non $(printf '0x%x' "${intel}")-fine del flash"
+	for r in RW_MRC_CACHE SMMSTORE RO_VPD RW_ELOG RW_NVRAM RECOVERY_MRC_CACHE; do
+		read -r off size <<< "$(fmd "${r}")"
+		[ -n "${off}" ] && [ $(( intel + off + size )) -le $(( c0off + c0size )) ] || bad "${fmdfile}: ${r} non nel primo chip"
+	done
+	read -r off size <<< "$(fmd RW_NVRAM)"
+	[ -n "${off}" ] && [ $(( off % 0x10000 )) = 0 ] && [ $(( size % 0x10000 )) = 0 ] \
+		|| bad "${fmdfile}: RW_NVRAM non in blocchi da 64 KiB tutti suoi"
+	for r in RW_SECTION_B WP_RO; do
+		read -r off size <<< "$(fmd "${r}")"
+		[ -n "${off}" ] && [ $(( intel + off )) -ge $(( boff )) ] && [ $(( intel + off + size )) -le $(( boff + bsize )) ] \
+			|| bad "${fmdfile}: ${r} non nel chip ${bootchip}"
+	done
+	read -r off size <<< "$(fmd WP_RO)"
+	[ -n "${off}" ] && [ $(( intel + off + size )) = $(( romsize )) ] && [ $(( off % 0x1000 )) = 0 ] \
+		|| bad "${fmdfile}: WP_RO non in fondo alla regione BIOS o non allineata a 4 KiB"
+	ok "${b}: ${fmdfile}, regioni scrivibili nel primo chip, slot B e regione RO nel chip ${bootchip}"
+done
+
+step "le board negli strumenti"
+# tools/update.py (FLAVOURS e VARIANTS: board, variante, dimensione del
+# flash, GUID dell'ESRT) e tools/fwupd-cab.py (BOARDS, VARIANTS) devono
+# conoscere ogni variante di ogni board, e nient'altro
+rows="$(mktemp)"
+for b in $(boards); do
+	prefix="$(board_get "${b}" BOARD_FLAVOUR_PREFIX)"
+	size="$(board_get "${b}" BOARD_ROM_SIZE)"
+	for v in $(board_get "${b}" BOARD_VARIANTS); do
+		g="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_GUID="\(.*\)"$/\1/p' "$(board_get "${b}" defconfig "${v}")" 2>/dev/null)"
+		echo "${b} ${v} ${prefix}${v} $((size)) ${g:--}" >> "${rows}"
+	done
+done
+if out="$(python3 -I - "${O}/tools" "${rows}" 2>&1 <<'PY'
+import importlib.util
+import sys
+
+tools, rows = sys.argv[1], sys.argv[2]
+sys.path.insert(0, tools)
+
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+upd = load("update", tools + "/update.py")
+cab = load("fwupd_cab", tools + "/fwupd-cab.py")
+bad, seen = [], set()
+for line in open(rows):
+    b, v, fl, size, g = line.split()
+    seen.add(fl)
+    if upd.FLAVOURS.get(fl) != (b, v, int(size)):
+        bad.append("tools/update.py: FLAVOURS[%r] e' %r, non (%r, %r, %s)" % (fl, upd.FLAVOURS.get(fl), b, v, size))
+    if str(upd.VARIANTS.get(fl)) != g:
+        bad.append("tools/update.py: VARIANTS[%r] e' %s, non il GUID del defconfig %s" % (fl, upd.VARIANTS.get(fl), g))
+    if b not in cab.BOARDS:
+        bad.append("tools/fwupd-cab.py: la board %s non e' in BOARDS" % b)
+    if v not in cab.VARIANTS:
+        bad.append("tools/fwupd-cab.py: la variante %s non e' in VARIANTS" % v)
+for fl in sorted(set(upd.FLAVOURS) - seen):
+    bad.append("tools/update.py: FLAVOURS[%r] di nessuna board" % fl)
+print("\n".join(bad) if bad else ", ".join(sorted(seen)))
+sys.exit(1 if bad else 0)
+PY
+)"; then
+	ok "tools/update.py e tools/fwupd-cab.py: ${out}"
+else
+	while IFS= read -r line; do [ -n "${line}" ] && bad "${line}"; done <<< "${out}"
+fi
+rm -f "${rows}"
 
 step "chiavi"
 if [ -f keys/capsule-signing.pem ]; then
@@ -620,14 +800,17 @@ for p in IPXE_COMMIT CSMWRAP_COMMIT; do
 	c="$(sed -n "s/^${p}=\"\([^\"]*\)\".*/\1/p" tools/build.sh)"
 	if [[ "${c}" =~ ^[0-9a-f]{40}$ ]]; then ok "${p} ${c:0:12}"; else bad "${p} in tools/build.sh: '${c}', non un commit intero"; fi
 done
-ro_cb="$(awk '$1 == "coreboot" { print $2 }' configs/ro-interface.txt 2>/dev/null)"
-if [ "${ro_cb}" = "${desc}" ]; then
-	ok "la parte RO sui portatili e' della stessa coreboot (configs/ro-interface.txt)"
-elif awk -v d="${desc}" '$1 == "rw-ok" && $2 == d { f = 1 } END { exit !f }' configs/ro-interface.txt 2>/dev/null; then
-	ok "pin ${desc}: slot controllati sulla parte RO ${ro_cb} (rw-ok in configs/ro-interface.txt)"
-else
-	bad "il pin e' ${desc}, la parte RO sui portatili ${ro_cb:-?}: gli slot devono ancora leggere quello che lascia (configs/ro-interface.txt, docs/vboot.md#limits)"
-fi
+for b in $(boards); do
+	iface="$(board_get "${b}" BOARD_RO_INTERFACE)"
+	ro_cb="$(awk '$1 == "coreboot" { print $2 }' "${iface}" 2>/dev/null)"
+	if [ "${ro_cb}" = "${desc}" ]; then
+		ok "${b}: la parte RO sulle macchine e' della stessa coreboot (${iface})"
+	elif awk -v d="${desc}" '$1 == "rw-ok" && $2 == d { f = 1 } END { exit !f }' "${iface}" 2>/dev/null; then
+		ok "${b}: pin ${desc}, slot controllati sulla parte RO ${ro_cb} (rw-ok in ${iface})"
+	else
+		bad "${b}: il pin e' ${desc}, la parte RO sulle macchine ${ro_cb:-?}: gli slot devono ancora leggere quello che lascia (${iface:-BOARD_RO_INTERFACE}, docs/vboot.md#limits)"
+	fi
+done
 
 step "link nei documenti"
 if out="$(files | python3 -c '
@@ -695,7 +878,7 @@ step "menu del setup"
 # solo con le build in work/coreboot (tools/build.sh roms); le stesse
 # eccezioni di tools/build.sh menu
 n=0
-for v in mrc nri; do
+for v in $(for bd in $(boards); do p="$(board_get "${bd}" BOARD_FLAVOUR_PREFIX)"; board_get "${bd}" BOARD_VARIANTS | sed "s/^/${p}/"; done); do
 	b="${O}/work/coreboot/build-${v}"
 	[ -f "${b}/config.h" ] && [ -f "${b}/build.h" ] || continue
 	n=$((n + 1))

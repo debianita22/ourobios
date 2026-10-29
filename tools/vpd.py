@@ -3,24 +3,27 @@
 # flash: i dati di questa macchina che coreboot mette nelle tabelle SMBIOS
 # (numero di serie, Machine Type Model, UUID), che il BIOS Lenovo aveva nel
 # suo flash e che coreboot non conosce. Le immagini delle release hanno la
-# regione vuota: la si scrive una volta sul portatile e la si copia
-# nell'immagine nuova a ogni aggiornamento (docs/flashing.md).
+# regione vuota: la si scrive una volta sulla macchina e la si copia
+# nell'immagine nuova a ogni aggiornamento con flashrom (docs/flashing.md;
+# M920x: docs/m920x.md).
 #
 #   python3 tools/vpd.py show dump.rom
 #   python3 tools/vpd.py set dump.rom -o vpd.rom --serial R9-0XXXXX \
 #           --mtm 20EF-001UGE --uuid serial
 #   python3 tools/vpd.py copy dump.rom w541-coreboot-vX.Y.Z-mrc.rom -o w541-flash.rom
 #
-# I file sono immagini o dump interi (12 MiB, con la FMAP) oppure la sola
-# regione RO_VPD (16 KiB). Le chiavi che coreboot legge (CONFIG_SMBIOS_*_
-# FROM_VPD e patch 0046):
+# I file sono immagini o dump interi con la FMAP (W541 12 MiB, M920x
+# 24 MiB) oppure la sola regione RO_VPD (16 KiB). Le chiavi che coreboot
+# legge (CONFIG_SMBIOS_*_FROM_VPD e patch 0046):
 #
 #   serial_number        tipo 1 e tipo 3: S/N dell'etichetta, es. PC0XXXXX
 #   mlb_serial_number    tipo 2: numero di serie della scheda madre
 #   system_uuid          tipo 1: UUID, 16 byte nell'ordine SMBIOS
 #   system_product_name  tipo 1 e tipo 2: Machine Type Model, es. 20EF001UGE
-#   system_sku           tipo 1: LENOVO_MT_20EF
-#   system_family        tipo 1: ThinkPad W541
+#   system_sku           tipo 1: LENOVO_MT_20EF; sul M920x, come il suo BIOS
+#                        Lenovo (%s_MT_%s_BU_%s_FM_%s nel modulo SMBIOS):
+#                        LENOVO_MT_10S2_BU_Think_FM_ThinkCentre M920x
+#   system_family        tipo 1: ThinkPad W541, ThinkCentre M920x
 #
 # Formato: Google VPD 2.0 (src/drivers/vpd di coreboot). Un'intestazione
 # "gVpdInfo" con la lunghezza dei dati, poi coppie chiave/valore precedute
@@ -50,8 +53,14 @@ TYPE_IMPLICIT_TERMINATOR = 0xFF
 # CONFIG_SMBIOS_SYSTEM_DATA_SIZE, 64 con lo zero finale)
 MAX_STRING = 63
 
-# Machine type -> famiglia, come le scrive il BIOS Lenovo
-FAMILIES = {"20EF": "ThinkPad W541", "20EG": "ThinkPad W541"}
+# Machine type -> famiglia, come le scrive il BIOS Lenovo. M920x: 10S2 dal
+# BIOS Lenovo di una macchina vera, 10S1 dalle schede dei rivenditori; gli
+# altri con --family
+FAMILIES = {"20EF": "ThinkPad W541", "20EG": "ThinkPad W541",
+            "10S1": "ThinkCentre M920x", "10S2": "ThinkCentre M920x"}
+# Famiglia -> lo SKU come lo scrive il suo BIOS Lenovo ({mt} il machine
+# type, {family} la famiglia); le altre famiglie: LENOVO_MT_{mt}
+SKUS = {"ThinkCentre M920x": "LENOVO_MT_{mt}_BU_Think_FM_{family}"}
 
 # --uuid serial: un UUID ricavato da MTM e numero di serie (versione 5, con
 # questo namespace fisso), uguale ogni volta che si riscrive la VPD
@@ -263,12 +272,18 @@ def cmd_set(args):
                 % args.mtm)
         family = args.family or FAMILIES.get(mtm[:4])
         if family is None:
-            die("machine type %s: non e' un W541 (20EF, 20EG); indica --family" % mtm[:4])
+            die("machine type %s sconosciuto (%s); indica --family" % (mtm[:4], ", ".join(
+                "%s %s" % (f, "/".join(sorted(m for m in FAMILIES if FAMILIES[m] == f)))
+                for f in sorted(set(FAMILIES.values())))))
+        sku = args.sku or SKUS.get(family, "LENOVO_MT_{mt}").format(mt=mtm[:4], family=family)
         updates += [("system_product_name", mtm.encode()),
-                    ("system_sku", ("LENOVO_MT_" + mtm[:4]).encode()),
+                    ("system_sku", check_string("system_sku", sku)),
                     ("system_family", check_string("system_family", family))]
-    elif args.family is not None:
-        updates.append(("system_family", check_string("system_family", args.family)))
+    else:
+        if args.family is not None:
+            updates.append(("system_family", check_string("system_family", args.family)))
+        if args.sku is not None:
+            updates.append(("system_sku", check_string("system_sku", args.sku)))
     if args.uuid is not None:
         if args.uuid.lower() == "serial":
             merged = dict(current)
@@ -309,7 +324,7 @@ def cmd_set(args):
     for key in args.delete:
         entries = [(k, v) for k, v in entries if k != key]
 
-    if not (args.serial or args.board_serial or args.mtm or args.family or args.uuid
+    if not (args.serial or args.board_serial or args.mtm or args.family or args.sku or args.uuid
             or args.key or args.delete or args.clear):
         die("niente da scrivere: --serial, --mtm, --uuid, --board-serial, --key CHIAVE=VALORE, "
             "--delete o --clear")
@@ -350,7 +365,8 @@ def main():
     p.add_argument("--serial", help="numero di serie (S/N dell'etichetta)")
     p.add_argument("--board-serial", help="numero di serie della scheda madre")
     p.add_argument("--mtm", help="Machine Type Model, es. 20EF001UGE: anche SKU e famiglia")
-    p.add_argument("--family", help="famiglia, se non e' un W541")
+    p.add_argument("--family", help="famiglia, se il machine type non e' tra quelli noti")
+    p.add_argument("--sku", help="SKU, se non quello che --mtm ricava dalla famiglia")
     p.add_argument("--uuid", help="UUID; serial: ricavato da MTM e numero di serie, sempre "
                    "lo stesso; random: uno nuovo, se manca")
     p.add_argument("--key", action="append", default=[], metavar="CHIAVE=VALORE",

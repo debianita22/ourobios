@@ -1,0 +1,57 @@
+/*
+ * ThinkCentre M920x Tiny: due chip SPI, W25Q128JV da 16 MiB (BIOS1,
+ * 0x0000000-0x0FFFFFF) e W25Q64JV da 8 MiB (BIOS2, 0x1000000-0x17FFFFF),
+ * visti come un flash da 24 MiB.
+ *
+ * SI_DESC, SI_GBE, SI_ME e SI_BIOS devono coincidere con le regioni del
+ * descrittore (boards/m920x/blobs/ifd.bin): lo controlla ifdtool -t alla
+ * build. La regione ME e' di 12 MiB (CSME 12 completa, ~7.5 MiB usati),
+ * la regione BIOS gli altri 12 MiB, dal chip da 16 MiB a quello da 8.
+ *
+ * vboot con due slot RW come sul W541 (docs/vboot.md): le regioni scritte
+ * a ogni avvio (training della RAM di FSP-M, variabili UEFI, VPD,
+ * registro degli eventi, dati di vboot) in testa alla regione BIOS, nel
+ * chip da 16 MiB; RW_SECTION_A e RW_SECTION_B, ciascuno con romstage,
+ * FSP-M, FSP-S, ramstage e payload firmati; WP_RO in cima al chip da 8 MiB
+ * (il vettore di reset) con FMAP, GBB e il CBFS di sola lettura (bootblock
+ * con verstage e microcode, 1 MiB). Ogni slot ha 5 MiB (~3.6 MiB usati con
+ * il payload di EDK2). RW_SECTION_B e WP_RO stanno tutti nel chip da
+ * 8 MiB: quel chip da solo (-8mb-chip.rom) avvia sempre, dallo slot B.
+ *
+ * Dimensioni da rispettare: SMMSTORE = CONFIG_SMMSTORE_SIZE (0x80000),
+ * RW_MRC_CACHE e RECOVERY_MRC_CACHE = CONFIG_MRC_SETTINGS_CACHE_SIZE
+ * (0x10000), RO_VPD = CONFIG_VPD_FMAP_SIZE (0x4000).
+ */
+FLASH 0x1800000 {
+	SI_ALL@0x0 0xc00000 {
+		SI_DESC@0x0 0x1000
+		SI_GBE@0x1000 0x2000
+		SI_ME@0x3000 0xbfd000
+	}
+	SI_BIOS@0xc00000 0xc00000 {
+		RW_MRC_CACHE@0x0 0x10000
+		SMMSTORE@0x10000 0x80000
+		RO_VPD@0x90000 0x4000
+		RW_ELOG@0x94000 0x4000
+		RW_UNUSED@0x98000 0x8000
+		RW_NVRAM@0xa0000 0x10000
+		RECOVERY_MRC_CACHE@0xb0000 0x10000
+		RW_SECTION_A@0xc0000 0x520000 {
+			VBLOCK_A@0x0 0x10000
+			FW_MAIN_A(CBFS)@0x10000 0x50ffc0
+			RW_FWID_A@0x51ffc0 0x40
+		}
+		RW_SECTION_B@0x5e0000 0x520000 {
+			VBLOCK_B@0x0 0x10000
+			FW_MAIN_B(CBFS)@0x10000 0x50ffc0
+			RW_FWID_B@0x51ffc0 0x40
+		}
+		WP_RO@0xb00000 0x100000 {
+			FMAP@0x0 0x800
+			RO_FRID@0x800 0x40
+			RO_PADDING@0x840 0x7c0
+			GBB@0x1000 0x1f000
+			COREBOOT(CBFS)@0x20000 0xe0000
+		}
+	}
+}

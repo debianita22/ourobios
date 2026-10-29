@@ -3,9 +3,10 @@
 #             patches/series, chiave Optimus solo in blobs/opvk.inc,
 #             defconfig coerenti
 #   patch     coreboot al commit pinnato + patches/series, EDK2 al commit dei
-#             defconfig + patches/edk2 e patches/lvglpkg, e i .config delle
-#             due varianti: ogni riga dei defconfig deve restare (Kconfig la
-#             lascia cadere senza errori se mancano le dipendenze)
+#             defconfig + patches/edk2 e patches/lvglpkg, e i .config di ogni
+#             variante di ogni board (boards/*/board.sh): ogni riga dei
+#             defconfig deve restare (Kconfig la lascia cadere senza errori
+#             se mancano le dipendenze)
 name: Check
 
 on:
@@ -55,7 +56,7 @@ jobs:
 
       # solo Kconfig: gcc del sistema (--toolchain host), niente crossgcc
       - name: tools/build.sh prepare config
-        run: ./tools/build.sh --toolchain host prepare config
+        run: ./tools/build.sh --toolchain host --board all prepare config
 
       # la bozza per una nuova parte RO (patches/ro-next) non e' in nessuna
       # serie: un avviso, non un errore, se non applica piu' sopra la serie
@@ -75,7 +76,7 @@ jobs:
           {
             echo "### coreboot $(sed -n 's/^COREBOOT_DESCRIBE="\(.*\)"/\1/p' tools/build.sh)"
             echo
-            echo "$(git -C work/coreboot log --oneline "$(sed -n 's/^COREBOOT_COMMIT="\(.*\)"/\1/p' tools/build.sh)..HEAD" | wc -l) patch applicate, .config di mrc e nri completi."
+            echo "$(git -C work/coreboot log --oneline "$(sed -n 's/^COREBOOT_COMMIT="\(.*\)"/\1/p' tools/build.sh)..HEAD" | wc -l) patch applicate, .config di ogni variante completi: $(find work/coreboot -maxdepth 1 -name 'build-*' -type d -printf '%f\n' | sed 's/^build-//' | sort | paste -sd ' ')."
             echo "EDK2: $(grep -cv '^#' patches/edk2/series) patch su EDK2, $(grep -cv '^#' patches/lvglpkg/series) su LvglPkg."
           } >> "${GITHUB_STEP_SUMMARY}"
 
@@ -84,8 +85,7 @@ jobs:
         with:
           name: config
           path: |
-            work/coreboot/build-mrc/.config
-            work/coreboot/build-nri/.config
+            work/coreboot/build-*/.config
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14

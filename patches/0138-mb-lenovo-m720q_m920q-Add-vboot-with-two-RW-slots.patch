@@ -1,0 +1,118 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 15:49:23 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Add vboot with two RW slots
+
+vboot with two RW slots, as on the Haswell ThinkPads: the bootblock and
+verstage in the RO region verify the signature of an RW slot (romstage,
+FSP-M and FSP-S, ramstage, the payload) and boot it, and the other one
+if it does not verify, so that an update written to the slot that is not
+running cannot leave the machine without a firmware that boots.
+
+The board has no recovery button and its flash no write-protect pin
+that the firmware reads: get_recovery_mode_switch() and
+get_write_protect_state() return 0. The nvdata goes to the RW_NVRAM
+region of the flash (VBOOT_VBNV_FLASH), where a payload that updates a
+slot can ask vboot to try it; the GBB flags turn off what a ChromeOS EC
+and lid would need.
+
+LENOVO_M920_VBOOT_MINIMAL_RO keeps everything after verstage out of the
+RO region (RW_REGION_ONLY): the RO region is then the bootblock, the
+microcode and the GBB, written once, and each update replaces all the
+code that runs after verstage. There is no recovery firmware then: if
+neither slot verifies, the flash has to be written with an external
+programmer.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TnH4v9ZgSCT6oudGt6KtJL
+---
+ src/mainboard/lenovo/m720q_m920q/Kconfig     | 28 ++++++++++++++++++++
+ src/mainboard/lenovo/m720q_m920q/Makefile.mk |  5 ++++
+ src/mainboard/lenovo/m720q_m920q/vboot.c     | 18 +++++++++++++
+ 3 files changed, 51 insertions(+)
+ create mode 100644 src/mainboard/lenovo/m720q_m920q/vboot.c
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/Kconfig b/src/mainboard/lenovo/m720q_m920q/Kconfig
+index dc4d8ef1a5..ff0ea09fec 100644
+--- a/src/mainboard/lenovo/m720q_m920q/Kconfig
++++ b/src/mainboard/lenovo/m720q_m920q/Kconfig
+@@ -42,4 +42,32 @@ config MAINBOARD_FAMILY
+ config CBFS_SIZE
+ 	default 0x900000
+ 
++config VBOOT
++	select GBB_FLAG_DISABLE_EC_SOFTWARE_SYNC
++	select GBB_FLAG_DISABLE_FWMP
++	select GBB_FLAG_DISABLE_LID_SHUTDOWN
++	select GBB_FLAG_DISABLE_PD_SOFTWARE_SYNC
++	select HAS_RECOVERY_MRC_CACHE
++	select VBOOT_VBNV_FLASH
++
++config VBOOT_SLOTS_RW_AB
++	default y
++
++config LENOVO_M920_VBOOT_MINIMAL_RO
++	bool "Keep the stages after verstage and the payload out of the RO region"
++	depends on VBOOT && VBOOT_STARTS_IN_BOOTBLOCK && VBOOT_SLOTS_RW_AB
++	help
++	  With verstage in the bootblock, the RO region only needs the
++	  bootblock and the microcode to boot from an RW slot. Keep romstage,
++	  FSP-M and FSP-S, postcar, ramstage, the DSDT, the VBT and the payload
++	  in the RW slots only: the RO region is then small, written once, and
++	  each update replaces all the code that runs after verstage.
++
++	  There is then no recovery path: if neither slot verifies, the boot
++	  stops after verstage, and the flash has to be written with an
++	  external programmer.
++
++config RW_REGION_ONLY
++	default "fallback/romstage fallback/postcar fallback/ramstage fallback/dsdt.aml fallback/payload vbt.bin fspm.bin fsps.bin" if LENOVO_M920_VBOOT_MINIMAL_RO
++
+ endif
+diff --git a/src/mainboard/lenovo/m720q_m920q/Makefile.mk b/src/mainboard/lenovo/m720q_m920q/Makefile.mk
+index 4be83458d1..d00b4e4823 100644
+--- a/src/mainboard/lenovo/m720q_m920q/Makefile.mk
++++ b/src/mainboard/lenovo/m720q_m920q/Makefile.mk
+@@ -3,10 +3,15 @@
+ CPPFLAGS_common += -I$(src)/mainboard/$(MAINBOARDDIR)/include
+ 
+ bootblock-y += bootblock.c
++bootblock-$(CONFIG_VBOOT) += vboot.c
++
++verstage-$(CONFIG_VBOOT) += vboot.c
+ 
+ romstage-y += romstage.c
++romstage-$(CONFIG_VBOOT) += vboot.c
+ 
+ ramstage-y += gpio.c
+ ramstage-y += hda_verb.c
+ ramstage-y += ramstage.c
++ramstage-$(CONFIG_VBOOT) += vboot.c
+ ramstage-$(CONFIG_MAINBOARD_USE_LIBGFXINIT) += gma-mainboard.ads
+diff --git a/src/mainboard/lenovo/m720q_m920q/vboot.c b/src/mainboard/lenovo/m720q_m920q/vboot.c
+new file mode 100644
+index 0000000000..bdaad42ba1
+--- /dev/null
++++ b/src/mainboard/lenovo/m720q_m920q/vboot.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <bootmode.h>
++
++/*
++ * No recovery button: vboot boots one of its two RW slots, and with a
++ * minimal RO region there is no recovery firmware to boot anyway.
++ */
++int get_recovery_mode_switch(void)
++{
++	return 0;
++}
++
++/* The firmware protects its RO region through the SPI controller (PRR) */
++int get_write_protect_state(void)
++{
++	return 0;
++}
+-- 
+2.43.0
+

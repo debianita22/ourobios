@@ -29,7 +29,8 @@ Other code can still run before the payload locks: boot manager driver
 options (Driver####, SysPrep####) and option ROMs. So TRY_OTHER applies
 the rules of the setup itself: the name of the release in the other slot,
 read from the "revision" file of its CBFS, must have the variant of the
-running one ("mrc" or "nri") and a version not below
+running one ("mrc" or "nri" on the W541, "fsp" on the M920x) and a
+version not below
 CONFIG_DRIVERS_EFI_MAIN_FW_LSV. The CBFS of the slot is walked in place
 through the flash mapping, as the stack of SMM is small.
 
@@ -88,7 +89,7 @@ index 507678754c..2c4e329e37 100644
 +
 +BOOT_STATE_INIT_ENTRY(BS_OS_RESUME, BS_ON_ENTRY, lock_vboot_try_other, NULL);
 diff --git a/src/drivers/smmstore/smi.c b/src/drivers/smmstore/smi.c
-index 09ffbf5cb7..2ef77c597f 100644
+index 09ffbf5cb7..29e2cfe05b 100644
 --- a/src/drivers/smmstore/smi.c
 +++ b/src/drivers/smmstore/smi.c
 @@ -1,12 +1,18 @@
@@ -256,12 +257,12 @@ index 09ffbf5cb7..2ef77c597f 100644
 +}
 +
 +/*
-+ * The variant in the name of a release: "mrc" or "nri" after a dash, at the
-+ * end or before the optional patches ("+..."). NULL without one.
++ * The variant in the name of a release: "mrc", "nri" or "fsp" after a dash, at
++ * the end or before the optional patches ("+..."). NULL without one.
 + */
 +static const char *release_variant(const char *name)
 +{
-+	static const char *const variants[] = { "mrc", "nri" };
++	static const char *const variants[] = { "mrc", "nri", "fsp" };
 +	const char *p;
 +	size_t i, n;
 +

@@ -2,8 +2,8 @@
 # fwupd-cab.py - il pacchetto fwupd (.cab) di una capsula, e i metadati del
 # remote fwupd del progetto (docs/update.md)
 #
-#   tools/fwupd-cab.py metainfo --variant mrc --guid GUID --version 1.2.3.0 \
-#       --date 2026-10-11 --url URL > firmware.metainfo.xml
+#   tools/fwupd-cab.py metainfo [--board w541] --variant mrc --guid GUID \
+#       --version 1.2.3.0 --date 2026-10-11 --url URL > firmware.metainfo.xml
 #   tools/fwupd-cab.py pack --date 2026-10-11 -o OUT.cab \
 #       firmware.bin firmware.metainfo.xml [firmware.jcat]
 #   tools/fwupd-cab.py metadata -o ourobios.xml.gz --cab CAB URL [--cab CAB URL]
@@ -50,7 +50,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import update  # noqa: E402
 
 # l'inizializzazione della RAM di ogni variante, per la descrizione
-VARIANTS = {"mrc": "Intel mrc.bin", "nri": "native RAM init"}
+VARIANTS = {"mrc": "Intel mrc.bin", "nri": "native RAM init", "fsp": "Intel FSP-M"}
+# il nome delle board (boards/<board>/board.sh); il componente del W541 ha
+# il nome della sola variante, come prima delle altre board
+BOARDS = {"w541": "ThinkPad W541", "m920x": "ThinkCentre M920x Tiny"}
 REPO = "https://github.com/debianita22/ourobios"
 CHUNK = 32768
 
@@ -104,18 +107,19 @@ def make_cab(files, when):
     return out
 
 
-def metainfo(variant, guid, version, date, url):
-    vid = "io.github.debianita22.ourobios.%s.firmware" % variant
+def metainfo(variant, guid, version, date, url, board="w541"):
+    flavour = variant if board == "w541" else "%s-%s" % (board, variant)
+    vid = "io.github.debianita22.ourobios.%s.firmware" % flavour
     return """<?xml version="1.0" encoding="UTF-8"?>
 <!-- Copyright 2026 ouroBIOS contributors -->
 <component type="firmware">
   <id>{vid}</id>
-  <name>ouroBIOS ({variant})</name>
-  <name_variant_suffix>{variant}</name_variant_suffix>
-  <summary>ouroBIOS: coreboot and EDK II system firmware for the ThinkPad W541</summary>
+  <name>ouroBIOS ({flavour})</name>
+  <name_variant_suffix>{flavour}</name_variant_suffix>
+  <summary>ouroBIOS: coreboot and EDK II system firmware for the {model}</summary>
   <description>
     <p>
-      ouroBIOS, the coreboot firmware of the ThinkPad W541, {variant} variant (memory
+      ouroBIOS, the coreboot firmware of the {model}, {variant} variant (memory
       initialisation: {descen}), verified by vboot. The update writes the RW
       slot that is not running, and the firmware tries it on the next boot:
       if the write is cut short or the new slot fails, the old one boots.
@@ -149,7 +153,7 @@ def metainfo(variant, guid, version, date, url):
     </release>
   </releases>
 </component>
-""".format(vid=vid, variant=variant, descen=VARIANTS[variant],
+""".format(vid=vid, flavour=flavour, model=BOARDS[board], variant=variant, descen=VARIANTS[variant],
            guid=guid, repo=REPO, version=version, date=date, url=escape(url))
 
 
@@ -274,6 +278,7 @@ def main():
     ap = argparse.ArgumentParser(description="pacchetto fwupd (.cab) di una capsula e metadati del remote")
     sub = ap.add_subparsers(dest="cmd", required=True)
     m = sub.add_parser("metainfo", help="firmware.metainfo.xml su stdout")
+    m.add_argument("--board", default="w541", choices=sorted(BOARDS))
     m.add_argument("--variant", required=True, choices=sorted(VARIANTS))
     m.add_argument("--guid", required=True)
     m.add_argument("--version", required=True, help="X.Y.Z.R (fw_quad di tools/build.sh)")
@@ -313,7 +318,7 @@ def main():
         if not re.fullmatch(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", a.version):
             sys.exit("versione non valida (X.Y.Z.R): %s" % a.version)
         datetime.datetime.strptime(a.date, "%Y-%m-%d")
-        sys.stdout.write(metainfo(a.variant, a.guid, a.version, a.date, a.url))
+        sys.stdout.write(metainfo(a.variant, a.guid, a.version, a.date, a.url, a.board))
         return
 
     when = datetime.datetime.strptime(a.date, "%Y-%m-%d")

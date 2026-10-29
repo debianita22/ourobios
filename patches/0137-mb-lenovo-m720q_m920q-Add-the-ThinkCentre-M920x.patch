@@ -1,0 +1,84 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Thu, 29 Oct 2026 15:42:30 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Add the ThinkCentre M920x
+
+The M920x Tiny is the M920q with a second M.2 slot for an NVMe drive,
+an M.2 slot that takes SATA too, and a riser for a PCIe graphics card:
+the devicetree of this board already has them (pcie_rp17, SATA port 4).
+Its flash is the M920q's, 16 + 8 MiB.
+
+Add it as a third board of the directory, so that a build says what it
+is for: the part number, and in SMBIOS the model as the version and the
+family, as the OEM firmware reports them, the product name being the
+machine type and model (for example 10S1...) when the VPD provides it.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TnH4v9ZgSCT6oudGt6KtJL
+---
+ src/mainboard/lenovo/m720q_m920q/Kconfig        | 14 ++++++++++++--
+ src/mainboard/lenovo/m720q_m920q/Kconfig.name   |  3 +++
+ src/mainboard/lenovo/m720q_m920q/board_info.txt |  2 +-
+ 3 files changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/Kconfig b/src/mainboard/lenovo/m720q_m920q/Kconfig
+index 40641c211f..dc4d8ef1a5 100644
+--- a/src/mainboard/lenovo/m720q_m920q/Kconfig
++++ b/src/mainboard/lenovo/m720q_m920q/Kconfig
+@@ -1,12 +1,12 @@
+ # SPDX-License-Identifier: GPL-2.0-only
+ 
+-if BOARD_LENOVO_M920Q || BOARD_LENOVO_M720Q
++if BOARD_LENOVO_M920Q || BOARD_LENOVO_M720Q || BOARD_LENOVO_M920X
+ 
+ config BOARD_SPECIFIC_OPTIONS
+ 	def_bool y
+ 	select AZALIA_USE_LEGACY_VERB_TABLE
+ 	select BOARD_ROMSIZE_KB_16384 if BOARD_LENOVO_M720Q
+-	select BOARD_ROMSIZE_KB_24576 if BOARD_LENOVO_M920Q
++	select BOARD_ROMSIZE_KB_24576 if BOARD_LENOVO_M920Q || BOARD_LENOVO_M920X
+ 	select DRIVERS_UART_8250IO
+ 	select HAVE_ACPI_RESUME
+ 	select HAVE_ACPI_TABLES
+@@ -28,6 +28,16 @@ config MAINBOARD_DIR
+ config MAINBOARD_PART_NUMBER
+ 	default "ThinkCentre M720 Tiny" if BOARD_LENOVO_M720Q
+ 	default "ThinkCentre M920 Tiny" if BOARD_LENOVO_M920Q
++	default "ThinkCentre M920x Tiny" if BOARD_LENOVO_M920X
++
++# As the OEM firmware: the model in the version of the SMBIOS system
++# information, whose product name is the machine type (from the VPD)
++config MAINBOARD_VERSION
++	default "ThinkCentre M920x" if BOARD_LENOVO_M920X
++
++config MAINBOARD_FAMILY
++	string
++	default "ThinkCentre M920x" if BOARD_LENOVO_M920X
+ 
+ config CBFS_SIZE
+ 	default 0x900000
+diff --git a/src/mainboard/lenovo/m720q_m920q/Kconfig.name b/src/mainboard/lenovo/m720q_m920q/Kconfig.name
+index 6f5110366a..bde624ef1b 100644
+--- a/src/mainboard/lenovo/m720q_m920q/Kconfig.name
++++ b/src/mainboard/lenovo/m720q_m920q/Kconfig.name
+@@ -5,3 +5,6 @@ config BOARD_LENOVO_M720Q
+ 
+ config BOARD_LENOVO_M920Q
+ 	bool "ThinkCentre M920 Tiny"
++
++config BOARD_LENOVO_M920X
++	bool "ThinkCentre M920x Tiny"
+diff --git a/src/mainboard/lenovo/m720q_m920q/board_info.txt b/src/mainboard/lenovo/m720q_m920q/board_info.txt
+index 8420ecc448..3adc14127f 100644
+--- a/src/mainboard/lenovo/m720q_m920q/board_info.txt
++++ b/src/mainboard/lenovo/m720q_m920q/board_info.txt
+@@ -1,5 +1,5 @@
+ Category: desktop
+-Board URL: ThinkCentre M720q/M920q
++Board URL: ThinkCentre M720q/M920q/M920x
+ ROM package: SOIC-8
+ ROM protocol: SPI
+ ROM socketed: n
+-- 
+2.43.0
+
