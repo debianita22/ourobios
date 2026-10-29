@@ -43,7 +43,7 @@ index 52b5e7ee96..ed211e011a 100644
  
  	/* C-state Interrupt Response Latency Control 0 - package C3 latency */
 diff --git a/src/soc/intel/cannonlake/fsp_params.c b/src/soc/intel/cannonlake/fsp_params.c
-index b2dda7fc90..3ddd704d0e 100644
+index b2dda7fc90..8aed7b2c2c 100644
 --- a/src/soc/intel/cannonlake/fsp_params.c
 +++ b/src/soc/intel/cannonlake/fsp_params.c
 @@ -448,6 +448,9 @@ void platform_fsp_silicon_init_params_cb(FSPS_UPD *supd)
@@ -51,7 +51,7 @@ index b2dda7fc90..3ddd704d0e 100644
  	s_cfg->Enable8254ClockGatingOnS3 = !use_8254;
  
 +	/* CFG Lock of MSR_PKG_CST_CONFIG_CONTROL, which FSP-S sets by default (cpu.c) */
-+	s_cfg->PmgCstCfgCtrlLock = get_uint_option("cfg_lock", 1);
++	tconfig->PmgCstCfgCtrlLock = get_uint_option("cfg_lock", 1);
 +
  	/*
  	 * Legacy PM ACPI Timer (and TCO Timer)
