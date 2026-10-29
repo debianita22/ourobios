@@ -390,6 +390,22 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `ProtectMemoryRegions`, `ProvideCustomSlide` and `EnableSafeModeSlide`
   (from rc15), `SyncRuntimePermissions` and `EnableWriteUnprotector` are
   off ([docs/macos.md](docs/macos.md#in-the-opencore-configuration)).
+- From rc18, one payload for the two variants. FmpDxe, the driver that
+  publishes the firmware in the ESRT and applies the capsules, had the
+  GUID of its variant as its FILE_GUID, so the two payloads differed in
+  those bytes only and EDK2 was built twice. Its FILE_GUID is now one
+  fixed GUID in both defconfigs (`EDK2_CAPSULE_MAIN_FW_GUID`, patch 0135);
+  the GUID of each variant in the ESRT, the one its capsules carry, comes
+  from the coreboot table at every boot, as the one FmpDxe publishes
+  already did (`edk2/0033`). `tools/build.sh` builds EDK2 once and gives
+  the second variant the payload of the first, after checking that the
+  two `.config` differ only in the RAM init, the name and the GUID
+  ([README](README.md#building)). The update test of the CI runs with
+  the fixed FILE_GUID too. FmpDxe keeps the result of its last update
+  (`FmpState`, the `last_attempt_*` fields of the ESRT) under its
+  FILE_GUID, so the first boot with rc18 shows no last attempt, until the
+  next capsule; the variables under the old GUID stay in the store,
+  unused ([docs/update.md](docs/update.md#how-it-works)).
 
 ## v1.3.9
 

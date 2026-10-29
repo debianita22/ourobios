@@ -254,7 +254,11 @@ the commit coreboot pins (which must be `IPXE_COMMIT` of `tools/build.sh`)
 and CSMWrap at the commit `tools/build.sh` pins and builds the latter with
 the system compiler (`nasm`, `xxd`), builds the coreboot cross toolchain
 the first time (30-60 minutes, then reused), builds each variant and runs
-`tools/verify-rom.sh` on it. Useful options:
+`tools/verify-rom.sh` on it. The EDK2 payload is built once (from
+v1.3.10-rc18): nothing in it depends on the variant, whose GUID it reads
+from the coreboot table at every boot, so the second variant gets the
+payload of the first, after a check that the two `.config` differ only in
+the RAM init, the name and the GUID of the ESRT. Useful options:
 
 ```sh
 tools/build.sh --variant mrc                  # one variant
