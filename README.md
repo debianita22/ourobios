@@ -290,7 +290,10 @@ keys and `config` in CBFS says so. `--release` also wants the capsule
 key.
 
 `smoke` puts the EDK2 payload of each variant, as built, into a coreboot
-image for QEMU's q35 and boots it with `tools/qemu-smoke.py`: coreboot must
+image for QEMU's q35 and boots it with `tools/qemu-smoke.py` (once per
+payload: a variant with the same payload, byte for byte, as one already
+tested is not tested again; QEMU runs with KVM when `/dev/kvm` is usable,
+with TCG otherwise, four times slower): coreboot must
 reach the payload, the payload must draw, Esc must open the setup, and the
 setup must open a page and go back, without a reset. Then, in two more
 boots, the UEFI Shell writes a test variable with `setvar`: it must be in
