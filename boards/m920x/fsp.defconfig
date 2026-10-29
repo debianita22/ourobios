@@ -34,10 +34,10 @@ CONFIG_VBOOT_KERNEL_KEY="m920x/vboot/kernel_subkey.vbpubk"
 CONFIG_VBOOT_KEYBLOCK="m920x/vboot/firmware.keyblock"
 CONFIG_VBOOT_FIRMWARE_PRIVKEY="m920x/vboot/firmware_data_key.vbprivk"
 
-# IFD, GbE e ME dell'immagine coreboot che girava sul M920x (MAC
-# 00:2b:67:0b:91:73, CSME 12.0.35.1427 completa): regioni sbloccate, ME
-# leggibile dalla CPU. La ME resta intera: lo stato si sceglie dal menu
-# (Security -> Management Engine, comando HECI), senza me_cleaner.
+# IFD, GbE e ME del firmware Lenovo del M920x del port, letto dai due chip
+# (MAC e8:6a:64:cd:fd:06, CSME 12.0.6.1120 completa): regioni sbloccate con
+# ifdtool, ME leggibile dalla CPU. La ME resta intera: lo stato si sceglie
+# dal menu (Security -> Management Engine, comando HECI), senza me_cleaner.
 CONFIG_HAVE_IFD_BIN=y
 CONFIG_IFD_BIN_PATH="m920x/ifd.bin"
 CONFIG_HAVE_ME_BIN=y

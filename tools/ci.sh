@@ -484,13 +484,14 @@ EOF
 | \`SHA256SUMS\` | checksums of the files above |
 
 Flash layout (\`boards/m920x/flash.fmd\`): the first 12 MiB (IFD, GbE, ME)
-come from the coreboot image that ran on the M920x these blobs come from:
-unlocked regions, the whole Intel CSME 12 firmware (no \`me_cleaner\`), and
-the GbE region with that machine's MAC address. Then, still on the 16 MiB
-chip, the regions coreboot writes at runtime (memory training, UEFI
-variables, VPD, event log, vboot's state), empty; then the two RW slots, A
-across the two chips and B on the 8 MiB one, each signed, and at the top of
-the 8 MiB chip the read-only part, which verifies a slot before it runs it
+come from the Lenovo firmware of the M920x these blobs come from: its
+descriptor with the regions unlocked, the whole Intel CSME 12 firmware (no
+\`me_cleaner\`), and the GbE region with that machine's MAC address. Then,
+still on the 16 MiB chip, the regions coreboot writes at runtime (memory
+training, UEFI variables, VPD, event log, vboot's state), empty; then the
+two RW slots, A across the two chips and B on the 8 MiB one, each signed,
+and at the top of the 8 MiB chip the read-only part, which verifies a slot
+before it runs it
 ([docs/vboot.md](https://github.com/${repo}/blob/main/docs/vboot.md)). An
 update from Linux writes only the BIOS region, as below: it keeps the
 machine's own descriptor, ME and MAC address.
@@ -512,7 +513,8 @@ Or with fwupd ([docs/update.md](https://github.com/${repo}/blob/main/docs/update
 ${fwupd_how}
 
 **First install**, on an M920x that already runs coreboot with an unlocked
-flash, as the image these blobs come from: only the BIOS region is written.
+flash, as the machine these blobs come from did: only the BIOS region is
+written.
 From the Lenovo firmware the flash is locked: the first time, an external
 programmer ([docs/m920x.md](https://github.com/${repo}/blob/main/docs/m920x.md#first-install)).
 From an ouroBIOS release, turn off *Firmware protection* (setup menu,
