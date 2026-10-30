@@ -93,6 +93,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   0157-0158; the PC9 measured with ci-143 came from a boot on which it
   was off. *Hardware* → *Devices* → *PCIe riser slot*: Auto, Enabled
   (for a card that Auto does not see), Disabled.
+- From rc4, about 0.5 s less at every boot of the M920x and of the W541:
+  SMM no longer reads the *BIOS Lock* option from the flash without
+  cache at the end of the boot, ramstage gives it the value (0170).
 - `tools/update.py other-slot` also takes the test builds of the CI
   (`ouroBIOS-ci-N-...`), to try one in the slot that is not running.
 
