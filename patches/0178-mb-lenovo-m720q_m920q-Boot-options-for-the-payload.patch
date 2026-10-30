@@ -1,0 +1,132 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 20:09:10 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Boot options for the payload
+
+Three settings of the OEM setup that the ouroBIOS EDK2 payload now
+reads, as UINT32 variables of the coreboot options GUID, where a
+missing variable keeps today's behaviour. They go into General > Boot
+with iPXE and CSMWrap.
+
+- option_roms, "Option ROMs of the cards": All (2, the default) or
+  Graphics cards only (1), which PciPlatformDxe applies; any other value
+  means All there. There is no None: with a processor without graphics
+  (the F models) or with Hardware > Intel graphics off, the GOP of a
+  graphics card is the only firmware screen, and the OS cannot reset a
+  boot-services variable. Listed only with EDK2_LOAD_OPTION_ROMS, which
+  brings that driver in. The help says which cards lose what: NVMe,
+  SATA (AHCI) and USB cards still boot with the payload's own drivers
+  and Intel network cards through iPXE, so only a card that needs its
+  own ROM (RAID, SAS, other network cards) works in the OS only.
+- usb_boot, "Boot from USB drives", default on: off, the boot manager
+  no longer lists the USB drives. The help says how they can still
+  boot (entries made by an OS, the UEFI Shell and its startup.nsh,
+  CSMWrap, and PlatformRecovery with \EFI\BOOT\BOOTX64.EFI once no
+  entry works) and that it is not a security setting: with Secure
+  Boot on these paths start only signed programs, and the default
+  keys accept the ones Microsoft signed.
+- boot_menu_prompt, "Boot menu prompt", default on, as Option Keys
+  Display of the OEM setup: off, no "Press ESC" line on the logo, and
+  Esc still opens the boot menu.
+
+The Boot form was hidden in builds without iPXE and CSMWrap; with the
+last two options always there, it now always shows.
+
+TEST=Host syntax check of cfr.c; tools/cfr-dump.sh: the menu is valid,
+with the three options in Boot, option_roms suppressed without
+EDK2_LOAD_OPTION_ROMS and listed with it, and every help line under 60
+columns. For the hardware test, with the matching EDK2 patches: each
+option at both values (a bootable USB stick in efibootmgr and the boot
+menu, the prompt on the logo, a graphics card's screen with Graphics
+cards only; with Graphics cards only, an NVMe drive on the riser still
+boots).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/cfr.c | 58 ++++++++++++++++++++++++--
+ 1 file changed, 55 insertions(+), 3 deletions(-)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index 788be133c2..e0c3b0e0df 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -206,7 +206,8 @@ static const struct sm_object general_about = SM_DECLARE_FORM({
+ 
+ /*
+  * The boot options of the payload: its boot manager reads them (EDK2,
+- * PlatformBootManagerLib), coreboot does not.
++ * PlatformBootManagerLib, and PciPlatformDxe for the option ROMs), coreboot
++ * does not. A missing variable counts as the default there.
+  */
+ static const struct sm_object ipxe_boot = SM_DECLARE_BOOL({
+ 	.flags		= CONFIG(EDK2_ENABLE_IPXE) ? 0 : CFR_OPTFLAG_SUPPRESS,
+@@ -231,13 +232,64 @@ static const struct sm_object csmwrap_boot = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ });
+ 
++/* PciPlatformDxe: 1 for display controllers only, any other value for all */
++static const struct sm_object option_roms = SM_DECLARE_ENUM({
++	.flags		= CONFIG(EDK2_LOAD_OPTION_ROMS) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "option_roms",
++	.ui_name	= "Option ROMs of the cards",
++	.ui_helptext	= "The UEFI drivers in the option ROMs of the PCIe cards,\n"
++			  "which the firmware runs (with Secure Boot on, only those\n"
++			  "that the db keys allow). Graphics cards only: just those\n"
++			  "of graphics cards, which give the firmware screen with a\n"
++			  "processor without graphics (F models) or with Hardware >\n"
++			  "Intel graphics off. NVMe, SATA (AHCI) and USB cards still\n"
++			  "boot with the firmware's own drivers, Intel network cards\n"
++			  "through iPXE; a card that needs its ROM (RAID, SAS, other\n"
++			  "network cards) then works in the OS only.\n"
++			  "Default: All.",
++	.default_value	= 2,
++	.values		= (const struct sm_enum_value[]) {
++				{ "All",			2	},
++				{ "Graphics cards only",	1	},
++				SM_ENUM_VALUE_END			},
++});
++
++static const struct sm_object usb_boot = SM_DECLARE_BOOL({
++	.opt_name	= "usb_boot",
++	.ui_name	= "Boot from USB drives",
++	.ui_helptext	= "The USB drives in the boot order and the boot menu.\n"
++			  "Off: the firmware does not list them, but they can still\n"
++			  "boot: from the entries that an OS made, from the UEFI\n"
++			  "Shell and its startup.nsh, from CSMWrap, from Boot From\n"
++			  "File in the setup's Boot Maintenance Manager, and through\n"
++			  "\\EFI\\BOOT\\BOOTX64.EFI, which the firmware tries on every\n"
++			  "drive once no boot entry works (PlatformRecovery).\n"
++			  "Not a security setting: with Secure Boot on, these paths\n"
++			  "start only signed programs, and the default keys accept\n"
++			  "those signed by Microsoft (Windows, shim).\n"
++			  "Default: on.",
++	.default_value	= true,
++});
++
++static const struct sm_object boot_menu_prompt = SM_DECLARE_BOOL({
++	.opt_name	= "boot_menu_prompt",
++	.ui_name	= "Boot menu prompt",
++	.ui_helptext	= "\"Press ESC for Boot Options/Settings\" on the logo at\n"
++			  "startup. Off: the line is not shown, and Esc still opens\n"
++			  "the boot menu.\n"
++			  "Default: on, as Option Keys Display in the OEM setup.",
++	.default_value	= true,
++});
++
++/* Always shown: usb_boot and boot_menu_prompt are in every EDK2 build */
+ static const struct sm_object general_boot = SM_DECLARE_FORM({
+-	.flags		= (CONFIG(EDK2_ENABLE_IPXE) || CONFIG(EDK2_ENABLE_CSMWRAP))
+-			  ? 0 : CFR_OPTFLAG_SUPPRESS,
+ 	.ui_name	= "Boot",
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&ipxe_boot,
+ 		&csmwrap_boot,
++		&option_roms,
++		&usb_boot,
++		&boot_menu_prompt,
+ 		NULL
+ 	},
+ });
+-- 
+2.47.3
+

@@ -1,0 +1,384 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 19:54:12 +0100
+Subject: [PATCH] UefiPayloadPkg/PlatformBootManagerLib: USB boot and prompt
+ switches
+
+Two more switches of the coreboot setup menu, read with
+PlatformSetupSwitch() like ipxe_boot and csmwrap_boot: a variable of
+gEficorebootNvDataGuid that is missing counts as on, so a board whose
+setup has neither (the W541) boots as before.
+
+usb_boot: off, the USB drives are no longer in the boot order or the
+boot menu. The boot manager calls EDKII_PLATFORM_BOOT_MANAGER_PROTOCOL,
+when there is one, with the options it made for the devices it found,
+before it compares them with the ones in NV. This library now installs
+that protocol, only with the switch off and before any refresh of the
+boot options, and drops from the list every option whose device path
+has a USB node, the test BmBoot already uses to put USB drives first,
+and no MAC node. The MAC node is what BmGetNetworkDescription() takes
+for a network boot option: a USB network adapter keeps its PXE and HTTP
+options, since the setup help speaks of drives only. The M920x payload
+has no network stack of EDK2 (iPXE brings its own), so today there are
+no such options anyway.
+
+The boot manager then deletes the USB drive options it had made, once,
+and does not make them again, so there is no flash write at every boot.
+Its options for other devices go back as copies of their own, since the
+boot manager frees both arrays: EfiBootManagerInitializeLoadOption()
+copies the description, the device path and OptionalData, the GUID
+that marks an option made by the boot manager, so they still match
+theirs in NV. With no USB drive in the list the protocol returns
+EFI_UNSUPPORTED and the boot manager keeps its own list, without a copy.
+
+It is not a security boundary: Boot#### options made by the user or an
+OS, Boot From File in the Boot Maintenance Manager of the setup, the
+UEFI Shell and its startup.nsh, CSMWrap and the platform recovery
+(\EFI\BOOT\BOOTX64.EFI of any media once every Boot#### has failed) can
+still start from USB. Capsules on disk are still read from a USB drive.
+
+boot_menu_prompt: off, "Press ESC for Boot Options/Settings" (or its
+serial text) is not drawn. Only the drawing is skipped: the Esc and
+Down key options and the key notify are registered as before, so the
+boot menu opens the same way.
+
+TEST=gcc -c -Wall -Wextra of PlatformBootManager.c against the headers
+of this tree, with a stub AutoGen.h: no warning in the new code (one in
+PlatformRegisterFvBootOption() of 2019, from upstream). No EDK2 build
+here. Remains for the hardware test of the M920x: with a bootable USB
+stick, usb_boot on lists its auto-created entry in efibootmgr and the
+boot menu; off, after a restart the entry is gone, NVMe, Shell, iPXE
+and CSMWrap entries unchanged, and a second restart writes nothing
+more; on again, the entry comes back. With boot_menu_prompt off no
+prompt on the logo, and Esc in the timeout still opens the boot menu.
+A crash in the filter would come before PlatformMarkFirmwareGood(), so
+vboot would fall back to the other slot; an older slot makes the USB
+options again and this one deletes them, one write per slot switch.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../PlatformBootManager.c                     | 264 +++++++++++++++---
+ .../PlatformBootManagerLib.inf                |   3 +-
+ 2 files changed, 232 insertions(+), 35 deletions(-)
+
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+index 3f068c44a9..3d77b5e8f6 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+@@ -10,6 +10,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include "PlatformBootManager.h"
+ #include "PlatformConsole.h"
+ #include <Protocol/FirmwareVolume2.h>
++#include <Protocol/PlatformBootManager.h>
+ 
+ /**
+   Signal EndOfDxe event and install SMM Ready to lock protocol.
+@@ -312,6 +313,189 @@ PlatformSecureBootOn (
+   return !EFI_ERROR (Status) && (SecureBoot == SECURE_BOOT_MODE_ENABLE);
+ }
+ 
++/**
++  Is this the boot option of a USB drive? Its device path has a USB node,
++  the test BmBoot uses to put the USB drives first, and no MAC node, the
++  mark of a network boot option for BmGetNetworkDescription(): a USB
++  network adapter keeps its PXE and HTTP options, as the setup help says.
++
++  @param Option   The boot option.
++
++  @retval TRUE   A USB drive.
++  @retval FALSE  Another device, or a network boot through a USB adapter.
++**/
++STATIC
++BOOLEAN
++PlatformIsUsbDriveOption (
++  IN CONST EFI_BOOT_MANAGER_LOAD_OPTION  *Option
++  )
++{
++  EFI_DEVICE_PATH_PROTOCOL  *Node;
++  BOOLEAN                   Usb;
++
++  if (Option->FilePath == NULL) {
++    return FALSE;
++  }
++
++  Usb = FALSE;
++  for (Node = Option->FilePath; !IsDevicePathEnd (Node); Node = NextDevicePathNode (Node)) {
++    if (DevicePathType (Node) != MESSAGING_DEVICE_PATH) {
++      continue;
++    }
++
++    if (DevicePathSubType (Node) == MSG_MAC_ADDR_DP) {
++      return FALSE;
++    }
++
++    if (DevicePathSubType (Node) == MSG_USB_DP) {
++      Usb = TRUE;
++    }
++  }
++
++  return Usb;
++}
++
++/**
++  EDKII_PLATFORM_BOOT_MANAGER_PROTOCOL.RefreshAllBootOptions(), installed
++  only with the usb_boot switch of the setup off: the boot options that the
++  boot manager makes for the devices it finds, without the USB drives. The
++  boot manager then deletes the USB drive options it made before, once, and
++  does not make them again: no flash write at every boot.
++
++  The boot manager frees BootOptions and later frees the returned array
++  with EfiBootManagerFreeLoadOptions(), so each kept option is a copy of its
++  own, OptionalData included: that is the GUID that marks an option made by
++  the boot manager, so the kept options still match theirs in NV.
++
++  @param[in]  BootOptions              The options the boot manager found.
++  @param[in]  BootOptionsCount         The number of BootOptions.
++  @param[out] UpdatedBootOptions       The options to use instead.
++  @param[out] UpdatedBootOptionsCount  The number of UpdatedBootOptions.
++
++  @retval EFI_SUCCESS            UpdatedBootOptions has the options to use.
++  @retval EFI_UNSUPPORTED        No USB drive: the boot manager keeps its own.
++  @retval EFI_INVALID_PARAMETER  A parameter is NULL.
++  @retval EFI_OUT_OF_RESOURCES   No memory for the copies.
++**/
++STATIC
++EFI_STATUS
++EFIAPI
++PlatformRefreshAllBootOptions (
++  IN  CONST EFI_BOOT_MANAGER_LOAD_OPTION  *BootOptions,
++  IN  CONST UINTN                         BootOptionsCount,
++  OUT       EFI_BOOT_MANAGER_LOAD_OPTION  **UpdatedBootOptions,
++  OUT       UINTN                         *UpdatedBootOptionsCount
++  )
++{
++  EFI_STATUS                    Status;
++  EFI_BOOT_MANAGER_LOAD_OPTION  *Kept;
++  UINTN                         KeptCount;
++  UINTN                         Index;
++
++  if ((UpdatedBootOptions == NULL) || (UpdatedBootOptionsCount == NULL) ||
++      ((BootOptions == NULL) && (BootOptionsCount != 0)))
++  {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  for (Index = 0; Index < BootOptionsCount; Index++) {
++    if (PlatformIsUsbDriveOption (&BootOptions[Index])) {
++      break;
++    }
++  }
++
++  if (Index == BootOptionsCount) {
++    return EFI_UNSUPPORTED;
++  }
++
++  //
++  // Zeroed: an entry that fails half way is still safe to free.
++  //
++  Kept = AllocateZeroPool (BootOptionsCount * sizeof (EFI_BOOT_MANAGER_LOAD_OPTION));
++  if (Kept == NULL) {
++    return EFI_OUT_OF_RESOURCES;
++  }
++
++  KeptCount = 0;
++  for (Index = 0; Index < BootOptionsCount; Index++) {
++    if (PlatformIsUsbDriveOption (&BootOptions[Index])) {
++      DEBUG ((DEBUG_INFO, "%a: usb_boot off, no option for %s\n", __func__, BootOptions[Index].Description));
++      continue;
++    }
++
++    //
++    // EfiBootManagerInitializeLoadOption() makes its own copies of the
++    // description, the device path and OptionalData.
++    //
++    Status = EfiBootManagerInitializeLoadOption (
++               &Kept[KeptCount],
++               BootOptions[Index].OptionNumber,
++               BootOptions[Index].OptionType,
++               BootOptions[Index].Attributes,
++               BootOptions[Index].Description,
++               BootOptions[Index].FilePath,
++               BootOptions[Index].OptionalData,
++               BootOptions[Index].OptionalDataSize
++               );
++    KeptCount++;
++    if (EFI_ERROR (Status) ||
++        (Kept[KeptCount - 1].Description == NULL) ||
++        (Kept[KeptCount - 1].FilePath == NULL) ||
++        ((BootOptions[Index].OptionalDataSize != 0) && (Kept[KeptCount - 1].OptionalData == NULL)))
++    {
++      EfiBootManagerFreeLoadOptions (Kept, KeptCount);
++      return EFI_ERROR (Status) ? Status : EFI_OUT_OF_RESOURCES;
++    }
++  }
++
++  *UpdatedBootOptions      = Kept;
++  *UpdatedBootOptionsCount = KeptCount;
++  return EFI_SUCCESS;
++}
++
++STATIC EDKII_PLATFORM_BOOT_MANAGER_PROTOCOL  mPlatformBootManager = {
++  EDKII_PLATFORM_BOOT_MANAGER_PROTOCOL_REVISION,
++  PlatformRefreshAllBootOptions
++};
++
++/**
++  With the usb_boot switch of the setup off, install the filter that keeps
++  the USB drives out of the boot options the boot manager makes by itself;
++  a USB network adapter keeps its network boot options. On, or on a board
++  whose setup has no such switch, nothing is installed and the boot manager
++  works as before.
++
++  It is not a security boundary: Boot#### options made by the user or an
++  OS, Boot From File in the Boot Maintenance Manager of the setup, the UEFI
++  Shell (and its startup.nsh), CSMWrap and the platform recovery
++  (\EFI\BOOT\BOOTX64.EFI of any media, once every Boot#### has failed) can
++  still start from USB.
++**/
++STATIC
++VOID
++PlatformInstallUsbBootFilter (
++  VOID
++  )
++{
++  EFI_STATUS  Status;
++  EFI_HANDLE  Handle;
++
++  if (PlatformSetupSwitch (L"usb_boot")) {
++    return;
++  }
++
++  Handle = NULL;
++  Status = gBS->InstallMultipleProtocolInterfaces (
++                  &Handle,
++                  &gEdkiiPlatformBootManagerProtocolGuid,
++                  &mPlatformBootManager,
++                  NULL
++                  );
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_ERROR, "%a: %r, the USB drives stay in the boot options\n", __func__, Status));
++  }
++}
++
+ EFI_HANDLE BootManagerEntryNotifyHandle1;
+ EFI_HANDLE BootManagerEntryNotifyHandle2;
+ EFI_HANDLE BootManagerContinueNotifyHandle;
+@@ -466,6 +650,12 @@ PlatformBootManagerBeforeConsole (
+   EFI_BOOT_MANAGER_LOAD_OPTION  BootOption;
+   BOOLEAN                       ConsoleInitialized;
+ 
++  //
++  // Before any refresh of the boot options: the setup may keep the USB
++  // drives out of them (usb_boot).
++  //
++  PlatformInstallUsbBootFilter ();
++
+   //
+   // Register ENTER as CONTINUE key
+   //
+@@ -614,41 +804,47 @@ PlatformBootManagerAfterConsole (
+     }
+   }
+ 
+-  if (FixedPcdGetBool (PcdBootManagerEscape)) {
+-    if (FixedPcdGetBool (PcdSerialTerminalPrintEnabled)) {
+-      Print (
+-        L"\n"
+-        L"    Esc              to enter Setup Option Menu.\n"
+-        L"    ENTER            to boot directly.\n"
+-        L"\n"
+-        );
+-    } else {
+-      BootLogoUpdateProgress (
+-        White,
+-        Black,
+-        L"Press ESC for Boot Options/Settings",
+-        White,
+-        0,
+-        0
+-        );
+-    }
+-  } else {
+-    if (FixedPcdGetBool (PcdSerialTerminalPrintEnabled)) {
+-      Print (
+-        L"\n"
+-        L"    F2 or Down      to enter Setup Option Menu.\n"
+-        L"    ENTER           to boot directly.\n"
+-        L"\n"
+-        );
++  //
++  // The setup may hide the prompt (boot_menu_prompt); the keys registered
++  // in PlatformBootManagerBeforeConsole() work either way.
++  //
++  if (PlatformSetupSwitch (L"boot_menu_prompt")) {
++    if (FixedPcdGetBool (PcdBootManagerEscape)) {
++      if (FixedPcdGetBool (PcdSerialTerminalPrintEnabled)) {
++        Print (
++          L"\n"
++          L"    Esc              to enter Setup Option Menu.\n"
++          L"    ENTER            to boot directly.\n"
++          L"\n"
++          );
++      } else {
++        BootLogoUpdateProgress (
++          White,
++          Black,
++          L"Press ESC for Boot Options/Settings",
++          White,
++          0,
++          0
++          );
++      }
+     } else {
+-      BootLogoUpdateProgress (
+-        White,
+-        Black,
+-        L"Press F2 or Down for Boot Options/Settings",
+-        White,
+-        0,
+-        0
+-        );
++      if (FixedPcdGetBool (PcdSerialTerminalPrintEnabled)) {
++        Print (
++          L"\n"
++          L"    F2 or Down      to enter Setup Option Menu.\n"
++          L"    ENTER           to boot directly.\n"
++          L"\n"
++          );
++      } else {
++        BootLogoUpdateProgress (
++          White,
++          Black,
++          L"Press F2 or Down for Boot Options/Settings",
++          White,
++          0,
++          0
++          );
++      }
+     }
+   }
+ }
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+index 671d3204f2..cedb9339a8 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+@@ -67,7 +67,7 @@
+   gEfiCapsuleReportGuid           ## CONSUMES ## Variable:L"CapsuleLast"
+   gEfiFileInfoGuid                ## CONSUMES
+   gEfiPartTypeSystemPartGuid      ## CONSUMES
+-  gEficorebootNvDataGuid          ## CONSUMES ## Variable:L"ipxe_boot" L"csmwrap_boot"
++  gEficorebootNvDataGuid          ## CONSUMES ## Variable:L"ipxe_boot" L"csmwrap_boot" L"usb_boot" L"boot_menu_prompt"
+   gEfiGlobalVariableGuid          ## CONSUMES ## Variable:L"SecureBoot"
+ 
+ [Protocols]
+@@ -82,6 +82,7 @@
+   gEfiSerialIoProtocolGuid
+   gEfiPciRootBridgeIoProtocolGuid
+   gEfiBatteryStatusProtocolGuid   ## SOMETIMES_CONSUMES
++  gEdkiiPlatformBootManagerProtocolGuid ## SOMETIMES_PRODUCES
+ 
+ [Pcd]
+   gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut
+-- 
+2.47.3
+

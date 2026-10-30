@@ -58,7 +58,7 @@ index f3330e5070..97cf35c794 100644
  power_on_after_fail=Disable
 +hyper_threading=Enable
 diff --git a/src/mainboard/lenovo/m720q_m920q/romstage.c b/src/mainboard/lenovo/m720q_m920q/romstage.c
-index 75e44df35f..0f34791a51 100644
+index 51e7284034..d0ea9454c5 100644
 --- a/src/mainboard/lenovo/m720q_m920q/romstage.c
 +++ b/src/mainboard/lenovo/m720q_m920q/romstage.c
 @@ -1,8 +1,10 @@
@@ -72,7 +72,7 @@ index 75e44df35f..0f34791a51 100644
  #include <mainboard/ec.h>
  #include <option.h>
  #include <soc/cnl_memcfg_init.h>
-@@ -89,6 +91,31 @@ static uint8_t peg_enable(void)
+@@ -90,6 +92,31 @@ static uint8_t peg_enable(const FSPM_UPD *memupd)
  	return 0;
  }
  

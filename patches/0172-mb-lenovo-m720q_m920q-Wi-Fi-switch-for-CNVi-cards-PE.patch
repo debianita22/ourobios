@@ -21,14 +21,20 @@ Two cases of other components than the ones of the port machine:
 The boot log line for an empty slot says which option to set if a card
 is there and Auto did not see it.
 
+The check uses InternalGfx of the FSP-M parameters, which the SoC code
+sets from its own probe of the IGD before the mainboard hook, rather
+than a second read of 00:02.0: the port also stays on when the Intel
+graphics are turned off in the setup, the other case without a screen
+of the processor.
+
 TEST=Built lenovo/m920x.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- src/mainboard/lenovo/m720q_m920q/cfr.c      |  8 +++---
- src/mainboard/lenovo/m720q_m920q/ramstage.c |  7 +++++-
- src/mainboard/lenovo/m720q_m920q/romstage.c | 27 ++++++++++++++-------
- 3 files changed, 29 insertions(+), 13 deletions(-)
+ src/mainboard/lenovo/m720q_m920q/cfr.c      |  8 ++++--
+ src/mainboard/lenovo/m720q_m920q/ramstage.c |  7 ++++-
+ src/mainboard/lenovo/m720q_m920q/romstage.c | 32 ++++++++++++++-------
+ 3 files changed, 32 insertions(+), 15 deletions(-)
 
 diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
 index f8c71cf807..b442a54f9b 100644
@@ -78,12 +84,15 @@ index f3cfa60ee3..222c4363e3 100644
  	if (!get_uint_option("front_usb", 1))
  		disable_usb_ports(cfg, front_usb2, ARRAY_SIZE(front_usb2),
 diff --git a/src/mainboard/lenovo/m720q_m920q/romstage.c b/src/mainboard/lenovo/m720q_m920q/romstage.c
-index feb0d46e4c..75e44df35f 100644
+index feb0d46e4c..51e7284034 100644
 --- a/src/mainboard/lenovo/m720q_m920q/romstage.c
 +++ b/src/mainboard/lenovo/m720q_m920q/romstage.c
-@@ -67,17 +67,26 @@ static bool peg_card_present(void)
+@@ -65,19 +65,29 @@ static bool peg_card_present(void)
+ 	return (slot & PCI_EXP_SLTSTA_PDS) || (link & PCI_EXP_LNKSTA_DLLLA);
+ }
  
- static uint8_t peg_enable(void)
+-static uint8_t peg_enable(void)
++static uint8_t peg_enable(const FSPM_UPD *memupd)
  {
 -	switch (get_uint_option("peg_slot", PEG_SLOT_AUTO)) {
 -	case PEG_SLOT_ENABLED:
@@ -101,9 +110,10 @@ index feb0d46e4c..75e44df35f 100644
 +	/*
 +	 * A processor without graphics (the F models) shows the firmware and
 +	 * the setup on a card of the riser only: never turn the port off there,
-+	 * not even with the option, which could not be set back otherwise.
++	 * not even with the option, which could not be set back otherwise. The
++	 * SoC code probed the IGD and set InternalGfx before this hook.
 +	 */
-+	if (pci_s_read_config16(PCI_DEV(0, 2, 0), PCI_VENDOR_ID) == 0xffff) {
++	if (!memupd->FspmConfig.InternalGfx) {
 +		printk(BIOS_INFO, "PEG: no processor graphics, the port stays on\n");
 +		return 2;
  	}
@@ -117,6 +127,13 @@ index feb0d46e4c..75e44df35f 100644
  }
  
  void mainboard_memory_init_params(FSPM_UPD *memupd)
+@@ -88,5 +98,5 @@ void mainboard_memory_init_params(FSPM_UPD *memupd)
+ 	if (!get_uint_option("onboard_wlan", 1))
+ 		memupd->FspmConfig.PcieRpEnableMask &= ~(1 << 5);
+ 
+-	memupd->FspmConfig.Peg0Enable = peg_enable();
++	memupd->FspmConfig.Peg0Enable = peg_enable(memupd);
+ }
 -- 
 2.47.3
 
