@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 09:29:59 +0100
+Subject: [PATCH] soc/intel/cannonlake: Turn on the DMI Power Optimizer by
+ default
+
+PchPwrOptEnable, the DMI Power Optimizer of the PCH, is off by default
+in the Coffee Lake FSP-S (CoffeeLakeFspBinPkg: 0 in the UPD region of
+fsps.bin), and Cannon Lake never set it. Tiger Lake and Alder Lake
+turn it on unless a board sets DmiPwrOptimizeDisable.
+
+On an M920x (Q370) whose PCIe links all have ASPM L1 and LTR, whose
+PMC sees no LTR under 150 us and whose iGPU sits in RC6 without a
+display, the package never goes past PC3 (89-94% of the time at idle,
+never PC6 to PC10).
+
+Do as the later SoCs: on unless the devicetree sets
+DmiPwrOptimizeDisable.
+
+TEST=Built lenovo/m920x. Package C-states of the M920x after it, in
+the hardware test.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/soc/intel/cannonlake/chip.h       | 6 ++++++
+ src/soc/intel/cannonlake/fsp_params.c | 3 +++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/src/soc/intel/cannonlake/chip.h b/src/soc/intel/cannonlake/chip.h
+index b8fd376a50..27be8f1abd 100644
+--- a/src/soc/intel/cannonlake/chip.h
++++ b/src/soc/intel/cannonlake/chip.h
+@@ -395,6 +395,12 @@ struct soc_intel_cannonlake_config {
+ 	/* SATA Power Optimizer */
+ 	bool satapwroptimize;
+ 
++	/*
++	 * DMI Power Optimizer of the PCH, on unless a board sets this, as
++	 * on Tiger Lake and Alder Lake: FSP-S has it off by default here
++	 */
++	bool DmiPwrOptimizeDisable;
++
+ 	/* SATA Gen3 Strength */
+ 	struct sata_port_config sata_port[SOC_INTEL_CML_SATA_DEV_MAX];
+ 
+diff --git a/src/soc/intel/cannonlake/fsp_params.c b/src/soc/intel/cannonlake/fsp_params.c
+index bd2e808c33..bbf69a2bd8 100644
+--- a/src/soc/intel/cannonlake/fsp_params.c
++++ b/src/soc/intel/cannonlake/fsp_params.c
+@@ -440,6 +440,9 @@ void platform_fsp_silicon_init_params_cb(FSPS_UPD *supd)
+ 	s_cfg->PchPmPcieWakeFromDeepSx = config->LanWakeFromDeepSx;
+ 	s_cfg->PchPmWolEnableOverride = get_uint_option("wake_on_lan", config->WolEnableOverride);
+ 
++	/* DMI Power Optimizer: lets the PCH report its idleness to the CPU */
++	s_cfg->PchPwrOptEnable = !config->DmiPwrOptimizeDisable;
++
+ 	/* disable Legacy PME */
+ 	memset(s_cfg->PcieRpPmSci, 0, sizeof(s_cfg->PcieRpPmSci));
+ 
+-- 
+2.47.3
+
