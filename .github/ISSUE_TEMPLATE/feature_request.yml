@@ -1,0 +1,98 @@
+# Issue form (https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms).
+# The components and the devices are the same as in bug_report.yml.
+name: Feature request
+description: A new feature, setup option or tool, or an improvement to one that exists.
+labels: ["enhancement"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest an improvement. What the firmware does today is in the [README](https://github.com/debianita22/ourobios#readme) (setup menu and its categories), [docs/m920x.md](https://github.com/debianita22/ourobios/blob/main/docs/m920x.md) and [docs/update.md](https://github.com/debianita22/ourobios/blob/main/docs/update.md); something that should work and does not is a bug report.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Where the change would go. Pick more than one if you are not sure.
+      multiple: true
+      options:
+        - 'coreboot (boot, hardware init, ACPI, SMBIOS, power, fan)'
+        - 'EDK2 payload or setup menu'
+        - 'vboot or updates (tools/update.py, capsules, fwupd)'
+        - 'Tools (tools/*.py, tools/build.sh, CI)'
+        - 'Documentation'
+        - 'Other, or not sure'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      description: The machines it is for.
+      multiple: true
+      options:
+        - 'ThinkPad W541, mrc (Intel mrc.bin)'
+        - 'ThinkPad W541, nri (native RAM init)'
+        - 'ThinkCentre M920x Tiny, fsp (Intel FSP)'
+        - 'Other (say which under Additional context)'
+    validations:
+      required: false
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem you are addressing
+      description: What you cannot do today, or what is harder than it should be.
+      placeholder: On the M920x I cannot ... without ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What you would like to happen, as you see it (a setup option and where in the menu, a change in a tool, a document). If you have nothing in mind, say so.
+    validations:
+      required: true
+
+  - type: textarea
+    id: value
+    attributes:
+      label: Who benefits
+      description: Who would use it, and what it gives them (a feature of the OEM firmware that people miss, power or boot time, an OS that needs it, easier updates or recovery...).
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered
+      description: Other ways to get the same result, a workaround that works today (an OS setting, a kernel parameter, OpenCore), and why they fall short.
+    validations:
+      required: false
+
+  - type: textarea
+    id: prior-art
+    attributes:
+      label: How others do it
+      description: The same feature in the Lenovo firmware (the name of the setup option), upstream coreboot, Dasharo, MrChromebox's or Libreboot's firmware, with links if you have them.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else, screenshots or photos, logs, the firmware version you run (`sudo dmidecode -s bios-version`).
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the open and closed issues, and this has not been asked before.
+          required: true

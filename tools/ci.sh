@@ -8,6 +8,13 @@
 #                                    (stdout, in inglese come il README)
 #   tools/ci.sh check DIST           job release: i file di ogni release in
 #                                    DIST, prima di pubblicarli
+#   tools/ci.sh sbom DIST [CB]       job build e release: la distinta dei
+#                                    componenti di ogni ROM di DIST
+#                                    (tools/sbom.py), per publish; CB un
+#                                    clone di coreboot con il commit pinnato
+#                                    (job build: work/coreboot), che solo
+#                                    legge; senza, lo scarica in
+#                                    work/sbom-coreboot
 #   tools/ci.sh compare DIST REPRO   job compare: le ROM di DIST (job build) e
 #                                    di REPRO (job repro, un altro runner)
 #                                    uguali bit a bit; se no le regioni
@@ -316,7 +323,8 @@ If the laptop does not come up after flashing it (black screen, no boot),
 recovery needs an external programmer: see [Recovery](https://github.com/${repo}/blob/main/docs/flashing.md#recovery).
 EOF
 	fi
-	notes_changes
+	# prima dei cambi: con i titoli di CHANGELOG.md (### Added, ...) finirebbe
+	# sotto l'ultimo
 	if [ "${pre}" = yes ]; then
 		echo
 		echo "**Pre-release**: not yet confirmed on real hardware. Keep a backup of your flash and an external programmer at hand."
@@ -324,7 +332,10 @@ EOF
 		echo
 		echo "**Tested on a W541**: the move from v1.0.x with flashrom, boot and resume from suspend, capsule updates with the A/B slots (a slot rewritten across the two chips, the switch, the result in the ESRT), the fallback to the other slot when the running one is spoiled ([docs/vboot.md](https://github.com/${repo}/blob/main/docs/vboot.md#how-it-is-tested)), and DMA translation with \`intel_iommu=on\` under load, also after a resume ([docs/flashing.md](https://github.com/${repo}/blob/main/docs/flashing.md#first-boot-and-settings))."
 	fi
+	notes_changes
 	cat <<EOF
+
+### Files and installation
 
 | File | Use |
 |---|---|
@@ -334,7 +345,7 @@ EOF
 | \`${cap}\` | **signed UEFI capsule**: updates from Linux a W541 that already runs v1.3.0 or later, with \`tools/update.py\` |
 | \`${cab}\` | the same capsule as an **fwupd package** (\`fwupdmgr install\`, once the project certificate is in \`/etc/pki/fwupd\`) |
 | \`${cfg}\` | the complete coreboot \`.config\` |
-| \`${lay}\` | flash layout (FMAP) and CBFS contents |${meta_row}
+| \`${lay}\` | flash layout (FMAP) and CBFS contents |${meta_row}${sbom_rows}
 | \`SHA256SUMS\` | checksums of the files above |
 
 Flash layout (\`configs/w541.fmd\`): the first 5 MiB (IFD, GbE, ME) are
@@ -358,7 +369,7 @@ protection* can stay on
 ([docs/update.md](https://github.com/${repo}/blob/main/docs/update.md)).
 
 \`\`\`sh
-curl -LO https://raw.githubusercontent.com/${repo}/main/tools/update.py
+curl -LO https://raw.githubusercontent.com/${repo}/${sha}/tools/update.py
 sudo python3 update.py stage ${latest}       # or: sudo python3 update.py stage ${cap}
 sudo systemctl reboot
 \`\`\`
@@ -465,12 +476,15 @@ with two signed RW slots, signed UEFI capsules and fwupd. What is specific
 to the M920x, what was tried on one and how to go back are in
 [docs/m920x.md](https://github.com/${repo}/blob/main/docs/m920x.md).
 EOF
-	notes_changes
+	# prima dei cambi, come sul W541
 	if [ "${pre}" = yes ]; then
 		echo
 		echo "**Pre-release**: not yet confirmed on real hardware. Keep a backup of your flash and an external programmer at hand."
 	fi
+	notes_changes
 	cat <<EOF
+
+### Files and installation
 
 | File | Use |
 |---|---|
@@ -480,7 +494,7 @@ EOF
 | \`${cap}\` | **signed UEFI capsule**: updates from Linux an M920x that already runs ouroBIOS, with \`tools/update.py\` |
 | \`${cab}\` | the same capsule as an **fwupd package** (\`fwupdmgr install\`, once the project certificate is in \`/etc/pki/fwupd\`) |
 | \`${cfg}\` | the complete coreboot \`.config\` |
-| \`${lay}\` | flash layout (FMAP) and CBFS contents |
+| \`${lay}\` | flash layout (FMAP) and CBFS contents |${sbom_rows}
 | \`SHA256SUMS\` | checksums of the files above |
 
 Flash layout (\`boards/m920x/flash.fmd\`): the first 12 MiB (IFD, GbE, ME)
@@ -502,9 +516,12 @@ starts again on it; if the new slot does not verify or does not boot, vboot
 goes back to the old one. Settings, boot entries, Secure Boot keys, VPD and
 event log stay, and *BIOS Lock* and *Firmware protection* can stay on
 ([docs/update.md](https://github.com/${repo}/blob/main/docs/update.md)).
+The capsule rewrites the two slots only and keeps the memory training: an
+\`update.py\` from before v1.4.0-rc4 refuses it, so take the one of this
+release, as below.
 
 \`\`\`sh
-curl -LO https://raw.githubusercontent.com/${repo}/main/tools/update.py
+curl -LO https://raw.githubusercontent.com/${repo}/${sha}/tools/update.py
 sudo python3 update.py stage ${latest}       # or: sudo python3 update.py stage ${cap}
 sudo systemctl reboot
 \`\`\`
@@ -518,14 +535,23 @@ written.
 From the Lenovo firmware the flash is locked: the first time, an external
 programmer ([docs/m920x.md](https://github.com/${repo}/blob/main/docs/m920x.md#first-install)).
 From an ouroBIOS release, turn off *Firmware protection* (setup menu,
-*Security*) first.
+*Security*) first. That region is written whole, with what the firmware
+fills at runtime empty, as in the image: the settings, boot entries and
+Secure Boot keys (\`SMMSTORE\`), the event log (\`RW_ELOG\`), the memory
+training (\`RW_MRC_CACHE\`, done again on the first boot), vboot's state
+(\`RW_NVRAM\`) and the VPD (\`RO_VPD\`: serial number, machine type, UUID
+and the Windows product key). The commands below copy the VPD of the
+backup into the image; the rest starts over.
 
 \`\`\`sh
 sha256sum -c SHA256SUMS --ignore-missing
 sudo modprobe -r spi_intel_pci spi_intel                    # flashrom must not go through /dev/mtd0
 sudo flashrom -p internal -r backup-\$(date +%F).rom        # whole 24 MiB, keep it off the machine
 ls -l backup-*.rom                                        # 25165824 bytes (16777216: it went through /dev/mtd0)
-sudo flashrom -p internal --ifd -i bios -w ${rom}
+curl -LO https://raw.githubusercontent.com/${repo}/${sha}/tools/vpd.py
+cp ${rom} m920x-flash.rom
+python3 vpd.py copy --in-place backup-\$(date +%F).rom m920x-flash.rom   # a backup with no VPD: nothing to copy, go on
+sudo flashrom -p internal --ifd -i bios -w m920x-flash.rom
 \`\`\`
 
 **External programmer** (recovery): \`${chip8}\` on the 8 MiB chip (BIOS2)
@@ -555,8 +581,9 @@ Lenovo's tools, which expect the Lenovo firmware
 **Serial number and machine type (VPD)**: as on the W541, the firmware
 reports the serial number, machine type model and UUID of the machine from
 the \`RO_VPD\` flash region, which these images leave empty: write it once
-with \`tools/vpd.py\`
-([how](https://github.com/${repo}/blob/main/docs/m920x.md#serial-number-and-machine-type-vpd)).
+with \`tools/vpd.py\`; a capsule update leaves it alone, flashrom rewrites
+it, so copy it into the image first (\`tools/vpd.py copy\`, as above,
+[how](https://github.com/${repo}/blob/main/docs/m920x.md#serial-number-and-machine-type-vpd)).
 
 Inside: coreboot \`${cbdesc}\` ([${cb:0:12}](https://github.com/coreboot/coreboot/commit/${cb}))
 with [${npatch} patches](https://github.com/${repo}/tree/${sha}/patches), EDK2 payload
@@ -591,6 +618,9 @@ cmd_notes() {
 	declare -F "notes_${board}" > /dev/null || die "${fl}: nessuna funzione notes_${board} in tools/ci.sh"
 	case "${board}" in m920x) machine=PC ;; esac
 	repo="${GITHUB_REPOSITORY:-debianita22/ourobios}"
+	# il commit della build: anche quello di tools/update.py e tools/vpd.py
+	# nelle istruzioni, che leggono le sue capsule (main puo' essere indietro,
+	# come con le pre-release del M920x da m920x-rc4)
 	sha="${GITHUB_SHA:-$(git -C "${O}" rev-parse HEAD)}"
 	version="${VERSION}"
 	n="$(fl_name "${fl}")"
@@ -618,7 +648,7 @@ cmd_notes() {
 	# mrc (latest), con le altre della stessa versione, mai una candidate;
 	# quello testing (TESTING_TAG) anche con le candidate. Ogni candidate ha
 	# la sua versione, sotto quella della release a cui porta
-	local fwupd_how meta_row=""
+	local fwupd_how meta_row="" sbom_rows=""
 	if [ "${version%%-*}" = "${version}" ] && [ "${PRERELEASE:-false}" != true ]; then
 		fwupd_how="with the project remote and certificate installed ([docs/update.md](https://github.com/debianita22/ourobios/blob/main/docs/update.md#the-fwupd-remote)), \`fwupdmgr refresh\` then \`fwupdmgr update\` (or GNOME Software, KDE Discover) offers this release as long as it is the latest, also to a ${machine} on one of its release candidates, each of which has a version of its own, below the release's; or \`sudo fwupdmgr install ${cab}\`. Then reboot."
 	else
@@ -626,6 +656,10 @@ cmd_notes() {
 	fi
 	if [ "${fl}" = mrc ]; then
 		meta_row=$'\n'"| \`${FWUPD_METADATA}\`, \`${FWUPD_METADATA}.jcat\` | the signed metadata of the project's **fwupd remote**: the \`.cab\` of every board and variant of this release |"
+	fi
+	# la distinta dei componenti (cmd_sbom), se c'e': senza, le note di prima
+	if [ -f "${d}/${n}-sbom.md" ]; then
+		sbom_rows=$'\n'"| \`${n}-sbom.md\` | **software bill of materials**: version, license and SHA-256 of every component, Intel's binaries included, and how much of the image is open source |"$'\n'"| \`${n}.cdx.json\` | the same as CycloneDX 1.5 JSON |"
 	fi
 
 	"notes_${board}"
@@ -646,8 +680,30 @@ cmd_notes() {
 	fi
 	if [ -n "${prev}" ]; then
 		echo
-		echo "Changes since ${prev}:"
+		echo "### Changes since ${prev}"
+		echo
 		git -C "${O}" log --no-merges --format='- %s' "${prev}..${sha}"
+	fi
+	# la sezione breve della distinta (tools/sbom.py --notes, il suo titolo
+	# compreso) e i checksum dei file della release (SHA256SUMS di
+	# cmd_publish), da confrontare anche senza scaricarlo
+	if [ -f "${d}/${n}-sbom-notes.md" ]; then
+		echo
+		sed -e '/./,$!d' "${d}/${n}-sbom-notes.md" | sed -e ':a' -e '/^\n*$/{$d;N;ba' -e '}'
+		echo
+		echo "The whole bill of materials, with the SHA-256 of every binary: \`${n}-sbom.md\`; as CycloneDX 1.5: \`${n}.cdx.json\`."
+	fi
+	if [ -f "${d}/release-${fl}/SHA256SUMS" ]; then
+		cat <<EOF
+
+### Checksums
+
+SHA-256 of the files of this release (\`sha256sum -c SHA256SUMS --ignore-missing\`):
+
+\`\`\`
+$(cat "${d}/release-${fl}/SHA256SUMS")
+\`\`\`
+EOF
 	fi
 	cat <<EOF
 
@@ -658,7 +714,7 @@ EOF
 # Job release: una release per flavour, bozze prima e pubblicate insieme
 # alla fine
 cmd_publish() {
-	local d="${1:?cartella con le ROM}" sha v t tag rels id draft cur latest=false pre
+	local d="${1:?cartella con le ROM}" sha v t tag rels id draft cur latest=false pre n
 	: "${VERSION:?}" "${GITHUB_REPOSITORY:?}" "${GITHUB_SHA:?}" "${DEFAULT_BRANCH:?}"
 	flavours_for "${VERSION}"
 	sha="$(git -C "${O}" rev-parse --verify -q "${GITHUB_SHA}^{commit}")" || fail "Pubblica" "commit ${GITHUB_SHA} non trovato"
@@ -714,6 +770,13 @@ cmd_publish() {
 		mapfile -t up < <(fl_files "${v}")
 		# i metadati del remote fwupd, con tutti i flavour: solo nella mrc
 		if [ "${v}" = mrc ]; then up+=("${FWUPD_METADATA}" "${FWUPD_METADATA}.jcat"); fi
+		# la distinta dei componenti: non e' negli artifact, la fa il passo
+		# SBOM (cmd_sbom); la sezione breve va solo nelle note
+		n="$(fl_name "${v}")"
+		for f in "${n}-sbom.md" "${n}.cdx.json" "${n}-sbom-notes.md"; do
+			[ -s "${d}/${f}" ] || fail "Pubblica" "${f} non c'e': prima tools/ci.sh sbom ${d}"
+		done
+		up+=("${n}-sbom.md" "${n}.cdx.json")
 		for f in "${up[@]}"; do
 			[ -f "${d}/${f}" ] || fail "Pubblica" "${f} non c'e' negli artifact"
 			cp "${d}/${f}" "${d}/release-${v}/"
@@ -861,6 +924,54 @@ cmd_check() {
 	summ "Controlli: $(fl_list "${VERSION}-"), ${FWUPD_METADATA}."
 }
 
+# Job release, dopo check: la distinta dei componenti (tools/sbom.py) di
+# ogni ROM di DIST, accanto alla ROM: <nome>-sbom.md e <nome>.cdx.json
+# (CycloneDX 1.5) negli asset della release, <nome>-sbom-notes.md nelle
+# note (cmd_publish). Anche nel job build, su work/coreboot, perche' una
+# ROM che tools/sbom.py non legge si veda nelle build di prova e non solo
+# al tag. I commit dei submodule di coreboot (vboot, libgfxinit, fsp...)
+# li legge dagli alberi del commit pinnato: in CB, un clone che lo ha e
+# che non si tocca; senza CB, work/sbom-coreboot, con un fetch senza file
+# (circa 1 MB) dall'URL di tools/build.sh, se non ce l'ha gia'
+cmd_sbom() {
+	local d="${1:?cartella con le ROM}" cbdir="${2:-}" cb url v n args
+	: "${VERSION:?}"
+	flavours_for "${VERSION}"
+	cb="$(pin COREBOOT_COMMIT)"
+	url="$(pin COREBOOT_REPO)"
+	if [ -z "${cb}" ] || [ -z "${url}" ]; then
+		fail "SBOM" "tools/build.sh: COREBOOT_COMMIT o COREBOOT_REPO non trovati"
+	fi
+	# GIT_NO_LAZY_FETCH (git 2.44+): in un clone parziale (il fetch qui
+	# sotto ne fa uno) un commit che manca si scaricherebbe con tutta la
+	# sua storia, senza --depth; qui deve solo dire che manca
+	if [ -n "${cbdir}" ]; then
+		GIT_NO_LAZY_FETCH=1 git -C "${cbdir}" cat-file -e "${cb}^{commit}" 2>/dev/null \
+			|| fail "SBOM" "${cbdir}: non ha coreboot ${cb:0:12} (tools/build.sh prepare, o senza CB)"
+	else
+		cbdir="${O}/work/sbom-coreboot"
+		if ! GIT_NO_LAZY_FETCH=1 git -C "${cbdir}" cat-file -e "${cb}^{commit}" 2>/dev/null; then
+			git init -q "${cbdir}" || fail "SBOM" "${cbdir}: git init non va"
+			git -C "${cbdir}" fetch -q --depth=1 --filter=blob:none "${url}" "${cb}" \
+				|| fail "SBOM" "coreboot ${cb:0:12} non si scarica da ${url} (git fetch)"
+		fi
+	fi
+	args=(--repo "${O}" --coreboot "${cbdir}")
+	for v in "${FLAVOURS[@]}"; do
+		n="${d}/$(fl_name "${v}")"
+		[ -s "${n}.rom" ] || fail "SBOM" "${VERSION}-${v}: manca ${n##*/}.rom"
+		python3 -I "${O}/tools/sbom.py" "${args[@]}" -o "${n}-sbom.md" "${n}.rom" \
+			|| fail "SBOM" "${n##*/}.rom: tools/sbom.py non va"
+		python3 -I "${O}/tools/sbom.py" "${args[@]}" --cyclonedx -o "${n}.cdx.json" "${n}.rom" \
+			|| fail "SBOM" "${n##*/}.rom: tools/sbom.py --cyclonedx non va"
+		python3 -I "${O}/tools/sbom.py" "${args[@]}" --notes -o "${n}-sbom-notes.md" "${n}.rom" \
+			|| fail "SBOM" "${n##*/}.rom: tools/sbom.py --notes non va"
+		summ "**${VERSION}-${v}**"
+		cat "${n}-sbom-notes.md" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+		echo "  ok  ${VERSION}-${v}: ${n##*/}-sbom.md, ${n##*/}.cdx.json"
+	done
+}
+
 # Le ROM del job build (DIST) e quelle del job repro (REPRO, un runner che
 # ha costruito tutto da capo: coreboot, EDK2, iPXE, CSMWrap) uguali bit a
 # bit, con i loro .config. Se no, le regioni della mappa che differiscono
@@ -911,7 +1022,8 @@ case "${1:-}" in
 	version) cmd_version ;;
 	notes)   shift; cmd_notes "$@" ;;
 	check)   shift; cmd_check "$@" ;;
+	sbom)    shift; cmd_sbom "$@" ;;
 	compare) shift; cmd_compare "$@" ;;
 	publish) shift; cmd_publish "$@" ;;
-	*) die "uso: ci.sh version | notes DIST FLAVOUR | check DIST | compare DIST REPRO | publish DIST (flavour: ${FLAVOURS[*]})" ;;
+	*) die "uso: ci.sh version | notes DIST FLAVOUR | check DIST | sbom DIST [CB] | compare DIST REPRO | publish DIST (flavour: ${FLAVOURS[*]})" ;;
 esac

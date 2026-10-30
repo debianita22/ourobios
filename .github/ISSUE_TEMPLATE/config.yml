@@ -1,0 +1,22 @@
+# The choice of a new issue: only the forms of this folder, no blank issue,
+# and the documentation for what is not an issue.
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/debianita22/ourobios#readme
+    about: What a release contains, the flash layout, the setup menu, and the links to every guide.
+  - name: The machine does not boot after a flash
+    url: https://github.com/debianita22/ourobios/blob/main/docs/flashing.md#recovery
+    about: Recovery with an external programmer on the ThinkPad W541; Diagnosing a hang, on the same page, reads the POST code of a boot that stopped.
+  - name: ThinkCentre M920x Tiny
+    url: https://github.com/debianita22/ourobios/blob/main/docs/m920x.md
+    about: First install, updates, recovery of the two chips, Intel ME, fan, other processors and cards.
+  - name: Updates with capsules and fwupd
+    url: https://github.com/debianita22/ourobios/blob/main/docs/update.md
+    about: tools/update.py, fwupd, the setup menu with a USB drive, going back, and what each error message means.
+  - name: Testing a release and tools/hw-report.py
+    url: https://github.com/debianita22/ourobios/blob/main/docs/testing.md
+    about: The checks of tools/hw-report.py and the test matrix, to run before a bug or hardware report.
+  - name: Releases
+    url: https://github.com/debianita22/ourobios/releases
+    about: Images, capsules and fwupd packages of every version, with their notes and SHA256SUMS.

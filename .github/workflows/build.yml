@@ -12,10 +12,12 @@
 # Ogni release ha l'immagine completa del flash della board (W541 12 MiB,
 # M920x 24 MiB: IFD, GbE, ME, coreboot), le immagini dei due chip per un
 # programmatore esterno, la capsula firmata per l'aggiornamento da Linux
-# (docs/update.md) e il suo pacchetto fwupd (.cab), il .config, il layout e
-# SHA256SUMS; la mrc anche i metadati firmati del remote fwupd
-# (configs/fwupd/ourobios.conf), con i .cab di tutte le board, che il remote
-# scarica dalla release latest.
+# (docs/update.md) e il suo pacchetto fwupd (.cab), il .config, il layout,
+# la distinta dei componenti (SBOM, tools/sbom.py: Markdown e CycloneDX,
+# la fa il job release; il job build la prova su ogni build) e SHA256SUMS;
+# la mrc anche i metadati firmati del remote fwupd
+# (configs/fwupd/ourobios.conf), con i .cab di tutte le board, che il
+# remote scarica dalla release latest.
 # tools/verify-rom.sh blocca la release se i byte prima della regione BIOS
 # non sono quelli attesi dalla board (W541: i primi 5 MiB identici a
 # legacy/coreboot-4.22/coreboot.rom; M920x: lo SHA-256 dei primi 12 MiB in
@@ -247,6 +249,14 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+      # tools/sbom.py su queste ROM, anche nelle build di prova: un errore si
+      # vede qui e non al tag, nel job release che la rifa per pubblicarla.
+      # Dopo l'upload: le ROM restano negli artifact anche se si ferma, e la
+      # distinta non ci va (la release usa la sua). Di coreboot l'albero
+      # della build, senza rete
+      - name: SBOM
+        run: ./tools/ci.sh sbom dist work/coreboot
+
   # In parallelo alle ROM: le ROM un'altra volta, da capo, su un altro
   # runner (lo stesso albero, il crossgcc dalla cache, che salva il job
   # build); senza la chiave delle capsule, che non servono (gli slot si
@@ -412,6 +422,13 @@ jobs:
       # i metadati del remote fwupd con tutti i .cab (tools/ci.sh check)
       - name: Controlli
         run: ./tools/ci.sh check dist
+
+      # la distinta dei componenti di ogni ROM scaricata (tools/sbom.py):
+      # Markdown e CycloneDX negli asset della release, la sezione breve
+      # nelle note; di coreboot bastano gli alberi del commit pinnato, senza
+      # file: i commit dei submodule (vboot, libgfxinit, fsp...)
+      - name: SBOM
+        run: ./tools/ci.sh sbom dist
 
       - name: Pubblica
         run: ./tools/ci.sh publish dist
