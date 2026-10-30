@@ -141,9 +141,4 @@ CONFIG_EDK2_CSMWRAP_FILE="m920x/csmwrap.efi"
 # processore F, senza grafica, e' l'unico schermo); con Secure Boot acceso
 # EDK2 le verifica con le chiavi di db
 CONFIG_EDK2_LOAD_OPTION_ROMS=y
-# Niente driver PS/2: coreboot lascia spenta la tastiera del Super I/O
-# (devicetree.cb, pnp 2e.5), quindi in EDK2 non avrebbero niente da guidare.
-# Senza EDK2_PS2_SUPPORT escono SioBusDxe e Ps2KeyboardDxe; Ps2MouseDxe ha
-# un suo interruttore nel .dsc (PS2_MOUSE_ENABLE, acceso di default).
-# CONFIG_EDK2_PS2_SUPPORT is not set
-CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D UFS_ENABLE=FALSE -D UHCI_ENABLE=FALSE -D EBC_ENABLE=FALSE -D EXTRA_FS_DRIVERS=FALSE -D CRYPTO_PROTOCOL_SUPPORT=TRUE -D PS2_MOUSE_ENABLE=FALSE"
+CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D UFS_ENABLE=FALSE -D UHCI_ENABLE=FALSE -D EBC_ENABLE=FALSE -D EXTRA_FS_DRIVERS=FALSE -D CRYPTO_PROTOCOL_SUPPORT=TRUE"

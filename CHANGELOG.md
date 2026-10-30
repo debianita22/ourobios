@@ -147,9 +147,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   the firmware's own drivers); *Boot from USB drives*, off to keep them out
   of the boot order and the boot menu (not a security setting: the Shell,
   CSMWrap, an OS entry and the fallback path still start them); *Boot menu
-  prompt*, off to hide "Press ESC" on the logo, while Esc still works. The
-  M920x payload has no PS/2 drivers any more: the board has no PS/2 port,
-  and coreboot keeps the keyboard controller of the Super I/O off.
+  prompt*, off to hide "Press ESC" on the logo, while Esc still works.
 - From rc4, updates of the M920x keep the memory training: the capsules
   rewrite the two RW slots only, `tools/update.py other-slot` leaves
   `RW_MRC_CACHE` as it is (`--retrain` empties it), and *Go back to* in
