@@ -10,7 +10,7 @@
 # si comporta da sistema operativo (tools/efi/slot-lock-test.c).
 #
 #   python3 tools/qemu-update.py [--out DIR] [--timeout S] --lock-test EFI
-#                                A.cap B.cap C.cap D.cap
+#                                [--keep-cache B-cache.cap] A.cap B.cap C.cap D.cap
 #
 # Il flash parte dalla ROM della capsula A e resta lo stesso da un avvio
 # all'altro. QEMU esce a ogni reset (-no-reboot) e riparte da spento, come
@@ -52,6 +52,9 @@
 #      di 0x5A, cosi' la capsula ne riscrive ogni blocco): vboot resta sullo
 #      slot di prima; la stessa capsula, preparata di nuovo, lo finisce
 #  12. la capsula su una chiavetta USB invece che nell'ESP
+#  13. con --keep-cache, la capsula di B con i soli due slot nel manifest,
+#      come quelle del M920x (BOARD_CAPSULE_REGIONS): scritto lo slot B,
+#      RW_MRC_CACHE com'era (pieno di 0x5A); vboot prova B
 # A ogni avvio fino al payload, l'ESRT che il payload stampa (build DEBUG):
 # il firmware di sistema con la versione dello slot che gira, e l'ultimo
 # tentativo.
@@ -111,6 +114,8 @@ VAR_VALID = (0x3F, 0x3E)
 NV_UNKNOWN, NV_TRYING, NV_SUCCESS, NV_FAILURE = 0, 1, 2, 3
 SLOTS = "AB"
 ROMS = "ABCD"
+# il manifest di una capsula che lascia il training della RAM (il M920x)
+KEEP_CACHE_REGIONS = ["RW_SECTION_A", "RW_SECTION_B"]
 TAG_RE = r"ouroBIOS-v\d+\.\d+\.\d+(?:-rc\d+)?-mrc\+update-test-[A-Z]"
 
 ESP_OFFSET = 1 << 20            # la partizione a 1 MiB, come la fanno gli installer
@@ -298,8 +303,9 @@ class UpdateTest:
     def idle(self, text):
         return any(m in text for m in self.IDLE)
 
-    def __init__(self, caps, lock_test, out, timeout):
+    def __init__(self, caps, lock_test, out, timeout, keep_cache=None):
         self.paths, self.lock_test, self.out, self.timeout = caps, lock_test, out, timeout
+        self.keep_path, self.keep = keep_cache, None
         self.tmp = self.m = None
         self.usb = None
         self.steps = []
@@ -313,6 +319,14 @@ class UpdateTest:
                 raise Fail("%s: la capsula scrive %s, non %s come quelle delle release"
                            % (path, cap["regions"], update.REGIONS))
             self.caps[key] = {"path": path, "cap": cap, "image": cap["image"]}
+        if self.keep_path:
+            # la ROM di B, il manifest senza RW_MRC_CACHE
+            _, cap = update.load_capsule(self.keep_path)
+            if cap["regions"] != KEEP_CACHE_REGIONS or cap["image"] != self.caps["B"]["image"] \
+                    or cap["type_id"] != self.caps["B"]["cap"]["type_id"]:
+                raise Fail("%s: non e' la capsula di B con le regioni %s (scrive %s)"
+                           % (self.keep_path, KEEP_CACHE_REGIONS, cap["regions"]))
+            self.keep = {"path": self.keep_path, "cap": cap}
         guids = {c["cap"]["type_id"] for c in self.caps.values()}
         if len(guids) != 1:
             raise Fail("le capsule non sono dello stesso firmware (GUID)")
@@ -429,17 +443,19 @@ class UpdateTest:
                           + (exp[0], update.version_str(exp[1]), update.version_str(exp[2]),
                              update.version_str(exp[3]), exp[4])))
 
-    def stage(self, key, drive=None):
-        """La capsula nell'ESP (o in drive), il bit in OsIndications,
-        RW_MRC_CACHE pieno: la capsula lo deve riscrivere."""
-        (drive or self.esp).put(self.caps[key]["path"], "ouroBIOS-%s.cap" % key)
+    def stage(self, key, drive=None, path=None):
+        """La capsula nell'ESP (o in drive; path al posto di quella di key),
+        il bit in OsIndications, RW_MRC_CACHE pieno: la capsula lo deve
+        riscrivere, o lasciare com'e' se non lo nomina."""
+        (drive or self.esp).put(path or self.caps[key]["path"], "ouroBIOS-%s.cap" % key)
         self.flash.set_var("OsIndications", EFI_GLOBAL, update.VAR_ATTRS,
                            struct.pack("<Q", self.flash.os_indications() | update.FILE_CAPSULE_DELIVERY))
         self.flash.fill("RW_MRC_CACHE", 0x5A)
 
-    def capsule_boot(self, tag, key, running, trace=None):
+    def capsule_boot(self, tag, key, running, trace=None, keep_cache=False):
         """Un avvio con la capsula key mentre gira lo slot running: il payload
-        scrive solo l'altro slot, chiede a vboot di provarlo e riavvia."""
+        scrive solo l'altro slot, chiede a vboot di provarlo e riavvia. Con
+        keep_cache la capsula non nomina RW_MRC_CACHE, che resta com'era."""
         before = self.flash.data()
         target = "B" if running == "A" else "A"
         how, text = self.boot(tag, trace=trace)
@@ -459,7 +475,10 @@ class UpdateTest:
             raise Fail("%s: scritto lo slot %s, quello che gira" % (tag, running))
         if self.flash.region("RW_SECTION_" + target, after) != self.flash.region("RW_SECTION_" + target, image):
             raise Fail("%s: lo slot %s non e' quello della capsula %s" % (tag, target, key))
-        if self.flash.region("RW_MRC_CACHE", after) != self.flash.region("RW_MRC_CACHE", image):
+        if keep_cache:
+            if self.flash.region("RW_MRC_CACHE", after) != self.flash.region("RW_MRC_CACHE", before):
+                raise Fail("%s: RW_MRC_CACHE cambiato, la capsula non lo nomina" % tag)
+        elif self.flash.region("RW_MRC_CACHE", after) != self.flash.region("RW_MRC_CACHE", image):
             raise Fail("%s: RW_MRC_CACHE non riscritto dalla capsula" % tag)
         st = self.flash.nv()
         if not st["valid"] or SLOTS[st["try_next"]] != target or st["try_count"] != 2:
@@ -827,13 +846,24 @@ class UpdateTest:
         self.ok("capsula A da una chiavetta USB: scritto lo slot A, capsula tolta dalla chiavetta; vboot "
                 "prova A e il payload lo conferma")
 
+        # 13. la capsula di B senza RW_MRC_CACHE nel manifest, come quelle
+        # del M920x: lo slot B (ora C) riscritto, il training della RAM no
+        if self.keep:
+            self.stage("B", path=self.keep["path"])
+            self.capsule_boot("13-capsula-B-cache", "B", "A", keep_cache=True)
+            how, text = self.boot("13-B")
+            self.expect("13-B", how, text, "booted")
+            self.confirmed("13-B", text, "B", "B", trying=True, last=(v["B"], 0))
+            self.ok("capsula B con i soli slot nel manifest (%s): scritto lo slot B, RW_MRC_CACHE com'era; "
+                    "vboot prova B e il payload lo conferma" % " ".join(KEEP_CACHE_REGIONS))
+
         # alla fine
         if f.region("WP_RO") != self.ro:
             raise Fail("la parte RO e' cambiata")
         if f.var(MARK_NAME, MARK_GUID) != MARK_DATA:
             raise Fail("la variabile %s scritta all'inizio non c'e' piu'" % MARK_NAME)
-        self.ok("dopo 10 capsule, una interrotta, e un ritorno dal setup: la parte RO e' quella della ROM A, "
-                "la variabile UEFI scritta prima degli aggiornamenti c'e' ancora")
+        self.ok("dopo %d capsule, una interrotta, e un ritorno dal setup: la parte RO e' quella della ROM A, "
+                "la variabile UEFI scritta prima degli aggiornamenti c'e' ancora" % (11 if self.keep else 10))
         return self.steps
 
 
@@ -851,6 +881,9 @@ def main():
                     help="le capsule %s (tools/build.sh update-test)" % ", ".join(ROMS))
     ap.add_argument("--lock-test", required=True, metavar="EFI",
                     help="tools/efi/slot-lock-test.c compilato (tools/build.sh update-test)")
+    ap.add_argument("--keep-cache", metavar="CAP",
+                    help="la capsula di B con i soli due slot nel manifest (tools/build.sh update-test, "
+                    "B-cache.cap): il passo 13")
     ap.add_argument("--out", default="update-test", help="seriale e riassunto (default: update-test/)")
     ap.add_argument("--timeout", type=float, default=300, help="secondi per ogni avvio (default 300)")
     args = ap.parse_args()
@@ -858,7 +891,7 @@ def main():
         if not shutil.which(tool):
             sys.exit("serve %s (Debian/Ubuntu: apt install qemu-system-x86 mtools)" % tool)
     os.makedirs(args.out, exist_ok=True)
-    test = UpdateTest(args.caps, args.lock_test, args.out, args.timeout)
+    test = UpdateTest(args.caps, args.lock_test, args.out, args.timeout, args.keep_cache)
     passed = False
     try:
         test.run()
