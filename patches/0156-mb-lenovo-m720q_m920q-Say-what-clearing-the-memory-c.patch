@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 30 Oct 2026 08:05:34 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Say what clearing the memory costs
+ here
+
+The help of "Clear memory at power-on" says about 1 s with 32 GB, the
+figure of the W541. On an M920x with 40 GB, the BS_DEV_INIT exit hook
+that clears it takes 2003 ms of a boot (cbmem -1), about 0.5 s for
+each 10 GB, the most expensive step after the serial console.
+
+TEST=cbmem -1 on an M920x with 32 + 8 GB: "BS: BS_DEV_INIT exit times
+(exec / console): 2003 / 110 ms", the clear_memory lines inside it.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/cfr.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index 6ae81352d1..4df7e0b67b 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -473,7 +473,8 @@ static const struct sm_object clear_dram_on_boot = SM_DECLARE_BOOL({
+ 	.ui_name	= "Clear memory at power-on",
+ 	.ui_helptext	= "Clear all the memory at every boot (not when resuming\n"
+ 			  "from sleep), so that what the previous OS left in it\n"
+-			  "cannot be read. About 1 s more per boot with 32 GB.\n"
++			  "cannot be read. About 0.5 s more per boot for each 10 GB:\n"
++			  "2 s with 40 GB.\n"
+ 			  "Default: on.",
+ 	.default_value	= true,
+ });
+-- 
+2.47.3
+

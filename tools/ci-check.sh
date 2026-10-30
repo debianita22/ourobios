@@ -136,6 +136,34 @@ EOF
 	else
 		bad "tools/vpd.py: la VPD scritta non si rilegge uguale"
 	fi
+	# --from-lenovo: le variabili DmiVar di una NVRAM AMI finta, con un numero
+	# di serie cambiato dopo (voce di soli dati in fondo alla catena dei next)
+	# e una voce non valida, che non conta
+	if python3 - <<'EOF'
+import struct
+import sys
+import uuid
+sys.dont_write_bytecode = True
+sys.path.insert(0, "tools")
+import vpd
+def nvar(name, data, attr=0x83, nxt=0xFFFFFF):
+    body = (b"\0" + name.encode() + b"\0" if name else b"") + data
+    return b"NVAR" + struct.pack("<H", 10 + len(body)) + nxt.to_bytes(3, "little") + bytes([attr]) + body
+u = uuid.uuid4()
+first = nvar("DmiVar0100010700", b"PC0ABCDE\0")
+mtm = nvar("DmiVar0100010500", b"10S2S00V00\0")
+newer = nvar(None, b"PC0XYZ12\0", attr=0x88)
+serial = nvar("DmiVar0100010700", b"PC0ABCDE\0", nxt=len(first) + len(mtm))
+buf = b"\xff" * 64 + serial + mtm + newer + nvar("DmiVar0100010800", u.bytes_le) \
+    + nvar("DmiVar0200020700", b"BOARD\0", attr=0x03) + b"\xff" * 64
+assert vpd.lenovo_dmi(buf) == {"serial": b"PC0XYZ12\0", "mtm": b"10S2S00V00\0", "uuid": u.bytes_le}
+assert vpd.lenovo_dmi(b"\xff" * 4096) == {}
+EOF
+	then
+		ok "tools/vpd.py: --from-lenovo legge le DmiVar di una NVRAM AMI"
+	else
+		bad "tools/vpd.py: --from-lenovo non legge le DmiVar come deve"
+	fi
 	# Una capsula con la struttura di GenerateCapsule (firma finta) letta da
 	# tools/update.py: variante, versioni, regioni del manifest RMAP, immagine
 	if python3 - <<'EOF'

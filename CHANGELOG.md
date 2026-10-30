@@ -56,6 +56,17 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   firmware: the override of the PCH for the wake of the LAN from S4 and
   S5 is on, *Energy Saver* → *Wake on LAN from off* (0154-0155). Without
   it Linux arms the port up to S4 only, as the ACPI tables say.
+- From rc3, the M920x boots about 4 s faster: the serial console of
+  coreboot (COM1 of the Super I/O, a real UART behind an optional
+  connector) prints from INFO instead of DEBUG, which at 115200 baud took
+  5 s per boot; `cbmem -1` still has every line. The level is a saved
+  option: on an installed machine, *Console* → *Console Log Level*
+  ([docs/m920x.md](docs/m920x.md#boot-time)). The help of *Clear memory
+  at power-on* gives its time there, 2 s with 40 GB (0156).
+- `tools/vpd.py set --from-lenovo DUMP`: the serial number, MTM and UUID
+  of an M920x from the dump of its Lenovo firmware (the `DmiVar`
+  variables of the AMI NVRAM), the UUID of the factory included, which
+  is not on the label ([docs/m920x.md](docs/m920x.md#serial-number-and-machine-type-vpd)).
 
 ## v1.3.10
 

@@ -10,6 +10,7 @@
 #   python3 tools/vpd.py show dump.rom
 #   python3 tools/vpd.py set dump.rom -o vpd.rom --serial R9-0XXXXX \
 #           --mtm 20EF-001UGE --uuid serial
+#   python3 tools/vpd.py set dump.rom -o vpd.rom --from-lenovo lenovo.rom
 #   python3 tools/vpd.py copy dump.rom w541-coreboot-vX.Y.Z-mrc.rom -o w541-flash.rom
 #
 # I file sono immagini o dump interi con la FMAP (W541 12 MiB, M920x
@@ -65,6 +66,19 @@ SKUS = {"ThinkCentre M920x": "LENOVO_MT_{mt}_BU_Think_FM_{family}"}
 # --uuid serial: un UUID ricavato da MTM e numero di serie (versione 5, con
 # questo namespace fisso), uguale ogni volta che si riscrive la VPD
 UUID_NAMESPACE = uuid.UUID("5a8f1c0e-3b7d-4e62-9a41-7c0d2e9b6f13")
+
+# --from-lenovo: i dati che il BIOS AMI di Lenovo (M920x) tiene nella sua
+# NVRAM, in un dump del flash fatto prima di installare ouroBIOS. Sono
+# variabili NVAR "DmiVarTTHHHHOO": tipo TT, handle HHHH e offset OO del campo
+# SMBIOS. L'UUID non e' sull'etichetta: solo da qui resta quello di fabbrica
+LENOVO_DMI = {
+    "DmiVar0100010500": "mtm",           # tipo 1, Product Name: l'MTM
+    "DmiVar0100010700": "serial",        # tipo 1, Serial Number
+    "DmiVar0100010800": "uuid",          # tipo 1, UUID, 16 byte nell'ordine SMBIOS
+    "DmiVar0200020700": "board_serial",  # tipo 2, Serial Number, se il BIOS lo ha
+}
+NVAR_VALID, NVAR_EXT_HEADER, NVAR_DATA_ONLY, NVAR_GUID, NVAR_ASCII_NAME = 0x80, 0x10, 0x08, 0x04, 0x02
+NVAR_NO_NEXT = 0xFFFFFF
 
 
 def die(msg):
@@ -240,6 +254,70 @@ def check_string(key, text):
     return text.encode("ascii")
 
 
+def nvar_header(data, pos):
+    """(dimensione, next, attributi) della voce NVAR a pos, o None."""
+    if data[pos:pos + 4] != b"NVAR" or pos + 10 > len(data):
+        return None
+    size = struct.unpack_from("<H", data, pos + 4)[0]
+    if size <= 10 or pos + size > len(data):
+        return None
+    return size, int.from_bytes(data[pos + 6:pos + 9], "little"), data[pos + 9]
+
+
+def lenovo_dmi(data):
+    """I campi di LENOVO_DMI dalle variabili NVAR di un dump del BIOS Lenovo:
+    {campo: bytes}. Una variabile cambiata dopo la prima scrittura ha il
+    valore nuovo in una voce di soli dati, in fondo alla catena dei next
+    (offset dall'inizio della voce, NVAR_NO_NEXT alla fine). Le voci con
+    l'header esteso si saltano: qui non ce ne sono, e il formato e' un altro."""
+    found = {}
+    pos = data.find(b"NVAR")
+    while pos >= 0:
+        hdr = nvar_header(data, pos)
+        if hdr and hdr[2] & NVAR_VALID and hdr[2] & NVAR_ASCII_NAME \
+                and not hdr[2] & (NVAR_DATA_ONLY | NVAR_EXT_HEADER):
+            size, nxt, attr = hdr
+            name_at = pos + 10 + (16 if attr & NVAR_GUID else 1)
+            end = data.find(b"\0", name_at, pos + size)
+            name = data[name_at:end].decode("ascii", "replace") if end > 0 else ""
+            if name in LENOVO_DMI:
+                value, cur = data[end + 1:pos + size], pos
+                for _ in range(64):
+                    if nxt == NVAR_NO_NEXT:
+                        break
+                    cur += nxt
+                    nhdr = nvar_header(data, cur)
+                    if not nhdr or nhdr[2] & NVAR_EXT_HEADER:
+                        break
+                    if nhdr[2] & NVAR_VALID:
+                        value = data[cur + 10:cur + nhdr[0]]
+                    nxt = nhdr[1]
+                found[LENOVO_DMI[name]] = bytes(value)
+        pos = data.find(b"NVAR", pos + 4)
+    return found
+
+
+def from_lenovo(args):
+    """Riempie --serial, --mtm, --board-serial e --uuid non dati con i valori
+    del BIOS Lenovo nel dump args.from_lenovo."""
+    with open(args.from_lenovo, "rb") as f:
+        dmi = lenovo_dmi(f.read())
+    taken = []
+    for field, attr in (("serial", "serial"), ("mtm", "mtm"), ("board_serial", "board_serial")):
+        text = dmi.get(field, b"").split(b"\0")[0].decode("ascii", "replace").strip()
+        if text and getattr(args, attr) is None:
+            setattr(args, attr, text)
+            taken.append(field)
+    raw = dmi.get("uuid", b"")[:16]
+    if len(raw) == 16 and raw not in (b"\0" * 16, b"\xff" * 16) and args.uuid is None:
+        args.uuid = str(uuid.UUID(bytes_le=raw))
+        taken.append("uuid")
+    if not taken:
+        die("%s: nessun dato del BIOS Lenovo da prendere (variabili DmiVar nella NVRAM AMI): "
+            "e' un dump del flash fatto con il firmware Lenovo?" % args.from_lenovo)
+    print("dal BIOS Lenovo (%s): %s" % (args.from_lenovo, ", ".join(taken)))
+
+
 def cmd_show(args):
     _, off, size, entries = load(args.image)
     print_entries(entries, "%s @0x%x" % (args.image, off))
@@ -251,6 +329,8 @@ def cmd_set(args):
     data, off, size, entries = load(args.image)
     entries = [] if args.clear else list(entries)
     current = dict(entries)
+    if args.from_lenovo:
+        from_lenovo(args)
 
     updates = []
     if args.serial is not None:
@@ -374,6 +454,9 @@ def main():
     p.add_argument("--delete", action="append", default=[], metavar="CHIAVE",
                    help="toglie una chiave")
     p.add_argument("--clear", action="store_true", help="parte da una VPD vuota")
+    p.add_argument("--from-lenovo", metavar="DUMP",
+                   help="numero di serie, MTM e UUID dal BIOS Lenovo di un dump fatto prima di "
+                   "installare ouroBIOS (M920x); quelli dati qui vincono")
     p.set_defaults(func=cmd_set)
 
     p = sub.add_parser("copy", help="copia la VPD di un dump in un'immagine nuova")
