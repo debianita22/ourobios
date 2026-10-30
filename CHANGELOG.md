@@ -96,6 +96,25 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 - From rc4, about 0.5 s less at every boot of the M920x and of the W541:
   SMM no longer reads the *BIOS Lock* option from the flash without
   cache at the end of the boot, ramstage gives it the value (0170).
+- From rc4, the M920x with other processors and cards than the port
+  machine's: PL2 1.25 times the TDP as the OEM firmware, instead of 65 W
+  for every processor (a T model drew 65 W in bursts, a 65 W one with
+  Turbo Boost stopped under its 81 W); the fan class follows PL1 when it
+  is set; Turbo Boost and Hyper-Threading are in the menu only where the
+  processor has them (0171). The *Wireless* switch also turns off a CNVi
+  card; with an F processor (no graphics) the riser port stays on; EDK2
+  loads the option ROMs of the cards, so a graphics card on the riser
+  shows the firmware screen and the setup (0172 and the M920x defconfig).
+  A machine that already saved its settings keeps the PL2 it had:
+  *Energy Saver* → *Processor* → *CPU PL2 power limit* → 0.
+- From rc4, on the M920x, two bugs reported upstream for the M720q and the
+  M920q: the DisplayPort output was described as HDMI in the VBT, so a DP
+  monitor was not detected under Linux (coreboot bug #670, 0174); a
+  memory training cache made with another processor or with
+  Hyper-Threading the other way is no longer given back to FSP-M, which
+  trains again (0173). The first boot after the update trains the memory
+  once, about 40 s with a black screen. The global reset of bug #655
+  was already fixed in the coreboot of rc3.
 - `tools/update.py other-slot` also takes the test builds of the CI
   (`ouroBIOS-ci-N-...`), to try one in the slot that is not running.
 
