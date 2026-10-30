@@ -166,5 +166,4 @@
 0170-security-lockdown-Give-SMM-the-BIOS-Lock-option-read.patch
 0171-mb-lenovo-m720q_m920q-Follow-the-installed-processor.patch
 0172-mb-lenovo-m720q_m920q-Wi-Fi-switch-for-CNVi-cards-PE.patch
-0173-mb-lenovo-m720q_m920q-Retrain-memory-for-another-CPU.patch
 0174-mb-lenovo-m720q_m920q-Use-a-VBT-with-DisplayPort-on-.patch
