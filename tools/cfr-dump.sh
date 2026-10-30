@@ -138,6 +138,9 @@ cflags=("${arch[@]}" -std="${std}" -O1 -g -nostdinc -ffreestanding -fno-builtin 
 	-I"${tree}/3rdparty/vboot/firmware/include" -I"${tree}/3rdparty"
 	-include "${tree}/src/include/kconfig.h" -include "${tree}/src/include/rules.h"
 	-include "${tree}/src/commonlib/bsd/include/commonlib/bsd/compiler.h")
+# Gli header della board (<mainboard/...>), se ne ha: il suo Makefile.mk li
+# aggiunge con CPPFLAGS_common, e il cfr.c del M920x usa mainboard/ec.h
+[ -d "${tree}/src/mainboard/${mbdir}/include" ] && cflags+=(-I"${tree}/src/mainboard/${mbdir}/include")
 # Con un SoC Intel (il M920x: cannonlake), i suoi header e quelli del codice
 # comune e di FSP, dopo gli altri come nel Makefile di coreboot: il cfr.c
 # della board usa i suoi enum (soc/soc_chip.h, intelblocks/)
