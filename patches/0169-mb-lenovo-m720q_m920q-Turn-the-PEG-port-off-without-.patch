@@ -1,0 +1,150 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 30 Oct 2026 12:34:57 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Turn the PEG port off without a riser
+ card
+
+FSP-M's default for the PEG port of the riser slot is Auto, "enable
+the port if an endpoint is present", but on the M920x Tiny it leaves
+the port on with an empty slot on almost every boot. An enabled PEG
+port without a card keeps the processor package out of the C-states
+deeper than PC3: about 1.1 W at idle instead of 0.55 W with PC9.
+
+Decide in romstage, from the slot's Presence Detect State and the Data
+Link Layer Link Active bit before FSP-M trains the port: without a
+card, Peg0Enable = 0; with a card, FSP-M's Auto as before. The
+"peg_slot" option in Hardware > Devices, as the "Enable Root Port"
+item of the OEM setup: Auto (default), Enabled, Disabled.
+
+TEST=Built lenovo/m920x. Package C-states with the empty slot, in the
+hardware test.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/cfr.c        | 18 ++++++++
+ .../lenovo/m720q_m920q/include/mainboard/ec.h |  7 +++
+ src/mainboard/lenovo/m720q_m920q/romstage.c   | 45 +++++++++++++++++++
+ 3 files changed, 70 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index 363d7b6e6c..9a09cd49e7 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -447,6 +447,23 @@ static const struct sm_object onboard_wlan = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ });
+ 
++static const struct sm_object peg_slot = SM_DECLARE_ENUM({
++	.opt_name	= "peg_slot",
++	.ui_name	= "PCIe riser slot",
++	.ui_helptext	= "The processor's PCIe port of the riser slot. Auto: on\n"
++			  "with a card on the riser, off without one, which lets the\n"
++			  "processor package reach its deepest idle states.\n"
++			  "Enabled: always on, for a card that Auto does not see.\n"
++			  "Disabled: always off, a card on the riser included.\n"
++			  "Default: Auto.",
++	.default_value	= PEG_SLOT_AUTO,
++	.values		= (const struct sm_enum_value[]) {
++				{ "Auto",	PEG_SLOT_AUTO		},
++				{ "Enabled",	PEG_SLOT_ENABLED	},
++				{ "Disabled",	PEG_SLOT_DISABLED	},
++				SM_ENUM_VALUE_END			},
++});
++
+ static const struct sm_object front_usb = SM_DECLARE_BOOL({
+ 	.opt_name	= "front_usb",
+ 	.ui_name	= "Front USB ports",
+@@ -470,6 +487,7 @@ static const struct sm_object hardware_devices = SM_DECLARE_FORM({
+ 		&onboard_ethernet,
+ 		&onboard_audio,
+ 		&onboard_wlan,
++		&peg_slot,
+ 		&front_usb,
+ 		&rear_usb,
+ 		NULL
+diff --git a/src/mainboard/lenovo/m720q_m920q/include/mainboard/ec.h b/src/mainboard/lenovo/m720q_m920q/include/mainboard/ec.h
+index f6f045486f..15262f8363 100644
+--- a/src/mainboard/lenovo/m720q_m920q/include/mainboard/ec.h
++++ b/src/mainboard/lenovo/m720q_m920q/include/mainboard/ec.h
+@@ -10,4 +10,11 @@ enum ice_mode {
+ 	ICE_FULL_SPEED		= 2,
+ };
+ 
++/* The "peg_slot" option: the PEG port of the riser slot (romstage.c) */
++enum peg_slot {
++	PEG_SLOT_AUTO		= 0,
++	PEG_SLOT_ENABLED	= 1,
++	PEG_SLOT_DISABLED	= 2,
++};
++
+ #endif /* MAINBOARD_EC_H */
+diff --git a/src/mainboard/lenovo/m720q_m920q/romstage.c b/src/mainboard/lenovo/m720q_m920q/romstage.c
+index 8e50403b1a..feb0d46e4c 100644
+--- a/src/mainboard/lenovo/m720q_m920q/romstage.c
++++ b/src/mainboard/lenovo/m720q_m920q/romstage.c
+@@ -1,5 +1,9 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <console/console.h>
++#include <device/pci_def.h>
++#include <device/pci_ops.h>
++#include <mainboard/ec.h>
+ #include <option.h>
+ #include <soc/cnl_memcfg_init.h>
+ #include <soc/romstage.h>
+@@ -37,6 +41,45 @@ static const struct cnl_mb_cfg baseboard_mem_cfg = {
+ 	.ect = 1,
+ };
+ 
++/*
++ * A card on the riser slot (PEG port 00:01.0), from the slot's presence
++ * detect and link state before FSP-M trains the port. FSP-M's own Auto
++ * leaves the port on without a card on most boots, and an empty PEG port
++ * keeps the package out of the C-states deeper than PC3.
++ */
++static bool peg_card_present(void)
++{
++	const pci_devfn_t peg = PCI_DEV(0, 1, 0);
++	uint16_t cap, flags, slot, link;
++
++	if (pci_s_read_config16(peg, PCI_VENDOR_ID) == 0xffff)
++		return false;
++	cap = pci_s_find_capability(peg, PCI_CAP_ID_PCIE);
++	if (!cap)
++		return true;
++	flags = pci_s_read_config16(peg, cap + PCI_EXP_FLAGS);
++	slot = pci_s_read_config16(peg, cap + PCI_EXP_SLTSTA);
++	link = pci_s_read_config16(peg, cap + PCI_EXP_LNKSTA);
++	printk(BIOS_INFO, "PEG: PCIe flags 0x%04x, slot status 0x%04x, link status 0x%04x\n",
++	       flags, slot, link);
++	return (slot & PCI_EXP_SLTSTA_PDS) || (link & PCI_EXP_LNKSTA_DLLLA);
++}
++
++static uint8_t peg_enable(void)
++{
++	switch (get_uint_option("peg_slot", PEG_SLOT_AUTO)) {
++	case PEG_SLOT_ENABLED:
++		return 1;
++	case PEG_SLOT_DISABLED:
++		return 0;
++	default:
++		if (peg_card_present())
++			return 2;	/* FSP-M's Auto, which trains the link */
++		printk(BIOS_INFO, "PEG: no card on the riser slot, port off\n");
++		return 0;
++	}
++}
++
+ void mainboard_memory_init_params(FSPM_UPD *memupd)
+ {
+ 	cannonlake_memcfg_init(&memupd->FspmConfig, &baseboard_mem_cfg);
+@@ -44,4 +87,6 @@ void mainboard_memory_init_params(FSPM_UPD *memupd)
+ 	/* The Wi-Fi card on root port 6 (pcie_rp6), unless "onboard_wlan" is off */
+ 	if (!get_uint_option("onboard_wlan", 1))
+ 		memupd->FspmConfig.PcieRpEnableMask &= ~(1 << 5);
++
++	memupd->FspmConfig.Peg0Enable = peg_enable();
+ }
+-- 
+2.47.3
+
