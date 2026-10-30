@@ -59,8 +59,11 @@ A capsule ([docs/update.md](update.md)) carries both slots. The payload,
 in the boot that applies it:
 
 1. reads `RW_NVRAM` and finds the slot that is running;
-2. writes the other one (and clears `RW_MRC_CACHE`, so that the new code
-   trains the memory again), verifying every block;
+2. writes the other one, verifying every block; a W541 capsule also clears
+   `RW_MRC_CACHE`, so that the new code trains the memory again, while an
+   M920x one from v1.4.0-rc4 leaves it, and the new slot trains only if
+   the version of the cache does not match its FSP-M, processor and
+   Hyper-Threading setting ([docs/update.md](update.md#what-changes-and-what-stays));
 3. appends a record to `RW_NVRAM`: *try next* the new slot, two tries;
 4. restarts.
 
@@ -73,7 +76,10 @@ alternate. Until then the old slot keeps the release before:
 and so does, without an OS, *Go back to* on the *Firmware Update* page of the
 setup ([From the setup](update.md#from-the-setup)): the payload asks
 coreboot's SMMSTORE handler to try the other slot, with two tries, and to
-clear `RW_MRC_CACHE` (patch 0065). The payload locks that request before it
+clear `RW_MRC_CACHE` (patch 0065; on the M920x from v1.4.0-rc4 the cache
+stays, `SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE`, patch 0179, and the
+version of the cache tells the other slot whether to train). The payload
+locks that request before it
 starts a boot option and at `ExitBootServices()`, coreboot on S3 resume: an
 OS loader or an OS goes back only with a capsule. Before the lock, coreboot
 checks the request as the setup does, for the code that runs earlier
@@ -82,7 +88,9 @@ checks the request as the setup does, for the code that runs earlier
 variant of the running one and a version not below its lowest supported
 version.
 
-The capsule never writes `WP_RO`, `SMMSTORE`, `RO_VPD` or `RW_ELOG`.
+The capsule never writes `WP_RO`, `SMMSTORE`, `RO_VPD` or `RW_ELOG`: the
+payload writes the regions that the manifest of the capsule names, and the
+manifests of the releases name the slots, and on the W541 `RW_MRC_CACHE`.
 
 ## Firmware protection
 
@@ -96,7 +104,12 @@ only the slots.
 
 Turn it off only to write the whole BIOS region with flashrom (switching
 variant, an update of the read-only part), then on again. *BIOS Lock*, in
-the same menu, still controls who may write the rest of the flash.
+the same menu, still controls who may write the rest of the flash. On the
+M920x, `sudo python3 tools/update.py protection` shows whether `WP_RO` is
+in a locked range in this boot, and `--expect-ro on` makes that a check
+for scripts ([docs/update.md](update.md#flash-protection)). From
+v1.4.0-rc4 an RTC power loss on the M920x turns the option back on, with
+the other settings ([docs/m920x.md](m920x.md#resetting-the-settings)).
 
 ## Keys
 
@@ -252,10 +265,11 @@ their capsules, made as those of the releases; each capsule goes into
 bit of `OsIndications`, as `update.py stage` puts it; QEMU starts from off
 at every reset:
 
-- capsule B while A runs: the payload writes slot B and `RW_MRC_CACHE`, asks
-  vboot to try B for two boots and restarts; slot A and the read-only part
-  are unchanged, the capsule is gone from the ESP and the bit from
-  `OsIndications`. vboot boots B and the payload confirms it;
+- capsule B while A runs: the payload writes slot B and `RW_MRC_CACHE` (the
+  manifest of the W541 capsules), asks vboot to try B for two boots and
+  restarts; slot A and the read-only part are unchanged, the capsule is
+  gone from the ESP and the bit from `OsIndications`. vboot boots B and the
+  payload confirms it;
 - capsule C: it goes to slot A, which is no longer running, and boots;
 - capsule B again, the release already in the other slot (`update.py
   rollback`): with QEMU's trace of the flash, not one byte written to the
@@ -268,8 +282,9 @@ at every reset:
   *Firmware Update*, the keys sent by QEMU, the pages followed on the
   serial port): the page shows slot A with D and slot B with B, *Go back
   to* B is confirmed with Y, coreboot asks vboot to try B with two tries and
-  clears `RW_MRC_CACHE`, nothing is written to the slots; vboot boots B and
-  the payload confirms it;
+  clears `RW_MRC_CACHE` (the q35 ROMs do not select
+  `SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE`, as the W541), nothing is written
+  to the slots; vboot boots B and the payload confirms it;
 - a boot option, a UEFI application in `\EFI\BOOT\BOOTX64.EFI`
   (`tools/efi/slot-lock-test.c`), asks coreboot for the other slot as a boot
   loader would, then after `ExitBootServices()` as an OS: refused both
@@ -292,12 +307,16 @@ at every reset:
 - capsule A on a USB drive instead of the ESP (`edk2/0012`, what *Update
   from a USB drive* of the setup prepares): slot A written, the capsule
   removed from the drive;
+- capsule B again, made with the two slots only in its manifest, as those
+  of the M920x from v1.4.0-rc4 (`B-cache.cap`, `--keep-cache`): slot B
+  written, `RW_MRC_CACHE` left as it was (filled with a pattern before),
+  and vboot tries B, which the payload confirms;
 - the ESRT at every boot: the version of the slot that runs, and as last
   attempt the version of the capsule, status 0 (patch `edk2/0018`). After a
   fallback the last attempt is still the capsule that was written, with
   status 0: the ESRT does not say that vboot went back (`update.py status`
   notes the version mismatch);
-- after the ten capsules, one of them cut off, and the switch from the
+- after the eleven capsules, one of them cut off, and the switch from the
   setup, the read-only part is the one of ROM A, and a UEFI variable written
   before the first update is still in the store.
 

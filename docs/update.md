@@ -37,22 +37,26 @@ in the same way ([The fwupd remote](#the-fwupd-remote)).
 
 ## What changes and what stays
 
-A capsule carries the whole 12 MiB image of the release, but the firmware
-writes only a few of its regions ([flash map](flashing.md)):
+A capsule carries the whole image of the release, 12 MiB on the W541 and
+24 MiB on the M920x, but the firmware writes only the regions that the
+manifest of the capsule names, `update.py info FILE.cap` lists them
+([flash map](flashing.md), [of the M920x](m920x.md#flash-layout)):
 
 | Region | |
 |---|---|
 | `RW_SECTION_A` or `RW_SECTION_B` | **written**, the slot that is not running: the new firmware |
 | the other slot | kept: the firmware that runs now, where vboot goes back if the new one fails |
-| `RW_MRC_CACHE` | **erased**: the first boot trains the memory again, a few seconds longer |
+| `RW_MRC_CACHE` | W541 (and M920x up to v1.4.0-rc3): **erased**, the first boot trains the memory again, a few seconds longer. M920x from rc4: kept, the new slot trains again only if the cache was made with another FSP-M, processor or Hyper-Threading setting ([docs/m920x.md](m920x.md#updates)) |
 | `RW_NVRAM` | a record appended: *try* the new slot, two tries |
-| `WP_RO` | kept: bootblock, vboot's root key, `mrc.bin` |
+| `WP_RO` | kept: bootblock, vboot's root key, `mrc.bin` (W541) |
 | `SMMSTORE` | kept: settings, boot entries, Secure Boot keys, supervisor password |
 | `RO_VPD` | kept: serial number, machine type, UUID |
 | `RW_ELOG` | kept: event log |
 | descriptor, GbE, ME | kept |
 
-(Up to v1.2.x: `COREBOOT`, the whole 4 MiB chip, and `RW_MRC_CACHE`.)
+(Up to v1.2.x: `COREBOOT`, the whole 4 MiB chip, and `RW_MRC_CACHE`.) The
+manifest of a W541 capsule is `RW_MRC_CACHE RW_SECTION_A RW_SECTION_B`,
+that of an M920x one from rc4 `RW_SECTION_A RW_SECTION_B`.
 
 So, unlike flashrom, a capsule needs no `tools/vpd.py copy` and resets no
 setting. Blocks that are already identical are not written again.
@@ -81,19 +85,24 @@ v1.2.0 to v1.2.2 apply the capsules of v1.2.x, which rewrite the whole
 
 Python 3 and nothing else; it needs root, an EFI boot and the EFI system
 partition (ESP) mounted (`/boot/efi`, `/efi`; elsewhere: `--esp DIR`).
+Take the one of the release, or a later one: an `update.py` from before
+v1.4.0-rc4 refuses the M920x capsules from rc4, which name two regions
+(*la capsula scrive ..., attese ...*), and the notes of each release
+download it from the commit of that release.
 
 | Command | |
 |---|---|
-| `status` | running variant and version, the lowest version it accepts, the result of the last update, the capsule waiting for the next boot |
+| `status` | running variant and version, the lowest version it accepts, the result of the last update, the capsule waiting for the next boot; on the M920x also the state of the Intel ME (from rc4, from the SMBIOS strings of the firmware) and of the flash protection: `WP_RO`, *BIOS Lock*, whether the slots can be written ([Flash protection](#flash-protection)) |
 | `stage --latest` | downloads the newest release of the running variant from GitHub (`--pre`: the release candidates and other pre-releases too; the `nri` releases up to v1.3.8, published as pre-releases, count as releases), checks its `SHA256SUMS` |
 | `stage FILE.cap` | a capsule already downloaded |
 | `cancel` | removes the waiting capsule and the request |
 | `info FILE.cap` | variant, version, regions and signer of a capsule (or of the fwupd package, `FILE.cab`) |
-| `other-slot flash.bin FILE.rom` | an image to write with flashrom, three regions only: the slot of a release in the slot that is not running, vboot asked to try it ([A release from its image](#a-release-from-its-image-in-the-other-slot)) |
+| `other-slot flash.bin FILE.rom` | an image to write with flashrom, two or three regions only: the slot of a release in the slot that is not running, vboot asked to try it, and an empty `RW_MRC_CACHE` where the capsule of that release empties it, or with `--retrain` ([A release from its image](#a-release-from-its-image-in-the-other-slot)) |
 | `rollback FLASH.bin` | back to the release in the slot that is not running, the one before the last update: see [Going back](#going-back) |
 | `vboot FLASH.bin` | from a copy of the flash (`sudo flashrom -p internal -r FLASH.bin`): the slot of the next boot and its tries, the slot of this boot and of the one before, and whether vboot found one broken ([docs/vboot.md](vboot.md)) |
 | `vboot-work FILE` | what vboot decided at this boot, from its work buffer in CBMEM (`sudo cbmem -r 0x78007343 > FILE`; [docs/vboot.md](vboot.md)) |
 | `vars FLASH.bin` | the UEFI variables in the `SMMSTORE` region of a copy of the flash: names, GUIDs, attributes and sizes, never the data (`--grep REGEX`, `--all` for the deleted ones too) |
+| `protection` | the flash protection of this boot on the M920x, read from the registers of the SPI controller and never written: each Protected Range mapped onto the regions of the flash map, *BIOS Lock*, the locks, whether a capsule and flashrom can write ([Flash protection](#flash-protection)) |
 
 `stage` checks what the firmware would check, so that a reboot is not
 wasted: the variant (an `nri` capsule is refused on `mrc`), the version (not
@@ -112,7 +121,47 @@ from an image made on the old one, with its ACPI tables.
 After the reboot, `update.py status` shows the new version and, under
 *ultimo* (last), the result of the update. Releases before v1.3.0 (and
 v1.3.0-rc1 and rc2) never put the result in the ESRT: there *ultimo* stays
-*nessun aggiornamento con capsula*.
+*nessun aggiornamento con capsula*. Without root it prints only the
+version: the ESRT, the ME and the flash protection need it.
+
+### Flash protection
+
+On the M920x, `sudo python3 update.py protection` tells what can write the
+flash in this boot, from the registers of the SPI controller (`00:1f.5`):
+the Protected Ranges, mapped onto the regions of the flash map that this
+boot used (CBMEM; `--flash FILE` takes the names from a copy of the flash
+or a release), the *BIOS Lock* bits of `BIOS_CNTL`, the locks (FLOCKDN, the
+PR locks), the access of the CPU to the regions of the descriptor, and the
+two options of *Security* → *Flash protection* as saved in `SMMSTORE`,
+which apply from the next boot. It only reads: PCI configuration space,
+the registers of the controller and the flash as the CPU maps it below
+4 GiB (`/dev/mem`), without loading or unloading a module; under the
+kernel lockdown of Secure Boot the registers are refused, and it says so.
+On ci-151, with both options off:
+
+```text
+BIOS_CNTL:   0x8b: BIOSWE 1, BLE 1, EISS 0, BILD 1
+blocchi:     FLOCKDN 1, PR bloccati PR0, PR1, PR2, PR3, PR4 (DLOCK 0x00001f00), PRR34_LOCKDN 1, WRSDIS 1, descrittore attivo
+PR, GPR0:    tutti vuoti
+opzioni:     Firmware protection 0, BIOS Lock 0 (in SMMSTORE: valgono dal prossimo avvio)
+WP_RO:       NON protetta (Firmware protection spenta, anche nel setup)
+BIOS Lock:   spento: il sistema puo' scrivere il flash
+capsula:     si': nessun PR sugli slot, RW_NVRAM e SMMSTORE
+flashrom:    si' sugli slot (BIOS Lock spento, nessun PR)
+```
+
+With *Firmware protection* on, `WP_RO` (`0x1700000-0x17FFFFF`) must be in
+a locked Protected Range with writes off: then flashrom cannot write the
+BIOS region whole (turn the option off first), while capsules, and
+`other-slot` with *BIOS Lock* off, which write the slots only, still
+work. `--expect-ro on` (or `off`) makes it a check for scripts: exit 0
+when `WP_RO` is as expected, 1 when not, 2 when it cannot tell (no
+`WP_RO` in the map). The
+Protected Ranges hold only for the CPU: the other masters of the flash
+(ME, GbE) follow the descriptor, which the release images leave writable
+by everyone. `status` prints the short form of the same: the `WP_RO:`,
+`BIOS Lock:` and `slot RW:` lines. On the W541 `protection` stops with
+an error and `status` says *non verificabile su questa macchina*.
 
 ## What happens at boot
 
@@ -138,10 +187,11 @@ of the region being written, one column per 4 KiB block: blue rewritten,
 green already as in the capsule (not written), grey still to do, white the
 block being written. Around them the versions and the slots (*v1.3.6-rc3 ·
 slot B › v1.3.6 · slot A*), what is being done (looking for the capsule,
-checking its signature, clearing the memory training data, writing the slot,
-asking vboot to try it), the percentage, how much was rewritten and how much
-was already there, the time left, and at the bottom *Do not turn off the
-laptop or unplug the AC adapter*. At the end the snake winks and the screen
+checking its signature, clearing the memory training data when the capsule
+names it, writing the slot, asking vboot to try it), the percentage, how
+much was rewritten and how much was already there, the time left, and at
+the bottom *Do not turn off the laptop or unplug the AC adapter*. At the
+end the snake winks and the screen
 says what happens if the new slot does not start; after a failure it shows
 where (the block, in red on the map) and that the slot in use was not
 touched.
@@ -383,22 +433,34 @@ the `mrc` read-only part, try the other variant's slot
 ## A release from its image, in the other slot
 
 `update.py other-slot` prepares an image with the slot of a release, from
-its `.rom`, `.cap` or `.cab`, in the slot that is not running, an empty
-`RW_MRC_CACHE` and a record in `RW_NVRAM` that asks vboot to try that slot
-with two tries; flashrom then writes those three regions only (`--fmap`
-reads the map from the image), with the read-only part, the settings, the
-VPD and the event log untouched. For a release the capsule path does not
-offer: an older one, a local build. *BIOS Lock* must be off (flashrom says
-*BIOS region SMM protection is enabled* otherwise, and writes nothing);
-*Firmware protection* can stay on, it covers the read-only part only.
+its `.rom`, `.cap` or `.cab`, in the slot that is not running, and a
+record in `RW_NVRAM` that asks vboot to try that slot with two tries;
+flashrom then writes those regions only (`--fmap` reads the map from the
+image), with the read-only part, the settings, the VPD and the event log
+untouched. The memory training goes as with the capsule of that release:
+on the W541, and for the M920x releases before v1.4.0-rc4, the image has
+an empty `RW_MRC_CACHE`, which flashrom writes too; on the M920x from rc4
+the cache stays, and the slot trains again only if the cache does not fit
+it. `--retrain` empties it anyway, for a slot that did not start with the
+saved training. For a release the capsule path does not offer: an older
+one, a local build, a CI build. *BIOS Lock* must be off (flashrom says
+*BIOS region SMM protection is enabled* otherwise, and writes nothing;
+`update.py` warns first); *Firmware protection* can stay on, it covers the
+read-only part only.
 
 ```sh
-sudo modprobe -r spi_intel_platform spi_intel
+sudo modprobe -r spi_intel_platform spi_intel              # M920x: spi_intel_pci spi_intel
 sudo flashrom -p internal -r flash.bin
 python3 tools/update.py other-slot flash.bin w541-coreboot-v1.3.8-mrc.rom
 sudo flashrom -p internal --fmap -i RW_SECTION_B -i RW_MRC_CACHE -i RW_NVRAM -w other-slot.rom
 sudo systemctl reboot
 ```
+
+`other-slot` prints the flashrom command of the case: on the M920x from
+rc4 it is `--fmap -i RW_SECTION_B -i RW_NVRAM` (and `-i RW_MRC_CACHE`
+after `--retrain`), with the slot letter of the case. Reboot right after
+flashrom, without suspending: `RW_NVRAM` already asks for the other slot,
+and a resume from S3 goes through vboot.
 
 As after a capsule, if the slot does not reach the payload twice in a row
 (power off and on at each hang), vboot goes back to the slot that ran.
@@ -436,8 +498,9 @@ downloads the capsule of that release from GitHub (`--capsule FILE` for
 one already downloaded), checks that it carries the same release for that
 slot, and stages it with the same checks as `stage`. The firmware applies
 it as any capsule: it finds the slot already written, so it writes
-nothing there, clears `RW_MRC_CACHE` and asks vboot to try that slot,
-with two tries; if it does not boot, vboot comes back to the slot of
+nothing there, clears `RW_MRC_CACHE` if the capsule names it (a W541 one,
+an M920x one before v1.4.0-rc4) and asks vboot to try that slot, with two
+tries; if it does not boot, vboot comes back to the slot of
 now. `--dry-run` stops before staging and says how many 4 KiB blocks of
 the slot differ from the release (none, normally).
 
@@ -455,8 +518,13 @@ From v1.3.4, without an OS: *System Preferences* (Esc at power-on) →
 release in the other one (*Other slot*). *Go back to* that release asks to
 confirm, then restarts into it as `update.py rollback` does: vboot tries the
 slot at the next two boots and comes back to the slot of now if it does not
-boot; only `RW_MRC_CACHE` is cleared, so the first boot trains the memory
-again. Settings, boot entries and Secure Boot keys stay.
+boot. On the W541 only `RW_MRC_CACHE` is cleared, so the first boot
+trains the memory again, a few seconds with a dark screen; on the M920x,
+when the slot that runs is v1.4.0-rc4 or later, nothing is cleared (patch
+0179), and the other slot trains again only if the saved training does
+not fit it, up to a minute with a dark screen. Do not turn the computer
+off during that first start: vboot counts it as a failed try. Settings,
+boot entries and Secure Boot keys stay.
 
 The setup checks what a capsule would: it refuses an empty or damaged slot,
 the release that runs, the other variant and a release older than the
@@ -519,6 +587,13 @@ Any tool that delivers capsules on disk works the same way:
   boot overwrites it). `cbmem -c` of that boot (*try_count used up; falling
   back*) tells the case of the two tries.
 
+- On the M920x from v1.4.0-rc4, where the training stays: a new slot that
+  does not start twice in a row with the saved one sends vboot back to
+  the old slot like any other failure. Write it once more with the cache
+  emptied, `update.py other-slot --retrain` with the image of the release
+  ([A release from its image](#a-release-from-its-image-in-the-other-slot)),
+  so that it trains; then the next updates keep the new training.
+
 The event log (`tools/elog.py`, `elogtool`) shows the reboots of an update.
 
 ## How it works
@@ -545,12 +620,17 @@ The event log (`tools/elog.py`, `elogtool`) shows the reboots of an update.
   (`keys/capsule-signing.pem`) and the version against the lowest supported
   one; `FmpDeviceSmmLib` writes the regions listed by the manifest appended
   to the image (`RW_MRC_CACHE RW_SECTION_A RW_SECTION_B`, `CAPSULE_REGIONS`
-  in `tools/build.sh`), through the SMMSTORE handler: of the two slots only
-  the one that is not running, then a record in `RW_NVRAM` with *try next*
-  and two tries (patch `edk2/0015`). An image without a manifest, or whose
-  regions are not where the running firmware's flash map has them, is
-  refused: upstream, such an image rewrites the whole BIOS region, settings
-  and VPD included.
+  in `tools/build.sh`, or `BOARD_CAPSULE_REGIONS` of the board:
+  `RW_SECTION_A RW_SECTION_B` on the M920x from v1.4.0-rc4), through the
+  SMMSTORE handler: of the two slots only the one that is not running,
+  then a record in `RW_NVRAM` with *try next* and two tries (patch
+  `edk2/0015`). An image without a manifest, or whose regions are not
+  where the running firmware's flash map has them, is refused: upstream,
+  such an image rewrites the whole BIOS region, settings and VPD included.
+  The payload writes whatever regions a signed manifest names: the list is
+  checked by the build and `update.py` (`info`, `stage`), not by the
+  payload, so fwupd and the setup trust the signature alone
+  ([docs/roadmap.md](roadmap.md)).
 - After writing, the payload restarts. Without anything to write, it gives
   the whole-flash access back to coreboot (patch 0050) before Driver####
   options, option ROMs or the OS run, or restarts if that fails. It asks the

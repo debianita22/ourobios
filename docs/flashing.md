@@ -85,6 +85,11 @@ v1.3.9, and for any other update of the read-only part.
   locks `/dev/mem` and the I/O ports down and `-p internal` cannot work at
   all: turn Secure Boot off for the flash, or boot a live system without it.
 - Check the download: `sha256sum -c SHA256SUMS --ignore-missing`.
+- What is inside: the `…-sbom.md` of the release (from v1.4.0), or
+  `python3 -I tools/sbom.py ROM`, lists every component of the image with
+  its version, license and SHA-256 (Intel's ME, microcode and VBT, on the
+  M920x its FSP, on the W541 `mrc.bin` and the NVIDIA VBIOS) and how much
+  of it is open-source code; `….cdx.json` is the same as CycloneDX 1.5.
 
 ## Boot loader fallback path
 
@@ -168,6 +173,18 @@ the descriptor, GbE and ME already on the machine: on another W541 those are
 its own, with its own MAC address. flashrom must end with `VERIFIED`. If it
 does not, do not power off: write the image (or your backup) again
 straight away.
+
+The BIOS region is written whole, with the regions the firmware fills at
+runtime as the image has them, empty: `SMMSTORE` (settings, boot entries,
+Secure Boot keys, supervisor password), `RW_ELOG` (the event log),
+`RW_MRC_CACHE` (the first boot trains the memory again), `RW_NVRAM`
+(vboot's state: the next boot starts from slot A), `RECOVERY_MRC_CACHE`
+and `RO_VPD`, unless copied into the image first (below). On a W541 that
+runs this repository's firmware, the command of
+[From v1.2.x to v1.3.0](#from-v12x-to-v130) keeps the settings, the VPD
+and the event log: it writes the slots, the read-only part and vboot's
+regions only. On the M920x `--ifd -i bios` empties the same regions of its
+24 MiB image ([docs/m920x.md](m920x.md#updates)).
 
 With the [VPD](#serial-number-and-machine-type-vpd) written, copy it from
 the flash into the new image first, and flash that one (its checksum no
