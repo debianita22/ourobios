@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 11:24:42 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Set the GPE routing of the GPIO groups
+
+With gpe0_dw0-2 unset, all 0, pmc_gpe_init() prints "Duplicate GPE DW
+register values detected" twice at every boot and keeps the reset
+values of GPIO_GPE_CFG. On an M920x that register reads 0x432: GPP_C,
+GPP_D and GPP_G. Set those, so the routing stays the same and the
+warning goes.
+
+TEST=Built lenovo/m920x. GPIO_GPE_CFG still 0x432, in the hardware
+test.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/devicetree.cb | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/devicetree.cb b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+index 7ec4aa6905..2eb59d1724 100644
+--- a/src/mainboard/lenovo/m720q_m920q/devicetree.cb
++++ b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+@@ -8,6 +8,12 @@ chip soc/intel/cannonlake
+ 	# Enhanced Intel SpeedStep, as the OEM firmware: P-states for the OS
+ 	register "eist_enable" = "true"
+ 
++	# GPE routing of the GPIO groups: the reset values of GPIO_GPE_CFG,
++	# which coreboot used anyway, with a warning, while these were unset
++	register "gpe0_dw0" = "GPP_C"
++	register "gpe0_dw1" = "GPP_D"
++	register "gpe0_dw2" = "GPP_G"
++
+ 	# SATA Power Optimizer, off by default in FSP-S
+ 	register "satapwroptimize" = "true"
+ 
+-- 
+2.47.3
+

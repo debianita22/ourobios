@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 11:16:40 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Say when the CPU fan does not turn
+
+The OEM firmware stops at "Fan failure" when the CPU fan reads 0 rpm.
+Once the EC runs its profile, read the tachometer of FAN2 (EC page 1,
+0x42-0x43) for up to 2 s and log its speed, or an error when it stays
+at 0: the fan has its floor of about 850 rpm by then, so a working fan
+costs one read. No halt: a server should still boot, and the CPU
+throttles by itself.
+
+TEST=Built lenovo/m920x. On an M920x the first read gives the speed of
+the fan, in the hardware test.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/ec.c | 25 ++++++++++++++++++++++++-
+ 1 file changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/ec.c b/src/mainboard/lenovo/m720q_m920q/ec.c
+index 30f5b4628c..1e7a953b14 100644
+--- a/src/mainboard/lenovo/m720q_m920q/ec.c
++++ b/src/mainboard/lenovo/m720q_m920q/ec.c
+@@ -4,6 +4,7 @@
+ #include <bootstate.h>
+ #include <commonlib/helpers.h>
+ #include <console/console.h>
++#include <delay.h>
+ #include <cpu/x86/msr.h>
+ #include <device/device.h>
+ #include <device/pci_ids.h>
+@@ -14,6 +15,7 @@
+ #include <option.h>
+ #include <superio/nuvoton/nct6687d/chip.h>
+ #include <superio/nuvoton/nct6687d/nct6687d.h>
++#include <superio/nuvoton/nct6687d/nct6687d_ec.h>
+ #include <types.h>
+ 
+ /*
+@@ -93,6 +95,26 @@ static uint8_t ec_boot(void)
+ 	}
+ }
+ 
++/*
++ * The tachometer of the CPU fan (FAN2, EC page 1, 0x42-0x43): 0 rpm once the
++ * EC runs its profile means a fan that does not turn, the "Fan failure" of the
++ * OEM firmware. Up to 2 s: the fan has its floor of about 850 rpm by then.
++ */
++static void ec_check_fan(uint16_t base)
++{
++	unsigned int rpm = 0;
++
++	for (int i = 0; i < 20 && !rpm; i++) {
++		if (i)
++			mdelay(100);
++		rpm = nct6687d_ec_read_page(base, 1, 0x42) << 8 | nct6687d_ec_read_page(base, 1, 0x43);
++	}
++	if (rpm)
++		printk(BIOS_INFO, "EC: CPU fan at %u rpm\n", rpm);
++	else
++		printk(BIOS_ERR, "EC: the CPU fan does not turn (0 rpm): fan failure\n");
++}
++
+ static void ec_report_platform(void *unused)
+ {
+ 	const struct device *ec = dev_find_slot_pnp(0x2e, NCT6687D_EC);
+@@ -114,7 +136,8 @@ static void ec_report_platform(void *unused)
+ 
+ 	printk(BIOS_INFO, "EC: platform %02x %02x %02x (TDP %u W)\n",
+ 	       regs[0].value, regs[1].value, regs[2].value, tdp);
+-	nct6687d_hwm_write_config(res->base, regs, ARRAY_SIZE(regs));
++	if (nct6687d_hwm_write_config(res->base, regs, ARRAY_SIZE(regs)))
++		ec_check_fan(res->base);
+ }
+ 
+ BOOT_STATE_INIT_ENTRY(BS_DEV_INIT, BS_ON_EXIT, ec_report_platform, NULL);
+-- 
+2.47.3
+

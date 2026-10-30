@@ -155,3 +155,10 @@
 0159-acpi-The-MSDM-table-from-a-product-key-in-the-VPD.patch
 0160-soc-intel-cannonlake-Let-an-option-turn-the-HD-Audio.patch
 0161-mb-lenovo-m720q_m920q-Turn-devices-off-from-the-setu.patch
+0162-mb-lenovo-m720q_m920q-A-switch-for-the-Wi-Fi-card-an.patch
+0163-mb-lenovo-m720q_m920q-Say-when-the-CPU-fan-does-not-.patch
+0164-soc-intel-common-block-lpc-Skip-the-I-O-resources-at.patch
+0165-soc-intel-cannonlake-Give-the-PCH-thermal-device-its.patch
+0166-mb-lenovo-m720q_m920q-Set-the-GPE-routing-of-the-GPI.patch
+0167-drivers-vpd-A-missing-VPD-region-is-not-a-warning.patch
+0168-mb-lenovo-m720q_m920q-An-ACPI-node-for-the-M.2-Wi-Fi.patch
