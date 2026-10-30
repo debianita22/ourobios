@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <DCHEM88@hotmail.it>
-Date: Fri, 30 Oct 2026 13:31:16 +0100
+Date: Fri, 30 Oct 2026 13:41:03 +0100
 Subject: [PATCH] security/lockdown: Give SMM the BIOS Lock option read by
  ramstage
 
@@ -55,7 +55,7 @@ index 4cf0165ff5..1833c0e70c 100644
  {
  	*base = smm_runtime.smmstore_com_buffer_base;
 diff --git a/src/cpu/x86/smm/smm_module_loader.c b/src/cpu/x86/smm/smm_module_loader.c
-index cd5017ca6a..43d3ef4457 100644
+index 6ceca2816c..665b251cd0 100644
 --- a/src/cpu/x86/smm/smm_module_loader.c
 +++ b/src/cpu/x86/smm/smm_module_loader.c
 @@ -11,6 +11,7 @@
@@ -92,7 +92,7 @@ index 6b0e78153a..a65034d7fa 100644
  	size_t smmstore_com_buffer_size;
  #if CONFIG(SMM_OPAL_S3_SCRATCH_CBMEM)
 diff --git a/src/security/lockdown/lockdown.h b/src/security/lockdown/lockdown.h
-index b81e636c32..2755327b1b 100644
+index aad1714be4..8d70a83033 100644
 --- a/src/security/lockdown/lockdown.h
 +++ b/src/security/lockdown/lockdown.h
 @@ -6,11 +6,20 @@
@@ -118,7 +118,7 @@ index b81e636c32..2755327b1b 100644
 +	return get_uint_option("bios_lock", CONFIG(BOOTMEDIA_SMM_BWP));
  }
  
- #endif /* SECURITY_LOCKDOWN_LOCKDOWN_H */
+ static inline bool enable_bootmedia_lock(void)
 -- 
 2.47.3
 
