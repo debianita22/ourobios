@@ -1,0 +1,129 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 09:47:05 +0100
+Subject: [PATCH] acpi: The MSDM table from a product key in the VPD
+
+coreboot adds a SLIC or MSDM table only from the CBFS file
+fallback/slic. On a machine that came with Windows, the OEM firmware
+kept the product key (OEM Activation 3.0) outside its image, one per
+machine, while the CBFS of a release is the same for every machine,
+and in a vboot slot it is signed.
+
+With VPD, build the MSDM from the "msdm_product_key" key of RO_VPD (29
+characters) when CBFS has no such table: version 1, data type 1, the
+key as data, as OA 3.0 asks. A table in CBFS still wins.
+
+TEST=Built lenovo/m920x. On an M920x with the key of its Lenovo
+firmware in the VPD, Windows reads it from the MSDM table, in the
+hardware test.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/acpi/acpi.c | 63 +++++++++++++++++++++++++++++++++++++++++++++----
+ 1 file changed, 59 insertions(+), 4 deletions(-)
+
+diff --git a/src/acpi/acpi.c b/src/acpi/acpi.c
+index 155105b96d..31acfd507d 100644
+--- a/src/acpi/acpi.c
++++ b/src/acpi/acpi.c
+@@ -30,6 +30,9 @@
+ #include <device/device.h>
+ #include <device/mmio.h>
+ #include <device/pci.h>
++#if CONFIG(VPD)
++#include <drivers/vpd/vpd.h>
++#endif
+ #if CONFIG(AMD_CRB_FTPM)
+ #include <drivers/amd/ftpm/tpm.h>
+ #elif CONFIG(AMPERE_CRB_FTPM)
+@@ -1484,6 +1487,54 @@ static void acpi_create_dsdt(acpi_header_t *header, void *dsdt_file_arg)
+ 	}
+ }
+ 
++/*
++ * The MSDM table of Windows (OEM Activation 3.0) with the product key in
++ * the VPD (key "msdm_product_key", 29 characters as XXXXX-XXXXX-XXXXX-
++ * XXXXX-XXXXX), for the machines whose key the OEM firmware kept outside
++ * the image: one image for all of them, the key of each in its own VPD.
++ */
++struct acpi_msdm {
++	acpi_header_t header;
++	u32 version;
++	u32 reserved;
++	u32 data_type;
++	u32 data_reserved;
++	u32 data_length;
++	char data[29];
++} __packed;
++
++static struct acpi_msdm msdm_from_vpd;
++
++static acpi_header_t *acpi_msdm_from_vpd(void)
++{
++#if CONFIG(VPD)
++	char key[sizeof(msdm_from_vpd.data) + 2];
++	acpi_header_t *header = &msdm_from_vpd.header;
++
++	if (!vpd_gets("msdm_product_key", key, sizeof(key), VPD_RO)
++	    || strlen(key) != sizeof(msdm_from_vpd.data))
++		return NULL;
++
++	memset(&msdm_from_vpd, 0, sizeof(msdm_from_vpd));
++	memcpy(header->signature, "MSDM", 4);
++	memcpy(header->oem_id, OEM_ID, 6);
++	memcpy(header->oem_table_id, ACPI_TABLE_CREATOR, 8);
++	memcpy(header->asl_compiler_id, ASLC, 4);
++	header->asl_compiler_revision = asl_revision;
++	header->revision = 3;
++	header->length = sizeof(msdm_from_vpd);
++	msdm_from_vpd.version = 1;
++	msdm_from_vpd.data_type = 1;
++	msdm_from_vpd.data_length = sizeof(msdm_from_vpd.data);
++	memcpy(msdm_from_vpd.data, key, sizeof(msdm_from_vpd.data));
++	header->checksum = acpi_checksum((void *)header, header->length);
++	printk(BIOS_INFO, "ACPI: MSDM from the VPD\n");
++	return header;
++#else
++	return NULL;
++#endif
++}
++
+ static void acpi_create_slic(acpi_header_t *header, void *slic_file_arg)
+ {
+ 	acpi_header_t *slic_file = *(acpi_header_t **)slic_file_arg;
+@@ -1541,6 +1592,7 @@ static unsigned long write_acpi_tables(const unsigned long start)
+ 	acpi_xsdt_t *xsdt = NULL;
+ 	acpi_facs_t *facs = NULL;
+ 	acpi_header_t *slic_file;
++	acpi_header_t *slic_table;
+ 	acpi_header_t *ssdt = NULL;
+ 	acpi_header_t *dsdt_file;
+ 	struct device *dev;
+@@ -1555,7 +1607,7 @@ static unsigned long write_acpi_tables(const unsigned long start)
+ 	} tables[] = {
+ 		{ acpi_create_dsdt, &dsdt_file, sizeof(acpi_header_t) },
+ 		{ acpi_create_fadt, &facs, sizeof(acpi_fadt_t) },
+-		{ acpi_create_slic, &slic_file, sizeof(acpi_header_t) },
++		{ acpi_create_slic, &slic_table, sizeof(acpi_header_t) },
+ 		{ acpi_create_ssdt_generator, NULL, sizeof(acpi_header_t) },
+ 		{ acpi_create_mcfg, NULL, sizeof(acpi_mcfg_t) },
+ 		{ acpi_create_tcpa, NULL, sizeof(acpi_tcpa_t) },
+@@ -1684,9 +1736,12 @@ static unsigned long write_acpi_tables(const unsigned long start)
+ 		slic_file = 0;
+ 	}
+ 
+-	if (slic_file) {
+-		memcpy(oem_id, slic_file->oem_id, 6);
+-		memcpy(oem_table_id, slic_file->oem_table_id, 8);
++	/* A SLIC or MSDM in CBFS wins over the key in the VPD */
++	slic_table = slic_file ? slic_file : acpi_msdm_from_vpd();
++
++	if (slic_table) {
++		memcpy(oem_id, slic_table->oem_id, 6);
++		memcpy(oem_table_id, slic_table->oem_table_id, 8);
+ 	}
+ 
+ 	printk(BIOS_INFO, "ACPI: Writing ACPI tables at %lx.\n", start);
+-- 
+2.47.3
+

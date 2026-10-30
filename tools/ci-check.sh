@@ -156,11 +156,15 @@ newer = nvar(None, b"PC0XYZ12\0", attr=0x88)
 serial = nvar("DmiVar0100010700", b"PC0ABCDE\0", nxt=len(first) + len(mtm))
 buf = b"\xff" * 64 + serial + mtm + newer + nvar("DmiVar0100010800", u.bytes_le) \
     + nvar("DmiVar0200020700", b"BOARD\0", attr=0x03) + b"\xff" * 64
-assert vpd.lenovo_dmi(buf) == {"serial": b"PC0XYZ12\0", "mtm": b"10S2S00V00\0", "uuid": u.bytes_le}
+key = b"ABCDE-FGHIJ-KLMNO-PQRST-UVWXY"
+oa3 = struct.pack("<5I", 1, 0, 1, 0, len(key)) + key
+buf += nvar("RomHoleReplaceOA3Var", oa3)
+assert vpd.lenovo_dmi(buf) == {"serial": b"PC0XYZ12\0", "mtm": b"10S2S00V00\0", "uuid": u.bytes_le,
+                               "oa3": oa3}
 assert vpd.lenovo_dmi(b"\xff" * 4096) == {}
 EOF
 	then
-		ok "tools/vpd.py: --from-lenovo legge le DmiVar di una NVRAM AMI"
+		ok "tools/vpd.py: --from-lenovo legge le DmiVar e la chiave OA3 di una NVRAM AMI"
 	else
 		bad "tools/vpd.py: --from-lenovo non legge le DmiVar come deve"
 	fi

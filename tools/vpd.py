@@ -25,6 +25,9 @@
 #                        Lenovo (%s_MT_%s_BU_%s_FM_%s nel modulo SMBIOS):
 #                        LENOVO_MT_10S2_BU_Think_FM_ThinkCentre M920x
 #   system_family        tipo 1: ThinkPad W541, ThinkCentre M920x
+#   msdm_product_key     la chiave di Windows (OEM Activation 3.0) della
+#                        tabella ACPI MSDM (patch 0159), XXXXX-XXXXX-...: si
+#                        mostra coperta, e' una licenza
 #
 # Formato: Google VPD 2.0 (src/drivers/vpd di coreboot). Un'intestazione
 # "gVpdInfo" con la lunghezza dei dati, poi coppie chiave/valore precedute
@@ -76,7 +79,11 @@ LENOVO_DMI = {
     "DmiVar0100010700": "serial",        # tipo 1, Serial Number
     "DmiVar0100010800": "uuid",          # tipo 1, UUID, 16 byte nell'ordine SMBIOS
     "DmiVar0200020700": "board_serial",  # tipo 2, Serial Number, se il BIOS lo ha
+    # la chiave di Windows della macchina: il corpo della tabella MSDM
+    # (versione 1, tipo 1, lunghezza 29, la chiave), fuori dall'immagine
+    "RomHoleReplaceOA3Var": "oa3",
 }
+WINDOWS_KEY_RE = re.compile(r"[0-9A-Z]{5}(?:-[0-9A-Z]{5}){4}")
 NVAR_VALID, NVAR_EXT_HEADER, NVAR_DATA_ONLY, NVAR_GUID, NVAR_ASCII_NAME = 0x80, 0x10, 0x08, 0x04, 0x02
 NVAR_NO_NEXT = 0xFFFFFF
 
@@ -199,6 +206,8 @@ def encode_region(entries, size):
 
 
 def show_value(key, value):
+    if key == "msdm_product_key":
+        return "(%d caratteri) XXXXX-XXXXX-XXXXX-XXXXX-%s" % (len(value), value[-5:].decode("ascii", "replace"))
     if key == "system_uuid":
         if len(value) == 16:
             return str(uuid.UUID(bytes_le=value)).upper()
@@ -308,6 +317,13 @@ def from_lenovo(args):
         if text and getattr(args, attr) is None:
             setattr(args, attr, text)
             taken.append(field)
+    oa3 = dmi.get("oa3", b"")
+    if len(oa3) >= 20 and args.windows_key is None:
+        version, _, kind, _, size = struct.unpack_from("<5I", oa3)
+        key = oa3[20:20 + size].decode("ascii", "replace")
+        if version == 1 and kind == 1 and WINDOWS_KEY_RE.fullmatch(key):
+            args.windows_key = key
+            taken.append("chiave di Windows")
     raw = dmi.get("uuid", b"")[:16]
     if len(raw) == 16 and raw not in (b"\0" * 16, b"\xff" * 16) and args.uuid is None:
         args.uuid = str(uuid.UUID(bytes_le=raw))
@@ -386,6 +402,10 @@ def cmd_set(args):
             except ValueError:
                 die("UUID non valido: %r (forma 01234567-89AB-CDEF-0123-456789ABCDEF, "
                     "serial o random)" % args.uuid)
+    if args.windows_key is not None:
+        if not WINDOWS_KEY_RE.fullmatch(args.windows_key.strip().upper()):
+            die("chiave di Windows: 25 caratteri in 5 gruppi, XXXXX-XXXXX-XXXXX-XXXXX-XXXXX")
+        updates.append(("msdm_product_key", args.windows_key.strip().upper().encode()))
     for item in args.key:
         if "=" not in item:
             die("coppia senza '=': %r (CHIAVE=VALORE)" % item)
@@ -405,7 +425,7 @@ def cmd_set(args):
         entries = [(k, v) for k, v in entries if k != key]
 
     if not (args.serial or args.board_serial or args.mtm or args.family or args.sku or args.uuid
-            or args.key or args.delete or args.clear):
+            or args.windows_key or args.key or args.delete or args.clear):
         die("niente da scrivere: --serial, --mtm, --uuid, --board-serial, --key CHIAVE=VALORE, "
             "--delete o --clear")
     data[off:off + size] = encode_region(entries, size)
@@ -449,14 +469,16 @@ def main():
     p.add_argument("--sku", help="SKU, se non quello che --mtm ricava dalla famiglia")
     p.add_argument("--uuid", help="UUID; serial: ricavato da MTM e numero di serie, sempre "
                    "lo stesso; random: uno nuovo, se manca")
+    p.add_argument("--windows-key", metavar="CHIAVE",
+                   help="la chiave di Windows (OEM Activation 3.0) per la tabella MSDM")
     p.add_argument("--key", action="append", default=[], metavar="CHIAVE=VALORE",
                    help="una chiave qualsiasi, come testo")
     p.add_argument("--delete", action="append", default=[], metavar="CHIAVE",
                    help="toglie una chiave")
     p.add_argument("--clear", action="store_true", help="parte da una VPD vuota")
     p.add_argument("--from-lenovo", metavar="DUMP",
-                   help="numero di serie, MTM e UUID dal BIOS Lenovo di un dump fatto prima di "
-                   "installare ouroBIOS (M920x); quelli dati qui vincono")
+                   help="numero di serie, MTM, UUID e chiave di Windows dal BIOS Lenovo di un dump "
+                   "fatto prima di installare ouroBIOS (M920x); quelli dati qui vincono")
     p.set_defaults(func=cmd_set)
 
     p = sub.add_parser("copy", help="copia la VPD di un dump in un'immagine nuova")

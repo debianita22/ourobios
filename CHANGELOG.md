@@ -70,6 +70,14 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 - From rc3, the DMI and SATA Power Optimizers of the PCH on the M920x, off by
   default in the Coffee Lake FSP-S and never set on Cannon Lake: with LTR on
   every link (0142), the package still stopped at PC3 at idle (0157-0158).
+- From rc3, the Windows product key of a machine that came with it, in an
+  ACPI MSDM table as with the OEM firmware, from the `msdm_product_key`
+  key of the VPD (0159); `tools/vpd.py set --from-lenovo` takes it from
+  the dump of the Lenovo firmware, `--windows-key` by hand.
+- From rc3, *Hardware* → *Devices* on the M920x, as the Devices menu of the
+  OEM setup: Ethernet, audio, front and rear USB ports (0160-0161). The
+  TCO watchdog of the PCH works (`iTCO_wdt`), which Proxmox blacklists:
+  [docs/m920x.md](docs/m920x.md#status) says how to use it for its HA.
 
 ## v1.3.10
 

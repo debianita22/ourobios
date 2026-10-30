@@ -152,3 +152,6 @@
 0156-mb-lenovo-m720q_m920q-Say-what-clearing-the-memory-c.patch
 0157-soc-intel-cannonlake-Turn-on-the-DMI-Power-Optimizer.patch
 0158-mb-lenovo-m720q_m920q-Turn-on-the-SATA-Power-Optimiz.patch
+0159-acpi-The-MSDM-table-from-a-product-key-in-the-VPD.patch
+0160-soc-intel-cannonlake-Let-an-option-turn-the-HD-Audio.patch
+0161-mb-lenovo-m720q_m920q-Turn-devices-off-from-the-setu.patch
