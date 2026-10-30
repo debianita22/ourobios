@@ -124,3 +124,8 @@ CONFIG_EDK2_ENABLE_CSMWRAP=y
 CONFIG_EDK2_CSMWRAP_FILE="m920x/csmwrap.efi"
 # Le stesse opzioni di EDK2 del W541 (patch edk2/0027, edk2/0034)
 CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D UFS_ENABLE=FALSE -D UHCI_ENABLE=FALSE -D EBC_ENABLE=FALSE -D EXTRA_FS_DRIVERS=FALSE -D CRYPTO_PROTOCOL_SUPPORT=TRUE"
+
+# DIAG, solo per la build di prova: i tempi di ogni callback degli stati di
+# avvio e il log di SMM nella console CBMEM
+CONFIG_DEBUG_BOOT_STATE=y
+CONFIG_DEBUG_SMI=y

@@ -1,0 +1,110 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 13:01:19 +0100
+Subject: [PATCH] DIAG (test build only): Time the chipset and SMM finalize
+ steps
+
+Not for the release: prints how long each step of soc_finalize() and of the SMM finalize() takes, to find the 0.5 s spent there on the M920x.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/soc/intel/cannonlake/finalize.c         | 10 ++++++++++
+ src/soc/intel/common/block/smm/smihandler.c | 14 ++++++++++++++
+ 2 files changed, 24 insertions(+)
+
+diff --git a/src/soc/intel/cannonlake/finalize.c b/src/soc/intel/cannonlake/finalize.c
+index 19fcf1387f..f7962d8533 100644
+--- a/src/soc/intel/cannonlake/finalize.c
++++ b/src/soc/intel/cannonlake/finalize.c
+@@ -16,6 +16,7 @@
+ #include <intelblocks/thermal.h>
+ #include <soc/p2sb.h>
+ #include <soc/pci_devs.h>
++#include <timer.h>
+ #include <soc/pcr_ids.h>
+ #include <soc/pm.h>
+ #include <soc/smbus.h>
+@@ -84,13 +85,22 @@ static void pch_finalize(void)
+ 
+ static void soc_finalize(void *unused)
+ {
++	struct stopwatch sw;
++	long t_pch, t_smm, t_heci;
++
+ 	printk(BIOS_DEBUG, "Finalizing chipset.\n");
+ 
++	stopwatch_init(&sw);
+ 	pch_finalize();
++	t_pch = stopwatch_duration_usecs(&sw);
+ 	apm_control(APM_CNT_FINALIZE);
++	t_smm = stopwatch_duration_usecs(&sw);
+ 	if (soc_disable_heci1_at_pre_boot() &&
+ 			CONFIG(SOC_INTEL_COMMON_BLOCK_HECI1_DISABLE_USING_PMC_IPC))
+ 		heci1_disable();
++	t_heci = stopwatch_duration_usecs(&sw);
++	printk(BIOS_INFO, "DIAG finalize: pch %ld us, smm %ld us, heci %ld us\n",
++	       t_pch, t_smm - t_pch, t_heci - t_smm);
+ 
+ 	/* Indicate finalize step with post code */
+ 	post_code(POSTCODE_OS_BOOT);
+diff --git a/src/soc/intel/common/block/smm/smihandler.c b/src/soc/intel/common/block/smm/smihandler.c
+index 5ca77ee9d7..80ac5af1ad 100644
+--- a/src/soc/intel/common/block/smm/smihandler.c
++++ b/src/soc/intel/common/block/smm/smihandler.c
+@@ -37,6 +37,7 @@
+ #include <spi-generic.h>
+ #include <stdint.h>
+ #include <string.h>
++#include <timer.h>
+ #include <types.h>
+ 
+ /* SoC overrides. */
+@@ -398,18 +399,26 @@ static void finalize(void)
+ 	}
+ 	finalize_done = 1;
+ 
++	struct stopwatch sw;
++	long t[6];
++	stopwatch_init(&sw);
++
+ 	enable_smm_code_access_check();
++	t[0] = stopwatch_duration_usecs(&sw);
+ 
+ 	if (CONFIG(SPI_FLASH_SMM))
+ 		/* Re-init SPI driver to handle locked BAR */
+ 		fast_spi_init();
++	t[1] = stopwatch_duration_usecs(&sw);
+ 
+ 	boot_device_init();
++	t[2] = stopwatch_duration_usecs(&sw);
+ 
+ 	if (enable_smm_bios_protection()) {
+ 		fast_spi_enable_wp();
+ 		set_insmm_sts(false);
+ 	}
++	t[3] = stopwatch_duration_usecs(&sw);
+ 
+ 	/*
+ 	 * HECI is disabled in smihandler_soc_at_finalize() which also locks down the side band
+@@ -417,6 +426,7 @@ static void finalize(void)
+ 	 * therefore, this call must precede smihandler_soc_at_finalize().
+ 	 */
+ 	mainboard_smi_finalize();
++	t[4] = stopwatch_duration_usecs(&sw);
+ 
+ 	/* Lock down all GPIOs that may have been requested by the SoC and/or the mainboard. */
+ 	if (CONFIG(SOC_INTEL_COMMON_BLOCK_SMM_LOCK_GPIO_PADS))
+@@ -424,6 +434,10 @@ static void finalize(void)
+ 
+ 	/* Specific SOC SMI handler during ramstage finalize phase */
+ 	smihandler_soc_at_finalize();
++	t[5] = stopwatch_duration_usecs(&sw);
++	printk(BIOS_INFO, "DIAG SMM finalize (cumulative us): code-check %ld, spi-init %ld, "
++	       "boot-dev %ld, bios-prot %ld, mainboard %ld, gpio+soc %ld\n",
++	       t[0], t[1], t[2], t[3], t[4], t[5]);
+ }
+ 
+ void smihandler_southbridge_apmc(
+-- 
+2.47.3
+

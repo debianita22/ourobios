@@ -163,3 +163,4 @@
 0167-drivers-vpd-A-missing-VPD-region-is-not-a-warning.patch
 0168-mb-lenovo-m720q_m920q-An-ACPI-node-for-the-M.2-Wi-Fi.patch
 0169-mb-lenovo-m720q_m920q-Turn-the-PEG-port-off-without-.patch
+0170-DIAG-test-build-only-Time-the-chipset-and-SMM-finali.patch
