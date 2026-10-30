@@ -1,0 +1,148 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 30 Oct 2026 09:56:18 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Turn devices off from the setup, as
+ the OEM does
+
+The OEM setup has a Devices menu that turns off the Ethernet
+controller, the audio controller and the front and rear USB ports.
+FSP-S enables GbE and the USB ports from the devicetree: clear them in
+the init of the mainboard chip, which runs before the SoC calls FSP-S,
+from the "onboard_ethernet", "front_usb" and "rear_usb" options. The
+audio controller is FSP-M's, with "onboard_audio" (previous patch).
+All four in Hardware > Devices, on by default.
+
+TEST=Built lenovo/m920x. Each switch on the machine, in the hardware
+test.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/cfr.c      | 48 +++++++++++++++++++++
+ src/mainboard/lenovo/m720q_m920q/ramstage.c | 37 ++++++++++++++++
+ 2 files changed, 85 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index 4df7e0b67b..6cb7b63ad3 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -419,6 +419,53 @@ static const struct sm_object ice_mode = SM_DECLARE_ENUM({
+ 				SM_ENUM_VALUE_END				},
+ });
+ 
++/* Read by ramstage.c, and by FSP-M parameters for the audio controller */
++static const struct sm_object onboard_ethernet = SM_DECLARE_BOOL({
++	.opt_name	= "onboard_ethernet",
++	.ui_name	= "Ethernet",
++	.ui_helptext	= "The Ethernet port (Intel I219-LM). Off, the controller is\n"
++			  "hidden: no network, nor Wake on LAN or network boot.\n"
++			  "Default: on.",
++	.default_value	= true,
++});
++
++static const struct sm_object onboard_audio = SM_DECLARE_BOOL({
++	.opt_name	= "onboard_audio",
++	.ui_name	= "Audio",
++	.ui_helptext	= "The HD Audio controller: the front jacks, the internal\n"
++			  "speaker and the audio over DisplayPort and HDMI.\n"
++			  "Default: on.",
++	.default_value	= true,
++});
++
++static const struct sm_object front_usb = SM_DECLARE_BOOL({
++	.opt_name	= "front_usb",
++	.ui_name	= "Front USB ports",
++	.ui_helptext	= "The USB-A and USB-C ports of the front panel.\n"
++			  "Default: on.",
++	.default_value	= true,
++});
++
++static const struct sm_object rear_usb = SM_DECLARE_BOOL({
++	.opt_name	= "rear_usb",
++	.ui_name	= "Rear USB ports",
++	.ui_helptext	= "The four USB ports of the rear panel. Off, a keyboard\n"
++			  "works only on the front ports, the setup menu included.\n"
++			  "Default: on.",
++	.default_value	= true,
++});
++
++static const struct sm_object hardware_devices = SM_DECLARE_FORM({
++	.ui_name	= "Devices",
++	.obj_list	= (const struct sm_object *[]) {
++		&onboard_ethernet,
++		&onboard_audio,
++		&front_usb,
++		&rear_usb,
++		NULL
++	},
++});
++
+ static const struct sm_object hardware_cooling = SM_DECLARE_FORM({
+ 	.ui_name	= "Cooling",
+ 	.obj_list	= (const struct sm_object *[]) {
+@@ -646,6 +693,7 @@ static struct sm_obj_form hardware = {
+ 	.obj_list = (const struct sm_object *[]) {
+ 		&hardware_intel_graphics,
+ 		&hardware_cooling,
++		&hardware_devices,
+ 		NULL
+ 	},
+ };
+diff --git a/src/mainboard/lenovo/m720q_m920q/ramstage.c b/src/mainboard/lenovo/m720q_m920q/ramstage.c
+index e94ca02030..eab5773ed3 100644
+--- a/src/mainboard/lenovo/m720q_m920q/ramstage.c
++++ b/src/mainboard/lenovo/m720q_m920q/ramstage.c
+@@ -1,8 +1,44 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <commonlib/helpers.h>
++#include <device/device.h>
+ #include <mainboard/gpio.h>
++#include <option.h>
+ #include <soc/gpio.h>
+ #include <soc/ramstage.h>
++#include <static.h>
++
++/* The USB ports of the front and of the rear panel (devicetree.cb) */
++static const unsigned int front_usb2[] = { 1, 3 }, front_usb3[] = { 0, 1 };
++static const unsigned int rear_usb2[] = { 4, 5, 6, 7 }, rear_usb3[] = { 2, 3, 4, 5 };
++
++static void disable_usb_ports(config_t *cfg, const unsigned int *usb2, size_t n2,
++			      const unsigned int *usb3, size_t n3)
++{
++	for (size_t i = 0; i < n2; i++)
++		cfg->usb2_ports[usb2[i]].enable = 0;
++	for (size_t i = 0; i < n3; i++)
++		cfg->usb3_ports[usb3[i]].enable = 0;
++}
++
++/*
++ * The devices of the Devices menu of the OEM setup that FSP-S enables from
++ * the devicetree: before the SoC calls FSP-S, as the mainboard chip comes
++ * first. The audio controller is FSP-M's ("onboard_audio" in romstage).
++ */
++static void mainboard_init(void *chip_info)
++{
++	config_t *cfg = config_of_soc();
++
++	if (!get_uint_option("onboard_ethernet", 1))
++		DEV_PTR(gbe)->enabled = 0;
++	if (!get_uint_option("front_usb", 1))
++		disable_usb_ports(cfg, front_usb2, ARRAY_SIZE(front_usb2),
++				  front_usb3, ARRAY_SIZE(front_usb3));
++	if (!get_uint_option("rear_usb", 1))
++		disable_usb_ports(cfg, rear_usb2, ARRAY_SIZE(rear_usb2),
++				  rear_usb3, ARRAY_SIZE(rear_usb3));
++}
+ 
+ static void mainboard_enable(struct device *dev)
+ {
+@@ -10,5 +46,6 @@ static void mainboard_enable(struct device *dev)
+ }
+ 
+ struct chip_operations mainboard_ops = {
++	.init = mainboard_init,
+ 	.enable_dev = mainboard_enable,
+ };
+-- 
+2.47.3
+

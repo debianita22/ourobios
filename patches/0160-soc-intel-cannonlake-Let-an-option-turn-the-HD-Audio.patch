@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 30 Oct 2026 09:55:42 +0100
+Subject: [PATCH] soc/intel/cannonlake: Let an option turn the HD Audio
+ controller off
+
+FSP-M enables the HD Audio controller from the devicetree, so a
+mainboard can only offer to turn it off at build time: the devicetree
+of ramstage comes too late. Read the "onboard_audio" option there too,
+on by default, as the OEM firmware of the ThinkCentre M920x offers in
+its Devices menu ("Onboard Audio Controller").
+
+TEST=Built lenovo/m920x, which offers it.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/soc/intel/cannonlake/romstage/fsp_params.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/soc/intel/cannonlake/romstage/fsp_params.c b/src/soc/intel/cannonlake/romstage/fsp_params.c
+index 9a9677bf55..b5c1b14641 100644
+--- a/src/soc/intel/cannonlake/romstage/fsp_params.c
++++ b/src/soc/intel/cannonlake/romstage/fsp_params.c
+@@ -95,7 +95,8 @@ void platform_fsp_memory_init_params_cb(FSPM_UPD *mupd, uint32_t version)
+ 
+ 	m_cfg->PchIshEnable = is_devfn_enabled(PCH_DEVFN_ISH);
+ 
+-	m_cfg->PchHdaEnable = is_devfn_enabled(PCH_DEVFN_HDA);
++	/* The HD Audio controller, unless the "onboard_audio" option turns it off */
++	m_cfg->PchHdaEnable = is_devfn_enabled(PCH_DEVFN_HDA) && get_uint_option("onboard_audio", 1);
+ 
+ 	m_cfg->SaIpuEnable = is_devfn_enabled(SA_DEVFN_IPU);
+ 
+-- 
+2.47.3
+
