@@ -87,6 +87,12 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   routing and the missing RW_VPD (0165-0167); under Linux, no more "failed
   to evaluate _DSM 2c176672-..." from iwlwifi: the Wi-Fi card has an ACPI
   node (0168).
+- From rc4, the PEG port of the M920x riser slot off when no card is on
+  it (0169): FSP-M's Auto left the empty port on at almost every boot,
+  and with it the package stopped at PC3 at idle (about 1.1 W) even with
+  0157-0158; the PC9 measured with ci-143 came from a boot on which it
+  was off. *Hardware* → *Devices* → *PCIe riser slot*: Auto, Enabled
+  (for a card that Auto does not see), Disabled.
 - `tools/update.py other-slot` also takes the test builds of the CI
   (`ouroBIOS-ci-N-...`), to try one in the slot that is not running.
 
