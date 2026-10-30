@@ -257,6 +257,34 @@ bool mainboard_cpu_has_ht(void)
 	return true;
 }
 
+/* E l'offset TCC programmabile (PLATFORM_INFO bit 30): il menu lo mostra */
+bool mainboard_cpu_has_tcc_offset(void)
+{
+	return true;
+}
+
+/*
+ * M920x (mainboard/me.h): l'ME come lo legge me_status.c sul M920x di prova,
+ * disattivato dal setup (HFSTS1 0x80032044, modo 3), con il testo di aiuto
+ * che scrive in quel caso.
+ */
+const char *mainboard_me_summary(void)
+{
+	return "Disabled (soft temporary disable)";
+}
+
+const char *mainboard_me_details(void)
+{
+	return "The Intel ME at this boot, from its status registers\n"
+	       "(HFSTS1-6):\n"
+	       "80032044 368A0106 00000030 00004000 00000000 C0000004\n"
+	       "Working state 4, operation state 1, operation mode 3,\n"
+	       "error code 2.\n"
+	       "Disabled: HECI (00:16.0) is hidden from the OS, no AMT.\n"
+	       "The setting is in Security > Management Engine. A change\n"
+	       "shows here after the next boot.";
+}
+
 /*
  * L'elenco di riferimento: sm_root[] e le form generiche lette dalle
  * strutture, con i ctor applicati a una copia come fa drivers/option/cfr.c.

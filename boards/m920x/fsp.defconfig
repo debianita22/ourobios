@@ -89,6 +89,19 @@ CONFIG_BOOTMEDIA_LOCK_CONTROLLER=y
 CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO=y
 CONFIG_BOOTMEDIA_LOCK_RUNTIME_OPTION=y
 
+# Le opzioni del setup tornano ai default quando la RTC perde
+# l'alimentazione (pila scarica, jumper della CMOS), come col BIOS Lenovo:
+# romstage cancella le variabili di coreboot in SMMSTORE, tutte le opzioni
+# del setup (anche livello della console e seriale). Quindi l'ME torna
+# acceso (me_state Enabled, con qualche reset in piu'), Firmware protection
+# accesa (da spegnere prima di un flashrom -i bios), e tornano le voci di
+# avvio di iPXE e CSMWrap se erano spente. Con la pila scarica succede a
+# ogni distacco della corrente. Chiavi di Secure Boot, le altre voci di
+# avvio e VPD restano (docs/m920x.md, "Resetting the settings"). Solo negli
+# slot costruiti con questa opzione; il simbolo viene dalla patch di
+# drivers/efi che lo aggiunge (patches/series).
+CONFIG_DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE=y
+
 # Aggiornamento con capsula UEFI (docs/update.md): il GUID dell'ESRT e' del
 # M920x, una capsula del W541 non si applica qui ne' viceversa. LSV: la
 # release piu' vecchia di cui il firmware accetta una capsula, quella della
@@ -128,4 +141,9 @@ CONFIG_EDK2_CSMWRAP_FILE="m920x/csmwrap.efi"
 # processore F, senza grafica, e' l'unico schermo); con Secure Boot acceso
 # EDK2 le verifica con le chiavi di db
 CONFIG_EDK2_LOAD_OPTION_ROMS=y
-CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D UFS_ENABLE=FALSE -D UHCI_ENABLE=FALSE -D EBC_ENABLE=FALSE -D EXTRA_FS_DRIVERS=FALSE -D CRYPTO_PROTOCOL_SUPPORT=TRUE"
+# Niente driver PS/2: coreboot lascia spenta la tastiera del Super I/O
+# (devicetree.cb, pnp 2e.5), quindi in EDK2 non avrebbero niente da guidare.
+# Senza EDK2_PS2_SUPPORT escono SioBusDxe e Ps2KeyboardDxe; Ps2MouseDxe ha
+# un suo interruttore nel .dsc (PS2_MOUSE_ENABLE, acceso di default).
+# CONFIG_EDK2_PS2_SUPPORT is not set
+CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D UFS_ENABLE=FALSE -D UHCI_ENABLE=FALSE -D EBC_ENABLE=FALSE -D EXTRA_FS_DRIVERS=FALSE -D CRYPTO_PROTOCOL_SUPPORT=TRUE -D PS2_MOUSE_ENABLE=FALSE"

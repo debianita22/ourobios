@@ -1,0 +1,353 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 20:05:58 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Show the ME state in setup and SMBIOS
+
+The setup can turn the Intel ME off (me_state, which the CSE driver
+applies at PCI enumeration), but nothing showed what the ME then did:
+only the boot log has its status registers (dump_me_status() at
+BS_OS_RESUME_CHECK exit), and with the ME disabled the OS has no HECI
+device to ask.
+
+me_status.c reads HFSTS1-6 once when the tables are written, SMBIOS
+first and then the setup menu, at BS_WRITE_TABLES: HECI1 is still
+visible then, as nothing hides it before BS_PAYLOAD_LOAD here. The
+visibility is checked quietly (is_cse_enabled() warns when the device
+is hidden), no HECI message is sent, and the options are read as the
+CSE driver reads them, with UINT_MAX when there are none.
+
+- General > About this ThinkCentre gets a read-only "Management Engine"
+  line: "Disabled (soft temporary disable)", "Enabled", "Enabled, not
+  ready (state N)", "Security override (jumper)" or "(HECI message)",
+  "Debug", "Mode N", or "Not available" when HECI1 cannot be read. Its
+  help has the registers, the working state, operation state and mode
+  and the error code, that HECI is hidden from the OS when the ME is
+  disabled, and the state the setup asks for when the ME is not in it,
+  with what to do after three resets did not change it.
+- SMBIOS type 11 OEM strings, through the root device's
+  get_smbios_strings: "ME: <the same text>" and "ME HFSTS: " with the
+  six registers, 64 characters at most each, for dmidecode and
+  tools/update.py status.
+
+TEST=Built me_status.c with the summary and SMBIOS code on the host
+against stubbed registers: the live M920x values (80032044 368A0106
+00000030 00004000 00000000 C0000004) give "Disabled (soft temporary
+disable)", working state 4, operation state 1, mode 3, error code 2,
+and a 63-character HFSTS string; the other modes, a hidden HECI1 and a
+requested state the ME is not in give the expected text. Host syntax
+check of the changed files; tools/cfr-dump.sh: the menu is valid with
+info_me in About. For the hardware test: the line and its help in the
+setup, the same registers in cbmem -1, the two strings in dmidecode -t
+11, one more SMBIOS structure and nothing else changed, 00:16.0 still
+absent from lspci.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/Makefile.mk  |   1 +
+ src/mainboard/lenovo/m720q_m920q/cfr.c        |  17 ++
+ .../lenovo/m720q_m920q/include/mainboard/me.h |  32 ++++
+ src/mainboard/lenovo/m720q_m920q/me_status.c  | 148 ++++++++++++++++++
+ src/mainboard/lenovo/m720q_m920q/ramstage.c   |  25 +++
+ 5 files changed, 223 insertions(+)
+ create mode 100644 src/mainboard/lenovo/m720q_m920q/include/mainboard/me.h
+ create mode 100644 src/mainboard/lenovo/m720q_m920q/me_status.c
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/Makefile.mk b/src/mainboard/lenovo/m720q_m920q/Makefile.mk
+index 38db3b9546..6bfa97378d 100644
+--- a/src/mainboard/lenovo/m720q_m920q/Makefile.mk
++++ b/src/mainboard/lenovo/m720q_m920q/Makefile.mk
+@@ -15,6 +15,7 @@ ramstage-y += cpu.c
+ ramstage-y += ec.c
+ ramstage-y += gpio.c
+ ramstage-y += hda_verb.c
++ramstage-y += me_status.c
+ ramstage-y += ramstage.c
+ ramstage-$(CONFIG_VBOOT) += vboot.c
+ ramstage-$(CONFIG_MAINBOARD_USE_LIBGFXINIT) += gma-mainboard.ads
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index b442a54f9b..cba16d3277 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -11,6 +11,7 @@
+ #include <intelblocks/pmclib.h>
+ #include <mainboard/cpu.h>
+ #include <mainboard/ec.h>
++#include <mainboard/me.h>
+ #include <memory_info.h>
+ #include <soc/soc_chip.h>
+ #include <stdio.h>
+@@ -171,6 +172,21 @@ static const struct sm_object info_firmware = SM_DECLARE_VARCHAR({
+ 	.default_value	= CONFIG_LOCALVERSION " (coreboot " COREBOOT_VERSION ")",
+ });
+ 
++/* What ramstage reads of the ME at this boot (me_status.c) */
++static void update_me(struct sm_object *new)
++{
++	new->sm_varchar.default_value = mainboard_me_summary();
++	new->sm_varchar.ui_helptext = mainboard_me_details();
++}
++
++static const struct sm_object info_me = SM_DECLARE_VARCHAR({
++	.flags		= CFR_OPTFLAG_READONLY | CFR_OPTFLAG_VOLATILE,
++	.opt_name	= "info_me",
++	.ui_name	= "Management Engine",
++	.ui_helptext	= "The state of the Intel ME at this boot.",
++	.default_value	= "Unknown",
++}, WITH_CALLBACK(update_me));
++
+ static const struct sm_object general_about = SM_DECLARE_FORM({
+ 	.ui_name	= "About this ThinkCentre",
+ 	.obj_list	= (const struct sm_object *[]) {
+@@ -183,6 +199,7 @@ static const struct sm_object general_about = SM_DECLARE_FORM({
+ 		&info_memory,
+ 		&info_memory_profile,
+ 		&info_firmware,
++		&info_me,
+ 		NULL
+ 	},
+ });
+diff --git a/src/mainboard/lenovo/m720q_m920q/include/mainboard/me.h b/src/mainboard/lenovo/m720q_m920q/include/mainboard/me.h
+new file mode 100644
+index 0000000000..f3733d9f27
+--- /dev/null
++++ b/src/mainboard/lenovo/m720q_m920q/include/mainboard/me.h
+@@ -0,0 +1,32 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef MAINBOARD_ME_H
++#define MAINBOARD_ME_H
++
++#include <types.h>
++
++/*
++ * The Intel ME at this boot, for the setup and SMBIOS: its status registers
++ * as ramstage reads them while HECI1 (00:16.0) is visible, before the end of
++ * the boot, and the options of the CSE driver (UINT_MAX without them).
++ */
++struct mb_me_status {
++	bool valid;
++	uint32_t hfsts[6];
++	unsigned int me_state;
++	unsigned int me_state_counter;
++};
++
++const struct mb_me_status *mainboard_me_status(void);
++
++/*
++ * One of "Disabled (soft temporary disable)", "Enabled", "Enabled, not ready
++ * (state N)", "Security override (jumper)", "Security override (HECI
++ * message)", "Debug", "Mode N" and "Not available"
++ */
++const char *mainboard_me_summary(void);
++
++/* The help text of the setup: registers, numbers, requested state */
++const char *mainboard_me_details(void);
++
++#endif /* MAINBOARD_ME_H */
+diff --git a/src/mainboard/lenovo/m720q_m920q/me_status.c b/src/mainboard/lenovo/m720q_m920q/me_status.c
+new file mode 100644
+index 0000000000..34ca63c4c6
+--- /dev/null
++++ b/src/mainboard/lenovo/m720q_m920q/me_status.c
+@@ -0,0 +1,148 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <commonlib/helpers.h>
++#include <device/device.h>
++#include <device/pci_def.h>
++#include <device/pci_ops.h>
++#include <intelblocks/cse.h>
++#include <intelblocks/me.h>
++#include <limits.h>
++#include <mainboard/me.h>
++#include <option.h>
++#include <soc/pci_devs.h>
++#include <stdarg.h>
++#include <stdio.h>
++#include <string.h>
++
++/*
++ * The registers that dump_me_status() logs at BS_OS_RESUME_CHECK, read again
++ * when the tables are written (SMBIOS, then the setup menu): HECI1 is still
++ * there, as nothing hides it before BS_PAYLOAD_LOAD. No HECI message, which
++ * a disabled ME would not answer.
++ */
++const struct mb_me_status *mainboard_me_status(void)
++{
++	static const uint8_t hfsts[] = {
++		PCI_ME_HFSTS1, PCI_ME_HFSTS2, PCI_ME_HFSTS3,
++		PCI_ME_HFSTS4, PCI_ME_HFSTS5, PCI_ME_HFSTS6,
++	};
++	static struct mb_me_status status;
++	static bool done;
++
++	if (done)
++		return &status;
++	done = true;
++
++	/* As the CSE driver reads them: nothing requested without the option */
++	status.me_state = get_uint_option("me_state", UINT_MAX);
++	status.me_state_counter = get_uint_option("me_state_counter", UINT_MAX);
++
++	/* Not is_cse_enabled(), which warns when the device is hidden */
++	if (!is_devfn_enabled(PCH_DEVFN_CSE) ||
++	    pci_s_read_config16(PCI_DEV(0, PCI_SLOT(PCH_DEVFN_CSE), PCI_FUNC(PCH_DEVFN_CSE)),
++				PCI_VENDOR_ID) == 0xffff)
++		return &status;
++
++	for (size_t i = 0; i < ARRAY_SIZE(hfsts); i++)
++		status.hfsts[i] = me_read_config32(hfsts[i]);
++	status.valid = true;
++
++	return &status;
++}
++
++/* The operation modes without a name in cse.h, as intelmetool names them */
++#define ME_HFS1_COM_DEBUG		0x2	/* ME_HFS_MODE_DEBUG */
++#define ME_HFS1_COM_SECOVER_JUMPER	0x4	/* ME_HFS_MODE_OVER_JMPR */
++
++const char *mainboard_me_summary(void)
++{
++	static char text[32];
++	const struct mb_me_status *me = mainboard_me_status();
++	const union me_hfsts1 hfsts1 = { .data = me->hfsts[0] };
++
++	if (!me->valid)
++		return "Not available";
++
++	switch (hfsts1.fields.operation_mode) {
++	case ME_HFS1_COM_NORMAL:
++		if (hfsts1.fields.working_state == ME_HFS1_CWS_NORMAL)
++			return "Enabled";
++		snprintf(text, sizeof(text), "Enabled, not ready (state %u)",
++			 hfsts1.fields.working_state);
++		return text;
++	case ME_HFS1_COM_SOFT_TEMP_DISABLE:
++		return "Disabled (soft temporary disable)";
++	case ME_HFS1_COM_SECOVER_JUMPER:
++		return "Security override (jumper)";
++	case ME_HFS1_COM_SECOVER_MEI_MSG:
++		return "Security override (HECI message)";
++	case ME_HFS1_COM_DEBUG:
++		return "Debug";
++	default:
++		snprintf(text, sizeof(text), "Mode %u", hfsts1.fields.operation_mode);
++		return text;
++	}
++}
++
++/* Add to the text what fits */
++static void __printf(3, 4) text_add(char *text, size_t size, const char *fmt, ...)
++{
++	const size_t len = strnlen(text, size);
++	va_list args;
++
++	if (len + 1 >= size)
++		return;
++	va_start(args, fmt);
++	vsnprintf(text + len, size - len, fmt, args);
++	va_end(args);
++}
++
++const char *mainboard_me_details(void)
++{
++	static char text[640];
++	const struct mb_me_status *me = mainboard_me_status();
++	const union me_hfsts1 hfsts1 = { .data = me->hfsts[0] };
++	bool disabled;
++
++	if (text[0])
++		return text;
++
++	if (!me->valid) {
++		text_add(text, sizeof(text),
++			 "The firmware could not read the ME at this boot: its HECI\n"
++			 "interface (00:16.0) was off or hidden.\n");
++	} else {
++		text_add(text, sizeof(text),
++			 "The Intel ME at this boot, from its status registers\n"
++			 "(HFSTS1-6):\n"
++			 "%08X %08X %08X %08X %08X %08X\n"
++			 "Working state %u, operation state %u, operation mode %u,\n"
++			 "error code %u.\n",
++			 me->hfsts[0], me->hfsts[1], me->hfsts[2],
++			 me->hfsts[3], me->hfsts[4], me->hfsts[5],
++			 hfsts1.fields.working_state, hfsts1.fields.operation_state,
++			 hfsts1.fields.operation_mode, hfsts1.fields.error_code);
++		disabled = hfsts1.fields.operation_mode == ME_HFS1_COM_SOFT_TEMP_DISABLE;
++		if (disabled)
++			text_add(text, sizeof(text),
++				 "Disabled: HECI (00:16.0) is hidden from the OS, no AMT.\n");
++
++		/* What the CSE driver did not get, as it compares them */
++		if (me->me_state != UINT_MAX && !!me->me_state != disabled) {
++			text_add(text, sizeof(text),
++				 "Requested in Security > Management Engine: %s.\n",
++				 me->me_state ? "Disabled" : "Enabled");
++			if (me->me_state_counter != UINT_MAX &&
++			    me->me_state_counter >= ME_DISABLE_ATTEMPTS)
++				text_add(text, sizeof(text),
++					 "The change did not take after %u resets: turn the\n"
++					 "computer off and unplug it for a few seconds.\n",
++					 ME_DISABLE_ATTEMPTS);
++		}
++	}
++	text_add(text, sizeof(text),
++		 "The setting is in Security > Management Engine. A change\n"
++		 "shows here after the next boot.");
++
++	return text;
++}
+diff --git a/src/mainboard/lenovo/m720q_m920q/ramstage.c b/src/mainboard/lenovo/m720q_m920q/ramstage.c
+index 222c4363e3..581d41b085 100644
+--- a/src/mainboard/lenovo/m720q_m920q/ramstage.c
++++ b/src/mainboard/lenovo/m720q_m920q/ramstage.c
+@@ -3,10 +3,13 @@
+ #include <commonlib/helpers.h>
+ #include <device/device.h>
+ #include <mainboard/gpio.h>
++#include <mainboard/me.h>
+ #include <option.h>
++#include <smbios.h>
+ #include <soc/gpio.h>
+ #include <soc/ramstage.h>
+ #include <static.h>
++#include <stdio.h>
+ 
+ /* The USB ports of the front and of the rear panel (devicetree.cb) */
+ static const unsigned int front_usb2[] = { 1, 3 }, front_usb3[] = { 0, 1 };
+@@ -50,9 +53,31 @@ static void mainboard_init(void *chip_info)
+ 				  rear_usb3, ARRAY_SIZE(rear_usb3));
+ }
+ 
++/*
++ * The ME state for the OS (dmidecode -t 11, tools/update.py status): with
++ * the ME disabled the OS has no HECI to ask. At most 64 characters each.
++ */
++static void mainboard_smbios_strings(struct device *dev, struct smbios_type11 *t)
++{
++	const struct mb_me_status *me = mainboard_me_status();
++	char text[65];
++
++	snprintf(text, sizeof(text), "ME: %s", mainboard_me_summary());
++	t->count = smbios_add_string(t->eos, text);
++	if (!me->valid)
++		return;
++	snprintf(text, sizeof(text), "ME HFSTS: %08X %08X %08X %08X %08X %08X",
++		 me->hfsts[0], me->hfsts[1], me->hfsts[2],
++		 me->hfsts[3], me->hfsts[4], me->hfsts[5]);
++	t->count = smbios_add_string(t->eos, text);
++}
++
+ static void mainboard_enable(struct device *dev)
+ {
+ 	mainboard_configure_gpios();
++	/* dev is the root device, whose operations each board may extend */
++	if (CONFIG(GENERATE_SMBIOS_TABLES))
++		dev->ops->get_smbios_strings = mainboard_smbios_strings;
+ }
+ 
+ struct chip_operations mainboard_ops = {
+-- 
+2.47.3
+

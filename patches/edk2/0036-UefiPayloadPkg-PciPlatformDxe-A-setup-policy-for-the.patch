@@ -1,0 +1,155 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 19:51:45 +0100
+Subject: [PATCH] UefiPayloadPkg/PciPlatformDxe: A setup policy for the option
+ ROMs
+
+With PcdPciDisableBusEnumeration the PCI bus driver only does a light
+enumeration and loads no option ROM of its own: GetPciRom() of this
+driver is the only way one gets in, and it took the ROM of every device.
+It now reads "option_roms", a setting of the coreboot setup menu that
+CfrSetupMenuDxe keeps as a UINT32 variable of gEficorebootNvDataGuid.
+At 1, "Graphics cards only", a device that is not a display controller
+(class 0x03) gets EFI_NOT_FOUND before its ROM BAR is touched; any other
+value, or no variable, means all of them, as before.
+
+The value is kept for the boot only after a read that succeeds with the
+size of a UINT32: a failed read counts as All for that device and is
+tried again for the next one, so an early or broken read cannot pin the
+whole boot to the default.
+
+There is no "None" value. With the Intel graphics off, or a processor
+without it, the GOP of the card is the only firmware screen; a None
+would have to keep the display ROMs when no IGD answers at 00:02.0.
+The class code is what the card reports, so this is a policy and not a
+security boundary: Secure Boot decides which images may run.
+
+Only builds with LOAD_OPTION_ROMS have this driver (the M920x); the
+W541 builds without it.
+
+TEST=gcc -fsyntax-only of PciPlatformDxe.c against the MdePkg and
+MdeModulePkg headers of this tree, with a stub AutoGen.h: no errors.
+No EDK2 build here. Remains for the hardware test of the M920x: with no
+card the boot is the same with both values; with a graphics card on the
+riser its firmware screen shows with both; the ROM of a NIC or storage
+card loads only with All (the DEBUG_INFO lines of a debug build).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../PciPlatformDxe/PciPlatformDxe.c           | 66 +++++++++++++++++++
+ .../PciPlatformDxe/PciPlatformDxe.h           |  2 +
+ .../PciPlatformDxe/PciPlatformDxe.inf         |  4 ++
+ 3 files changed, 72 insertions(+)
+
+diff --git a/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.c b/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.c
+index 9bbb911eb2..fb8bb859bd 100644
+--- a/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.c
++++ b/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.c
+@@ -12,6 +12,50 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Bus/Pci/PciBusDxe/PciBus.h>
+ #include <Bus/Pci/PciBusDxe/PciOptionRomSupport.h>
+ 
++//
++// Values of the option_roms setting of the coreboot setup menu (CFR). Any
++// other value, or none, means all the option ROMs.
++//
++#define OPTION_ROMS_GRAPHICS_ONLY  1
++#define OPTION_ROMS_ALL            2
++
++STATIC BOOLEAN  mOptionRomsRead;
++STATIC UINT32   mOptionRoms;
++
++/**
++  The option_roms setting of the coreboot setup menu, which CfrSetupMenuDxe
++  keeps as a UINT32 variable of gEficorebootNvDataGuid. Only a good read is
++  kept for the rest of the boot: after a failed one this function returns
++  OPTION_ROMS_ALL and reads the variable again for the next device.
++
++  @return The setting, OPTION_ROMS_ALL when there is none.
++**/
++STATIC
++UINT32
++PciPlatformOptionRoms (
++  VOID
++  )
++{
++  EFI_STATUS  Status;
++  UINT32      Value;
++  UINTN       Size;
++
++  if (mOptionRomsRead) {
++    return mOptionRoms;
++  }
++
++  Value  = OPTION_ROMS_ALL;
++  Size   = sizeof (Value);
++  Status = gRT->GetVariable (L"option_roms", &gEficorebootNvDataGuid, NULL, &Size, &Value);
++  if (EFI_ERROR (Status) || (Size != sizeof (Value))) {
++    return OPTION_ROMS_ALL;
++  }
++
++  mOptionRoms     = Value;
++  mOptionRomsRead = TRUE;
++  return mOptionRoms;
++}
++
+ EFI_STATUS
+ EFIAPI
+ PciPlatformNotify (
+@@ -149,6 +193,28 @@ PciGetPciRom (
+     PciFunction
+     ));
+ 
++  //
++  // With light enumeration this is the only way an option ROM gets in, so
++  // option_roms can limit them to the graphics cards here. The class code
++  // is what the card reports: Secure Boot decides what may run, not this.
++  // There is no "None": with the Intel graphics off, or a processor without
++  // it, the card's GOP is the only firmware screen. A None would have to
++  // keep the display ROMs when no IGD answers at 00:02.0.
++  //
++  if ((PciPlatformOptionRoms () == OPTION_ROMS_GRAPHICS_ONLY) && !IS_PCI_DISPLAY (&PciIoDevice->Pci)) {
++    DEBUG ((
++      DEBUG_INFO,
++      "%a: PCI @ [%02x|%02x|%02x|%02x]: Not a display controller, option ROM skipped (option_roms)\n",
++      __func__,
++      PciSegment,
++      PciBus,
++      PciDevice,
++      PciFunction
++      ));
++    Status = EFI_NOT_FOUND;
++    goto CloseAndReturn;
++  }
++
+   //
+   // Default ROM is at 0x30
+   //
+diff --git a/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.h b/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.h
+index a80a1e4d93..9c1f1cd708 100644
+--- a/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.h
++++ b/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.h
+@@ -16,3 +16,5 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <IndustryStandard/Pci22.h>
+ #include <Protocol/PciIo.h>
+ #include <Protocol/PciPlatform.h>
++
++#include <Library/UefiRuntimeServicesTableLib.h>
+diff --git a/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.inf b/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.inf
+index cd45f76674..eff67f706c 100644
+--- a/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.inf
++++ b/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.inf
+@@ -31,6 +31,10 @@
+   DebugLib
+   MemoryAllocationLib
+   BaseMemoryLib
++  UefiRuntimeServicesTableLib
++
++[Guids]
++  gEficorebootNvDataGuid                        ## CONSUMES ## Variable:L"option_roms"
+ 
+ [Protocols]
+   gEfiPciPlatformProtocolGuid                   ## PRODUCES
+-- 
+2.47.3
+
