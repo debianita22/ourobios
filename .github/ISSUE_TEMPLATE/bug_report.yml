@@ -1,0 +1,183 @@
+# Issue form (https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms).
+# The components and the devices are those of the releases: keep them in
+# step with boards/*/board.sh (BOARD_VARIANTS) and with feature_request.yml
+# and hardware_report.yml.
+name: Bug report
+description: Something in ouroBIOS does not work as it should, the firmware, the setup menu, an update, a tool or the documentation.
+labels: ["bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem. A few things first:
+
+        - **A machine that no longer boots** needs recovery before anything else: [ThinkPad W541](https://github.com/debianita22/ourobios/blob/main/docs/flashing.md#recovery), [ThinkCentre M920x](https://github.com/debianita22/ourobios/blob/main/docs/m920x.md#recovery). A boot that stops on the way leaves its POST code for the next one: [Diagnosing a hang](https://github.com/debianita22/ourobios/blob/main/docs/flashing.md#diagnosing-a-hang).
+        - **An update that was refused or did not take**: [If it goes wrong](https://github.com/debianita22/ourobios/blob/main/docs/update.md#if-it-goes-wrong) explains each message.
+        - The report and the log asked for below need coreboot's `cbmem` (the `coreboot-utils` package on Debian and Ubuntu, or `make -C util/cbmem WERROR=` in a coreboot tree); `tools/hw-report.py` runs from a clone of this repository. It shows serial numbers and UUIDs with their last 4 characters only and never prints the Windows key; look through any other file before you attach it.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Where the problem is. Pick more than one if you are not sure.
+      multiple: true
+      options:
+        - 'coreboot (boot, hardware init, ACPI, SMBIOS, power, fan)'
+        - 'EDK2 payload or setup menu'
+        - 'vboot or updates (tools/update.py, capsules, fwupd)'
+        - 'Tools (tools/*.py, tools/build.sh, CI)'
+        - 'Documentation'
+        - 'Other, or not sure'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      description: The machine and the release variant it runs (the end of the version string below). For a problem in the tools or the docs, the machine you used them for.
+      multiple: true
+      options:
+        - 'ThinkPad W541, mrc (Intel mrc.bin)'
+        - 'ThinkPad W541, nri (native RAM init)'
+        - 'ThinkCentre M920x Tiny, fsp (Intel FSP)'
+        - 'Other (say which under Additional context)'
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Firmware version
+      description: |
+        The BIOS version string of the boot the logs come from: `sudo dmidecode -s bios-version` (or `cat /sys/class/dmi/id/bios_version`; also in the *About* card of the setup menu). A release: `ouroBIOS-v1.4.0-rc3-m920x-fsp`, on the W541 with the `CBET4000` prefix. A CI build: `ouroBIOS-ci-151-d0aaa35-m920x-fsp`, the run number and the commit. A local build of `tools/build.sh`: `ouroBIOS-dev-<commit>-<variant>`, say what you changed under Additional context. For a problem in the docs or in the build tools alone: `n/a`.
+      placeholder: ouroBIOS-v1.4.0-rc3-m920x-fsp
+    validations:
+      required: true
+
+  - type: dropdown
+    id: flashed
+    attributes:
+      label: How it was written
+      description: How the firmware that runs now got onto the flash. Skip it for a problem in the docs or in the build tools alone.
+      options:
+        - 'Capsule with tools/update.py stage'
+        - 'Capsule with fwupd (fwupdmgr, GNOME Software, KDE Discover)'
+        - 'Capsule from the setup menu (Firmware Update, USB drive)'
+        - 'flashrom, internal, the whole BIOS region (--ifd -i bios)'
+        - 'flashrom, internal, one RW slot (tools/update.py other-slot)'
+        - 'External programmer (CH341A or other)'
+        - 'Other (say how under Additional context)'
+    validations:
+      required: false
+
+  - type: input
+    id: previous
+    attributes:
+      label: Firmware before this one
+      description: What ran before (an older ouroBIOS, the Lenovo firmware, MrChromebox's coreboot, Libreboot...) and whether the problem was there too.
+      placeholder: ouroBIOS-v1.4.0-rc2-m920x-fsp, no problem there
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: Distribution and kernel (`uname -r`), or the other OS, if the problem shows after the boot loader.
+      placeholder: Proxmox VE 9 (Debian 13), Linux 7.0.14-15-pve
+    validations:
+      required: false
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What goes wrong, in a few lines.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: reproducibility
+    attributes:
+      label: How often
+      description: How often it happens when you follow the steps below.
+      options:
+        - 'Every time'
+        - 'Most of the time'
+        - 'Sometimes'
+        - 'Once so far'
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: From power-on, or from the command you ran. Setup options you changed from their defaults count too (*Clear memory at power-on*, *Management Engine*, *Firmware protection*...).
+      placeholder: |
+        1. Power on, Esc, Energy Saver > Turbo Boost: Disabled, save
+        2. Boot Linux, run ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened. If the Lenovo firmware or another coreboot does it right, say which and how.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead, with the exact messages (on screen, from the tool, in the logs). Photos of the screen are welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: hw-report
+    attributes:
+      label: tools/hw-report.py report
+      description: |
+        Needed for a firmware problem on a machine that boots. In a clone of the repository (`git clone https://github.com/debianita22/ourobios`), at idle, run `sudo python3 -I tools/hw-report.py --markdown report.md` (about 20 s), then paste the contents of `report.md` here (it is Markdown, a few KB) or attach the file. The checks are those of [docs/testing.md](https://github.com/debianita22/ourobios/blob/main/docs/testing.md#toolshw-reportpy). With a copy of the flash (`--dump flash.bin`) it also reads the event log, vboot's state and the saved setup options.
+    validations:
+      required: false
+
+  - type: textarea
+    id: cbmem
+    attributes:
+      label: coreboot log (cbmem -1)
+      description: |
+        The console of the last boot: `sudo cbmem -1 > cbmem.txt`, then attach `cbmem.txt` (drag it here: on the M920x it is about 55 KB, too long to paste). If the problem was in the boot before the last one, `sudo cbmem -2` may still hold it. For boot time problems, `sudo cbmem -t` too. For an update, also `sudo python3 -I tools/update.py status`.
+    validations:
+      required: false
+
+  - type: input
+    id: test-case
+    attributes:
+      label: Test case ID
+      description: The ID of the check that failed, from `tools/hw-report.py` or the test matrix of [docs/testing.md](https://github.com/debianita22/ourobios/blob/main/docs/testing.md#test-matrix), if one did.
+      placeholder: MEM-01
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else, the other device or flashing method, your changes to a local build, workarounds you have tried, other logs (`journalctl -k -b`, `lspci -vv`).
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the open and closed issues, and this is not one of them.
+          required: true

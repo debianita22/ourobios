@@ -1,0 +1,194 @@
+# Issue form (https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms).
+# A machine that runs ouroBIOS and what works on it, as Dasharo's hardware
+# compatibility reports. The areas of the table are the suites of
+# docs/testing.md, with their IDs. The label "hardware report" has to exist
+# in the repository, or GitHub leaves the issue without it.
+name: Hardware report
+description: Tell how ouroBIOS runs on your machine, the hardware in it, what works and what does not.
+title: "Hardware report: "
+labels: ["hardware report"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting how ouroBIOS runs on your machine: every machine tried with other processors, memory or cards tells what works beyond the one of the port. Something broken that needs fixing is better as a bug report of its own; link it here.
+
+        Most of what is asked below comes from one command, run at idle in a clone of the repository ([docs/testing.md](https://github.com/debianita22/ourobios/blob/main/docs/testing.md#toolshw-reportpy)):
+
+        ```sh
+        git clone https://github.com/debianita22/ourobios && cd ourobios
+        sudo python3 -I tools/hw-report.py --markdown report.md
+        ```
+
+        It only reads (no writes to the flash, MSRs, `/sys` or `/dev`, no module loaded), and shows serial numbers and UUIDs with their last 4 characters only. It needs coreboot's `cbmem` (the `coreboot-utils` package on Debian and Ubuntu) and `dmidecode`.
+
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      description: The machine and the release variant it runs (the end of the version string below).
+      options:
+        - 'ThinkPad W541, mrc (Intel mrc.bin)'
+        - 'ThinkPad W541, nri (native RAM init)'
+        - 'ThinkCentre M920x Tiny, fsp (Intel FSP)'
+        - 'Other (say which under Notes)'
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Firmware version
+      description: The BIOS version string, `sudo dmidecode -s bios-version` (also in the *About* card of the setup menu). A release (`ouroBIOS-v1.4.0-rc3-m920x-fsp`, on the W541 with the `CBET4000` prefix) or a CI build (`ouroBIOS-ci-151-d0aaa35-m920x-fsp`).
+      placeholder: ouroBIOS-v1.4.0-rc3-m920x-fsp
+    validations:
+      required: true
+
+  - type: dropdown
+    id: flashed
+    attributes:
+      label: How it was written
+      description: How the firmware that runs now got onto the flash.
+      options:
+        - 'Capsule with tools/update.py stage'
+        - 'Capsule with fwupd (fwupdmgr, GNOME Software, KDE Discover)'
+        - 'Capsule from the setup menu (Firmware Update, USB drive)'
+        - 'flashrom, internal, the whole BIOS region (--ifd -i bios)'
+        - 'flashrom, internal, one RW slot (tools/update.py other-slot)'
+        - 'External programmer (CH341A or other)'
+        - 'Other (say how under Notes)'
+    validations:
+      required: true
+
+  - type: input
+    id: previous
+    attributes:
+      label: Firmware before this one
+      description: What ran before ouroBIOS or before this version (the Lenovo firmware and its version, MrChromebox's coreboot, Libreboot, an older ouroBIOS).
+      placeholder: MrChromebox's coreboot, before that the Lenovo firmware M1UCT17A
+    validations:
+      required: false
+
+  - type: input
+    id: mtm
+    attributes:
+      label: Machine type and model
+      description: From the label under the machine (*Type 20EF-001UGE* is `20EF001UGE`), or `sudo dmidecode -s system-product-name` once the VPD is written.
+      placeholder: 10S2S00V00
+    validations:
+      required: false
+
+  - type: input
+    id: cpu
+    attributes:
+      label: Processor
+      description: "`grep -m1 'model name' /proc/cpuinfo`"
+      placeholder: Intel Core i3-8100 CPU @ 3.60GHz
+    validations:
+      required: true
+
+  - type: textarea
+    id: memory
+    attributes:
+      label: Memory
+      description: Each module, its size, speed and part number, and the slot it sits in (`sudo dmidecode -t 17`, or MEM-02 in the report). Say if another combination did not boot or did not train.
+      placeholder: |
+        Channel-0-DIMM-0: 32 GB DDR4 SODIMM 2400 MT/s, Crucial CT32G4SFD8266.C16FE
+        Channel-1-DIMM-0: 8 GB DDR4 SODIMM 2400 MT/s, Hynix HMA81GS6JJR8N-VK
+    validations:
+      required: true
+
+  - type: textarea
+    id: cards
+    attributes:
+      label: Storage, cards and peripherals
+      description: NVMe and SATA drives, the Wi-Fi card, a card on the riser (M920x), the dock and anything plugged in that matters (`lspci -nn`, `lsblk -d -o NAME,MODEL,TRAN`). Write `stock` if nothing changed from the factory.
+      placeholder: |
+        NVMe: Samsung 970 EVO Plus 1 TB
+        Wi-Fi: Intel AX200
+        Riser: none
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating systems
+      description: Each OS you booted, with its version and kernel.
+      placeholder: Proxmox VE 9 (Debian 13), Linux 7.0.14-15-pve; Windows 11 24H2
+    validations:
+      required: true
+
+  - type: textarea
+    id: hw-report
+    attributes:
+      label: tools/hw-report.py report
+      description: Paste the contents of `report.md` here (it is Markdown, a few KB) or attach the file. The second boot after a flash or an update is the one to report, the first one trains the memory again.
+    validations:
+      required: true
+
+  - type: textarea
+    id: works
+    attributes:
+      label: What works and what does not
+      description: For each area, `works`, `does not` or `not tried`, with a note where it helps (the port, the monitor, the OS). The IDs are those of the test matrix in [docs/testing.md](https://github.com/debianita22/ourobios/blob/main/docs/testing.md#test-matrix). Remove the rows of the other machine.
+      value: |
+        | Area | Result | Notes |
+        |---|---|---|
+        | Boot: logo, setup menu (Esc), boot from NVMe, SATA, USB (BOOT) | | |
+        | Memory: every module, its size and speed (MEM) | | |
+        | CPU: SpeedStep, Turbo Boost, power limits (CPU) | | |
+        | Idle: package C-states, power at idle (IDLE) | | |
+        | Suspend to RAM and resume (S3) | | |
+        | USB ports, front and rear (USB) | | |
+        | NVMe, SATA, PCIe cards (PCI) | | |
+        | Display: firmware screen, setup menu, desktop on each output (DISP) | | |
+        | Audio: speaker, headphone and microphone jacks (AUD) | | |
+        | Ethernet, Wake-on-LAN (NET) | | |
+        | Wi-Fi, Bluetooth | | |
+        | Fan and temperatures (FAN) | | |
+        | TPM (TPM) | | |
+        | Intel ME, enabled and disabled (ME) | | |
+        | vboot slots, capsule updates (VB, UPD) | | |
+        | Flash protection (FLASH) | | |
+        | Setup options saved and applied (OPT) | | |
+        | Serial number, machine type, UUID in SMBIOS (ID) | | |
+        | W541: NVIDIA GPU, internal panel, dock | | |
+        | W541: battery and charge thresholds | | |
+        | W541: keyboard, Fn keys, TrackPoint, touchpad | | |
+        | M920x: PCIe riser slot | | |
+    validations:
+      required: true
+
+  - type: textarea
+    id: problems
+    attributes:
+      label: What does not work, in detail
+      description: For each `does not` above, what happens, and whether it worked with the firmware before. Link the bug report if you opened one.
+    validations:
+      required: false
+
+  - type: textarea
+    id: cbmem
+    attributes:
+      label: coreboot log (cbmem -1)
+      description: "`sudo cbmem -1 > cbmem.txt`, then attach `cbmem.txt` (drag it here: on the M920x it is about 55 KB, too long to paste)."
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Anything else, setup options you changed from their defaults, the other device or flashing method, photos.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Documentation
+      options:
+        - label: This report may be quoted in the documentation of the project (docs/m920x.md, docs/testing.md, the README).
+          required: false

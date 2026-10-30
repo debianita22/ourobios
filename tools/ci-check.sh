@@ -8,8 +8,12 @@
 #   1. shellcheck (livello warning) sugli script, riconosciuti dalla prima riga
 #   2. Python: la sintassi dei file .py, la VPD che scrive tools/vpd.py
 #      riletta uguale, una capsula letta da tools/update.py come la scrive
-#      GenerateCapsule, il suo pacchetto fwupd e i metadati del remote
-#      fwupd (tools/fwupd-cab.py)
+#      GenerateCapsule (anche del M920x, 24 MiB, con le regioni di oggi e
+#      quelle di prima), il suo pacchetto fwupd e i metadati del remote
+#      fwupd (tools/fwupd-cab.py), gli esiti di tools/hw-report.py su log e
+#      timestamp finti; su un /sys finto, la riga ME di tools/update.py
+#      status (SMBIOS tipo 11) e la protezione del flash (protection);
+#      l'immagine di other-slot da un flash finto
 #   3. i workflow (actionlint, se c'e')
 #   4. blobs/, assets/, legacy/ e i blob delle altre board (boards/*/blobs):
 #      i file corrispondono ai loro SHA256SUMS
@@ -22,8 +26,8 @@
 #      dell'ESRT (cosi' mrc e nri differiscono solo li'), con IFD, ME e GbE
 #      (immagine completa), EDK2 pinnato a un commit, i file in w541/ che
 #      tools/build.sh copia davvero; la mappa configs/w541.fmd con le regioni
-#      scrivibili nel chip da 8 MiB; i GUID e le regioni delle capsule uguali
-#      in tools/update.py e tools/build.sh, il FILE_GUID di FmpDxe in
+#      scrivibili nel chip da 8 MiB; i GUID e le regioni delle capsule (per
+#      board) uguali in tools/update.py e tools/build.sh, il FILE_GUID di FmpDxe in
 #      tools/qemu-update.py; il remote fwupd (configs/fwupd/ourobios.conf)
 #      sui metadati di build.sh e ci.sh. Le altre board (boards/*/board.sh):
 #      i loro defconfig con un GUID dell'ESRT ciascuno, lo stesso commit di
@@ -168,7 +172,8 @@ EOF
 	else
 		bad "tools/vpd.py: --from-lenovo non legge le DmiVar come deve"
 	fi
-	# other-slot: le build di prova della CI accanto alle release, solo li'
+	# other-slot: le build di prova della CI accanto alle release, solo li';
+	# la variante di una build, che dice se il training della RAM resta
 	if python3 - <<'EOF'
 import sys
 sys.dont_write_bytecode = True
@@ -180,14 +185,183 @@ assert update.region_releases(data, area) == ["ouroBIOS-v1.4.0-rc3-m920x-fsp"]
 assert update.region_builds(data, area) == ["ouroBIOS-v1.4.0-rc3-m920x-fsp", "ouroBIOS-ci-143-7125dcb-m920x-fsp"]
 assert update.build_key_or_ci("ouroBIOS-ci-143-7125dcb-m920x-fsp") >= update.RO_COMMON
 assert update.build_key_or_ci("ouroBIOS-v1.3.8-mrc") < update.RO_COMMON
+assert update.build_flavour("ouroBIOS-ci-143-7125dcb-m920x-fsp", 0) == "m920x-fsp"
+assert update.build_flavour("ouroBIOS-v1.3.8-mrc", 0) == "mrc"
+assert update.build_flavour("?", 24 << 20) == "m920x-fsp" and update.build_flavour("?", 1) is None
+assert "RW_MRC_CACHE" in update.CURRENT_REGIONS["nri"] and "RW_MRC_CACHE" not in update.CURRENT_REGIONS["m920x-fsp"]
 EOF
 	then
 		ok "tools/update.py: other-slot riconosce anche le build di prova della CI"
 	else
 		bad "tools/update.py: other-slot non riconosce le build della CI come deve"
 	fi
+	# other-slot su un flash finto (24 MiB, M920x; 12 MiB, W541) e una
+	# release: lo slot che non gira e RW_NVRAM cambiati, RW_MRC_CACHE com'era
+	# sul M920x, vuota con --retrain, sul W541 e per una release del M920x di
+	# prima della rc4; il comando di flashrom con quelle regioni soltanto, e il
+	# riavvio subito
+	if python3 - <<'EOF'
+import contextlib
+import io
+import os
+import shutil
+import struct
+import sys
+import tempfile
+sys.dont_write_bytecode = True
+root = tempfile.mkdtemp()
+# senza /sys: nessun bios_version da confrontare, nessun controller SPI
+os.environ["W541_UPDATE_SYSROOT"] = root
+sys.path.insert(0, "tools")
+import update
+
+# le aree negli ultimi 12 MiB del flash, come sul M920x
+LAYOUT = (("RW_MRC_CACHE", 0x0, 0x10000), ("SMMSTORE", 0x10000, 0x80000), ("RW_NVRAM", 0xa0000, 0x10000),
+          ("RW_SECTION_A", 0xc0000, 0x520000), ("FW_MAIN_A", 0xd0000, 0x50ffc0),
+          ("RW_SECTION_B", 0x5e0000, 0x520000), ("FW_MAIN_B", 0x5f0000, 0x50ffc0),
+          ("WP_RO", 0xb00000, 0x100000), ("FMAP", 0xb00000, 0x800))
+
+
+def flash(size, ro, a, b, cache, nvram=True):
+    base = size - 0xc00000
+    areas = {n: (base + o, s) for n, o, s in LAYOUT}
+    img = bytearray(b"\xff" * size)
+    fmap = b"__FMAP__" + struct.pack("<BBQI32sH", 1, 1, 0, size, b"FLASH", len(areas))
+    fmap += b"".join(struct.pack("<II32sH", o, s, n.encode(), 0) for n, (o, s) in areas.items())
+    img[areas["FMAP"][0]:areas["FMAP"][0] + len(fmap)] = fmap
+    for area, name, fill in (("WP_RO", ro, 0x33), ("RW_SECTION_A", a, 0xaa), ("RW_SECTION_B", b, 0xbb)):
+        o = areas[area][0] + (0x20000 if area == "WP_RO" else 0x10000)
+        img[o:o + 0x1000] = bytes([fill]) * 0x1000
+        img[o + 0x1000:o + 0x1000 + len(name)] = name.encode()
+    o = areas["RW_MRC_CACHE"][0]
+    img[o:o + len(cache)] = cache
+    o = areas["SMMSTORE"][0]
+    img[o:o + 8] = b"settings"
+    if nvram:
+        # un record: gira lo slot A
+        rec = bytearray(16)
+        rec[0] = 0x40
+        rec[15] = update.nv_crc8(rec[:15])
+        o = areas["RW_NVRAM"][0]
+        img[o:o + 16] = rec
+    return img, areas
+
+
+def other_slot(size, fl, retrain, new=4):
+    rc = lambda n: "ouroBIOS-v1.4.0-rc%d-%s" % (n, fl)
+    dump, areas = flash(size, rc(3), rc(3), rc(2), b"MRCd" + bytes(range(256)) * 16)
+    rel, _ = flash(size, rc(new), rc(new), rc(new), b"", nvram=False)
+    paths = [os.path.join(root, n) for n in ("dump.bin", "release.rom", "out.rom")]
+    for path, data in zip(paths, (dump, rel)):
+        open(path, "wb").write(bytes(data))
+    out = io.StringIO()
+    args = type("A", (), {"dump": paths[0], "image": paths[1], "out": paths[2], "force": False,
+                          "retrain": retrain})()
+    with contextlib.redirect_stdout(out):
+        update.cmd_other_slot(args)
+    new = open(paths[2], "rb").read()
+    region = lambda data, n: bytes(data[areas[n][0]:sum(areas[n])])
+    assert region(new, "RW_SECTION_B") == region(rel, "RW_SECTION_B"), "slot B non dalla release"
+    for n in ("RW_SECTION_A", "WP_RO", "SMMSTORE"):
+        assert region(new, n) == region(dump, n), n
+    st = update.nv_state(region(new, "RW_NVRAM"))
+    assert st["valid"] and st["try_next"] == 1 and st["try_count"] == 2, st
+    cmd = [l for l in out.getvalue().splitlines() if "flashrom -p internal" in l]
+    assert len(cmd) == 1, out.getvalue()
+    return (region(new, "RW_MRC_CACHE") == region(dump, "RW_MRC_CACHE"),
+            not region(new, "RW_MRC_CACHE").strip(b"\xff"), cmd[0], out.getvalue())
+
+
+kept, empty, cmd, text = other_slot(24 << 20, "m920x-fsp", False)
+assert kept and cmd.endswith("--fmap -i RW_SECTION_B -i RW_NVRAM -w %s/out.rom" % root), cmd
+assert "Riavvia subito dopo flashrom, senza sospendere" in text and "rifai l'immagine con --retrain" in text, text
+kept, empty, cmd, text = other_slot(24 << 20, "m920x-fsp", True)
+assert empty and "--fmap -i RW_SECTION_B -i RW_MRC_CACHE -i RW_NVRAM -w" in cmd, cmd
+kept, empty, cmd, text = other_slot(12 << 20, "mrc", False)
+assert empty and "--fmap -i RW_SECTION_B -i RW_MRC_CACHE -i RW_NVRAM -w" in cmd, cmd
+# una release del M920x di prima della rc4: la sua capsula lo svuotava
+kept, empty, cmd, text = other_slot(24 << 20, "m920x-fsp", False, new=3)
+assert empty and "--fmap -i RW_SECTION_B -i RW_MRC_CACHE -i RW_NVRAM -w" in cmd, cmd
+shutil.rmtree(root)
+EOF
+	then
+		ok "tools/update.py: other-slot su un flash finto (M920x: RW_MRC_CACHE resta, vuota con --retrain o verso la rc3; W541: vuota)"
+	else
+		bad "tools/update.py: other-slot non prepara l'immagine come deve"
+	fi
+	# tools/hw-report.py senza la macchina, su log e timestamp finti: la RAM
+	# init lenta con la cache valida (la ci-150) e' un FAIL, quella del
+	# training no; i messaggi noti del log di coreboot non contano, un errore si';
+	# le opzioni tornate ai default sono un evento (INFO), e il microcode che
+	# con PRMRR il log dice di una revisione in meno e' quello del CBFS
+	if python3 - <<'EOF'
+import importlib.util
+import sys
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location("hw_report", "tools/hw-report.py")
+hw = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hw)
+
+
+def firmware(board, log, ts):
+    fw = hw.Firmware.__new__(hw.Firmware)
+    fw.cbmem, fw.bios, fw.board, fw.total_line = None, "ouroBIOS-ci-150-ecbf45d-m920x-fsp", board, None
+    fw.log, fw.ts = log, ts
+    return fw
+
+
+def ram(fw):
+    rep = hw.Report()
+    hw.check_raminit(fw, rep)
+    return rep.checks[0]["status"], rep.checks[0]["data"]["cache"]
+
+
+ts = lambda t: [(0, 15212, 0, "1st timestamp"), (950, 765277, 0, "calling FspMemoryInit"),
+                (951, 765277 + t, t, "returning from FspMemoryInit"), (99, 24439663, 0, "selfboot jump")]
+valid = ["[DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.",
+         "[DEBUG]  MRC: 'RW_MRC_CACHE' does not need update."]
+train = ["[INFO ]  MRC: version mismatch: 7007420 vs 7007430", "[DEBUG]  MRC: updated 'RW_MRC_CACHE'."]
+assert ram(firmware("m920x", valid, ts(15242599))) == ("FAIL", "valid")
+assert ram(firmware("m920x", valid, ts(3000000))) == ("WARN", "valid")
+assert ram(firmware("m920x", valid, ts(230000))) == ("PASS", "valid")
+assert ram(firmware("m920x", train, ts(21070000))) == ("INFO", "training")
+assert ram(firmware("m920x", ["[DEBUG]  S3 Resume"], ts(150000))) == ("PASS", "s3")
+rep = hw.Report()
+hw.check_boot_time(firmware("m920x", valid, ts(15242599)), rep)
+assert rep.checks[0]["status"] == "FAIL"
+rep = hw.Report()
+hw.check_fw_log(firmware("m920x", ["[WARN ]  CBFS: 'fallback/slic' not found.",
+                                   "[ERROR]  EC: the CPU fan does not turn (0 rpm): fan failure"], []), rep)
+assert rep.checks[0]["status"] == "FAIL" and "noto" in rep.checks[0]["details"][0]
+assert hw.separator_pcr("sha256").startswith("3D458CFE55CC03EA")
+assert hw.redact("PC0ZK26") == "****ZK26" and hw.redact("ab") == "****"
+rep = hw.Report()
+hw.check_fw_log(firmware("m920x", ["[WARN ]  Setup options: 31 reset to defaults (RTC power lost)",
+                                   "[WARN ]  CBFS: 'fallback/slic' not found."], []), rep)
+assert rep.checks[0]["status"] == "INFO" and "evento" in rep.checks[0]["details"][0], rep.checks[0]
+
+
+class NoMsr:
+    def read(self, cpu, reg):
+        return None
+
+
+rep = hw.Report()
+hw.check_cpu(firmware("m920x", ["[DEBUG]  microcode: sig=0x906eb pf=0x2 revision=0xf5",
+                                "[INFO ]  AP: slot 1 apic_id 2, MCU rev: 0x000000f5",
+                                "[DEBUG]  Skip microcode update"], []), rep, NoMsr())
+assert rep.checks[0]["data"]["firmware_microcode"] == [0xf6], rep.checks[0]
+assert "coreboot 0xf6 (il log dice 0xf5" in rep.checks[0]["details"][0], rep.checks[0]["details"]
+EOF
+	then
+		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, messaggi noti ed eventi del log, microcode con PRMRR"
+	else
+		bad "tools/hw-report.py: i controlli non danno gli esiti attesi"
+	fi
 	# Una capsula con la struttura di GenerateCapsule (firma finta) letta da
-	# tools/update.py: variante, versioni, regioni del manifest RMAP, immagine
+	# tools/update.py: variante, versioni, regioni del manifest RMAP, immagine.
+	# Del M920x (24 MiB): info vuole le regioni di oggi, stage accetta anche
+	# quelle delle v1.4.0-rc1..rc3, che scrivono anche RW_MRC_CACHE
 	if python3 - <<'EOF'
 import struct
 import sys
@@ -195,21 +369,55 @@ import uuid
 sys.dont_write_bytecode = True
 sys.path.insert(0, "tools")
 import update
+
+
+def capsule(variant, image, regions, version=0x01020302, lsv=0x01020000):
+    rmap = b"".join(r.encode().ljust(16, b"\0") for r in regions)
+    rmap += struct.pack("<IHH", update.RMAP_SIGNATURE, 1, len(regions))
+    payload = struct.pack("<4sIII", b"MSS1", 16, version, lsv) + image + rmap
+    cert = b"\x30" * 100
+    auth = struct.pack("<QIHH", 7, 24 + len(cert), 0x200, 0x0EF1) + update.PKCS7_CERT_GUID.bytes_le + cert
+    item = auth + payload
+    ihdr = struct.pack("<I16sB3sIIQQ", 3, update.VARIANTS[variant].bytes_le, 1, b"", len(item), 0, 0, 1)
+    fmp = struct.pack("<IHHQ", 1, 0, 1, 16) + ihdr + item
+    data = update.FMP_CAPSULE_GUID.bytes_le + struct.pack("<III", 32, 0x10000, 32 + len(fmp)) + bytes(4) + fmp
+    return data, payload, cert
+
+
 image = bytes(range(256)) * (update.ROM_SIZE // 256)
-rmap = b"".join(r.encode().ljust(16, b"\0") for r in update.REGIONS)
-rmap += struct.pack("<IHH", update.RMAP_SIGNATURE, 1, len(update.REGIONS))
-payload = struct.pack("<4sIII", b"MSS1", 16, 0x01020302, 0x01020000) + image + rmap
-cert = b"\x30" * 100
-auth = struct.pack("<QIHH", 7, 24 + len(cert), 0x200, 0x0EF1) + update.PKCS7_CERT_GUID.bytes_le + cert
-item = auth + payload
-ihdr = struct.pack("<I16sB3sIIQQ", 3, update.VARIANTS["nri"].bytes_le, 1, b"", len(item), 0, 0, 1)
-fmp = struct.pack("<IHHQ", 1, 0, 1, 16) + ihdr + item
-data = update.FMP_CAPSULE_GUID.bytes_le + struct.pack("<III", 32, 0x10000, 32 + len(fmp)) + bytes(4) + fmp
+data, payload, cert = capsule("nri", image, update.REGIONS)
 cap = update.parse_capsule(data)
 assert (cap["variant"], cap["version"], cap["lsv"]) == ("nri", 0x01020302, 0x01020000)
 assert cap["regions"] == update.REGIONS and cap["image"] == image and cap["signature"] == cert
 assert cap["signed"] == payload + struct.pack("<Q", 7)
 update.check_capsule(cap, {"variant": "nri", "legacy": False})
+update.check_capsule(cap, current_only=True)
+m920x = {"variant": "m920x-fsp", "legacy": False}
+big = bytes(range(256)) * (update.FLAVOURS["m920x-fsp"][2] // 256)
+mcap = update.parse_capsule(capsule("m920x-fsp", big, ["RW_SECTION_A", "RW_SECTION_B"], 0x0103ff04)[0])
+assert mcap["regions"] == update.CURRENT_REGIONS["m920x-fsp"] and len(mcap["image"]) == 24 << 20
+update.check_capsule(mcap, current_only=True)
+update.check_capsule(mcap, m920x)
+old = update.parse_capsule(capsule("m920x-fsp", big, update.REGIONS, 0x0103ff03)[0])
+update.check_capsule(old, m920x)
+try:
+    update.check_capsule(old, current_only=True)
+    raise AssertionError("info accetta una capsula del M920x con RW_MRC_CACHE")
+except update.Error as e:
+    assert "stage la accetta ancora" in str(e), e
+for regions, size in ((["RW_SECTION_A", "RW_SECTION_B"], update.ROM_SIZE), (["RW_SECTION_A"], 24 << 20)):
+    bad = update.parse_capsule(capsule("m920x-fsp", big[:size], regions)[0])
+    try:
+        update.check_capsule(bad, m920x)
+        raise AssertionError("capsula del M920x accettata: %r, %d byte" % (regions, size))
+    except update.Error:
+        pass
+try:
+    update.check_capsule(update.parse_capsule(capsule("nri", image, update.CURRENT_REGIONS["m920x-fsp"])[0]),
+                         {"variant": "nri", "legacy": False})
+    raise AssertionError("capsula del W541 senza RW_MRC_CACHE accettata")
+except update.Error:
+    pass
 assert update.version_str(0x01020302) == "v1.2.4-rc2" and update.version_quad(0x01020302) == "1.2.3.2"
 assert update.version_str(0x01020300) == "v1.2.3" and update.version_str(0x0103ff01) == "v1.4.0-rc1"
 # i numeri fino a v1.3.6-rc1, nel formato di prima, sono ancora sui portatili
@@ -397,6 +605,263 @@ EOF
 		ok "tools/qemu-update.py: variabili scritte nello store, FmpState, ESRT, traccia del pflash e pagina Firmware Update letti"
 	else
 		bad "tools/qemu-update.py: le funzioni della prova dell'aggiornamento non fanno quello che devono"
+	fi
+	# tools/update.py status, la riga ME: dalle stringhe OEM (SMBIOS tipo 11)
+	# che scrive coreboot sul M920x, da dmi_sysfs o, senza, dalla tabella
+	# intera; con la sola riga riassuntiva quella com'e'
+	if python3 - <<'EOF'
+import os
+import shutil
+import sys
+import tempfile
+sys.dont_write_bytecode = True
+root = tempfile.mkdtemp()
+# prima di import: update.py prende la radice quando lo si carica
+os.environ["W541_UPDATE_SYSROOT"] = root
+sys.path.insert(0, "tools")
+import update
+
+
+def type11(*strings):
+    return bytes([11, 5, 0x09, 0x00, len(strings)]) + b"".join(s.encode() + b"\0" for s in strings) + b"\0"
+
+
+me = ("ME: Disabled (soft temporary disable)",
+      "ME HFSTS: 80032044 368A0106 00000030 00004000 00000000 C0000004")
+assert all(len(s) <= 64 for s in me) and len(me[1]) == 63
+want = ("disattivata (soft temporary disable), stato di lavoro 4, codice di errore 2; "
+        "HECI (00:16.0) nascosta al sistema")
+d = os.path.join(root, "sys/firmware/dmi/entries")
+os.makedirs(os.path.join(d, "11-0"))
+os.makedirs(os.path.join(d, "17-0"))
+open(os.path.join(d, "11-0", "raw"), "wb").write(type11(*me))
+open(os.path.join(d, "17-0", "raw"), "wb").write(bytes([17, 4, 0, 0]) + b"ME: no\0\0")
+assert update.me_status() == want, update.me_status()
+# senza dmi_sysfs: la tabella, con altre strutture prima e dopo
+shutil.rmtree(d)
+t = os.path.join(root, "sys/firmware/dmi/tables")
+os.makedirs(t)
+type0 = bytes([0, 0x18, 0, 0]) + bytes(0x14) + b"coreboot\0\0"
+type1 = bytes([1, 0x1b, 1, 0]) + bytes(0x17) + b"\0\0"
+end = bytes([127, 4, 0x0a, 0]) + b"\0\0"
+table = lambda *mid: type0 + b"".join(mid) + type1 + end + type11("ME: dopo la fine")
+open(os.path.join(t, "DMI"), "wb").write(table(type11("altro"), type11(*me)))
+assert update.me_status() == want, update.me_status()
+# ME acceso e HECI visibile
+os.makedirs(os.path.join(root, "sys/bus/pci/devices/0000:00:16.0"))
+open(os.path.join(t, "DMI"), "wb").write(table(type11(
+    "ME: Enabled", "ME HFSTS: 90000245 00000000 00000030 00004000 00000000 40000004")))
+assert update.me_status() == "attiva, stato di lavoro 5, codice di errore 0", update.me_status()
+# solo la riga riassuntiva (HECI non letta dal firmware)
+open(os.path.join(t, "DMI"), "wb").write(table(type11("ME: Not available")))
+assert update.me_status() == "Not available", update.me_status()
+# un firmware che non le scrive
+open(os.path.join(t, "DMI"), "wb").write(table())
+assert update.me_status() is None
+shutil.rmtree(root)
+EOF
+	then
+		ok "tools/update.py: la riga ME di status dalle stringhe OEM di SMBIOS (dmi_sysfs e tabella)"
+	else
+		bad "tools/update.py: la riga ME di status non si legge come deve dalle stringhe OEM"
+	fi
+	# tools/update.py protection su un /sys finto: lo spazio PCI e il BAR0 del
+	# controller SPI del M920x, e la regione BIOS sotto i 4 GiB in un file da
+	# 12 MiB al posto di /dev/mem, con la FMAP e le opzioni in SMMSTORE.
+	# Nessun PR (com'e' la ci-151), PR0 su WP_RO, un PR su RW_SECTION_A, il
+	# BIOS Lock di questo avvio e quello del setup, uno store non sano o
+	# rovinato (i default), senza FMAP, i codici di --expect-ro, senza root,
+	# il W541
+	if python3 - <<'EOF'
+import contextlib
+import io
+import os
+import shutil
+import struct
+import sys
+import tempfile
+sys.dont_write_bytecode = True
+root = tempfile.mkdtemp()
+os.environ["W541_UPDATE_SYSROOT"] = root
+sys.path.insert(0, "tools")
+import update
+
+spi = os.path.join(root, "sys/bus/pci/devices/0000:00:1f.5")
+os.makedirs(spi)
+for f, v in (("vendor", "0x8086"), ("device", "0xa324"), ("class", "0x0c8000")):
+    open(os.path.join(spi, f), "w").write(v + "\n")
+areas = [("SI_ALL", 0, 0xc00000), ("SI_DESC", 0, 0x1000), ("SI_GBE", 0x1000, 0x2000), ("SI_ME", 0x3000, 0xbfd000),
+         ("SI_BIOS", 0xc00000, 0xc00000), ("RW_MRC_CACHE", 0xc00000, 0x10000), ("SMMSTORE", 0xc10000, 0x80000),
+         ("RW_NVRAM", 0xca0000, 0x10000), ("RW_SECTION_A", 0xcc0000, 0x520000), ("FW_MAIN_A", 0xcd0000, 0x50ffc0),
+         ("RW_SECTION_B", 0x11e0000, 0x520000), ("WP_RO", 0x1700000, 0x100000), ("FMAP", 0x1700000, 0x800),
+         ("COREBOOT", 0x1720000, 0xe0000)]
+base = 0xff400000                      # 4 GiB - 12 MiB: flash 0xc00000
+win = os.path.join(root, "bios-window.bin")
+
+
+def var(name, value, state=0x3f, guid=update.CB_OPTION_GUID, dsize=None):
+    n = (name + "\0").encode("utf-16-le")
+    d = struct.pack("<I", value)
+    h = struct.pack("<HBBIQ16sIII16s", 0x55aa, state, 0, 3, 0, bytes(16), 0, len(n),
+                    len(d) if dsize is None else dsize, guid)
+    v = h + n + d
+    return v + b"\xff" * (-len(v) % 4)
+
+
+def fixture(prs=(), bios_cntl=0x8b, health=0xfe, options=((0, 0, 0x3f),), config=256, with_fmap=True,
+            tail=b"", checksum=0):
+    cfg = bytearray(256)
+    cfg[0:4] = struct.pack("<HH", 0x8086, 0xa324)
+    cfg[0x10:0x14] = struct.pack("<I", 0xfe010000)
+    cfg[0xdc] = bios_cntl
+    open(os.path.join(spi, "config"), "wb").write(bytes(cfg[:config]))
+    bar = bytearray(0x1000)
+    for off, v in ((0x00, 0x17ff0c00), (0x04, 0x230af801), (0x0c, 0x1f00), (0x50, 0xffff), (0x54, 0),
+                   (0x58, 0x17ff0c00), (0x5c, 0x0bff0003), (0x60, 0x00020001)):
+        bar[off:off + 4] = struct.pack("<I", v)
+    for n in range(4, 12):
+        bar[0x54 + 4 * n:0x58 + 4 * n] = struct.pack("<I", 0x7fff)
+    for n, v in prs:
+        bar[0x84 + 4 * n:0x88 + 4 * n] = struct.pack("<I", v)
+    open(os.path.join(spi, "resource0"), "wb").write(bytes(bar))
+    img = bytearray(b"\xff" * 0xc00000)
+    fmap = b"__FMAP__" + struct.pack("<BBQI32sH", 1, 1, 0, 0x1800000, b"FLASH", len(areas))
+    fmap += b"".join(struct.pack("<II32sH", o, n, name.encode(), 0) for name, o, n in areas)
+    if with_fmap:
+        img[0xb00000:0xb00000 + len(fmap)] = fmap
+    # la FV come la scrive efi_fv_initialize(): 64 blocchi da 4 KiB
+    st = 0x10000
+    fv = bytearray(0x48)
+    fv[0x10:0x20] = update.NV_DATA_FV_GUID
+    fv[0x20:0x28] = struct.pack("<Q", 0x40000)
+    fv[0x28:0x2c] = b"_FVH"
+    fv[0x30:0x32] = struct.pack("<H", 0x48)
+    fv[0x37] = 2
+    fv[0x38:0x40] = struct.pack("<II", 0x40, 0x1000)
+    fv[0x32:0x34] = struct.pack("<H", (checksum - sum(struct.unpack("<36H", fv))) & 0xffff)
+    img[st:st + 0x48] = fv
+    img[st + 0x48:st + 0x64] = update.AUTH_VAR_GUID + struct.pack("<IBBHI", 0x30000 - 0x48, 0x5a, health, 0, 0)
+    vs = var("bootmedia_lock", 1, 0x3c)                   # la copia di prima, cancellata
+    for bm, bl, state in options:
+        vs += var("bootmedia_lock", bm, state) + var("bios_lock", bl, state)
+    vs += var("bootmedia_lock", 7, guid=bytes(16)) + tail  # stesso nome, altro GUID
+    img[st + 0x64:st + 0x64 + len(vs)] = vs
+    open(win, "wb").write(bytes(img))
+
+
+dm = (win, base)
+fixture()
+p = update.spi_protection(dm)
+assert p["bios"] == (0xc00000, 0x17fffff) and p["window"] == base and p["fmap"].startswith("quella nel flash")
+assert p["options"] == {"bootmedia_lock": 0, "bios_lock": 0}, p["options"]
+v = update.spi_verdict(p)
+assert v["ro"] == "off" and v["desc_writable"] and not v["smm_only"] and not v["capsule_block"]
+assert update.protection_lines(dm) == [
+    ("WP_RO", "NON protetta (Firmware protection spenta, anche nel setup)"),
+    ("BIOS Lock", "spento: il sistema puo' scrivere il flash"),
+    ("slot RW", "scrivibili con la capsula e con flashrom")], update.protection_lines(dm)
+# Firmware protection: PR0 su WP_RO, come lo scrive fast_spi_flash_protect()
+fixture(prs=((0, 0x97ff1700),), options=((1, 0, 0x3f),))
+p = update.spi_protection(dm)
+v = update.spi_verdict(p)
+assert v["ro"] == "ok" and v["prs"][0]["areas"] == ["WP_RO"] and not v["capsule_block"], v
+assert update.ro_text(p, v).startswith("protetta fino al reset (PR0); ma il descrittore e' scrivibile")
+assert update.slots_text(p, v) == "scrivibili con la capsula e con flashrom"
+# WP_RO coperta da due PR insieme
+fixture(prs=((0, 0x97ff1780), (1, 0x977f1700)), options=((1, 0, 0x3f),))
+assert update.spi_verdict(update.spi_protection(dm))["ro"] == "ok"
+# un PR su RW_SECTION_A: la capsula non lo scrive
+fixture(prs=((2, 0x91df0cc0),))
+p = update.spi_protection(dm)
+v = update.spi_verdict(p)
+assert v["capsule_block"] == ["PR2 RW_SECTION_A"] and v["prs"][0]["areas"] == ["RW_SECTION_A"], v
+assert update.slots_text(p, v).startswith("NON scrivibili: PR2 RW_SECTION_A")
+assert v["ro"] == "off"
+# BIOS Lock in questo avvio: EISS e BLE, o EISS a 0 e WPD a 0 con BLE (SMM
+# lo rimette a 0 dopo la finalize); l'opzione in SMMSTORE solo come nota
+for bc, opt, by_smi in ((0xaa, 1, False), (0x8a, 1, True)):
+    fixture(bios_cntl=bc, options=((0, opt, 0x3f),))
+    p = update.spi_protection(dm)
+    v = update.spi_verdict(p)
+    assert v["smm_only"] and v["smm_by_smi"] == by_smi, (bc, v)
+    assert update.slots_text(p, v) == "scrivibili con la capsula; flashrom no (BIOS Lock)"
+fixture(bios_cntl=0x8a, options=((0, 0, 0x3f),))
+p = update.spi_protection(dm)
+assert update.bios_lock_text(p, update.spi_verdict(p)) == "acceso: scrive solo il firmware in SMM (EISS a 0: " \
+    "lo tiene l'SMI che rimette WPD a 0); spento nel setup, vale dal prossimo avvio"
+# acceso nel setup ma non in questo avvio: WPD resta a 1, flashrom scrive
+fixture(bios_cntl=0x8b, options=((0, 1, 0x3f),))
+p = update.spi_protection(dm)
+v = update.spi_verdict(p)
+assert not v["smm_only"] and update.slots_text(p, v) == "scrivibili con la capsula e con flashrom"
+assert update.bios_lock_text(p, v) == \
+    "spento: il sistema puo' scrivere il flash; acceso nel setup, vale dal prossimo avvio"
+# senza BLE WPD a 0 non tiene: flashrom lo accende
+fixture(bios_cntl=0x88)
+p = update.spi_protection(dm)
+assert update.bios_lock_text(p, update.spi_verdict(p)) == \
+    "spento: il sistema puo' scrivere il flash (dopo aver acceso BIOSWE, come fa flashrom)"
+# copie in cancellazione (0x3e): vale l'ultima, se non ce n'e' una valida
+fixture(options=((0, 0, 0x3e), (1, 0, 0x3e)))
+assert update.spi_protection(dm)["options"] == {"bootmedia_lock": 1, "bios_lock": 0}
+# store non sano: coreboot usa i default
+fixture(health=0xff)
+p = update.spi_protection(dm)
+assert p["options"] == {"bootmedia_lock": None, "bios_lock": None}
+assert update.option_text(p, "bootmedia_lock") == "1 (default: store di SMMSTORE NON sano)"
+assert "al default, accesa (store di SMMSTORE NON sano)" in update.ro_text(p, update.spi_verdict(p))
+# store che coreboot rifiuta, quindi i default: una variabile che va oltre la
+# fine dello store, dati dopo l'ultima, il checksum della FV
+for kw, why in ((dict(tail=var("x", 0, dsize=0x2ff00)), "variabile a 0x"),
+                (dict(tail=b"\0" * 4), "dati dopo l'ultima variabile"),
+                (dict(checksum=1), "checksum della FV")):
+    fixture(**kw)
+    p = update.spi_protection(dm)
+    assert p["options"] == {"bootmedia_lock": None, "bios_lock": None}, (kw, p["options"])
+    assert p["options_note"].startswith("store di SMMSTORE rovinato (" + why), (kw, p["options_note"])
+# protection: i codici di --expect-ro (0 come atteso, 1 no, 2 non si sa)
+spi_protection = update.spi_protection
+update.spi_protection = lambda devmem=None: spi_protection(dm)
+
+
+def protection(expect):
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc = update.cmd_protection(type("A", (), {"flash": None, "expect_ro": expect})())
+    return rc, out.getvalue()
+
+
+fixture(prs=((0, 0x97ff1700),), options=((1, 0, 0x3f),))
+assert [protection(e)[0] for e in ("on", "off", None)] == [0, 1, 0]
+fixture()
+assert [protection(e)[0] for e in ("on", "off")] == [1, 0]
+# senza FMAP (ne' nel flash ne' da cbmem) un PR non si confronta con gli slot
+fixture(prs=((2, 0x91df0cc0),), with_fmap=False)
+p = spi_protection(dm)
+v = update.spi_verdict(p)
+assert v["ro"] is None and v["unmapped"] == ["PR2"] and not v["capsule_block"], v
+assert update.slots_text(p, v) == \
+    "non verificabili: PR2 attivi, FMAP non letta (update.py protection --flash FILE)"
+rc, out = protection("off")
+assert rc == 2 and "stato di WP_RO non noto" in out, out
+assert "capsula:     non verificabile: PR2 attivi" in out and "flashrom:    non verificabile: PR2" in out, out
+fixture(with_fmap=False)
+p = spi_protection(dm)
+assert update.slots_text(p, update.spi_verdict(p)) == "scrivibili con la capsula e con flashrom"
+update.spi_protection = spi_protection
+# senza root sysfs da' 64 byte dello spazio PCI
+fixture(config=64)
+assert update.protection_lines(dm) == [("protezione", "serve root (sudo)")]
+# il W541: a 00:1f.5 non c'e' il controller SPI
+shutil.rmtree(spi)
+assert update.spi_protection(dm) is None
+assert update.protection_lines(dm)[0][1].startswith("non verificabile")
+shutil.rmtree(root)
+EOF
+	then
+		ok "tools/update.py: protection su registri finti (nessun PR, PR0 su WP_RO, PR su uno slot, BIOS Lock, store non sano o rovinato, senza FMAP, --expect-ro, senza root, W541)"
+	else
+		bad "tools/update.py: protection non legge i registri finti come deve"
 	fi
 else
 	bad "python3 non installato"
@@ -595,7 +1060,7 @@ if [ -f configs/w541-mrc.defconfig ] && [ -f configs/w541-nri.defconfig ]; then
 	r_build="$(sed -n 's/^CAPSULE_REGIONS=(\(.*\))$/\1/p' tools/build.sh)"
 	r_upd="$(sed -n 's/^REGIONS = \[\(.*\)\]$/\1/p' tools/update.py | tr -d '",')"
 	if [ -n "${r_build}" ] && [ "${r_build}" = "${r_upd}" ]; then
-		ok "regioni delle capsule: ${r_build}"
+		ok "regioni delle capsule (il default, W541 e update-test): ${r_build}"
 	else
 		bad "regioni delle capsule: tools/build.sh '${r_build}', tools/update.py '${r_upd}'"
 	fi
@@ -761,12 +1226,16 @@ done
 
 step "le board negli strumenti"
 # tools/update.py (FLAVOURS e VARIANTS: board, variante, dimensione del
-# flash, GUID dell'ESRT) e tools/fwupd-cab.py (BOARDS, VARIANTS) devono
-# conoscere ogni variante di ogni board, e nient'altro
+# flash, GUID dell'ESRT; CURRENT_REGIONS: le regioni delle capsule,
+# BOARD_CAPSULE_REGIONS o CAPSULE_REGIONS di tools/build.sh) e
+# tools/fwupd-cab.py (BOARDS, VARIANTS) devono conoscere ogni variante di
+# ogni board, e nient'altro
 rows="$(mktemp)"
+r_default="$(sed -n 's/^CAPSULE_REGIONS=(\(.*\))$/\1/p' tools/build.sh | tr ' ' ',')"
 for b in $(boards); do
 	prefix="$(board_get "${b}" BOARD_FLAVOUR_PREFIX)"
 	size="$(board_get "${b}" BOARD_ROM_SIZE)"
+	regions="$(board_get "${b}" BOARD_CAPSULE_REGIONS | sed '/^$/d' | paste -sd, -)"
 	# la prima versione con la board, se non c'e' da sempre: vX.Y.Z
 	since="$(board_get "${b}" BOARD_SINCE)"
 	if [ -n "${since}" ]; then
@@ -778,7 +1247,7 @@ for b in $(boards); do
 	fi
 	for v in $(board_get "${b}" BOARD_VARIANTS); do
 		g="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_GUID="\(.*\)"$/\1/p' "$(board_get "${b}" defconfig "${v}")" 2>/dev/null)"
-		echo "${b} ${v} ${prefix}${v} $((size)) ${g:--}" >> "${rows}"
+		echo "${b} ${v} ${prefix}${v} $((size)) ${g:--} ${regions:-${r_default}}" >> "${rows}"
 	done
 done
 if out="$(python3 -I - "${O}/tools" "${rows}" 2>&1 <<'PY'
@@ -800,8 +1269,13 @@ upd = load("update", tools + "/update.py")
 cab = load("fwupd_cab", tools + "/fwupd-cab.py")
 bad, seen = [], set()
 for line in open(rows):
-    b, v, fl, size, g = line.split()
+    b, v, fl, size, g, regions = line.split()
     seen.add(fl)
+    if upd.CURRENT_REGIONS.get(fl) != regions.split(","):
+        bad.append("tools/update.py: CURRENT_REGIONS[%r] e' %r, la capsula di tools/build.sh scrive %s"
+                   % (fl, upd.CURRENT_REGIONS.get(fl), regions.replace(",", " ")))
+    if upd.CURRENT_REGIONS.get(fl) not in upd.ACCEPTED_REGIONS.get(fl, []):
+        bad.append("tools/update.py: ACCEPTED_REGIONS[%r] senza le regioni di oggi" % fl)
     if upd.FLAVOURS.get(fl) != (b, v, int(size)):
         bad.append("tools/update.py: FLAVOURS[%r] e' %r, non (%r, %r, %s)" % (fl, upd.FLAVOURS.get(fl), b, v, size))
     if str(upd.VARIANTS.get(fl)) != g:
@@ -812,6 +1286,8 @@ for line in open(rows):
         bad.append("tools/fwupd-cab.py: la variante %s non e' in VARIANTS" % v)
 for fl in sorted(set(upd.FLAVOURS) - seen):
     bad.append("tools/update.py: FLAVOURS[%r] di nessuna board" % fl)
+for fl in sorted((set(upd.CURRENT_REGIONS) | set(upd.ACCEPTED_REGIONS)) - seen):
+    bad.append("tools/update.py: CURRENT_REGIONS o ACCEPTED_REGIONS[%r] di nessuna board" % fl)
 print("\n".join(bad) if bad else ", ".join(sorted(seen)))
 sys.exit(1 if bad else 0)
 PY
