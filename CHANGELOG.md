@@ -75,9 +75,20 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   key of the VPD (0159); `tools/vpd.py set --from-lenovo` takes it from
   the dump of the Lenovo firmware, `--windows-key` by hand.
 - From rc3, *Hardware* → *Devices* on the M920x, as the Devices menu of the
-  OEM setup: Ethernet, audio, front and rear USB ports (0160-0161). The
+  OEM setup: Ethernet, audio, Wi-Fi with its Bluetooth, front and rear USB
+  ports (0160-0162). The
   TCO watchdog of the PCH works (`iTCO_wdt`), which Proxmox blacklists:
   [docs/m920x.md](docs/m920x.md#status) says how to use it for its HA.
+- From rc4, on the M920x: *Console* → *Serial Console* in the setup, to turn
+  the serial console off (about 1 s less per boot at INFO); the speed of
+  the CPU fan in the boot log, or an error when it does not turn (0163);
+  no more "LPC IO decode base 0!" error at every boot (0164), nor the
+  warnings for the minimum D-state of the PCH thermal device, the GPE
+  routing and the missing RW_VPD (0165-0167); under Linux, no more "failed
+  to evaluate _DSM 2c176672-..." from iwlwifi: the Wi-Fi card has an ACPI
+  node (0168).
+- `tools/update.py other-slot` also takes the test builds of the CI
+  (`ouroBIOS-ci-N-...`), to try one in the slot that is not running.
 
 ## v1.3.10
 

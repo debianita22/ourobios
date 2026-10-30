@@ -168,6 +168,24 @@ EOF
 	else
 		bad "tools/vpd.py: --from-lenovo non legge le DmiVar come deve"
 	fi
+	# other-slot: le build di prova della CI accanto alle release, solo li'
+	if python3 - <<'EOF'
+import sys
+sys.dont_write_bytecode = True
+sys.path.insert(0, "tools")
+import update
+data = b"\xff" * 16 + b"ouroBIOS-v1.4.0-rc3-m920x-fsp\0" + b"ouroBIOS-ci-143-7125dcb-m920x-fsp\0"
+area = (0, len(data))
+assert update.region_releases(data, area) == ["ouroBIOS-v1.4.0-rc3-m920x-fsp"]
+assert update.region_builds(data, area) == ["ouroBIOS-v1.4.0-rc3-m920x-fsp", "ouroBIOS-ci-143-7125dcb-m920x-fsp"]
+assert update.build_key_or_ci("ouroBIOS-ci-143-7125dcb-m920x-fsp") >= update.RO_COMMON
+assert update.build_key_or_ci("ouroBIOS-v1.3.8-mrc") < update.RO_COMMON
+EOF
+	then
+		ok "tools/update.py: other-slot riconosce anche le build di prova della CI"
+	else
+		bad "tools/update.py: other-slot non riconosce le build della CI come deve"
+	fi
 	# Una capsula con la struttura di GenerateCapsule (firma finta) letta da
 	# tools/update.py: variante, versioni, regioni del manifest RMAP, immagine
 	if python3 - <<'EOF'

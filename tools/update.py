@@ -1061,6 +1061,31 @@ def build_release_key(name):
     return (int(x), int(y), int(z), int(rc) if rc else 1 << 30)
 
 
+# Le build di prova della CI (branch ci-test/**): ouroBIOS-ci-N-sha-<board>-<variante>,
+# dallo stesso albero delle release. Solo other-slot le accetta, come una
+# release di oggi (la cache-as-RAM di dopo la v1.3.9): status e rollback no
+CI_BUILD_RE = re.compile(rb"ouroBIOS-ci-\d+-[0-9a-f]{7,}-(?:[a-z0-9]+-)?(?:mrc|nri|fsp)")
+
+
+def region_builds(data, area):
+    """Come region_releases(), con anche le build di prova della CI."""
+    off, size = area
+    found = region_releases(data, area)
+    for m in CI_BUILD_RE.finditer(data[off:off + size]):
+        name = m.group().decode()
+        if name not in found:
+            found.append(name)
+    return found
+
+
+def build_key_or_ci(name):
+    """La chiave di build_release_key(); una build della CI vale come una di oggi."""
+    key = build_release_key(name)
+    if key is None and CI_BUILD_RE.search(name.encode()):
+        return (1 << 30,) * 4
+    return key
+
+
 def region_releases(data, area):
     off, size = area
     found = []
@@ -1337,14 +1362,19 @@ def cmd_other_slot(args):
     off, size = areas["RW_NVRAM"]
     nvram, other = nv_try_other(flash[off:off + size])
     current = "B" if other == "A" else "A"
-    running = RELEASE_KEY_RE.search(read_text(BIOS_VERSION) or "")
-    in_cur = region_releases(flash, areas["FW_MAIN_" + current])
-    tag = lambda name: TAG_RE.search(name or "").group() if TAG_RE.search(name or "") else None
-    if running and [tag(n) for n in in_cur] != [tag(running.group())]:
+    bios = read_text(BIOS_VERSION) or ""
+    running = RELEASE_KEY_RE.search(bios) or CI_BUILD_RE.search(bios.encode())
+    running = running.group() if running else None
+    if isinstance(running, bytes):
+        running = running.decode()
+    in_cur = region_builds(flash, areas["FW_MAIN_" + current])
+    tag = lambda name: (TAG_RE.search(name or "").group() if TAG_RE.search(name or "")
+                       else name)
+    if running and [tag(n) for n in in_cur] != [tag(running)]:
         raise Error("nello slot %s, quello di questo avvio secondo RW_NVRAM, c'e' %s e gira %s: "
                     "una copia del flash di un altro avvio? rileggila"
-                    % (current, " + ".join(in_cur) or "altro", running.group()))
-    names = region_releases(image, iareas["FW_MAIN_" + other])
+                    % (current, " + ".join(in_cur) or "altro", running))
+    names = region_builds(image, iareas["FW_MAIN_" + other])
     if len(names) != 1:
         raise Error("%s: nello slot %s porta %s" % (args.image, other, " + ".join(names) or "nessuna release"))
     # La parte RO lascia alla romstage i dati di vboot, la console e le cache
@@ -1352,11 +1382,11 @@ def cmd_other_slot(args):
     # uno slot che li cerca altrove non parte (POST 0x21). Fino alla v1.3.8 ogni
     # variante ha i suoi; dalla v1.3.9 sono uguali, ma diversi da prima, e solo
     # la parte RO di mrc porta mrc.bin
-    ro = region_releases(flash, areas["WP_RO"]) if "WP_RO" in areas else []
+    ro = region_builds(flash, areas["WP_RO"]) if "WP_RO" in areas else []
     ro_variant = ro[0].rsplit("-", 1)[1] if len(ro) == 1 else None
-    ro_common = len(ro) == 1 and build_release_key(ro[0]) >= RO_COMMON
+    ro_common = len(ro) == 1 and build_key_or_ci(ro[0]) >= RO_COMMON
     variant = names[0].rsplit("-", 1)[1]
-    common = build_release_key(names[0]) >= RO_COMMON
+    common = build_key_or_ci(names[0]) >= RO_COMMON
     if ro and not args.force:
         if common != ro_common:
             raise Error("%s cerca nella cache-as-RAM quello che lascia la parte RO %s v1.3.9, qui c'e' "
@@ -1371,7 +1401,7 @@ def cmd_other_slot(args):
                            "variante"))
     print("gira:      slot %s, %s" % (current, " + ".join(in_cur) or "?"))
     print("da provare: slot %s, %s (ora: %s)" % (other, names[0],
-          " + ".join(region_releases(flash, areas["FW_MAIN_" + other])) or "vuoto"))
+          " + ".join(region_builds(flash, areas["FW_MAIN_" + other])) or "vuoto"))
     out = bytearray(flash)
     for name in ("RW_SECTION_" + other,):
         o, s = areas[name]

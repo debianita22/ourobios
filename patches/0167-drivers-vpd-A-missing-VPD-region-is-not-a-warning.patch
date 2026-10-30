@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 30 Oct 2026 11:24:42 +0100
+Subject: [PATCH] drivers/vpd: A missing VPD region is not a warning
+
+init_vpd_rdevs() looks for both RO_VPD and RW_VPD and prints a warning
+for the one the FMAP does not have. A board may have only one of them:
+the ThinkCentre M920x and the W541 have only RO_VPD, and get
+"init_vpd_rdev: No RW_VPD FMAP section." as a warning at every boot.
+Print it as information.
+
+TEST=Built lenovo/m920x.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/drivers/vpd/vpd.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/drivers/vpd/vpd.c b/src/drivers/vpd/vpd.c
+index 56b09263c3..7d809c3ce8 100644
+--- a/src/drivers/vpd/vpd.c
++++ b/src/drivers/vpd/vpd.c
+@@ -52,7 +52,8 @@ static void init_vpd_rdev(const char *fmap_name, struct region_device *rdev)
+ 	int32_t size;
+ 
+ 	if (fmap_locate_area_as_rdev(fmap_name, rdev)) {
+-		printk(BIOS_WARNING, "%s: No %s FMAP section.\n", __func__,
++		/* Not an error: a board may have only one of RO_VPD and RW_VPD */
++		printk(BIOS_INFO, "%s: No %s FMAP section.\n", __func__,
+ 			fmap_name);
+ 		goto fail;
+ 	}
+-- 
+2.47.3
+
