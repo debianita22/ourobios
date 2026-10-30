@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 11:16:40 +0100
+Subject: [PATCH] soc/intel/common/block/lpc: Skip the I/O resources at base 0
+
+A Super I/O LDN that decodes nothing gets "io 0x60 = 0x00" in the
+devicetree, as the ACPI LDN of the NCT6687D on the ThinkCentre M920x.
+pch_lpc_loop_resources() passed it to lpc_open_pmio_window() like any
+assigned I/O resource, which printed "LPC IO decode base 0!" as an
+error at every boot. Skip it: there is no window to open.
+
+TEST=Built lenovo/m920x: the error is gone from the console, in the
+hardware test.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/soc/intel/common/block/lpc/lpc.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/soc/intel/common/block/lpc/lpc.c b/src/soc/intel/common/block/lpc/lpc.c
+index 99c628e12c..2ae1ed8828 100644
+--- a/src/soc/intel/common/block/lpc/lpc.c
++++ b/src/soc/intel/common/block/lpc/lpc.c
+@@ -100,7 +100,8 @@ static void pch_lpc_loop_resources(struct device *dev)
+ 		return;
+ 
+ 	for (res = dev->resource_list; res; res = res->next) {
+-		if ((res->flags & IORESOURCE_IO) && (res->flags & IORESOURCE_ASSIGNED))
++		/* A base of 0 is a window that the devicetree turned off (io 0x60 = 0) */
++		if ((res->flags & IORESOURCE_IO) && (res->flags & IORESOURCE_ASSIGNED) && res->base)
+ 			lpc_open_pmio_window(res->base, res->size);
+ 	}
+ 	pch_lpc_set_child_resources(dev);
+-- 
+2.47.3
+

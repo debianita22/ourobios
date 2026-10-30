@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 11:24:42 +0100
+Subject: [PATCH] soc/intel/cannonlake: Give the PCH thermal device its minimum
+ D-state
+
+The PCH thermal controller (00:12.0) is missing from the table of the
+minimum sleep states, so the PEP code prints "Unknown min d_state for
+PCI: 00:12.0" twice at every boot. Add it with D3, as the other PCH
+devices without a wake role.
+
+TEST=Built lenovo/m920x: the warning is gone, in the hardware test.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/soc/intel/cannonlake/acpi.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/soc/intel/cannonlake/acpi.c b/src/soc/intel/cannonlake/acpi.c
+index 002293f67a..7139719189 100644
+--- a/src/soc/intel/cannonlake/acpi.c
++++ b/src/soc/intel/cannonlake/acpi.c
+@@ -178,6 +178,7 @@ static struct min_sleep_state min_pci_sleep_states[] = {
+ 	{ PCH_DEVFN_XHCI,	ACPI_DEVICE_SLEEP_D3 },
+ 	{ PCH_DEVFN_USBOTG,	ACPI_DEVICE_SLEEP_D3 },
+ 	{ PCH_DEVFN_SRAM,	ACPI_DEVICE_SLEEP_D3 },
++	{ PCH_DEVFN_THERMAL,	ACPI_DEVICE_SLEEP_D3 },
+ 	{ PCH_DEVFN_CNViWIFI,	ACPI_DEVICE_SLEEP_D3 },
+ 	{ PCH_DEVFN_SDCARD,	ACPI_DEVICE_SLEEP_D3 },
+ 	{ PCH_DEVFN_I2C0,	ACPI_DEVICE_SLEEP_D3 },
+-- 
+2.47.3
+

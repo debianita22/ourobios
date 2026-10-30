@@ -1,0 +1,91 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 11:13:09 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: A switch for the Wi-Fi card and its
+ Bluetooth
+
+FSP-M enables the PCIe root ports from PcieRpEnableMask, which the
+SoC computes from the devicetree: too early for ramstage, but the
+mainboard gets the UPDs after it in mainboard_memory_init_params().
+Clear root port 6 there, the M.2 Wi-Fi card, when the "onboard_wlan"
+option is off, and in ramstage USB2 port 13, its Bluetooth, and the
+devicetree entry of the port. In Hardware > Devices, on by default, as
+"Wireless LAN" in the Devices menu of the OEM setup.
+
+TEST=Built lenovo/m920x. The switch on the machine, in the hardware
+test.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/cfr.c      | 10 ++++++++++
+ src/mainboard/lenovo/m720q_m920q/ramstage.c |  5 +++++
+ src/mainboard/lenovo/m720q_m920q/romstage.c |  5 +++++
+ 3 files changed, 20 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index 6cb7b63ad3..363d7b6e6c 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -438,6 +438,15 @@ static const struct sm_object onboard_audio = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ });
+ 
++static const struct sm_object onboard_wlan = SM_DECLARE_BOOL({
++	.opt_name	= "onboard_wlan",
++	.ui_name	= "Wireless",
++	.ui_helptext	= "The M.2 Wi-Fi card and its Bluetooth. Off, the card is not\n"
++			  "powered on its PCIe port and its Bluetooth port is off.\n"
++			  "Default: on.",
++	.default_value	= true,
++});
++
+ static const struct sm_object front_usb = SM_DECLARE_BOOL({
+ 	.opt_name	= "front_usb",
+ 	.ui_name	= "Front USB ports",
+@@ -460,6 +469,7 @@ static const struct sm_object hardware_devices = SM_DECLARE_FORM({
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&onboard_ethernet,
+ 		&onboard_audio,
++		&onboard_wlan,
+ 		&front_usb,
+ 		&rear_usb,
+ 		NULL
+diff --git a/src/mainboard/lenovo/m720q_m920q/ramstage.c b/src/mainboard/lenovo/m720q_m920q/ramstage.c
+index eab5773ed3..f3cfa60ee3 100644
+--- a/src/mainboard/lenovo/m720q_m920q/ramstage.c
++++ b/src/mainboard/lenovo/m720q_m920q/ramstage.c
+@@ -32,6 +32,11 @@ static void mainboard_init(void *chip_info)
+ 
+ 	if (!get_uint_option("onboard_ethernet", 1))
+ 		DEV_PTR(gbe)->enabled = 0;
++	/* The Bluetooth of the M.2 Wi-Fi card, USB2 port 13; the card itself is FSP-M's */
++	if (!get_uint_option("onboard_wlan", 1)) {
++		cfg->usb2_ports[13].enable = 0;
++		DEV_PTR(pcie_rp6)->enabled = 0;
++	}
+ 	if (!get_uint_option("front_usb", 1))
+ 		disable_usb_ports(cfg, front_usb2, ARRAY_SIZE(front_usb2),
+ 				  front_usb3, ARRAY_SIZE(front_usb3));
+diff --git a/src/mainboard/lenovo/m720q_m920q/romstage.c b/src/mainboard/lenovo/m720q_m920q/romstage.c
+index acd091ae6b..8e50403b1a 100644
+--- a/src/mainboard/lenovo/m720q_m920q/romstage.c
++++ b/src/mainboard/lenovo/m720q_m920q/romstage.c
+@@ -1,5 +1,6 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <option.h>
+ #include <soc/cnl_memcfg_init.h>
+ #include <soc/romstage.h>
+ 
+@@ -39,4 +40,8 @@ static const struct cnl_mb_cfg baseboard_mem_cfg = {
+ void mainboard_memory_init_params(FSPM_UPD *memupd)
+ {
+ 	cannonlake_memcfg_init(&memupd->FspmConfig, &baseboard_mem_cfg);
++
++	/* The Wi-Fi card on root port 6 (pcie_rp6), unless "onboard_wlan" is off */
++	if (!get_uint_option("onboard_wlan", 1))
++		memupd->FspmConfig.PcieRpEnableMask &= ~(1 << 5);
+ }
+-- 
+2.47.3
+

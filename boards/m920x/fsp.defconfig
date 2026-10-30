@@ -69,6 +69,9 @@ CONFIG_CMOS_POST_OFFSET=0x70
 # 115200 baud le righe DEBUG costavano circa 4 s a ogni avvio; per vederle
 # anche sulla seriale: menu, Console -> Console Log Level.
 CONFIG_DEFAULT_CONSOLE_LOGLEVEL_6=y
+# E nel menu Console -> Serial Console, per spegnerla (senza cavo l'avvio
+# non la aspetta): accesa di default, come CONSOLE_SERIAL
+CONFIG_CONSOLE_SERIAL_RUNTIME=y
 
 # I dati di questa macchina dalla VPD (RO_VPD, vuota nelle release, si
 # scrive con tools/vpd.py): numero di serie, UUID, Machine Type Model, SKU

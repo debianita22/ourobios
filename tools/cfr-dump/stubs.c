@@ -27,7 +27,10 @@
 #include <cbmem.h>
 #include <commonlib/memory_info.h>
 #include <console/console.h>
+#include <console/uart.h>
 #include <cpu/x86/name.h>
+#include <device/device.h>
+#include <device/resource.h>
 #include <drivers/option/cfr_frontend.h>
 #include <drivers/vpd/vpd.h>
 #include <ec/lenovo/h8/h8.h>
@@ -203,6 +206,41 @@ bool h8_has_uwb(void)
 bool h8_has_power_management_beeps(void)
 {
 	return CFR_DUMP_H8_PM_BEEPS;
+}
+
+/*
+ * La console seriale con CONSOLE_SERIAL_RUNTIME: console/cfr.c mostra "Serial
+ * Console" se un dispositivo PNP acceso del devicetree ha la porta della UART
+ * della console. Qui una UART come quella del M920x (COM1 del Super I/O,
+ * 0x3f8): l'opzione si vede come sulla macchina.
+ */
+#define CFR_DUMP_UART_BASE	0x3f8
+
+uintptr_t uart_platform_base(unsigned int idx)
+{
+	return idx == 0 ? CFR_DUMP_UART_BASE : 0;
+}
+
+static struct resource console_uart_res = {
+	.base	= CFR_DUMP_UART_BASE,
+	.flags	= IORESOURCE_IO,
+};
+
+static struct device console_uart_dev = {
+	.path		= { .type = DEVICE_PATH_PNP },
+	.enabled	= 1,
+	.resource_list	= &console_uart_res,
+};
+
+bool is_dev_enabled(const struct device *dev)
+{
+	return dev && dev->enabled;
+}
+
+DEVTREE_CONST struct device *dev_find_path(DEVTREE_CONST struct device *prev_match,
+					   enum device_path_type path_type)
+{
+	return !prev_match && path_type == DEVICE_PATH_PNP ? &console_uart_dev : NULL;
 }
 
 /*
