@@ -6,24 +6,28 @@ Subject: [PATCH] mb/lenovo/m720q_m920q: An ACPI node for the M.2 Wi-Fi card
 At every boot Linux prints "ACPI: \: failed to evaluate _DSM
 2c176672-0b22-294b-814f-75e4dd26b5fd" twice: iwlwifi asks the product
 reset _DSM (7266172C-220B-4B29-814F-75E4DD26B5FD) of the ACPI node of
-the card, which has none behind root port 6, and the NULL handle fails
-with AE_BAD_PARAMETER. Declare the card, _ADR 0, with no methods: a
-missing _DSM is AE_NOT_FOUND, which acpi_evaluate_dsm() does not
-report. No _PRW, as before: the wake of the card stays the OS's.
+the card, which has none, and the NULL handle fails with
+AE_BAD_PARAMETER. Declare the card, _ADR 0, with no methods: a missing
+_DSM is AE_NOT_FOUND, which acpi_evaluate_dsm() does not report. No
+_PRW, as before: the wake of the card stays the OS's.
 
-TEST=acpiexec with the DSDT of an M920x and this scope: the device is
-\_SB.PCI0.RP06.WIFI with _ADR 0. The warning in the hardware test.
+The card is behind root port 6, the only port on of 00:1c, which the
+PCH then puts at function 0: lspci lists it as 00:1c.0, and Linux gives
+it the node with _ADR 0x001c0000, RP01, not RP06. The node goes there.
+
+TEST=On an M920x, a first version under RP06 was in the DSDT and Linux
+still warned: 00:1c.0 has the firmware node \_SB_.PCI0.RP01.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- src/mainboard/lenovo/m720q_m920q/dsdt.asl | 13 +++++++++++++
- 1 file changed, 13 insertions(+)
+ src/mainboard/lenovo/m720q_m920q/dsdt.asl | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
 
 diff --git a/src/mainboard/lenovo/m720q_m920q/dsdt.asl b/src/mainboard/lenovo/m720q_m920q/dsdt.asl
-index 777df2d431..a4dec07c22 100644
+index 777df2d431..cc071dcad9 100644
 --- a/src/mainboard/lenovo/m720q_m920q/dsdt.asl
 +++ b/src/mainboard/lenovo/m720q_m920q/dsdt.asl
-@@ -21,6 +21,19 @@ DefinitionBlock(
+@@ -21,6 +21,21 @@ DefinitionBlock(
  		#include <soc/intel/cannonlake/acpi/southbridge.asl>
  	}
  
@@ -31,8 +35,10 @@ index 777df2d431..a4dec07c22 100644
 +	 * The M.2 Wi-Fi card behind root port 6, with no method: iwlwifi asks
 +	 * its _DSM for the product reset and, without an ACPI node for the card,
 +	 * warns at every boot (AE_BAD_PARAMETER); a missing method is quiet.
++	 * Port 6 is the only one on of 00:1c, which the PCH then puts at
++	 * function 0: the OS gives it the node with _ADR 0x001c0000, RP01.
 +	 */
-+	Scope (\_SB.PCI0.RP06)
++	Scope (\_SB.PCI0.RP01)
 +	{
 +		Device (WIFI)
 +		{
