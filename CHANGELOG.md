@@ -102,9 +102,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   Turbo Boost stopped under its 81 W); the fan class follows PL1 when it
   is set; Turbo Boost and Hyper-Threading are in the menu only where the
   processor has them (0171). The *Wireless* switch also turns off a CNVi
-  card; with an F processor (no graphics) the riser port stays on; EDK2
-  loads the option ROMs of the cards, so a graphics card on the riser
-  shows the firmware screen and the setup (0172 and the M920x defconfig).
+  card; without processor graphics (an F processor, or *Intel graphics*
+  off in the setup) the riser port stays on; EDK2 loads the option ROMs
+  of the cards, so a graphics card on the riser shows the firmware screen
+  and the setup (0172 and the M920x defconfig).
   A machine that already saved its settings keeps the PL2 it had:
   *Energy Saver* → *Processor* → *CPU PL2 power limit* → 0.
 - From rc4, on the M920x, two bugs reported upstream for the M720q and the
@@ -117,6 +118,84 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   was already fixed in the coreboot of rc3.
 - `tools/update.py other-slot` also takes the test builds of the CI
   (`ouroBIOS-ci-N-...`), to try one in the slot that is not running.
+- From rc4, on the M920x, an RTC power loss (the coin cell out or flat, the
+  clear-CMOS jumper) resets the setup options to their defaults, as with
+  the Lenovo firmware: coreboot deletes them before the memory training
+  reads the first one, and the setup writes each default back (0175,
+  [docs/m920x.md](docs/m920x.md#resetting-the-settings)). The ME comes
+  back on, *Firmware protection* too (turn it off again before writing the
+  flash with flashrom), and so do the boot entries a setup switch had
+  removed (iPXE, CSMWrap, USB drives); the other boot entries, the Secure
+  Boot keys, the setup password, the VPD and the event log stay. With a
+  flat coin cell every loss of AC power does it. Only the slots of rc4 and
+  later do it.
+- From rc4, the state of the Intel ME of the M920x, which the OS cannot ask
+  once the ME is disabled (no HECI device): *General* → *About this
+  ThinkCentre* → *Management Engine* in the setup, with its status
+  registers in the help, and two SMBIOS OEM strings (type 11, `ME: ...`
+  and `ME HFSTS: ...`) for `dmidecode -t 11` and `tools/update.py status`
+  (0176, [docs/m920x.md](docs/m920x.md#intel-me)).
+- From rc4, *Hardware* → *Cooling* → *TCC activation offset* on the M920x,
+  as in the OEM setup: the processor throttles that many °C below its
+  TjMax (0-15, default 0), cooler and quieter under a long load; listed
+  on the processors that can take it (0177,
+  [docs/m920x.md](docs/m920x.md#fan)).
+- From rc4, three switches of the OEM setup in *General* → *Boot* of the
+  M920x, which the payload reads (0178, `edk2/0036-0037`,
+  [docs/m920x.md](docs/m920x.md#boot-options)): *Option ROMs of the cards*,
+  *All* or *Graphics cards only* (NVMe, SATA and USB cards still boot with
+  the firmware's own drivers); *Boot from USB drives*, off to keep them out
+  of the boot order and the boot menu (not a security setting: the Shell,
+  CSMWrap, an OS entry and the fallback path still start them); *Boot menu
+  prompt*, off to hide "Press ESC" on the logo, while Esc still works. The
+  M920x payload has no PS/2 drivers any more: the board has no PS/2 port,
+  and coreboot keeps the keyboard controller of the Super I/O off.
+- From rc4, updates of the M920x keep the memory training: the capsules
+  rewrite the two RW slots only, `tools/update.py other-slot` leaves
+  `RW_MRC_CACHE` as it is (`--retrain` empties it), and *Go back to* in
+  the setup no longer erases it (0179, `edk2/0038`). The new slot trains
+  again only when the cache was made with another FSP-M, processor or
+  Hyper-Threading setting (0173), so an update no longer takes the 20-40 s
+  of a training; the first update from rc3 or earlier usually still does,
+  once. Staging these capsules takes the `tools/update.py` of rc4 or later,
+  which still takes those of rc1-rc3: the release notes now download it
+  from the commit of the release instead of `main`. The W541 still empties
+  the cache at every update
+  ([docs/update.md](docs/update.md#what-changes-and-what-stays)).
+- `tools/update.py status` also shows, on the M920x, the state of the ME
+  (from rc4) and of the flash protection: whether `WP_RO` is in a locked
+  Protected Range, *BIOS Lock*, whether flashrom can write the slots.
+  `tools/update.py protection` reads it in detail from the registers of
+  the SPI controller, each Protected Range mapped onto the regions of the
+  flash map, without writing anything; `--expect-ro on|off` gives an exit
+  status for scripts ([docs/update.md](docs/update.md#flash-protection)).
+- `tools/hw-report.py`: a read-only report of a running machine, PASS, WARN
+  or FAIL per area with thresholds: boot time, the RAM init against the
+  training cache (FspMemoryInit over 2 s with a valid cache is a warning,
+  over 5 s a failure), firmware and kernel log, package C-states, PCIe ASPM
+  and LTR, the riser port, fan, ME, TPM, vboot slot, flash protection,
+  SMBIOS and ACPI tables; with a copy of the flash also the event log,
+  `RW_NVRAM` and the saved options. [docs/testing.md](docs/testing.md): the
+  release test matrix of the M920x and the W541.
+- `tools/sbom.py`: the software bill of materials of a ROM, read from the
+  image itself: coreboot, vboot, libgfxinit, EDK II, LvglPkg, iPXE, CSMWrap
+  and SeaBIOS with versions and licenses; Intel's FSP-M and FSP-S,
+  microcode, ME, flash descriptor, GbE and VBT (on the W541 also `mrc.bin`
+  and the NVIDIA VBIOS) with versions and SHA-256; how much of the image is
+  open-source code, closed binaries, data and empty flash. Each release
+  carries it as `…-sbom.md` and as CycloneDX 1.5 (`….cdx.json`), both in
+  its `SHA256SUMS`, and its notes a short table from it and the checksums.
+- The notes of the M920x releases say what a first install with `flashrom
+  --ifd -i bios` empties (settings, boot entries and Secure Boot keys, the
+  event log, the memory training, vboot's state, the VPD) and copy the VPD
+  of the backup into the image before writing it (`tools/vpd.py copy
+  --in-place`).
+- Issue forms for the repository: *Bug report* (component, device and
+  variant, firmware version, how it was written, how often, the
+  `tools/hw-report.py` report and the coreboot log), *Feature request*
+  and *Hardware report* (processor, memory, cards, what works and what
+  does not); no blank issues, links to the docs instead. What was looked
+  at for this version and left for later: [docs/roadmap.md](docs/roadmap.md).
 
 ## v1.3.10
 

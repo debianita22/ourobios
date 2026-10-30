@@ -67,7 +67,9 @@ firmware reports itself as `ouroBIOS-vX.Y.Z-<variant>` (coreboot's
 | `….config` | the complete coreboot configuration |
 | `…-layout.txt` | flash map (FMAP) and CBFS contents |
 | `ourobios.xml.gz`, `….jcat` | mrc release only (from v1.3.4): the signed metadata of the project's fwupd remote, with the `.cab` of both variants (from v1.4.0 also of the M920x) ([docs/update.md](docs/update.md#the-fwupd-remote)) |
-| `SHA256SUMS` | checksums |
+| `…-sbom.md` | software bill of materials (from v1.4.0): versions, licenses and SHA-256 of every component and binary blob, and how much of the image is open source (`tools/sbom.py`) |
+| `….cdx.json` | the same as CycloneDX 1.5 JSON (from v1.4.0) |
+| `SHA256SUMS` | checksums (from v1.4.0 also in the notes of the release) |
 
 The W541 flash is two chips seen as one 12 MiB space. The layout is
 [`configs/w541.fmd`](configs/w541.fmd):
@@ -373,7 +375,9 @@ switch to the other slot without writing it, and a UEFI application
 started from the disk (`tools/efi/slot-lock-test.c`) must be refused, before
 and after `ExitBootServices()`; a full `RW_NVRAM`, a power cut halfway
 through a slot and a capsule on a USB drive must leave a laptop that boots
-and finishes the update; the ESRT is checked at every boot
+and finishes the update; a capsule that names the two slots only, as those
+of the M920x, must leave `RW_MRC_CACHE` as it was; the ESRT is checked at
+every boot
 ([docs/vboot.md](docs/vboot.md#how-it-is-tested)). It needs
 `qemu-system-x86`, `mtools`, `clang` and `lld`; the serial console goes to
 `work/update-test/out`.
@@ -383,7 +387,7 @@ and finishes the update; the ESRT is checked at every boot
 | Workflow | When | What |
 |---|---|---|
 | [`check.yml`](.github/workflows/check.yml) | every push and pull request | `tools/ci-check.sh` (shellcheck, actionlint, blob checksums, patch series, defconfigs); the series applied to the pinned coreboot and EDK2, and the configuration of every board and variant checked |
-| [`build.yml`](.github/workflows/build.yml) | tag `vX.Y.Z`, *Run workflow*, push to `ci-test/**` | the ROMs of every board with the coreboot toolchain (cached), verified, their setup menu checked (`menu`), their payloads booted in QEMU (`smoke`), their capsules signed; in parallel, the ROMs built a second time from scratch on another runner (`repro`) and compared bit by bit with the first (`compare`), and the capsule update with vboot A/B in QEMU (`update-test`); the files of each release checked (`tools/ci.sh check`) and published as `vX.Y.Z-mrc`, `vX.Y.Z-nri` and, from v1.4.0, `vX.Y.Z-m920x-fsp` |
+| [`build.yml`](.github/workflows/build.yml) | tag `vX.Y.Z`, *Run workflow*, push to `ci-test/**` | the ROMs of every board with the coreboot toolchain (cached), verified, their setup menu checked (`menu`), their payloads booted in QEMU (`smoke`), their capsules signed, their bill of materials made (`tools/sbom.py`); in parallel, the ROMs built a second time from scratch on another runner (`repro`) and compared bit by bit with the first (`compare`), and the capsule update with vboot A/B in QEMU (`update-test`); the files of each release checked (`tools/ci.sh check`) and published as `vX.Y.Z-mrc`, `vX.Y.Z-nri` and, from v1.4.0, `vX.Y.Z-m920x-fsp` |
 | [`upstream.yml`](.github/workflows/upstream.yml) | every Monday | opens an issue when the series no longer applies on coreboot `main`, a patch was merged upstream, a coreboot release is out, or MrChromebox's EDK2 branch moved |
 
 A release is made by pushing a version tag (`git tag v1.0.0 && git push origin
@@ -415,10 +419,11 @@ gh release edit v1.4.0-m920x-fsp --repo debianita22/ourobios --prerelease=false 
 | `assets/` | the logo, `ourobios.svg`, and the boot splash of each board made from it (`tools/logo.py splash`): `bootsplash.bmp` for the W541, `bootsplash-m920x.bmp` for the M920x |
 | `configs/` | `w541-mrc.defconfig` and `w541-nri.defconfig`, the flash map `w541.fmd`, the interface of the read-only part already on the laptops (`ro-interface.txt`), the OpenCore device properties of this W541 for patches 0128 and 0133 (`macos/`), the fwupd remotes (`fwupd/ourobios.conf`, the releases; `fwupd/ourobios-testing.conf`, the candidates too) |
 | `patches/` | the series applied to coreboot, the patches to EDK2 and its LvglPkg, the q35 patches of the update test and of the setup screenshots; `optional/` for patches to build in with `--with`, none at the moment ([patches/README.md](patches/README.md)) |
-| `tools/` | `build.sh`, the build; `verify-rom.sh`, the checks on a ROM; `ci-check.sh`, `ci.sh` and `upstream.sh`, the CI, the releases and the upstream check; `cfr-dump.sh` and `q35-cfr-rom.sh`, the setup menu of a build (`build.sh menu`) and its screenshots (`qemu-setup-shots.py`); `update.py`, the capsule update from Linux; `fwupd-cab.py`, the fwupd package and the metadata of the remote; `vpd.py`, the serial number and machine type; `elog.py`, which reads the event log from a flash dump; `idle-report.py`, package C-states, power, memory traffic and device power states at idle; `pm-regs.py`, the power management registers the firmware left; `ddr-report.py`, the memory controller as the RAM init left it, and two of its dumps compared; `mem-latency.c`, how long a read from the memory takes; `peg-report.py`, the PCIe link to the NVIDIA GPU; `qemu-smoke.py`, the payload booted in QEMU (with `efi/rt-reloc-test.c`, the runtime services moved as boot.efi of macOS moves them, and `efi/secure-boot-test.c`, the ESRT and Secure Boot image verification, with `pe-hash.py`, the Authenticode hash of a PE image; the TPM 1.2 of swtpm and its measurement log); `qemu-update.py`, capsule updates with vboot A/B in QEMU (with `efi/slot-lock-test.c`, a UEFI application for it); `logo.py`, the logo as an LVGL image or a PNG |
+| `tools/` | `build.sh`, the build; `verify-rom.sh`, the checks on a ROM; `ci-check.sh`, `ci.sh` and `upstream.sh`, the CI, the releases and the upstream check; `cfr-dump.sh` and `q35-cfr-rom.sh`, the setup menu of a build (`build.sh menu`) and its screenshots (`qemu-setup-shots.py`); `update.py`, the capsule update from Linux and the flash protection of the running boot; `fwupd-cab.py`, the fwupd package and the metadata of the remote; `vpd.py`, the serial number and machine type; `elog.py`, which reads the event log from a flash dump; `idle-report.py`, package C-states, power, memory traffic and device power states at idle; `hw-report.py`, PASS, WARN or FAIL for each area of a running machine, the automated part of the release tests ([docs/testing.md](docs/testing.md)); `pm-regs.py`, the power management registers the firmware left; `ddr-report.py`, the memory controller as the RAM init left it, and two of its dumps compared; `mem-latency.c`, how long a read from the memory takes; `peg-report.py`, the PCIe link to the NVIDIA GPU; `qemu-smoke.py`, the payload booted in QEMU (with `efi/rt-reloc-test.c`, the runtime services moved as boot.efi of macOS moves them, and `efi/secure-boot-test.c`, the ESRT and Secure Boot image verification, with `pe-hash.py`, the Authenticode hash of a PE image; the TPM 1.2 of swtpm and its measurement log); `qemu-update.py`, capsule updates with vboot A/B in QEMU (with `efi/slot-lock-test.c`, a UEFI application for it); `logo.py`, the logo as an LVGL image or a PNG; `sbom.py`, the software bill of materials of a ROM read from the image itself (versions, licenses, SHA-256 of the binaries, how much is open source), in Markdown or CycloneDX |
 | `keys/` | the certificate of the key that signs the capsules, and vboot's public keys ([keys/README.md](keys/README.md)) |
 | `legacy/coreboot-4.22/` | the coreboot 4.22 image and configuration this project started from, built from the same blobs |
-| `docs/` | [flashing and recovery](docs/flashing.md), [updates with capsules](docs/update.md), [verified boot and A/B](docs/vboot.md), [the native RAM init](docs/raminit.md), [macOS with OpenCore](docs/macos.md), [the ThinkCentre M920x](docs/m920x.md) |
+| `docs/` | [flashing and recovery](docs/flashing.md), [updates with capsules](docs/update.md), [verified boot and A/B](docs/vboot.md), [the native RAM init](docs/raminit.md), [macOS with OpenCore](docs/macos.md), [the ThinkCentre M920x](docs/m920x.md), [release testing](docs/testing.md), [what was evaluated and left for later](docs/roadmap.md) |
+| `.github/` | the workflows ([Continuous integration and releases](#continuous-integration-and-releases)) and the issue forms in `ISSUE_TEMPLATE/`: bug report, feature request and hardware report, which ask for the firmware version, how it was written, the `tools/hw-report.py` report and the coreboot log |
 
 ## Binary blobs
 
