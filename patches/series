@@ -168,3 +168,8 @@
 0172-mb-lenovo-m720q_m920q-Wi-Fi-switch-for-CNVi-cards-PE.patch
 0173-mb-lenovo-m720q_m920q-Retrain-memory-for-another-CPU.patch
 0174-mb-lenovo-m720q_m920q-Use-a-VBT-with-DisplayPort-on-.patch
+0175-drivers-efi-Reset-the-setup-options-on-RTC-power-los.patch
+0176-mb-lenovo-m720q_m920q-Show-the-ME-state-in-setup-and.patch
+0177-mb-lenovo-m720q_m920q-A-TCC-offset-option.patch
+0178-mb-lenovo-m720q_m920q-Boot-options-for-the-payload.patch
+0179-drivers-smmstore-Optionally-keep-the-MRC-cache-on-a-.patch

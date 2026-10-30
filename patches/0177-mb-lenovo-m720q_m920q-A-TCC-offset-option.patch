@@ -1,0 +1,160 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 30 Oct 2026 20:07:16 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: A TCC offset option
+
+The OEM setup has a TCC activation offset: the processor throttles that
+many degrees below TjMax, which keeps a Tiny cooler and quieter under a
+long load. Cannon Lake takes it from the devicetree (tcc_offset), which
+this board leaves at 0.
+
+Hardware > Cooling gets "TCC activation offset", 0-15 (coreboot writes
+the 4 bits 27:24 of MSR 0x1a2), default 0 as the OEM firmware, listed
+only when PLATFORM_INFO bit 30 says that the offset can be programmed
+(mainboard_cpu_has_tcc_offset() in cpu.c).
+
+The value goes into the devicetree from a BS_PRE_DEVICE exit hook, not
+from mainboard_init(): the MP init, where configure_tcc_thermal_target()
+writes the MSR, starts on entry to BS_DEV_INIT_CHIPS, before the chips'
+init, and FSP-S reads the same field (TccActivationOffset, with
+TccOffsetClamp on above 0, so the processor may run below its base
+frequency while hot). The hook also runs on S3 resume, which loses the
+MSR, and skips a processor without the offset, where a variable left by
+another processor would otherwise reach FSP-S. The offset is not
+locked: the OS can still change it.
+
+TEST=Host syntax check of the changed files; tools/cfr-dump.sh: the
+menu is valid, with the number in Cooling. For the hardware test, with
+an offset of 10: MSR 0x1a2 bits 29:24 = 10 (and bits 7:0 as FSP-S
+leaves them, to note), the Linux TCC cooling device at 10, the package
+leveling off near 90 C under stress-ng, the fan of the EC with offset
+0 and 10, and the value again after S3; with 0, MSR 0x1a2 as today
+(0x00641400).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/cfr.c        | 26 +++++++++++++++++++
+ src/mainboard/lenovo/m720q_m920q/cpu.c        |  9 +++++++
+ .../m720q_m920q/include/mainboard/cpu.h       |  6 +++--
+ src/mainboard/lenovo/m720q_m920q/ramstage.c   | 20 ++++++++++++++
+ 4 files changed, 59 insertions(+), 2 deletions(-)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index cba16d3277..788be133c2 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -532,10 +532,36 @@ static const struct sm_object hardware_devices = SM_DECLARE_FORM({
+ 	},
+ });
+ 
++/* Only on a processor whose offset can be set (cpu.c) */
++static void update_tcc_offset(struct sm_object *new)
++{
++	if (!mainboard_cpu_has_tcc_offset())
++		new->sm_number.flags |= CFR_OPTFLAG_SUPPRESS;
++}
++
++/* Read by ramstage.c, for the CPU code and FSP-S parameters */
++static const struct sm_object tcc_offset = SM_DECLARE_NUMBER({
++	.opt_name	= "tcc_offset",
++	.ui_name	= "TCC activation offset",
++	.ui_helptext	= "The processor throttles this many degrees C below its\n"
++			  "maximum temperature (TjMax, 100 C on these processors),\n"
++			  "0-15. Above 0 it may also run below its base frequency\n"
++			  "while hot: cooler and quieter, slower under a long load.\n"
++			  "The OS can still change it (Linux: intel_tcc_cooling).\n"
++			  "Default: 0, as the OEM firmware. Not listed on the\n"
++			  "processors without a programmable offset.",
++	.default_value	= 0,
++	.min		= 0,
++	.max		= 15,
++	.step		= 1,
++	.display_flags	= 0,
++}, WITH_CALLBACK(update_tcc_offset));
++
+ static const struct sm_object hardware_cooling = SM_DECLARE_FORM({
+ 	.ui_name	= "Cooling",
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&ice_mode,
++		&tcc_offset,
+ 		NULL
+ 	},
+ });
+diff --git a/src/mainboard/lenovo/m720q_m920q/cpu.c b/src/mainboard/lenovo/m720q_m920q/cpu.c
+index ea853547c1..6bed5dd925 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cpu.c
++++ b/src/mainboard/lenovo/m720q_m920q/cpu.c
+@@ -28,3 +28,12 @@ bool mainboard_cpu_has_ht(void)
+ 		return true;
+ 	return (cpuid_ext(0xb, 0).ebx & 0xffff) > 1;
+ }
++
++/*
++ * A programmable TCC activation offset (MSR 0x1a2 bits 27:24, the 4 bits
++ * that coreboot writes): PLATFORM_INFO bit 30.
++ */
++bool mainboard_cpu_has_tcc_offset(void)
++{
++	return rdmsr(MSR_PLATFORM_INFO).lo & BIT(30);
++}
+diff --git a/src/mainboard/lenovo/m720q_m920q/include/mainboard/cpu.h b/src/mainboard/lenovo/m720q_m920q/include/mainboard/cpu.h
+index cc30de8101..fcc2598276 100644
+--- a/src/mainboard/lenovo/m720q_m920q/include/mainboard/cpu.h
++++ b/src/mainboard/lenovo/m720q_m920q/include/mainboard/cpu.h
+@@ -8,10 +8,12 @@
+ /*
+  * What the installed processor has, for the setup menu: the board takes
+  * any Coffee Lake desktop processor, from the two-core Pentium to the
+- * eight-core Core i9, with and without Turbo Boost and Hyper-Threading.
+- * mainboard_cpu_has_ht() is also true while the option turns it off.
++ * eight-core Core i9, with and without Turbo Boost, Hyper-Threading and a
++ * programmable TCC offset. mainboard_cpu_has_ht() is also true while the
++ * option turns it off.
+  */
+ bool mainboard_cpu_has_turbo(void);
+ bool mainboard_cpu_has_ht(void);
++bool mainboard_cpu_has_tcc_offset(void);
+ 
+ #endif /* MAINBOARD_CPU_H */
+diff --git a/src/mainboard/lenovo/m720q_m920q/ramstage.c b/src/mainboard/lenovo/m720q_m920q/ramstage.c
+index 581d41b085..6c6ebc0478 100644
+--- a/src/mainboard/lenovo/m720q_m920q/ramstage.c
++++ b/src/mainboard/lenovo/m720q_m920q/ramstage.c
+@@ -1,7 +1,9 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <bootstate.h>
+ #include <commonlib/helpers.h>
+ #include <device/device.h>
++#include <mainboard/cpu.h>
+ #include <mainboard/gpio.h>
+ #include <mainboard/me.h>
+ #include <option.h>
+@@ -53,6 +55,24 @@ static void mainboard_init(void *chip_info)
+ 				  rear_usb3, ARRAY_SIZE(rear_usb3));
+ }
+ 
++/*
++ * The TCC activation offset of the option, for both readers of the
++ * devicetree value: configure_tcc_thermal_target() in the MP init, which
++ * starts on entry to BS_DEV_INIT_CHIPS, before mainboard_init(), and FSP-S
++ * (TccActivationOffset). Also on S3 resume, which loses the MSR. Up to 15,
++ * the 4 bits that the CPU code writes; not on the processors without the
++ * offset, where the option is hidden but its variable may remain.
++ */
++static void mainboard_set_tcc_offset(void *unused)
++{
++	config_t *cfg = config_of_soc();
++
++	if (mainboard_cpu_has_tcc_offset())
++		cfg->tcc_offset = MIN(get_uint_option("tcc_offset", 0), 15);
++}
++
++BOOT_STATE_INIT_ENTRY(BS_PRE_DEVICE, BS_ON_EXIT, mainboard_set_tcc_offset, NULL);
++
+ /*
+  * The ME state for the OS (dmidecode -t 11, tools/update.py status): with
+  * the ME disabled the OS has no HECI to ask. At most 64 characters each.
+-- 
+2.47.3
+

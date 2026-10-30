@@ -1,0 +1,121 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 30 Oct 2026 20:10:20 +0100
+Subject: [PATCH] drivers/smmstore: Optionally keep the MRC cache on a vboot
+ slot switch
+
+SMMSTORE_CMD_VBOOT_TRY_OTHER, the setup's "Go back to" the other RW
+slot, erases RW_MRC_CACHE first, so that the other slot trains the
+memory itself. On the M920x that costs a 21-36 s training on the next
+boot, and it is not needed there: the cache carries a version, the
+FSP-M image revision of the slot that wrote it with the board's bits
+(Hyper-Threading and a hash of the processor, through
+FSP_PLATFORM_MEMORY_SETTINGS_VERSIONS), and its data hashes. Each slot
+has its own FSP-M, so a slot that cannot use the cache sees another
+version and trains, and one that can skips the training.
+
+SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE makes vboot_try_other() keep the
+cache. It is defined outside "if SMMSTORE", and the m720q_m920q boards
+select it only with SMMSTORE, so that a build without SMMSTORE has no
+unmet dependency (fatal with KCONFIG_WERROR). Without it, as on the
+W541, the cache is erased as before. Update the comment of the command
+in smmstore.h.
+
+A release that changes the memory settings on the coreboot side
+without a new FSP-M or version bits would now reuse the other slot's
+cache after a switch; with the cache erased it trained. Clearing the
+cache (update.py other-slot --retrain, or erasing RW_MRC_CACHE) is the
+way out then.
+
+TEST=Host syntax check of smi.c and store.c for SMM with the option on
+and off. For the hardware test, between two builds with patch 0173
+(the first boot after ci-151 retrains once, the cache version changes
+from 7007420 to 7007430): "Go back to" in the setup, then on the other
+slot "MRC: 'RW_MRC_CACHE' does not need update" and no training, and
+the same back; a slot with another FSP-M trains once.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/drivers/smmstore/Kconfig             | 12 ++++++++++++
+ src/drivers/smmstore/smi.c               |  8 +++++---
+ src/include/smmstore.h                   |  4 +++-
+ src/mainboard/lenovo/m720q_m920q/Kconfig |  1 +
+ 4 files changed, 21 insertions(+), 4 deletions(-)
+
+diff --git a/src/drivers/smmstore/Kconfig b/src/drivers/smmstore/Kconfig
+index b5d9a90fd8..d47493b3ea 100644
+--- a/src/drivers/smmstore/Kconfig
++++ b/src/drivers/smmstore/Kconfig
+@@ -30,3 +30,15 @@ config SMMSTORE_BLOCK_SIZE
+ 	  an internal SoC or board policy value, not a user-visible option.
+ 
+ endif
++
++# Outside "if SMMSTORE": a board selects it whatever its payload
++config SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE
++	bool
++	help
++	  SMMSTORE_CMD_VBOOT_TRY_OTHER, the payload's switch to the other
++	  vboot RW slot, keeps the memory training cache (RW_MRC_CACHE)
++	  instead of erasing it. Select it only where the version of the
++	  cache tells each slot whether it can use it: the FSP-M of the
++	  slot, and the board's memory settings with
++	  FSP_PLATFORM_MEMORY_SETTINGS_VERSIONS. A slot that cannot use it
++	  trains the memory itself, one that can skips the training.
+diff --git a/src/drivers/smmstore/smi.c b/src/drivers/smmstore/smi.c
+index 29e2cfe05b..5c902fc55a 100644
+--- a/src/drivers/smmstore/smi.c
++++ b/src/drivers/smmstore/smi.c
+@@ -33,7 +33,7 @@ static int range_check(void *start, size_t size)
+ /* SMMSTORE_CMD_VBOOT_TRY_OTHER refused until the next boot */
+ static bool vboot_locked;
+ 
+-/* The memory training cache, if the FMAP has one, which another slot must not reuse */
++/* Erase the memory training cache, if the FMAP has one, so that another slot trains again */
+ static int erase_mrc_cache(void)
+ {
+ 	struct region_device rdev;
+@@ -260,9 +260,11 @@ static uint32_t vboot_try_other(void)
+ 		return SMMSTORE_RET_FAILURE;
+ 	/*
+ 	 * The cache first: if the switch does not happen after that, the slot
+-	 * of now only trains the memory again.
++	 * of now only trains the memory again. Kept where its version decides
++	 * whether the other slot can use it.
+ 	 */
+-	if (erase_mrc_cache() || vbnv_try_other_slot(2))
++	if ((!CONFIG(SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE) && erase_mrc_cache()) ||
++	    vbnv_try_other_slot(2))
+ 		return SMMSTORE_RET_FAILURE;
+ 	return SMMSTORE_RET_SUCCESS;
+ }
+diff --git a/src/include/smmstore.h b/src/include/smmstore.h
+index 01f7c82d12..1eea78171c 100644
+--- a/src/include/smmstore.h
++++ b/src/include/smmstore.h
+@@ -29,7 +29,9 @@
+  * its payload sends SMMSTORE_CMD_VBOOT_SLOT_GOOD; if it does not verify or
+  * does not get that far, vboot goes back to the slot that runs now. The
+  * memory training cache (RW_MRC_CACHE), if the FMAP has one, is erased first,
+- * as an update capsule does, so that the other slot trains the memory itself.
++ * as an update capsule does, so that the other slot trains the memory itself;
++ * with SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE it is kept, and its version
++ * tells the other slot whether it can use it.
+  *
+  * The rules of the setup that asks for it apply here too, so that code that
+  * runs before the payload locks the switch (a Driver#### or SysPrep####
+diff --git a/src/mainboard/lenovo/m720q_m920q/Kconfig b/src/mainboard/lenovo/m720q_m920q/Kconfig
+index c75234511a..4713cb6cee 100644
+--- a/src/mainboard/lenovo/m720q_m920q/Kconfig
++++ b/src/mainboard/lenovo/m720q_m920q/Kconfig
+@@ -19,6 +19,7 @@ config BOARD_SPECIFIC_OPTIONS
+ 	select MAINBOARD_HAS_TPM2
+ 	select MAINBOARD_USES_IFD_GBE_REGION
+ 	select MEMORY_MAPPED_TPM
++	select SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE if SMMSTORE
+ 	select SOC_INTEL_CANNONLAKE_PCH_H
+ 	select SOC_INTEL_COFFEELAKE
+ 	select SOC_INTEL_COMMON_BLOCK_HDA_VERB
+-- 
+2.47.3
+

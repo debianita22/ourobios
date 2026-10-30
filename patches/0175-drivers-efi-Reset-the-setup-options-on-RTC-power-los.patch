@@ -1,0 +1,773 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 30 Oct 2026 20:02:36 +0100
+Subject: [PATCH] drivers/efi: Reset the setup options on RTC power loss
+
+With the UEFI variable store backend, the setup options are EFI
+variables of the coreboot options GUID in SMMSTORE. A CMOS clear, the
+usual way back to the defaults when the setup cannot be reached, then
+resets the CMOS bytes and the date but none of the options.
+
+efi_fv_delete_options() marks every live variable of a GUID as deleted
+in place, clearing one more bit of its state byte as efi_fv_set_option()
+does with the old copy: it needs no free space and no erase, and the
+payload's reclaim drops the records later. It writes nothing unless the
+whole store is well formed up to its erased tail, and nothing while
+EDK2's fault tolerant write has an interrupted write of the store that
+it will redo from the spare copy (the FTW working block after the
+store), which would bring the variables back. An erased region, as
+after a full flash, or an empty store is a success with nothing
+deleted. The deletion walks from a copy of the store rdev, as the check
+walk moves it to the end.
+
+With DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE, Cannon Lake romstage
+calls it through efi_option_reset_all() when the power state snapshot
+has RTC_PWR_STS, outside S3 and before FSP-M reads the first memory
+option; only the console options are read earlier, so the console of
+that boot keeps their old values up to ramstage. EDK2's CFR setup
+creates each missing option with its default at the next start. Every
+option goes back to its default, BIOS Lock, Intel ME and Firmware
+protection included. Boot entries, the Secure Boot keys and the setup
+password have other GUIDs and are kept, but an entry that a setup
+switch removes, such as iPXE or CSMWrap, comes back if the switch was
+off. For the rest of romstage get_uint_option() returns the fallbacks,
+as the flash window may still be cached with the old records; ramstage
+starts with the caches invalidated. That check is compiled only in
+romstage with the option, so the bootblock, ramstage and SMM are
+unchanged.
+
+Nothing in coreboot clears RTC_PWR_STS on Cannon Lake, and the options
+would then be reset at every boot. Romstage records a successful reset
+in the power state before FSP-M, whose CBMEM hook copies it, and the
+PMC final op of ramstage clears the bit only then, after FSP-S,
+rtc_init() and the ELOG RTC reset event, as Tiger Lake clears it in
+ramstage. A reset anywhere before that point (FSP-M, FSP-S, the ME)
+repeats the boot with the bit still set: the deletion finds nothing
+more, and the CMOS defaults and the ELOG event are not lost. FSP-S also
+still sees the bit, as without this option. A refused store leaves the
+bit set for the next boot to try again, unless FSP-M clears it itself
+(Tiger Lake's seems to). The register is read back and logged.
+
+TEST=tests/drivers/efivars.c: five new tests (only the records of the
+GUID change, 0x3f to 0x3d and 0x3e to 0x3c, and a deletion that walks
+from the moved rdev fails; malformed store refused without writes;
+erased and empty stores; pending FTW write; write error), built on the
+host with a cmocka stand-in, 30 of 30 pass. On a copy of the M920x
+SMMSTORE (ci-151 dump): 31 variables deleted, their 31 state bytes the
+only change, the 36 others kept; the erased SMMSTORE of the release
+image is left as it is. The changed files pass a host syntax check for
+every stage with the option on and off. On the running M920x the log
+has "RTC Init", then the ELOG events, then "PCI: 00:00:1f.2 final", the
+order the clear relies on. Not built with the coreboot toolchain.
+
+For the hardware test, with the option on and GEN_PMCON_B bit 2 clear
+before installing: after a CMOS clear, "Setup options: N reset to
+defaults (RTC power lost)" in romstage, no "CMOS: me_state" line in
+ramstage, "RTC: power failure cleared" with bit 2 clear after the ELOG
+events, an ELOG RTC Reset event, the setup at its defaults and the
+Secure Boot keys unchanged; efibootmgr unchanged only if iPXE and
+CSMWrap were on before, otherwise their entries come back. Extra resets
+from FSP or the ME on that boot are allowed. At the next boot, no
+"reset to defaults" line and a "CMOS: me_state" line again. Firmware
+protection is on again afterwards: turn it off before an internal
+flashrom write.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/drivers/efi/Kconfig                      |  31 +++
+ src/drivers/efi/efivars.c                    | 194 +++++++++++++++++
+ src/drivers/efi/efivars.h                    |  15 ++
+ src/drivers/efi/option.c                     |  35 +++
+ src/drivers/efi/option.h                     |   7 +
+ src/soc/intel/cannonlake/include/soc/pm.h    |   2 +
+ src/soc/intel/cannonlake/pmc.c               |  27 +++
+ src/soc/intel/cannonlake/romstage/romstage.c |  16 ++
+ tests/drivers/efivars.c                      | 211 ++++++++++++++++++-
+ 9 files changed, 537 insertions(+), 1 deletion(-)
+
+diff --git a/src/drivers/efi/Kconfig b/src/drivers/efi/Kconfig
+index 22fee4fb56..a449e06aca 100644
+--- a/src/drivers/efi/Kconfig
++++ b/src/drivers/efi/Kconfig
+@@ -7,6 +7,37 @@ config DRIVERS_EFI_VARIABLE_STORE
+ 	  Adds a driver that is able to read and write an EFI formatted
+ 	  VariableStore as used by tianocore.
+ 
++config DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE
++	bool "Reset the setup options when the RTC loses power"
++	depends on USE_UEFI_VARIABLE_STORE
++	default n
++	help
++	  The setup options are EFI variables in SMMSTORE, so a CMOS clear
++	  (the coin cell removed, or a clear-CMOS jumper) leaves them as
++	  they are. With this option, when the RTC has lost power, romstage
++	  marks every variable of the coreboot options GUID as deleted
++	  before the memory settings are read: that boot runs with the
++	  defaults, and the payload writes them back. The console options
++	  are read earlier, so the console of that boot up to ramstage
++	  keeps the old debug level and serial setting.
++
++	  Every option returns to its default, the security ones too: on
++	  the Lenovo M720q/M920q/M920x, BIOS Lock goes back to its default
++	  (off without BOOTMEDIA_SMM_BWP), the Intel ME to enabled and
++	  Firmware protection to on, so turn it off again before writing
++	  the flash with flashrom. The Secure Boot keys, passwords, boot
++	  entries and the other variables of the payload are kept, but the
++	  entries that a setup switch removes (such as iPXE and CSMWrap)
++	  come back if it was off. With a dead coin cell, every loss of AC
++	  power resets the options.
++
++	  A malformed store, or one with an interrupted write that the
++	  payload will redo, is not changed. coreboot then leaves the RTC
++	  failure set, for the next boot to try again, but FSP-M may clear
++	  it on its own, and then that CMOS clear does not reset them.
++
++	  Only soc/intel/cannonlake implements it.
++
+ config DRIVERS_EFI_FW_INFO
+ 	bool "Expose firmware version in a EFI-friendly form"
+ 	select UDK_2017_BINDING if !PLATFORM_USES_FSP2_0 && !PLATFORM_USES_FSP1_1
+diff --git a/src/drivers/efi/efivars.c b/src/drivers/efi/efivars.c
+index 31cc58256c..e72ba8c2f4 100644
+--- a/src/drivers/efi/efivars.c
++++ b/src/drivers/efi/efivars.c
+@@ -958,3 +958,197 @@ enum cb_err efi_fv_set_option(const struct region_device *rdev,
+ 
+ 	return CB_SUCCESS;
+ }
++
++/*
++ * EDK2's fault tolerant write (FTW) working block, which the payload's
++ * SmmStoreFvb places right after the variable store, with the layout of
++ * MdeModulePkg/Include/Guid/SystemNvDataGuid.h in its X64 build. The
++ * padding is explicit, so that a 32-bit stage has the same offsets. A flag
++ * is set when its bit is 0.
++ */
++static const EFI_GUID EdkiiWorkingBlockSignatureGuid = {
++	0x9e58292b, 0x7c68, 0x497d, { 0xa0, 0xce, 0x65, 0x00, 0xfd, 0x9f, 0x1b, 0x95 } };
++
++#define FTW_WORKING_BLOCK_VALID		(1 << 0)
++#define FTW_WORKING_BLOCK_INVALID	(1 << 1)
++#define FTW_HEADER_ALLOCATED		(1 << 0)
++#define FTW_WRITES_COMPLETED		(1 << 2)
++#define FTW_SPARE_COMPLETED		(1 << 1)
++#define FTW_DEST_COMPLETED		(1 << 2)
++
++struct ftw_working_block_header {
++	EFI_GUID signature;
++	uint32_t crc;
++	uint8_t state;
++	uint8_t reserved[3];
++	uint64_t write_queue_size;
++};
++
++struct ftw_write_header {
++	uint8_t state;
++	uint8_t reserved[3];
++	EFI_GUID caller_id;
++	uint8_t reserved2[4];
++	uint64_t number_of_writes;
++	uint64_t private_data_size;
++};
++
++/* A write record: its state, then the LBA, offset, length and relative offset */
++#define FTW_RECORD_SIZE	40
++
++_Static_assert(sizeof(struct ftw_working_block_header) == 32 &&
++	       offsetof(struct ftw_working_block_header, write_queue_size) == 24,
++	       "FTW working block header layout");
++_Static_assert(sizeof(struct ftw_write_header) == 40 &&
++	       offsetof(struct ftw_write_header, number_of_writes) == 24,
++	       "FTW write header layout");
++
++/*
++ * Whether the payload will redo an interrupted write of the variable store at
++ * its next start (FaultTolerantWriteDxe: the last write not complete, with its
++ * spare copy complete). That rewrites the store from the spare copy, so what
++ * is changed in it before is lost.
++ */
++static enum cb_err ftw_write_pending(const struct region_device *rdev,
++				     const struct region_device *store_rdev, bool *pending)
++{
++	struct ftw_working_block_header ws;
++	struct ftw_write_header hdr;
++	struct region_device ftw;
++	uint64_t end, pos, size;
++	uint8_t state;
++
++	*pending = false;
++
++	/* The working block follows the variable store */
++	pos = region_device_offset(store_rdev) - region_device_offset(rdev) +
++		region_device_sz(store_rdev);
++	if (pos + sizeof(ws) > region_device_sz(rdev))
++		return CB_SUCCESS;
++	if (rdev_chain(&ftw, rdev, pos, region_device_sz(rdev) - pos))
++		return CB_EFI_ACCESS_ERROR;
++	if (rdev_readat(&ftw, &ws, 0, sizeof(ws)) != sizeof(ws))
++		return CB_EFI_ACCESS_ERROR;
++
++	if (!compare_guid(&ws.signature, &EdkiiWorkingBlockSignatureGuid)) {
++		/* Erased: the payload has not used it yet */
++		for (size_t i = 0; i < sizeof(ws); i++)
++			if (((const uint8_t *)&ws)[i] != UINT8_MAX)
++				return CB_EFI_VS_CORRUPTED_INVALID;
++		return CB_SUCCESS;
++	}
++	/* Otherwise the payload takes it back from the spare copy first */
++	if ((ws.state & FTW_WORKING_BLOCK_VALID) || !(ws.state & FTW_WORKING_BLOCK_INVALID) ||
++	    ws.write_queue_size > region_device_sz(&ftw) - sizeof(ws))
++		return CB_EFI_VS_CORRUPTED_INVALID;
++	end = sizeof(ws) + ws.write_queue_size;
++
++	/* The last write is the first one not complete (FtwGetLastWriteHeader()) */
++	for (pos = sizeof(ws); ; pos += size) {
++		if (pos + sizeof(hdr) > end)
++			return CB_SUCCESS;
++		if (rdev_readat(&ftw, &hdr, pos, sizeof(hdr)) != sizeof(hdr))
++			return CB_EFI_ACCESS_ERROR;
++		if (hdr.state & FTW_WRITES_COMPLETED)
++			break;
++		if (hdr.number_of_writes > end || hdr.private_data_size > end)
++			return CB_EFI_VS_CORRUPTED_INVALID;
++		size = sizeof(hdr) + hdr.number_of_writes *
++			(FTW_RECORD_SIZE + hdr.private_data_size);
++		if (size > end - pos)
++			return CB_EFI_VS_CORRUPTED_INVALID;
++	}
++	if (hdr.state & FTW_HEADER_ALLOCATED)
++		return CB_SUCCESS;
++
++	/* Its last record is the first one not written to the destination */
++	if (hdr.number_of_writes > end || hdr.private_data_size > end)
++		return CB_EFI_VS_CORRUPTED_INVALID;
++	for (uint64_t i = 0; i < hdr.number_of_writes; i++) {
++		const uint64_t record = pos + sizeof(hdr) +
++			i * (FTW_RECORD_SIZE + hdr.private_data_size);
++
++		if (record + FTW_RECORD_SIZE > end)
++			return CB_EFI_VS_CORRUPTED_INVALID;
++		if (rdev_readat(&ftw, &state, record, sizeof(state)) != sizeof(state))
++			return CB_EFI_ACCESS_ERROR;
++		if (state & FTW_DEST_COMPLETED) {
++			*pending = !(state & FTW_SPARE_COMPLETED);
++			return CB_SUCCESS;
++		}
++	}
++
++	/* Every record written: only the header is left to mark */
++	return CB_SUCCESS;
++}
++
++struct efi_delete_args {
++	const EFI_GUID *guid;
++	size_t deleted;
++};
++
++static enum cb_err delete_by_guid(struct region_device *rdev, VARIABLE_HEADER *hdr,
++				  size_t hdr_size, void *arg, bool *stop)
++{
++	struct efi_delete_args *da = arg;
++	uint8_t state;
++
++	/* The variables that match() can find */
++	if (hdr->State != VAR_ADDED && hdr->State != (VAR_IN_DELETED_TRANSITION & VAR_ADDED))
++		return CB_SUCCESS;
++	if (!compare_guid(&hdr->VendorGuid, da->guid))
++		return CB_SUCCESS;
++
++	/* One more bit cleared, as efi_fv_set_option() deletes the old copy */
++	state = hdr->State & VAR_DELETED;
++	if (rdev_writeat(rdev, &state, offsetof(VARIABLE_HEADER, State), sizeof(state)) !=
++	    sizeof(state))
++		return CB_EFI_ACCESS_ERROR;
++	da->deleted++;
++
++	return CB_SUCCESS;
++}
++
++enum cb_err efi_fv_delete_options(const struct region_device *rdev,
++				  const EFI_GUID *guid,
++				  size_t *deleted)
++{
++	struct efi_delete_args args = { .guid = guid };
++	struct region_device store_rdev = *rdev;
++	struct region_device walk_rdev;
++	bool auth_format;
++	bool erased;
++	bool pending;
++	enum cb_err ret;
++
++	*deleted = 0;
++
++	ret = efi_fv_init(&store_rdev, &auth_format);
++	if (ret != CB_SUCCESS) {
++		/* Not formatted yet, e.g. after a full flash: there is nothing to delete */
++		if (region_is_erased(rdev, &erased) == CB_SUCCESS && erased)
++			return CB_SUCCESS;
++		return ret;
++	}
++
++	/* The whole store first: nothing is written to a malformed one */
++	walk_rdev = store_rdev;
++	ret = walk_variables(&walk_rdev, auth_format, noop, NULL, NULL);
++	if (ret != CB_EFI_OPTION_NOT_FOUND)
++		return ret;
++
++	ret = ftw_write_pending(rdev, &store_rdev, &pending);
++	if (ret != CB_SUCCESS)
++		return ret;
++	if (pending) {
++		printk(BIOS_WARNING, PREFIX "Fault tolerant write pending, nothing deleted\n");
++		return CB_ERR;
++	}
++
++	/* walk_variables() moved walk_rdev to the end: start again */
++	walk_rdev = store_rdev;
++	ret = walk_variables(&walk_rdev, auth_format, delete_by_guid, &args, NULL);
++	*deleted = args.deleted;
++
++	return ret == CB_EFI_OPTION_NOT_FOUND ? CB_SUCCESS : ret;
++}
+diff --git a/src/drivers/efi/efivars.h b/src/drivers/efi/efivars.h
+index 40716d2739..f9c2b1babe 100644
+--- a/src/drivers/efi/efivars.h
++++ b/src/drivers/efi/efivars.h
+@@ -50,6 +50,21 @@ enum cb_err efi_fv_set_option(const struct region_device *rdev,
+ 			      void *data,
+ 			      uint32_t size);
+ 
++/**
++ * efi_fv_delete_options
++ * Mark every variable of the vendor guid as deleted, in place: one bit of its
++ * state byte, so it needs no free space and no erase. Nothing is written
++ * unless the whole store is well formed up to its erased tail and no fault
++ * tolerant write of the payload is pending on it. An erased region, or a
++ * store without such variables, is a success with nothing deleted.
++ * @rdev: the read/writable region to operate on
++ * @guid: the vendor guid of the variables to delete
++ * @deleted: on output the number of variables marked as deleted
++ */
++enum cb_err efi_fv_delete_options(const struct region_device *rdev,
++				  const EFI_GUID *guid,
++				  size_t *deleted);
++
+ enum cb_err efi_fv_print_options(const struct region_device *rdev);
+ 
+ #endif /* _EDK2_OPTION_H_ */
+diff --git a/src/drivers/efi/option.c b/src/drivers/efi/option.c
+index 691fb15cce..1b028fd748 100644
+--- a/src/drivers/efi/option.c
++++ b/src/drivers/efi/option.c
+@@ -1,5 +1,6 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <console/console.h>
+ #include <option.h>
+ #include <smmstore.h>
+ 
+@@ -11,6 +12,9 @@
+ static const EFI_GUID EficorebootNvDataGuid = {
+ 	0xceae4c1d, 0x335b, 0x4685, { 0xa4, 0xa0, 0xfc, 0x4a, 0x94, 0xee, 0xa0, 0x85 } };
+ 
++/* Set by efi_option_reset_all(): this stage reads the defaults from now on */
++static bool options_reset;
++
+ enum cb_err efi_option_initialize_store(void)
+ {
+ 	struct region_device rdev;
+@@ -57,10 +61,41 @@ enum cb_err efi_option_set_uint(const char *name, uint32_t value)
+ 	return efi_fv_set_option(&rdev, &EficorebootNvDataGuid, name, &var, sizeof(var));
+ }
+ 
++enum cb_err efi_option_reset_all(void)
++{
++	struct region_device rdev;
++	size_t deleted;
++	enum cb_err ret;
++
++	if (smmstore_lookup_region(&rdev))
++		return CB_CMOS_OTABLE_DISABLED;
++
++	ret = efi_fv_delete_options(&rdev, &EficorebootNvDataGuid, &deleted);
++	if (ret != CB_SUCCESS) {
++		printk(BIOS_ERR, "Setup options: not reset (%d), %zu deleted\n", ret, deleted);
++		return ret;
++	}
++
++	options_reset = true;
++	printk(BIOS_WARNING, "Setup options: %zu reset to defaults (RTC power lost)\n",
++	       deleted);
++
++	return CB_SUCCESS;
++}
++
+ unsigned int get_uint_option(const char *name, const unsigned int fallback)
+ {
+ 	uint32_t value;
+ 
++	/*
++	 * After a reset in romstage, the flash window that it reads may still be
++	 * cached with the old variables. Ramstage starts with the caches
++	 * invalidated and finds them deleted.
++	 */
++	if (CONFIG(DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE) && ENV_SEPARATE_ROMSTAGE &&
++	    options_reset)
++		return fallback;
++
+ 	if (efi_option_get_uint(name, &value) != CB_SUCCESS)
+ 		return fallback;
+ 
+diff --git a/src/drivers/efi/option.h b/src/drivers/efi/option.h
+index 2d2760ca1d..f17116cd8e 100644
+--- a/src/drivers/efi/option.h
++++ b/src/drivers/efi/option.h
+@@ -9,4 +9,11 @@ enum cb_err efi_option_get_uint(const char *name, uint32_t *value);
+ enum cb_err efi_option_set_uint(const char *name, uint32_t value);
+ enum cb_err efi_option_initialize_store(void);
+ 
++/*
++ * Delete every setup option from the store, so that the payload writes the
++ * defaults back. get_uint_option() then returns the fallbacks for the rest
++ * of romstage. For DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE.
++ */
++enum cb_err efi_option_reset_all(void);
++
+ #endif /* DRIVERS_EFI_OPTION_H */
+diff --git a/src/soc/intel/cannonlake/include/soc/pm.h b/src/soc/intel/cannonlake/include/soc/pm.h
+index 863d9f9203..201b777e1d 100644
+--- a/src/soc/intel/cannonlake/include/soc/pm.h
++++ b/src/soc/intel/cannonlake/include/soc/pm.h
+@@ -145,6 +145,8 @@ struct chipset_power_state {
+ 	uint32_t gblrst_cause[2];
+ 	uint32_t hpr_cause0;
+ 	uint32_t prev_sleep_state;
++	/* Romstage reset the setup options: pmc_final() then clears RTC_PWR_STS */
++	uint8_t options_reset;
+ } __packed;
+ 
+ /* Get base address PMC memory mapped registers. */
+diff --git a/src/soc/intel/cannonlake/pmc.c b/src/soc/intel/cannonlake/pmc.c
+index 578f9f843b..b0ce2f317f 100644
+--- a/src/soc/intel/cannonlake/pmc.c
++++ b/src/soc/intel/cannonlake/pmc.c
+@@ -1,5 +1,6 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <acpi/acpi_pm.h>
+ #include <bootstate.h>
+ #include <console/console.h>
+ #include <device/mmio.h>
+@@ -136,6 +137,31 @@ static void pmc_fill_ssdt(const struct device *dev)
+ 		generate_acpi_power_engine();
+ }
+ 
++/*
++ * RTC_PWR_STS stays set until it is cleared, and nothing else in coreboot
++ * clears it on Cannon Lake (FSP-M may: Tiger Lake's seems to), so the setup
++ * options would be reset at every boot. Clear it only once romstage reset
++ * them, and only here, after FSP-S, rtc_init() and the ELOG event: a reset
++ * before this point repeats all of them, and the deletion then finds
++ * nothing more. Read back, so that the log shows the clear worked.
++ */
++static void clear_rtc_failed(void)
++{
++	const struct chipset_power_state *ps;
++	uint8_t *const pmc = pmc_mmio_regs();
++	uint32_t gen_pmcon_b;
++
++	if (!CONFIG(DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE) ||
++	    acpi_fetch_pm_state(&ps, PS_CLAIMER_RTC) < 0 || !ps->options_reset)
++		return;
++
++	clrbits8(pmc + GEN_PMCON_B, RTC_BATTERY_DEAD);
++	gen_pmcon_b = read32(pmc + GEN_PMCON_B);
++	printk(gen_pmcon_b & RTC_BATTERY_DEAD ? BIOS_ERR : BIOS_INFO,
++	       "RTC: power failure %scleared, GEN_PMCON_B: %08x\n",
++	       gen_pmcon_b & RTC_BATTERY_DEAD ? "not " : "", gen_pmcon_b);
++}
++
+ /*
+  * `pmc_final` function is native implementation of equivalent events performed by
+  * each FSP NotifyPhase() API invocations.
+@@ -150,6 +176,7 @@ static void pmc_fill_ssdt(const struct device *dev)
+ static void pmc_final(struct device *dev)
+ {
+ 	pmc_clear_pmcon_sts();
++	clear_rtc_failed();
+ }
+ 
+ struct device_operations pmc_ops = {
+diff --git a/src/soc/intel/cannonlake/romstage/romstage.c b/src/soc/intel/cannonlake/romstage/romstage.c
+index b3777b686f..b88d83507b 100644
+--- a/src/soc/intel/cannonlake/romstage/romstage.c
++++ b/src/soc/intel/cannonlake/romstage/romstage.c
+@@ -3,6 +3,7 @@
+ #include <arch/romstage.h>
+ #include <cbmem.h>
+ #include <console/console.h>
++#include <drivers/efi/option.h>
+ #include <fsp/util.h>
+ #include <intelblocks/cfg.h>
+ #include <intelblocks/cse.h>
+@@ -117,6 +118,19 @@ static void save_dimm_info(void)
+ 	printk(BIOS_DEBUG, "%d DIMMs found\n", mem_info->dimm_cnt);
+ }
+ 
++/*
++ * The RTC lost power (a CMOS clear): reset the setup options too, which live
++ * in SMMSTORE and not in the CMOS. Before FSP-M, which reads them.
++ */
++static bool reset_options_on_rtc_failure(const struct chipset_power_state *ps)
++{
++	if (!CONFIG(DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE) ||
++	    !(ps->gen_pmcon_b & RTC_BATTERY_DEAD))
++		return false;
++
++	return efi_option_reset_all() == CB_SUCCESS;
++}
++
+ void mainboard_romstage_entry(void)
+ {
+ 	bool s3wake;
+@@ -130,6 +144,8 @@ void mainboard_romstage_entry(void)
+ 	cse_init(HECI1_BASE_ADDRESS);
+ 
+ 	s3wake = pmc_fill_power_state(ps) == ACPI_S3;
++	/* Before fsp_memory_init(), whose CBMEM hook copies ps for ramstage */
++	ps->options_reset = !s3wake && reset_options_on_rtc_failure(ps);
+ 	fsp_memory_init(s3wake);
+ 	pmc_set_disb();
+ 	if (!s3wake) {
+diff --git a/tests/drivers/efivars.c b/tests/drivers/efivars.c
+index fac57ea460..682055b641 100644
+--- a/tests/drivers/efivars.c
++++ b/tests/drivers/efivars.c
+@@ -707,6 +707,210 @@ static void efi_test_exact_fit_write(void **state)
+ 		"new", &value, sizeof(value)), CB_EFI_STORE_FULL);
+ }
+ 
++static const EFI_GUID OtherGuid = {
++	0x8be4df61, 0x93ca, 0x11d2, { 0xaa, 0x0d, 0x00, 0xe0, 0x98, 0x03, 0x2b, 0x8c } };
++
++#define VARIABLE_OFFSET (sizeof(EFI_FIRMWARE_VOLUME_HEADER) + \
++	sizeof(EFI_FV_BLOCK_MAP_ENTRY) + sizeof(VARIABLE_STORE_HEADER))
++
++/* The variable after the one at offset */
++static size_t next_variable(size_t offset)
++{
++	const AUTHENTICATED_VARIABLE_HEADER *header = (void *)(flash_buffer + offset);
++
++	return offset + ALIGN_UP(sizeof(*header) + header->NameSize + header->DataSize,
++				 HEADER_ALIGNMENT);
++}
++
++static uint8_t flash_before[sizeof(flash_buffer)];
++
++/* Only the bytes at the offsets given, up to 4, differ from flash_before */
++static void assert_flash_changed_at(const size_t *offsets, size_t count)
++{
++	for (size_t i = 0; i < sizeof(flash_buffer); i++) {
++		bool expected = false;
++
++		for (size_t j = 0; j < count; j++)
++			expected |= i == offsets[j];
++		if (!expected)
++			assert_int_equal(flash_buffer[i], flash_before[i]);
++		else
++			assert_int_not_equal(flash_buffer[i], flash_before[i]);
++	}
++}
++
++/* Only the variables of the guid go, one state byte each, live or in transition */
++static void efi_test_delete_options(void **state)
++{
++	const size_t state_offset = offsetof(AUTHENTICATED_VARIABLE_HEADER, State);
++	size_t first, other, second, offsets[2], deleted;
++	uint8_t value[16];
++	uint32_t size, number = 1;
++
++	mock_rdev(true);
++	assert_int_equal(efi_fv_set_option(&flash_rdev_rw, &OtherGuid, "other", "kept",
++		sizeof("kept")), CB_SUCCESS);
++	assert_int_equal(efi_fv_set_option(&flash_rdev_rw, &EficorebootNvDataGuid,
++		"second", &number, sizeof(number)), CB_SUCCESS);
++	first = VARIABLE_OFFSET;
++	other = next_variable(first);
++	second = next_variable(other);
++	flash_buffer[first + state_offset] = VAR_IN_DELETED_TRANSITION & VAR_ADDED;
++	memcpy(flash_before, flash_buffer, sizeof(flash_buffer));
++
++	assert_int_equal(efi_fv_delete_options(&flash_rdev_rw, &EficorebootNvDataGuid,
++		&deleted), CB_SUCCESS);
++	/* Fails if the deletion walks from where the check left the rdev */
++	assert_int_equal(deleted, 2);
++	assert_int_equal(flash_buffer[first + state_offset],
++		VAR_DELETED & VAR_IN_DELETED_TRANSITION & VAR_ADDED);
++	assert_int_equal(flash_buffer[second + state_offset], VAR_DELETED & VAR_ADDED);
++	offsets[0] = first + state_offset;
++	offsets[1] = second + state_offset;
++	assert_flash_changed_at(offsets, ARRAY_SIZE(offsets));
++
++	size = sizeof(value);
++	assert_int_equal(efi_fv_get_option(&flash_rdev_rw, &EficorebootNvDataGuid, name,
++		value, &size), CB_EFI_OPTION_NOT_FOUND);
++	size = sizeof(value);
++	assert_int_equal(efi_fv_get_option(&flash_rdev_rw, &EficorebootNvDataGuid, "second",
++		value, &size), CB_EFI_OPTION_NOT_FOUND);
++	size = sizeof(value);
++	assert_int_equal(efi_fv_get_option(&flash_rdev_rw, &OtherGuid, "other", value, &size),
++		CB_SUCCESS);
++	assert_string_equal((const char *)value, "kept");
++
++	/* Again: nothing left to delete */
++	memcpy(flash_before, flash_buffer, sizeof(flash_buffer));
++	assert_int_equal(efi_fv_delete_options(&flash_rdev_rw, &EficorebootNvDataGuid,
++		&deleted), CB_SUCCESS);
++	assert_int_equal(deleted, 0);
++	assert_flash_changed_at(NULL, 0);
++}
++
++/* A malformed store is left to the payload, without a write */
++static void efi_test_delete_options_refuse_malformed(void **state)
++{
++	size_t deleted = 1;
++
++	mock_rdev(true);
++	flash_buffer[next_variable(VARIABLE_OFFSET)] = 0;
++	memcpy(flash_before, flash_buffer, sizeof(flash_buffer));
++	assert_int_equal(efi_fv_delete_options(&flash_rdev_rw, &EficorebootNvDataGuid,
++		&deleted), CB_EFI_VS_CORRUPTED_INVALID);
++	assert_int_equal(deleted, 0);
++	assert_flash_changed_at(NULL, 0);
++
++	/* A broken header with data after it is not an erased store */
++	mock_rdev(true);
++	flash_buffer[0x10] ^= 0xff;
++	memcpy(flash_before, flash_buffer, sizeof(flash_buffer));
++	assert_int_not_equal(efi_fv_delete_options(&flash_rdev_rw, &EficorebootNvDataGuid,
++		&deleted), CB_SUCCESS);
++	assert_flash_changed_at(NULL, 0);
++}
++
++/* Erased (never formatted) or empty: nothing to delete, and that is a success */
++static void efi_test_delete_options_erased_or_empty(void **state)
++{
++	size_t deleted = 1;
++
++	memset(flash_buffer, 0xff, sizeof(flash_buffer));
++	mock_rdev(false);
++	memcpy(flash_before, flash_buffer, sizeof(flash_buffer));
++	assert_int_equal(efi_fv_delete_options(&flash_rdev_rw, &EficorebootNvDataGuid,
++		&deleted), CB_SUCCESS);
++	assert_int_equal(deleted, 0);
++	assert_flash_changed_at(NULL, 0);
++
++	assert_int_equal(efi_fv_initialize(&flash_rdev_rw, 0x10000), CB_SUCCESS);
++	deleted = 1;
++	memcpy(flash_before, flash_buffer, sizeof(flash_buffer));
++	assert_int_equal(efi_fv_delete_options(&flash_rdev_rw, &EficorebootNvDataGuid,
++		&deleted), CB_SUCCESS);
++	assert_int_equal(deleted, 0);
++	assert_flash_changed_at(NULL, 0);
++}
++
++/* EDK2's FTW working block, right after the variable store of FVH */
++#define FTW_OFFSET		0x10000
++#define FTW_WRITE_HEADER	(FTW_OFFSET + 32)
++#define FTW_WRITE_RECORD	(FTW_WRITE_HEADER + 40)
++
++static void mock_ftw_write(uint8_t header_state, uint8_t record_state)
++{
++	static const EFI_GUID signature = { 0x9e58292b, 0x7c68, 0x497d,
++		{ 0xa0, 0xce, 0x65, 0x00, 0xfd, 0x9f, 0x1b, 0x95 } };
++	const uint64_t queue_size = 0x10000 - 32, writes = 1, private_size = 0;
++
++	memcpy(flash_buffer + FTW_OFFSET, &signature, sizeof(signature));
++	memset(flash_buffer + FTW_OFFSET + 16, 0, 4);			/* Crc */
++	flash_buffer[FTW_OFFSET + 20] = 0xfe;				/* valid */
++	memcpy(flash_buffer + FTW_OFFSET + 24, &queue_size, sizeof(queue_size));
++	flash_buffer[FTW_WRITE_HEADER] = header_state;
++	memcpy(flash_buffer + FTW_WRITE_HEADER + 24, &writes, sizeof(writes));
++	memcpy(flash_buffer + FTW_WRITE_HEADER + 32, &private_size, sizeof(private_size));
++	flash_buffer[FTW_WRITE_RECORD] = record_state;
++}
++
++/* The payload will rewrite the store from its spare copy: no deletion before that */
++static void efi_test_delete_options_pending_ftw(void **state)
++{
++	const size_t state_offset = VARIABLE_OFFSET +
++		offsetof(AUTHENTICATED_VARIABLE_HEADER, State);
++	size_t deleted;
++
++	/* Allocated, not complete; spare written, destination not */
++	mock_rdev(true);
++	mock_ftw_write(0xfc, 0xfd);
++	memcpy(flash_before, flash_buffer, sizeof(flash_buffer));
++	assert_int_equal(efi_fv_delete_options(&flash_rdev_rw, &EficorebootNvDataGuid,
++		&deleted), CB_ERR);
++	assert_flash_changed_at(NULL, 0);
++
++	/* The working block taken back from the spare copy first */
++	mock_rdev(true);
++	mock_ftw_write(0xfc, 0xfd);
++	flash_buffer[FTW_OFFSET] ^= 0xff;
++	memcpy(flash_before, flash_buffer, sizeof(flash_buffer));
++	assert_int_equal(efi_fv_delete_options(&flash_rdev_rw, &EficorebootNvDataGuid,
++		&deleted), CB_EFI_VS_CORRUPTED_INVALID);
++	assert_flash_changed_at(NULL, 0);
++
++	/* Spare not complete: the payload drops that write */
++	mock_rdev(true);
++	mock_ftw_write(0xfc, 0xff);
++	memcpy(flash_before, flash_buffer, sizeof(flash_buffer));
++	assert_int_equal(efi_fv_delete_options(&flash_rdev_rw, &EficorebootNvDataGuid,
++		&deleted), CB_SUCCESS);
++	assert_int_equal(deleted, 1);
++	assert_flash_changed_at(&state_offset, 1);
++
++	/* Destination written, or the whole write complete */
++	mock_rdev(true);
++	mock_ftw_write(0xfc, 0xf9);
++	assert_int_equal(efi_fv_delete_options(&flash_rdev_rw, &EficorebootNvDataGuid,
++		&deleted), CB_SUCCESS);
++	assert_int_equal(deleted, 1);
++	mock_rdev(true);
++	mock_ftw_write(0xf8, 0xf9);
++	assert_int_equal(efi_fv_delete_options(&flash_rdev_rw, &EficorebootNvDataGuid,
++		&deleted), CB_SUCCESS);
++	assert_int_equal(deleted, 1);
++}
++
++static void efi_test_delete_options_write_error(void **state)
++{
++	size_t deleted;
++
++	mock_fault_rdev(SIZE_MAX);
++	write_failure_offset = VARIABLE_OFFSET + offsetof(AUTHENTICATED_VARIABLE_HEADER, State);
++	assert_int_equal(efi_fv_delete_options(&flash_rdev_rw, &EficorebootNvDataGuid,
++		&deleted), CB_EFI_ACCESS_ERROR);
++	assert_int_equal(deleted, 0);
++	write_failure_offset = SIZE_MAX;
++}
++
+ int main(void)
+ {
+ 	const struct CMUnitTest tests[] = {
+@@ -734,7 +938,12 @@ int main(void)
+ 		cmocka_unit_test(efi_test_propagate_name_read_error),
+ 		cmocka_unit_test(efi_test_propagate_print_name_read_error),
+ 		cmocka_unit_test(efi_test_propagate_data_read_error),
+-		cmocka_unit_test(efi_test_exact_fit_write)
++		cmocka_unit_test(efi_test_exact_fit_write),
++		cmocka_unit_test(efi_test_delete_options),
++		cmocka_unit_test(efi_test_delete_options_refuse_malformed),
++		cmocka_unit_test(efi_test_delete_options_erased_or_empty),
++		cmocka_unit_test(efi_test_delete_options_pending_ftw),
++		cmocka_unit_test(efi_test_delete_options_write_error)
+ 	};
+ 
+ 	return cb_run_group_tests(tests, NULL, NULL);
+-- 
+2.47.3
+

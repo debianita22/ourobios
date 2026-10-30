@@ -1,0 +1,110 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 30 Oct 2026 19:54:45 +0100
+Subject: [PATCH] UefiPayloadPkg: Say what a slot switch keeps and trains again
+
+"Go back to the other slot" said that only the memory training cache
+is cleared and that the first start trains the memory again, a few
+seconds longer; its confirmation said the same. That is what coreboot
+does on the W541, which erases RW_MRC_CACHE before it switches. The
+M920x is going to keep the cache
+(SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE):
+its version, from the FSP-M of each slot and the board bits, tells the
+other slot whether it can use it, and that slot trains again only if
+not, which there takes 21-36 s.
+
+The payload is the same for both, so the help and the confirmation now
+say that the first start may train the memory again, up to a minute
+with a dark screen (both boards build with NO_EARLY_GFX_INIT, so nothing
+is drawn before ramstage), and the help adds when: always on some
+models, on others only if that firmware cannot use the saved training.
+Both now say not to turn the computer off meanwhile: an owner who takes
+the dark screen for a hang and turns it off twice uses up the two tries
+of vboot, and the firmware quietly comes back to this slot. Settings,
+boot entries and Secure Boot keys are kept on both. The comment of
+SmmStoreLibVbootTryOtherSlot(), in the header and in SmmStore.c, says
+which coreboot option keeps the cache.
+
+The confirmation is formatted into Message[512] of ShowPopup(): its
+text is 349 characters without the two release names and the slot
+letter, which take at most 63 + 63 + 1 (RELEASE_LENGTH), 476 in all.
+
+Text and comments only: no change in what the payload does.
+
+TEST=git diff: only the two strings and the two comments change, with
+the CRLF line ends of the files; the format still has %s, %c, %s for
+its three arguments. No EDK2 build here. Remains for the hardware test:
+the help of Firmware Update > Go back to the other slot and its
+confirmation show the new text, whole, on the M920x and the W541.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.c   | 2 +-
+ UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.uni | 2 +-
+ UefiPayloadPkg/Include/Library/SmmStoreLib.h        | 6 ++++--
+ UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c       | 6 ++++--
+ 4 files changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.c b/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.c
+index 35ba86b9ba..9b240eff1e 100644
+--- a/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.c
++++ b/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.c
+@@ -1330,7 +1330,7 @@ GoToOtherSlot (
+   if (ShowPopup (
+         EfiHiiPopupStyleWarning,
+         EfiHiiPopupTypeYesNo,
+-        L"Start %s, in slot %c, from now on?\nThe computer restarts into it. If it does not start twice in a row, the firmware comes back to this one, %s. The first start trains the memory again, a few seconds longer. Settings, boot entries and Secure Boot keys are kept. Unsaved changes in the setup are lost.",
++        L"Start %s, in slot %c, from now on?\nThe computer restarts into it. If it does not start twice in a row, the firmware comes back to this one, %s. The first start may train the memory again: up to a minute with a dark screen. Do not turn the computer off meanwhile. Settings, boot entries and Secure Boot keys are kept. Unsaved changes in the setup are lost.",
+         Slots.OtherName,
+         Slots.Other,
+         Slots.RunningName
+diff --git a/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.uni b/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.uni
+index 4c0e3b5c42..a63087dfba 100644
+--- a/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.uni
++++ b/UefiPayloadPkg/FirmwareUpdateDxe/FirmwareUpdate.uni
+@@ -42,7 +42,7 @@
+ #string STR_INSTALL_HELP         #language en-US "Copy the capsule of a release (the .cap file) into the folder EFI\\UpdateCapsule of a FAT USB drive, and connect the drive and the AC adapter. The firmware checks the capsule, restarts, and writes it before anything else starts, in about a minute. Settings, boot entries and Secure Boot keys are kept. Unsaved changes in the setup are lost.\n\nFrom Linux, tools/update.py and fwupd install the same capsules."
+ 
+ #string STR_SLOT_PROMPT          #language en-US "Go back to the other slot"
+-#string STR_SLOT_HELP            #language en-US "Restart into the firmware of the other slot, and keep it once it starts: if it does not start twice in a row, the firmware comes back to this one. Only the memory training cache is cleared: the first start trains the memory again, a few seconds longer. Settings, boot entries and Secure Boot keys are kept. Unsaved changes in the setup are lost.\n\nFrom Linux, tools/update.py rollback does the same with the capsule of that release."
++#string STR_SLOT_HELP            #language en-US "Restart into the firmware of the other slot, and keep it once it starts: if it does not start twice in a row, the firmware comes back to this one, so do not turn the computer off during its first start. That start may train the memory again, up to a minute with a dark screen: always on some models, on others only if that firmware cannot use the saved training. Settings, boot entries and Secure Boot keys are kept. Unsaved changes in the setup are lost.\n\nFrom Linux, tools/update.py rollback does the same with the capsule of that release."
+ 
+ #string STR_POPUP_MESSAGE        #language en-US ""
+ #string STR_NULL_STRING          #language en-US ""
+diff --git a/UefiPayloadPkg/Include/Library/SmmStoreLib.h b/UefiPayloadPkg/Include/Library/SmmStoreLib.h
+index 3b7d054ab8..6d42d4442f 100644
+--- a/UefiPayloadPkg/Include/Library/SmmStoreLib.h
++++ b/UefiPayloadPkg/Include/Library/SmmStoreLib.h
+@@ -178,8 +178,10 @@ SmmStoreLibVbootSlotGood (
+ /**
+   Ask coreboot to boot the RW slot that is not running from the next boot:
+   vboot tries it twice, as after an update, and comes back to the slot that
+-  runs now if it does not boot.  coreboot also clears the memory training
+-  cache, which that slot must not reuse.
++  runs now if it does not boot.  coreboot clears the memory training cache
++  first, unless it is built with SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE (the
++  M920x): then the cache stays, and its version tells the other slot
++  whether it can use it or must train the memory again.
+ 
+   @retval EFI_SUCCESS       vboot tries the other slot at the next boot.
+   @retval EFI_NO_MEDIA      SmmStore is not initialized.
+diff --git a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+index 808eb19895..1d010de619 100644
+--- a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
++++ b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+@@ -433,8 +433,10 @@ SmmStoreLibVbootSlotGood (
+ /**
+   Ask coreboot to boot the RW slot that is not running from the next boot:
+   vboot tries it twice, as after an update, and comes back to the slot that
+-  runs now if it does not boot.  coreboot also clears the memory training
+-  cache, which that slot must not reuse.
++  runs now if it does not boot.  coreboot clears the memory training cache
++  first, unless it is built with SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE (the
++  M920x): then the cache stays, and its version tells the other slot
++  whether it can use it or must train the memory again.
+ 
+   @retval EFI_SUCCESS       vboot tries the other slot at the next boot.
+   @retval EFI_NO_MEDIA      SmmStore is not initialized.
+-- 
+2.47.3
+
