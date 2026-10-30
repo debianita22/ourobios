@@ -1,0 +1,57 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 14:42:37 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Use a VBT with DisplayPort on DDI B
+
+coreboot bug #670: the VBT described its first external output as
+DVI/HDMI on DDI B (device type 0x60d2, HDMI-B, no AUX channel), but the
+DisplayPort connector of these boards is on DDI B and the HDMI one on
+DDI C. i915 then made an HDMI connector out of the DisplayPort one and a
+DP monitor there was not detected; the HDMI port worked as DDI C was
+DP++. The M920x has the same rear outputs (one HDMI, one DisplayPort,
+the optional port on DDI D).
+
+The in-tree VBT is one of the 19 of the OEM firmware, for another SKU.
+This one, made for the bug by Matt DeVillier from the OEM tables:
+DP-B with AUX-B (0x60d6), HDMI-C (0x60d2), DP++ on DDI D for the
+optional port, no phantom LFP1 and no fixed 1024x768 boot mode, at
+BDB 228 as the Coffee Lake FSP sample. Tested in the bug on an M720q
+with libgfxinit: DP and HDMI in EDK2 and in Linux, and after S3.
+
+TEST=Built lenovo/m920x. On the M920x: HDMI in the firmware and in
+Linux as before, in the hardware test; DP not tried (no cable).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/data.vbt | Bin 4608 -> 4608 bytes
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/data.vbt b/src/mainboard/lenovo/m720q_m920q/data.vbt
+index 38acf19c20e4d75c5c4212cbc17fa0c6dc2d56ac..6ec88c160872773fb9bbe6bdfc9c60a5655e81b3 100644
+GIT binary patch
+delta 671
+zcmZ9IJ!lkB6ot?Ht+V&NnY=t9n8I*1!6d7ZMKKB?xLYJB3PysB7Owb*h>EC)pk_hQ
+zM#bf+jfhwTe;Nr}h^3uXL<Oxx1#uOtXeB}7oyivB;eGd=nK|z;GxffD-_2#wbmt|M
+z-A-?5qimut=)&p7*w1PO9{#KY;t+8KF(WnzD+n2(L4{E<V1pP4feOHYfylrg^?bS4
+z@2Y<PRET#q7(=$0Jp`6OYBL#+bCVsCGQ7!RabG*;1F|xC+%{Q^+ik<`m~26wDtnxp
+z#kOop8@3d42dF$GgI&qL=xSc*9{J1n-6-~8M=*f%fsZS}CX~XLC>I%%a_*3DPIwy;
+zJ_s#gPM8;>0-;0b7J7vtVWUtLwh6n0y~2^^s$kxePZnL)ZXkN?>%dhDyIn_Nym_~<
+z-FFi{yH-3q)q@3`%7g!oC!)pc!CMFp6JIBLpXf31E3%)7eh_ym+pB0u@uac`6`fFg
+zTiJ(-W)#0y_Pe5Aio3O4t!abiJ=z}AbXM~{ZJ%m-uKA<3bDHKiYhIDq^$Cq8yg#vL
+z5}HbQI<e0ZdXaD|vA+`vQXWk0NJ?WVA5HCrl&+>p$wqbmljmk=WwSviqmf};8<$t!
+m3i%C~zyYlB?%-R1g|^Ukh5xj+?70VK$kohoq07yhuYUndmvtHd
+
+delta 587
+zcmYk1%WG6I6o*f8A9L?Xa+`@z+luvATCEB*7eTc6=nO?ftYC4W#f`HOT@Jbtu^nG4
+z5iHTapi4Kx;7W?P@ByNtXkFTkf}$HmM0C*8JG1b>$2m#9<VRYgt<jqU(QNq_<o=Ra
+zvyj{94fMnK!v1fr4gxyc0crpQU;z?emt*r5<PIT2fK3U+1MpuVKu|1es~37jA-p~b
+z)+V2m?v4O{w<tlqfdgu=Tv&g47B^W)B&ZlTABbRiZ=q#raR}VHk-4Dmu&P;je3~PH
+zdY0<S{1so3bN;Se-#C>H!+~HN&IJ<Yf?Y5YK7}MD*p^z@$ILL#B80chd*&1Ko#`;8
+z7@^FpW5$>&Gr>$ThnZtcqg@Gpi&6+dvgc~(^XQfQBK^krvY(8H+l%qE^nK}zU<jmN
+zNeAb*+=5^?QUl#t#EVFa=<XptK>C30C!$caS-A;?Q;N<gcR}GbMR$~2QusvCSLOaH
+zOf^-tt7|-@sj1x+jW;y4wR@!TrKTU+l?;{*?KJM7!J~%G8+YB{ZA15s+wk1rJ3}4g
+z`Z65MXfks%8J@_@Ru{G8ittS{(q6)5B>H{Tt_>==@DJ^*Z`tF1sQl3%k<<SG*j`?P
+
+-- 
+2.47.3
+
