@@ -1,0 +1,122 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 14:29:59 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Wi-Fi switch for CNVi cards, PEG
+ without iGPU
+
+Two cases of other components than the ones of the port machine:
+
+- The M.2 Wi-Fi slot also takes the CNVi cards (Wireless-AC 9560 and
+  9461 CNVi), whose MAC is the Wi-Fi controller of the PCH (00:14.3),
+  on in the devicetree: FSP-S turns it on when it finds the radio.
+  The "Wireless" option turned off only root port 6 and the Bluetooth
+  port: it turns the CNVi controller off as well, before FSP-S reads
+  the devicetree for CnviMode.
+- A processor without graphics (the F models) shows the firmware and
+  the setup on a card of the riser only. The PEG port stays on there
+  whatever the slot says and whatever the "peg_slot" option: an Auto
+  that missed the card, or Disabled, would leave no screen to set the
+  option back on.
+
+The boot log line for an empty slot says which option to set if a card
+is there and Auto did not see it.
+
+TEST=Built lenovo/m920x.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/cfr.c      |  8 +++---
+ src/mainboard/lenovo/m720q_m920q/ramstage.c |  7 +++++-
+ src/mainboard/lenovo/m720q_m920q/romstage.c | 27 ++++++++++++++-------
+ 3 files changed, 29 insertions(+), 13 deletions(-)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index f8c71cf807..b442a54f9b 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -460,8 +460,9 @@ static const struct sm_object onboard_audio = SM_DECLARE_BOOL({
+ static const struct sm_object onboard_wlan = SM_DECLARE_BOOL({
+ 	.opt_name	= "onboard_wlan",
+ 	.ui_name	= "Wireless",
+-	.ui_helptext	= "The M.2 Wi-Fi card and its Bluetooth. Off, the card is not\n"
+-			  "powered on its PCIe port and its Bluetooth port is off.\n"
++	.ui_helptext	= "The M.2 Wi-Fi card and its Bluetooth, PCIe or CNVi. Off,\n"
++			  "the PCIe port of the card or the CNVi controller of the PCH\n"
++			  "is off, and the Bluetooth port too.\n"
+ 			  "Default: on.",
+ 	.default_value	= true,
+ });
+@@ -473,7 +474,8 @@ static const struct sm_object peg_slot = SM_DECLARE_ENUM({
+ 			  "with a card on the riser, off without one, which lets the\n"
+ 			  "processor package reach its deepest idle states.\n"
+ 			  "Enabled: always on, for a card that Auto does not see.\n"
+-			  "Disabled: always off, a card on the riser included.\n"
++			  "Disabled: always off, a card on the riser included, but\n"
++			  "on with a processor without graphics (F models).\n"
+ 			  "Default: Auto.",
+ 	.default_value	= PEG_SLOT_AUTO,
+ 	.values		= (const struct sm_enum_value[]) {
+diff --git a/src/mainboard/lenovo/m720q_m920q/ramstage.c b/src/mainboard/lenovo/m720q_m920q/ramstage.c
+index f3cfa60ee3..222c4363e3 100644
+--- a/src/mainboard/lenovo/m720q_m920q/ramstage.c
++++ b/src/mainboard/lenovo/m720q_m920q/ramstage.c
+@@ -32,10 +32,15 @@ static void mainboard_init(void *chip_info)
+ 
+ 	if (!get_uint_option("onboard_ethernet", 1))
+ 		DEV_PTR(gbe)->enabled = 0;
+-	/* The Bluetooth of the M.2 Wi-Fi card, USB2 port 13; the card itself is FSP-M's */
++	/*
++	 * The M.2 Wi-Fi card: a PCIe one on root port 6 (FSP-M's), or a CNVi one
++	 * on the Wi-Fi controller of the PCH, which FSP-S turns on from the
++	 * devicetree; the Bluetooth of either on USB2 port 13.
++	 */
+ 	if (!get_uint_option("onboard_wlan", 1)) {
+ 		cfg->usb2_ports[13].enable = 0;
+ 		DEV_PTR(pcie_rp6)->enabled = 0;
++		DEV_PTR(cnvi_wifi)->enabled = 0;
+ 	}
+ 	if (!get_uint_option("front_usb", 1))
+ 		disable_usb_ports(cfg, front_usb2, ARRAY_SIZE(front_usb2),
+diff --git a/src/mainboard/lenovo/m720q_m920q/romstage.c b/src/mainboard/lenovo/m720q_m920q/romstage.c
+index feb0d46e4c..75e44df35f 100644
+--- a/src/mainboard/lenovo/m720q_m920q/romstage.c
++++ b/src/mainboard/lenovo/m720q_m920q/romstage.c
+@@ -67,17 +67,26 @@ static bool peg_card_present(void)
+ 
+ static uint8_t peg_enable(void)
+ {
+-	switch (get_uint_option("peg_slot", PEG_SLOT_AUTO)) {
+-	case PEG_SLOT_ENABLED:
++	const unsigned int option = get_uint_option("peg_slot", PEG_SLOT_AUTO);
++
++	if (option == PEG_SLOT_ENABLED)
+ 		return 1;
+-	case PEG_SLOT_DISABLED:
+-		return 0;
+-	default:
+-		if (peg_card_present())
+-			return 2;	/* FSP-M's Auto, which trains the link */
+-		printk(BIOS_INFO, "PEG: no card on the riser slot, port off\n");
+-		return 0;
++	/*
++	 * A processor without graphics (the F models) shows the firmware and
++	 * the setup on a card of the riser only: never turn the port off there,
++	 * not even with the option, which could not be set back otherwise.
++	 */
++	if (pci_s_read_config16(PCI_DEV(0, 2, 0), PCI_VENDOR_ID) == 0xffff) {
++		printk(BIOS_INFO, "PEG: no processor graphics, the port stays on\n");
++		return 2;
+ 	}
++	if (option == PEG_SLOT_DISABLED)
++		return 0;
++	if (peg_card_present())
++		return 2;	/* FSP-M's Auto, which trains the link */
++	printk(BIOS_INFO, "PEG: no card on the riser slot, port off (a card there not"
++	       " seen: Hardware > Devices > PCIe riser slot > Enabled)\n");
++	return 0;
+ }
+ 
+ void mainboard_memory_init_params(FSPM_UPD *memupd)
+-- 
+2.47.3
+

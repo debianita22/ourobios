@@ -244,6 +244,20 @@ DEVTREE_CONST struct device *dev_find_path(DEVTREE_CONST struct device *prev_mat
 }
 
 /*
+ * M920x (mainboard/cpu.h): il processore ha Turbo Boost e Hyper-Threading,
+ * cosi' il menu li mostra tutti e due.
+ */
+bool mainboard_cpu_has_turbo(void)
+{
+	return true;
+}
+
+bool mainboard_cpu_has_ht(void)
+{
+	return true;
+}
+
+/*
  * L'elenco di riferimento: sm_root[] e le form generiche lette dalle
  * strutture, con i ctor applicati a una copia come fa drivers/option/cfr.c.
  * Una riga per oggetto, indentata di due spazi per livello:

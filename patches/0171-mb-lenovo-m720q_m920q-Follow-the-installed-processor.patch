@@ -1,0 +1,248 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 14:29:58 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Follow the installed processor
+
+The board takes any Coffee Lake desktop processor, from the two-core
+Pentium and Celeron to the eight-core Core i9, in 35 W (T) and 65 W
+models, with and without Turbo Boost and Hyper-Threading; some of the
+defaults were right for one of them only.
+
+- PL2: the devicetree fixed it at 65 W. On a 35 W T model the package
+  could draw 65 W for 28 s, where the OEM firmware (PL2 override on,
+  value 0: the processor default) stops at 1.25 times the TDP, 44 W;
+  on a 65 W model with Turbo Boost it held the bursts under the 81 W
+  of the OEM firmware. No override now: PL1 the TDP, PL2 1.25 times
+  it, and the option's default 0.
+- The fan: the EC gets the class of the processor's sustained power,
+  its TDP, or PL1 when the option sets it, so a T model raised to 65 W
+  gets the fan table of a 65 W one.
+- Turbo Boost and Hyper-Threading are in the menu only on the
+  processors that have them: a single-core turbo ratio above the base
+  one (not CPUID leaf 6, which stops reporting it when the firmware
+  turns it off), more than one thread per core. Hyper-Threading stays
+  listed while it is off, as the processor then shows one thread per
+  core.
+
+TEST=Built lenovo/m920x. On an i3-8100 (no Turbo Boost, no
+Hyper-Threading, 65 W): PL1 65 W, PL2 81 W, EC class 65 W, and the two
+options not in the menu, in the hardware test.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/Makefile.mk  |  1 +
+ src/mainboard/lenovo/m720q_m920q/cfr.c        | 33 +++++++++++++++----
+ src/mainboard/lenovo/m720q_m920q/cpu.c        | 30 +++++++++++++++++
+ .../lenovo/m720q_m920q/devicetree.cb          |  7 ++--
+ src/mainboard/lenovo/m720q_m920q/ec.c         | 11 +++++--
+ .../m720q_m920q/include/mainboard/cpu.h       | 17 ++++++++++
+ 6 files changed, 87 insertions(+), 12 deletions(-)
+ create mode 100644 src/mainboard/lenovo/m720q_m920q/cpu.c
+ create mode 100644 src/mainboard/lenovo/m720q_m920q/include/mainboard/cpu.h
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/Makefile.mk b/src/mainboard/lenovo/m720q_m920q/Makefile.mk
+index 43f0995f09..38db3b9546 100644
+--- a/src/mainboard/lenovo/m720q_m920q/Makefile.mk
++++ b/src/mainboard/lenovo/m720q_m920q/Makefile.mk
+@@ -11,6 +11,7 @@ romstage-y += romstage.c
+ romstage-$(CONFIG_VBOOT) += vboot.c
+ 
+ ramstage-$(CONFIG_DRIVERS_OPTION_CFR) += cfr.c
++ramstage-y += cpu.c
+ ramstage-y += ec.c
+ ramstage-y += gpio.c
+ ramstage-y += hda_verb.c
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index 9a09cd49e7..f8c71cf807 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -9,6 +9,7 @@
+ #include <drivers/vpd/vpd.h>
+ #include <intelblocks/acpi.h>
+ #include <intelblocks/pmclib.h>
++#include <mainboard/cpu.h>
+ #include <mainboard/ec.h>
+ #include <memory_info.h>
+ #include <soc/soc_chip.h>
+@@ -226,15 +227,23 @@ static const struct sm_object general_boot = SM_DECLARE_FORM({
+ 
+ /* Energy Saver */
+ 
++/* Only on a processor that has it, or with it turned off (cpu.c) */
++static void update_hyper_threading(struct sm_object *new)
++{
++	if (!mainboard_cpu_has_ht())
++		new->sm_bool.flags |= CFR_OPTFLAG_SUPPRESS;
++}
++
+ /* Read by FSP-M parameters (soc/intel/cannonlake/romstage/fsp_params.c) */
+ static const struct sm_object hyper_threading = SM_DECLARE_BOOL({
+ 	.opt_name	= "hyper_threading",
+ 	.ui_name	= "Hyper-Threading",
+ 	.ui_helptext	= "Two logical processors per core, on the processors that\n"
+-			  "have them (Core i7).\n"
++			  "have them (Core i7 of the 8th generation, Core i9,\n"
++			  "Pentium Gold). Not listed on the others.\n"
+ 			  "Default: on.",
+ 	.default_value	= CONFIG(FSP_HYPERTHREADING),
+-});
++}, WITH_CALLBACK(update_hyper_threading));
+ 
+ /* Read by soc/intel/cannonlake/cpu.c and acpi.c */
+ static const struct sm_object eist = SM_DECLARE_BOOL({
+@@ -247,14 +256,23 @@ static const struct sm_object eist = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ });
+ 
++/* Only on a processor that has it: not the 8th generation Core i3, Pentium, Celeron */
++static void update_turbo_mode(struct sm_object *new)
++{
++	if (!mainboard_cpu_has_turbo())
++		new->sm_bool.flags |= CFR_OPTFLAG_SUPPRESS;
++}
++
+ static const struct sm_object turbo_mode = SM_DECLARE_BOOL({
+ 	.opt_name	= "turbo_mode",
+ 	.ui_name	= "Intel Turbo Boost",
+ 	.ui_helptext	= "Frequencies above the base one while the power limits and\n"
+ 			  "the temperature allow it.\n"
+-			  "Default: on. Off: quieter and cooler, slower under load.",
++			  "Default: on. Off: quieter and cooler, slower under load.\n"
++			  "Not listed on the processors without it (Core i3 of\n"
++			  "the 8th generation, Pentium, Celeron).",
+ 	.default_value	= true,
+-}, WITH_DEP_VALUES(&eist, true));
++}, WITH_DEP_VALUES(&eist, true), WITH_CALLBACK(update_turbo_mode));
+ 
+ /* Read by soc/intel/common/block/power_limit (set_power_limits()) */
+ static const struct sm_object tdp_pl1_override = SM_DECLARE_NUMBER({
+@@ -263,7 +281,7 @@ static const struct sm_object tdp_pl1_override = SM_DECLARE_NUMBER({
+ 	.ui_helptext	= "Long-duration power limit of the CPU package, 0-65 W,\n"
+ 			  "within what the processor allows.\n"
+ 			  "Default: 0, the TDP of the processor (35 W for the T\n"
+-			  "models of this Tiny).",
++			  "models, 65 W for the others). The fan follows it.",
+ 	.default_value	= 0,
+ 	.min		= 0,
+ 	.max		= 65,
+@@ -276,8 +294,9 @@ static const struct sm_object tdp_pl2_override = SM_DECLARE_NUMBER({
+ 	.ui_name	= "CPU PL2 power limit (W)",
+ 	.ui_helptext	= "Short-duration power limit of the CPU package, 0-90 W, at\n"
+ 			  "least PL1 (the firmware raises it to PL1 if lower).\n"
+-			  "Default: 65 W, as for this Tiny. 0: 1.25 times the TDP.",
+-	.default_value	= 65,
++			  "Default: 0, 1.25 times the TDP as the OEM firmware: 44 W\n"
++			  "for the T models, 81 W for the 65 W ones.",
++	.default_value	= 0,
+ 	.min		= 0,
+ 	.max		= 90,
+ 	.step		= 1,
+diff --git a/src/mainboard/lenovo/m720q_m920q/cpu.c b/src/mainboard/lenovo/m720q_m920q/cpu.c
+new file mode 100644
+index 0000000000..ea853547c1
+--- /dev/null
++++ b/src/mainboard/lenovo/m720q_m920q/cpu.c
+@@ -0,0 +1,30 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <arch/cpuid.h>
++#include <cpu/x86/msr.h>
++#include <intelblocks/msr.h>
++#include <mainboard/cpu.h>
++#include <option.h>
++
++/*
++ * Turbo Boost: a single-core turbo ratio above the base one. Not from CPUID
++ * leaf 6, which stops reporting it once the firmware turns it off.
++ */
++bool mainboard_cpu_has_turbo(void)
++{
++	const unsigned int base = (rdmsr(MSR_PLATFORM_INFO).lo >> 8) & 0xff;
++
++	return (rdmsr(MSR_TURBO_RATIO_LIMIT).lo & 0xff) > base;
++}
++
++/*
++ * Hyper-Threading: more than one logical processor per core (CPUID leaf 0xb).
++ * Turned off by the option, the processor shows one per core: then it may
++ * have it, and the option stays in the menu to turn it on again.
++ */
++bool mainboard_cpu_has_ht(void)
++{
++	if (!get_uint_option("hyper_threading", CONFIG(FSP_HYPERTHREADING)))
++		return true;
++	return (cpuid_ext(0xb, 0).ebx & 0xffff) > 1;
++}
+diff --git a/src/mainboard/lenovo/m720q_m920q/devicetree.cb b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+index 2eb59d1724..9b19d1e419 100644
+--- a/src/mainboard/lenovo/m720q_m920q/devicetree.cb
++++ b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+@@ -1,9 +1,10 @@
+ ## SPDX-License-Identifier: GPL-2.0-only
+ 
+ chip soc/intel/cannonlake
+-	register "power_limits_config" = "{
+-		.tdp_pl2_override = 65,
+-	}"
++	# Power limits from the processor's TDP, as the OEM firmware (its PL2
++	# override is on with 0, the processor default): PL1 the TDP, PL2 1.25
++	# times it. A fixed PL2 of 65 W let a 35 W T model draw 65 W for 28 s,
++	# and held a 65 W one with Turbo Boost under its default 81 W.
+ 
+ 	# Enhanced Intel SpeedStep, as the OEM firmware: P-states for the OS
+ 	register "eist_enable" = "true"
+diff --git a/src/mainboard/lenovo/m720q_m920q/ec.c b/src/mainboard/lenovo/m720q_m920q/ec.c
+index 1e7a953b14..6d9f6b7a96 100644
+--- a/src/mainboard/lenovo/m720q_m920q/ec.c
++++ b/src/mainboard/lenovo/m720q_m920q/ec.c
+@@ -62,7 +62,14 @@ static uint8_t ec_cooling(unsigned int *tdp)
+ 	const unsigned int unit = rdmsr(MSR_PKG_POWER_SKU_UNIT).lo & 0xf;
+ 	uint8_t cooling = COOLING_THERMAL_ALERT;
+ 
+-	*tdp = (rdmsr(MSR_PKG_POWER_SKU).lo & 0x7fff) >> unit;
++	/*
++	 * The class of the processor's sustained power: its TDP, or PL1 when
++	 * the "tdp_pl1_override" option sets it (power_limit.c), so that a T
++	 * model raised to 65 W gets the fan table of a 65 W one.
++	 */
++	*tdp = get_uint_option("tdp_pl1_override", 0);
++	if (!*tdp)
++		*tdp = (rdmsr(MSR_PKG_POWER_SKU).lo & 0x7fff) >> unit;
+ 	if (*tdp > 65)
+ 		cooling |= COOLING_TDP_OVER_65W;
+ 	else if (*tdp > 45)
+@@ -134,7 +141,7 @@ static void ec_report_platform(void *unused)
+ 		{ EC_BOOT, ec_boot() },
+ 	};
+ 
+-	printk(BIOS_INFO, "EC: platform %02x %02x %02x (TDP %u W)\n",
++	printk(BIOS_INFO, "EC: platform %02x %02x %02x (PL1 %u W)\n",
+ 	       regs[0].value, regs[1].value, regs[2].value, tdp);
+ 	if (nct6687d_hwm_write_config(res->base, regs, ARRAY_SIZE(regs)))
+ 		ec_check_fan(res->base);
+diff --git a/src/mainboard/lenovo/m720q_m920q/include/mainboard/cpu.h b/src/mainboard/lenovo/m720q_m920q/include/mainboard/cpu.h
+new file mode 100644
+index 0000000000..cc30de8101
+--- /dev/null
++++ b/src/mainboard/lenovo/m720q_m920q/include/mainboard/cpu.h
+@@ -0,0 +1,17 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef MAINBOARD_CPU_H
++#define MAINBOARD_CPU_H
++
++#include <types.h>
++
++/*
++ * What the installed processor has, for the setup menu: the board takes
++ * any Coffee Lake desktop processor, from the two-core Pentium to the
++ * eight-core Core i9, with and without Turbo Boost and Hyper-Threading.
++ * mainboard_cpu_has_ht() is also true while the option turns it off.
++ */
++bool mainboard_cpu_has_turbo(void);
++bool mainboard_cpu_has_ht(void);
++
++#endif /* MAINBOARD_CPU_H */
+-- 
+2.47.3
+

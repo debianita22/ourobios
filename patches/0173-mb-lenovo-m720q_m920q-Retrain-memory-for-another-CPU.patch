@@ -1,0 +1,109 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Fri, 30 Oct 2026 14:42:37 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Retrain memory for another CPU or HT
+ setting
+
+Reports on the M920q (coreboot.f4lc0n-industries.co.uk/m920q.html):
+with a Hyper-Threading processor the memory training cache "may capture
+invalid state" and then blocks the boots, with that processor and with
+another one, until the BIOS region is written again; the workaround
+there is to build without the cache. The cases have something in
+common: the cache was made with Hyper-Threading the other way (the
+CMOS default left it off, see below) or with another processor, and
+FSP-M got it back.
+
+Select FSP_PLATFORM_MEMORY_SETTINGS_VERSIONS and give the mainboard
+bits of the cache version: bit 0 the "hyper_threading" option, bits 3:1
+a hash of the processor's CPUID signature and brand string. Turning
+Hyper-Threading on or off, or another processor, makes FSP-M train
+again instead of resuming a cache made for another setup; a swap of
+processors goes unseen once in eight. The first boot after this change
+trains once, as the version of the cache changes.
+
+cmos.default had no hyper_threading, so the CMOS option backend read 0
+and the first boot ran with Hyper-Threading off on the processors that
+have it, while the CFR one defaults to on: Enable, as the OEM firmware.
+
+TEST=Built lenovo/m920x. On the M920x: one training after the update,
+then the cache is used again; with Hyper-Threading turned off and on in
+the setup, a training each time, in the hardware test.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/Kconfig      |  1 +
+ src/mainboard/lenovo/m720q_m920q/cmos.default |  1 +
+ src/mainboard/lenovo/m720q_m920q/romstage.c   | 27 +++++++++++++++++++
+ 3 files changed, 29 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/Kconfig b/src/mainboard/lenovo/m720q_m920q/Kconfig
+index 159820afb2..c75234511a 100644
+--- a/src/mainboard/lenovo/m720q_m920q/Kconfig
++++ b/src/mainboard/lenovo/m720q_m920q/Kconfig
+@@ -9,6 +9,7 @@ config BOARD_SPECIFIC_OPTIONS
+ 	select BOARD_ROMSIZE_KB_24576 if BOARD_LENOVO_M920Q || BOARD_LENOVO_M920X
+ 	select DRIVERS_OPTION_CFR_ENABLED if PAYLOAD_EDK2 && SMMSTORE
+ 	select DRIVERS_UART_8250IO
++	select FSP_PLATFORM_MEMORY_SETTINGS_VERSIONS
+ 	select HAVE_ACPI_RESUME
+ 	select HAVE_ACPI_TABLES
+ 	select HAVE_CMOS_DEFAULT
+diff --git a/src/mainboard/lenovo/m720q_m920q/cmos.default b/src/mainboard/lenovo/m720q_m920q/cmos.default
+index f3330e5070..97cf35c794 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cmos.default
++++ b/src/mainboard/lenovo/m720q_m920q/cmos.default
+@@ -1,3 +1,4 @@
+ boot_option=Fallback
+ debug_level=Debug
+ power_on_after_fail=Disable
++hyper_threading=Enable
+diff --git a/src/mainboard/lenovo/m720q_m920q/romstage.c b/src/mainboard/lenovo/m720q_m920q/romstage.c
+index 75e44df35f..0f34791a51 100644
+--- a/src/mainboard/lenovo/m720q_m920q/romstage.c
++++ b/src/mainboard/lenovo/m720q_m920q/romstage.c
+@@ -1,8 +1,10 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <arch/cpuid.h>
+ #include <console/console.h>
+ #include <device/pci_def.h>
+ #include <device/pci_ops.h>
++#include <fsp/api.h>
+ #include <mainboard/ec.h>
+ #include <option.h>
+ #include <soc/cnl_memcfg_init.h>
+@@ -89,6 +91,31 @@ static uint8_t peg_enable(void)
+ 	return 0;
+ }
+ 
++/*
++ * The mainboard bits of the version of the memory training cache: a cache
++ * made with another processor, or with Hyper-Threading the other way, is
++ * not given back to FSP-M, which trains again. Bit 0 is the option, bits 3:1
++ * a hash of the processor's signature and brand string (a swap of processors
++ * goes unseen once in eight).
++ */
++uint8_t fsp_memory_mainboard_version(void)
++{
++	uint32_t hash = cpuid_eax(1);
++
++	for (uint32_t leaf = 0x80000002; leaf <= 0x80000004; leaf++) {
++		const struct cpuid_result r = cpuid(leaf);
++		hash = (hash ^ r.eax) * 0x01000193;
++		hash = (hash ^ r.ebx) * 0x01000193;
++		hash = (hash ^ r.ecx) * 0x01000193;
++		hash = (hash ^ r.edx) * 0x01000193;
++	}
++	hash ^= hash >> 16;
++	hash ^= hash >> 8;
++	hash ^= hash >> 4;
++
++	return (hash & 0xe) | !!get_uint_option("hyper_threading", CONFIG(FSP_HYPERTHREADING));
++}
++
+ void mainboard_memory_init_params(FSPM_UPD *memupd)
+ {
+ 	cannonlake_memcfg_init(&memupd->FspmConfig, &baseboard_mem_cfg);
+-- 
+2.47.3
+

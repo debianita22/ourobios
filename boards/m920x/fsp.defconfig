@@ -123,4 +123,9 @@ CONFIG_IPXE_EFI_IMAGE="intel.efi"
 CONFIG_EDK2_ENABLE_CSMWRAP=y
 CONFIG_EDK2_CSMWRAP_FILE="m920x/csmwrap.efi"
 # Le stesse opzioni di EDK2 del W541 (patch edk2/0027, edk2/0034)
+# Le option ROM UEFI delle schede, come col firmware Lenovo: una scheda
+# grafica sul riser mostra la schermata del firmware e il setup (con un
+# processore F, senza grafica, e' l'unico schermo); con Secure Boot acceso
+# EDK2 le verifica con le chiavi di db
+CONFIG_EDK2_LOAD_OPTION_ROMS=y
 CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D UFS_ENABLE=FALSE -D UHCI_ENABLE=FALSE -D EBC_ENABLE=FALSE -D EXTRA_FS_DRIVERS=FALSE -D CRYPTO_PROTOCOL_SUPPORT=TRUE"
