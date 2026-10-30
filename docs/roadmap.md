@@ -251,9 +251,14 @@ From the same list of Dasharo options:
   still works.
 - **Render standby (RC6)**: already on, from the FSP-S default, and i915
   uses it; a switch could only turn it off.
-- **PS/2 controller**: the board has none (coreboot keeps the keyboard
-  device of the Super I/O off), so instead the M920x payload no longer
-  carries the PS/2 drivers.
+- **PS/2 drivers in the M920x payload**: the board has no PS/2 port and
+  coreboot keeps the keyboard device of the Super I/O off, so the payload's
+  PS/2 drivers find nothing (a probe of a few ms). Dropping them
+  (`# CONFIG_EDK2_PS2_SUPPORT is not set`, `-D PS2_MOUSE_ENABLE=FALSE`)
+  broke the CI smoke test, build ci-153: `tools/qemu-smoke.py` types on
+  QEMU's PS/2 keyboard, so Esc never reached the setup. Next step: give
+  the smoke test a USB keyboard for payloads without PS/2 (and check that
+  QMP `send-key` reaches it rather than the i8042), then drop them.
 
 ## Openness score
 
