@@ -1,0 +1,124 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 30 Oct 2026 13:31:16 +0100
+Subject: [PATCH] security/lockdown: Give SMM the BIOS Lock option read by
+ ramstage
+
+With BOOTMEDIA_SMM_BWP_RUNTIME_OPTION, enable_smm_bios_protection()
+looked the "bios_lock" option up in the option store also in SMM, at
+the finalize SMI of every boot and at each BIOSWE SMI. In SMM the
+store is read from the memory-mapped flash without cache: on the
+M920x, with 196 KiB of the SMMSTORE in use, about 0.5 s of the boot
+went into the finalize SMI (the same read from Linux, uncached, takes
+355 ms).
+
+Ramstage reads the option when it sets the SMI handler up, as it does
+for the SMM log level, and passes it in struct smm_runtime; SMM takes
+it from there. A change in the setup still takes effect at the next
+boot, as before, and the value in SMRAM cannot be changed by the OS.
+
+TEST=Built lenovo/m920x and w541. Boot time of the M920x before and
+after, BIOS Lock on and off, in the hardware test.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/cpu/x86/smm/smm_module_handler.c |  8 ++++++++
+ src/cpu/x86/smm/smm_module_loader.c  |  5 +++++
+ src/include/cpu/x86/smm.h            |  3 +++
+ src/security/lockdown/lockdown.h     | 15 ++++++++++++---
+ 4 files changed, 28 insertions(+), 3 deletions(-)
+
+diff --git a/src/cpu/x86/smm/smm_module_handler.c b/src/cpu/x86/smm/smm_module_handler.c
+index 4cf0165ff5..1833c0e70c 100644
+--- a/src/cpu/x86/smm/smm_module_handler.c
++++ b/src/cpu/x86/smm/smm_module_handler.c
+@@ -9,6 +9,7 @@
+ #include <cpu/cpu.h>
+ #include <cpu/x86/smm.h>
+ #include <rmodule.h>
++#include <security/lockdown/lockdown.h>
+ #include <types.h>
+ #include <security/intel/stm/SmmStm.h>
+ 
+@@ -61,6 +62,13 @@ int get_console_loglevel(void)
+ }
+ #endif
+ 
++#if CONFIG(BOOTMEDIA_SMM_BWP_RUNTIME_OPTION)
++bool smm_get_bios_protection(void)
++{
++	return smm_runtime.bios_protection;
++}
++#endif
++
+ void smm_get_smmstore_com_buffer(uintptr_t *base, size_t *size)
+ {
+ 	*base = smm_runtime.smmstore_com_buffer_base;
+diff --git a/src/cpu/x86/smm/smm_module_loader.c b/src/cpu/x86/smm/smm_module_loader.c
+index cd5017ca6a..43d3ef4457 100644
+--- a/src/cpu/x86/smm/smm_module_loader.c
++++ b/src/cpu/x86/smm/smm_module_loader.c
+@@ -11,6 +11,7 @@
+ #include <device/device.h>
+ #include <device/mmio.h>
+ #include <rmodule.h>
++#include <security/lockdown/lockdown.h>
+ #include <smmstore.h>
+ #include <stdio.h>
+ #include <string.h>
+@@ -349,6 +350,10 @@ static void setup_smihandler_params(struct smm_runtime *mod_params,
+ 	else
+ 		mod_params->smm_log_level = 0;
+ 
++#if CONFIG(BOOTMEDIA_SMM_BWP_RUNTIME_OPTION)
++	mod_params->bios_protection = enable_smm_bios_protection();
++#endif
++
+ 	if (CONFIG(SMM_PCI_RESOURCE_STORE))
+ 		smm_pci_resource_store_init(mod_params);
+ 
+diff --git a/src/include/cpu/x86/smm.h b/src/include/cpu/x86/smm.h
+index 6b0e78153a..a65034d7fa 100644
+--- a/src/include/cpu/x86/smm.h
++++ b/src/include/cpu/x86/smm.h
+@@ -97,6 +97,9 @@ struct smm_runtime {
+ #endif
+ 	uintptr_t save_state_top[CONFIG_MAX_CPUS];
+ 	int smm_log_level;
++#if CONFIG(BOOTMEDIA_SMM_BWP_RUNTIME_OPTION)
++	u8 bios_protection;
++#endif
+ 	uintptr_t smmstore_com_buffer_base;
+ 	size_t smmstore_com_buffer_size;
+ #if CONFIG(SMM_OPAL_S3_SCRATCH_CBMEM)
+diff --git a/src/security/lockdown/lockdown.h b/src/security/lockdown/lockdown.h
+index b81e636c32..2755327b1b 100644
+--- a/src/security/lockdown/lockdown.h
++++ b/src/security/lockdown/lockdown.h
+@@ -6,11 +6,20 @@
+ #include <option.h>
+ #include <types.h>
+ 
++/* The value of the "bios_lock" option that ramstage gave SMM (smm_runtime) */
++bool smm_get_bios_protection(void);
++
+ static inline bool enable_smm_bios_protection(void)
+ {
+-	if (CONFIG(BOOTMEDIA_SMM_BWP_RUNTIME_OPTION))
+-		return get_uint_option("bios_lock", CONFIG(BOOTMEDIA_SMM_BWP));
+-	return CONFIG(BOOTMEDIA_SMM_BWP);
++	if (!CONFIG(BOOTMEDIA_SMM_BWP_RUNTIME_OPTION))
++		return CONFIG(BOOTMEDIA_SMM_BWP);
++	/*
++	 * SMM would read the option store from the flash without cache: a
++	 * few hundred ms for each lookup. Ramstage reads it for SMM.
++	 */
++	if (ENV_SMM)
++		return smm_get_bios_protection();
++	return get_uint_option("bios_lock", CONFIG(BOOTMEDIA_SMM_BWP));
+ }
+ 
+ #endif /* SECURITY_LOCKDOWN_LOCKDOWN_H */
+-- 
+2.47.3
+
