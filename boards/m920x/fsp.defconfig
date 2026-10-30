@@ -64,6 +64,12 @@ CONFIG_ELOG_GSMI=y
 CONFIG_CMOS_POST=y
 CONFIG_CMOS_POST_OFFSET=0x70
 
+# Console: la seriale (COM1 del Super I/O, il connettore opzionale) dal
+# livello INFO, la console CBMEM (sudo cbmem -1) sempre fino a DEBUG. A
+# 115200 baud le righe DEBUG costavano circa 4 s a ogni avvio; per vederle
+# anche sulla seriale: menu, Console -> Console Log Level.
+CONFIG_DEFAULT_CONSOLE_LOGLEVEL_6=y
+
 # I dati di questa macchina dalla VPD (RO_VPD, vuota nelle release, si
 # scrive con tools/vpd.py): numero di serie, UUID, Machine Type Model, SKU
 # e famiglia nelle tabelle SMBIOS e nel menu, come col BIOS Lenovo.
