@@ -30,6 +30,17 @@ BOARD_CPUIDS=(906ea 906eb 906ec 906ed)
 # i file CBFS che ogni slot RW deve avere oltre a stage, payload, DSDT,
 # VBT, microcode e config (verify-rom.sh): FSP-M e FSP-S
 BOARD_SLOT_FILES=(fspm.bin fsps.bin)
+# le regioni che scrive la capsula (tools/build.sh, CAPSULE_REGIONS sul
+# W541): solo i due slot, il payload scrive quello che non gira. Il training
+# della RAM resta, e non si rifa' a ogni aggiornamento (21-36 s): coreboot lo
+# rifa' quando cambia la sua versione, la revisione di FSP-M dello slot con
+# il byte basso (il numero di build) al posto di processore e
+# Hyper-Threading (patch 0173). Non la cambiano le UPD di FSP-M che mette
+# coreboot (soc/intel/cannonlake/romstage/fsp_params.c, romstage.c della
+# board): una release che le cambia alza fsp_memory_soc_version() (i bit
+# 3:0, liberi), o rimette qui RW_MRC_CACHE. Dalla v1.4.0-rc4; le capsule
+# rc1-rc3 scrivono anche RW_MRC_CACHE (tools/update.py)
+BOARD_CAPSULE_REGIONS=(RW_SECTION_A RW_SECTION_B)
 BOARD_GBE=boards/m920x/blobs/gbe.bin
 BOARD_VBIOS=""
 BOARD_OPVK=""

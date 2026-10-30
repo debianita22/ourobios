@@ -59,7 +59,8 @@
 #                  la prova; quattro ROM per q35 con vboot a due slot (A, B,
 #                  C e D, che ha anche lo schermo per il setup), costruite in
 #                  un worktree dell'albero con patches/test/q35-update-test.patch;
-#                  le loro capsule, fatte come quelle delle release. Le ROM del
+#                  le loro capsule, fatte come quelle delle release, e una
+#                  di B senza RW_MRC_CACHE, come quelle del M920x. Le ROM del
 #                  W541 non c'entrano. Seriale in WORK/update-test/out
 #   keys           controlla le chiavi di firma dell'ambiente (CAPSULE_SIGNING_KEY,
 #                  VBOOT_SIGNING_KEY) senza build: con --release devono esserci
@@ -104,8 +105,9 @@
 # le altre (boards/<board>/board.sh, BOARD_FLAVOUR_PREFIX).
 #
 # La capsula (w541-coreboot-<versione>-<variante>.cap): la ROM con il
-# manifest RMAP delle regioni che il firmware riscrive (CAPSULE_REGIONS: i
-# due slot, di cui il payload scrive solo quello che non gira),
+# manifest RMAP delle regioni che il firmware riscrive (BOARD_CAPSULE_REGIONS
+# della board, o CAPSULE_REGIONS: i due slot, di cui il payload scrive solo
+# quello che non gira, e sul W541 il training della RAM),
 # firmata con GenerateCapsule di EDK2. La chiave privata arriva solo
 # dall'ambiente, CAPSULE_SIGNING_KEY (PEM; nella CI il secret omonimo), e
 # deve essere quella del certificato keys/capsule-signing.pem, di cui le ROM
@@ -187,11 +189,15 @@ CSMWRAP_NAME=csmwrap.efi
 # boards/<board>/board.sh: i defconfig li cercano li'. Il boot splash no:
 # nomina la macchina, e ogni board ha il suo in BOARD_TREE_FILES.
 COMMON_TREE_FILES=(keys/capsule-signing.pem)
-# Le regioni che una capsula riscrive: il training della RAM, che il codice
-# nuovo rifa' al primo avvio, e lo slot RW di vboot che non gira (la capsula
-# li porta tutti e due, il payload sceglie: edk2 0015). Le altre restano:
-# la regione RO, variabili UEFI (SMMSTORE), VPD, registro degli eventi,
-# dati di vboot (li aggiorna il payload), IFD, GbE, ME.
+# Le regioni che una capsula riscrive, il default delle board senza
+# BOARD_CAPSULE_REGIONS (W541) e di update-test: il training della RAM, che
+# il codice nuovo rifa' al primo avvio, e lo slot RW di vboot che non gira
+# (la capsula li porta tutti e due, il payload sceglie: edk2 0015). Le altre
+# restano: la regione RO, variabili UEFI (SMMSTORE), VPD, registro degli
+# eventi, dati di vboot (li aggiorna il payload), IFD, GbE, ME. Sul M920x il
+# training resta (BOARD_CAPSULE_REGIONS: quando la sua versione basta, e
+# quando no, in boards/m920x/board.sh). tools/update.py ha le stesse liste
+# (REGIONS, CURRENT_REGIONS: ci-check.sh)
 CAPSULE_REGIONS=(RW_MRC_CACHE RW_SECTION_A RW_SECTION_B)
 CAPSULE_CERT=keys/capsule-signing.pem
 # i metadati del remote fwupd, nella release mrc (configs/fwupd/ourobios.conf)
@@ -322,13 +328,14 @@ load_board() {
 	unset BOARD_NAME BOARD_VARIANTS BOARD_FLAVOUR_PREFIX BOARD_SINCE BOARD_TREE BOARD_TREE_FILES \
 		BOARD_SUMS BOARD_ROM_SIZE BOARD_CHIPS BOARD_BOOT_CHIP BOARD_INTEL_SIZE \
 		BOARD_REFERENCE BOARD_RO_INTERFACE BOARD_CPUIDS BOARD_SMOKE_SIZES \
-		BOARD_SLOT_FILES BOARD_GBE BOARD_VBIOS BOARD_OPVK BOARD_CONFIG_WANT
+		BOARD_SLOT_FILES BOARD_GBE BOARD_VBIOS BOARD_OPVK BOARD_CONFIG_WANT BOARD_CAPSULE_REGIONS
 	unset -f board_defconfig
 	# shellcheck source=/dev/null
 	. "${f}"
 	BOARD="$1"
 	: "${BOARD_FLAVOUR_PREFIX:=}"
 	if [ -z "${BOARD_SMOKE_SIZES+x}" ]; then BOARD_SMOKE_SIZES=(1920x1080); fi
+	if [ -z "${BOARD_CAPSULE_REGIONS+x}" ]; then BOARD_CAPSULE_REGIONS=("${CAPSULE_REGIONS[@]}"); fi
 }
 # La board $1, e VARIANTS: le varianti da costruire (quelle di --variant
 # che la board ha, o tutte)
@@ -1071,13 +1078,15 @@ sys.exit(0 if der and pcd[:4] == len(der).to_bytes(4, "big") and pcd[4:4 + len(d
 }
 
 # La capsula della ROM $1 in $2, come quelle delle release: il manifest RMAP
-# delle CAPSULE_REGIONS (le regioni che il payload puo' riscrivere) e la
-# firma PKCS#7 di GenerateCapsule di EDK2. $3 GUID, $4 versione, $5 minima,
-# $6 la chiave privata con il suo certificato in un file, $7 il certificato.
-# Il file intermedio sta accanto alla chiave. La usa anche update-test
+# delle regioni che il payload puo' riscrivere ($8 e seguenti) e la firma
+# PKCS#7 di GenerateCapsule di EDK2. $3 GUID, $4 versione, $5 minima, $6 la
+# chiave privata con il suo certificato in un file, $7 il certificato. Il
+# file intermedio sta accanto alla chiave. La usa anche update-test
 generate_capsule() {
 	local rom="$1" out="$2" guid="$3" fwv="$4" lsv="$5" signer="$6" cert="$7" r image rc=0 regions=()
-	for r in "${CAPSULE_REGIONS[@]}"; do regions+=(-r "${r}"); done
+	shift 7
+	[ $# -gt 0 ] || return 1
+	for r in "$@"; do regions+=(-r "${r}"); done
 	image="$(dirname "${signer}")/image.bin"
 	python3 "${EDK2_DIR}/UefiPayloadPkg/Tools/AppendRmapManifest.py" -o "${image}" \
 		"${regions[@]}" "${rom}" > /dev/null || return 1
@@ -1115,7 +1124,8 @@ make_capsule() {
 			|| die "CAPSULE_SIGNING_KEY non e' la chiave di ${CAPSULE_CERT}"
 		cat "${tmp}/key.pem" "${O}/${CAPSULE_CERT}" > "${tmp}/signer.pem"
 		generate_capsule "${n}.rom" "${n}.cap" "${guid}" "${fwv}" "${lsv}" "${tmp}/signer.pem" \
-			"${O}/${CAPSULE_CERT}" || die "${v}: capsula non fatta (AppendRmapManifest.py o GenerateCapsule)"
+			"${O}/${CAPSULE_CERT}" "${BOARD_CAPSULE_REGIONS[@]}" \
+			|| die "${v}: capsula non fatta (AppendRmapManifest.py o GenerateCapsule)"
 		# il pacchetto fwupd: la capsula, il metainfo e la loro firma
 		mkdir "${tmp}/cab"
 		cp "${n}.cap" "${tmp}/cab/firmware.bin"
@@ -1713,8 +1723,8 @@ cmd_update_test() {
 	say "update-test: QEMU"
 	for rom in "${UPDATE_TEST_ROMS[@]}"; do caps+=("${ut}/${rom%% *}.cap"); done
 	local rc=0 last
-	python3 "${O}/tools/qemu-update.py" --out "${ut}/out" --lock-test "${ut}/slot-lock-test.efi" "${caps[@]}" \
-		2>&1 | tee "${ut}/qemu-update.log" || rc=$?
+	python3 "${O}/tools/qemu-update.py" --out "${ut}/out" --lock-test "${ut}/slot-lock-test.efi" \
+		--keep-cache "${ut}/B-cache.cap" "${caps[@]}" 2>&1 | tee "${ut}/qemu-update.log" || rc=$?
 	if [ "${rc}" != 0 ]; then
 		# nella CI il log del job non si legge sempre: l'esito di ogni passo,
 		# il motivo e la fine della seriale dell'ultimo avvio in un'annotazione
@@ -1725,8 +1735,8 @@ cmd_update_test() {
 	fi
 }
 
-# La chiave di prova, il payload, le ROM A, B, C e D e le loro capsule in $1;
-# il worktree in $2. Il nome di ogni ROM ha versione e variante, come quello
+# La chiave di prova, il payload, le ROM A, B, C e D e le loro capsule in $1,
+# con B-cache.cap (B senza RW_MRC_CACHE nel manifest); il worktree in $2. Il nome di ogni ROM ha versione e variante, come quello
 # delle release: il setup le legge dallo slot (patch edk2/0020)
 update_test_build() {
 	local ut="$1" ab="$2" b d fd rom n ver
@@ -1835,8 +1845,15 @@ update_test_build() {
 	for rom in "${UPDATE_TEST_ROMS[@]}"; do
 		read -r n ver <<< "${rom}"
 		generate_capsule "${ab}/build-${n}/coreboot.rom" "${ut}/${n}.cap" "${UPDATE_TEST_GUID}" "${ver}" \
-			"${UPDATE_TEST_LSV}" "${ut}/signer.pem" "${ut}/cert.pem" || die "update-test: capsula ${n} non fatta"
+			"${UPDATE_TEST_LSV}" "${ut}/signer.pem" "${ut}/cert.pem" "${CAPSULE_REGIONS[@]}" \
+			|| die "update-test: capsula ${n} non fatta"
 	done
+	# la capsula di B con i soli due slot, come BOARD_CAPSULE_REGIONS del
+	# M920x: il payload non deve toccare RW_MRC_CACHE
+	read -r n ver <<< "${UPDATE_TEST_ROMS[1]}"
+	generate_capsule "${ab}/build-${n}/coreboot.rom" "${ut}/${n}-cache.cap" "${UPDATE_TEST_GUID}" "${ver}" \
+		"${UPDATE_TEST_LSV}" "${ut}/signer.pem" "${ut}/cert.pem" RW_SECTION_A RW_SECTION_B \
+		|| die "update-test: capsula ${n}-cache non fatta"
 }
 
 # I comandi di una board (config, roms, repro, menu, smoke) per ogni board
