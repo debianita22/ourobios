@@ -67,6 +67,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   of an M920x from the dump of its Lenovo firmware (the `DmiVar`
   variables of the AMI NVRAM), the UUID of the factory included, which
   is not on the label ([docs/m920x.md](docs/m920x.md#serial-number-and-machine-type-vpd)).
+- From rc3, the DMI and SATA Power Optimizers of the PCH on the M920x, off by
+  default in the Coffee Lake FSP-S and never set on Cannon Lake: with LTR on
+  every link (0142), the package still stopped at PC3 at idle (0157-0158).
 
 ## v1.3.10
 
