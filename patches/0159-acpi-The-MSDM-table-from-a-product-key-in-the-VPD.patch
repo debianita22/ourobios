@@ -19,11 +19,11 @@ hardware test.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- src/acpi/acpi.c | 63 +++++++++++++++++++++++++++++++++++++++++++++----
- 1 file changed, 59 insertions(+), 4 deletions(-)
+ src/acpi/acpi.c | 62 +++++++++++++++++++++++++++++++++++++++++++++----
+ 1 file changed, 58 insertions(+), 4 deletions(-)
 
 diff --git a/src/acpi/acpi.c b/src/acpi/acpi.c
-index 155105b96d..31acfd507d 100644
+index 155105b96d..5288b1364d 100644
 --- a/src/acpi/acpi.c
 +++ b/src/acpi/acpi.c
 @@ -30,6 +30,9 @@
@@ -36,7 +36,7 @@ index 155105b96d..31acfd507d 100644
  #if CONFIG(AMD_CRB_FTPM)
  #include <drivers/amd/ftpm/tpm.h>
  #elif CONFIG(AMPERE_CRB_FTPM)
-@@ -1484,6 +1487,54 @@ static void acpi_create_dsdt(acpi_header_t *header, void *dsdt_file_arg)
+@@ -1484,6 +1487,53 @@ static void acpi_create_dsdt(acpi_header_t *header, void *dsdt_file_arg)
  	}
  }
  
@@ -56,11 +56,10 @@ index 155105b96d..31acfd507d 100644
 +	char data[29];
 +} __packed;
 +
-+static struct acpi_msdm msdm_from_vpd;
-+
 +static acpi_header_t *acpi_msdm_from_vpd(void)
 +{
 +#if CONFIG(VPD)
++	static struct acpi_msdm msdm_from_vpd;
 +	char key[sizeof(msdm_from_vpd.data) + 2];
 +	acpi_header_t *header = &msdm_from_vpd.header;
 +
@@ -91,7 +90,7 @@ index 155105b96d..31acfd507d 100644
  static void acpi_create_slic(acpi_header_t *header, void *slic_file_arg)
  {
  	acpi_header_t *slic_file = *(acpi_header_t **)slic_file_arg;
-@@ -1541,6 +1592,7 @@ static unsigned long write_acpi_tables(const unsigned long start)
+@@ -1541,6 +1591,7 @@ static unsigned long write_acpi_tables(const unsigned long start)
  	acpi_xsdt_t *xsdt = NULL;
  	acpi_facs_t *facs = NULL;
  	acpi_header_t *slic_file;
@@ -99,7 +98,7 @@ index 155105b96d..31acfd507d 100644
  	acpi_header_t *ssdt = NULL;
  	acpi_header_t *dsdt_file;
  	struct device *dev;
-@@ -1555,7 +1607,7 @@ static unsigned long write_acpi_tables(const unsigned long start)
+@@ -1555,7 +1606,7 @@ static unsigned long write_acpi_tables(const unsigned long start)
  	} tables[] = {
  		{ acpi_create_dsdt, &dsdt_file, sizeof(acpi_header_t) },
  		{ acpi_create_fadt, &facs, sizeof(acpi_fadt_t) },
@@ -108,7 +107,7 @@ index 155105b96d..31acfd507d 100644
  		{ acpi_create_ssdt_generator, NULL, sizeof(acpi_header_t) },
  		{ acpi_create_mcfg, NULL, sizeof(acpi_mcfg_t) },
  		{ acpi_create_tcpa, NULL, sizeof(acpi_tcpa_t) },
-@@ -1684,9 +1736,12 @@ static unsigned long write_acpi_tables(const unsigned long start)
+@@ -1684,9 +1735,12 @@ static unsigned long write_acpi_tables(const unsigned long start)
  		slic_file = 0;
  	}
  
