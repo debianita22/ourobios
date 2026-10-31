@@ -1,0 +1,120 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sat, 31 Oct 2026 02:37:45 +0100
+Subject: [PATCH] mb/lenovo/haswell: Boot options for the payload
+
+The ouroBIOS EDK2 payload reads two boot switches of the setup for
+both boards, as UINT32 variables of the coreboot options GUID, and a
+missing variable counts as on: today the W541 always gets the default.
+They go into General > Boot with iPXE and CSMWrap, as on the M920x.
+
+- usb_boot, "Boot from USB drives", default on: off, the boot manager
+  no longer lists the USB drives of the laptop and the dock. The help
+  says how they can still boot (entries made by an OS, the UEFI Shell
+  and its startup.nsh, CSMWrap, Boot From File, and PlatformRecovery
+  with \EFI\BOOT\BOOTX64.EFI), that a capsule on a USB drive still
+  installs, and that it is not a security setting.
+- boot_menu_prompt, "Boot menu prompt", default on: off, no "Press
+  ESC" line on the logo, and Esc still opens the boot menu, from the
+  internal keyboard too.
+
+The help names the equivalents as in the ThinkPad setup (USB UEFI BIOS
+Support, Option Key Display): the names come from the T540p/W540 user
+guide, not from a W541 one. The Boot form, hidden in builds without
+iPXE and CSMWrap, now always shows on the W541.
+
+The option ROM setting of the M920x is not added: EDK2_LOAD_OPTION_ROMS
+stays off on the W541, so the payload has no PciPlatformDxe to read it.
+The VBIOS of the NVIDIA GPU in CBFS is a legacy image only, for the
+ACPI _ROM, and the only other card that could bring a ROM is an
+ExpressCard, whose unsigned code would then run in the firmware with
+Secure Boot off by default.
+
+The T440p shares the menu and keeps it as it is: both options are
+suppressed there, and the form keeps its condition.
+
+TEST=Host syntax check of cfr.c with the W541 mrc config and a T440p
+one; tools/cfr-dump.sh for mrc and nri: the menu is valid, with both
+options in Boot, and every help line under 60 columns; the CFR record
+is 23568 bytes, against a coreboot table of 32 KiB. The payload code
+(edk2/0037) has not run on a W541 yet. For the W541 hardware test: the
+first boot with no variable lists USB drives and shows the prompt;
+off, a USB stick in a laptop and in a dock port leaves the boot order
+and the boot menu while the internal drives, the Shell, iPXE and
+CSMWrap stay, and Esc on the internal keyboard still opens the boot
+menu without the prompt.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/haswell/cfr.c | 43 +++++++++++++++++++++++++++---
+ 1 file changed, 40 insertions(+), 3 deletions(-)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 4395304b8a..c48f540a87 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -226,7 +226,8 @@ static const struct sm_object general_about = SM_DECLARE_FORM({
+ 
+ /*
+  * The boot options of the payload: its boot manager reads them (EDK2,
+- * PlatformBootManagerLib), coreboot does not.
++ * PlatformBootManagerLib), coreboot does not. A missing variable counts as
++ * on there.
+  */
+ static const struct sm_object ipxe_boot = SM_DECLARE_BOOL({
+ 	.flags		= CONFIG(EDK2_ENABLE_IPXE) ? 0 : CFR_OPTFLAG_SUPPRESS,
+@@ -250,13 +251,49 @@ static const struct sm_object csmwrap_boot = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ });
+ 
++/* W541: the T440p keeps its menu */
++static const struct sm_object usb_boot = SM_DECLARE_BOOL({
++	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "usb_boot",
++	.ui_name	= "Boot from USB drives",
++	.ui_helptext	= "The USB drives (laptop and dock ports) in the boot order\n"
++			  "and the boot menu.\n"
++			  "Off: the firmware does not list them, but they can still\n"
++			  "boot: from the entries that an OS made, from the UEFI\n"
++			  "Shell and its startup.nsh, from CSMWrap, from Boot From\n"
++			  "File in the setup's Boot Maintenance Manager, and through\n"
++			  "\\EFI\\BOOT\\BOOTX64.EFI, which the firmware tries on every\n"
++			  "drive once no boot entry works (PlatformRecovery). An\n"
++			  "update capsule on a USB drive still installs.\n"
++			  "Not a security setting: with Secure Boot on, these paths\n"
++			  "start only signed programs, and the default keys accept\n"
++			  "those signed by Microsoft (Windows, shim).\n"
++			  "Default: on, as USB UEFI BIOS Support in the ThinkPad\n"
++			  "setup.",
++	.default_value	= true,
++});
++
++static const struct sm_object boot_menu_prompt = SM_DECLARE_BOOL({
++	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "boot_menu_prompt",
++	.ui_name	= "Boot menu prompt",
++	.ui_helptext	= "\"Press ESC for Boot Options/Settings\" on the logo at\n"
++			  "startup. Off: the line is not shown, and Esc still opens\n"
++			  "the boot menu, from the keyboard of the laptop too.\n"
++			  "Default: on, as Option Key Display in the ThinkPad setup.",
++	.default_value	= true,
++});
++
++/* Always shown on the W541: usb_boot and boot_menu_prompt are in every EDK2 build */
+ static const struct sm_object general_boot = SM_DECLARE_FORM({
+-	.flags		= (CONFIG(EDK2_ENABLE_IPXE) || CONFIG(EDK2_ENABLE_CSMWRAP))
+-			  ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.flags		= (CONFIG(BOARD_LENOVO_THINKPAD_W541) || CONFIG(EDK2_ENABLE_IPXE) ||
++			   CONFIG(EDK2_ENABLE_CSMWRAP)) ? 0 : CFR_OPTFLAG_SUPPRESS,
+ 	.ui_name	= "Boot",
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&ipxe_boot,
+ 		&csmwrap_boot,
++		&usb_boot,
++		&boot_menu_prompt,
+ 		NULL
+ 	},
+ });
+-- 
+2.47.3
+

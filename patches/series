@@ -173,3 +173,14 @@
 0177-mb-lenovo-m720q_m920q-A-TCC-offset-option.patch
 0178-mb-lenovo-m720q_m920q-Boot-options-for-the-payload.patch
 0179-drivers-smmstore-Optionally-keep-the-MRC-cache-on-a-.patch
+0180-northbridge-intel-haswell-Reset-the-setup-options-on.patch
+0181-mb-lenovo-haswell-Show-the-ME-state-in-setup-and-SMB.patch
+0182-mb-lenovo-haswell-Boot-options-for-the-payload.patch
+0183-ec-lenovo-h8-Power-on-with-AC-keyboard-beep-USB-char.patch
+0184-mb-lenovo-haswell-Mark-the-W541-hot-plug-ports-untru.patch
+0185-Haswell-NRI-Fix-logical-to-physical-rank-mapping.patch
+0186-northbridge-intel-haswell-Retrain-after-the-rank-map.patch
+0187-northbridge-intel-haswell-Name-the-DIMMs-by-their-sl.patch
+0188-northbridge-intel-haswell-Refuse-DIMMs-with-more-tha.patch
+0189-northbridge-intel-haswell-Timestamps-around-the-nati.patch
+0190-mb-lenovo-haswell-Handle-the-EC-events-the-stock-fir.patch

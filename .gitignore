@@ -3,3 +3,5 @@
 # tools/build.sh: le ROM
 /dist/
 __pycache__/
+# tools/cfr-dump.sh senza -o: il record CFR, nella cartella in cui si lancia
+/cfr.bin

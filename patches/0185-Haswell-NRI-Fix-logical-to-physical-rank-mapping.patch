@@ -1,0 +1,85 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Angel Pons <th3fanbus@gmail.com>
+Date: Sun, 25 Oct 2026 09:15:57 +0100
+Subject: [PATCH] Haswell NRI: Fix logical-to-physical rank mapping
+
+If the REUT sequence base address register is zero, the code would
+incorrectly assume that we should use 1:1 rank mapping.
+
+ouroBIOS backport of patch set 4 of
+https://review.coreboot.org/c/coreboot/+/96694 (Code-Review +2 and
+Verified +1, not merged on 2026-10-31), applied unchanged with git am
+(the hunks land 58 lines earlier than upstream's). Drop it when the
+base includes it; it touches change_margin.c as the merged 96647 does,
+so it needs a rebase at the next base bump.
+
+Why here: the 1D margin training (train_1d_margins.c) selects the rank
+under test as logical rank 0 with select_reut_ranks(ctrl, channel,
+BIT(rank)) and loads its register file with REG_FILE_USE_START and rank
+0. The REUT start address of logical rank 0 is 0, so the old code took
+physical rank 0: the read timing, write timing and read voltage
+centering of ranks 1-3 of each channel ran with the register file of
+rank 0. The W541 of docs/raminit.md has two dual-rank SO-DIMMs per
+channel, four ranks each. The read MPR training passes the rank itself
+and gets the same rank before and after the change.
+
+The training results change, so a slot with this patch must train
+afresh: the fast boot checks compare only the DIMMs and the CPU, and
+W541 capsules and update.py other-slot empty RW_MRC_CACHE, but a vboot
+fallback to the other slot keeps it. The next ouroBIOS commit bumps the
+revision of the saved data instead of touching this patch.
+
+TEST=git am on w541nri; host syntax check with -Werror of
+change_margin.c, train_1d_margins.c and train_read_mpr.c with the config
+of the ci-150 W541 nri build; checkpatch finds nothing in the code.
+Still to test on the W541 (nri, RW_MRC_CACHE empty): a cold boot trains
+and passes the memory test, ddr-report compared with the mrc dump shows
+the per-rank centering of ranks 1-3, then a fast boot, S3 resume and 30
+minutes of stress-ng --vm 4 --verify.
+
+Change-Id: I4a1c42891cc6f20451a2559eb90eea00c524a06a
+Signed-off-by: Angel Pons <th3fanbus@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../intel/haswell/native_raminit/change_margin.c     | 12 +++++++-----
+ 1 file changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/change_margin.c b/src/northbridge/intel/haswell/native_raminit/change_margin.c
+index 33af5d05c1..32ba48a4a4 100644
+--- a/src/northbridge/intel/haswell/native_raminit/change_margin.c
++++ b/src/northbridge/intel/haswell/native_raminit/change_margin.c
+@@ -122,16 +122,15 @@ void download_regfile(
+ 	const bool read_rf_rd,
+ 	const bool read_rf_wr)
+ {
+-	union reut_seq_base_addr_reg reut_seq_base_addr;
++	uint16_t seq_reg = 0;
+ 	switch (regfile) {
+ 	case REG_FILE_USE_START:
+-		reut_seq_base_addr.raw = mchbar_read64(REUT_ch_SEQ_ADDR_START(channel));
++		seq_reg = REUT_ch_SEQ_ADDR_START(channel);
+ 		break;
+ 	case REG_FILE_USE_CURRENT:
+-		reut_seq_base_addr.raw = mchbar_read64(REUT_ch_SEQ_ADDR_CURRENT(channel));
++		seq_reg = REUT_ch_SEQ_ADDR_CURRENT(channel);
+ 		break;
+ 	case REG_FILE_USE_RANK:
+-		reut_seq_base_addr.raw = 0;
+ 		if (rank >= NUM_SLOTRANKS)
+ 			die("%s: bad rank %u\n", __func__, rank);
+ 		break;
+@@ -139,7 +138,10 @@ void download_regfile(
+ 		die("%s: Invalid regfile param %u\n", __func__, regfile);
+ 	}
+ 	uint8_t phys_rank = rank;
+-	if (reut_seq_base_addr.raw != 0) {
++	if (seq_reg != 0) {
++		const union reut_seq_base_addr_reg reut_seq_base_addr = {
++			.raw = mchbar_read64(seq_reg),
++		};
+ 		/* Map REUT logical rank to physical rank */
+ 		const uint32_t log_to_phys = mchbar_read32(REUT_ch_RANK_LOG_TO_PHYS(channel));
+ 		phys_rank = log_to_phys >> (reut_seq_base_addr.rank_addr * 4) & 0x3;
+-- 
+2.47.3
+

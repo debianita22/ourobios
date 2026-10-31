@@ -31,8 +31,13 @@
 #      build: anche quelle degli header, che il compilatore non segnala),
 #      tranne quelle di -x NOME (anche con * e ?, ripetibile), che la
 #      board lascia fuori apposta.
-# Esce con 1 se il blob non e' valido o non corrisponde, o un'opzione manca
-# o e' ripetuta, con gli avvisi
+#   5. il record non supera i 28 KiB: la tabella di coreboot ne ha 32 in
+#      tutto (COREBOOT_TABLE_SIZE in src/arch/x86/include/arch/cbconfig.h)
+#      e write_tables() non si ferma se non ci sta, scrive oltre la sua
+#      voce di CBMEM e lo dice solo dopo; gli altri record ne prendono
+#      circa 1,6 (M920x) e le stringhe dei callback crescono sulla macchina.
+# Esce con 1 se il blob non e' valido o non corrisponde, un'opzione manca
+# o e' ripetuta o il record e' troppo grande, con gli avvisi
 # (dipendenze senza oggetto, form visibili vuote, piu' di otto categorie...)
 # sullo stderr. -q non stampa l'albero. -c controlla e stampa soltanto un
 # record gia' fatto (anche estratto da una ROM: cbfstool ... extract -n
@@ -107,15 +112,17 @@ if [ "${#srcs[@]}" = 0 ]; then
 fi
 
 # Le opzioni dell'H8 dal devicetree della build (default: quelle del W541)
-h8=(-DCFR_DUMP_H8_THINKLIGHT=0 -DCFR_DUMP_H8_KB_BACKLIGHT=1 -DCFR_DUMP_H8_UWB=0 -DCFR_DUMP_H8_PM_BEEPS=0)
+h8=(-DCFR_DUMP_H8_THINKLIGHT=0 -DCFR_DUMP_H8_KB_BACKLIGHT=1 -DCFR_DUMP_H8_UWB=0 -DCFR_DUMP_H8_PM_BEEPS=0
+	-DCFR_DUMP_H8_POWER_ON_AC=1 -DCFR_DUMP_H8_KBD_BEEP=1 -DCFR_DUMP_H8_UAO_BATTERY=1)
 static_c="$(find "${build}/mainboard" -name static.c 2>/dev/null | head -n 1 || true)"
 if [ -n "${static_c}" ]; then
 	h8conf="$(sed -n '/struct ec_lenovo_h8_config ec_lenovo_h8_info_/,/^};/p' "${static_c}")"
 	if [ -n "${h8conf}" ]; then
 		h8=()
-		for f in thinklight:THINKLIGHT keyboard_backlight:KB_BACKLIGHT uwb:UWB \
-				power_management_beeps:PM_BEEPS; do
-			v="$(sed -n "s/^\s*\.has_${f%%:*} = \(.*\),$/\1/p" <<< "${h8conf}")"
+		for f in has_thinklight:THINKLIGHT has_keyboard_backlight:KB_BACKLIGHT has_uwb:UWB \
+				has_power_management_beeps:PM_BEEPS has_power_on_ac_attach:POWER_ON_AC \
+				has_keyboard_beep_option:KBD_BEEP uao_battery_in_config2:UAO_BATTERY; do
+			v="$(sed -n "s/^\s*\.${f%%:*} = \(.*\),$/\1/p" <<< "${h8conf}")"
 			h8+=("-DCFR_DUMP_H8_${f#*:}=${v:-0}")
 		done
 	fi
@@ -452,6 +459,13 @@ for w in warnings:
 # (due oggetti con lo stesso nome sono la stessa variabile, mostrata due
 # volte), e ogni opzione dichiarata dai sorgenti compilati nel menu
 errors = []
+# Il margine nella tabella di coreboot (32 KiB, COREBOOT_TABLE_SIZE): vedi
+# il punto 5 in cima
+BUDGET = 28 << 10
+if len(data) > BUDGET:
+    errors.append("record di %d byte, oltre %d: con gli altri record la tabella di coreboot "
+                  "(0x8000 byte) puo' non bastare, e write_tables() scrive oltre la voce di CBMEM"
+                  % (len(data), BUDGET))
 count = collections.Counter(n["name"] for n, _ in walk(forms) if n["name"] != "-")
 for name, c in sorted(count.items()):
     if c > 1:
@@ -464,13 +478,13 @@ if declared != "-":
 for e in errors:
     print("cfr-dump: %s" % e, file=sys.stderr)
 if errors:
-    sys.exit("cfr-dump: %d errori nelle opzioni del menu" % len(errors))
+    sys.exit("cfr-dump: %d errori nel menu" % len(errors))
 if ref == "-":
-    sys.exit(print("cfr-dump: %s valido (%d oggetti)" % (path, len(listing))))
+    sys.exit(print("cfr-dump: %s valido (%d oggetti, %d byte)" % (path, len(listing), len(data))))
 expected = open(ref).readlines()
 if listing != expected:
     sys.stderr.writelines(difflib.unified_diff(expected, listing, "%s (sm_root[])" % mbcfr, path))
     sys.exit("cfr-dump: il blob non corrisponde alle strutture del menu (diff qui sopra)")
-print("cfr-dump: %s valido, uguale a sm_root[] di %s e alle form generiche (%d oggetti)"
-      % (path, mbcfr, len(listing)))
+print("cfr-dump: %s valido, uguale a sm_root[] di %s e alle form generiche (%d oggetti, %d byte)"
+      % (path, mbcfr, len(listing), len(data)))
 PY

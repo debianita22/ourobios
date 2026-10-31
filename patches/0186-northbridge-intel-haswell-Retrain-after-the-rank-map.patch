@@ -1,0 +1,63 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sat, 31 Oct 2026 04:18:59 +0100
+Subject: [PATCH] northbridge/intel/haswell: Retrain after the rank mapping fix
+
+The rank mapping fix (CB:96694, the previous commit) changes the 1D
+margin training of ranks 1-3, which ran with the register file of rank
+0 before it. A training saved by the old code in RW_MRC_CACHE still
+passes every fast boot check, which compare only the DIMMs and the CPU
+(restore_non_training()), so the fixed code would boot on the old
+margins without ever training them again.
+
+Today the W541 empties RW_MRC_CACHE wherever it changes the code: a
+capsule, update.py other-slot and the setup's "Go back to" (smmstore
+keeps the cache only with SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE, which
+only the M920x selects). Not on a vboot fallback: when the slot on
+trial runs out of tries, the other slot boots on the cache that the
+first one saved, and with one slot before the fix and one after, each
+would use the other's training. A slot written with flashrom alone, or
+a later change that keeps the cache on the W541 as on the M920x, would
+do the same.
+
+Bump reg_frame_rev() to 3, as "Haswell NRI: Fix per-bit sense amp
+offset packing" bumped it to 2: mrc_cache then sees another version and
+the memory is trained once more, and each slot ignores the other's
+data. It is kept out of the backport, which stays as upstream has it.
+It costs one training on the first boot of a slot with this commit,
+which the W541 does anyway after a capsule.
+
+TEST=Host syntax check with -Werror and the ci-150 W541 nri config.
+Still to test on the W541 (nri): with a training of an older nri build
+left in RW_MRC_CACHE (only the RW slot written), the first boot logs
+"MRC: version mismatch: 2 vs 3" and trains, the next one logs "Using
+cached memory parameters"; after a vboot fallback to an older nri slot,
+that slot also trains once ("version mismatch: 3 vs 2").
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../intel/haswell/native_raminit/save_restore.c            | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/save_restore.c b/src/northbridge/intel/haswell/native_raminit/save_restore.c
+index 6e199d3441..da737d2927 100644
+--- a/src/northbridge/intel/haswell/native_raminit/save_restore.c
++++ b/src/northbridge/intel/haswell/native_raminit/save_restore.c
+@@ -16,9 +16,12 @@ uint32_t reg_frame_rev(void)
+ 	 * require invalidating the cache.
+ 	 *
+ 	 * Exception: revision 2 discards data saved with broken per-bit
+-	 * sense amplifier offsets, so that they get trained again.
++	 * sense amplifier offsets, so that they get trained again. Revision
++	 * 3 does the same for data saved before the rank mapping fix
++	 * (CB:96694), whose 1D margins of ranks 1-3 were trained with the
++	 * register file of rank 0.
+ 	 */
+-	return 2;
++	return 3;
+ }
+ 
+ struct register_save {
+-- 
+2.47.3
+

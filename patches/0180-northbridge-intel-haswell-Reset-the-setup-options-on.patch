@@ -1,0 +1,260 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sat, 31 Oct 2026 02:29:57 +0100
+Subject: [PATCH] northbridge/intel/haswell: Reset the setup options on RTC
+ power loss
+
+With DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE, a CMOS clear also resets
+the setup options, which live in SMMSTORE, but only Cannon Lake romstage
+called efi_option_reset_all(). Haswell romstage now calls it right
+after early_pch_init() when rtc_failure() reports RTC_PWR_STS, before
+haswell_early_initialization(), whose VT-d, PEG and graphics settings
+are the first options read after the console. The S3 check comes later
+and clears SLP_TYP, so the gate uses platform_is_resuming(), which only
+reads it, through the PMBASE that early_pch_init() has just set. RTCRST#
+clears SLP_TYP, so that gate only keeps a resume from writing the flash.
+
+Unlike on Cannon Lake, nothing is cleared here: sb_rtc_init() in
+ramstage already logs the ELOG RTC reset event, clears RTC_PWR_STS and
+resets the CMOS at every boot that has it. A reset by mrc.bin or the
+native RAM init before that point repeats the deletion, which then
+finds nothing more, and the log of that boot says 0 options. The cost
+is that a store the deletion refuses is not tried again; Load Defaults
+in the setup still works.
+
+early_pch_init() halts the TCO timer, and the bit stays set up to
+ramstage, so a deletion that hung would hang every boot after it. POST
+code 0x37 comes before the deletion and 0x38 after it, both unused on
+this platform: with CMOS_POST, a boot whose previous boot stopped at
+0x37 skips the deletion, and ramstage clears the bit as usual. On
+Haswell the option therefore depends on CMOS_POST. That mark is in the
+CMOS as well: after a hang there, the machine has to be turned off with
+the power button while AC or a battery stays attached, because with a
+dead coin cell, removing every supply loses the mark and the next boot
+deletes again. The help says so. The pre-CBMEM console keeps only its
+last 16 KiB, less than a training boot, so the outcome is printed again
+once CBMEM is up.
+
+The Kconfig help no longer names one board. It covers laptops (with a
+dead coin cell, removing or draining the battery without AC is enough,
+and so is turning BIOS Lock off that way), the partial reset that an
+SPI error can leave, and how each platform clears the RTC failure. The
+option stays default n, so the other Haswell boards are unchanged.
+
+TEST=Host syntax check of romstage.c with the configs of the W541 ci-150
+builds, mrc and nri, with the option off and on (gcc -m32 -Werror and
+the coreboot warning flags). Objects built the same way reference
+efi_option_reset_all(), rtc_failure(), platform_is_resuming() and
+cmos_post_previous_boot() only with the option on. coreboot's kconfig
+(conf --olddefconfig) on a small Kconfig with this file: the option
+stays with Haswell and CMOS_POST and on other platforms, and is dropped
+on Haswell without CMOS_POST. Not built with the coreboot toolchain. The
+W541 defconfigs keep the option off for now. For the W541 hardware test,
+first check whether software can set GEN_PMCON_3 bit 2 (00:1f.0 0xa4:
+write, read back, reboot). Then, with the option on, after a CMOS clear
+(AC, battery and coin cell out): "Setup options: N reset to defaults
+(RTC power lost)" or "RTC power lost: setup options reset to defaults",
+"RTC: failed = 0x1", an ELOG RTC Reset event and the setup at its
+defaults; no reset at the next boot or on an S3 resume. The test notes
+must give the way out of a deletion that hangs (stuck at POST 0x37):
+hold the power button for 4 s with AC or the battery still attached, and
+the next boot logs "Setup options: not reset, last boot hung there";
+removing every supply would repeat the deletion.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/drivers/efi/Kconfig                  | 53 ++++++++++------
+ src/northbridge/intel/haswell/romstage.c | 77 ++++++++++++++++++++++++
+ 2 files changed, 112 insertions(+), 18 deletions(-)
+
+diff --git a/src/drivers/efi/Kconfig b/src/drivers/efi/Kconfig
+index a449e06aca..c6a552ea61 100644
+--- a/src/drivers/efi/Kconfig
++++ b/src/drivers/efi/Kconfig
+@@ -10,33 +10,50 @@ config DRIVERS_EFI_VARIABLE_STORE
+ config DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE
+ 	bool "Reset the setup options when the RTC loses power"
+ 	depends on USE_UEFI_VARIABLE_STORE
++	# The Haswell trigger skips a deletion that hung with the CMOS POST code
++	depends on CMOS_POST || !NORTHBRIDGE_INTEL_HASWELL
+ 	default n
+ 	help
+ 	  The setup options are EFI variables in SMMSTORE, so a CMOS clear
+ 	  (the coin cell removed, or a clear-CMOS jumper) leaves them as
+ 	  they are. With this option, when the RTC has lost power, romstage
+ 	  marks every variable of the coreboot options GUID as deleted
+-	  before the memory settings are read: that boot runs with the
+-	  defaults, and the payload writes them back. The console options
+-	  are read earlier, so the console of that boot up to ramstage
+-	  keeps the old debug level and serial setting.
+-
+-	  Every option returns to its default, the security ones too: on
+-	  the Lenovo M720q/M920q/M920x, BIOS Lock goes back to its default
+-	  (off without BOOTMEDIA_SMM_BWP), the Intel ME to enabled and
++	  before it reads the first option after its console: that boot
++	  runs with the defaults, and the payload writes them back. The
++	  console options are read earlier, so the console of that boot up
++	  to ramstage keeps the old debug level and serial setting.
++
++	  Every option returns to its default, the security ones too: BIOS
++	  Lock goes back to its default (off without BOOTMEDIA_SMM_BWP),
+ 	  Firmware protection to on, so turn it off again before writing
+-	  the flash with flashrom. The Secure Boot keys, passwords, boot
+-	  entries and the other variables of the payload are kept, but the
+-	  entries that a setup switch removes (such as iPXE and CSMWrap)
+-	  come back if it was off. With a dead coin cell, every loss of AC
+-	  power resets the options.
++	  the flash with flashrom, and the Intel ME to enabled on the boards
++	  with that option. The Secure Boot keys, passwords, boot entries
++	  and the other variables of the payload are kept, but the entries
++	  that a setup switch removes (such as iPXE and CSMWrap) come back
++	  if it was off.
++
++	  The RTC loses power only when the coin cell and every other
++	  supply of the RTC well are gone. With a dead coin cell, that is
++	  every loss of AC power on a desktop, and on a laptop every time
++	  the main battery (and a second one) is removed or runs flat while
++	  no AC adapter is attached: anyone who can do that can turn BIOS
++	  Lock off.
+ 
+ 	  A malformed store, or one with an interrupted write that the
+-	  payload will redo, is not changed. coreboot then leaves the RTC
+-	  failure set, for the next boot to try again, but FSP-M may clear
+-	  it on its own, and then that CMOS clear does not reset them.
+-
+-	  Only soc/intel/cannonlake implements it.
++	  payload will redo, is not changed, and an SPI error can leave a
++	  part of the options reset. On Cannon Lake, coreboot then leaves
++	  the RTC failure set, for the next boot to try again, but FSP-M may
++	  clear it on its own. On Haswell with Lynx Point, ramstage clears
++	  it at every boot, so the next boot does not try again. There the
++	  option needs CMOS_POST: a boot whose previous boot hung in the
++	  deletion skips it. That mark is in the CMOS as well, so after such
++	  a hang turn the machine off with the power button (4 s) and keep
++	  the AC adapter or the battery attached: with a dead coin cell,
++	  removing every supply loses the mark and the next boot deletes
++	  again. Load Defaults (F9) and saving (F10) in the setup reset the
++	  options in every case.
++
++	  soc/intel/cannonlake and northbridge/intel/haswell implement it.
+ 
+ config DRIVERS_EFI_FW_INFO
+ 	bool "Expose firmware version in a EFI-friendly form"
+diff --git a/src/northbridge/intel/haswell/romstage.c b/src/northbridge/intel/haswell/romstage.c
+index 4c70400016..f56aeddae1 100644
+--- a/src/northbridge/intel/haswell/romstage.c
++++ b/src/northbridge/intel/haswell/romstage.c
+@@ -1,19 +1,91 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
+ #include <arch/romstage.h>
++#include <bootmode.h>
+ #include <console/console.h>
+ #include <cpu/intel/haswell/haswell.h>
+ #include <device/mmio.h>
+ #include <device/pci_ops.h>
++#include <drivers/efi/option.h>
+ #include <elog.h>
++#include <post.h>
+ #include <romstage_handoff.h>
+ #include <security/intel/txt/txt.h>
+ #include <security/intel/txt/txt_register.h>
+ #include <northbridge/intel/haswell/haswell.h>
+ #include <northbridge/intel/haswell/raminit.h>
+ #include <southbridge/intel/common/pmclib.h>
++#include <southbridge/intel/common/rtc.h>
+ #include <southbridge/intel/lynxpoint/pch.h>
+ 
++/* POST codes before and after the deletion of the setup options */
++#define POST_OPTIONS_RESET	0x37
++#define POST_OPTIONS_RESET_DONE	0x38
++
++/* What reset_options_on_rtc_failure() did, logged again once CBMEM is up */
++static enum {
++	OPTIONS_KEPT,
++	OPTIONS_RESET,
++	OPTIONS_NOT_RESET,
++	OPTIONS_RESET_SKIPPED,
++} options_reset;
++
++/*
++ * The RTC lost power (a CMOS clear): reset the setup options too, which live in
++ * SMMSTORE and not in the CMOS. This runs before haswell_early_initialization(),
++ * which reads the first option after the console (vtd), and so before the S3
++ * check, which clears SLP_TYP: platform_is_resuming() only reads it, with the
++ * PMBASE that early_pch_init() set. RTCRST# clears SLP_TYP, so a boot with an RTC
++ * failure is never a resume, but a resume must not write the flash.
++ *
++ * RTC_PWR_STS is left as it is: sb_rtc_init() in ramstage logs the ELOG event,
++ * clears it and resets the CMOS, as before. A reset before ramstage repeats the
++ * deletion, which then finds nothing more; a refused store is not tried again.
++ */
++static void reset_options_on_rtc_failure(void)
++{
++	if (!CONFIG(DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE) || !rtc_failure() ||
++	    platform_is_resuming())
++		return;
++
++	/*
++	 * early_pch_init() halted the TCO timer, and the bit stays set up to
++	 * ramstage: a deletion that hangs would hang every boot that follows.
++	 * CMOS_POST, which Kconfig requires here, has the last code of the
++	 * previous boot: skip the deletion when that boot stopped in it. The
++	 * mark is in the CMOS too: a dead coin cell with every supply removed
++	 * loses it, a power-button shutdown with AC or battery keeps it.
++	 */
++	if (CONFIG(CMOS_POST)) {
++		u32 extra;
++		u8 code;
++
++		cmos_post_previous_boot(&code, &extra);
++		if (code == POST_OPTIONS_RESET) {
++			printk(BIOS_ERR, "Setup options: not reset, last boot hung there\n");
++			options_reset = OPTIONS_RESET_SKIPPED;
++			return;
++		}
++	}
++
++	post_code(POST_OPTIONS_RESET);
++	if (efi_option_reset_all() == CB_SUCCESS)
++		options_reset = OPTIONS_RESET;
++	else
++		options_reset = OPTIONS_NOT_RESET;
++	post_code(POST_OPTIONS_RESET_DONE);
++}
++
++/* The pre-CBMEM console keeps only its last 16 KiB, less than a training boot */
++static void log_options_reset(void)
++{
++	if (options_reset == OPTIONS_RESET)
++		printk(BIOS_INFO, "RTC power lost: setup options reset to defaults\n");
++	else if (options_reset != OPTIONS_KEPT)
++		printk(BIOS_ERR, "RTC power lost: setup options not reset%s\n",
++		       options_reset == OPTIONS_RESET_SKIPPED ? " (last boot hung there)" : "");
++}
++
+ void __weak mb_late_romstage_setup(void)
+ {
+ }
+@@ -31,6 +103,9 @@ void mainboard_romstage_entry(void)
+ 
+ 	post_code(0x31);
+ 
++	/* Before the first option read after the console */
++	reset_options_on_rtc_failure();
++
+ 	/* Perform some early chipset initialization required
+ 	 * before RAM initialization can work
+ 	 */
+@@ -90,6 +165,8 @@ void mainboard_romstage_entry(void)
+ 
+ 	romstage_handoff_init(s3resume);
+ 
++	log_options_reset();
++
+ 	post_code(0x3d);
+ 
+ 	mb_late_romstage_setup();
+-- 
+2.47.3
+
