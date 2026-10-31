@@ -1,0 +1,58 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Michael D Kinney <michael.d.kinney@intel.com>
+Date: Thu, 8 Oct 2026 09:01:36 -0700
+Subject: [PATCH] MdeModulePkg/UefiBootManagerLib: Fix short-form hard drive
+ boot regression
+
+PR #12829 added an early return when LocateHandleBuffer() failed
+during short-form hard drive device path expansion. On a fast boot,
+a miss in the HDDP cache can occur before Block I/O handles are
+available, so the return bypassed EfiBootManagerConnectAll() and
+prevented the fallback search from finding the device.
+
+Continue with an empty handle list after the lookup failure. This lets
+the existing path connect all controllers and retry the Block I/O search.
+
+Signed-off-by: Michael D Kinney <michael.d.kinney@intel.com>
+
+ouroBIOS backport of tianocore/edk2 commit 027e7a437 (merged on
+2026-10-08, after edk2-stable202608, the base of MrChromebox's
+uefipayload_2608), applied unchanged. Drop it when the base includes
+it.
+
+Why here: the early return came with "MdeModulePkg: Fix missing NULL
+tests" (77cf8c8c1), which is in the base, and both boards boot their
+OS from short-form hard drive device paths (the boot entries that
+efibootmgr, shim and Windows create, kept in the HDDP variable), so a
+miss of that cache before the Block I/O handles exist could skip the
+entry instead of connecting the controllers and trying again.
+
+TEST=git cherry-pick on the series: a clean merge at another offset
+(MrChromebox's BmBoot.c moves it), the same seven lines as upstream.
+No EDK2 build here.
+---
+ MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c b/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c
+index 381716eceb..84baec2bb3 100644
+--- a/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c
++++ b/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c
+@@ -1029,7 +1029,13 @@ BmExpandPartitionDevicePath (
+ 
+     Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiBlockIoProtocolGuid, NULL, &BlockIoHandleCount, &BlockIoBuffer);
+     if (EFI_ERROR (Status)) {
+-      return NULL;
++      //
++      // No Block I/O handles found.  Set count to 0 and buffer to NULL and
++      // continue to allow search for Block I/O handles to be tried again after
++      // attempting a ConnectAll.
++      //
++      BlockIoHandleCount = 0;
++      BlockIoBuffer      = NULL;
+     }
+ 
+     //
+-- 
+2.47.3
+
