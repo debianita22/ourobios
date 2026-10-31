@@ -517,7 +517,7 @@ goes back to the old one. Settings, boot entries, Secure Boot keys, VPD and
 event log stay, and *BIOS Lock* and *Firmware protection* can stay on
 ([docs/update.md](https://github.com/${repo}/blob/main/docs/update.md)).
 The capsule rewrites the two slots only and keeps the memory training: an
-\`update.py\` from before v1.4.0-rc4 refuses it, so take the one of this
+\`update.py\` from before v1.4.0 refuses it, so take the one of this
 release, as below.
 
 \`\`\`sh

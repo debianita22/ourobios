@@ -42,9 +42,9 @@ This project adds:
   test passes on every rank, and one qclk goes back as a guard band
   ([On the W541](#on-the-w541) for what `mrc.bin` does there). A training
   redone after a failed memory test leaves them as trained;
-- **patch 0185**, from v1.4.0-rc4, the rank mapping fix of Angel Pons,
+- **patch 0185**, from v1.4.0, the rank mapping fix of Angel Pons,
   upstream change [96694](https://review.coreboot.org/c/coreboot/+/96694)
-  (Code-Review +2, not merged yet when rc4 came out), taken as it is. The
+  (Code-Review +2, not merged yet when v1.4.0 came out), taken as it is. The
   1D margin training selects the rank under test as logical rank 0 and
   loads its register file; the REUT start address of logical rank 0 is 0,
   which the code took for a 1:1 mapping, so the read timing, write timing
@@ -56,7 +56,7 @@ This project adds:
   0008): the fast boot compares only the DIMMs and the processor, so
   without it a slot with 0185 could boot on a training that the code
   before it saved, the other slot after a vboot fallback included, and
-  the other way round. The first boot of an rc4 slot trains once (*MRC:
+  the other way round. The first boot of a v1.4.0 slot trains once (*MRC:
   version mismatch: 2 vs 3*, or *no data* after a capsule, which empties
   the cache anyway);
 - **patch 0188**, a DIMM with more than 10 column address bits left out.
@@ -140,7 +140,7 @@ tried with `update.py other-slot`:
 
 These figures predate patch 0185: on these DIMMs the read and write timing
 and the read voltage of ranks 1-3 were centred with the register file of
-rank 0. They are to be measured again with rc4 (MEM-06 of
+rank 0. They are to be measured again with v1.4.0 (MEM-06 of
 [docs/testing.md](testing.md#memory-and-training-cache-mem)).
 
 The registers after `mrc.bin` (v1.3.9-rc1) and after the NRI (rc3), from
@@ -238,7 +238,7 @@ firmware.
   under trial, as after `update.py other-slot`, vboot goes back to the other
   slot after two tries ([docs/vboot.md](vboot.md)).
 - 16 GiB SO-DIMMs (8 Gb chips, 11 column address bits) do not work on
-  Haswell: from v1.4.0-rc4 the NRI leaves them out (patch 0188), before it
+  Haswell: from v1.4.0 the NRI leaves them out (patch 0188), before it
   booted on them and the memory was corrupted.
 - Upstream changes not taken yet:
   [96893](https://review.coreboot.org/c/coreboot/+/96893) starts the

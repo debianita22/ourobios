@@ -992,10 +992,10 @@ assert "ME:        disattivata (AltMeDisable, BUP), stato di lavoro 1" in out, o
 assert "protezione: non verificabile su questa macchina (solo i controller SPI del M920x e del W541)" in out, out
 type11(ec)
 out = status()
-assert "ME:        non indicato da questo firmware (prima della release con lo stato del ME)" in out, out
-# il tag del W541 con lo stato del ME non c'e' ancora: niente versione inventata
+assert "ME:        non indicato da questo firmware (prima della v1.4.0)" in out, out
 assert (update.me_strings_since("m920x-fsp"), update.me_strings_since("nri")) == (
-    "v1.4.0-rc4", "release con lo stato del ME")
+    "v1.4.0", "v1.4.0")
+assert update.me_strings_since("altro") == "release con lo stato del ME"
 shutil.rmtree(root)
 EOF
 	then

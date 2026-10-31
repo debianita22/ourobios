@@ -61,7 +61,7 @@ in the boot that applies it:
 1. reads `RW_NVRAM` and finds the slot that is running;
 2. writes the other one, verifying every block; a W541 capsule also clears
    `RW_MRC_CACHE`, so that the new code trains the memory again, while an
-   M920x one from v1.4.0-rc4 leaves it, and the new slot trains only if
+   M920x one from v1.4.0 leaves it, and the new slot trains only if
    the version of the cache does not match its FSP-M, processor and
    Hyper-Threading setting ([docs/update.md](update.md#what-changes-and-what-stays));
 3. appends a record to `RW_NVRAM`: *try next* the new slot, two tries;
@@ -76,7 +76,7 @@ alternate. Until then the old slot keeps the release before:
 and so does, without an OS, *Go back to* on the *Firmware Update* page of the
 setup ([From the setup](update.md#from-the-setup)): the payload asks
 coreboot's SMMSTORE handler to try the other slot, with two tries, and to
-clear `RW_MRC_CACHE` (patch 0065; on the M920x from v1.4.0-rc4 the cache
+clear `RW_MRC_CACHE` (patch 0065; on the M920x from v1.4.0 the cache
 stays, `SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE`, patch 0179, and the
 version of the cache tells the other slot whether to train). The payload
 locks that request before it
@@ -105,11 +105,11 @@ only the slots.
 Turn it off only to write the whole BIOS region with flashrom (switching
 variant, an update of the read-only part), then on again. *BIOS Lock*, in
 the same menu, still controls who may write the rest of the flash. On the
-M920x and the W541 (there from the `update.py` of v1.4.0-rc4),
+M920x and the W541 (there from the `update.py` of v1.4.0),
 `sudo python3 tools/update.py protection` shows whether `WP_RO` is
 in a locked range in this boot, and `--expect-ro on` makes that a check
 for scripts ([docs/update.md](update.md#flash-protection)). From
-v1.4.0-rc4 an RTC power loss on the M920x turns the option back on, with
+v1.4.0 an RTC power loss on the M920x turns the option back on, with
 the other settings ([docs/m920x.md](m920x.md#resetting-the-settings)).
 
 ## Keys
@@ -309,7 +309,7 @@ at every reset:
   from a USB drive* of the setup prepares): slot A written, the capsule
   removed from the drive;
 - capsule B again, made with the two slots only in its manifest, as those
-  of the M920x from v1.4.0-rc4 (`B-cache.cap`, `--keep-cache`): slot B
+  of the M920x from v1.4.0 (`B-cache.cap`, `--keep-cache`): slot B
   written, `RW_MRC_CACHE` left as it was (filled with a pattern before),
   and vboot tries B, which the payload confirms;
 - the ESRT at every boot: the version of the slot that runs, and as last
