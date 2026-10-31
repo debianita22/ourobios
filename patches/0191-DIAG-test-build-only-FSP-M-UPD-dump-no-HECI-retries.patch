@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sat, 31 Oct 2026 14:25:39 +0100
+Subject: [PATCH] DIAG (test build only): FSP-M UPD dump, no HECI retries
+
+Not for the release. Dumps the whole FSPM_UPD before FspMemoryInit (Dasharo's method in dasharo-issues #1874) and sets DisableHeciRetry, to find the constant 15.24 s in FspMemoryInit with a valid training cache and the ME disabled.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/devicetree.cb | 4 ++++
+ src/mainboard/lenovo/m720q_m920q/romstage.c    | 5 +++++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/devicetree.cb b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+index 9b19d1e419..f4e0236cd3 100644
+--- a/src/mainboard/lenovo/m720q_m920q/devicetree.cb
++++ b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+@@ -1,6 +1,10 @@
+ ## SPDX-License-Identifier: GPL-2.0-only
+ 
+ chip soc/intel/cannonlake
++	# DIAG (test build only): no retries of FSP-M's HECI messages, with the
++	# ME disabled (the 15 s in FspMemoryInit)
++	register "DisableHeciRetry" = "true"
++
+ 	# Power limits from the processor's TDP, as the OEM firmware (its PL2
+ 	# override is on with 0, the processor default): PL1 the TDP, PL2 1.25
+ 	# times it. A fixed PL2 of 65 W let a 35 W T model draw 65 W for 28 s,
+diff --git a/src/mainboard/lenovo/m720q_m920q/romstage.c b/src/mainboard/lenovo/m720q_m920q/romstage.c
+index d0ea9454c5..c7316304e0 100644
+--- a/src/mainboard/lenovo/m720q_m920q/romstage.c
++++ b/src/mainboard/lenovo/m720q_m920q/romstage.c
+@@ -6,6 +6,7 @@
+ #include <device/pci_ops.h>
+ #include <fsp/api.h>
+ #include <mainboard/ec.h>
++#include <lib.h>
+ #include <option.h>
+ #include <soc/cnl_memcfg_init.h>
+ #include <soc/romstage.h>
+@@ -126,4 +127,8 @@ void mainboard_memory_init_params(FSPM_UPD *memupd)
+ 		memupd->FspmConfig.PcieRpEnableMask &= ~(1 << 5);
+ 
+ 	memupd->FspmConfig.Peg0Enable = peg_enable(memupd);
++
++	/* DIAG (test build only): every FSP-M parameter, as FSP-M gets it */
++	printk(BIOS_DEBUG, "DIAG FSPM_UPD (%zu bytes):\n", sizeof(*memupd));
++	hexdump(memupd, sizeof(*memupd));
+ }
+-- 
+2.47.3
+

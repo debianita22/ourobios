@@ -184,3 +184,4 @@
 0188-northbridge-intel-haswell-Refuse-DIMMs-with-more-tha.patch
 0189-northbridge-intel-haswell-Timestamps-around-the-nati.patch
 0190-mb-lenovo-haswell-Handle-the-EC-events-the-stock-fir.patch
+0191-DIAG-test-build-only-FSP-M-UPD-dump-no-HECI-retries.patch
