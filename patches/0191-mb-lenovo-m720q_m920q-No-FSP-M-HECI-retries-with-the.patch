@@ -15,14 +15,19 @@ A test build with DisableHeciRetry set gave 0.23 s.
 Set FspmTestConfig.DisableHeciRetry when the setup asks for the ME
 disabled, or when HFSTS1 already shows the soft temporary disable; an
 ME that runs keeps the retries, which can help it answer late. HFSTS1
-alone is not enough: before FSP-M it did not show the disable on the
-boots measured, although ramstage logged it, so romstage also logs it.
+alone is not enough: before FSP-M the ME still runs normally (0x80000045,
+operation mode 0), as the CSE driver disables it again in ramstage at
+every boot; romstage logs it. The option is read with get_uint_option():
+cse_is_me_state_requested_enabled() exists in ramstage only, and
+intelblocks/cse.h makes it return true in the other stages.
 The same pattern as Dasharo's dasharo-issues #1874, where a default of
 the FSP waited on a bus that never answered.
 
 TEST=On the M920x with the ME disabled: ci-155 and ci-157 (the HFSTS1
 check alone, which never matched) gave 15.24 s on some warm reboots and
-0.23 s on others; ci-156 (DisableHeciRetry from the devicetree) 0.23 s.
+0.23 s on others; ci-158 (the CSE helper, true in romstage) logged
+HFSTS1 0x80000045 and 15.24 s; ci-156 (DisableHeciRetry from the
+devicetree) 0.23 s.
 Still to test with this patch: "ME: HFSTS1 before FSP-M" and "ME
 disabled: no HECI retries in FSP-M" in the log at every boot and
 FspMemoryInit about 0.2 s on several reboots; with the ME enabled, no
@@ -30,11 +35,11 @@ such line and a normal boot.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- src/mainboard/lenovo/m720q_m920q/romstage.c | 15 +++++++++++++++
- 1 file changed, 15 insertions(+)
+ src/mainboard/lenovo/m720q_m920q/romstage.c | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
 
 diff --git a/src/mainboard/lenovo/m720q_m920q/romstage.c b/src/mainboard/lenovo/m720q_m920q/romstage.c
-index d0ea9454c5..9aef1f911b 100644
+index d0ea9454c5..f3cb04dc3b 100644
 --- a/src/mainboard/lenovo/m720q_m920q/romstage.c
 +++ b/src/mainboard/lenovo/m720q_m920q/romstage.c
 @@ -5,6 +5,7 @@
@@ -45,7 +50,7 @@ index d0ea9454c5..9aef1f911b 100644
  #include <mainboard/ec.h>
  #include <option.h>
  #include <soc/cnl_memcfg_init.h>
-@@ -126,4 +127,18 @@ void mainboard_memory_init_params(FSPM_UPD *memupd)
+@@ -126,4 +127,20 @@ void mainboard_memory_init_params(FSPM_UPD *memupd)
  		memupd->FspmConfig.PcieRpEnableMask &= ~(1 << 5);
  
  	memupd->FspmConfig.Peg0Enable = peg_enable(memupd);
@@ -54,12 +59,14 @@ index d0ea9454c5..9aef1f911b 100644
 +	 * With the ME disabled (Security > Management Engine), FSP-M's HECI
 +	 * messages get no answer, and on some boots its retries cost 15.2 s in
 +	 * FspMemoryInit, a valid training cache or not; without them it takes
-+	 * 0.23 s. Before FSP-M, HFSTS1 does not always show the soft temporary
-+	 * disable yet, so the setup option decides; an ME that runs keeps them.
++	 * 0.23 s. Before FSP-M the ME still runs normally (HFSTS1 0x80000045,
++	 * mode 0): the CSE driver disables it again in ramstage at every boot.
++	 * So the setup option decides; an ME left enabled keeps the retries.
 +	 */
 +	const uint32_t hfsts1 = me_read_config32(PCI_ME_HFSTS1);
 +	printk(BIOS_INFO, "ME: HFSTS1 before FSP-M: %08x\n", hfsts1);
-+	if (!cse_is_me_state_requested_enabled() || cse_is_hfs1_com_soft_temp_disable()) {
++	/* cse_is_me_state_requested_enabled() is ramstage only (true elsewhere) */
++	if (get_uint_option("me_state", 0) == 1 || cse_is_hfs1_com_soft_temp_disable()) {
 +		memupd->FspmTestConfig.DisableHeciRetry = 1;
 +		printk(BIOS_INFO, "ME disabled: no HECI retries in FSP-M\n");
 +	}
