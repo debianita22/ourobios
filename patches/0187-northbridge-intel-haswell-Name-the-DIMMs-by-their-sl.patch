@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sat, 31 Oct 2026 04:20:35 +0100
+Subject: [PATCH] northbridge/intel/haswell: Name the DIMMs by their slot in
+ SMBIOS
+
+setup_sdram_meminfo() takes the size and ranks of slot N from field N
+of MAD_DIMM, but the two fields are DIMM A and DIMM B, and bit 16 (DIMM
+A select) says which slot DIMM A is. The native RAM init makes the
+larger DIMM DIMM A (configure_mc.c, .dimm_a_sel = biggest), and on an
+mrc.bin build the bit is whatever mrc.bin programs. With the larger DIMM
+in slot 1, SMBIOS type 17 then gives slot 0 the size and ranks of slot
+1 with the part number and serial of slot 0, and slot 1 the other size;
+dmidecode and hw-report name the wrong module. The next commit makes
+this certain in the case it is about: when it leaves out the DIMM of
+slot 0, slot 1 becomes DIMM A, and SMBIOS would list the module left
+out with the size of the one in use.
+
+Take for each slot the field that bit 16 maps to it, for the size and
+the ranks; the SPD strings already come from the slot. With bit 16
+clear the fields map as before: equal DIMMs, as the four 8 GiB
+SO-DIMMs of the W541, keep the same records. The code is shared by
+mrc.bin and the native RAM init and by the W541 and the T440p, and the
+fix is meant for all of them.
+
+TEST=Host syntax check with -Werror and the ci-150 W541 nri and mrc
+configs. Host unit test of setup_sdram_meminfo() with MCHBAR mapped at
+its fixed address and synthetic SPD strings: channel 0 with slot 0
+empty and slot 1 DIMM A (8 GiB, dual rank) gives one record, slot 1,
+with its own part number and serial; channel 1 with 4 GiB single rank
+in slot 0 and 8 GiB dual rank in slot 1 gives each slot its size and
+ranks; four equal DIMMs with bit 16 clear give the same records as
+before. The code before this change fails 6 of these checks. Still to
+test on the W541 (both variants): dmidecode -t 17 unchanged with the
+four 8 GiB DIMMs; with DIMMs of two sizes in a channel, if at hand, each
+slot shows its own module.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/northbridge/intel/haswell/raminit_shared.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/raminit_shared.c b/src/northbridge/intel/haswell/raminit_shared.c
+index 608e0b343f..e8e0b68eea 100644
+--- a/src/northbridge/intel/haswell/raminit_shared.c
++++ b/src/northbridge/intel/haswell/raminit_shared.c
+@@ -159,15 +159,19 @@ void setup_sdram_meminfo(const uint8_t *spd_data[NUM_CHANNELS][NUM_SLOTS])
+ 	unsigned int dimm_cnt = 0;
+ 	for (unsigned int channel = 0; channel < NUM_CHANNELS; channel++) {
+ 		const uint32_t ch_conf = mchbar_read32(MAD_DIMM(channel));
++		/* Bit 16 selects the slot of DIMM A (the larger one), DIMM B is the other */
++		const unsigned int dimm_a_slot = (ch_conf >> 16) & 1;
+ 		for (unsigned int slot = 0; slot < NUM_SLOTS; slot++) {
+-			const uint32_t dimm_size = ((ch_conf >> (slot * 8)) & 0xff) * 256;
++			/* The MAD_DIMM fields of this slot: 0 for DIMM A, 1 for DIMM B */
++			const unsigned int field = slot != dimm_a_slot;
++			const uint32_t dimm_size = ((ch_conf >> (field * 8)) & 0xff) * 256;
+ 			if (dimm_size) {
+ 				struct dimm_info *dimm = &mem_info->dimm[dimm_cnt];
+ 				dimm->dimm_size = dimm_size;
+ 				/* TODO: Hardcoded, could also be LPDDR3 */
+ 				dimm->ddr_type = MEMORY_TYPE_DDR3;
+ 				dimm->ddr_frequency = ddr_freq_mhz * 2; /* In MT/s */
+-				dimm->rank_per_dimm = 1 + ((ch_conf >> (17 + slot)) & 1);
++				dimm->rank_per_dimm = 1 + ((ch_conf >> (17 + field)) & 1);
+ 				dimm->channel_num = channel;
+ 				dimm->dimm_num = slot;
+ 				dimm->bank_locator = channel * 2;
+-- 
+2.47.3
+

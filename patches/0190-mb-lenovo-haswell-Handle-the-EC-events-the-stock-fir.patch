@@ -1,0 +1,233 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sat, 31 Oct 2026 02:47:20 +0100
+Subject: [PATCH] mb/lenovo/haswell: Handle the EC events the stock firmware
+ handles
+
+The devicetrees of the W541 and the T440p enable EC events that this
+DSDT has no _Qxx method for (h8.c writes eventN_enable to EC 0x10+N),
+so the OS drops them. The Lenovo firmware (W541 2.42, GNET94WW; T440p
+2.56, GLETA2WW; their DSDTs decompiled) reports several of them to the
+OS as HKEY events, which thinkpad_acpi acts on: battery and sensor
+alarms ("THERMAL ALARM: battery is too hot!", a netlink event for
+userspace), dock and undock. Report them the same way, with the same
+codes, through RHK and RHKX:
+
+- 0x18: hotkey 0x1009, when the OS enables it, as the stock firmware;
+- 0x3f (W541 only, its numeric keypad): NumLock, 0x6000;
+- 0x40: thermal alarm. Notify the thermal zone, and report 0x6022 if
+  the EC's alarm level (stock TSL2, EC 0x8a bits 0-6) is not zero. It
+  is a critical level: when it is not zero and no hotkey driver runs,
+  the stock _TMP returns 128 C, which shuts the machine down, while the
+  CPU throttling of the stock _Q40 follows another level (TSL0);
+- 0x45: dock, 0x4010 or 0x4011 from EC 0x48 bit 5 (stock DOCD), read
+  first and reported 100 ms later, as the stock firmware does;
+- 0x46, 0x4e, 0x4f: battery alarms, 0x6012, 0x6011 and 0x6012.
+
+The two stock DSDTs handle these events identically, their EC field
+maps are the same, and both devicetrees enable them except 0x3f (the
+T440p has event7_enable 0x01 and no keypad): only _Q3F is under
+CONFIG(BOARD_LENOVO_THINKPAD_W541).
+
+Add the software mute handshake too. thinkpad_acpi reads HAUM (EC 0x03
+bits 5-6, what the mute and volume buttons do in the EC) and calls
+SAUM (2), "only keys". Without them it creates the "ThinkPad Console
+Audio Control" ALSA mixer on top of the EC; with them mute is left to
+the codec, as with the stock firmware. config3 0xc4 of both devicetrees
+already sets HAUM to 2 at boot and on resume, so SAUM (2) does not
+change the EC. The stock SAUM has no Return and works through the
+implicit return of ACPICA; this one returns HAUM, which thinkpad_acpi
+checks. In software mute mode thinkpad_acpi also clears the EC mute
+bit, EC 0x30 bit 6, at load and on every resume (volume_set_mute(false)
+for the mute-only Lenovo models). Here that bit is ALMT, which SSMS sets
+for the mute LED; the stock SSMS goes through an SMI instead. The
+mute_led subdriver of thinkpad_acpi comes after the volume one, though:
+on resume mute_led_resume() writes the LED state back through SSMS right
+after the clear, and at load the LED is registered after it, so that
+the audio-mute trigger sets it again (the hardware test checks both).
+thinkpad_acpi.software_mute=0 keeps the old behaviour.
+
+Left out, with the reason in ec.asl: 0x1e, 0x6b-0x6f and 0x77 (no stock
+handler either), 0x41 (stock reports 0x7000, "radio switch changed",
+but its WLSW is a constant, so the event changes nothing there; ours
+returns EC 0x48 bit 1, GSTS, and on 0x7000 thinkpad_acpi would read it
+at runtime and hard-block the radios if it reads 0, which nobody has
+checked, on boards without a radio switch), 0x43 (a stock SMI only),
+0x48, 0x49 and on the W541 0x5b (EC requests for a CPU limit: the stock
+_PPC follows the adapter wattage, the batteries and EC power limit
+registers, ours does not use the EC; this needs its own change and a
+test with a 65 W or 90 W adapter), 0x2c, 0x2d, 0x38 and 0x44 (Ultrabay:
+no bay device here), 0x70, 0x72, 0x73 and 0x74 (sticky Fn and Fn+Esc:
+thinkpad_acpi ignores 0x6005 and 0x6060, stock calls its SMI handler,
+0x6060 needs GMKS).
+
+HKEY keeps one pending event (BTN), where the stock firmware keeps one
+per class, so two events in a row before the OS reads them lose the
+first. The events added here are rare, and the sticky Fn events, which
+would follow hotkeys closely, stay out for that reason.
+
+TEST=Host build of the DSDT as coreboot does (cpp with the W541 ci-150
+nri and mrc config, and a T440p config derived from it, then iasl -we):
+0 errors and 0 warnings, the same remarks as before, and the AML
+disassembles without ACPI warnings. A script lists the events each
+devicetree enables against the _Qxx of the DSDT: 0x18, 0x3f, 0x40, 0x45,
+0x46, 0x4e and 0x4f now handled on the W541, the same but 0x3f on the
+T440p, the rest as listed above. An acpiexec test SSDT runs the methods
+on both DSDTs, 22 checks: SAUM writes only bits 5-6 of EC 0x03 and
+returns the mode, ignores values over 3; each _Qxx reports its code,
+nothing while HKEY is off, 0x1009 only when unmasked; DKST and TSLC
+read the right bits; there is no _Q41. Still to test on the W541:
+- docking and undocking log "docked into hotplug port replicator" and
+  "undocked ...";
+- _Q4E, _Q4F and _Q40 called through acpi_call log the thermal alarms
+  with no ACPI error;
+- the real 0x40 events: EC 0x88-0x8b (ec_sys, read only) at idle and
+  during 10 minutes of stress-ng, on AC and on battery, with the EC
+  queries counted (dynamic debug of drivers/acpi/ec.c, or the EC GPE
+  0x11 in /sys/firmware/acpi/interrupts) and no THERMAL line in dmesg;
+  if EC 0x8a reads non-zero at normal temperatures, report only the
+  Notify;
+- thinkpad_acpi no longer logs "Console audio control enabled",
+  /proc/asound/cards has no ThinkPad EC card, the mute key and its LED
+  work; muted, the LED stays lit after S3 and after a reload of
+  thinkpad_acpi;
+- macOS with OpenCore and Windows (with the Lenovo drivers) boot
+  without ACPI errors and without thermal warnings.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/haswell/acpi/ec.asl | 111 +++++++++++++++++++++++
+ 1 file changed, 111 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/ec.asl b/src/mainboard/lenovo/haswell/acpi/ec.asl
+index 05990f6bd1..acd6f967c2 100644
+--- a/src/mainboard/lenovo/haswell/acpi/ec.asl
++++ b/src/mainboard/lenovo/haswell/acpi/ec.asl
+@@ -7,6 +7,14 @@ Scope (EC)
+ {
+ 	Field (ERAM, ByteAcc, NoLock, Preserve)
+ 	{
++		/*
++		 * What the mute and volume buttons do in the EC, read by
++		 * thinkpad_acpi (TP_EC_MUTE_BTN_*): config3 of the devicetree
++		 * sets 2, where they are only keys.
++		 */
++		Offset (0x03),
++		    , 5,
++		HAUM, 2,
+ 		/*
+ 		 * Wake cause. The OEM firmware reads 16 bits, but the bits
+ 		 * that _L1D tests are all in the first byte: one byte is
+@@ -14,6 +22,109 @@ Scope (EC)
+ 		 */
+ 		Offset (0x36),
+ 		HWAC, 8,
++		Offset (0x48),
++		    , 5,
++		DKST, 1,	/* Docked (DOCD of the OEM firmware) */
++		Offset (0x8a),
++		TSLC, 7,	/* Thermal alarm level (TSL2 of the OEM firmware) */
++	}
++
++	/*
++	 * Software mute, for thinkpad_acpi: it sets the button mode to 2 and
++	 * checks the result, then leaves mute to the codec. The OEM SAUM has
++	 * no Return; this one returns the mode, which thinkpad_acpi checks.
++	 */
++	Method (SAUM, 1, NotSerialized)
++	{
++		If (Arg0 <= 3) {
++			HAUM = Arg0
++		}
++		Return (HAUM)
++	}
++
++	/*
++	 * The EC events that the devicetree enables and that the OEM firmware
++	 * reports to the OS, as HKEY events with the OEM codes (thinkpad_acpi
++	 * names them). The OEM DSDTs of the W541 and of the T440p handle them
++	 * alike, and both devicetrees enable them, except the NumLock event.
++	 *
++	 * Left out:
++	 * - 0x1e, 0x6b-0x6f and 0x77: no handler in the OEM firmware either;
++	 * - 0x41 (0x7000, radio switch changed): the OEM WLSW is a constant,
++	 *   so the event changes nothing there, while this WLSW returns EC
++	 *   0x48 bit 1 (GSTS). On 0x7000 thinkpad_acpi reads WLSW again and
++	 *   hard-blocks the radios if it is 0, which nothing has checked on
++	 *   these boards, and neither has a radio switch;
++	 * - 0x43: an SMI to the OEM firmware only (UCMS 0x18);
++	 * - 0x48, 0x49 and, on the W541, 0x5b: limits the EC asks for the
++	 *   CPU. The OEM _PPC follows the adapter wattage, the batteries and
++	 *   the EC power limit registers; this _PPC does not use the EC;
++	 * - 0x2c, 0x2d, 0x38 and 0x44: insertion and ejection in the
++	 *   Ultrabay, for which this DSDT has no bay device;
++	 * - 0x70, 0x72 and 0x73 (sticky Fn state, 0x6005) and 0x74 (Fn+Esc,
++	 *   0x6060): thinkpad_acpi ignores them, the OEM firmware also calls
++	 *   its SMI handler for them, and on 0x6060 thinkpad_acpi calls GMKS,
++	 *   which this HKEY does not have. HKEY keeps one event (BTN), and a
++	 *   sticky Fn event right after a hotkey would replace it.
++	 */
++
++	/* Hotkey 0x1009 (Fn+F9 in the thinkpad_acpi key map), if enabled */
++	Method (_Q18, 0, NotSerialized)
++	{
++		^HKEY.RHK (0x09)
++	}
++
++#if CONFIG(BOARD_LENOVO_THINKPAD_W541)
++	/* NumLock of the numeric keypad (0x6000); the key itself comes too */
++	Method (_Q3F, 0, NotSerialized)
++	{
++		^HKEY.RHKX (0x6000)
++	}
++#endif
++
++	/*
++	 * Thermal alarm: the thermal zone reads the temperature again, and an
++	 * alarm level is "a sensor reports something is extremely hot" for
++	 * thinkpad_acpi (0x6022). It is a critical level: when it is not zero
++	 * and no hotkey driver runs, the OEM _TMP returns 128 C, a shutdown.
++	 */
++	Method (_Q40, 0, NotSerialized)
++	{
++		Notify (\_TZ.THM0, 0x80)
++		If (TSLC) {
++			^HKEY.RHKX (0x6022)
++		}
++	}
++
++	/*
++	 * Docked (0x4010) or undocked (0x4011). As the OEM firmware: the dock
++	 * bit is read first, the event is reported 100 ms later.
++	 */
++	Method (_Q45, 0, NotSerialized)
++	{
++		Local0 = DKST
++		Sleep (100)
++		If (Local0) {
++			^HKEY.RHKX (0x4010)
++		} Else {
++			^HKEY.RHKX (0x4011)
++		}
++	}
++
++	/* Battery alarms: too hot (0x6011), extremely hot (0x6012) */
++	Method (_Q4E, 0, NotSerialized)
++	{
++		^HKEY.RHKX (0x6011)
++	}
++
++	Method (_Q46, 0, NotSerialized)
++	{
++		^HKEY.RHKX (0x6012)
++	}
++
++	Method (_Q4F, 0, NotSerialized)
++	{
++		^HKEY.RHKX (0x6012)
+ 	}
+ }
+ 
+-- 
+2.47.3
+

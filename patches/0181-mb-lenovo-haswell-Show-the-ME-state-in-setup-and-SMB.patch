@@ -1,0 +1,409 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sat, 31 Oct 2026 02:36:36 +0100
+Subject: [PATCH] mb/lenovo/haswell: Show the ME state in setup and SMBIOS
+
+On the W541 the ME is reduced by me_cleaner -S and its HECI interface
+is hidden from the OS by default (me_disable), so nothing but the boot
+log shows what the ME did, and the log has only the decoded fields.
+The M920x reads the registers when the tables are written, but here
+intel_me_finalize() hides 00:16.0 at BS_POST_DEVICE, before SMBIOS and
+the setup menu exist: a read then would always fail.
+
+me_status.c therefore takes a snapshot of HFS1-6 (0x40, 0x48, 0x60,
+0x64, 0x68 and 0x6c, the six words that Linux reads on Lynx Point) on
+entry to BS_DEV_INIT, where intel_me_path() logs them too, with one
+debug line. It sends no HECI message, skips an S3 resume and a device
+that is off or hidden, and reads me_disable as intel_me_finalize() does.
+
+The summary follows HFS2 first. A progress phase of BUP with state
+0x0a (checking the straps) and no error is "Disabled (AltMeDisable,
+BUP)", whatever the operation mode: ME 7 and 8 report mode 2 for it
+(d7e0cb93ae), which is not verified for ME 9, and a stopped ME must not
+be called enabled. Any other stop in BUP is "Stopped in BUP (state
+0xNN)". Only then the operation mode gives the texts of the M920x.
+
+- General > About this ThinkPad gets a read-only "Management Engine"
+  line with that summary. Its help has the registers, the working
+  state, operation state and mode, error code, progress phase and
+  state, the AltMeDisable meaning, whether HECI is hidden, and which
+  updates write the ME region.
+- SMBIOS type 11 gets "ME: <summary>" and "ME HFSTS: " with the six
+  words, at most 64 characters each, through the root device's
+  get_smbios_strings. They join the structure of the H8 EC string,
+  before it: no new structure, and thinkpad_acpi scans every string.
+
+The T440p shares the code and keeps its menu and SMBIOS: the line is
+suppressed and no snapshot is taken there. The help of me_disable no
+longer says that the ME keeps running, which a stopped ME does not.
+
+TEST=Built me_status.c on the host against stubbed registers: HFS
+00020191 and HFS2 100A0000 (an X220 with me_cleaner), and the same with
+mode 0, give "Disabled (AltMeDisable, BUP)" and a help text of 550 of
+639 bytes; a BUP stop with error 3 gives "Stopped in BUP (state 0x18)";
+the other modes, a hidden device and a 63-character HFSTS string as
+expected. Host syntax check of the changed files with the W541 mrc and
+nri configs and a T440p one; tools/cfr-dump.sh: the W541 menu is valid
+with info_me in About. For the W541 hardware test: the line and its
+help, the "ME: HFSTS1-6" log line with the same words, both strings in
+dmidecode -t 11 next to the EC string and the same SMBIOS handle count;
+after a warm reboot with HECI hidden the registers are still there;
+with HECI on, setpci -s 00:16.0 40.l 48.l 60.l 64.l 68.l 6c.l gives
+the same words. On nri, compare a cold boot and a warm reboot: what
+"ME: Checking whether CPU was replaced..." prints (not replaced,
+replaced, or timed out) and whether "CPU was replaced, forcing a cold
+boot" follows, which with the ME stopped in BUP would train the memory
+again at every boot.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/haswell/Makefile.mk |   1 +
+ src/mainboard/lenovo/haswell/cfr.c       |  18 +++
+ src/mainboard/lenovo/haswell/mainboard.c |  23 +++
+ src/mainboard/lenovo/haswell/me_status.c | 179 +++++++++++++++++++++++
+ src/mainboard/lenovo/haswell/me_status.h |  32 ++++
+ src/southbridge/intel/lynxpoint/cfr.h    |   2 +-
+ 6 files changed, 254 insertions(+), 1 deletion(-)
+ create mode 100644 src/mainboard/lenovo/haswell/me_status.c
+ create mode 100644 src/mainboard/lenovo/haswell/me_status.h
+
+diff --git a/src/mainboard/lenovo/haswell/Makefile.mk b/src/mainboard/lenovo/haswell/Makefile.mk
+index f96e1b8923..4334b65261 100644
+--- a/src/mainboard/lenovo/haswell/Makefile.mk
++++ b/src/mainboard/lenovo/haswell/Makefile.mk
+@@ -4,6 +4,7 @@ romstage-y += variants/$(VARIANT_DIR)/gpio.c
+ romstage-y += variants/$(VARIANT_DIR)/romstage.c
+ 
+ ramstage-y += mainboard.c
++ramstage-y += me_status.c
+ ramstage-$(CONFIG_DRIVERS_OPTION_CFR) += cfr.c
+ 
+ ramstage-$(CONFIG_MAINBOARD_USE_LIBGFXINIT) += variants/$(VARIANT_DIR)/gma-mainboard.ads
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 83760de4b8..4395304b8a 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -17,6 +17,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ 
++#include "me_status.h"
+ #include "setup_options.h"
+ 
+ /*
+@@ -189,6 +190,22 @@ static const struct sm_object info_ec_firmware = SM_DECLARE_VARCHAR({
+ 	.default_value	= "Unknown",
+ }, WITH_CALLBACK(update_ec_firmware));
+ 
++/* What ramstage read of the ME at this boot (me_status.c), on the W541 */
++static void update_me(struct sm_object *new)
++{
++	new->sm_varchar.default_value = mainboard_me_summary();
++	new->sm_varchar.ui_helptext = mainboard_me_details();
++}
++
++static const struct sm_object info_me = SM_DECLARE_VARCHAR({
++	.flags		= CFR_OPTFLAG_READONLY | CFR_OPTFLAG_VOLATILE |
++			  (CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS),
++	.opt_name	= "info_me",
++	.ui_name	= "Management Engine",
++	.ui_helptext	= "The state of the Intel ME at this boot.",
++	.default_value	= "Unknown",
++}, WITH_CALLBACK(update_me));
++
+ static const struct sm_object general_about = SM_DECLARE_FORM({
+ 	.ui_name	= "About this ThinkPad",
+ 	.obj_list	= (const struct sm_object *[]) {
+@@ -202,6 +219,7 @@ static const struct sm_object general_about = SM_DECLARE_FORM({
+ 		&info_memory_profile,
+ 		&info_firmware,
+ 		&info_ec_firmware,
++		&info_me,
+ 		NULL
+ 	},
+ });
+diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
+index b4d66ef738..4e8ad6ba68 100644
+--- a/src/mainboard/lenovo/haswell/mainboard.c
++++ b/src/mainboard/lenovo/haswell/mainboard.c
+@@ -11,8 +11,10 @@
+ #include <option.h>
+ #include <smbios.h>
+ #include <southbridge/intel/lynxpoint/chip.h>
++#include <stdio.h>
+ #include <string.h>
+ 
++#include "me_status.h"
+ #include "setup_options.h"
+ 
+ /* Battery charge thresholds in EC RAM, as in thinkpad_bat_thresholds_b0.asl */
+@@ -126,9 +128,30 @@ static void set_sata_ports(void)
+ 	}
+ }
+ 
++/*
++ * W541: the ME state for the OS (dmidecode -t 11, tools/update.py status),
++ * which has no HECI to ask with me_disable on. At most 64 characters each.
++ */
++static void mainboard_smbios_strings(struct device *dev, struct smbios_type11 *t)
++{
++	const struct mb_me_status *me = mainboard_me_status();
++	char text[65];
++
++	snprintf(text, sizeof(text), "ME: %s", mainboard_me_summary());
++	t->count = smbios_add_string(t->eos, text);
++	if (!me->valid)
++		return;
++	snprintf(text, sizeof(text), "ME HFSTS: %08X %08X %08X %08X %08X %08X",
++		 me->hfs[0], me->hfs[1], me->hfs[2], me->hfs[3], me->hfs[4], me->hfs[5]);
++	t->count = smbios_add_string(t->eos, text);
++}
++
+ static void mainboard_enable(struct device *dev)
+ {
++	/* dev is the root device, whose operations each board may extend */
+ 	dev->ops->acpi_fill_ssdt = mainboard_fill_ssdt;
++	if (CONFIG(BOARD_LENOVO_THINKPAD_W541) && CONFIG(GENERATE_SMBIOS_TABLES))
++		dev->ops->get_smbios_strings = mainboard_smbios_strings;
+ 
+ 	if (CONFIG(BOARD_LENOVO_THINKPAD_W541))
+ 		set_sata_ports();
+diff --git a/src/mainboard/lenovo/haswell/me_status.c b/src/mainboard/lenovo/haswell/me_status.c
+new file mode 100644
+index 0000000000..c83407d3e3
+--- /dev/null
++++ b/src/mainboard/lenovo/haswell/me_status.c
+@@ -0,0 +1,179 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <acpi/acpi.h>
++#include <bootstate.h>
++#include <commonlib/helpers.h>
++#include <console/console.h>
++#include <device/device.h>
++#include <device/pci_def.h>
++#include <device/pci_ops.h>
++#include <option.h>
++#include <southbridge/intel/lynxpoint/me.h>
++#include <stdarg.h>
++#include <stdio.h>
++#include <string.h>
++
++#include "me_status.h"
++
++/* The other status registers that Linux reads on Lynx Point (PCI_CFG_HFS_3, _4 and _6) */
++#define PCI_ME_HFS3	0x60
++#define PCI_ME_HFS4	0x64
++#define PCI_ME_HFS6	0x6c
++
++/*
++ * The registers that intel_me_path() logs at BS_DEV_INIT, read on its entry:
++ * with me_disable, intel_me_finalize() hides HECI at BS_POST_DEVICE, before
++ * SMBIOS and the setup menu are written. No HECI message, which a stopped ME
++ * would not answer. Only on the W541: the T440p keeps its setup and SMBIOS.
++ */
++const struct mb_me_status *mainboard_me_status(void)
++{
++	static const uint8_t hfs[] = {
++		PCI_ME_HFS, PCI_ME_HFS2, PCI_ME_HFS3, PCI_ME_HFS4, PCI_ME_HFS5, PCI_ME_HFS6,
++	};
++	static struct mb_me_status status;
++	static bool done;
++	const struct device *dev;
++
++	if (done)
++		return &status;
++	done = true;
++
++	if (!CONFIG(BOARD_LENOVO_THINKPAD_W541) || acpi_is_wakeup_s3())
++		return &status;
++
++	/* As intel_me_finalize() reads it */
++	status.me_disable = get_uint_option("me_disable", CONFIG(DISABLE_ME_PCI));
++
++	dev = pcidev_on_root(0x16, 0);
++	if (!dev || !dev->enabled || pci_read_config16(dev, PCI_VENDOR_ID) == 0xffff)
++		return &status;
++
++	for (size_t i = 0; i < ARRAY_SIZE(hfs); i++)
++		status.hfs[i] = pci_read_config32(dev, hfs[i]);
++	status.valid = true;
++
++	printk(BIOS_DEBUG, "ME: HFSTS1-6: %08x %08x %08x %08x %08x %08x\n",
++	       status.hfs[0], status.hfs[1], status.hfs[2],
++	       status.hfs[3], status.hfs[4], status.hfs[5]);
++
++	return &status;
++}
++
++static void me_status_snapshot(void *unused)
++{
++	mainboard_me_status();
++}
++
++BOOT_STATE_INIT_ENTRY(BS_DEV_INIT, BS_ON_ENTRY, me_status_snapshot, NULL);
++
++/*
++ * AltMeDisable, the strap that me_cleaner -S sets: the ME stops after its
++ * bring-up (BUP) once it has read the straps. ME 7 and 8 then report operation
++ * mode 2 (upstream commit d7e0cb93ae), not verified on ME 9, so the progress
++ * phase and state of HFS2 decide, whatever the mode: a stopped ME is never
++ * called enabled.
++ */
++static bool me_alt_disabled(union me_hfs hfs, union me_hfs2 hfs2)
++{
++	return hfs2.progress_code == ME_HFS2_PHASE_BUP &&
++	       hfs2.current_state == ME_HFS2_STATE_BUP_CHECK_STRAP &&
++	       hfs.error_code == ME_HFS_ERROR_NONE;
++}
++
++const char *mainboard_me_summary(void)
++{
++	static char text[32];
++	const struct mb_me_status *me = mainboard_me_status();
++	const union me_hfs hfs = { .raw = me->hfs[0] };
++	const union me_hfs2 hfs2 = { .raw = me->hfs[1] };
++
++	if (!me->valid)
++		return "Not available";
++
++	if (me_alt_disabled(hfs, hfs2))
++		return "Disabled (AltMeDisable, BUP)";
++
++	if (hfs2.progress_code == ME_HFS2_PHASE_BUP) {
++		snprintf(text, sizeof(text), "Stopped in BUP (state 0x%02x)",
++			 hfs2.current_state);
++		return text;
++	}
++
++	switch (hfs.operation_mode) {
++	case ME_HFS_MODE_NORMAL:
++		if (hfs.working_state == ME_HFS_CWS_NORMAL)
++			return "Enabled";
++		snprintf(text, sizeof(text), "Enabled, not ready (state %u)",
++			 hfs.working_state);
++		return text;
++	case ME_HFS_MODE_DIS:
++		return "Disabled (soft temporary disable)";
++	case ME_HFS_MODE_OVER_JMPR:
++		return "Security override (jumper)";
++	case ME_HFS_MODE_OVER_MEI:
++		return "Security override (HECI message)";
++	case ME_HFS_MODE_DEBUG:
++		return "Debug";
++	default:
++		snprintf(text, sizeof(text), "Mode %u", hfs.operation_mode);
++		return text;
++	}
++}
++
++/* Add to the text what fits */
++static void __printf(3, 4) text_add(char *text, size_t size, const char *fmt, ...)
++{
++	const size_t len = strnlen(text, size);
++	va_list args;
++
++	if (len + 1 >= size)
++		return;
++	va_start(args, fmt);
++	vsnprintf(text + len, size - len, fmt, args);
++	va_end(args);
++}
++
++const char *mainboard_me_details(void)
++{
++	static char text[640];
++	const struct mb_me_status *me = mainboard_me_status();
++	const union me_hfs hfs = { .raw = me->hfs[0] };
++	const union me_hfs2 hfs2 = { .raw = me->hfs[1] };
++
++	if (text[0])
++		return text;
++
++	if (!me->valid) {
++		text_add(text, sizeof(text),
++			 "The firmware could not read the ME at this boot: its HECI\n"
++			 "interface (00:16.0) was off or hidden.\n");
++	} else {
++		text_add(text, sizeof(text),
++			 "The Intel ME at this boot, from its status registers\n"
++			 "(HFS1-6):\n"
++			 "%08X %08X %08X %08X %08X %08X\n"
++			 "Working state %u, operation state %u, operation mode %u,\n"
++			 "error code %u; progress phase %u, state 0x%02x (HFS2).\n",
++			 me->hfs[0], me->hfs[1], me->hfs[2],
++			 me->hfs[3], me->hfs[4], me->hfs[5],
++			 hfs.working_state, hfs.operation_state, hfs.operation_mode,
++			 hfs.error_code, hfs2.progress_code, hfs2.current_state);
++		if (me_alt_disabled(hfs, hfs2))
++			text_add(text, sizeof(text),
++				 "Stopped after its bring-up (BUP) by the AltMeDisable\n"
++				 "strap of the flash descriptor (me_cleaner -S sets it).\n");
++		if (hfs.fpt_bad)
++			text_add(text, sizeof(text),
++				 "Its partition table in the flash is bad.\n");
++		text_add(text, sizeof(text), "HECI (00:16.0): %s.\n",
++			 me->me_disable ? "hidden from the OS at the end of the boot" :
++			 "visible to the OS");
++	}
++	text_add(text, sizeof(text),
++		 "Security > Management Engine only hides HECI. Capsules and\n"
++		 "flashrom --ifd -i bios do not write the ME region; the\n"
++		 "full-chip images write the one of this project.");
++
++	return text;
++}
+diff --git a/src/mainboard/lenovo/haswell/me_status.h b/src/mainboard/lenovo/haswell/me_status.h
+new file mode 100644
+index 0000000000..afe8431247
+--- /dev/null
++++ b/src/mainboard/lenovo/haswell/me_status.h
+@@ -0,0 +1,32 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef MAINBOARD_LENOVO_HASWELL_ME_STATUS_H
++#define MAINBOARD_LENOVO_HASWELL_ME_STATUS_H
++
++#include <types.h>
++
++/*
++ * The Intel ME at this boot, for the setup and SMBIOS (W541): its status
++ * registers HFS1-6 as ramstage reads them at BS_DEV_INIT, while HECI
++ * (00:16.0) is still visible, and the me_disable option.
++ */
++struct mb_me_status {
++	bool valid;
++	uint32_t hfs[6];
++	unsigned int me_disable;
++};
++
++const struct mb_me_status *mainboard_me_status(void);
++
++/*
++ * One of "Disabled (AltMeDisable, BUP)", "Stopped in BUP (state 0xNN)",
++ * "Disabled (soft temporary disable)", "Enabled", "Enabled, not ready (state
++ * N)", "Security override (jumper)", "Security override (HECI message)",
++ * "Debug", "Mode N" and "Not available"
++ */
++const char *mainboard_me_summary(void);
++
++/* The help text of the setup: registers, numbers, HECI */
++const char *mainboard_me_details(void);
++
++#endif /* MAINBOARD_LENOVO_HASWELL_ME_STATUS_H */
+diff --git a/src/southbridge/intel/lynxpoint/cfr.h b/src/southbridge/intel/lynxpoint/cfr.h
+index fef850cc1a..4131822694 100644
+--- a/src/southbridge/intel/lynxpoint/cfr.h
++++ b/src/southbridge/intel/lynxpoint/cfr.h
+@@ -45,7 +45,7 @@ static const struct sm_object me_disable = SM_DECLARE_ENUM({
+ 	.opt_name	= "me_disable",
+ 	.ui_name	= "Intel ME interface (HECI)",
+ 	.ui_helptext	= "The PCI interface (HECI) of the Management Engine, through\n"
+-			  "which the OS talks to it. The ME itself keeps running.\n"
++			  "which the OS talks to it. It does not change the ME itself.\n"
+ 			  "Default: " ME_PCI_DEFAULT ".",
+ 	.default_value	= CONFIG(DISABLE_ME_PCI),
+ 	.values		= (const struct sm_enum_value[]) {
+-- 
+2.47.3
+

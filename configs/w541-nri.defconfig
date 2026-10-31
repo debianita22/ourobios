@@ -106,6 +106,19 @@ CONFIG_BOOTMEDIA_LOCK_CONTROLLER=y
 CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO=y
 CONFIG_BOOTMEDIA_LOCK_RUNTIME_OPTION=y
 
+# Le opzioni del setup ai default quando la RTC perde l'alimentazione, come
+# sul M920x: romstage le cancella da SMMSTORE prima di leggerle. Il codice
+# per Haswell c'e', ma per ora resta spento: si accende dopo la prova OPT-05
+# sul M920x (docs/testing.md) e dopo aver visto sul W541 se il software puo'
+# accendere RTC_PWR_STS (bit 2 di GEN_PMCON_3, 00:1f.0 0xa4): se root potesse
+# farlo, con un riavvio rimetterebbe tutto ai default, BIOS Lock spento
+# compreso. Sul portatile la RTC resta senza corrente solo senza pila,
+# batteria e alimentatore insieme (con la pila scarica, togliendo batteria e
+# alimentatore). Su Haswell richiede CMOS_POST (qui sopra): se un avvio si
+# blocca nella cancellazione (POST 0x37), il successivo la salta, purche' il
+# portatile si spenga con il tasto (4 s) lasciando batteria o alimentatore.
+# CONFIG_DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE is not set
+
 # Aggiornamento con capsula UEFI (docs/update.md): ESRT con la versione della
 # release (DRIVERS_EFI_MAIN_FW_VERSION, la mette tools/build.sh), capsule su
 # disco (\EFI\UpdateCapsule dell'ESP o di una chiavetta USB) applicate dal

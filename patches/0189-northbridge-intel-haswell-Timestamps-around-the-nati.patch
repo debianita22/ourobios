@@ -1,0 +1,69 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sat, 31 Oct 2026 02:42:45 +0100
+Subject: [PATCH] northbridge/intel/haswell: Timestamps around the native RAM
+ init
+
+The mrc.bin path records TS_INITRAM_START and TS_INITRAM_END around
+sdram_initialize() (haswell_mrc/raminit.c), the native RAM init records
+nothing. cbmem -t then has no RAM init entry on a native RAM init build,
+and tools that time it see only the whole romstage: on the W541 the
+MEM-01 check of hw-report.py skips ("nessun timestamp della RAM init"),
+and BOOT-02 cannot take a training boot, up to a minute, out of the boot
+time. Record the same two timestamps around do_actual_raminit(), which
+covers the training on a cold boot and the restore from the cache on a
+fast boot or an S3 resume.
+
+The span is not the same work as mrc.bin's. early_init_native() runs
+before it: the wait for the ME UMA in intel_early_me_init() (up to 1 s),
+the CPU replacement check on a cold boot (up to 50 ms), and the early
+PCH and DMI init of the native path. The mrc.bin path calls none of
+them, so whatever mrc.bin does in their place falls inside its span.
+RAM init figures of the two variants are not to be compared one to one.
+
+The pre-RAM entries go into the CAR timestamp table, which mrc.bin
+builds fill with the same two entries, so the table needs no more room.
+The change is in the shared northbridge and also gives the T440p these
+entries.
+
+TEST=Host syntax check with -Werror and the ci-150 W541 nri config.
+Still to test on the W541 (nri): cbmem -t lists "before RAM
+initialization" and "after RAM initialization" on a training boot, a
+fast boot and an S3 resume, and hw-report.py reports MEM-01 instead of
+skipping it; the time from the start of romstage to "before RAM
+initialization" shows what early_init_native() costs.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../intel/haswell/native_raminit/raminit_native.c            | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.c b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
+index 019606ebad..06aef201af 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
+@@ -12,6 +12,7 @@
+ #include <northbridge/intel/haswell/raminit.h>
+ #include <southbridge/intel/lynxpoint/me.h>
+ #include <southbridge/intel/lynxpoint/pch.h>
++#include <timestamp.h>
+ #include <types.h>
+ 
+ #include "raminit_native.h"
+@@ -181,9 +182,13 @@ void perform_raminit(const bool s3resume)
+ 	wait_txt_clear();
+ 	wrmsr(0x2e6, (msr_t) {.lo = 0, .hi = 0});
+ 
++	timestamp_add_now(TS_INITRAM_START);
++
+ 	const enum raminit_boot_mode bootmode =
+ 			do_actual_raminit(s3resume, cpu_replaced, orig_bootmode);
+ 
++	timestamp_add_now(TS_INITRAM_END);
++
+ 	report_memory_config();
+ 
+ 	if (intel_early_me_uma_size() > 0) {
+-- 
+2.47.3
+

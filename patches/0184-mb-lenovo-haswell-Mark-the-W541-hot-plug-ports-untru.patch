@@ -1,0 +1,224 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sat, 31 Oct 2026 02:45:32 +0100
+Subject: [PATCH] mb/lenovo/haswell: Mark the W541 hot-plug ports untrusted for
+ the OS
+
+On the W541, root port 3 goes to the ExpressCard/34 slot and root port
+5 to the Thunderbolt controller (patch 0033, and EXP3/EXP5 with a
+removable slot in the OEM DSDT). A card in either can read and write
+memory by DMA, and Linux treats it as an internal device: with the
+IOMMU on, it gets the default DMA domain of the system.
+
+With the new option dma_untrusted_ports ("Untrusted ExpressCard and
+Thunderbolt", Security > Virtualization, default off, shown with Intel
+VT-d on), mainboard_fill_ssdt() gives RP03 and RP05 a _DSD with
+ExternalFacingPort. Linux then marks the devices behind them as
+untrusted and, with its IOMMU on, gives them a DMA domain of their own
+and bounce buffers.
+The property is written only for a port that is on (the ExpressCard
+and Thunderbolt switches can hide them) and only while the DMAR table
+has the remapping engine of the PCIe devices: the vtd option on, VT-d
+in the CPU and VTVC0BAR enabled, tested in the code too, as a hidden
+option keeps its stored value. RP01 is always on, so the root ports
+are not coalesced and keep their functions.
+
+The DMAR opt-in flag is not set: the payload has no IOMMU driver, so
+nothing protects the memory before the OS, and Windows Kernel DMA
+Protection needs TPM 2.0, which the W541 does not have. The help says
+so. The T440p does not get the option.
+
+The comments of dsdt.asl called RP03 the WWAN slot and RP05 the
+ExpressCard slot; they now say ExpressCard and Thunderbolt, and that
+the PCIe wake of RP03 is the one of an ExpressCard. Comments only.
+
+TEST=Host syntax check of mainboard.c and cfr.c with the W541 mrc and
+nri configs and a T440p one. tools/cfr-dump.sh for mrc and nri: the
+menu is valid, dma_untrusted_ports depends on vtd; suppressed with the
+T440p devicetree. The DSDT preprocessed with the W541 config compiles
+with iasl to the same AML as before. An SSDT with the _DSD that
+acpi_device_add_external_facing_port() writes in both scopes loads in
+acpiexec next to that DSDT, and both _DSD evaluate. For the W541
+hardware test: with the option and VT-d on, the SSDT (acpidump, iasl
+-d) has the _DSD in RP03 and RP05 only, none with VT-d off or a port
+turned off; an ExpressCard (USB 3.0 or eSATA) shows "removable" in
+sysfs, its IOMMU group type is DMA with intel_iommu=on, and it works.
+With these W541 changes the CFR record is 24884 bytes on the host, of
+the 32 KiB of the whole coreboot table: cbmem -1 has "coreboot table:
+N bytes." and no "didn't fit" line.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/haswell/cfr.c       | 18 ++++++++
+ src/mainboard/lenovo/haswell/dsdt.asl    | 21 +++++-----
+ src/mainboard/lenovo/haswell/mainboard.c | 53 ++++++++++++++++++++++++
+ 3 files changed, 82 insertions(+), 10 deletions(-)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 50b4fb7dbe..02f3f9c402 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -505,11 +505,29 @@ static const struct sm_object security_memory = SM_DECLARE_FORM({
+ 	},
+ });
+ 
++/* For the _DSD of mainboard_fill_ssdt(), on the W541 */
++static const struct sm_object dma_untrusted_ports = SM_DECLARE_BOOL({
++	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "dma_untrusted_ports",
++	.ui_name	= "Untrusted ExpressCard and Thunderbolt",
++	.ui_helptext	= "Mark the ExpressCard slot and the Thunderbolt port as\n"
++			  "external facing in ACPI. With its IOMMU on, Linux then\n"
++			  "treats the devices behind them as untrusted: a DMA domain\n"
++			  "of their own and bounce buffers, against a card that\n"
++			  "reads or writes memory it should not. Some cards may be\n"
++			  "slower.\n"
++			  "Not Windows Kernel DMA Protection (that needs TPM 2.0),\n"
++			  "and no protection before the OS starts.\n"
++			  "Default: off. Shown with Intel VT-d on.",
++	.default_value	= false,
++}, WITH_DEP_VALUES(&vtd, true));
++
+ static const struct sm_object security_virtualization = SM_DECLARE_FORM({
+ 	.ui_name	= "Virtualization",
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&vmx,
+ 		&vtd,
++		&dma_untrusted_ports,
+ 		NULL
+ 	},
+ });
+diff --git a/src/mainboard/lenovo/haswell/dsdt.asl b/src/mainboard/lenovo/haswell/dsdt.asl
+index 5ef1c62768..a2abf4a46b 100644
+--- a/src/mainboard/lenovo/haswell/dsdt.asl
++++ b/src/mainboard/lenovo/haswell/dsdt.asl
+@@ -47,11 +47,11 @@ DefinitionBlock(
+ 
+ 		/*
+ 		 * The cards behind the root ports: the card reader (RP01), the
+-		 * Wi-Fi card (RP02) and, on the W541, the WWAN slot (RP03) and
+-		 * the ExpressCard slot (RP05). A device node, as the OEM
+-		 * firmware has, gives their drivers an ACPI companion: without one,
+-		 * iwlwifi evaluates its _DSM on a NULL handle and Linux logs
+-		 * "failed to evaluate _DSM ... (0x1001)" at every boot.
++		 * Wi-Fi card (RP02) and, on the W541, the ExpressCard/34 slot
++		 * (RP03) and the Thunderbolt controller (RP05). A device node, as
++		 * the OEM firmware has, gives their drivers an ACPI companion:
++		 * without one, iwlwifi evaluates its _DSM on a NULL handle and
++		 * Linux logs "failed to evaluate _DSM ... (0x1001)" at every boot.
+ 		 */
+ 		Scope (RP01) { Device (PXSX) { Name (_ADR, 0) } }
+ 		Scope (RP02) { Device (PXSX) { Name (_ADR, 0) } }
+@@ -61,9 +61,10 @@ DefinitionBlock(
+ 		/*
+ 		 * What can wake the laptop, as on the OEM firmware: the Gigabit
+ 		 * Ethernet controller (Wake-on-LAN, its PME on GPE 0x0d like the
+-		 * USB controllers) and the Wi-Fi and WWAN cards (PCIe PME, GPE
+-		 * 0x09), from S3 and S4. The OS enables each one on request
+-		 * (ethtool -s ... wol g, /sys/.../power/wakeup).
++		 * USB controllers), the Wi-Fi card and, on the W541, an
++		 * ExpressCard (PCIe PME, GPE 0x09), from S3 and S4. The OS
++		 * enables each one on request (ethtool -s ... wol g,
++		 * /sys/.../power/wakeup).
+ 		 */
+ 		Device (GLAN)
+ 		{
+@@ -76,8 +77,8 @@ DefinitionBlock(
+ 
+ 		/*
+ 		 * As the OEM firmware: the deepest D-state in S3 of the devices
+-		 * (D3; the OS assumes it without _S3D, these say it), and the
+-		 * cards in the WWAN and ExpressCard slots as removable.
++		 * (D3; the OS assumes it without _S3D, these say it), and, on the
++		 * W541, the ExpressCard and the Thunderbolt devices as removable.
+ 		 */
+ 		Name (_S3D, 2)
+ 		Scope (PEGP) { Name (_S3D, 3) }
+diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
+index 4e8ad6ba68..8dc1e834e1 100644
+--- a/src/mainboard/lenovo/haswell/mainboard.c
++++ b/src/mainboard/lenovo/haswell/mainboard.c
+@@ -1,13 +1,16 @@
+ /* SPDX-License-Identifier: GPL-2.0-or-later */
+ 
++#include <acpi/acpi_device.h>
+ #include <acpi/acpigen.h>
+ #include <build.h>
+ #include <console/console.h>
+ #include <device/device.h>
++#include <device/pci_ops.h>
+ #include <drivers/intel/gma/int15.h>
+ #include <drivers/vpd/vpd.h>
+ #include <ec/acpi/ec.h>
+ #include <ec/lenovo/h8/h8.h>
++#include <northbridge/intel/haswell/haswell.h>
+ #include <option.h>
+ #include <smbios.h>
+ #include <southbridge/intel/lynxpoint/chip.h>
+@@ -66,6 +69,54 @@ static void disable_root_port(unsigned int func, const char *what)
+ 	rp->enabled = 0;
+ }
+ 
++/*
++ * Whether the DMAR table has the remapping engine of the PCIe devices, as
++ * northbridge_write_acpi_tables() and acpi_fill_dmar() decide it: VT-d in the
++ * CPU and VTVC0BAR set and enabled (the vtd option), in 32-bit space.
++ */
++static bool pcie_dma_remapping(void)
++{
++	const u32 vtvc0bar = mchbar_read32(VTVC0BAR);
++
++	if (pci_s_read_config32(HOST_BRIDGE, CAPID0_A) & VTD_DISABLE)
++		return false;
++
++	return (vtvc0bar & ~0xfff) && (vtvc0bar & 1) && !mchbar_read32(VTVC0BAR + 4);
++}
++
++/*
++ * W541: the hot-plug ports, the ExpressCard/34 slot (RP03) and the Thunderbolt
++ * controller (RP05), as external facing ports: with its IOMMU on, Linux then
++ * treats the devices behind them as untrusted (their own DMA domain, bounce
++ * buffers). Only with that remapping engine, and without the opt-in flag of
++ * the DMAR table: nothing protects the memory before the OS. RP01 stays on,
++ * so the root ports keep their functions (no coalescing).
++ */
++static void fill_ssdt_untrusted_ports(void)
++{
++	static const struct {
++		unsigned int func;
++		const char *scope;
++	} ports[] = {
++		{ 2, "\\_SB.PCI0.RP03" },
++		{ 4, "\\_SB.PCI0.RP05" },
++	};
++
++	if (!get_uint_option("dma_untrusted_ports", 0) || !get_uint_option("vtd", 1) ||
++	    !pcie_dma_remapping())
++		return;
++
++	for (size_t i = 0; i < ARRAY_SIZE(ports); i++) {
++		const struct device *rp = pcidev_on_root(0x1c, ports[i].func);
++
++		if (!rp || !rp->enabled)
++			continue;
++		acpigen_write_scope(ports[i].scope);
++		acpi_device_add_external_facing_port(NULL);
++		acpigen_pop_len();
++	}
++}
++
+ /* The setup options that the DSDT reads: acpi/dgpu.asl, devprops.asl, pnlf.asl, wake.asl */
+ static void mainboard_fill_ssdt(const struct device *dev)
+ {
+@@ -95,6 +146,8 @@ static void mainboard_fill_ssdt(const struct device *dev)
+ 		acpigen_write_scope("\\_SB.PCI0");
+ 		acpigen_write_name_integer("DPRP", props ? 1 : 0);
+ 		acpigen_pop_len();
++
++		fill_ssdt_untrusted_ports();
+ 	}
+ }
+ 
+-- 
+2.47.3
+
