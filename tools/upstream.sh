@@ -6,12 +6,16 @@
 #
 #   tools/upstream.sh coreboot [--dry-run]
 #   tools/upstream.sh edk2 [--dry-run]
+#   tools/upstream.sh mirror [--dry-run]
 #
 # coreboot  la serie di patches/ applica ancora su main? Qualche patch e' gia'
 #           entrata upstream (stesso Subject)? C'e' un tag di release dopo il
 #           pin? Se si', issue "coreboot: ...".
 # edk2      il ramo uefipayload_AAMM piu' recente di MrChromebox e' andato
 #           oltre il commit pinnato nei defconfig? Se si', issue "EDK2: ...".
+# mirror    i commit di EDK2 e LvglPkg di configs/edk2-pins.txt hanno il loro
+#           tag pin-<12 cifre> nei fork del progetto (EDK2_MIRROR e
+#           LVGLPKG_MIRROR di tools/build.sh)? Se no, issue "Mirror: ...".
 #
 # Con --dry-run scrive soltanto cosa farebbe (niente issue).
 set -euo pipefail
@@ -173,8 +177,79 @@ EOF
 	report "EDK2:" "${title}" "${body}"
 }
 
+# I commit di EDK2 e di LvglPkg pinnati (configs/edk2-pins.txt) nei mirror
+# del progetto (EDK2_MIRROR e LVGLPKG_MIRROR di tools/build.sh): per ognuno
+# il tag pin-<12 cifre>, perche' MrChromebox riscrive i suoi rami e un commit
+# tolto dal ramo non arriva piu' con un clone. Controlla anche che il
+# submodule LvglPkg del commit di EDK2 sia quello della lista.
+check_mirror() {
+	local em lm pins e l r got sub repo missing="" seen=" " n=0
+	em="$(sed -n 's/^EDK2_MIRROR="\([^"]*\)".*/\1/p' "${O}/tools/build.sh")"
+	lm="$(sed -n 's/^LVGLPKG_MIRROR="\([^"]*\)".*/\1/p' "${O}/tools/build.sh")"
+	pins="${O}/configs/edk2-pins.txt"
+	[ -n "${em}" ] && [ -n "${lm}" ] || die "EDK2_MIRROR o LVGLPKG_MIRROR non trovati in tools/build.sh"
+	[ -f "${pins}" ] || die "configs/edk2-pins.txt non c'e'"
+	while read -r e l r; do
+		case "${e}" in ''|'#'*) continue ;; esac
+		n=$((n + 1))
+		got="$(GIT_TERMINAL_PROMPT=0 git ls-remote "${em}" "refs/tags/pin-${e:0:12}" 2>/dev/null | cut -f1 || true)"
+		if [ "${got}" != "${e}" ]; then
+			missing="${missing}- EDK2 \`${e:0:12}\` (${r}): tag \`pin-${e:0:12}\` ${got:+su \`${got:0:12}\`}${got:-assente} in ${em}
+"
+		fi
+		# un commit di LvglPkg una volta sola, anche se piu' pin lo usano
+		if [ "${seen#* "${l}" }" = "${seen}" ]; then
+			seen="${seen}${l} "
+			got="$(GIT_TERMINAL_PROMPT=0 git ls-remote "${lm}" "refs/tags/pin-${l:0:12}" 2>/dev/null | cut -f1 || true)"
+			if [ "${got}" != "${l}" ]; then
+				missing="${missing}- LvglPkg \`${l:0:12}\`: tag \`pin-${l:0:12}\` ${got:+su \`${got:0:12}\`}${got:-assente} in ${lm}
+"
+			fi
+		fi
+		# il submodule del commit di EDK2, dal mirror o da MrChromebox (un 404
+		# scrive il suo JSON su stdout: vale solo un commit intero)
+		sub=""
+		for repo in "${em#https://github.com/}" mrchromebox/edk2; do
+			sub="$(gh api "repos/${repo}/contents/LvglPkg?ref=${e}" --jq .sha 2>/dev/null || true)"
+			[[ "${sub}" =~ ^[0-9a-f]{40}$ ]] && break
+			sub=""
+		done
+		if [ -n "${sub}" ] && [ "${sub}" != "${l}" ]; then
+			missing="${missing}- EDK2 \`${e:0:12}\`: il submodule LvglPkg e' \`${sub:0:12}\`, non \`${l:0:12}\` come in configs/edk2-pins.txt
+"
+		fi
+	done < "${pins}"
+	if [ -z "${missing}" ]; then
+		settle "Mirror:" "Mirror: i ${n} commit pinnati di EDK2 e LvglPkg hanno il loro tag"
+		note notice "Mirror: ${n} commit pinnati, tutti con il tag pin-<12 cifre> nei mirror"
+		return 0
+	fi
+	local body
+	body="$(cat <<EOF
+Nei mirror del progetto mancano dei tag dei commit pinnati (\`configs/edk2-pins.txt\`):
+
+${missing}
+Senza il tag, una build di quei commit dipende da MrChromebox: se il commit non e' piu' sul suo ramo, \`tools/build.sh\` lo trova solo finche' GitHub lo da' per hash.
+
+Per aggiungerli (il fork, se non c'e': \`gh repo fork mrchromebox/edk2 --clone=false --default-branch-only\`, e lo stesso per \`MrChromebox/LvglPkg\`):
+
+\`\`\`sh
+git clone --bare --filter=blob:none https://github.com/mrchromebox/edk2 edk2.git
+git -C edk2.git fetch origin <commit>
+git -C edk2.git push ${em} <commit>:refs/tags/pin-<prime 12 cifre>
+\`\`\`
+
+e lo stesso con \`https://github.com/MrChromebox/LvglPkg\` e ${lm}.
+
+Questo issue lo aggiorna e lo chiude \`upstream.yml\`.
+EOF
+)"
+	report "Mirror:" "Mirror: tag mancanti per i commit pinnati di EDK2 o LvglPkg" "${body}"
+}
+
 case "${WHAT}" in
 	coreboot) check_coreboot ;;
 	edk2)     check_edk2 ;;
-	*) die "uso: upstream.sh coreboot|edk2 [--dry-run]" ;;
+	mirror)   check_mirror ;;
+	*) die "uso: upstream.sh coreboot|edk2|mirror [--dry-run]" ;;
 esac

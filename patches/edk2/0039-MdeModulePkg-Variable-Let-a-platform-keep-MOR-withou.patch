@@ -1,0 +1,124 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sat, 31 Oct 2026 22:15:43 +0100
+Subject: [PATCH] MdeModulePkg/Variable: Let a platform keep MOR without SMM
+
+The variable driver without SMM (VariableRuntimeDxe, TcgMorLockDxe.c)
+deletes the TCG MOR variable MemoryOverwriteRequestControl at every
+boot and locks it at EndOfDxe, so that no OS counts on a request that
+nothing honors, and reports MemoryOverwriteRequestControlLock as
+unsupported: the lock cannot be made secure without SMM.
+
+coreboot honors MOR by itself: with "clear_dram_on_boot" on "when the
+OS asks", ramstage reads the variable from SMMSTORE and clears the
+memory before the payload when bit 0 is set. For a coreboot payload,
+MOR (revision 1) is then a real mitigation against a reset attack by
+someone who cannot run code in the OS, the case it was made for; only
+the lock of revision 2 needs SMM.
+
+Add PcdTcgMorWithoutSmm, a feature flag off by default: when on, the
+driver without SMM neither deletes nor locks the MOR variable, and
+leaves it to a driver of the platform to create it, or to delete and
+lock it itself when the platform does not honor it. MorLock is deleted
+and locked as before in both cases.
+
+TEST=git diff: with the flag off (the default of the .dec), the driver
+does what it did. No EDK2 build here.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ MdeModulePkg/MdeModulePkg.dec                 | 11 ++++++++
+ .../Variable/RuntimeDxe/TcgMorLockDxe.c       | 27 +++++++++++++------
+ .../RuntimeDxe/VariableRuntimeDxe.inf         |  1 +
+ 3 files changed, 31 insertions(+), 8 deletions(-)
+
+diff --git a/MdeModulePkg/MdeModulePkg.dec b/MdeModulePkg/MdeModulePkg.dec
+index bd3d314c29..33b2f815e6 100644
+--- a/MdeModulePkg/MdeModulePkg.dec
++++ b/MdeModulePkg/MdeModulePkg.dec
+@@ -1040,6 +1040,17 @@
+   #           will still be loaded, but memory protections will not be disabled.
+   gEfiMdeModulePkgTokenSpaceGuid.PcdAllowMemoryProtectionsCompatibilityMode|TRUE|BOOLEAN|0x00010081
+ 
++  ## Indicates if the variable driver without SMM keeps the TCG MOR variable
++  #  MemoryOverwriteRequestControl, for a platform that honors the request of
++  #  the OS by other means (coreboot clears the memory itself before the payload)
++  #  and that decides with a driver of its own whether the variable exists.
++  #  MemoryOverwriteRequestControlLock stays unsupported either way: it cannot be
++  #  made secure without SMM.
++  #   TRUE  - The variable driver without SMM neither deletes nor locks MemoryOverwriteRequestControl.
++  #   FALSE - The variable driver without SMM deletes and locks MemoryOverwriteRequestControl.
++  # @Prompt Keep the TCG MOR variable without SMM.
++  gEfiMdeModulePkgTokenSpaceGuid.PcdTcgMorWithoutSmm|FALSE|BOOLEAN|0x00010082
++
+ [PcdsFeatureFlag.IA32, PcdsFeatureFlag.AARCH64, PcdsFeatureFlag.LOONGARCH64]
+   gEfiMdeModulePkgTokenSpaceGuid.PcdPciDegradeResourceForOptionRom|FALSE|BOOLEAN|0x0001003a
+ 
+diff --git a/MdeModulePkg/Universal/Variable/RuntimeDxe/TcgMorLockDxe.c b/MdeModulePkg/Universal/Variable/RuntimeDxe/TcgMorLockDxe.c
+index 114d0693fe..45d7b2b019 100644
+--- a/MdeModulePkg/Universal/Variable/RuntimeDxe/TcgMorLockDxe.c
++++ b/MdeModulePkg/Universal/Variable/RuntimeDxe/TcgMorLockDxe.c
+@@ -16,6 +16,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Library/DebugLib.h>
+ #include <Library/BaseLib.h>
+ #include <Library/BaseMemoryLib.h>
++#include <Library/PcdLib.h>
+ #include "Variable.h"
+ 
+ #include <Protocol/VariablePolicy.h>
+@@ -87,15 +88,18 @@ MorLockInit (
+   // Thus, delete the MOR variable, should it exist for any reason (some OSes
+   // are known to create MOR unintentionally, in an attempt to set it), then
+   // also lock the MOR variable, in order to prevent other modules from
+-  // creating it.
++  // creating it. Unless the platform honors MOR without SMM and decides itself
++  // whether the variable exists (PcdTcgMorWithoutSmm).
+   //
+-  VariableServiceSetVariable (
+-    MEMORY_OVERWRITE_REQUEST_VARIABLE_NAME,
+-    &gEfiMemoryOverwriteControlDataGuid,
+-    0,                                      // Attributes
+-    0,                                      // DataSize
+-    NULL                                    // Data
+-    );
++  if (!FeaturePcdGet (PcdTcgMorWithoutSmm)) {
++    VariableServiceSetVariable (
++      MEMORY_OVERWRITE_REQUEST_VARIABLE_NAME,
++      &gEfiMemoryOverwriteControlDataGuid,
++      0,                                      // Attributes
++      0,                                      // DataSize
++      NULL                                    // Data
++      );
++  }
+ 
+   return EFI_SUCCESS;
+ }
+@@ -135,6 +139,13 @@ MorLockInitAtEndOfDxe (
+     DEBUG ((DEBUG_ERROR, "%a - Could not lock variable %s! %r\n", __func__, MEMORY_OVERWRITE_REQUEST_CONTROL_LOCK_NAME, Status));
+   }
+ 
++  //
++  // The MOR variable is the platform's to keep or to lock (PcdTcgMorWithoutSmm).
++  //
++  if (FeaturePcdGet (PcdTcgMorWithoutSmm)) {
++    return;
++  }
++
+   Status = RegisterBasicVariablePolicy (
+              VariablePolicy,
+              &gEfiMemoryOverwriteControlDataGuid,
+diff --git a/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf b/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
+index b5e8bf6067..189ce1f856 100644
+--- a/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
++++ b/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
+@@ -145,6 +145,7 @@
+ [FeaturePcd]
+   gEfiMdeModulePkgTokenSpaceGuid.PcdVariableCollectStatistics  ## CONSUMES # statistic the information of variable.
+   gEfiMdePkgTokenSpaceGuid.PcdUefiVariableDefaultLangDeprecate ## CONSUMES # Auto update PlatformLang/Lang
++  gEfiMdeModulePkgTokenSpaceGuid.PcdTcgMorWithoutSmm           ## CONSUMES # Keep MemoryOverwriteRequestControl
+ 
+ [Depex]
+   TRUE
+-- 
+2.47.3
+

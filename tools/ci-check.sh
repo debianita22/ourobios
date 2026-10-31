@@ -338,6 +338,12 @@ rep = hw.Report()
 hw.check_boot_time(firmware("m920x", valid, ts(15242599)), rep)
 assert rep.checks[0]["status"] == "FAIL"
 rep = hw.Report()
+hw.check_boot_time(firmware("m920x", valid + [
+    "[INFO ]  MOR: MemoryOverwriteRequestControl = 0x00",
+    "[INFO ]  DRAM clear: option when the OS asks, request of the OS no: not clearing"], ts(230000)), rep)
+assert any(d.startswith("Clear memory at power-on: When the OS asks, richiesta del sistema operativo (MOR) no: "
+                        "memoria non cancellata") for d in rep.checks[0]["details"]), rep.checks[0]["details"]
+rep = hw.Report()
 hw.check_fw_log(firmware("m920x", ["[WARN ]  CBFS: 'fallback/slic' not found.",
                                    "[ERROR]  EC: the CPU fan does not turn (0 rpm): fan failure"], []), rep)
 assert rep.checks[0]["status"] == "FAIL" and "noto" in rep.checks[0]["details"][0]
@@ -2054,6 +2060,85 @@ for b in $(boards); do
 		bad "${b}: il pin e' ${desc}, la parte RO sulle macchine ${ro_cb:-?}: gli slot devono ancora leggere quello che lascia (${iface:-BOARD_RO_INTERFACE}, docs/vboot.md#limits)"
 	fi
 done
+
+step "commit pinnati dal mirror (pinned_commit di tools/build.sh)"
+# Un repository "upstream" che non ha piu' il commit pinnato (riscritto) e
+# un mirror con il suo tag pin-<12 cifre>, in locale: pinned_commit lo deve
+# prendere dal mirror, in un clone intero e in uno parziale (i file dal
+# mirror promisor), e dire di no per un commit che non c'e' da nessuna parte
+fn="$(sed -n '/^pinned_commit() {$/,/^}$/p' tools/build.sh)"
+if [ -z "${fn}" ]; then
+	bad "tools/build.sh: nessuna funzione pinned_commit"
+else
+	out="$(
+		set -e
+		t="$(mktemp -d)"
+		trap 'rm -rf "${t}"' EXIT
+		eval "${fn}"
+		g() { git -c user.name=ci -c user.email=ci@ci -c init.defaultBranch=main -c protocol.file.allow=always "$@"; }
+		g init -q "${t}/work"
+		echo uno > "${t}/work/f"; g -C "${t}/work" add f; g -C "${t}/work" commit -q -m uno
+		g init -q --bare "${t}/up.git"; g -C "${t}/up.git" config uploadpack.allowfilter true
+		g -C "${t}/work" push -q "file://${t}/up.git" main
+		echo due > "${t}/work/f"; g -C "${t}/work" commit -q -am due
+		pin="$(g -C "${t}/work" rev-parse HEAD)"
+		g init -q --bare "${t}/mirror.git"; g -C "${t}/mirror.git" config uploadpack.allowfilter true
+		g -C "${t}/work" push -q "file://${t}/mirror.git" "HEAD:refs/tags/pin-${pin:0:12}"
+		for kind in intero parziale; do
+			if [ "${kind}" = parziale ]; then
+				g clone -q --filter=blob:none --no-checkout "file://${t}/up.git" "${t}/${kind}"
+			else
+				g clone -q --no-checkout "file://${t}/up.git" "${t}/${kind}"
+			fi
+			git() { command git -c protocol.file.allow=always "$@"; }
+			pinned_commit "${t}/${kind}" "${pin}" "file://${t}/mirror.git" > /dev/null
+			unset -f git
+			# nel clone parziale i file vengono dal mirror promisor, dopo un no
+			# di upstream ("not our ref")
+			g -C "${t}/${kind}" checkout -q --detach "${pin}" 2> /dev/null
+			[ "$(cat "${t}/${kind}/f")" = due ] || { echo "clone ${kind}: il file del commit pinnato non e' quello"; exit 1; }
+			git() { command git -c protocol.file.allow=always "$@"; }
+			if pinned_commit "${t}/${kind}" 0123456789abcdef0123456789abcdef01234567 "file://${t}/mirror.git" > /dev/null; then
+				echo "clone ${kind}: un commit che non c'e' da nessuna parte risulta trovato"; exit 1
+			fi
+			unset -f git
+		done
+		echo ok
+	)" 2>&1 || true
+	if [ "$(tail -n 1 <<< "${out}")" = ok ]; then
+		ok "dal tag pin-<12 cifre> del mirror, clone intero e parziale"
+	else
+		while IFS= read -r line; do [ -n "${line}" ] && bad "pinned_commit: ${line}"; done <<< "${out}"
+	fi
+fi
+for p in EDK2_MIRROR LVGLPKG_MIRROR; do
+	m="$(sed -n "s/^${p}=\"\([^\"]*\)\".*/\1/p" tools/build.sh)"
+	if [[ "${m}" =~ ^https://github\.com/debianita22/[A-Za-z0-9_.-]+$ ]]; then ok "${p} ${m}"; else bad "${p} in tools/build.sh: '${m}'"; fi
+done
+# configs/edk2-pins.txt: le righe "commit-edk2 commit-lvglpkg release", e il
+# pin dei defconfig fra quelle (tools/upstream.sh mirror ne controlla i tag)
+pins=configs/edk2-pins.txt
+if [ ! -f "${pins}" ]; then
+	bad "${pins} non c'e'"
+else
+	n=0
+	while read -r e l r; do
+		case "${e}" in ''|'#'*) continue ;; esac
+		n=$((n + 1))
+		[[ "${e}" =~ ^[0-9a-f]{40}$ ]] && [[ "${l}" =~ ^[0-9a-f]{40}$ ]] && [ -n "${r}" ] \
+			|| bad "${pins}: riga '${e} ${l} ${r}': due commit interi e le release"
+	done < "${pins}"
+	for f in configs/*.defconfig boards/*/*.defconfig; do
+		rev="$(sed -n 's/^CONFIG_EDK2_TAG_OR_REV="\(.*\)"$/\1/p' "${f}")"
+		[ -n "${rev}" ] || continue
+		if awk -v r="${rev}" '$1 == r { f = 1 } END { exit !f }' "${pins}"; then
+			ok "${f}: EDK2 ${rev:0:12} in ${pins}"
+		else
+			bad "${f}: EDK2 ${rev} manca in ${pins} (e nei mirror: tools/upstream.sh mirror)"
+		fi
+	done
+	ok "${pins}: ${n} commit pinnati"
+fi
 
 step "link nei documenti"
 if out="$(files | python3 -c '

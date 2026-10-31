@@ -1,0 +1,16 @@
+# The EDK2 commits (MrChromebox's uefipayload branches) that the releases
+# and the main branch pin, with the LvglPkg submodule of each. MrChromebox
+# rewrites those branches: a commit taken off its branch no longer comes
+# with a clone. The project's forks keep each one under a tag
+# pin-<first 12 digits> (EDK2_MIRROR and LVGLPKG_MIRROR in tools/build.sh,
+# which takes the commit from there when upstream no longer has it);
+# tools/upstream.sh mirror checks every week that the tags are there, and
+# tools/ci-check.sh that the pin of the defconfigs is listed here.
+#
+# edk2 commit                              lvglpkg commit                           releases
+b061f7a46bdb482db24a3c1fc8275e1c2a6681b5 659b502401d9439443dc636acb10ca711afe8bc5 v1.0.0-v1.3.2
+0d39245e631103f44313122ee8eacf923aa287aa 659b502401d9439443dc636acb10ca711afe8bc5 v1.3.3-v1.3.5
+9c0cb3a58343786240c38b2d115c200351d2882b 659b502401d9439443dc636acb10ca711afe8bc5 v1.3.6-v1.3.7
+f7cbaab0d5a224d15a144c049fc83f8d730b45fb 659b502401d9439443dc636acb10ca711afe8bc5 v1.3.8-v1.3.10-rc11
+ddf612165c8b36e94d5454f01a38e87cf101533f 659b502401d9439443dc636acb10ca711afe8bc5 v1.3.10-rc12-v1.4.0
+6c14abf865e093452edc775651df61775bf99c9f 659b502401d9439443dc636acb10ca711afe8bc5 v1.4.1-

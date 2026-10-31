@@ -581,7 +581,18 @@ def check_boot_time(fw, rep):
             details.append("%-38s %8s" % (label, sec(d)))
     top = sorted(fw.ts[1:], key=lambda x: -x[2])[:5]
     details.append("i passi piu' lunghi: " + "; ".join("%s fino a '%s'" % (sec(d), n) for _, _, d, n in top))
-    if fw.log is not None and fw.grep(r"clear_memory: Clearing DRAM"):
+    # Clear memory at power-on: dalla riga di security/memory (patch 0192),
+    # Always, When the OS asks (la richiesta TCG MOR) o Never; prima, solo
+    # se ha cancellato
+    clear = fw.grep(r"DRAM clear: option (.+), request of the OS (yes|no): (clearing|not clearing)") \
+        if fw.log is not None else []
+    if clear:
+        mode, req, act = clear[-1].groups()
+        details.append("Clear memory at power-on: %s, richiesta del sistema operativo (MOR) %s: %s" % (
+            {"always": "Always", "when the OS asks": "When the OS asks", "never": "Never"}.get(mode, mode),
+            "si'" if req == "yes" else "no",
+            "memoria cancellata (~0.5 s ogni 10 GB)" if act == "clearing" else "memoria non cancellata"))
+    elif fw.log is not None and fw.grep(r"clear_memory: Clearing DRAM"):
         details.append("Clear memory at power-on acceso (~0.5 s ogni 10 GB)")
     state = cache_state(fw)[0] if fw.log is not None else "unknown"
     # con il training si toglie la RAM init (sugli slot della NRI senza i suoi

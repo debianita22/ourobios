@@ -151,6 +151,14 @@ SUBMODULES=(
 # Makefile riporta al commit pinnato un albero pulito, ma uno con modifiche
 # lo lascia com'e' ("Working directory not clean; will not overwrite").
 EDK2_REPO="https://github.com/mrchromebox/edk2"
+# Le copie del progetto dei repository che MrChromebox riscrive (EDK2 e il
+# submodule LvglPkg): un fork con un tag pin-<12 cifre> per ogni commit che
+# una release ha pinnato. Un commit tolto dal suo ramo non arriva piu' con
+# un clone, e GitHub lo da' per hash solo finche' lo tiene: prepare lo prende
+# dal tag del fork (pinned_commit); tools/upstream.sh mirror controlla ogni
+# settimana che i tag ci siano
+EDK2_MIRROR="https://github.com/debianita22/edk2"
+LVGLPKG_MIRROR="https://github.com/debianita22/LvglPkg"
 EDK2_SUBDIR="payloads/external/edk2/workspace/mrchromebox"
 # I submodule di EDK2 che la build usa: OpenSSL (senza i suoi, prove e
 # provider, 1.5 GiB), brotli di BaseTools (BrotliCompress si compila con gli
@@ -754,24 +762,49 @@ toolchain_line() {
 		"$(gcc --version | head -n 1)" "$(ld --version | head -n 1)" "${os:+ (${os})}"
 }
 
+# Il commit $2 nel clone $1: c'e' gia', o arriva dal suo remote (un fetch;
+# in un clone parziale anche per hash, finche' GitHub lo tiene), se no dal
+# tag pin-<12 cifre> del mirror $3, aggiunto come secondo remote (e promisor
+# in un clone parziale, per i file che il primo non da' piu'). Vero se alla
+# fine il commit c'e'
+pinned_commit() {
+	local dir="$1" rev="$2" mirror="$3" tag="pin-${2:0:12}" filter
+	git -C "${dir}" cat-file -e "${rev}^{commit}" 2>/dev/null && return 0
+	git -C "${dir}" fetch -q origin 2>/dev/null || true
+	git -C "${dir}" cat-file -e "${rev}^{commit}" 2>/dev/null && return 0
+	echo "  ${rev:0:12} non e' piu' in $(git -C "${dir}" remote get-url origin): dal tag ${tag} di ${mirror}"
+	git -C "${dir}" remote remove ourobios-mirror 2>/dev/null || true
+	git -C "${dir}" remote add ourobios-mirror "${mirror}" || return 1
+	filter="$(git -C "${dir}" config --get remote.origin.partialclonefilter || true)"
+	if [ -n "${filter}" ]; then
+		git -C "${dir}" config remote.ourobios-mirror.promisor true
+		git -C "${dir}" config remote.ourobios-mirror.partialclonefilter "${filter}"
+	fi
+	git -C "${dir}" fetch -q ourobios-mirror "+refs/tags/${tag}:refs/tags/${tag}" 2>/dev/null || return 1
+	git -C "${dir}" cat-file -e "${rev}^{commit}" 2>/dev/null
+}
+
 # EDK2 al commit dei defconfig, i submodule ai loro commit, poi le patch
 # applicate come modifiche: patches/edk2 sull'albero, patches/lvglpkg sul
 # submodule LvglPkg. Il clone e' parziale (--filter=blob:none): la storia
-# senza il contenuto dei file, che arriva solo per i commit pinnati.
+# senza il contenuto dei file, che arriva solo per i commit pinnati. EDK2 e
+# LvglPkg, che MrChromebox riscrive, vengono dai mirror del progetto quando
+# il loro repository non ha piu' il commit pinnato (o non c'e' piu').
 prepare_edk2() {
-	local rev p n
+	local rev p n lvgl
 	rev="$(edk2_rev)"
 	[ -n "${rev}" ] || die "$(board_defconfig "${BOARD_VARIANTS[0]}"): CONFIG_EDK2_TAG_OR_REV non e' un commit intero"
 	say "EDK2 ${rev:0:12}"
 	if [ ! -d "${EDK2_DIR}/.git" ]; then
 		rm -rf "${EDK2_DIR}"
 		mkdir -p "$(dirname "${EDK2_DIR}")"
-		git clone -q --filter=blob:none --no-checkout "${EDK2_REPO}" "${EDK2_DIR}" \
-			|| die "EDK2: clone da ${EDK2_REPO} fallito"
+		git clone -q --filter=blob:none --no-checkout "${EDK2_REPO}" "${EDK2_DIR}" || {
+			rm -rf "${EDK2_DIR}"
+			git clone -q --filter=blob:none --no-checkout "${EDK2_MIRROR}" "${EDK2_DIR}"
+		} || die "EDK2: clone da ${EDK2_REPO} e da ${EDK2_MIRROR} fallito"
 	fi
-	if ! git -C "${EDK2_DIR}" cat-file -e "${rev}^{commit}" 2>/dev/null; then
-		git -C "${EDK2_DIR}" fetch -q origin || die "EDK2: fetch da ${EDK2_REPO} fallito"
-	fi
+	pinned_commit "${EDK2_DIR}" "${rev}" "${EDK2_MIRROR}" \
+		|| die "EDK2: ${rev:0:12} non c'e' in ${EDK2_REPO} ne' nel tag pin-${rev:0:12} di ${EDK2_MIRROR}"
 	# Di nuovo al commit pinnato: via le patch di un giro precedente, i file
 	# nuovi che avevano creato e il Logo.bmp che riscrive la build. Restano i
 	# file ignorati (BaseTools compilati).
@@ -791,8 +824,20 @@ prepare_edk2() {
 		# il clone non parte in una cartella piena
 		[ -e "${EDK2_DIR}/${p}/.git" ] || rm -rf "${EDK2_DIR:?}/${p}"
 	done
-	git -C "${EDK2_DIR}" submodule update -q --init --force --filter=blob:none "${EDK2_SUBMODULES[@]}" \
-		|| die "EDK2: submodule"
+	if ! git -C "${EDK2_DIR}" submodule update -q --init --force --filter=blob:none "${EDK2_SUBMODULES[@]}"; then
+		# LvglPkg e' di MrChromebox come EDK2: il commit pinnato dal mirror (gli
+		# altri submodule sono dei loro progetti, che non riscrivono la storia)
+		lvgl="$(git -C "${EDK2_DIR}" ls-tree HEAD LvglPkg | awk '{print $3}')"
+		[ -n "${lvgl}" ] || die "EDK2: submodule"
+		if [ -e "${EDK2_DIR}/LvglPkg/.git" ]; then
+			pinned_commit "${EDK2_DIR}/LvglPkg" "${lvgl}" "${LVGLPKG_MIRROR}" \
+				|| die "EDK2: LvglPkg ${lvgl:0:12} non c'e' ne' nel suo repository ne' nel tag pin-${lvgl:0:12} di ${LVGLPKG_MIRROR}"
+		else
+			git -C "${EDK2_DIR}" config submodule.LvglPkg.url "${LVGLPKG_MIRROR}"
+		fi
+		git -C "${EDK2_DIR}" submodule update -q --init --force --filter=blob:none "${EDK2_SUBMODULES[@]}" \
+			|| die "EDK2: submodule"
+	fi
 	# dentro OpenSSL nessun submodule (un pathspec che non c'e'); LvglPkg
 	# con la sua LVGL
 	git -C "${EDK2_DIR}/CryptoPkg/Library/OpensslLib/openssl" config submodule.active "__none__"

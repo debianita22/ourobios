@@ -343,7 +343,9 @@ image: flashrom, not a capsule.
   at 50 MHz as the descriptor sets it (about 12.5 MB/s): the check reads
   the 2.4 MB of the slot (and hashes them at 800 MHz), the loading reads
   the 1.9 MB of the compressed payload again. The settings save the most:
-  *Clear memory at power-on* off, a shorter *Auto Boot Time-out*. Until
+  *Clear memory at power-on* on *When the OS asks* or *Never*
+  ([Clearing the memory at power-on](#clearing-the-memory-at-power-on)),
+  a shorter *Auto Boot Time-out*. Until
   ramstage the processor runs at 800 MHz: a request
   for its maximum ratio before `mrc.bin`, as on Broadwell, is not applied
   (tried in v1.3.2-rc1: still 800 MHz after 1 ms, the same raminit time).
@@ -499,9 +501,12 @@ image: flashrom, not a capsule.
     off by default, leaves the flash writable only by the firmware in SMM,
     as the Lenovo firmware did: the settings are still saved, and signed
     update capsules still install, but flashrom and any other program in
-    the OS can only read it, until it is turned off again. *Clear memory at power-on*, on by default, clears all the
+    the OS can only read it, until it is turned off again. *Clear memory at power-on*, *Always* by default, clears all the
     memory at every boot but not on resume, so that nothing the previous
-    OS left in it can be read: about 1.7 s with 32 GB. The processor keeps
+    OS left in it can be read: about 1.7 s with 32 GB. From v1.4.1
+    *When the OS asks* clears it only after a reset while the OS held
+    secrets (TCG MOR), and *Never* not at all
+    ([Clearing the memory at power-on](#clearing-the-memory-at-power-on)). The processor keeps
     the VT-x setting until it is powered off, so after a change the next
     boot switches the laptop off and on once by itself. With a password
     set, Esc at power-on asks for it before the setup menu, boot entries
@@ -553,6 +558,60 @@ image: flashrom, not a capsule.
 
   A slot of a release before v1.4.0 has neither: `update.py status` then
   says that this firmware does not report it. Not yet tried on the W541.
+
+## Clearing the memory at power-on
+
+*Security* → *Memory protection* → *Clear memory at power-on*, on both
+boards, decides whether coreboot clears all the memory before the OS
+starts (never on resume from sleep), so that what the previous OS left
+in it cannot be read: about 1.7 s with 32 GB on the W541, 0.5 s per
+10 GB on the M920x (2 s with 40 GB).
+
+| Setting | The memory is cleared | The OS sees TCG MOR |
+|---|---|---|
+| *Always* (default) | at every boot | no |
+| *When the OS asks* (from v1.4.1) | only when the OS asked for it before the reset | yes |
+| *Never* | never, whatever the OS asks | no |
+
+*When the OS asks* follows the TCG Platform Reset Attack Mitigation
+specification (MOR): the OS sets bit 0 of the UEFI variable
+`MemoryOverwriteRequestControl` while it holds secrets in memory and
+clears it at a clean shutdown, so that only a reset in between (a crash,
+a power cut, someone pressing reset to read the memory, the cold boot
+attack) wipes it. coreboot reads the bit from the variable store before
+the payload (patch 0192), the payload offers the variable only with
+this setting and clears the bit before the next OS starts
+(`edk2/0039`, `edk2/0040`). The lock of revision 2 of MOR
+(`MemoryOverwriteRequestControlLock`, which Windows Credential Guard
+uses) is not offered with any setting: it needs a variable store behind
+SMM, which the payload does not have. The TPer reset of self-encrypting
+drives that EDK2's TcgMor does is not done either.
+
+- **Windows** sets the request when BitLocker holds its keys, and
+  clears it at a clean shutdown by itself.
+- **Linux** sets it at every boot when the kernel has
+  `CONFIG_RESET_ATTACK_MITIGATION` (Debian, Ubuntu and Proxmox kernels
+  do: `grep RESET_ATTACK /boot/config-$(uname -r)`), but nothing clears
+  it at shutdown, so the memory is still cleared at every boot, as with
+  *Always*. [`tools/mor-shutdown-hook`](../tools/mor-shutdown-hook)
+  clears it at the end of a clean shutdown, after the services have
+  stopped and the file systems are unmounted:
+
+  ```sh
+  sudo install -m 755 tools/mor-shutdown-hook /usr/lib/systemd/system-shutdown/ourobios-mor
+  # after a boot: 07 00 00 00 01 while Linux runs (the request), and in the
+  # coreboot log what the boot before decided
+  od -An -tx1 /sys/firmware/efi/efivars/MemoryOverwriteRequestControl-e20939be-32d4-41be-a150-897f85d49829
+  sudo cbmem -1 | grep -E 'MOR:|DRAM clear:'
+  #   DRAM clear: option when the OS asks, request of the OS no: not clearing
+  ```
+
+  A kernel without the option never asks: with *When the OS asks* its
+  memory is never cleared.
+
+The setting is read again at every boot; going back to a slot of a
+release before v1.4.1 with *When the OS asks* clears at every boot
+(those slots read it as on).
 
 ## Power at idle
 
