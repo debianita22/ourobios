@@ -30,6 +30,11 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   entry when an automatic boot fails, which v1.4.0 always did, becomes a
   setting next to *Auto Boot Time-out*, on by default. The 38 patches of
   `patches/edk2` apply unchanged.
+- A fix of mainline EDK2 after the base of MrChromebox's branch
+  (`edk2/0041`, tianocore 027e7a437): a boot entry with a short-form hard
+  drive path, as efibootmgr, shim and Windows make them, could be skipped
+  when the boot manager's cache of that path missed before the disks were
+  connected, instead of being tried again after connecting them.
 - The builds no longer depend on MrChromebox keeping a pinned commit on a
   branch: `tools/build.sh` takes a pinned EDK2 or LvglPkg commit that his
   repositories no longer give from the project's forks, under a tag

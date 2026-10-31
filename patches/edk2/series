@@ -38,3 +38,4 @@
 0038-UefiPayloadPkg-Say-what-a-slot-switch-keeps-and-trai.patch
 0039-MdeModulePkg-Variable-Let-a-platform-keep-MOR-withou.patch
 0040-UefiPayloadPkg-TCG-MOR-when-the-coreboot-setup-asks-.patch
+0041-MdeModulePkg-UefiBootManagerLib-Fix-short-form-hard-.patch
