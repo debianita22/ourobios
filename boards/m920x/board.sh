@@ -38,7 +38,7 @@ BOARD_SLOT_FILES=(fspm.bin fsps.bin)
 # Hyper-Threading (patch 0173). Non la cambiano le UPD di FSP-M che mette
 # coreboot (soc/intel/cannonlake/romstage/fsp_params.c, romstage.c della
 # board): una release che le cambia alza fsp_memory_soc_version() (i bit
-# 3:0, liberi), o rimette qui RW_MRC_CACHE. Dalla v1.4.0-rc4; le capsule
+# 3:0, liberi), o rimette qui RW_MRC_CACHE. Dalla v1.4.0; le capsule
 # rc1-rc3 scrivono anche RW_MRC_CACHE (tools/update.py)
 BOARD_CAPSULE_REGIONS=(RW_SECTION_A RW_SECTION_B)
 BOARD_GBE=boards/m920x/blobs/gbe.bin

@@ -86,7 +86,7 @@ LEGACY_VARIANTS = {
 # nuovo rifa' al primo avvio
 REGIONS = ["RW_MRC_CACHE", "RW_SECTION_A", "RW_SECTION_B"]
 # Quelle delle capsule di oggi, per variante (BOARD_CAPSULE_REGIONS di
-# boards/<board>/board.sh): sul M920x dalla v1.4.0-rc4 il training resta, la
+# boards/<board>/board.sh): sul M920x dalla v1.4.0 il training resta, la
 # sua versione dice se vale ancora (FSP-M, processore, Hyper-Threading; non
 # le UPD di FSP-M che mette coreboot: il perche' in board.sh). Le controlla
 # info, quindi anche tools/build.sh dopo ogni capsula
@@ -717,7 +717,7 @@ def power():
 
 # --- il ME: le stringhe OEM di SMBIOS ------------------------------------------
 #
-# Sul M920x (dalla v1.4.0-rc4) coreboot legge HFSTS1-6 dell'HECI prima di
+# Sul M920x (dalla v1.4.0) coreboot legge HFSTS1-6 dell'HECI prima di
 # scrivere le tabelle, quando il ME spento non l'ha ancora nascosta, e mette
 # in due stringhe di SMBIOS tipo 11 "ME: <stato>" e "ME HFSTS: <6 parole>". Qui
 # si decodifica HFSTS1 (intelblocks/me_12.h, union me_hfsts1).
@@ -749,11 +749,10 @@ ME9_TEXT = (
 # lynxpoint/me.h: ME_HFS2_PHASE_BUP, ME_HFS2_STATE_BUP_CHECK_STRAP
 ME9_PHASE_BUP, ME9_STATE_CHECK_STRAP = 1, 0x0a
 # La prima release di ogni variante che scrive le stringhe (lo slot di una
-# release di prima, anche dopo un ritorno di vboot, non le ha). Sul W541 la
-# release che porta mainboard/lenovo/haswell/me_status.c non ha ancora un
-# tag: None finche' non esce, e il testo dice solo "la release con lo stato
-# del ME"
-ME_STRINGS_SINCE = {"m920x-fsp": "v1.4.0-rc4", "mrc": None, "nri": None}
+# release di prima, anche dopo un ritorno di vboot, non le ha); None per una
+# variante senza ancora una release cosi', e il testo dice solo "la release
+# con lo stato del ME"
+ME_STRINGS_SINCE = {"m920x-fsp": "v1.4.0", "mrc": "v1.4.0", "nri": "v1.4.0"}
 
 
 def me_strings_since(variant):
@@ -1573,8 +1572,8 @@ def nv_try_other(region, tries=2):
 
 def build_flavour(name, size):
     """La variante (chiave di FLAVOURS) di una build dal suo nome
-    (ouroBIOS-v1.4.0-rc4-m920x-fsp, ouroBIOS-ci-151-d0aaa35-m920x-fsp,
-    ouroBIOS-v1.4.0-rc4-nri), o dalla dimensione del flash se una sola
+    (ouroBIOS-v1.4.0-m920x-fsp, ouroBIOS-ci-151-d0aaa35-m920x-fsp,
+    ouroBIOS-v1.4.0-nri), o dalla dimensione del flash se una sola
     variante ce l'ha; None se non si sa (chi chiama usa REGIONS: rifa' il
     training, il lato sicuro)."""
     for f in sorted(FLAVOURS, key=len, reverse=True):
@@ -1589,7 +1588,7 @@ def cmd_other_slot(args):
     (anche dell'altra variante) e RW_NVRAM che chiede a vboot di provarlo: da
     scrivere con flashrom in quelle due regioni soltanto. RW_MRC_CACHE resta
     com'e', vuota solo con --retrain o dove la capsula della release la
-    svuota (W541, M920x prima della v1.4.0-rc4)."""
+    svuota (W541, M920x prima della v1.4.0)."""
     with open(args.dump, "rb") as f:
         flash = f.read()
     areas = fmap_areas(flash)
@@ -1643,7 +1642,7 @@ def cmd_other_slot(args):
                            "e due" if ro_common else "fino alla v1.3.8 ogni parte RO parte solo la sua "
                            "variante"))
     # il training della RAM come lo tratta la capsula di quella release: sul
-    # M920x dalla v1.4.0-rc4 resta (la sua versione dice allo slot se vale);
+    # M920x dalla v1.4.0 resta (la sua versione dice allo slot se vale);
     # sul W541 e nelle release del M920x di prima si svuota
     flavour = build_flavour(names[0], len(image))
     retrain = args.retrain or "RW_MRC_CACHE" in CURRENT_REGIONS.get(flavour, REGIONS) \
@@ -2681,7 +2680,7 @@ def main():
     p.add_argument("--force", action="store_true", help="anche l'altra variante, che dopo questa parte RO non parte")
     p.add_argument("--retrain", action="store_true",
                    help="svuota anche il training della RAM (RW_MRC_CACHE): lo slot lo rifa' al primo avvio "
-                        "(sul W541 e per le release del M920x prima della v1.4.0-rc4 lo si svuota sempre)")
+                        "(sul W541 e per le release del M920x prima della v1.4.0 lo si svuota sempre)")
     p.set_defaults(func=cmd_other_slot)
 
     p = sub.add_parser("rollback", help="torna alla release nell'altro slot, quella di prima dell'ultimo aggiornamento")

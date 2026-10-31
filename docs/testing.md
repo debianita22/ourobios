@@ -71,7 +71,7 @@ What it reads, and the thresholds:
 | BOOT-02 | `cbmem -T`: reset to the payload, valid training cache | M920x ≤ 12 s, W541 ≤ 6 s | M920x ≤ 20 s, W541 ≤ 12 s | above |
 | BOOT-03 | `[ERROR]` and `[WARN ]` lines of `cbmem -1`, deduplicated | none, or known ones only | an unknown `[WARN ]` | an unknown `[ERROR]`, `[CRIT ]`, `[ALERT]`, `[EMERG]` |
 | BOOT-04 | `journalctl -k -b -p warning`, the lines about ACPI, firmware, BIOS, i915, PCI, DMAR, `_DSM`, TPM, microcode... | none, or known ones only | an unknown warning | an unknown error |
-| MEM-01 | `FspMemoryInit` (M920x) or the RAM init (W541; on `nri` from rc4, patch 0189, before it the whole romstage) in `cbmem -T`, the cache state in `cbmem -1` | ≤ 2 s with a valid cache or on S3 resume | ≤ 5 s | above |
+| MEM-01 | `FspMemoryInit` (M920x) or the RAM init (W541; on `nri` from v1.4.0, patch 0189, before it the whole romstage) in `cbmem -T`, the cache state in `cbmem -1` | ≤ 2 s with a valid cache or on S3 resume | ≤ 5 s | above |
 | MEM-02 | `dmidecode -t 17`, `/proc/meminfo`, *N DIMMs found* | Linux sees ≥ 90% of the modules | less, or a DIMM count that differs from the log | |
 | CPU-01 | `/proc/cpuinfo`, MSRs 0x606, 0x610, 0xCE, 0x1A2, 0x1AD, the EC line of the log; the microcode of the firmware from the log, plus one after *Skip microcode update* (Cannon Lake with PRMRR, [docs/m920x.md](m920x.md#status)); as a detail, whether the TCC offset can be set (bit 30 of 0xCE) and its value in 0x1A2 | one microcode on every core, PL1 on | cores with different microcode, PL1 off | |
 | IDLE-01 | MSRs 0x60D, 0x3F8-0x3FA, 0x630-0x632 and RAPL over `--seconds`, as `tools/idle-report.py` | PC6 and deeper ≥ 50% | ≥ 10% | below |
@@ -99,7 +99,7 @@ training ([docs/flashing.md](flashing.md#first-boot-and-settings)); at idle
 the M920x sits in PC9 83-87% and the W541 in PC6 90% with the screen off.
 
 - **Training boots.** After a W541 update (its capsule clears
-  `RW_MRC_CACHE`; from v1.4.0-rc4 an M920x one keeps it), or with a cache
+  `RW_MRC_CACHE`; from v1.4.0 an M920x one keeps it), or with a cache
   that does not match (*MRC: version mismatch*, *no data in*, *needs
   update* in the log), MEM-01 is `INFO` with the time it took, and BOOT-02
   judges the boot without it. The boot after must pass: the
@@ -124,7 +124,7 @@ the M920x sits in PC9 83-87% and the W541 in PC6 90% with the screen off.
   and the event log need a copy of the flash; an S3 resume only shows if
   the machine has suspended in this boot.
 
-A run on the M920x with ci-151 (a bisect build of rc4 with the 15 s
+A run on the M920x with ci-151 (a bisect build of v1.4.0 with the 15 s
 `FspMemoryInit`), `--seconds 10`, details trimmed:
 
 ```text
@@ -173,7 +173,7 @@ Esito: FAIL - 2 FAIL, 1 WARN, 15 PASS, 1 INFO, 1 SKIP (uscita 2)
    slot, the external programmer at hand
    ([docs/flashing.md](flashing.md#external-programmer)).
 2. **First boot**: on the W541 it trains the memory, on the M920x only if
-   the cache does not fit the new slot (the first rc4 slot after rc3 or
+   the cache does not fit the new slot (the first v1.4.0 slot after rc3 or
    older, usually). `hw-report.py`: MEM-01 is `INFO` on a training boot,
    everything else as below.
 3. **Second boot**, a reboot from Linux, then a **cold boot** (shut down,
@@ -213,7 +213,7 @@ or *manual*.
 | BOOT-05 | both | power on: logo, Esc opens the setup menu, the boot menu lists the disks | the logo of the board, the setup opens, every entry boots | manual |
 | BOOT-06 | both | boot from NVMe, SATA and a USB drive (UEFI) | each boots its OS | manual |
 | BOOT-07 | both | reboot from Linux, cold boot, power button held (forced off) then on | BOOT-02 and MEM-01 pass after each kind of reset | partial |
-| BOOT-08 | both | *General* → *Boot* → *Boot menu prompt* off, reboot, then on ([docs/m920x.md](m920x.md#boot-options); W541 from rc4, patch 0182, [docs/flashing.md](flashing.md#first-boot-and-settings)) | off: no "Press ESC for Boot Options/Settings" on the logo, and Esc during the timeout still opens the boot menu (W541: from the keyboard of the laptop too); on: the line again; not yet tried | manual |
+| BOOT-08 | both | *General* → *Boot* → *Boot menu prompt* off, reboot, then on ([docs/m920x.md](m920x.md#boot-options); W541 from v1.4.0, patch 0182, [docs/flashing.md](flashing.md#first-boot-and-settings)) | off: no "Press ESC for Boot Options/Settings" on the logo, and Esc during the timeout still opens the boot menu (W541: from the keyboard of the laptop too); on: the line again; not yet tried | manual |
 
 ### Memory and training cache (MEM)
 
@@ -221,12 +221,12 @@ or *manual*.
 
 | ID | Board | How to run | Pass criteria | Auto |
 |---|---|---|---|---|
-| MEM-01 | both | `sudo cbmem -t`, `sudo cbmem -1 \| grep 'MRC:'` | RAM init ≤ 2 s with the cache valid (*does not need update*) or on S3 resume; W541 `nri` from rc4 (patch 0189): *before* and *after RAM initialization* in `cbmem -t` on a training boot, a fast boot and an S3 resume, and MEM-01 no longer `SKIP`, not yet tried | MEM-01 |
-| MEM-02 | both | `sudo dmidecode -t memory` | every module with its size and speed; Linux sees at least 90%; W541 from rc4 (patch 0187, both variants): the same records as before with the four 8 GiB DIMMs, and with DIMMs of two sizes in a channel, if at hand, each slot with its own module; not yet tried | MEM-02 |
-| MEM-03 | both | the first boot after an update, then the next | W541: the first trains (*no data*, then *updated*), the next takes the fast path. M920x from rc4: no training (*does not need update*) unless the version changed (*version mismatch*, then *updated*, once) | partial (MEM-01 on both boots) |
+| MEM-01 | both | `sudo cbmem -t`, `sudo cbmem -1 \| grep 'MRC:'` | RAM init ≤ 2 s with the cache valid (*does not need update*) or on S3 resume; W541 `nri` from v1.4.0 (patch 0189): *before* and *after RAM initialization* in `cbmem -t` on a training boot, a fast boot and an S3 resume, and MEM-01 no longer `SKIP`, not yet tried | MEM-01 |
+| MEM-02 | both | `sudo dmidecode -t memory` | every module with its size and speed; Linux sees at least 90%; W541 from v1.4.0 (patch 0187, both variants): the same records as before with the four 8 GiB DIMMs, and with DIMMs of two sizes in a channel, if at hand, each slot with its own module; not yet tried | MEM-02 |
+| MEM-03 | both | the first boot after an update, then the next | W541: the first trains (*no data*, then *updated*), the next takes the fast path. M920x from v1.4.0: no training (*does not need update*) unless the version changed (*version mismatch*, then *updated*, once) | partial (MEM-01 on both boots) |
 | MEM-04 | both | `stress-ng --vm 4 --vm-bytes 75% --verify -t 30m` ([docs/raminit.md](raminit.md)) | no errors, no MCE in the kernel log | manual |
 | MEM-05 | M920x | another processor or *Hyper-Threading* toggled ([docs/m920x.md](m920x.md#other-processors-and-cards)) | one training boot (the cache version changes), then fast boots | partial |
-| MEM-06 | W541 | `nri` of rc4 (patches 0185, 0186) with `RW_MRC_CACHE` empty, as after its capsule: a cold boot, `sudo python3 tools/ddr-report.py --save nri-rc4.txt` and `--compare` with a dump of `mrc` ([docs/raminit.md](raminit.md#measuring)); a reboot, an S3 resume, `stress-ng --vm 4 --vm-bytes 75% --verify -t 30m`; then the cache of an older `nri` slot left for an rc4 slot (only the RW slot written), and the other way round | the first boot trains and logs *Memory test passed*; ranks 1-3 with centering values of their own, the round trips at 44/45 with IO latency 4 + 21 as before; the fast boot, the resume and stress-ng without errors; an rc4 slot on an older cache logs *MRC: version mismatch: 2 vs 3* and trains, an older slot on an rc4 cache *3 vs 2*, then *Using cached memory parameters* at the next boot; not yet tried | partial (MEM-01) |
+| MEM-06 | W541 | `nri` of v1.4.0 (patches 0185, 0186) with `RW_MRC_CACHE` empty, as after its capsule: a cold boot, `sudo python3 tools/ddr-report.py --save nri-v1.4.0.txt` and `--compare` with a dump of `mrc` ([docs/raminit.md](raminit.md#measuring)); a reboot, an S3 resume, `stress-ng --vm 4 --vm-bytes 75% --verify -t 30m`; then the cache of an older `nri` slot left for a v1.4.0 slot (only the RW slot written), and the other way round | the first boot trains and logs *Memory test passed*; ranks 1-3 with centering values of their own, the round trips at 44/45 with IO latency 4 + 21 as before; the fast boot, the resume and stress-ng without errors; a v1.4.0 slot on an older cache logs *MRC: version mismatch: 2 vs 3* and trains, an older slot on a v1.4.0 cache *3 vs 2*, then *Using cached memory parameters* at the next boot; not yet tried | partial (MEM-01) |
 | MEM-07 | W541 | `nri`, only if a 16 GiB DDR3L SO-DIMM is at hand: in one slot, the 8 GiB ones in the others; `sudo cbmem -1 \| grep 'DIMM ignored'` on the first, training boot; `sudo dmidecode -t 17`; with the module in place, `stress-ng --vm 4 --verify -t 30m` (or a memtest86+ pass) and `ddr-report.py` (patch 0188) | the laptop boots on the others, *CHxSy: DIMM ignored, 11 column address bits, Haswell has 10* after the start of the CBMEM console; type 17 lists the other DIMMs in their own slots, not the 16 GiB one; no errors, margins close to those without the module; with the four 8 GiB DIMMs no *DIMM ignored* line and 32 GiB as before; not yet tried | manual |
 
 ### CPU and power limits (CPU)
@@ -273,7 +273,7 @@ the W541 resumes since v1.0.9.
 | USB-02 | both | a USB 3 drive on each port: `lsusb -t` | it enumerates at 5000M or more on the USB 3 ports | manual |
 | USB-03 | both | boot from a USB drive | it boots (BOOT-06) | manual |
 | USB-04 | M920x | *Hardware* → *Devices*: front or rear USB off, reboot, on again | the ports go dead and come back | manual |
-| USB-05 | both | a bootable USB drive plugged in: `efibootmgr`; *General* → *Boot* → *Boot from USB drives* off, reboot twice; on again ([docs/m920x.md](m920x.md#boot-options)). W541 (rc4, patch 0182): also the first boot of rc4, with no variable stored, and the stick in a port of the laptop and in one of the dock | on (on the W541 also with no variable stored): its entry in `efibootmgr` and in the Esc menu; off: that entry gone, those of the disks, the Shell, iPXE and CSMWrap unchanged, and no new `Boot####` record at the second boot (`update.py vars --all` on a copy of the flash); on again: the entry back; not yet tried | manual |
+| USB-05 | both | a bootable USB drive plugged in: `efibootmgr`; *General* → *Boot* → *Boot from USB drives* off, reboot twice; on again ([docs/m920x.md](m920x.md#boot-options)). W541 (v1.4.0, patch 0182): also the first boot of v1.4.0, with no variable stored, and the stick in a port of the laptop and in one of the dock | on (on the W541 also with no variable stored): its entry in `efibootmgr` and in the Esc menu; off: that entry gone, those of the disks, the Shell, iPXE and CSMWrap unchanged, and no new `Boot####` record at the second boot (`update.py vars --all` on a copy of the flash); on again: the entry back; not yet tried | manual |
 
 ### PCIe, NVMe and SATA (PCI)
 
@@ -297,7 +297,7 @@ the W541 resumes since v1.0.9.
 | ID | Board | How to run | Pass criteria | Auto |
 |---|---|---|---|---|
 | DISP-01 | M920x | a monitor on HDMI: logo, setup menu, Linux desktop | the image at each step, the native resolution in Linux | manual |
-| DISP-02 | M920x | a monitor on each DisplayPort | the same; from rc4 the VBT of coreboot bug #670 (patch 0174), not yet tried | manual |
+| DISP-02 | M920x | a monitor on each DisplayPort | the same; from v1.4.0 the VBT of coreboot bug #670 (patch 0174), not yet tried | manual |
 | DISP-03 | W541 | the panel and each external output, with and without the NVIDIA GPU | the image at each step | manual |
 | DISP-04 | both | `journalctl -k -b \| grep i915` | no `WARN` or error of i915 | BOOT-04 |
 
@@ -359,7 +359,7 @@ power fail).
 
 | ID | Board | How to run | Pass criteria | Auto |
 |---|---|---|---|---|
-| ME-01 | both | `sudo cbmem -1 \| grep -E 'me_state\|Operation Mode\|HFSTS1-6'`; `lspci -s 00:16` | M920x *Disabled*: operation mode 3, no `00:16.0`; *Enabled*: mode 0, working state 5, `mei_me` on `00:16.0`. W541 from rc4 (patch 0181): *Disabled (AltMeDisable, BUP)*, `00:16.0` hidden with *Intel ME interface (HECI)* off, shown with it on | ME-01 (W541 before rc4: values only) |
+| ME-01 | both | `sudo cbmem -1 \| grep -E 'me_state\|Operation Mode\|HFSTS1-6'`; `lspci -s 00:16` | M920x *Disabled*: operation mode 3, no `00:16.0`; *Enabled*: mode 0, working state 5, `mei_me` on `00:16.0`. W541 from v1.4.0 (patch 0181): *Disabled (AltMeDisable, BUP)*, `00:16.0` hidden with *Intel ME interface (HECI)* off, shown with it on | ME-01 (W541 before v1.4.0: values only) |
 | ME-02 | M920x | *Security* → *Management Engine*: *Disabled*, reboot, *Enabled*, reboot | ME-01 passes after each; *Enabled* again not yet tried ([docs/m920x.md](m920x.md#intel-me)) | partial |
 | ME-03 | W541 | *Intel ME interface (HECI)* off and on | `00:16.0` hidden and shown; no `mei` errors | manual |
 | ME-04 | both | *General* → *About this ThinkCentre* (W541: *About this ThinkPad*) → *Management Engine* and its help; `sudo dmidecode -t 11`; `sudo python3 tools/update.py status` ([docs/m920x.md](m920x.md#intel-me), [docs/flashing.md](flashing.md#first-boot-and-settings)). W541 (patch 0181) also: a warm reboot with HECI hidden; with HECI on, `sudo setpci -s 00:16.0 40.l 48.l 60.l 64.l 68.l 6c.l`; on `nri`, a cold boot and a warm reboot | the state of ME-01 (M920x: *Disabled (soft temporary disable)* with the option on *Disabled*, *Enabled* with it on; W541: *Disabled (AltMeDisable, BUP)*); the six registers of the help and of `ME HFSTS:` those of `sudo cbmem -1 \| grep HFSTS`; the `ME:` line of `update.py status`. W541: the two ME strings before the EC one, and no more SMBIOS structures than before; the registers still read after the warm reboot; `setpci` gives the same six words; on `nri`, what *ME: Checking whether CPU was replaced...* prints, and no *CPU was replaced, forcing a cold boot*, which would train the memory at every boot; whether ME 9 reports mode 2. Not yet tried | manual |
@@ -386,7 +386,7 @@ power fail).
 | UPD-02 | both | from the previous release: `sudo python3 tools/update.py stage FILE.cap`, reboot | the new slot runs; MEM-03; settings, VPD and event log kept (OPT-02, ID-01, ELOG-01) | partial |
 | UPD-03 | both | the setup: *Firmware Update* → *Update from a USB drive* ([docs/update.md](update.md#from-the-setup-with-a-usb-drive)) | the same | manual |
 | UPD-04 | both | fwupd: `sudo fwupdmgr install FILE.cab` ([docs/update.md](update.md#fwupd)) | `fwupdmgr get-history` shows success; UPD-01 | partial |
-| UPD-05 | both | `sudo python3 tools/update.py rollback flash.bin`, reboot | the release before runs, from the other slot, nothing written to the slots; `RW_MRC_CACHE` emptied by the capsules that name it (W541, M920x before rc4) | manual |
+| UPD-05 | both | `sudo python3 tools/update.py rollback flash.bin`, reboot | the release before runs, from the other slot, nothing written to the slots; `RW_MRC_CACHE` emptied by the capsules that name it (W541, M920x before v1.4.0) | manual |
 | UPD-06 | both | capsules that must be refused: the other board, the other W541 variant, an older version without `--allow-older` | `update.py` refuses before the reboot; staged by hand, the firmware refuses and UPD-01 shows why | partial |
 | UPD-07 | M920x | between two builds with patch 0173: a capsule (`update.py info` lists `RW_SECTION_A RW_SECTION_B`), then `update.py other-slot` and `other-slot --retrain`, then *Go back to* in the setup ([docs/m920x.md](m920x.md#updates)) | no *Clearing the memory training data* on the update screen; after the capsule, `other-slot` and *Go back to*: *does not need update* and no training; after `--retrain`: one training, then the fast path; not yet tried | partial (MEM-01) |
 
