@@ -92,7 +92,7 @@ download it from the commit of that release.
 
 | Command | |
 |---|---|
-| `status` | running variant and version, the lowest version it accepts, the result of the last update, the capsule waiting for the next boot; on the M920x also the state of the Intel ME (from rc4, from the SMBIOS strings of the firmware) and of the flash protection: `WP_RO`, *BIOS Lock*, whether the slots can be written ([Flash protection](#flash-protection)) |
+| `status` | running variant and version, the lowest version it accepts, the result of the last update, the capsule waiting for the next boot; also the state of the Intel ME (from the SMBIOS strings of the firmware: on the M920x from rc4, on the W541 from the first release with patch 0181) and of the flash protection: `WP_RO`, *BIOS Lock*, whether the slots can be written ([Flash protection](#flash-protection)) |
 | `stage --latest` | downloads the newest release of the running variant from GitHub (`--pre`: the release candidates and other pre-releases too; the `nri` releases up to v1.3.8, published as pre-releases, count as releases), checks its `SHA256SUMS` |
 | `stage FILE.cap` | a capsule already downloaded |
 | `cancel` | removes the waiting capsule and the request |
@@ -102,7 +102,7 @@ download it from the commit of that release.
 | `vboot FLASH.bin` | from a copy of the flash (`sudo flashrom -p internal -r FLASH.bin`): the slot of the next boot and its tries, the slot of this boot and of the one before, and whether vboot found one broken ([docs/vboot.md](vboot.md)) |
 | `vboot-work FILE` | what vboot decided at this boot, from its work buffer in CBMEM (`sudo cbmem -r 0x78007343 > FILE`; [docs/vboot.md](vboot.md)) |
 | `vars FLASH.bin` | the UEFI variables in the `SMMSTORE` region of a copy of the flash: names, GUIDs, attributes and sizes, never the data (`--grep REGEX`, `--all` for the deleted ones too) |
-| `protection` | the flash protection of this boot on the M920x, read from the registers of the SPI controller and never written: each Protected Range mapped onto the regions of the flash map, *BIOS Lock*, the locks, whether a capsule and flashrom can write ([Flash protection](#flash-protection)) |
+| `protection` | the flash protection of this boot on the M920x and the W541, read from the registers of the SPI controller and never written: each Protected Range mapped onto the regions of the flash map, *BIOS Lock*, the locks, whether a capsule and flashrom can write ([Flash protection](#flash-protection)) |
 
 `stage` checks what the firmware would check, so that a reboot is not
 wasted: the variant (an `nri` capsule is refused on `mrc`), the version (not
@@ -126,24 +126,26 @@ version: the ESRT, the ME and the flash protection need it.
 
 ### Flash protection
 
-On the M920x, `sudo python3 update.py protection` tells what can write the
-flash in this boot, from the registers of the SPI controller (`00:1f.5`):
+On the M920x and the W541, `sudo python3 update.py protection` tells what
+can write the flash in this boot, from the registers of the SPI controller
+(`00:1f.5` on the M920x; on the W541 the one of Lynx Point, below):
 the Protected Ranges, mapped onto the regions of the flash map that this
 boot used (CBMEM; `--flash FILE` takes the names from a copy of the flash
 or a release), the *BIOS Lock* bits of `BIOS_CNTL`, the locks (FLOCKDN, the
 PR locks), the access of the CPU to the regions of the descriptor, and the
 two options of *Security* → *Flash protection* as saved in `SMMSTORE`,
-which apply from the next boot. It only reads: PCI configuration space,
-the registers of the controller and the flash as the CPU maps it below
-4 GiB (`/dev/mem`), without loading or unloading a module; under the
-kernel lockdown of Secure Boot the registers are refused, and it says so.
+which apply from the next boot or S3 resume. It only reads: PCI
+configuration space, the registers of the controller and the flash as the
+CPU maps it below 4 GiB (`/dev/mem`), without loading or unloading a
+module; under the kernel lockdown of Secure Boot the registers are
+refused, and it says so.
 On ci-151, with both options off:
 
 ```text
 BIOS_CNTL:   0x8b: BIOSWE 1, BLE 1, EISS 0, BILD 1
 blocchi:     FLOCKDN 1, PR bloccati PR0, PR1, PR2, PR3, PR4 (DLOCK 0x00001f00), PRR34_LOCKDN 1, WRSDIS 1, descrittore attivo
 PR, GPR0:    tutti vuoti
-opzioni:     Firmware protection 0, BIOS Lock 0 (in SMMSTORE: valgono dal prossimo avvio)
+opzioni:     Firmware protection 0, BIOS Lock 0 (in SMMSTORE: valgono dal prossimo avvio o ripresa da S3)
 WP_RO:       NON protetta (Firmware protection spenta, anche nel setup)
 BIOS Lock:   spento: il sistema puo' scrivere il flash
 capsula:     si': nessun PR sugli slot, RW_NVRAM e SMMSTORE
@@ -156,12 +158,28 @@ BIOS region whole (turn the option off first), while capsules, and
 `other-slot` with *BIOS Lock* off, which write the slots only, still
 work. `--expect-ro on` (or `off`) makes it a check for scripts: exit 0
 when `WP_RO` is as expected, 1 when not, 2 when it cannot tell (no
-`WP_RO` in the map). The
+`WP_RO` in the map, registers that cannot be read, no root). The
 Protected Ranges hold only for the CPU: the other masters of the flash
 (ME, GbE) follow the descriptor, which the release images leave writable
 by everyone. `status` prints the short form of the same: the `WP_RO:`,
-`BIOS Lock:` and `slot RW:` lines. On the W541 `protection` stops with
-an error and `status` says *non verificabile su questa macchina*.
+`BIOS Lock:` and `slot RW:` lines.
+
+On the W541 (from the `update.py` of v1.4.0-rc4) the controller is behind
+the LPC bridge, `00:1f.0`: `protection` checks that its RCBA is enabled and
+where Lynx Point puts it, then reads one 4 KiB page of `/dev/mem` at
+RCBA+0x3000, with the registers of the SPI controller (FRAP, the flash
+regions, PR0-PR4, FLOCKDN) and GCS and BUC (BILD, Top Swap), never the data
+or opcode registers. *BIOS Lock* counts as on with SMM_BWP set, or with BLE
+set and BIOSWE clear (setting BIOSWE then raises an SMI, which clears it
+again). With *Firmware protection* on, PR0 should read `0x8bff0b60`:
+`0xb60000-0xbfffff`, `WP_RO`, protected until the next reset or S3 resume,
+where coreboot sets it again. Many distribution kernels are built with
+`IO_STRICT_DEVMEM`, and the page is also held by `intel-spi` and `iTCO_wdt`:
+the registers are then refused, and `protection` says why, still shows *BIOS
+Lock* (from PCI configuration space) and the saved options (from the BIOS
+window of the flash), and exits 2 with `--expect-ro`; for this one check,
+boot once with `iomem=relaxed`, then drop it. None of it has run on a W541
+yet: the values are what the code predicts.
 
 ## What happens at boot
 
