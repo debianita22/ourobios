@@ -11,9 +11,10 @@
 #      GenerateCapsule (anche del M920x, 24 MiB, con le regioni di oggi e
 #      quelle di prima), il suo pacchetto fwupd e i metadati del remote
 #      fwupd (tools/fwupd-cab.py), gli esiti di tools/hw-report.py su log e
-#      timestamp finti; su un /sys finto, la riga ME di tools/update.py
-#      status (SMBIOS tipo 11) e la protezione del flash (protection);
-#      l'immagine di other-slot da un flash finto
+#      timestamp finti (M920x e W541); su un /sys finto, la riga ME di
+#      tools/update.py status (SMBIOS tipo 11) e la protezione del flash
+#      (protection), sul M920x e sul W541; l'immagine di other-slot da un
+#      flash finto
 #   3. i workflow (actionlint, se c'e')
 #   4. blobs/, assets/, legacy/ e i blob delle altre board (boards/*/blobs):
 #      i file corrispondono ai loro SHA256SUMS
@@ -188,10 +189,17 @@ assert update.build_key_or_ci("ouroBIOS-v1.3.8-mrc") < update.RO_COMMON
 assert update.build_flavour("ouroBIOS-ci-143-7125dcb-m920x-fsp", 0) == "m920x-fsp"
 assert update.build_flavour("ouroBIOS-v1.3.8-mrc", 0) == "mrc"
 assert update.build_flavour("?", 24 << 20) == "m920x-fsp" and update.build_flavour("?", 1) is None
+# i nomi delle rc e della CI della nri (prima diventavano "mrc", la prima
+# variante da 12 MiB), e una dimensione di due varianti: non si sa
+assert update.build_flavour("ouroBIOS-v1.4.0-rc4-nri", 12 << 20) == "nri"
+assert update.build_flavour("ouroBIOS-ci-150-ecbf45d-nri", 12 << 20) == "nri"
+assert update.build_flavour("ouroBIOS-ci-150-ecbf45d-mrc", 12 << 20) == "mrc"
+assert update.build_flavour("ouroBIOS-v1.4.0-rc4-m920x-fsp", 24 << 20) == "m920x-fsp"
+assert update.build_flavour("?", 12 << 20) is None
 assert "RW_MRC_CACHE" in update.CURRENT_REGIONS["nri"] and "RW_MRC_CACHE" not in update.CURRENT_REGIONS["m920x-fsp"]
 EOF
 	then
-		ok "tools/update.py: other-slot riconosce anche le build di prova della CI"
+		ok "tools/update.py: other-slot riconosce anche le build di prova della CI e le rc della nri"
 	else
 		bad "tools/update.py: other-slot non riconosce le build della CI come deve"
 	fi
@@ -357,6 +365,235 @@ EOF
 		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, messaggi noti ed eventi del log, microcode con PRMRR"
 	else
 		bad "tools/hw-report.py: i controlli non danno gli esiti attesi"
+	fi
+	# tools/hw-report.py sul W541, su log costruiti con le stringhe esatte dei
+	# printk dei sorgenti (nessun log vero di un W541 nel repository): la riga
+	# CRIT del ME ridotto da me_cleaner e' nota, "ME is not ready!" della NRI
+	# no; la RAM init della NRI con i suoi timestamp e, sugli slot di prima,
+	# la romstage; il training salvato della NRI; la protezione dal log, senza
+	# i registri, solo INFO; ME-01 dalle stringhe OEM del W541 e me_disable;
+	# la versione dell'EC (CVE-2019-6171); l'offset TCC in CPU-01
+	if python3 - <<'EOF'
+import importlib.util
+import os
+import shutil
+import struct
+import sys
+import tempfile
+sys.dont_write_bytecode = True
+root = tempfile.mkdtemp()
+# prima di caricare hw-report.py, che importa update.py
+os.environ["W541_UPDATE_SYSROOT"] = root
+sys.path.insert(0, "tools")
+spec = importlib.util.spec_from_file_location("hw_report", "tools/hw-report.py")
+hw = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hw)
+update = hw.update
+MRC, NRI = "ouroBIOS-ci-150-ecbf45d-mrc", "ouroBIOS-v1.4.0-rc4-nri"
+
+
+def firmware(log, ts=(), bios=MRC, board="w541", raw=None, spi=None):
+    fw = hw.Firmware.__new__(hw.Firmware)
+    fw.cbmem, fw.bios, fw.board, fw.total_line = None, bios, board, None
+    fw.log, fw.ts = log, list(ts)
+    fw.raw = lambda cbmem_id: (raw or {}).get(cbmem_id)
+    if spi is not None:
+        fw.spi = spi
+    return fw
+
+
+def run(fn, fw, *a):
+    rep = hw.Report()
+    fn(fw, rep, *a)
+    return rep.checks[0] if rep.checks else None
+
+
+banner = lambda stage, level: ("[NOTE ]  coreboot-26.09-438-g206078d6d990-%s Fri Oct 30 12:00:00 UTC 2026 x86_32 "
+                               "%s starting (log level: %d)..." % (MRC, stage, level))
+# mrc, training salvato: mrc_cache.c, lynxpoint/me.c:692/836/981, vpd.c:87,
+# cbfs.c:84, spi.c:1072, lockdown.c:68
+cached = [banner("ramstage", 7),
+          "[DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.",
+          "[DEBUG]  MRC: 'RW_MRC_CACHE' does not need update.",
+          "[CRIT ]  intel_me_path: mbp is not ready!",
+          "[NOTE ]  ME: BIOS path: Error",
+          "[ERROR]  ME: MBP not ready",
+          "[WARN ]  RO_VPD is uninitialized.",
+          "[WARN ]  CBFS: 'fallback/slic' not found.",
+          "[INFO ]  spi_flash_protect: FPR 0 is enabled for range 0x00b60000-0x00bfffff",
+          "[INFO ]  BM-LOCKDOWN: Enabled bootmedia protection"]
+ts = lambda *t: [(i, us, 0, n) for i, us, n in t]
+ts_mrc = ts((0, 0, "1st timestamp"), (1, 400000, "start of romstage"), (2, 450000, "before RAM initialization"),
+            (3, 1300000, "after RAM initialization"), (4, 1500000, "end of romstage"),
+            (10, 1550000, "start of ramstage"), (90, 3250000, "starting to load payload"),
+            (99, 3400000, "selfboot jump"))
+c = run(hw.check_fw_log, firmware(cached, ts_mrc))
+assert c["status"] == "PASS" and c["summary"].endswith("0 non noti"), c
+assert any("intel_me_path" in d and "noto: ME ridotto da me_cleaner" in d for d in c["details"]), c["details"]
+c = run(hw.check_raminit, firmware(cached, ts_mrc))
+assert (c["status"], c["data"]["cache"]) == ("PASS", "valid") and c["summary"].startswith("RAM init 0.85 s"), c
+assert run(hw.check_boot_time, firmware(cached, ts_mrc))["status"] == "PASS"
+# un errore non noto resta FAIL; "ME is not ready!" della NRI (early_me.c:51,
+# l'attesa di 1 s dell'UMA) non e' noto finche' un W541 vero non lo mostra
+for line in ("[CRIT ]  Failed to recover CBMEM in S3 resume.", "[ERROR]  ME is not ready!"):
+    c = run(hw.check_fw_log, firmware(cached + [line], ts_mrc))
+    assert c["status"] == "FAIL" and c["summary"].endswith("1 non noti"), (line, c)
+# nri, il primo avvio dopo un aggiornamento: il training (fino a un minuto)
+train = [banner("ramstage", 7), "[NOTE ]  MRC: no data in 'RW_MRC_CACHE'",
+         "[NOTE ]  CPU was replaced, forcing a cold boot",
+         "[DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.",
+         "[DEBUG]  MRC: cache data 'RW_MRC_CACHE' needs update.", "[DEBUG]  MRC: updated 'RW_MRC_CACHE'."]
+ts_train = ts((0, 0, "1st timestamp"), (1, 400000, "start of romstage"), (2, 450000, "before RAM initialization"),
+              (3, 29950000, "after RAM initialization"), (4, 30400000, "end of romstage"),
+              (10, 30450000, "start of ramstage"), (90, 32100000, "starting to load payload"),
+              (99, 32300000, "selfboot jump"))
+c = run(hw.check_raminit, firmware(train, ts_train, NRI))
+assert (c["status"], c["data"]["cache"]) == ("INFO", "training") and c["summary"].startswith("RAM init 29.50 s"), c
+c = run(hw.check_boot_time, firmware(train, ts_train, NRI))
+assert c["status"] == "PASS" and "2.80 s senza il training" in c["summary"], c
+# uno slot della NRI senza i timestamp della RAM init: tutta la romstage
+old = [t for t in ts_train if t[0] not in (2, 3)]
+c = run(hw.check_raminit, firmware(train, old, NRI))
+assert c["status"] == "INFO" and c["summary"].startswith("romstage (RAM init compresa) 30.00 s"), c
+c = run(hw.check_boot_time, firmware(train, old, NRI))
+assert c["status"] == "PASS" and "2.30 s senza il training" in c["summary"], c
+# nri, avvio veloce con il training salvato (raminit_native.c:151)
+fast = [banner("ramstage", 7), "[INFO ]  Using cached memory parameters",
+        "[DEBUG]  MRC: 'RW_MRC_CACHE' does not need update."]
+ts_fast = ts((0, 0, "1st timestamp"), (1, 400000, "start of romstage"), (2, 450000, "before RAM initialization"),
+             (3, 700000, "after RAM initialization"), (4, 900000, "end of romstage"),
+             (10, 950000, "start of ramstage"), (90, 2650000, "starting to load payload"),
+             (99, 2800000, "selfboot jump"))
+assert run(hw.check_raminit, firmware(fast, ts_fast, NRI))["status"] == "PASS"
+# solo la riga della NRI, senza quelle DEBUG della cache (log level 6)
+c = run(hw.check_raminit, firmware([banner("ramstage", 6), fast[1]], ts_fast, NRI))
+assert (c["status"], c["data"]["cache"]) == ("PASS", "valid") and "NRI" in c["details"][0], c
+c = run(hw.check_raminit, firmware([banner("ramstage", 6)], ts_fast, NRI))
+assert c["data"]["cache"] == "unknown" and any("Console Log Level" in d for d in c["details"]), c
+# TPM 1.2: il PCR0 con il solo separatore
+assert hw.separator_pcr("sha1") == "B2A83B0EBF2F8374299A5B2BDFC31EA955AD7236"
+# GPLV e il _DSM di iwlwifi non sono piu' noti (patch 0068 e 0069)
+for msg in ("ACPI Warning: SystemIO range 0x0000000000000480-0x00000000000004AF conflicts with OpRegion "
+            "0x0000000000000480-0x00000000000004EB (\\_SB.PCI0.GPLV) (20240827/utaddress-204)",
+            "ACPI: \\: failed to evaluate _DSM bf0212f2-788f-c64d-a5b3-1f738e285ade (0x1001)"):
+    assert hw.known(msg, hw.KNOWN_KERNEL, "w541") is None, msg
+
+# FLASH-01 senza i registri (kernel con IO_STRICT_DEVMEM): il PR dal log
+# confrontato con WP_RO della FMAP di CBMEM, INFO e non PASS (FLOCKDN non noto)
+fmap_areas = (("SI_BIOS", 0x500000, 0x700000), ("WP_RO", 0xb60000, 0xa0000), ("FMAP", 0xb60000, 0x800))
+fmap = b"__FMAP__" + struct.pack("<BBQI32sH", 1, 1, 0, 12 << 20, b"FLASH", len(fmap_areas))
+fmap += b"".join(struct.pack("<II32sH", o, s, n.encode(), 0) for n, o, s in fmap_areas)
+eperm = {"root": True, "ctrl": "lpt", "bios_cntl": 0x09, "regs": None, "options": dict.fromkeys(update.LOCK_OPTIONS),
+         "options_note": "non lette", "board_options": {"me_disable": None},
+         "error": "registri SPI non leggibili da /dev/mem (Operation not permitted); kernel con IO_STRICT_DEVMEM: "
+                  "per questa sola verifica avvia una volta con iomem=relaxed, poi toglilo (da confermare su un "
+                  "W541)"}
+c = run(hw.check_flash, firmware(cached, raw={hw.CBMEM_ID_FMAP: fmap}, spi=eperm))
+assert c["status"] == "INFO" and c["summary"].startswith("WP_RO protetto all'avvio secondo il log (PR0 dal log"), c
+assert "BIOS Lock: spento: il sistema puo' scrivere il flash" in c["details"], c["details"]
+assert c["data"] == {"wp_ro_protected": False, "wp_ro_from_log": "PR0", "option_off": False}, c["data"]
+# nessun controller conosciuto: lo stesso, dal log
+c = run(hw.check_flash, firmware(cached, raw={hw.CBMEM_ID_FMAP: fmap}, spi=None))
+assert c["status"] == "INFO" and "PR0 dal log" in c["summary"], c
+# il log senza il PR, la protezione accesa: INFO, registri non letti
+c = run(hw.check_flash, firmware(cached[:-2] + cached[-1:], raw={hw.CBMEM_ID_FMAP: fmap}, spi=eperm))
+assert c["status"] == "INFO" and c["summary"] == "protezione accesa secondo il log (registri non letti)", c
+
+# ME-01 sul W541: le stringhe OEM di mainboard/lenovo/haswell (HFS e HFS2 di
+# un X220 con me_cleaner, non di un W541), l'HECI nascosta da me_disable
+d = os.path.join(root, "sys/firmware/dmi/entries/11-0")
+os.makedirs(d)
+heci = os.path.join(root, "sys/bus/pci/devices/0000:00:16.0")
+ec = "IBM ThinkPad Embedded Controller -[%-17s]-" % "GMHT30WW-1.0"
+
+
+def type11(*strings):
+    open(os.path.join(d, "raw"), "wb").write(bytes([11, 5, 0x09, 0x00, len(strings)]) +
+                                             b"".join(s.encode() + b"\0" for s in strings) + b"\0")
+
+
+me = ("ME: Disabled (AltMeDisable, BUP)", "ME HFSTS: %08X %08X %08X %08X %08X %08X" % (0x00020191, 0x100A0000, 0, 0,
+                                                                                      0, 0))
+type11(*me + (ec,))
+lpt = lambda opt: dict(eperm, board_options={"me_disable": opt})
+c = run(hw.check_me, firmware(cached, spi=lpt(None)))
+assert c["status"] == "PASS" and c["summary"].startswith("disattivata (AltMeDisable, BUP), stato di lavoro 1"), c
+assert c["summary"].endswith("HECI nascosta, come chiede me_disable"), c
+assert "opzione me_disable: 1, il default (DISABLE_ME_PCI)? SMMSTORE non letta" in c["details"], c["details"]
+# HECI visibile: con SMMSTORE non letta non si sa (INFO); con me_disable a 1
+# in SMMSTORE, o lo store letto senza la variabile (o vuoto: coreboot ha
+# usato il default, acceso), si' (WARN)
+os.makedirs(heci)
+c = run(hw.check_me, firmware(cached, spi=lpt(None)))
+assert c["status"] == "INFO" and "visibile con me_disable non letto (default acceso)" in c["summary"], c
+assert run(hw.check_me, firmware(cached, spi=lpt(1)))["status"] == "WARN"
+for note in (None, "SMMSTORE vuota"):
+    c = run(hw.check_me, firmware(cached, spi=dict(lpt(None), store_read=True, options_note=note)))
+    assert c["status"] == "WARN" and c["summary"].endswith("HECI 00:16.0 visibile con me_disable al default, acceso"), c
+    assert "opzione me_disable: 1, il default (DISABLE_ME_PCI): non impostata in SMMSTORE%s" % (
+        " (SMMSTORE vuota)" if note else "") in c["details"] and c["data"]["me_disable_known"], c["details"]
+c = run(hw.check_me, firmware(cached, spi=lpt(0)))
+assert c["status"] == "PASS" and c["summary"].endswith("HECI visibile, driver -"), c
+# un ME fermo nel BUP per un altro motivo: WARN; HECI non letta dal firmware: INFO
+type11("ME: Stopped in BUP (state 0x18)", "ME HFSTS: 00003001 10180000 00000000 00000000 00000000 00000000", ec)
+c = run(hw.check_me, firmware(cached, spi=lpt(0)))
+assert c["status"] == "WARN" and c["summary"].startswith("ferma nel BUP (stato 0x18)"), c
+type11("ME: Not available", ec)
+c = run(hw.check_me, firmware(cached, spi=lpt(0)))
+assert c["status"] == "INFO" and c["summary"].startswith("non letta dal firmware"), c
+# senza le stringhe (uno slot di prima): le righe del log, o SKIP con il livello
+shutil.rmtree(heci)
+type11(ec)
+log = cached + ["[DEBUG]  ME: Current Working State   : Initializing",
+                "[DEBUG]  ME: Current Operation Mode  : Debug",
+                "[DEBUG]  ME: Progress Phase          : BUP Phase",
+                "[DEBUG]  ME: Progress Phase State    : Check to see if straps say ME DISABLED"]
+c = run(hw.check_me, firmware(log, spi=lpt(None)))
+assert c["status"] == "INFO" and c["summary"].startswith("operation mode Debug, working state Initializing"), c
+c = run(hw.check_me, firmware([banner("ramstage", 6)], spi=lpt(None)))
+assert c["status"] == "SKIP" and any("Console Log Level" in x for x in c["details"]), c
+# la riga del log della copia dei registri, senza SMBIOS
+c = run(hw.check_me, firmware(cached + ["[DEBUG]  ME: HFSTS1-6: 00020191 100a0000 00000000 00000000 00000000 "
+                                        "00000000"], spi=lpt(None)))
+assert c["status"] == "PASS" and c["summary"].startswith("disattivata (AltMeDisable, BUP)"), c
+
+# EC-01: GMHT30WW (1.15) dal log di h8.c, piu' vecchio dalla stringa OEM
+h8 = "[INFO ]  H8: EC Firmware ID %s, Version %d.%d%d%c" % ("GMHT30WW-1.0", 1, 1, 5, "A")
+c = run(hw.check_ec, firmware(cached + [h8]))
+assert c["status"] == "PASS" and c["data"] == {"ec": "GMHT30WW", "min": "GMHT30WW"}, c
+type11(*me + ("IBM ThinkPad Embedded Controller -[%-17s]-" % "GMHT29WW-1.0",))
+c = run(hw.check_ec, firmware(cached))
+assert c["status"] == "WARN" and "CVE-2019-6171" in c["summary"] and "GMHT29WW" in c["summary"], c
+assert any("programmatore esterno" in x for x in c["details"]), c["details"]
+type11("IBM ThinkPad Embedded Controller -[%-17s]-" % "G2HT35WW-1.0")
+assert run(hw.check_ec, firmware(cached))["status"] == "INFO"
+type11(*me)
+assert run(hw.check_ec, firmware(cached))["status"] == "SKIP"
+assert run(hw.check_ec, firmware(cached, board="m920x")) is None
+
+
+# CPU-01: l'offset TCC, solo nei dettagli (bit 27:24 sul W541, 29:24 sul M920x)
+class Msr:
+    def __init__(self, regs):
+        self.regs = regs
+
+    def read(self, cpu, reg):
+        return self.regs.get(reg)
+
+
+base = {0x606: 0xA0E03, 0x610: (1 << 15) | (47 * 8), 0x1AD: 38}
+c = run(hw.check_cpu, firmware(cached), Msr({**base, 0xCE: 0x10002700, 0x1A2: 0x00640000}))
+assert c["data"]["tcc_programmable"] is False and c["data"]["tcc_offset"] == 0, c["data"]
+assert any(x.startswith("offset TCC programmabile: no (PLATFORM_INFO bit 30), offset attuale 0 (MSR 0x1A2 bit "
+                        "27:24); sul W541") for x in c["details"]), c["details"]
+c = run(hw.check_cpu, firmware([], board="m920x"), Msr({**base, 0xCE: 1 << 30, 0x1A2: 0x2a640000}))
+assert c["data"]["tcc_programmable"] and c["data"]["tcc_offset"] == 0x2a, c["data"]
+shutil.rmtree(root)
+EOF
+	then
+		ok "tools/hw-report.py sul W541: messaggi noti del ME, RAM init della NRI (training, slot senza timestamp, cache), protezione dal log, ME-01 con me_disable e le stringhe OEM, EC 1.15, offset TCC"
+	else
+		bad "tools/hw-report.py: i controlli del W541 non danno gli esiti attesi"
 	fi
 	# Una capsula con la struttura di GenerateCapsule (firma finta) letta da
 	# tools/update.py: variante, versioni, regioni del manifest RMAP, immagine.
@@ -665,13 +902,114 @@ EOF
 	else
 		bad "tools/update.py: la riga ME di status non si legge come deve dalle stringhe OEM"
 	fi
+	# tools/update.py status sul W541: la riga ME dalle stringhe OEM di
+	# mainboard/lenovo/haswell (me_status.c, mainboard.c), tradotte; le stesse
+	# regole del firmware dalle sole parole (HFS2 prima del modo: un ME fermo
+	# nel BUP non e' mai "attiva"); un firmware senza le stringhe
+	if python3 - <<'EOF'
+import contextlib
+import io
+import os
+import shutil
+import sys
+import tempfile
+sys.dont_write_bytecode = True
+root = tempfile.mkdtemp()
+os.environ["W541_UPDATE_SYSROOT"] = root
+sys.path.insert(0, "tools")
+import update
+
+# le regole di mainboard_me_summary(): HFS e HFS2 di un X220 con me_cleaner
+# (HFS2 progress phase BUP, stato 0x0a, quello che coreboot ha provato)
+summ = update.me9_summary
+assert summ(0x00020191, 0x100A0000) == "Disabled (AltMeDisable, BUP)"
+assert summ(0x00000191, 0x100A0000) == "Disabled (AltMeDisable, BUP)"      # anche col modo 0
+assert summ(0x00003001, 0x10180000) == "Stopped in BUP (state 0x18)"
+assert summ(0x00023191, 0x100A0000) == "Stopped in BUP (state 0x0a)"       # con un errore
+assert summ(0x00000245, 0x50000000) == "Enabled"
+assert summ(0x00000243, 0x50000000) == "Enabled, not ready (state 3)"
+assert [summ(m << 16, 0) for m in (2, 3, 4, 5, 6)] == [
+    "Debug", "Disabled (soft temporary disable)", "Security override (jumper)",
+    "Security override (HECI message)", "Mode 6"]
+# ogni frase del firmware ha la sua traduzione, e sta nei 64 caratteri
+for s in ("Disabled (AltMeDisable, BUP)", "Stopped in BUP (state 0x18)", "Disabled (soft temporary disable)",
+          "Enabled", "Enabled, not ready (state 3)", "Security override (jumper)",
+          "Security override (HECI message)", "Debug", "Mode 6", "Not available"):
+    assert len("ME: " + s) <= 64 and update.me9_text(s, None) != s, s
+d = os.path.join(root, "sys/firmware/dmi/entries")
+os.makedirs(os.path.join(d, "11-0"))
+
+
+def type11(*strings):
+    open(os.path.join(d, "11-0", "raw"), "wb").write(
+        bytes([11, 5, 0x09, 0x00, len(strings)]) + b"".join(s.encode() + b"\0" for s in strings) + b"\0")
+
+
+# come le scrive mainboard_smbios_strings(): prima dell'EC (il dispositivo
+# radice viene prima), HFSTS in maiuscolo, 63 caratteri
+ec = "IBM ThinkPad Embedded Controller -[%-17s]-" % "GMHT30WW-1.0"
+me = ("ME: Disabled (AltMeDisable, BUP)",
+      "ME HFSTS: %08X %08X %08X %08X %08X %08X" % (0x00020191, 0x100A0000, 0, 0, 0, 0))
+assert all(len(s) <= 64 for s in me + (ec,)) and len(me[1]) == 63
+type11(*me + (ec,))
+want = ("disattivata (AltMeDisable, BUP), stato di lavoro 1, modo 2, codice di errore 0, fase 1 stato 0x0a; "
+        "HECI (00:16.0) nascosta al sistema")
+assert update.me_status("w541") == want, update.me_status("w541")
+# il decoder del M920x non cambia
+assert update.me_status().startswith("modo debug, stato di lavoro 1"), update.me_status()
+type11("ME: Stopped in BUP (state 0x18)", "ME HFSTS: 00003001 10180000 00000000 00000000 00000000 00000000", ec)
+assert update.me_status("w541").startswith("ferma nel BUP (stato 0x18), stato di lavoro 1, modo 0, codice di "
+                                           "errore 3"), update.me_status("w541")
+# HECI non letta: solo la riga riassuntiva
+os.makedirs(os.path.join(root, "sys/bus/pci/devices/0000:00:16.0"))
+type11("ME: Not available", ec)
+assert update.me_status("w541") == "non letta dal firmware (HECI spenta o nascosta all'avvio)"
+# solo le parole: la frase che direbbe il firmware
+type11(me[1], ec)
+assert update.me_status("w541").startswith("disattivata (AltMeDisable, BUP), stato di lavoro 1")
+# status su una nri: la riga ME, e senza le stringhe la release da cui ci sono
+esrt = os.path.join(root, "sys/firmware/efi/esrt/entries/entry0")
+os.makedirs(esrt)
+for f, v in (("fw_class", str(update.VARIANTS["nri"])), ("fw_version", "0x0103ff04"),
+             ("lowest_supported_fw_version", "0x01030900"), ("last_attempt_version", "0"),
+             ("last_attempt_status", "0")):
+    open(os.path.join(esrt, f), "w").write(v + "\n")
+os.makedirs(os.path.join(root, "sys/class/dmi/id"))
+open(os.path.join(root, "sys/class/dmi/id/bios_version"), "w").write("ouroBIOS-v1.4.0-rc4-nri\n")
+os.makedirs(os.path.join(root, "esp/EFI"))
+
+
+def status():
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        update.cmd_status(type("A", (), {"esp": os.path.join(root, "esp")})())
+    return out.getvalue()
+
+
+type11(*me + (ec,))
+out = status()
+assert "ME:        disattivata (AltMeDisable, BUP), stato di lavoro 1" in out, out
+assert "protezione: non verificabile su questa macchina (solo i controller SPI del M920x e del W541)" in out, out
+type11(ec)
+out = status()
+assert "ME:        non indicato da questo firmware (prima della release con lo stato del ME)" in out, out
+# il tag del W541 con lo stato del ME non c'e' ancora: niente versione inventata
+assert (update.me_strings_since("m920x-fsp"), update.me_strings_since("nri")) == (
+    "v1.4.0-rc4", "release con lo stato del ME")
+shutil.rmtree(root)
+EOF
+	then
+		ok "tools/update.py: la riga ME di status sul W541 (le frasi del ME 9 tradotte, solo le parole, senza le stringhe)"
+	else
+		bad "tools/update.py: la riga ME di status sul W541 non si legge come deve"
+	fi
 	# tools/update.py protection su un /sys finto: lo spazio PCI e il BAR0 del
 	# controller SPI del M920x, e la regione BIOS sotto i 4 GiB in un file da
 	# 12 MiB al posto di /dev/mem, con la FMAP e le opzioni in SMMSTORE.
 	# Nessun PR (com'e' la ci-151), PR0 su WP_RO, un PR su RW_SECTION_A, il
 	# BIOS Lock di questo avvio e quello del setup, uno store non sano o
 	# rovinato (i default), senza FMAP, i codici di --expect-ro, senza root,
-	# il W541
+	# nessun controller
 	if python3 - <<'EOF'
 import contextlib
 import io
@@ -765,7 +1103,8 @@ fixture(prs=((0, 0x97ff1700),), options=((1, 0, 0x3f),))
 p = update.spi_protection(dm)
 v = update.spi_verdict(p)
 assert v["ro"] == "ok" and v["prs"][0]["areas"] == ["WP_RO"] and not v["capsule_block"], v
-assert update.ro_text(p, v).startswith("protetta fino al reset (PR0); ma il descrittore e' scrivibile")
+assert update.ro_text(p, v).startswith("protetta fino al prossimo reset o ripresa da S3 (PR0); ma il descrittore "
+                                      "e' scrivibile")
 assert update.slots_text(p, v) == "scrivibili con la capsula e con flashrom"
 # WP_RO coperta da due PR insieme
 fixture(prs=((0, 0x97ff1780), (1, 0x977f1700)), options=((1, 0, 0x3f),))
@@ -788,14 +1127,14 @@ for bc, opt, by_smi in ((0xaa, 1, False), (0x8a, 1, True)):
 fixture(bios_cntl=0x8a, options=((0, 0, 0x3f),))
 p = update.spi_protection(dm)
 assert update.bios_lock_text(p, update.spi_verdict(p)) == "acceso: scrive solo il firmware in SMM (EISS a 0: " \
-    "lo tiene l'SMI che rimette WPD a 0); spento nel setup, vale dal prossimo avvio"
+    "lo tiene l'SMI che rimette WPD a 0); spento nel setup, vale dal prossimo avvio o ripresa da S3"
 # acceso nel setup ma non in questo avvio: WPD resta a 1, flashrom scrive
 fixture(bios_cntl=0x8b, options=((0, 1, 0x3f),))
 p = update.spi_protection(dm)
 v = update.spi_verdict(p)
 assert not v["smm_only"] and update.slots_text(p, v) == "scrivibili con la capsula e con flashrom"
 assert update.bios_lock_text(p, v) == \
-    "spento: il sistema puo' scrivere il flash; acceso nel setup, vale dal prossimo avvio"
+    "spento: il sistema puo' scrivere il flash; acceso nel setup, vale dal prossimo avvio o ripresa da S3"
 # senza BLE WPD a 0 non tiene: flashrom lo accende
 fixture(bios_cntl=0x88)
 p = update.spi_protection(dm)
@@ -852,16 +1191,366 @@ update.spi_protection = spi_protection
 # senza root sysfs da' 64 byte dello spazio PCI
 fixture(config=64)
 assert update.protection_lines(dm) == [("protezione", "serve root (sudo)")]
-# il W541: a 00:1f.5 non c'e' il controller SPI
+# senza il controller SPI 00:1f.5 (e senza un LPC Lynx Point, il W541)
 shutil.rmtree(spi)
 assert update.spi_protection(dm) is None
 assert update.protection_lines(dm)[0][1].startswith("non verificabile")
 shutil.rmtree(root)
 EOF
 	then
-		ok "tools/update.py: protection su registri finti (nessun PR, PR0 su WP_RO, PR su uno slot, BIOS Lock, store non sano o rovinato, senza FMAP, --expect-ro, senza root, W541)"
+		ok "tools/update.py: protection su registri finti (nessun PR, PR0 su WP_RO, PR su uno slot, BIOS Lock, store non sano o rovinato, senza FMAP, --expect-ro, senza root, nessun controller)"
 	else
 		bad "tools/update.py: protection non legge i registri finti come deve"
+	fi
+	# tools/update.py protection sul W541 (Lynx Point), su un /sys finto: lo
+	# spazio PCI dell'LPC 00:1f.0 (BIOS_CNTL, RCBA) e un /dev/mem finto da
+	# 0xfed1c000 a 4 GiB con la pagina RCBA + 0x3000 (GCS, BUC, i registri SPI
+	# a 0x3800) e la regione BIOS di 7 MiB con la FMAP della ci-150 e SMMSTORE.
+	# I valori di ci-150: PR0 0x8bff0b60 su WP_RO, FLOCKDN, FRAP 0xffff
+	# (FLMSTR1 0xffff0000), BIOS_CNTL 0x09 col BIOS Lock spento e 0x2a acceso.
+	# Poi i casi: nessun PR, FLOCKDN spento, un PR su uno slot, BIOS_CNTL,
+	# RCBA spento o strano, /dev/mem rifiutata, senza root, un altro LPC;
+	# protection e --expect-ro, status, e FLASH-01 di tools/hw-report.py
+	if python3 - <<'EOF'
+import contextlib
+import errno
+import importlib.util
+import io
+import os
+import shutil
+import struct
+import sys
+import tempfile
+sys.dont_write_bytecode = True
+root = tempfile.mkdtemp()
+os.environ["W541_UPDATE_SYSROOT"] = root
+sys.path.insert(0, "tools")
+import update
+
+# i dword letti non toccano mai FDATA, SSFS/SSFC/PREOP/OPTYPE/OPMENU, FDOC/FDOD
+assert not [o for o in update.LPT_SPIBAR_READ if 0x10 <= o < 0x50 or 0x90 <= o < 0xa0 or 0xb0 <= o < 0xb8]
+assert len(update.LPT_LPC_IDS) == 24 and 0x8c4f in update.LPT_LPC_IDS and 0x8c43 not in update.LPT_LPC_IDS
+lpc = os.path.join(root, "sys/bus/pci/devices/0000:00:1f.0")
+sata = os.path.join(root, "sys/bus/pci/devices/0000:00:1f.5")
+for d, dev, cls in ((lpc, "0x8c4f", "0x060100"), (sata, "0x8c09", "0x010185")):
+    os.makedirs(d)
+    for f, v in (("vendor", "0x8086"), ("device", dev), ("class", cls)):
+        open(os.path.join(d, f), "w").write(v + "\n")
+# la FMAP del ROM della ci-150 (W541, 12 MiB)
+areas = [("SI_ALL", 0, 0x500000), ("SI_DESC", 0, 0x1000), ("SI_GBE", 0x1000, 0x2000), ("SI_ME", 0x3000, 0x4fd000),
+         ("SI_BIOS", 0x500000, 0x700000), ("RW_MRC_CACHE", 0x500000, 0x10000), ("SMMSTORE", 0x510000, 0x80000),
+         ("RO_VPD", 0x590000, 0x4000), ("RW_ELOG", 0x594000, 0x4000), ("RW_NVRAM", 0x5a0000, 0x10000),
+         ("RW_SECTION_A", 0x5c0000, 0x2d0000), ("FW_MAIN_A", 0x5d0000, 0x2bffc0),
+         ("RW_SECTION_B", 0x890000, 0x2d0000), ("FW_MAIN_B", 0x8a0000, 0x2bffc0), ("WP_RO", 0xb60000, 0xa0000),
+         ("FMAP", 0xb60000, 0x800), ("COREBOOT", 0xb80000, 0x80000)]
+phys = 0xfed1c000                       # il primo byte del /dev/mem finto
+mem = os.path.join(root, "devmem.bin")
+WIN = 0xff900000                        # 4 GiB - 7 MiB: flash 0x500000
+win_off = lambda flash: WIN - phys + flash - 0x500000
+with open(mem, "wb") as f:
+    f.truncate((1 << 32) - phys)        # sparso, ~19 MiB
+    fmap = b"__FMAP__" + struct.pack("<BBQI32sH", 1, 1, 0, 0xc00000, b"FLASH", len(areas))
+    fmap += b"".join(struct.pack("<II32sH", o, n, name.encode(), 0) for name, o, n in areas)
+    f.seek(win_off(0xb60000))
+    f.write(fmap)
+
+
+def var(name, value, state=0x3f):
+    n = (name + "\0").encode("utf-16-le")
+    d = struct.pack("<I", value)
+    v = struct.pack("<HBBIQ16sIII16s", 0x55aa, state, 0, 3, 0, bytes(16), 0, len(n), len(d),
+                    update.CB_OPTION_GUID) + n + d
+    return v + b"\xff" * (-len(v) % 4)
+
+
+def store(options):
+    """SMMSTORE: vuota (None) o la FV di efi_fv_initialize() con le opzioni."""
+    img = bytearray(b"\xff" * 0x80000)
+    if options is not None:
+        fv = bytearray(0x48)
+        fv[0x10:0x20] = update.NV_DATA_FV_GUID
+        fv[0x20:0x28] = struct.pack("<Q", 0x40000)
+        fv[0x28:0x2c] = b"_FVH"
+        fv[0x30:0x32] = struct.pack("<H", 0x48)
+        fv[0x37] = 2
+        fv[0x38:0x40] = struct.pack("<II", 0x40, 0x1000)
+        fv[0x32:0x34] = struct.pack("<H", -sum(struct.unpack("<36H", fv)) & 0xffff)
+        img[0:0x48] = fv
+        img[0x48:0x64] = update.AUTH_VAR_GUID + struct.pack("<IBBHI", 0x30000 - 0x48, 0x5a, 0xfe, 0, 0)
+        vs = b"".join(var(k, v) for k, v in options)
+        img[0x64:0x64 + len(vs)] = vs
+    return bytes(img)
+
+
+def fixture(prs=((0, 0x8bff0b60),), bios_cntl=0x09, hsfs=0x0000e008, rcba=0xfed1c001, options=None, config=256,
+            device=0x8c4f):
+    cfg = bytearray(256)
+    cfg[0:4] = struct.pack("<HH", 0x8086, device)
+    cfg[0xdc] = bios_cntl
+    cfg[0xf0:0xf4] = struct.pack("<I", rcba)
+    open(os.path.join(lpc, "config"), "wb").write(bytes(cfg[:config]))
+    open(os.path.join(lpc, "device"), "w").write("0x%04x\n" % device)
+    page = bytearray(0x1000)
+    regs = {0x410: 0x00000001, 0x414: 0x00000000,                     # GCS BILD 1, BUC Top Swap 0
+            0x800: 0x0bff0500, 0x804: hsfs, 0x850: 0x0000ffff,        # BFPR, HSFS, FRAP
+            0x854: 0x00000000, 0x858: 0x0bff0500, 0x85c: 0x04ff0003, 0x860: 0x00020001, 0x864: 0x00007fff}
+    for n, v in prs:
+        regs[0x874 + 4 * n] = v
+    for off, v in regs.items():
+        page[off:off + 4] = struct.pack("<I", v)
+    with open(mem, "r+b") as f:
+        f.seek(0x3000)
+        f.write(page)
+        f.seek(win_off(0x510000))
+        f.write(store(options))
+
+
+dm = (mem, phys)
+# (a) i default di una release: PR0 su WP_RO, BIOS Lock spento, SMMSTORE vuota
+fixture()
+p = update.spi_protection(dm)
+assert (p["ctrl"], p["device"], p["rcba"], p["bar"]) == ("lpt", 0x8c4f, 0xfed1c000, 0xfed1f800), p
+assert p["bios"] == (0x500000, 0xbfffff) and p["window"] == WIN and p["fmap"] == "quella nel flash (0x0b60000)"
+assert p["gcs"] & update.GCS_BILD and not p["buc"] & update.BUC_TS
+v = update.spi_verdict(p)
+assert v["ro"] == "ok" and v["prs"][0]["areas"] == ["WP_RO"] and v["flockdn"] and v["desc_writable"], v
+assert update.option_text(p, "bootmedia_lock") == "1 (default: SMMSTORE vuota)"
+assert update.protection_lines(dm) == [
+    ("WP_RO", "protetta fino al prossimo reset o ripresa da S3 (PR0); ma il descrittore e' scrivibile dalla CPU "
+              "(UNLOCK_FLASH_REGIONS): si puo' aggirare"),
+    ("BIOS Lock", "spento: il sistema puo' scrivere il flash"),
+    ("slot RW", "scrivibili con la capsula e con flashrom")], update.protection_lines(dm)
+# (b) Firmware protection spenta nel setup, nessun PR; me_disable da SMMSTORE
+fixture(prs=(), options=(("bootmedia_lock", 0), ("bios_lock", 0), ("me_disable", 0)))
+p = update.spi_protection(dm)
+assert p["options"] == {"bootmedia_lock": 0, "bios_lock": 0} and p["board_options"] == {"me_disable": 0}, p
+assert update.ro_text(p, update.spi_verdict(p)) == "NON protetta (Firmware protection spenta, anche nel setup)"
+# (c) FLOCKDN spento: i PR si possono togliere
+fixture(hsfs=0x00006008)
+p = update.spi_protection(dm)
+v = update.spi_verdict(p)
+assert v["ro"] == "unlocked" and "ma FLOCKDN e' spento" in update.ro_text(p, v), v
+# (d) un PR su RW_SECTION_A: la capsula non lo scrive
+fixture(prs=((0, 0x8bff0b60), (1, 0x888f05c0)))
+p = update.spi_protection(dm)
+v = update.spi_verdict(p)
+assert v["capsule_block"] == ["PR1 RW_SECTION_A"] and v["ro"] == "ok", v
+# (e) BIOS_CNTL: 0x2a come lo lascia coreboot col BIOS Lock acceso, 0x0a
+# (SMM_BWP tolto: lo tiene l'SMI), 0x29 (SMM_BWP da solo, R/WLO: basta),
+# 0x08 (BIOSWE si accende), 0x0b (l'SMI non ha rimesso BIOSWE a 0)
+for bc, smm, by_smi, text in (
+        (0x2a, True, False, "acceso: scrive solo il firmware in SMM"),
+        (0x0a, True, True, "acceso: scrive solo il firmware in SMM (SMM_BWP a 0: lo tiene l'SMI che rimette "
+                           "BIOSWE a 0)"),
+        (0x29, True, False, "acceso: scrive solo il firmware in SMM"),
+        (0x08, False, False, "spento: il sistema puo' scrivere il flash (dopo aver acceso BIOSWE, come fa "
+                             "flashrom)"),
+        (0x0b, False, False, "spento: il sistema puo' scrivere il flash (BLE acceso ma BIOSWE a 1: l'SMI non "
+                             "l'ha rimesso a 0)")):
+    fixture(bios_cntl=bc, options=(("bios_lock", 1),))
+    p = update.spi_protection(dm)
+    v = update.spi_verdict(p)
+    assert (v["smm_only"], v["smm_by_smi"]) == (smm, by_smi), (bc, v)
+    want = text + ("" if smm else "; acceso nel setup, vale dal prossimo avvio o ripresa da S3")
+    assert update.bios_lock_text(p, v) == want, (bc, update.bios_lock_text(p, v))
+    if smm:
+        assert update.slots_text(p, v) == "scrivibili con la capsula; flashrom no (BIOS Lock)"
+# (f) protection: le righe di Lynx Point, nessuna di Cannon Point; --expect-ro
+spi_protection = update.spi_protection
+update.spi_protection = lambda devmem=None: spi_protection(dm)
+
+
+def protection(expect):
+    """cmd_protection come lo chiama main(): (codice d'uscita, stdout e stderr)."""
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+        try:
+            rc = update.cmd_protection(type("A", (), {"flash": None, "expect_ro": expect})())
+        except update.Error as e:
+            print("errore: %s" % e, file=sys.stderr)
+            rc = 1
+    return rc, out.getvalue()
+
+
+fixture()
+rc, out = protection(None)
+for s in ("controller:  00:1f.0 (LPC), 8086:8c4f (Lynx Point QM87), RCBA 0xfed1c000, SPIBAR 0xfed1f800",
+          "BIOS_CNTL:   0x09: BIOSWE 1, BLE 0, SMM_BWP 0, Top Swap 0 (TSS)",
+          "GCS:         0x00000001: BILD 1; BUC 0x00: Top Swap 0",
+          "BIOS:        regione 0x0500000-0x0bfffff (7 MiB), sotto i 4 GiB da 0xff900000",
+          "blocchi:     FLOCKDN 1 (blocca anche PR0-PR4), descrittore attivo",
+          "regioni:     descrittore 0x0000000-0x0000fff, BIOS 0x0500000-0x0bfffff, ME 0x0003000-0x04fffff, "
+          "GbE 0x0001000-0x0002fff",
+          "FRAP:        0x0000ffff: la CPU legge descrittore, BIOS, ME, GbE; scrive descrittore, BIOS, ME, GbE",
+          "PR0:         0x8bff0b60: 0x0b60000-0x0bfffff scrittura = WP_RO"):
+    assert s in out.splitlines(), (s, out)
+assert rc == 0 and not any(w in out for w in ("DLOCK", "EISS", "GPR0", "PRR34", "WRSDIS", "FRACC")), out
+assert [protection(e)[0] for e in ("on", "off")] == [0, 1]
+fixture(prs=())
+rc, out = protection("on")
+assert rc == 1 and "PR0-PR4:     tutti vuoti" in out, out
+assert protection("off")[0] == 0
+# status: le stesse tre righe del M920x
+fixture()
+assert [l for l, _ in update.protection_lines()] == ["WP_RO", "BIOS Lock", "slot RW"]
+update.spi_protection = spi_protection
+# (g) RCBA spento, o fuori dalla riserva di ACPI: la pagina non si mappa;
+# BIOS_CNTL viene dallo spazio PCI, il BIOS Lock si sa lo stesso
+fixture(rcba=0xfed1c000)
+assert update.protection_lines(dm) == [
+    ("protezione", "RCBA spento (0xf0 = 0xfed1c000); BIOS_CNTL 0x09"),
+    ("BIOS Lock", "spento: il sistema puo' scrivere il flash")], update.protection_lines(dm)
+fixture(rcba=0xfe000001)
+assert "non e' 0xfed1c000 ne' in una riserva PNP0C02" in update.spi_protection(dm)["error"]
+os.makedirs(os.path.join(root, "proc"))
+open(os.path.join(root, "proc/iomem"), "w").write(
+    "fe000000-fe003fff : pnp 00:01\nfed1c000-fed1ffff : pnp 00:01\n  fed1f410-fed1f414 : iTCO_wdt.0.auto\n"
+    "  fed1f800-fed1f9ff : intel-spi\n")
+assert update.spi_protection(dm)["error"].startswith("pagina 0xfe003000 non leggibile da ")
+# (h) /dev/mem rifiutata (IO_STRICT_DEVMEM con i driver sulla pagina, o la
+# kernel lockdown): perche', e FLOCKDN dal driver intel-spi; le opzioni in
+# SMMSTORE si leggono lo stesso dalla finestra della regione BIOS (SI_BIOS di
+# configs/w541.fmd senza cbmem, se no quello della FMAP dell'avvio);
+# protection dice il BIOS Lock ed esce con 2 con --expect-ro (mai 1: con off
+# vorrebbe dire protetta); other-slot avvisa del BIOS Lock lo stesso
+read_dwords = update.read_dwords
+
+
+def eperm(path, offset, offsets):
+    raise PermissionError(errno.EPERM, os.strerror(errno.EPERM))
+
+
+update.read_dwords = eperm
+os.makedirs(update.INTEL_SPI_PLATFORM)
+open(os.path.join(update.INTEL_SPI_PLATFORM, "intel_spi_locked"), "w").write("1\n")
+fixture(bios_cntl=0x2a)
+p = update.spi_protection(dm)
+assert p["error"] == ("registri SPI non leggibili da /dev/mem (Operation not permitted); kernel con "
+                      "IO_STRICT_DEVMEM (la pagina 0xfed1f000 e' anche di fed1f410-fed1f414 iTCO_wdt.0.auto, "
+                      "fed1f800-fed1f9ff intel-spi): per questa sola verifica avvia una volta con iomem=relaxed, "
+                      "poi toglilo (da confermare su un W541); FLOCKDN 1 (intel_spi_locked)"), p["error"]
+assert update.protection_lines(dm)[1] == ("BIOS Lock", "acceso: scrive solo il firmware in SMM")
+fixture(bios_cntl=0x2a, options=(("me_disable", 0), ("bios_lock", 0)))
+p = update.spi_protection(dm)
+assert p["regs"] is None and p["error"].startswith("registri SPI non leggibili") and p["store_read"], p
+assert p["options"] == {"bootmedia_lock": None, "bios_lock": 0} and p["board_options"] == {"me_disable": 0}, p
+assert (p["bios_from"], p["fmap"]) == ("SI_BIOS di configs/w541.fmd", "quella nel flash (0x0b60000)"), p
+assert update.protection_lines(dm)[1] == (
+    "BIOS Lock", "acceso: scrive solo il firmware in SMM; spento nel setup, vale dal prossimo avvio o ripresa da S3")
+boot_fmap = update.boot_fmap
+update.boot_fmap = lambda: fmap
+p = update.spi_protection(dm)
+assert (p["bios_from"], p["fmap"]) == ("SI_BIOS della FMAP dell'avvio",
+                                       "quella dell'avvio (cbmem), uguale a quella nel flash"), p
+assert p["board_options"] == {"me_disable": 0}
+update.boot_fmap = boot_fmap
+# SI_BIOS deve finire dove finisce il flash (la dimensione nell'header)
+assert update.fmap_bios_region(fmap) == (0x500000, 0xbfffff)
+assert update.fmap_bios_region(fmap[:18] + struct.pack("<I", 0x1000000) + fmap[22:]) is None
+assert update.fmap_bios_region(b"") is None
+update.spi_protection = lambda devmem=None: spi_protection(dm)
+fixture(bios_cntl=0x2a, options=(("bios_lock", 1),))
+rc, out = protection(None)
+assert rc == 1 and "errore: registri SPI non leggibili da /dev/mem (Operation not permitted)" in out, out
+for s in ("opzioni:     Firmware protection 1 (default), BIOS Lock 1 (in SMMSTORE: valgono dal prossimo avvio o "
+          "ripresa da S3)", "BIOS Lock:   acceso: scrive solo il firmware in SMM"):
+    assert s in out.splitlines(), (s, out)
+for e in ("on", "off"):
+    rc, out = protection(e)
+    assert rc == 2 and "atteso: WP_RO %s; stato di WP_RO non noto" % (
+        "protetta" if e == "on" else "non protetta") in out.splitlines(), (e, rc, out)
+# other-slot: il BIOS Lock si dice anche senza i registri, e che i PR non si sono visti
+geteuid = update.os.geteuid
+update.os.geteuid = lambda: 0
+for bc, warn in ((0x2a, True), (0x09, False)):
+    fixture(bios_cntl=bc)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        update.check_flash_writable({"RW_SECTION_A": (0x5c0000, 0x2d0000)}, ["RW_SECTION_A"])
+    lines = out.getvalue().splitlines()
+    assert lines[:-1] == ([update.BIOS_LOCK_WARNING] if warn else []), (bc, lines)
+    assert lines[-1].startswith("nota: i Protected Range di questo avvio non si leggono"), lines
+update.os.geteuid = geteuid
+update.spi_protection = spi_protection
+os.makedirs(os.path.join(root, "sys/kernel/security"))
+open(os.path.join(root, "sys/kernel/security/lockdown"), "w").write("none [integrity] confidentiality\n")
+assert "kernel lockdown (integrity): /dev/mem resta chiusa" in update.spi_protection(dm)["error"]
+update.read_dwords = read_dwords
+# un errore che non e' EPERM (niente /dev/mem): com'e', senza iomem=relaxed
+# ne' lockdown; niente finestra, le opzioni non lette
+nomem = (os.path.join(root, "nessuna"), phys)
+p = update.spi_protection(nomem)
+assert p["error"] == "registri SPI non leggibili da /dev/mem (No such file or directory); FLOCKDN 1 " \
+    "(intel_spi_locked)", p["error"]
+assert not p.get("store_read") and p["options_note"] == "non lette", p
+# (i) senza root sysfs da' 64 byte dello spazio PCI
+fixture(config=64)
+assert update.protection_lines(dm) == [("protezione", "serve root (sudo)")]
+update.spi_protection = lambda devmem=None: spi_protection(dm)
+assert [protection(e)[0] for e in (None, "on", "off")] == [1, 2, 2]
+update.spi_protection = spi_protection
+# (j) un LPC che non e' di Lynx Point (0x8c43 non c'e', Wildcat Point 0x9cc3 no)
+for dev in (0x8c43, 0x9cc3):
+    fixture(device=dev)
+    assert update.spi_protection(dm) is None, dev
+    assert update.protection_lines(dm)[0][1].startswith("non verificabile")
+update.spi_protection = lambda devmem=None: spi_protection(dm)
+rc, out = protection("off")
+assert rc == 2 and "niente da leggere su questa macchina" in out, out
+update.spi_protection = spi_protection
+# (l) FLASH-01 di tools/hw-report.py con la stessa sonda: registri bloccati
+spec = importlib.util.spec_from_file_location("hw_report", "tools/hw-report.py")
+hw = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hw)
+assert hw.update is update
+fixture()
+update.spi_protection = lambda devmem=None: spi_protection(dm)
+fw = hw.Firmware.__new__(hw.Firmware)
+fw.cbmem, fw.bios, fw.board, fw.total_line, fw.ts = None, "ouroBIOS-v1.4.0-rc4-mrc", "w541", None, []
+fw.log = ["[INFO ]  spi_flash_protect: FPR 0 is enabled for range 0x00b60000-0x00bfffff",
+          "[INFO ]  BM-LOCKDOWN: Enabled bootmedia protection"]
+rep = hw.Report()
+hw.check_flash(fw, rep)
+c = rep.checks[0]
+assert (c["status"], c["summary"]) == ("PASS", "WP_RO protetto (PR0), registri bloccati"), c
+assert "Lynx Point 00:1f.0: BIOS_CNTL 0x09 (BIOSWE 1, BLE 0, SMM_BWP 0), GCS 0x00000001 (BILD 1), FLOCKDN si'" \
+    in c["details"], c["details"]
+
+
+def report(check, log, probe):
+    """Un controllo di hw-report.py con un Firmware nuovo (spi_probe() ricorda la sonda)."""
+    update.spi_protection = lambda devmem=None: probe()
+    fw = hw.Firmware.__new__(hw.Firmware)
+    fw.cbmem, fw.bios, fw.board, fw.total_line, fw.ts, fw.log = None, "ouroBIOS-v1.4.0-rc4-mrc", "w541", None, [], log
+    rep = hw.Report()
+    check(fw, rep)
+    update.spi_protection = spi_protection
+    return rep.checks[0]
+
+
+# PR0 su WP_RO con FLOCKDN spento: c'e' ma si toglie, WARN (non "WP_RO non e' in un PR")
+fixture(hsfs=0x00006008)
+c = report(hw.check_flash, fw.log, lambda: spi_protection(dm))
+assert (c["status"], c["summary"]) == ("WARN", "WP_RO in PR0, ma il PR non e' bloccato (FLOCKDN spento): si puo' "
+                                               "togliere"), c
+assert not c["data"]["wp_ro_protected"], c
+# ME-01 con la sonda vera: pagina rifiutata, SMMSTORE letta senza me_disable
+# e l'HECI visibile: il default si sa, WARN; con SMMSTORE non letta, INFO
+os.makedirs(update.HECI_PCI)
+hfsts = ["[DEBUG]  ME: HFSTS1-6: 00020191 100a0000 00000000 00000000 00000000 00000000"]
+update.read_dwords = eperm
+fixture(options=(("bootmedia_lock", 1),))
+c = report(hw.check_me, hfsts, lambda: spi_protection(dm))
+assert c["status"] == "WARN" and c["summary"].endswith("HECI 00:16.0 visibile con me_disable al default, acceso"), c
+update.read_dwords = read_dwords
+c = report(hw.check_me, hfsts, lambda: spi_protection(nomem))
+assert c["status"] == "INFO" and c["summary"].endswith("non letto (default acceso): Enabled nel setup?"), c
+shutil.rmtree(root)
+EOF
+	then
+		ok "tools/update.py: protection sul W541 (Lynx Point: PR0 su WP_RO, FLOCKDN, PR su uno slot, BIOS_CNTL, RCBA, /dev/mem rifiutata con le opzioni lette lo stesso, senza root, altri LPC, --expect-ro anche senza registri, other-slot; FLASH-01 e ME-01)"
+	else
+		bad "tools/update.py: protection non legge i registri finti di Lynx Point come deve"
 	fi
 else
 	bad "python3 non installato"
