@@ -16,13 +16,14 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   variable `MemoryOverwriteRequestControl`, from the variable store
   before the payload (patches 0192-0194); the payload offers the
   variable only with this setting and clears the bit before the next OS
-  starts (`edk2/0039`, `edk2/0040`). *Always*, the default, and *Never*
-  do what on and off did, and the OS sees no MOR with them, as before.
-  Windows clears its request at a clean shutdown; Linux kernels with
-  `CONFIG_RESET_ATTACK_MITIGATION` (Debian, Ubuntu, Proxmox) set it at
-  every boot and never clear it, which
-  [`tools/mor-shutdown-hook`](tools/mor-shutdown-hook) does at the end of
-  a clean shutdown
+  starts (`edk2/0039`, `edk2/0040`); a boot that finds no variable, as
+  the first one with the setting, clears too. *Always*, the default, and
+  *Never* do what on and off did, and the OS sees no MOR with them, as
+  before. Windows with BitLocker clears its request after a clean
+  shutdown; Linux kernels with `CONFIG_RESET_ATTACK_MITIGATION` (Debian,
+  Ubuntu, Proxmox) set it at every boot and never clear it, so their
+  memory is still cleared at every boot, which is right for an OS that
+  does not remove its secrets at shutdown
   ([docs/flashing.md](docs/flashing.md#clearing-the-memory-at-power-on)).
 - EDK2 moves to `6c14abf865e0` of MrChromebox's `uefipayload_2608`: the
   branch was rewritten after v1.4.0, and the commit v1.4.0 pins
