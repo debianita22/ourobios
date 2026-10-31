@@ -1,0 +1,64 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sat, 31 Oct 2026 22:18:28 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Clear memory when the OS asks
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+*Security* → *Memory protection* → *Clear memory at power-on* was on or
+off. Make it a choice of three, the values of security/memory: Always
+(1, the default, as on), When the OS asks (2: only when bit 0 of the
+TCG MOR variable MemoryOverwriteRequestControl is set, after a reset
+while the OS held secrets) and Never (0, as off). A saved on or off
+keeps its meaning. On the M920x the clearing takes about 0.5 s per
+10 GB, 2 s with 40 GB, so a clean reboot with the OS's request cleared
+saves that.
+
+TEST=Builds for the M920x; the setup menu of the build lists the three
+values.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/cfr.c | 23 ++++++++++++++++-------
+ 1 file changed, 16 insertions(+), 7 deletions(-)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index e0c3b0e0df..7f1d19a04d 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -659,15 +659,24 @@ static const struct sm_object bootmedia_lock = SM_DECLARE_BOOL({
+ }, WITH_CALLBACK(update_bootmedia_lock));
+ 
+ /* Read by security_clear_dram_request() (security/memory/memory.c) */
+-static const struct sm_object clear_dram_on_boot = SM_DECLARE_BOOL({
++static const struct sm_object clear_dram_on_boot = SM_DECLARE_ENUM({
+ 	.opt_name	= "clear_dram_on_boot",
+ 	.ui_name	= "Clear memory at power-on",
+-	.ui_helptext	= "Clear all the memory at every boot (not when resuming\n"
+-			  "from sleep), so that what the previous OS left in it\n"
+-			  "cannot be read. About 0.5 s more per boot for each 10 GB:\n"
+-			  "2 s with 40 GB.\n"
+-			  "Default: on.",
+-	.default_value	= true,
++	.ui_helptext	= "Clear all the memory before the OS starts (not when\n"
++			  "resuming from sleep), so that what the previous OS left in\n"
++			  "it cannot be read: about 0.5 s more per boot for each 10 GB,\n"
++			  "2 s with 40 GB. Always: at every boot. When the OS asks:\n"
++			  "only after a reset while the OS held secrets (TCG MOR:\n"
++			  "Windows with BitLocker; Linux sets the request at every\n"
++			  "boot and needs it cleared at a clean shutdown). Never: not\n"
++			  "even then.\n"
++			  "Default: Always.",
++	.default_value	= 1,
++	.values		= (const struct sm_enum_value[]) {
++				{ "Always",		1	},
++				{ "When the OS asks",	2	},
++				{ "Never",		0	},
++				SM_ENUM_VALUE_END	},
+ });
+ 
+ /* Read by FSP-M parameters (soc/intel/cannonlake/romstage/fsp_params.c) */
+-- 
+2.47.3
+

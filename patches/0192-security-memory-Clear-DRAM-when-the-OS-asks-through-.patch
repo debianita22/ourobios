@@ -1,0 +1,157 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sat, 31 Oct 2026 22:18:28 +0100
+Subject: [PATCH] security/memory: Clear DRAM when the OS asks, through TCG MOR
+
+SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT clears all the memory at every boot
+that is not an S3 resume, or never when the option "clear_dram_on_boot"
+is off: 2 s with 40 GiB on a ThinkCentre M920x, 1.7 s with 32 GiB on a
+ThinkPad W541. The TCG Platform Reset Attack Mitigation specification
+lets the OS say when that is needed: it sets bit 0 of the UEFI variable
+MemoryOverwriteRequestControl while it holds secrets in memory and
+clears it at a clean shutdown, so that only a reset in between, such as
+the one of a cold boot attack, wipes the memory. Windows does it with
+BitLocker, Linux with RESET_ATTACK_MITIGATION and a shutdown step of
+its own.
+
+Add the value 2 of the option, "when the OS asks": with the UEFI
+variable store driver, ramstage reads the variable from SMMSTORE and
+clears only when bit 0 is set, or when the store cannot be read. The
+values 0 and 1 keep their meaning, and a slot from before this change
+reads 2 as on. The variable is read in every mode, and one line of the
+log says what was decided. The payload must create the variable and
+clear the bit before the next OS starts: ouroBIOS's MorControlDxe
+(edk2/0040) does it with this setting only, so that with the others
+the OS sees no MOR, as before.
+
+TEST=Builds for the ThinkCentre M920x and the ThinkPad W541.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/security/memory/Kconfig  |  8 +++-
+ src/security/memory/memory.c | 79 ++++++++++++++++++++++++++++++++++--
+ 2 files changed, 82 insertions(+), 5 deletions(-)
+
+diff --git a/src/security/memory/Kconfig b/src/security/memory/Kconfig
+index ded2b280ce..a884253596 100644
+--- a/src/security/memory/Kconfig
++++ b/src/security/memory/Kconfig
+@@ -19,7 +19,11 @@ config SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT
+ 	  This increases boot time depending on the amount of DRAM
+ 	  installed.
+ 
+-	  With an option backend, the option "clear_dram_on_boot" can
+-	  turn it off at runtime (it defaults to on).
++	  With an option backend, the option "clear_dram_on_boot" chooses
++	  at runtime: 1 (the default) always, 0 never, 2 only when the OS
++	  asks for it, through bit 0 of the UEFI variable
++	  MemoryOverwriteRequestControl of the TCG Platform Reset Attack
++	  Mitigation specification, read from the UEFI variable store
++	  (DRIVERS_EFI_VARIABLE_STORE; without it, 2 never clears).
+ 
+ endmenu #Memory initialization
+diff --git a/src/security/memory/memory.c b/src/security/memory/memory.c
+index 07ca0c028f..1eb131ade0 100644
+--- a/src/security/memory/memory.c
++++ b/src/security/memory/memory.c
+@@ -1,11 +1,66 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <console/console.h>
+ #include <option.h>
+ #include <security/intel/txt/txt.h>
+ #include <stdbool.h>
+ 
++#if CONFIG(DRIVERS_EFI_VARIABLE_STORE)
++#include <drivers/efi/efivars.h>
++#include <smmstore.h>
++#endif
++
+ #include "memory.h"
+ 
++/* Values of the option "clear_dram_on_boot" */
++enum {
++	CLEAR_DRAM_NEVER	= 0,
++	CLEAR_DRAM_ALWAYS	= 1,
++	CLEAR_DRAM_OS_REQUEST	= 2,
++};
++
++/*
++ * The request of the OS under the TCG Platform Reset Attack Mitigation
++ * specification: bit 0 of the UEFI variable MemoryOverwriteRequestControl,
++ * which the OS sets while it holds secrets in memory and clears at a clean
++ * shutdown. The payload creates the variable (EDK2's TcgMor, which also
++ * clears the bit before the next OS starts). A variable store that cannot
++ * be read counts as a request.
++ */
++static bool tcg_mor_clear_requested(void)
++{
++#if CONFIG(DRIVERS_EFI_VARIABLE_STORE)
++	static const EFI_GUID mor_guid = {
++		0xe20939be, 0x32d4, 0x41be, { 0xa1, 0x50, 0x89, 0x7f, 0x85, 0xd4, 0x98, 0x29 } };
++	struct region_device rdev;
++	uint8_t mor = 0;
++	uint32_t size = sizeof(mor);
++	enum cb_err ret;
++
++	/* The store driver is not in every stage; only ramstage clears */
++	if (!ENV_RAMSTAGE)
++		return false;
++	if (smmstore_lookup_region(&rdev)) {
++		printk(BIOS_WARNING, "MOR: no variable store, counted as a request\n");
++		return true;
++	}
++	ret = efi_fv_get_option(&rdev, &mor_guid, "MemoryOverwriteRequestControl", &mor, &size);
++	if (ret == CB_EFI_OPTION_NOT_FOUND) {
++		printk(BIOS_INFO, "MOR: no MemoryOverwriteRequestControl variable\n");
++		return false;
++	}
++	if (ret != CB_SUCCESS || size != sizeof(mor)) {
++		printk(BIOS_WARNING, "MOR: MemoryOverwriteRequestControl unreadable (%d), "
++		       "counted as a request\n", ret);
++		return true;
++	}
++	printk(BIOS_INFO, "MOR: MemoryOverwriteRequestControl = 0x%02x\n", mor);
++	return mor & 1;
++#else
++	return false;
++#endif
++}
++
+ /**
+  * To be called after DRAM init.
+  * Tells the caller if DRAM must be cleared as requested by the user,
+@@ -13,9 +68,27 @@
+  */
+ bool security_clear_dram_request(void)
+ {
+-	if (CONFIG(SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT) &&
+-	    get_uint_option("clear_dram_on_boot", true))
+-		return true;
++	if (CONFIG(SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT)) {
++		const unsigned int mode = get_uint_option("clear_dram_on_boot",
++							  CLEAR_DRAM_ALWAYS);
++		/* Read in every mode, for the log */
++		const bool os_request = tcg_mor_clear_requested();
++		bool clear;
++
++		if (mode == CLEAR_DRAM_NEVER)
++			clear = false;
++		else if (mode == CLEAR_DRAM_OS_REQUEST)
++			clear = os_request;
++		else
++			clear = true;
++
++		printk(BIOS_INFO, "DRAM clear: option %s, request of the OS %s: %s\n",
++		       mode == CLEAR_DRAM_NEVER ? "never" :
++		       mode == CLEAR_DRAM_OS_REQUEST ? "when the OS asks" : "always",
++		       os_request ? "yes" : "no", clear ? "clearing" : "not clearing");
++		if (clear)
++			return true;
++	}
+ 
+ 	if (CONFIG(INTEL_TXT) && intel_txt_memory_has_secrets())
+ 		return true;
+-- 
+2.47.3
+

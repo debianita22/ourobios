@@ -5,6 +5,45 @@ GitHub include its section; release candidates take the section of the
 version they lead to. For the releases before v1.3.0, see their notes on
 the [releases page](https://github.com/debianita22/ourobios/releases).
 
+## v1.4.1
+
+- *Security* → *Memory protection* → *Clear memory at power-on*, on both
+  boards, has a third setting, *When the OS asks*: the memory is cleared
+  only after a reset while the OS held secrets in it, as the TCG Platform
+  Reset Attack Mitigation specification (MOR) has it, and a clean reboot
+  is that much shorter (2 s on an M920x with 40 GB, 1.7 s on a W541 with
+  32 GB). coreboot reads the request of the OS, bit 0 of the UEFI
+  variable `MemoryOverwriteRequestControl`, from the variable store
+  before the payload (patches 0192-0194); the payload offers the
+  variable only with this setting and clears the bit before the next OS
+  starts (`edk2/0039`, `edk2/0040`). *Always*, the default, and *Never*
+  do what on and off did, and the OS sees no MOR with them, as before.
+  Windows clears its request at a clean shutdown; Linux kernels with
+  `CONFIG_RESET_ATTACK_MITIGATION` (Debian, Ubuntu, Proxmox) set it at
+  every boot and never clear it, which
+  [`tools/mor-shutdown-hook`](tools/mor-shutdown-hook) does at the end of
+  a clean shutdown
+  ([docs/flashing.md](docs/flashing.md#clearing-the-memory-at-power-on)).
+- EDK2 moves to `6c14abf865e0` of MrChromebox's `uefipayload_2608`: the
+  branch was rewritten after v1.4.0, and the commit v1.4.0 pins
+  (`ddf612165c8b`) is no longer on it. The fall-through to the next boot
+  entry when an automatic boot fails, which v1.4.0 always did, becomes a
+  setting next to *Auto Boot Time-out*, on by default. The 38 patches of
+  `patches/edk2` apply unchanged.
+- The builds no longer depend on MrChromebox keeping a pinned commit on a
+  branch: `tools/build.sh` takes a pinned EDK2 or LvglPkg commit that his
+  repositories no longer give from the project's forks, under a tag
+  `pin-<12 digits>`; [`configs/edk2-pins.txt`](configs/edk2-pins.txt)
+  lists the EDK2 commit of every release since v1.0.0, and
+  `tools/upstream.sh mirror`, every week, opens an issue while one of
+  them has no tag.
+- `tools/hw-report.py`: BOOT-02 says which *Clear memory at power-on*
+  setting the boot read, whether the OS had asked, and whether the memory
+  was cleared.
+- docs/m920x.md: the fan readout under Linux at every boot
+  (`/etc/modules-load.d`, the EC has nothing that loads `nct6683` by
+  itself).
+
 ## v1.4.0
 
 - After rc3, on the M920x with the Intel ME disabled in the setup, boots

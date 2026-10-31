@@ -1,0 +1,297 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sat, 31 Oct 2026 22:17:52 +0100
+Subject: [PATCH] UefiPayloadPkg: TCG MOR when the coreboot setup asks for it
+
+coreboot can clear the memory only when the OS asks for it (option
+clear_dram_on_boot, "When the OS asks", 2): ramstage reads bit 0 of the
+TCG MOR variable MemoryOverwriteRequestControl from SMMSTORE before the
+payload. The payload has to offer the variable, so that the OS can set
+it, and clear the bit before the next OS starts.
+
+Add MorControlDxe, with SMMSTORE variables only. With "When the OS
+asks" it creates MemoryOverwriteRequestControl (0) when there is none,
+and when bit 0 is set it clears it at ReadyToBoot, as SecurityPkg's
+TcgMor does; there is no TPer reset of self-encrypting drives here.
+With any other setting (Always, the default, or Never) it deletes the
+variable and locks it, as the variable driver without SMM did, so that
+no OS counts on a request coreboot does not look at: the OS sees what
+it saw before. PcdTcgMorWithoutSmm leaves MOR to it; the variable
+driver keeps MemoryOverwriteRequestControlLock unsupported.
+
+The variable is read and written only through the runtime services:
+the OS can set the bit as on any MOR platform (Linux does it at every
+boot with RESET_ATTACK_MITIGATION, Windows with BitLocker).
+
+TEST=gcc -fsyntax-only of MorControlDxe.c with the EDK2 headers. No
+EDK2 build here. Remains for the hardware test: with "When the OS asks"
+the variable exists after a boot and Linux sets it; with the default
+it does not exist.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ UefiPayloadPkg/MorControlDxe/MorControlDxe.c  | 163 ++++++++++++++++++
+ .../MorControlDxe/MorControlDxe.inf           |  43 +++++
+ UefiPayloadPkg/UefiPayloadPkg.dsc             |   6 +
+ UefiPayloadPkg/UefiPayloadPkg.fdf             |   1 +
+ 4 files changed, 213 insertions(+)
+ create mode 100644 UefiPayloadPkg/MorControlDxe/MorControlDxe.c
+ create mode 100644 UefiPayloadPkg/MorControlDxe/MorControlDxe.inf
+
+diff --git a/UefiPayloadPkg/MorControlDxe/MorControlDxe.c b/UefiPayloadPkg/MorControlDxe/MorControlDxe.c
+new file mode 100644
+index 0000000000..b326cd3292
+--- /dev/null
++++ b/UefiPayloadPkg/MorControlDxe/MorControlDxe.c
+@@ -0,0 +1,163 @@
++/** @file
++  TCG MOR (Memory Overwrite Request) of the coreboot payload, by the coreboot
++  setup option "clear_dram_on_boot" (CFR, gEficorebootNvDataGuid).
++
++  Only with "When the OS asks" (2) does the variable
++  MemoryOverwriteRequestControl exist: coreboot reads it in ramstage and
++  clears the memory before the payload when bit 0 is set, and this driver
++  creates it and, as SecurityPkg's TcgMor does, clears bit 0 at ReadyToBoot,
++  before the next OS starts. With the other settings coreboot clears the
++  memory at every boot (Always, 1, the default) or never (Never, 0), whatever
++  the OS asks: the variable is deleted and locked, as the variable driver
++  without SMM does when the platform does not honor MOR, so that no OS counts
++  on it. The variable driver leaves MOR to this driver (PcdTcgMorWithoutSmm)
++  and keeps MemoryOverwriteRequestControlLock unsupported: it cannot be made
++  secure without SMM.
++
++  No TPer reset of self-encrypting drives here, unlike TcgMor.
++
++  Copyright (c) 2026, ouroBIOS contributors
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++
++#include <Uefi.h>
++#include <Guid/MemoryOverwriteControl.h>
++#include <Library/DebugLib.h>
++#include <Library/UefiBootServicesTableLib.h>
++#include <Library/UefiLib.h>
++#include <Library/UefiRuntimeServicesTableLib.h>
++#include <Library/VariablePolicyHelperLib.h>
++#include <Protocol/VariablePolicy.h>
++
++//
++// Values of clear_dram_on_boot (coreboot's security/memory/memory.c)
++//
++#define CLEAR_DRAM_ALWAYS      1
++#define CLEAR_DRAM_OS_REQUEST  2
++
++#define MOR_ATTRIBUTES  (EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS)
++
++/**
++  The setting of clear_dram_on_boot, which CfrSetupMenuDxe keeps as a UINT32
++  variable of gEficorebootNvDataGuid.
++
++  @return The setting, CLEAR_DRAM_ALWAYS when there is none.
++**/
++STATIC
++UINT32
++MorClearDramMode (
++  VOID
++  )
++{
++  EFI_STATUS  Status;
++  UINT32      Value;
++  UINTN       Size;
++
++  Size   = sizeof (Value);
++  Status = gRT->GetVariable (L"clear_dram_on_boot", &gEficorebootNvDataGuid, NULL, &Size, &Value);
++  if (EFI_ERROR (Status) || (Size != sizeof (Value))) {
++    return CLEAR_DRAM_ALWAYS;
++  }
++
++  return Value;
++}
++
++/**
++  Clears bit 0 of MemoryOverwriteRequestControl before the OS starts: the
++  memory was cleared by coreboot, and the OS sets the bit again while it
++  holds secrets.
++
++  @param[in]  Event    Event whose notification function is being invoked
++  @param[in]  Context  Unused
++**/
++STATIC
++VOID
++EFIAPI
++MorOnReadyToBoot (
++  IN EFI_EVENT  Event,
++  IN VOID       *Context
++  )
++{
++  EFI_STATUS  Status;
++  UINT8       Mor;
++  UINTN       Size;
++
++  gBS->CloseEvent (Event);
++
++  Size   = sizeof (Mor);
++  Status = gRT->GetVariable (MEMORY_OVERWRITE_REQUEST_VARIABLE_NAME, &gEfiMemoryOverwriteControlDataGuid, NULL, &Size, &Mor);
++  if (EFI_ERROR (Status) || (Size != sizeof (Mor)) || (MOR_CLEAR_MEMORY_VALUE (Mor) == 0)) {
++    return;
++  }
++
++  Mor   &= (UINT8)~MOR_CLEAR_MEMORY_BIT_MASK;
++  Status = gRT->SetVariable (MEMORY_OVERWRITE_REQUEST_VARIABLE_NAME, &gEfiMemoryOverwriteControlDataGuid, MOR_ATTRIBUTES, sizeof (Mor), &Mor);
++  DEBUG ((EFI_ERROR (Status) ? DEBUG_ERROR : DEBUG_INFO, "MorControlDxe: request of the OS cleared: %r\n", Status));
++}
++
++/**
++  Creates, keeps or removes MemoryOverwriteRequestControl by the setting of
++  clear_dram_on_boot.
++
++  @param[in]  ImageHandle  The image handle of the driver
++  @param[in]  SystemTable  The system table
++
++  @retval EFI_SUCCESS  Always: without MOR the platform still boots
++**/
++EFI_STATUS
++EFIAPI
++MorControlDxeEntryPoint (
++  IN EFI_HANDLE        ImageHandle,
++  IN EFI_SYSTEM_TABLE  *SystemTable
++  )
++{
++  EFI_STATUS                      Status;
++  EDKII_VARIABLE_POLICY_PROTOCOL  *VariablePolicy;
++  EFI_EVENT                       Event;
++  UINT8                           Mor;
++  UINTN                           Size;
++
++  if (MorClearDramMode () != CLEAR_DRAM_OS_REQUEST) {
++    //
++    // Not honored: no variable, and none that the OS or another module can
++    // create, as the variable driver does without PcdTcgMorWithoutSmm.
++    //
++    gRT->SetVariable (MEMORY_OVERWRITE_REQUEST_VARIABLE_NAME, &gEfiMemoryOverwriteControlDataGuid, 0, 0, NULL);
++    Status = gBS->LocateProtocol (&gEdkiiVariablePolicyProtocolGuid, NULL, (VOID **)&VariablePolicy);
++    if (!EFI_ERROR (Status)) {
++      Status = RegisterBasicVariablePolicy (
++                 VariablePolicy,
++                 &gEfiMemoryOverwriteControlDataGuid,
++                 MEMORY_OVERWRITE_REQUEST_VARIABLE_NAME,
++                 VARIABLE_POLICY_NO_MIN_SIZE,
++                 VARIABLE_POLICY_NO_MAX_SIZE,
++                 VARIABLE_POLICY_NO_MUST_ATTR,
++                 VARIABLE_POLICY_NO_CANT_ATTR,
++                 VARIABLE_POLICY_TYPE_LOCK_NOW
++                 );
++    }
++
++    DEBUG ((EFI_ERROR (Status) ? DEBUG_ERROR : DEBUG_INFO, "MorControlDxe: MOR not offered, locked: %r\n", Status));
++    return EFI_SUCCESS;
++  }
++
++  Size   = sizeof (Mor);
++  Status = gRT->GetVariable (MEMORY_OVERWRITE_REQUEST_VARIABLE_NAME, &gEfiMemoryOverwriteControlDataGuid, NULL, &Size, &Mor);
++  if (EFI_ERROR (Status) || (Size != sizeof (Mor))) {
++    //
++    // A variable of another size is replaced, as TcgMor does with one it
++    // cannot read
++    //
++    Mor    = 0;
++    Status = gRT->SetVariable (MEMORY_OVERWRITE_REQUEST_VARIABLE_NAME, &gEfiMemoryOverwriteControlDataGuid, MOR_ATTRIBUTES, sizeof (Mor), &Mor);
++    DEBUG ((EFI_ERROR (Status) ? DEBUG_ERROR : DEBUG_INFO, "MorControlDxe: MOR created: %r\n", Status));
++    return EFI_SUCCESS;
++  }
++
++  DEBUG ((DEBUG_INFO, "MorControlDxe: MemoryOverwriteRequestControl 0x%02x\n", Mor));
++  if (MOR_CLEAR_MEMORY_VALUE (Mor) != 0) {
++    EfiCreateEventReadyToBootEx (TPL_CALLBACK, MorOnReadyToBoot, NULL, &Event);
++  }
++
++  return EFI_SUCCESS;
++}
+diff --git a/UefiPayloadPkg/MorControlDxe/MorControlDxe.inf b/UefiPayloadPkg/MorControlDxe/MorControlDxe.inf
+new file mode 100644
+index 0000000000..e347edc707
+--- /dev/null
++++ b/UefiPayloadPkg/MorControlDxe/MorControlDxe.inf
+@@ -0,0 +1,43 @@
++## @file
++#  TCG MOR (Memory Overwrite Request) of the coreboot payload: the variable
++#  MemoryOverwriteRequestControl exists only when the coreboot setup option
++#  clear_dram_on_boot is "When the OS asks", and coreboot clears the memory
++#  when the OS asked; bit 0 is cleared at ReadyToBoot.
++#
++#  Copyright (c) 2026, ouroBIOS contributors
++#  SPDX-License-Identifier: BSD-2-Clause-Patent
++##
++
++[Defines]
++  INF_VERSION                    = 0x00010005
++  BASE_NAME                      = MorControlDxe
++  FILE_GUID                      = A1125F10-B2E6-4124-8769-9A9A67AB81A8
++  MODULE_TYPE                    = DXE_DRIVER
++  VERSION_STRING                 = 1.0
++  ENTRY_POINT                    = MorControlDxeEntryPoint
++
++[Sources]
++  MorControlDxe.c
++
++[Packages]
++  MdePkg/MdePkg.dec
++  MdeModulePkg/MdeModulePkg.dec
++  UefiPayloadPkg/UefiPayloadPkg.dec
++
++[LibraryClasses]
++  UefiDriverEntryPoint
++  UefiBootServicesTableLib
++  UefiRuntimeServicesTableLib
++  UefiLib
++  DebugLib
++  VariablePolicyHelperLib
++
++[Guids]
++  gEficorebootNvDataGuid                  ## CONSUMES ## Variable:L"clear_dram_on_boot"
++  gEfiMemoryOverwriteControlDataGuid      ## SOMETIMES_PRODUCES ## Variable:L"MemoryOverwriteRequestControl"
++
++[Protocols]
++  gEdkiiVariablePolicyProtocolGuid        ## SOMETIMES_CONSUMES
++
++[Depex]
++  gEfiVariableArchProtocolGuid AND gEfiVariableWriteArchProtocolGuid AND gEdkiiVariablePolicyProtocolGuid
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
+index bf390fe9d3..b8713738b5 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dsc
++++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
+@@ -787,6 +787,11 @@
+   gEfiMdeModulePkgTokenSpaceGuid.PcdPciDegradeResourceForOptionRom|FALSE
+   ## Whether capsules are allowed to persist across reset.
+   gEfiMdeModulePkgTokenSpaceGuid.PcdSupportUpdateCapsuleReset|$(CAPSULE_SUPPORT)
++!if $(VARIABLE_SUPPORT) == "SMMSTORE"
++  ## coreboot honors TCG MOR itself (clear_dram_on_boot "When the OS asks"):
++  ## MorControlDxe, not the variable driver, decides whether the variable exists
++  gEfiMdeModulePkgTokenSpaceGuid.PcdTcgMorWithoutSmm|TRUE
++!endif
+ 
+ 
+   #
+@@ -1513,6 +1518,7 @@
+       NULL|MdeModulePkg/Library/VarCheckUefiLib/VarCheckUefiLib.inf
+       NULL|EmbeddedPkg/Library/NvVarStoreFormattedLib/NvVarStoreFormattedLib.inf
+   }
++  UefiPayloadPkg/MorControlDxe/MorControlDxe.inf
+ !elseif $(VARIABLE_SUPPORT) == "SPI"
+   MdeModulePkg/Universal/Variable/RuntimeDxe/VariableSmm.inf {
+     <LibraryClasses>
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
+index 81aa063279..c2989df0ff 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.fdf
++++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
+@@ -271,6 +271,7 @@ INF MdeModulePkg/Universal/ResetSystemRuntimeDxe/ResetSystemRuntimeDxe.inf
+   INF UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntimeDxe.inf
+   INF MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteDxe.inf
+   INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
++  INF UefiPayloadPkg/MorControlDxe/MorControlDxe.inf
+ !elseif $(VARIABLE_SUPPORT) == "SPI"
+   INF UefiPayloadPkg/FvbRuntimeDxe/FvbSmm.inf
+   INF MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteSmm.inf
+-- 
+2.47.3
+
