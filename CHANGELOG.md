@@ -7,9 +7,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.4.0
 
-- From rc4, on the M920x with the Intel ME disabled, about 15 s less at
-  every boot: FSP-M no longer retries its HECI messages to the disabled ME
-  (0191), FspMemoryInit 0.23 s instead of 15.24 s.
+- From rc4, on the M920x with the Intel ME disabled in the setup, no more
+  boots 15 s slower than the others: FSP-M no longer retries its HECI
+  messages to the disabled ME (0191), FspMemoryInit 0.23 s instead of
+  15.24 s on those boots.
 - **ThinkCentre M920x Tiny** (Intel Coffee Lake, Q370): a release of its
   own in every version, `vX.Y.Z-m920x-fsp`, built from coreboot's
   `lenovo/m720q_m920q` board with Intel's FSP-M RAM init and the rest of
