@@ -1,0 +1,360 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sat, 31 Oct 2026 02:41:32 +0100
+Subject: [PATCH] ec/lenovo/h8: Power on with AC, keyboard beep, USB charge on
+ battery
+
+The OEM firmware of the ThinkPad W541 (GNET94WW) has three EC settings
+in its setup that coreboot lacks or gets wrong. Its EcIoDxe reads them
+from the LenovoConfig variable and sets bits in the EC config bytes,
+which h8_enable() writes from the devicetree at every boot:
+
+- Power On with AC Attach: EC 0x01 bit 1, set when on. The EC powers
+  the laptop on when AC is plugged in, and resumes it from hibernation.
+- Keyboard Beep: EC 0x03 bit 1, set when off: the beep of the EC for a
+  key combination that it does not handle.
+- Charge in Battery Mode, under Always On USB: EC 0x02 bit 3, set when
+  off, and set whenever Always On USB is off. The W541 devicetree has
+  config2 = 0xa8, with the bit set, and h8_usb_always_on_enable() only
+  writes EC 0x0d, so "AC and battery" most likely acts as "AC only" in
+  hibernation and power-off on battery. Upstream once set this bit for
+  AC only (b21f5d708af) and dropped it in a rewrite (4f4322dd685).
+
+Three new chip flags, has_power_on_ac_attach, has_keyboard_beep_option
+and uao_battery_in_config2, make h8_enable() set those bits from the
+options power_on_ac (default off), keyboard_beep (default on) and
+usb_always_on, which clears bit 3 only for "AC and battery". Only the
+W541 devicetree sets them, and its defaults give the bytes it writes
+today (0x05, 0xa8, 0xc4). Every other H8 board writes config1-3 as
+before; the T440p has the same config2 = 0xa8, but its OEM firmware has
+not been looked at, so it keeps the AC-only behaviour on purpose.
+
+The two new options are in ec/lenovo/h8/cfr.c, suppressed without their
+flag and listed in the generic H8 forms too. The W541 menu has them in
+Energy Saver > Power and General > Sound. Where config2 bit 3 follows
+the option (h8_has_uao_battery_in_config2(), the W541), the help of
+"USB always on" says what each value does in hibernation and power-off.
+It says nothing about sleep on battery, which the OEM help says still
+has power with "AC only"; that is left to the hardware test. The other
+boards keep the old help, as the devicetree value of the bit decides
+there.
+
+A W541 that already has "AC and battery" chosen powers the port on
+battery in hibernation and power-off from this change on, which runs
+the battery down; the release notes have to say so.
+
+The EC keeps these bits only while it has power, and a slot built
+without this change writes the old bytes again after a vboot fallback.
+The OEM firmware also writes EC 0x05 = 0x87 where the devicetree has
+beepmask1 = 0x86; whether that bit gates the keyboard beep is an open
+point for the hardware test, as are the OEM writes of EC 0x02 bit 7 and
+EC 0x03 bits 5-6, which this change does not follow.
+
+TEST=Host syntax check of h8.c, h8 cfr.c and the haswell cfr.c with the
+W541 mrc and nri configs and a T440p one; sconfig accepts the new
+registers. tools/cfr-dump.sh for mrc and nri: the menu is valid with
+both options shown and the W541 help of usb_always_on, every help line
+under 60 columns; with the T440p devicetree both are suppressed and
+usb_always_on keeps its old help. For the W541 hardware test, first dump
+EC 0x01-0x05 and 0x0d (ec_sys) with each usb_always_on value. Power on
+with AC attached: off, unplug AC, plug it: the laptop starts, and
+resumes from hibernation; off, nothing. Keyboard beep off and on, with
+an unhandled Fn combination, also with beepmask1 = 0x87. "AC and
+battery": a load on the yellow port has power in power-off on battery;
+"AC only": none. The S3 result is to be recorded, not judged. With
+power_on_ac on: unplug AC, suspend to S3, plug AC in, and record
+whether the laptop wakes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/ec/lenovo/h8/cfr.c                        | 57 ++++++++++++++++-
+ src/ec/lenovo/h8/cfr.h                        |  2 +
+ src/ec/lenovo/h8/chip.h                       | 10 +++
+ src/ec/lenovo/h8/h8.c                         | 61 ++++++++++++++++++-
+ src/ec/lenovo/h8/h8.h                         |  8 +++
+ src/mainboard/lenovo/haswell/cfr.c            |  2 +
+ .../haswell/variants/w541/devicetree.cb       |  4 ++
+ 7 files changed, 140 insertions(+), 4 deletions(-)
+
+diff --git a/src/ec/lenovo/h8/cfr.c b/src/ec/lenovo/h8/cfr.c
+index 64701a8041..75eb4e5a8a 100644
+--- a/src/ec/lenovo/h8/cfr.c
++++ b/src/ec/lenovo/h8/cfr.c
+@@ -93,7 +93,23 @@ const struct sm_object h8_cfr_backlight = SM_DECLARE_ENUM({
+ 	.values		= kic_values_both,
+ }, WITH_CALLBACK(update_backlight));
+ 
+-/* USB Always-On */
++/*
++ * USB Always-On. Where config2 bit 3 follows the option (the W541), "AC and battery"
++ * also powers the port on battery in hibernation and power-off; elsewhere the
++ * devicetree value of that bit decides, so the help does not promise it.
++ */
++static void update_usb_always_on(struct sm_object *new)
++{
++	if (h8_has_uao_battery_in_config2())
++		new->sm_enum.ui_helptext = "Power to the Always On USB port while the laptop sleeps,\n"
++					   "hibernates or is off, to charge devices.\n"
++					   "AC only: in hibernation and power-off, only with the\n"
++					   "AC adapter attached.\n"
++					   "AC and battery: in hibernation and power-off on battery\n"
++					   "too, which runs the battery down.\n"
++					   "Default: Disabled.";
++}
++
+ const struct sm_object h8_cfr_usb_always_on = SM_DECLARE_ENUM({
+ 	.opt_name	= "usb_always_on",
+ 	.ui_name	= "USB always on",
+@@ -107,7 +123,7 @@ const struct sm_object h8_cfr_usb_always_on = SM_DECLARE_ENUM({
+ 				{ "AC only",		UAO_AC_ONLY		},
+ 				{ "AC and battery",	UAO_AC_AND_BATTERY	},
+ 				SM_ENUM_VALUE_END				},
+-});
++}, WITH_CALLBACK(update_usb_always_on));
+ 
+ /* Ultrawideband */
+ static void update_uwb(struct sm_object *new)
+@@ -206,6 +222,41 @@ const struct sm_object h8_cfr_battery_beep = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ }, WITH_CALLBACK(update_beep));
+ 
++/* Keyboard beep, as the OEM setup of the W541 has it (config3 bit 1) */
++static void update_keyboard_beep(struct sm_object *new)
++{
++	if (!h8_has_keyboard_beep_option())
++		new->sm_bool.flags = CFR_OPTFLAG_SUPPRESS;
++}
++
++const struct sm_object h8_cfr_keyboard_beep = SM_DECLARE_BOOL({
++	.opt_name	= "keyboard_beep",
++	.ui_name	= "Keyboard beep",
++	.ui_helptext	= "Beep of the EC when a key combination that it does not\n"
++			  "handle is pressed.\n"
++			  "Default: on.",
++	.default_value	= true,
++}, WITH_CALLBACK(update_keyboard_beep));
++
++/* Power on with AC attached, as the OEM setup of the W541 has it (config1 bit 1) */
++static void update_power_on_ac(struct sm_object *new)
++{
++	if (!h8_has_power_on_ac_attach())
++		new->sm_bool.flags = CFR_OPTFLAG_SUPPRESS;
++}
++
++const struct sm_object h8_cfr_power_on_ac = SM_DECLARE_BOOL({
++	.opt_name	= "power_on_ac",
++	.ui_name	= "Power on with AC attached",
++	.ui_helptext	= "The EC powers the laptop on when the AC adapter is\n"
++			  "plugged in while it is off, and resumes it from\n"
++			  "hibernation. The EC keeps the setting while it has power:\n"
++			  "after the battery and the AC adapter were both gone, it\n"
++			  "applies again from the next boot.\n"
++			  "Default: off.",
++	.default_value	= false,
++}, WITH_CALLBACK(update_power_on_ac));
++
+ /* Fn-CTRL Swap */
+ const struct sm_object h8_cfr_fn_ctrl_swap = SM_DECLARE_BOOL({
+ 	.opt_name	= "fn_ctrl_swap",
+@@ -266,6 +317,7 @@ __cfr_form static const struct sm_obj_form cfr_power = {
+ 	.obj_list = (const struct sm_object *[]) {
+ 		&h8_cfr_first_battery,
+ 		&h8_cfr_usb_always_on,
++		&h8_cfr_power_on_ac,
+ 		NULL
+ 	},
+ };
+@@ -301,6 +353,7 @@ __cfr_form static const struct sm_obj_form cfr_misc = {
+ 		&h8_cfr_volume,
+ 		&h8_cfr_pm_beeps,
+ 		&h8_cfr_battery_beep,
++		&h8_cfr_keyboard_beep,
+ 		NULL
+ 	},
+ };
+diff --git a/src/ec/lenovo/h8/cfr.h b/src/ec/lenovo/h8/cfr.h
+index b67c97ef4c..b9e89cf999 100644
+--- a/src/ec/lenovo/h8/cfr.h
++++ b/src/ec/lenovo/h8/cfr.h
+@@ -20,6 +20,8 @@ extern const struct sm_object h8_cfr_wlan;
+ extern const struct sm_object h8_cfr_wwan;
+ extern const struct sm_object h8_cfr_pm_beeps;
+ extern const struct sm_object h8_cfr_battery_beep;
++extern const struct sm_object h8_cfr_keyboard_beep;
++extern const struct sm_object h8_cfr_power_on_ac;
+ extern const struct sm_object h8_cfr_fn_ctrl_swap;
+ extern const struct sm_object h8_cfr_sticky_fn;
+ extern const struct sm_object h8_cfr_f1_to_f12_as_primary;
+diff --git a/src/ec/lenovo/h8/chip.h b/src/ec/lenovo/h8/chip.h
+index 4ac686ea2d..c3547fabd5 100644
+--- a/src/ec/lenovo/h8/chip.h
++++ b/src/ec/lenovo/h8/chip.h
+@@ -35,6 +35,16 @@ struct ec_lenovo_h8_config {
+ 	bool has_power_management_beeps;
+ 	bool has_uwb;
+ 
++	/*
++	 * Settings of the OEM setup that the EC keeps in its config bytes, as
++	 * the OEM firmware of the ThinkPad W541 programs them (EcIoDxe). Only
++	 * boards that set these get the options; the others write config1-3
++	 * as the devicetree has them.
++	 */
++	bool has_power_on_ac_attach;	/* config1 bit 1: power_on_ac */
++	bool has_keyboard_beep_option;	/* config3 bit 1: keyboard_beep */
++	bool uao_battery_in_config2;	/* config2 bit 3: usb_always_on on battery */
++
+ 	u8 bdc_gpio_num;
+ 	u8 bdc_gpio_lvl;
+ 
+diff --git a/src/ec/lenovo/h8/h8.c b/src/ec/lenovo/h8/h8.c
+index 52c02ef8ef..a2e8e0d4d9 100644
+--- a/src/ec/lenovo/h8/h8.c
++++ b/src/ec/lenovo/h8/h8.c
+@@ -332,6 +332,42 @@ bool h8_has_power_management_beeps(void)
+ 	return conf && conf->has_power_management_beeps;
+ }
+ 
++/* Returns true when the board has the power_on_ac option (config1 bit 1) */
++bool h8_has_power_on_ac_attach(void)
++{
++	const struct device *dev = DEV_PTR(lenovo_ec);
++	assert(dev && dev->chip_info);
++	const struct ec_lenovo_h8_config *conf = dev ? dev->chip_info : NULL;
++
++	return conf && conf->has_power_on_ac_attach;
++}
++
++/* Returns true when the board has the keyboard_beep option (config3 bit 1) */
++bool h8_has_keyboard_beep_option(void)
++{
++	const struct device *dev = DEV_PTR(lenovo_ec);
++	assert(dev && dev->chip_info);
++	const struct ec_lenovo_h8_config *conf = dev ? dev->chip_info : NULL;
++
++	return conf && conf->has_keyboard_beep_option;
++}
++
++/* Returns true when usb_always_on also sets config2 bit 3 (charge on battery) */
++bool h8_has_uao_battery_in_config2(void)
++{
++	const struct device *dev = DEV_PTR(lenovo_ec);
++	assert(dev && dev->chip_info);
++	const struct ec_lenovo_h8_config *conf = dev ? dev->chip_info : NULL;
++
++	return conf && conf->uao_battery_in_config2;
++}
++
++/* A bit of a config byte, from a setup option */
++static u8 h8_config_bit(u8 reg8, u8 bit, bool set)
++{
++	return set ? reg8 | bit : reg8 & ~bit;
++}
++
+ static void h8_enable(struct device *dev)
+ {
+ 	struct ec_lenovo_h8_config *conf = dev->chip_info;
+@@ -356,9 +392,30 @@ static void h8_enable(struct device *dev)
+ 	reg8 = conf->config1;
+ 	if (conf->has_thinklight || conf->has_keyboard_backlight)
+ 		reg8 = (reg8 & 0xf3) | (backlight << 2);
++	/* The EC powers the laptop on when AC is attached */
++	if (conf->has_power_on_ac_attach)
++		reg8 = h8_config_bit(reg8, H8_CONFIG1_POWER_ON_AC,
++				     get_uint_option("power_on_ac", 0));
+ 	ec_write(H8_CONFIG1, reg8 & ~conf->config1_reserved_mask);
+-	ec_write(H8_CONFIG2, conf->config2);
+-	ec_write(H8_CONFIG3, conf->config3);
++
++	/*
++	 * Set, the Always On USB port has no power on battery in hibernation and
++	 * power-off: only "AC and battery" clears it.
++	 */
++	reg8 = conf->config2;
++	if (conf->uao_battery_in_config2) {
++		const bool battery = get_uint_option("usb_always_on", UAO_OFF) ==
++				     UAO_AC_AND_BATTERY;
++		reg8 = h8_config_bit(reg8, H8_CONFIG2_UAO_NO_BATTERY, !battery);
++	}
++	ec_write(H8_CONFIG2, reg8);
++
++	/* Set, no beep for a key combination that the EC does not handle */
++	reg8 = conf->config3;
++	if (conf->has_keyboard_beep_option)
++		reg8 = h8_config_bit(reg8, H8_CONFIG3_KBD_BEEP_OFF,
++				     !get_uint_option("keyboard_beep", 1));
++	ec_write(H8_CONFIG3, reg8);
+ 
+ 	/*
+ 	 * Reset LEDs to power on state.
+diff --git a/src/ec/lenovo/h8/h8.h b/src/ec/lenovo/h8/h8.h
+index 0ef285cbf7..49fa4add5d 100644
+--- a/src/ec/lenovo/h8/h8.h
++++ b/src/ec/lenovo/h8/h8.h
+@@ -52,6 +52,10 @@ bool h8_has_uwb(void);
+ 
+ bool h8_has_power_management_beeps(void);
+ 
++bool h8_has_power_on_ac_attach(void);
++bool h8_has_keyboard_beep_option(void);
++bool h8_has_uao_battery_in_config2(void);
++
+ /*
+  * boards needing specific h8-related inits could override it
+  */
+@@ -67,14 +71,18 @@ void h8_mb_init(void);
+ 
+ #define H8_CONFIG1 0x01
+ #define H8_CONFIG1_BKLT_LID		0x01
++#define H8_CONFIG1_POWER_ON_AC		0x02	/* W541 EcIoDxe: Power On with AC Attach */
+ #define H8_CONFIG1_UBAY_PWR		0x20
+ 
+ #define H8_CONFIG2 0x02
+ #define H8_CONFIG2_USB_DOCK			0x01
+ #define H8_CONFIG2_DOCK_SPEAKER_MUTE		0x02
+ #define H8_CONFIG2_DOCK_SPEAKER_MUTE_POL	0x04
++/* W541 EcIoDxe: Charge in Battery Mode off, Always On USB not on battery */
++#define H8_CONFIG2_UAO_NO_BATTERY		0x08
+ 
+ #define H8_CONFIG3 0x03
++#define H8_CONFIG3_KBD_BEEP_OFF		0x02	/* W541 EcIoDxe: Keyboard Beep off */
+ #define H8_CONFIG3_STICKY_FNLOCK_LED	0x10
+ 
+ #define H8_SOUND_ENABLE0		0x04
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index c48f540a87..50b4fb7dbe 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -303,6 +303,7 @@ static const struct sm_object general_sound = SM_DECLARE_FORM({
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&h8_cfr_pm_beeps,
+ 		&h8_cfr_battery_beep,
++		&h8_cfr_keyboard_beep,
+ 		&h8_cfr_volume,
+ 		NULL
+ 	},
+@@ -426,6 +427,7 @@ static const struct sm_object energy_power = SM_DECLARE_FORM({
+ 	.ui_name	= "Power",
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&h8_cfr_usb_always_on,
++		&h8_cfr_power_on_ac,
+ 		&power_on_after_fail,
+ 		NULL
+ 	},
+diff --git a/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb b/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb
+index 14b2f4fa4d..2c7e265605 100644
+--- a/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb
++++ b/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb
+@@ -74,6 +74,10 @@ chip northbridge/intel/haswell
+ 					register "config2" = "0xa8"
+ 					register "config3" = "0xc4"
+ 					register "has_keyboard_backlight" = "1"
++					# The EC settings of the OEM setup (EcIoDxe)
++					register "has_power_on_ac_attach" = "1"
++					register "has_keyboard_beep_option" = "1"
++					register "uao_battery_in_config2" = "1"
+ 					register "event2_enable" = "0xff"
+ 					register "event3_enable" = "0xff"
+ 					register "event4_enable" = "0xd0"
+-- 
+2.47.3
+

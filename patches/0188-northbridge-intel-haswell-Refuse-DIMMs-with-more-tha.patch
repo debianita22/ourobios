@@ -1,0 +1,190 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sat, 31 Oct 2026 02:42:12 +0100
+Subject: [PATCH] northbridge/intel/haswell: Refuse DIMMs with more than 10
+ column bits
+
+Haswell Trad only addresses DDR3 devices with 10 column address bits.
+MAD_DIMM tells the controller the size, ranks and width of a DIMM, not
+its column bits, so a 16 GiB SO-DIMM of 8 Gb x8 devices (11 column
+bits) is mapped wrongly. Ticket 626 shows what happens with the native
+RAM init: the margins look fine, the machine boots with mangled
+graphics, memtest86+ crashes and the OS hangs. Neither the OEM firmware
+nor mrc.bin supports such DIMMs. The memory test of the native RAM init
+goes through the controller and cannot see the column bit that the
+controller never drives, so nothing stops the boot today.
+
+Leave such a DIMM out, with an error that names its slot, and go on with
+the others. Stopping instead (die()) beeps and flashes the LEDs on these
+boards (H8_BEEP_ON_DEATH, H8_FLASH_LEDS_ON_DEATH), but the reason stays
+in the pre-RAM console, which nothing can read on a W541: it has no
+serial port and CBMEM never comes up. With the DIMM left out the laptop
+boots with less memory and the reason is in cbmem -1. The error is
+printed when the SPDs are read and once more after cbmem_recovery(): a
+DIMM change forces a training, and the log of a training overflows the
+16 KiB pre-RAM console, which keeps only its end, so the first line
+would be lost on exactly the first boot with such a DIMM.
+
+The DIMM's decoded data is cleared, so it does not add to the channel
+size and configure_mc.c does not pick it as DIMM A; with the previous
+commit SMBIOS then lists the DIMMs that remain, in their own slots. Its
+ranks leave the rank map, so the JEDEC init, the training and MAD_DIMM
+skip them. That is not quite an empty slot: the module stays on the bus
+and loads its lines, its mode registers are never written, and the CADB
+writes of the other ranks' mode registers set CKE for all four ranks
+(reut.c, cke = 0xf). The training runs with the module in place, so the
+margins include it, but nobody has run such a setup yet: the hardware
+test below covers it. If the other DIMMs do not train with it in place,
+the boot stops after the second attempt, as before. When no DIMM is
+left, return RAMINIT_STATUS_UNSUPPORTED_MEMORY with its own message
+rather than "No DIMMs were found".
+
+A fast boot compares the DIMM records with the cached ones. They are the
+same on every boot, so the cache keeps working, and a DIMM change still
+forces a training. ULT builds keep accepting every DIMM: the ticket
+names Haswell Trad only. The check is in the shared northbridge and
+applies to the T440p as well, which has the same limit.
+
+TEST=Host syntax check with -Werror and the ci-150 W541 nri config. Host
+unit test of collect_spd_info() and report_ignored_dimms() with
+synthetic DDR3L-1600 SO-DIMM SPDs (8 GiB of 4 Gb x8 devices, 16 GiB of
+8 Gb x8 devices) decoded by spd_decode_ddr3(): four 8 GiB DIMMs
+unchanged and nothing to repeat; one 16 GiB DIMM in CH0S0 left out
+(rank map 0xc, 8 GiB on channel 0, slot 1 is DIMM A) and repeated; both
+DIMMs of channel 1 left out (channel 0 only); four 16 GiB DIMMs return
+UNSUPPORTED_MEMORY; no DIMM still returns NO_MEMORY_INSTALLED, and a
+new SPD pass forgets the DIMMs left out before. The same test fails on
+the code before this change. Still to test on the W541 (nri): with the
+four 8 GiB DIMMs no "DIMM ignored" line and 32 GiB as before. With a 16
+GiB DIMM, if one is at hand: the laptop boots on the others; cbmem -1
+of that first, training boot has the error after the start of the CBMEM
+console; dmidecode -t 17 lists the remaining DIMMs in their slots and
+not the 16 GiB one; with the module left in place, 30 minutes of
+stress-ng --vm 4 --verify (or a memtest86+ pass) find no error, and
+ddr-report shows margins close to those of the same DIMMs without it.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../haswell/native_raminit/raminit_native.c   |  2 +
+ .../haswell/native_raminit/raminit_native.h   |  1 +
+ .../haswell/native_raminit/spd_bitmunching.c  | 55 +++++++++++++++++++
+ 3 files changed, 58 insertions(+)
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.c b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
+index af784fbc9d..019606ebad 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
+@@ -210,6 +210,8 @@ void perform_raminit(const bool s3resume)
+ 		system_reset();
+ 	}
+ 
++	report_ignored_dimms();
++
+ 	/* Save training data on non-S3 resumes */
+ 	if (!s3resume)
+ 		save_mrc_data();
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index 1d45bb8fe2..487389eea0 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -617,6 +617,7 @@ void raminit_main(enum raminit_boot_mode bootmode);
+ void raminit_reset(void);
+ 
+ enum raminit_status collect_spd_info(struct sysinfo *ctrl);
++void report_ignored_dimms(void);
+ enum raminit_status initialise_mpll(struct sysinfo *ctrl);
+ enum raminit_status convert_timings(struct sysinfo *ctrl);
+ enum raminit_status configure_mc(struct sysinfo *ctrl);
+diff --git a/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c b/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
+index a481ad80ad..f051564445 100644
+--- a/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
++++ b/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
+@@ -74,6 +74,51 @@ static void decode_spd(struct raminit_dimm_info *const dimm)
+ 		dram_print_spd_ddr3(&dimm->data);
+ }
+ 
++/* Column address bits of the DIMMs that dimm_is_usable() left out, 0 for the others */
++static uint8_t ignored_col_bits[NUM_CHANNELS][NUM_SLOTS];
++
++static void print_ignored_dimm(uint8_t channel, uint8_t slot, uint8_t col_bits)
++{
++	printk(BIOS_ERR, "CH%uS%u: DIMM ignored, %u column address bits, Haswell has 10\n",
++	       channel, slot, col_bits);
++}
++
++/*
++ * Haswell Trad addresses DDR3 devices with 10 column address bits only:
++ * the controller is told the size, ranks and width of a DIMM, not its
++ * column bits. A DIMM of 8 Gb x8 devices (16 GiB, dual rank) has 11. It
++ * trains with good margins, then memory corrupts, and the memory test
++ * goes through the controller, which cannot see the missing column bit
++ * (https://ticket.coreboot.org/issues/626). Leave such a DIMM out. Its
++ * data is cleared, so it neither adds to the channel nor becomes DIMM A.
++ */
++static bool dimm_is_usable(struct raminit_dimm_info *const dimm, uint8_t channel, uint8_t slot)
++{
++	if (is_hsw_ult() || dimm->data.col_bits <= 10)
++		return true;
++
++	print_ignored_dimm(channel, slot, dimm->data.col_bits);
++	ignored_col_bits[channel][slot] = dimm->data.col_bits;
++	memset(&dimm->data, 0, sizeof(dimm->data));
++	dimm->valid = false;
++	return false;
++}
++
++/*
++ * Repeat the error once the console is in CBMEM. A DIMM change forces a
++ * training, whose log overflows the pre-RAM console and loses its start.
++ */
++void report_ignored_dimms(void)
++{
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		for (uint8_t slot = 0; slot < NUM_SLOTS; slot++) {
++			const uint8_t col_bits = ignored_col_bits[channel][slot];
++			if (col_bits)
++				print_ignored_dimm(channel, slot, col_bits);
++		}
++	}
++}
++
+ static enum raminit_status find_common_spd_parameters(struct sysinfo *ctrl)
+ {
+ 	const union pci_capid0_a_reg capid0_a = {
+@@ -98,9 +143,11 @@ static enum raminit_status find_common_spd_parameters(struct sysinfo *ctrl)
+ 	ctrl->tCWL = 0;
+ 	ctrl->tCMD = 0;
+ 	ctrl->chanmap = 0;
++	memset(ignored_col_bits, 0, sizeof(ignored_col_bits));
+ 
+ 	bool yes_ecc = false;
+ 	bool not_ecc = false;
++	uint8_t ignored = 0;
+ 
+ 	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
+ 		ctrl->dpc[channel] = 0;
+@@ -114,6 +161,10 @@ static enum raminit_status find_common_spd_parameters(struct sysinfo *ctrl)
+ 
+ 			printk(RAM_DEBUG, "\nCH%uS%u SPD:\n", channel, slot);
+ 			decode_spd(dimm);
++			if (!dimm_is_usable(dimm, channel, slot)) {
++				ignored++;
++				continue;
++			}
+ 
+ 			ctrl->chanmap |= BIT(channel);
+ 			ctrl->dpc[channel]++;
+@@ -150,6 +201,10 @@ static enum raminit_status find_common_spd_parameters(struct sysinfo *ctrl)
+ 		}
+ 	}
+ 
++	if (!ctrl->chanmap && ignored) {
++		printk(BIOS_ERR, "No usable DIMMs: all have more than 10 column bits\n");
++		return RAMINIT_STATUS_UNSUPPORTED_MEMORY;
++	}
+ 	if (!ctrl->chanmap) {
+ 		printk(BIOS_ERR, "No DIMMs were found\n");
+ 		return RAMINIT_STATUS_NO_MEMORY_INSTALLED;
+-- 
+2.47.3
+

@@ -54,6 +54,15 @@ void exit(int status) __noreturn;
 #ifndef CFR_DUMP_H8_PM_BEEPS
 #define CFR_DUMP_H8_PM_BEEPS		0
 #endif
+#ifndef CFR_DUMP_H8_POWER_ON_AC
+#define CFR_DUMP_H8_POWER_ON_AC		1
+#endif
+#ifndef CFR_DUMP_H8_KBD_BEEP
+#define CFR_DUMP_H8_KBD_BEEP		1
+#endif
+#ifndef CFR_DUMP_H8_UAO_BATTERY
+#define CFR_DUMP_H8_UAO_BATTERY		1
+#endif
 
 static void put(int fd, const char *s, size_t len)
 {
@@ -209,6 +218,31 @@ bool h8_has_power_management_beeps(void)
 }
 
 /*
+ * Le impostazioni dell'EC del setup Lenovo del W541 (has_power_on_ac_attach
+ * e has_keyboard_beep_option del devicetree): ec/lenovo/h8/cfr.c mostra
+ * power_on_ac e keyboard_beep solo con queste
+ */
+bool h8_has_power_on_ac_attach(void)
+{
+	return CFR_DUMP_H8_POWER_ON_AC;
+}
+
+bool h8_has_keyboard_beep_option(void)
+{
+	return CFR_DUMP_H8_KBD_BEEP;
+}
+
+/*
+ * uao_battery_in_config2 del devicetree (solo il W541): con questa
+ * usb_always_on ha il testo di aiuto su ibernazione e spegnimento a batteria,
+ * altrimenti quello generico dell'H8
+ */
+bool h8_has_uao_battery_in_config2(void)
+{
+	return CFR_DUMP_H8_UAO_BATTERY;
+}
+
+/*
  * La console seriale con CONSOLE_SERIAL_RUNTIME: console/cfr.c mostra "Serial
  * Console" se un dispositivo PNP acceso del devicetree ha la porta della UART
  * della console. Qui una UART come quella del M920x (COM1 del Super I/O,
@@ -263,6 +297,33 @@ bool mainboard_cpu_has_tcc_offset(void)
 	return true;
 }
 
+#if CONFIG(BOARD_LENOVO_THINKPAD_W541)
+/*
+ * W541 (me_status.h della mainboard): l'ME come lo legge me_status.c con lo
+ * strap AltMeDisable di me_cleaner -S, ferma nel BUP (valori di esempio,
+ * HFS 0x00020191 e HFS2 0x100A0000 come su un X220, non di un W541 vero),
+ * con il testo di aiuto che scrive in quel caso e HECI nascosta.
+ */
+const char *mainboard_me_summary(void)
+{
+	return "Disabled (AltMeDisable, BUP)";
+}
+
+const char *mainboard_me_details(void)
+{
+	return "The Intel ME at this boot, from its status registers\n"
+	       "(HFS1-6):\n"
+	       "00020191 100A0000 00000000 00000000 00000000 00000000\n"
+	       "Working state 1, operation state 6, operation mode 2,\n"
+	       "error code 0; progress phase 1, state 0x0a (HFS2).\n"
+	       "Stopped after its bring-up (BUP) by the AltMeDisable\n"
+	       "strap of the flash descriptor (me_cleaner -S sets it).\n"
+	       "HECI (00:16.0): hidden from the OS at the end of the boot.\n"
+	       "Security > Management Engine only hides HECI. Capsules and\n"
+	       "flashrom --ifd -i bios do not write the ME region; the\n"
+	       "full-chip images write the one of this project.";
+}
+#else
 /*
  * M920x (mainboard/me.h): l'ME come lo legge me_status.c sul M920x di prova,
  * disattivato dal setup (HFSTS1 0x80032044, modo 3), con il testo di aiuto
@@ -284,6 +345,7 @@ const char *mainboard_me_details(void)
 	       "The setting is in Security > Management Engine. A change\n"
 	       "shows here after the next boot.";
 }
+#endif
 
 /*
  * L'elenco di riferimento: sm_root[] e le form generiche lette dalle
