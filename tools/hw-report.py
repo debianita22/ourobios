@@ -17,11 +17,13 @@
 # avvisi del log di coreboot (cbmem -1) e quelli del kernel che riguardano il
 # firmware, la memoria (SMBIOS), CPU e limiti di potenza, gli stati C del
 # package e il consumo (come tools/idle-report.py), ASPM e LTR del PCIe, la
-# porta PEG del riser (M920x), ventola e temperature, ME, TPM, protezione del
-# flash, SMBIOS e tabelle ACPI, S3. Con --dump, una copia del flash presa con
-# flashrom -r (lo script il flash non lo legge mai): il registro degli eventi
-# (tools/elog.py), lo stato di vboot in RW_NVRAM, cosa c'e' negli slot e le
-# opzioni del setup salvate in SMMSTORE (tools/update.py).
+# porta PEG del riser (M920x), ventola e temperature, ME, firmware dell'EC
+# (W541), TPM, protezione del flash (con la sonda di tools/update.py
+# protection, sulle due board), SMBIOS e tabelle ACPI, S3. Con --dump, una
+# copia del flash presa con flashrom -r (lo script il flash non lo legge
+# mai): il registro degli eventi (tools/elog.py), lo stato di vboot in
+# RW_NVRAM, cosa c'e' negli slot e le opzioni del setup salvate in SMMSTORE
+# (tools/update.py).
 #
 # Solo lettura: niente scritture su flash, MSR, /sys o /dev, nessun modulo
 # caricato (il modulo msr serve per gli stati C: sudo modprobe msr, a mano).
@@ -38,7 +40,6 @@ import glob
 import hashlib
 import importlib.util
 import json
-import mmap
 import os
 import platform
 import re
@@ -121,8 +122,12 @@ KNOWN_FW_LOG = (
     (r"PMC: Duplicate GPE DW register values detected", "m920x",
      "dal bootblock di una parte RO di prima della patch 0166 (una capsula non la riscrive); "
      "il ramstage con la 0166 non lo stampa piu'"),
-    # docs/flashing.md, First boot and settings: normali sul W541
-    (r"ME: BIOS path: Error|MBP not ready", "w541", "ME ridotto da me_cleaner -S"),
+    # docs/flashing.md, First boot and settings: normali sul W541. Con l'MBP
+    # che non arriva lynxpoint/me.c stampa anche, in CRIT, "intel_me_path: mbp
+    # is not ready!". Non "ME is not ready!" della romstage della NRI
+    # (early_me.c): l'attesa di 1 s dell'UMA, da vedere su un W541 vero
+    (r"ME: BIOS path: Error|MBP not ready|intel_me_path: mbp is not ready!", "w541",
+     "ME ridotto da me_cleaner -S"),
     (r"RO_VPD is uninitialized|DMI: Cannot read .* from VPD|No RW_VPD FMAP section", "w541",
      "VPD vuota (tools/vpd.py)"),
     (r"1c\.3: Timeout waiting for 328h", "w541", "la root port 4, non usata"),
@@ -147,9 +152,9 @@ KNOWN_KERNEL = (
      "SGX non e' attivato (SOC_INTEL_COMMON_BLOCK_SGX_ENABLE, default n)"),
     (r"hpet_acpi_add: no address or irqs in _CRS", "m920x",
      "il _CRS dell'HPET (soc/intel/common/block/acpi/acpi/lpc.asl) ha solo l'indirizzo, senza IRQ"),
-    # docs/flashing.md: normali sul W541
-    (r"SystemIO range .* conflicts with OpRegion", "w541", "gpio_ich resta scaricato, i GPIO sono di ACPI"),
-    (r"failed to evaluate _DSM", "w541", "Wi-Fi Intel senza nodo nelle tabelle ACPI (iwlwifi)"),
+    # Sul W541 non piu' noti: GPLV ("SystemIO range ... conflicts with
+    # OpRegion") e "failed to evaluate _DSM" di iwlwifi li tolgono le patch
+    # 0068 e 0069; se tornano e' una regressione
 )
 
 # ME: i valori delle righe di cse_spec.c (CSME, numeri) e di
@@ -159,6 +164,12 @@ ME_MODES = {"Normal": 0, "Debug": 2, "Soft Temporary Disable": 3, "Security Over
 ME_HFS1_CWS_NORMAL = 5          # intelblocks/cse.h
 ME_HFS1_COM_NORMAL = 0
 ME_HFS1_COM_SOFT_TEMP_DISABLE = 3
+# W541: il riassunto del firmware nelle stringhe OEM (mainboard/lenovo/
+# haswell/me_status.c): quelli di un ME a posto (me_cleaner -S sulle immagini
+# di ouroBIOS, o il ME intero di Lenovo su un altro W541) e quelli che si
+# spiegano senza un guasto
+ME9_GOOD = ("Disabled (AltMeDisable, BUP)", "Enabled")
+ME9_INFO = ("Not available", "Disabled (soft temporary disable)")
 
 # MSR (Intel SDM vol. 4; cpu/intel/haswell/haswell.h)
 MSR_PLATFORM_INFO = 0xCE
@@ -166,13 +177,19 @@ MSR_TEMPERATURE_TARGET = 0x1A2
 MSR_TURBO_RATIO_LIMIT = 0x1AD
 MSR_PKG_POWER_SKU_UNIT = 0x606
 MSR_PKG_POWER_LIMIT = 0x610
+# L'offset TCC: programmabile se PLATFORM_INFO bit 30; in MSR 0x1A2 i bit
+# 27:24 su Haswell (il W541, dove l'SDM li da' riservati) e 29:24 sul M920x
+PLATFORM_INFO_PROG_TCC = 1 << 30
 
-# Il controller SPI di Lynx Point, il W541 (southbridge/intel/common/lpc_def.h
-# e spi.c: BIOS_CNTL 0xdc nel PCI dell'LPC, registri a RCBA + 0x3800, PR0 a
-# 0x74); quello di Cannon Point, il M920x, lo legge tools/update.py (protection)
-BIOS_CNTL_WPD, BIOS_CNTL_BLE, BIOS_CNTL_SMM_BWP = 1 << 0, 1 << 1, 1 << 5
-HSFSTS_FLOCKDN = 1 << 15
-FPR_WPE = 1 << 31
+# L'EC del W541 (e del W540): ECP 1.15, GMHT30WW, corregge CVE-2019-6171
+# (LEN-27764, firmware Lenovo 2.40); ouroBIOS non aggiorna l'EC
+EC_BUILD_RE = re.compile(r"^([0-9A-Z]{4})(\d{2})WW")
+EC_MIN = {"GMHT": (30, "1.15")}
+EC_STRING_RE = re.compile(r"^IBM ThinkPad Embedded Controller -\[(\S+)\s*\]-$")
+
+# Il Protected Range che coreboot scrive (southbridge/intel/common/spi.c sul
+# W541, fast_spi_flash.c sul M920x): quando i registri non si leggono
+FPR_LOG = r"^(?:fast_)?spi_flash_protect: FPR (\d) is enabled for range 0x([0-9a-f]{8})-0x([0-9a-f]{8})$"
 
 # Le opzioni di coreboot in SMMSTORE (drivers/efi/option.c, EficorebootNvDataGuid)
 CB_OPTION_GUID = uuid.UUID("ceae4c1d-335b-4685-a4a0-fc4a94eea085").bytes_le
@@ -467,7 +484,40 @@ def cache_state(fw):
     v = fw.grep(MRC_VALID.pattern)
     if v:
         return "valid", "'%s' valida, usata" % v[0].group(1)
+    # la NRI del W541 (raminit_native.c, INFO): il training salvato usato
+    if fw.grep(r"^Using cached memory parameters$"):
+        return "valid", "training salvato usato (NRI: Using cached memory parameters)"
     return "unknown", "stato della cache non nel log"
+
+
+def log_level(fw):
+    """Il livello del log di questo avvio, dal banner di ramstage (o di
+    romstage): Setup > Console > Console Log Level lo cambia senza una build."""
+    levels = {m.group(1): int(m.group(2)) for m in
+              fw.grep(r"coreboot-\S+ .* (romstage|ramstage) starting \(log level: (\d+)\)")}
+    return levels.get("ramstage", levels.get("romstage"))
+
+
+def debug_hint(fw, what):
+    """Perche' mancano righe di livello DEBUG (7), se il log e' piu' basso."""
+    level = log_level(fw)
+    if level is not None and level < 7:
+        return "%s sono di livello DEBUG (7), il log di questo avvio e' al livello %d: Setup > Console > " \
+            "Console Log Level" % (what, level)
+    return None
+
+
+def raminit_span(fw):
+    """(durata, cosa) della RAM init: FspMemoryInit (M920x), la RAM init
+    (mrc.bin, e la NRI con i timestamp di raminit_native.c), se no tutta la
+    romstage (gli slot della NRI di prima: la RAM init c'e' dentro)."""
+    for a, b, what in ((TS_FSP_MEMORY_INIT_START, TS_FSP_MEMORY_INIT_END, "FspMemoryInit"),
+                       (TS_INITRAM_START, TS_INITRAM_END, "RAM init"),
+                       (TS_ROMSTAGE_START, TS_ROMSTAGE_END, "romstage (RAM init compresa)")):
+        t = fw.span(a, b)
+        if t is not None:
+            return t, what
+    return None, None
 
 
 def check_raminit(fw, rep):
@@ -475,15 +525,18 @@ def check_raminit(fw, rep):
     if not fw.ts:
         rep.add("MEM-01", "RAM init", "SKIP", "timestamp di coreboot non letti (cbmem -T)")
         return
-    t = fw.span(TS_FSP_MEMORY_INIT_START, TS_FSP_MEMORY_INIT_END)
-    what = "FspMemoryInit"
-    if t is None:
-        t, what = fw.span(TS_INITRAM_START, TS_INITRAM_END), "RAM init"
+    t, what = raminit_span(fw)
     if t is None:
         rep.add("MEM-01", "RAM init", "SKIP", "nessun timestamp della RAM init")
         return
     state, why = cache_state(fw) if fw.log is not None else ("unknown", "log di coreboot non letto")
     details = ["cache del training: %s" % why]
+    if what.startswith("romstage"):
+        details.append("nessun timestamp della RAM init (la NRI prima dei suoi, raminit_native.c): conta "
+                       "tutta la romstage")
+    hint = debug_hint(fw, "le righe 'MRC:' della cache") if state == "unknown" and fw.log is not None else None
+    if hint:
+        details.append(hint)
     s = t / 1e6
     if state == "training":
         status = "INFO"
@@ -531,8 +584,9 @@ def check_boot_time(fw, rep):
     if fw.log is not None and fw.grep(r"clear_memory: Clearing DRAM"):
         details.append("Clear memory at power-on acceso (~0.5 s ogni 10 GB)")
     state = cache_state(fw)[0] if fw.log is not None else "unknown"
-    raminit = fw.span(TS_FSP_MEMORY_INIT_START, TS_FSP_MEMORY_INIT_END) or fw.span(TS_INITRAM_START,
-                                                                                   TS_INITRAM_END) or 0
+    # con il training si toglie la RAM init (sugli slot della NRI senza i suoi
+    # timestamp tutta la romstage, che la contiene)
+    raminit = raminit_span(fw)[0] or 0
     eff = total - raminit if state == "training" else total
     b = BOARDS.get(fw.board)
     s = eff / 1e6
@@ -772,16 +826,27 @@ def check_cpu(fw, rep, msr):
         status = "INFO"
         details.append("MSR non leggibili (sudo modprobe msr)")
     pi, tt, tr = (msr.read(cpu0, r) for r in (MSR_PLATFORM_INFO, MSR_TEMPERATURE_TARGET, MSR_TURBO_RATIO_LIMIT))
+    tcc = {}
     if pi is not None:
         details.append("rapporto base %d (%d MHz), turbo a 1 core %s, TjMax %s" % (
             (pi >> 8) & 0xFF, ((pi >> 8) & 0xFF) * 100, "%d" % (tr & 0xFF) if tr else "?",
             "%d C" % ((tt >> 16) & 0xFF) if tt is not None else "?"))
+        # solo informativo: sul W541 dice se un'opzione per l'offset avrebbe senso
+        bits, mask = ("29:24", 0x3F) if fw.board == "m920x" else ("27:24", 0xF)
+        tcc = {"tcc_programmable": bool(pi & PLATFORM_INFO_PROG_TCC),
+               "tcc_offset": (tt >> 24) & mask if tt is not None else None}
+        offset = "?" if tcc["tcc_offset"] is None else "%d" % tcc["tcc_offset"]
+        details.append("offset TCC programmabile: %s (PLATFORM_INFO bit 30), offset attuale %s (MSR 0x1A2 bit %s)%s"
+                       % ("si'" if tcc["tcc_programmable"] else "no", offset, bits,
+                          "; sul W541 nessuna opzione nel setup, il dato serve a decidere" if fw.board == "w541"
+                          else ""))
     ec = fw.grep(r"EC: platform (\S+ \S+ \S+) \(PL1 (\d+) W\)") if fw.log is not None else []
     if ec:
         details.append("EC: platform %s, classe della CPU %s W" % (ec[-1].group(1), ec[-1].group(2)))
     if fw.log is not None and fw.grep(r"^Turbo is unavailable"):
         details.append("coreboot: Turbo non disponibile su questa CPU")
-    rep.add("CPU-01", "CPU", status, summary, details, {"microcode": sorted(codes), "firmware_microcode": fwrev})
+    rep.add("CPU-01", "CPU", status, summary, details,
+            dict({"microcode": sorted(codes), "firmware_microcode": fwrev}, **tcc))
 
 
 def hwmon():
@@ -880,6 +945,8 @@ def check_fan(fw, rep):
         parts.append("ventola non letta")
         if fw.board == "m920x":
             details.append("M920x: sudo modprobe nct6683, poi di nuovo")
+        elif fw.board == "w541":
+            details.append("W541: la legge thinkpad_acpi (hwmon thinkpad, fan1_input): il modulo c'e'?")
     if dead:
         status = "FAIL"
         details.append("il firmware ha letto 0 rpm all'avvio: guasto della ventola (ec.c)")
@@ -988,8 +1055,92 @@ def me_value(text, names=None):
     return text
 
 
+def spi_probe(fw):
+    """update.spi_protection() una volta sola per i controlli che la usano
+    (FLASH-01, e ME-01 sul W541 per me_disable in SMMSTORE)."""
+    if not hasattr(fw, "spi"):
+        try:
+            fw.spi = update.spi_protection()
+        except (OSError, update.Error, struct.error, ValueError) as e:
+            fw.spi = {"root": True, "regs": None, "error": "protezione non letta: %s" % e}
+    return fw.spi
+
+
+def check_me_w541(fw, rep):
+    """ME-01 sul W541: lo stato del ME 9 dalle stringhe OEM di SMBIOS (copia di
+    HFS1-6 presa dal firmware prima di nascondere l'HECI), se no dal log; e
+    l'HECI 00:16.0 rispetto all'opzione me_disable (Security > Management
+    Engine > Intel ME interface, default Disabled: nascosta)."""
+    heci = os.path.exists(update.HECI_PCI)
+    drv = os.path.basename(os.path.realpath(update.HECI_PCI + "/driver")) \
+        if os.path.exists(update.HECI_PCI + "/driver") else "-"
+    details = []
+    try:
+        summary, words = update.me_strings(update.oem_strings())
+    except OSError as e:
+        summary = words = None
+        details.append("stringhe OEM di SMBIOS non lette: %s" % e)
+    logged = fw.grep(r"^ME: HFSTS1-6: ((?:[0-9a-f]{8} ){5}[0-9a-f]{8})$") if fw.log is not None else []
+    if words is None and logged:
+        words = [int(w, 16) for w in logged[-1].group(1).split()]
+        details.append("HFS1-6 dal log (riga 'ME: HFSTS1-6'), non da SMBIOS")
+    p = spi_probe(fw) or {}
+    opt = p.get("board_options", {}).get("me_disable")
+    hide = opt if opt is not None else update.LPT_OPTIONS["me_disable"]
+    # store letto senza la variabile (o vuoto, o rifiutato): coreboot ha usato
+    # il default, che quindi si sa; solo uno store non letto lascia il dubbio
+    known = opt is not None or bool(p.get("store_read"))
+    details.append("opzione me_disable: %s" % (
+        "%d (in SMMSTORE)" % opt if opt is not None else
+        "%d, il default (DISABLE_ME_PCI): non impostata in SMMSTORE%s" % (
+            hide, " (%s)" % p["options_note"] if p.get("options_note") else "") if known else
+        "%d, il default (DISABLE_ME_PCI)? SMMSTORE non letta" % hide))
+    details.append("HECI 00:16.0 nel sistema: %s" % (("si', driver %s" % drv) if heci else "no"))
+    status = "PASS"
+    if summary is None and words is None:
+        # un firmware senza le stringhe: le righe di lynxpoint/me_status.c
+        g = lambda rx: (fw.grep(rx) or [None])[-1] if fw.log is not None else None
+        com, cws = g(r"^ME: Current Operation Mode\s*: (.+)$"), g(r"^ME: Current Working State\s*: (.+)$")
+        phase = g(r"^ME: Progress Phase\s*: (.+)$")
+        if com is None:
+            hint = debug_hint(fw, "le righe 'ME:'") if fw.log is not None else None
+            rep.add("ME-01", "Intel ME", "SKIP", "ne' le stringhe OEM del ME (dalla %s) ne' righe 'ME: Current "
+                    "Operation Mode' nel log" % update.me_strings_since("mrc"), details + ([hint] if hint else []))
+            return
+        text = "operation mode %s, working state %s%s (dal log)" % (
+            com.group(1), cws.group(1) if cws else "?", ", %s" % phase.group(1) if phase else "")
+        status = "INFO"
+    else:
+        text = update.me9_text(summary, words)
+        if summary is None:
+            summary = update.me9_summary(words[0], words[1])
+        status = "PASS" if summary in ME9_GOOD else "INFO" if summary in ME9_INFO else "WARN"
+        if summary == "Not available":
+            details.append("il firmware non ha letto 00:16.0 all'avvio: era nascosta (un riavvio a caldo con "
+                           "HECI su Disabled?) o spenta")
+    if hide and heci:
+        status = worst(status, "WARN" if known else "INFO")
+        text += "; HECI 00:16.0 visibile con me_disable %s" % (
+            "acceso" if opt is not None else "al default, acceso" if known else
+            "non letto (default acceso): Enabled nel setup?")
+    elif not hide and not heci:
+        status = worst(status, "INFO")
+        text += "; HECI 00:16.0 non c'e' con me_disable spento"
+    else:
+        text += "; HECI %s" % ("nascosta, come chiede me_disable" if hide else "visibile, driver %s" % drv)
+    for m in fw.grep(r"^ME: (FW Partition Table\s*: BAD|Bringup Loader Failure\s*: YES|"
+                     r"Progress Phase State\s*: .*)$") if fw.log is not None else []:
+        details.append("log: ME: " + m.group(1))
+    rep.add("ME-01", "Intel ME", status, text, details,
+            {"summary": summary, "hfsts": words, "me_disable": opt, "me_disable_known": known, "heci": heci})
+
+
 def check_me(fw, rep):
-    """ME-01: lo stato del ME (HFSTS1 nel log) rispetto all'opzione me_state."""
+    """ME-01: lo stato del ME (HFSTS1 nel log) rispetto all'opzione me_state
+    (M920x) o me_disable (W541, check_me_w541())."""
+    if fw.board == "w541":
+        check_me_w541(fw, rep)
+        return
     if fw.log is None:
         rep.add("ME-01", "Intel ME", "SKIP", "log di coreboot non letto")
         return
@@ -997,11 +1148,13 @@ def check_me(fw, rep):
     cws, com, err = (g(r"^ME: Current Working State\s*: (.+)$"), g(r"^ME: Current Operation Mode\s*: (.+)$"),
                      g(r"^ME: Error Code\s*: (.+)$"))
     opt = g(r"^CMOS: me_state = (\d+)")
-    heci = os.path.exists("/sys/bus/pci/devices/0000:00:16.0")
-    drv = os.path.basename(os.path.realpath("/sys/bus/pci/devices/0000:00:16.0/driver")) \
-        if os.path.exists("/sys/bus/pci/devices/0000:00:16.0/driver") else "-"
+    heci = os.path.exists(update.HECI_PCI)
+    drv = os.path.basename(os.path.realpath(update.HECI_PCI + "/driver")) \
+        if os.path.exists(update.HECI_PCI + "/driver") else "-"
     if com is None:
-        rep.add("ME-01", "Intel ME", "SKIP", "nessuna riga 'ME: Current Operation Mode' nel log")
+        hint = debug_hint(fw, "le righe 'ME:'")
+        rep.add("ME-01", "Intel ME", "SKIP", "nessuna riga 'ME: Current Operation Mode' nel log",
+                [hint] if hint else [])
         return
     mode = me_value(com.group(1), ME_MODES)
     ws = me_value(cws.group(1), {"Normal": ME_HFS1_CWS_NORMAL}) if cws else None
@@ -1014,7 +1167,7 @@ def check_me(fw, rep):
     for m in fw.grep(r"^ME: (Version: .*|Manufacturing Mode\s*: YES|FW Partition Table\s*: BAD|"
                      r"Bringup Loader Failure\s*: YES)$"):
         details.append("log: ME: " + m.group(1))
-    if fw.board == "w541" or not isinstance(mode, int):
+    if not isinstance(mode, int):
         rep.add("ME-01", "Intel ME", "INFO", "operation mode %s, working state %s" % (mode, ws), details)
         return
     status = "PASS"
@@ -1082,6 +1235,16 @@ def check_tpm(fw, rep):
         m = re.search(r"PCR-00:\s*([0-9A-F ]+)", txt)
         if m:
             pcr0, alg = m.group(1).replace(" ", ""), "sha1"
+    if major == "1":
+        # TPM 1.2 (W541): coreboot lo accende e lo attiva (tspi.c); owned dice
+        # se il sistema ne ha preso possesso
+        flags = [(n, rd("%s/%s" % (base, n)) or rd("%s/device/%s" % (base, n)))
+                 for n in ("enabled", "active", "owned")]
+        if any(v is not None for _, v in flags):
+            details.append("TPM 1.2: " + ", ".join("%s %s" % (n, v if v is not None else "?") for n, v in flags))
+        if any(v == "0" for n, v in flags if n in ("enabled", "active")):
+            status = "WARN"
+            details.append("TPM 1.2 spento o non attivo")
     summary = "TPM %s.x%s" % (major, ", tabella %s" % want[1] if want and want[1] in tables else "")
     if pcr0:
         if set(pcr0) <= {"0"} or set(pcr0) <= {"F"}:
@@ -1097,50 +1260,30 @@ def check_tpm(fw, rep):
                                                         bool(pcr0 and alg and pcr0 == separator_pcr(alg))})
 
 
-def map_mmio(addr, length=0x1000):
-    """Una finestra MMIO da /dev/mem in sola lettura (serve iomem=relaxed per i registri dei driver)."""
-    base = addr & ~0xFFF
-    fd = os.open("/dev/mem", os.O_RDONLY | os.O_SYNC)
-    try:
-        m = mmap.mmap(fd, ((addr - base + length + 0xFFF) & ~0xFFF), mmap.MAP_SHARED, mmap.PROT_READ,
-                      offset=base)
-    finally:
-        os.close(fd)
-    return m, addr - base
-
-
-def spi_registers():
-    """BIOS_CNTL, FLOCKDN e i Protected Range del controller SPI del W541
-    (Lynx Point), o un errore. Il M920x lo legge tools/update.py (protection)."""
-    try:
-        lpc = "/sys/bus/pci/devices/0000:00:1f.0"
-        dev = int(rd(lpc + "/device", "0x0"), 16)
-        if rd(lpc + "/vendor") == "0x8086" and dev & 0xFF00 in (0x8C00, 0x9C00):
-            with open(lpc + "/config", "rb") as f:
-                cfg = f.read(256)
-            bios_cntl = cfg[0xDC]
-            rcba = struct.unpack_from("<I", cfg, 0xF0)[0]
-            if not rcba & 1:
-                return None, "RCBA non abilitato"
-            m, off = map_mmio((rcba & 0xFFFFC000) + 0x3800)
-            hsfs = struct.unpack_from("@H", m, off + 0x04)[0]
-            fpr = [struct.unpack_from("@I", m, off + 0x74 + 4 * n)[0] for n in range(5)]
-            return {"ctrl": "ICH9 SPI (Lynx Point)", "bios_cntl": bios_cntl, "flockdn": bool(hsfs & HSFSTS_FLOCKDN),
-                    "fpr": fpr}, None
-        return None, "controller SPI non riconosciuto"
-    except (OSError, ValueError, OverflowError, struct.error, IndexError) as e:
-        return None, "%s (serve iomem=relaxed?)" % e
-
-
-def flash_fast_spi(p, details):
-    """FLASH-01 sul M920x, con la sonda di tools/update.py (spi_protection):
-    (il PR che copre WP_RO o None, FLOCKDN, errore)."""
-    if not p["root"] or not p["regs"] or "error" in p:
-        return None, None, p.get("error") or "serve root"
+def flash_spi(p, details):
+    """FLASH-01 con la sonda di tools/update.py (spi_protection), sul M920x e
+    sul W541: (i PR che coprono tutta WP_RO o None, se sono bloccati, FLOCKDN
+    o None, errore)."""
+    if not p["root"]:
+        return None, None, None, "serve root"
+    lpt = p.get("ctrl") == "lpt"
+    bc = p.get("bios_cntl")
+    if bc is not None:
+        if lpt:
+            details.append("Lynx Point 00:1f.0: BIOS_CNTL 0x%02x (BIOSWE %d, BLE %d, SMM_BWP %d)%s" % (
+                bc, bc & 1, bc >> 1 & 1, bc >> 5 & 1, ", GCS 0x%08x (BILD %d)" % (p["gcs"], p["gcs"] & 1)
+                if "gcs" in p else ""))
+        else:
+            details.append("fast SPI 00:1f.5: BIOS_CNTL 0x%02x (BIOSWE %d, BLE %d, EISS %d)" % (
+                bc, bc & 1, bc >> 1 & 1, bc >> 5 & 1))
+    if not p.get("regs") or "error" in p:
+        if bc is not None:
+            # BIOS_CNTL viene dallo spazio PCI, anche senza /dev/mem
+            smm, by_smi = update.bios_lock_state(p)
+            details.append("BIOS Lock: %s" % update.bios_lock_text(p, {"smm_only": smm, "smm_by_smi": by_smi}))
+        return None, None, None, p.get("error") or "registri non letti"
     v = update.spi_verdict(p)
-    bc = p["bios_cntl"]
-    details.append("fast SPI 00:1f.5: BIOS_CNTL 0x%02x (BIOSWE %d, BLE %d, EISS %d), FLOCKDN %s" % (
-        bc, bc & 1, bc >> 1 & 1, bc >> 5 & 1, "si'" if v["flockdn"] else "no"))
+    details[-1] += ", FLOCKDN %s" % ("si'" if v["flockdn"] else "no")
     for r in v["prs"]:
         details.append("%s 0x%07x-0x%07x%s%s" % (r["name"], r["lo"], r["hi"], " scrittura protetta" if r["wpe"]
                                                  else "", (" (" + ", ".join(r["areas"][:4]) + ")") if r["areas"]
@@ -1148,7 +1291,18 @@ def flash_fast_spi(p, details):
     for label, fn in (("WP_RO", update.ro_text), ("BIOS Lock", update.bios_lock_text),
                       ("slot RW", update.slots_text)):
         details.append("%s: %s" % (label, fn(p, v)))
-    return ", ".join(v["ro_by"]) if v["ro"] == "ok" else None, v["flockdn"], None
+    full = v["ro"] in ("ok", "unlocked")
+    return ", ".join(v["ro_by"]) if full else None, v["ro"] == "ok", v["flockdn"], None
+
+
+def logged_fpr(fw):
+    """I Protected Range che coreboot dice di aver scritto in questo avvio,
+    e WP_RO della FMAP di CBMEM: ([(n, inizio, fine)], WP_RO o None)."""
+    prs = [(int(m.group(1)), int(m.group(2), 16), int(m.group(3), 16)) for m in fw.grep(FPR_LOG)] \
+        if fw.log is not None else []
+    fmap = fw.raw(CBMEM_ID_FMAP)
+    areas = update.fmap_areas(fmap) if fmap else None
+    return prs, (areas or {}).get("WP_RO")
 
 
 def check_flash(fw, rep):
@@ -1157,39 +1311,23 @@ def check_flash(fw, rep):
     lock = [m.group(0) for m in fw.grep(r"^BM-LOCKDOWN: (Enabled bootmedia protection.*|Boot media protection off.*|"
                                         r"Failed to enable.*|Could not find region.*)")] if fw.log is not None else []
     details.extend("log: " + l for l in lock)
-    covered, flockdn, err = None, None, None
-    p = update.spi_protection()
+    covered, locked, flockdn, err, from_log = None, None, None, None, None
+    p = spi_probe(fw)
     if p is not None:
-        covered, flockdn, err = flash_fast_spi(p, details)
+        covered, locked, flockdn, err = flash_spi(p, details)
     else:
-        areas = None
-        fmap = fw.raw(CBMEM_ID_FMAP)
-        if fmap:
-            areas = update.fmap_areas(fmap)
-        regs, err = spi_registers()
-        if regs:
-            bc = regs["bios_cntl"]
-            flockdn = regs["flockdn"]
-            details.append("%s: BIOS_CNTL 0x%02x (scrittura %s, BLE %s, SMM_BWP %s), FLOCKDN %s" % (
-                regs["ctrl"], bc & 0xFF, "abilitata" if bc & BIOS_CNTL_WPD else "chiusa",
-                "si'" if bc & BIOS_CNTL_BLE else "no", "si'" if bc & BIOS_CNTL_SMM_BWP else "no",
-                "si'" if flockdn else "no"))
-            wp = areas.get("WP_RO") if areas else None
-            for n, v in enumerate(regs["fpr"]):
-                if not v:
-                    continue
-                lo, hi = (v & 0x7FFF) << 12, (((v >> 16) & 0x7FFF) << 12) | 0xFFF
-                names = [k for k, (o, s) in (areas or {}).items() if o >= lo and o + s - 1 <= hi and s]
-                details.append("PR%d 0x%07x-0x%07x%s%s" % (n, lo, hi, " scrittura protetta" if v & FPR_WPE else "",
-                                                          (" (" + ", ".join(sorted(names)[:4]) + ")") if names else ""))
-                if wp and v & FPR_WPE and lo <= wp[0] and hi >= wp[0] + wp[1] - 1:
-                    covered = "PR%d" % n
-            if wp and covered is None:
-                details.append("WP_RO 0x%07x-0x%07x in nessun Protected Range" % (wp[0], wp[0] + wp[1] - 1))
-            details.append("BIOS Lock %s" % ("acceso: solo SMM scrive il flash" if bc & BIOS_CNTL_BLE and
-                                             bc & BIOS_CNTL_SMM_BWP else "spento (il default)"))
+        err = "nessun controller conosciuto (00:1f.5 Cannon Point, 00:1f.0 Lynx Point)"
     if err:
         details.append("registri SPI non letti: %s" % err)
+        # senza i registri, il PR che coreboot ha scritto: dice cosa e' successo
+        # all'avvio, non FLOCKDN ne' un PR cambiato dopo
+        prs, wp = logged_fpr(fw)
+        for n, lo, hi in prs:
+            details.append("log: PR%d 0x%07x-0x%07x" % (n, lo, hi))
+            if wp and lo <= wp[0] and hi >= wp[0] + wp[1] - 1:
+                from_log = "PR%d" % n
+        if prs and not wp:
+            details.append("WP_RO non confrontata: FMAP di CBMEM non letta (cbmem -r %x)" % CBMEM_ID_FMAP)
     if flockdn is False:
         status = "WARN"
         details.append("FLOCKDN spento: i Protected Range si possono ancora cambiare")
@@ -1201,8 +1339,16 @@ def check_flash(fw, rep):
         status = "WARN"
         summary = ("Firmware protection spenta (Security > Flash protection): riaccenderla dopo flashrom; "
                    "WP_RO scrivibile")
+    elif covered is not None and not locked:
+        # FLOCKDN spento (e sul M920x nessun PRx_LOCKDN): il PR c'e' ma si toglie
+        status = "WARN"
+        summary = "WP_RO in %s, ma il PR non e' bloccato (FLOCKDN spento): si puo' togliere" % covered
     elif covered is not None:
         summary = "WP_RO protetto (%s)%s" % (covered, ", registri bloccati" if flockdn else "")
+    elif from_log is not None:
+        status = "INFO"
+        summary = "WP_RO protetto all'avvio secondo il log (%s dal log; registri non letti, FLOCKDN non noto)" % \
+            from_log
     elif lock:
         status = "WARN" if flockdn is not None else "INFO"
         summary = "il log dice protezione accesa, ma WP_RO non e' in un Protected Range" \
@@ -1210,7 +1356,65 @@ def check_flash(fw, rep):
     else:
         status, summary = "INFO", "nessuna riga BM-LOCKDOWN nel log"
     rep.add("FLASH-01", "Protezione del flash", status, summary, details,
-            {"wp_ro_protected": covered is not None, "option_off": off})
+            {"wp_ro_protected": covered is not None and bool(locked), "wp_ro_from_log": from_log,
+             "option_off": off})
+
+
+EC_CVE = "CVE-2019-6171"
+
+
+def ec_version(fw):
+    """[(fonte, build ID)] della versione dell'EC H8: la riga di h8.c nel log
+    ("H8: EC Firmware ID GMHT30WW-1.x, Version ...") e la stringa OEM di SMBIOS
+    ("IBM ThinkPad Embedded Controller -[GMHT30WW-1.x]-")."""
+    out = []
+    for m in fw.grep(r"^H8: EC Firmware ID (\S+), Version (\S+)$") if fw.log is not None else []:
+        out.append(("log, Version %s" % m.group(2), m.group(1)))
+    try:
+        for s in update.oem_strings() or []:
+            m = EC_STRING_RE.match(s)
+            if m:
+                out.append(("SMBIOS tipo 11", m.group(1)))
+    except OSError:
+        pass
+    return out
+
+
+def check_ec(fw, rep):
+    """EC-01: la versione del firmware dell'EC (H8, ThinkPad): sul W541 almeno
+    la 1.15 (GMHT30WW), che corregge CVE-2019-6171. ouroBIOS non aggiorna l'EC."""
+    found = ec_version(fw)
+    if not found:
+        if fw.board == "w541":
+            rep.add("EC-01", "Firmware dell'EC", "SKIP",
+                    "versione dell'EC non trovata (ne' 'H8: EC Firmware ID' nel log ne' la stringa OEM)")
+        return
+    details = ["%s: %s" % (src, ident) for src, ident in found]
+    builds = {}
+    for _, ident in found:
+        m = EC_BUILD_RE.match(ident)
+        if m:
+            builds[m.group(1)] = min(builds.get(m.group(1), 99), int(m.group(2)))
+    ident = found[0][1].split("-")[0]
+    known = [(fam, n) for fam, n in builds.items() if fam in EC_MIN]
+    if not known:
+        rep.add("EC-01", "Firmware dell'EC", "INFO", "EC %s: versione minima non nota per questa famiglia" % ident,
+                details)
+        return
+    fam, n = known[0]
+    need, ecp = EC_MIN[fam]
+    if n < need:
+        rep.add("EC-01", "Firmware dell'EC", "WARN",
+                "EC %s%02dWW piu' vecchio della %s (%s%02dWW), senza la correzione di %s" % (
+                    fam, n, ecp, fam, need, EC_CVE),
+                details + ["ouroBIOS non aggiorna l'EC: lo fa solo il firmware Lenovo 2.42 (GNUJ39US), cioe' "
+                           "rimettere tutto il firmware originale con un programmatore esterno, aggiornare, poi "
+                           "di nuovo ouroBIOS (docs/flashing.md)"],
+                {"ec": "%s%02dWW" % (fam, n), "min": "%s%02dWW" % (fam, need)})
+        return
+    rep.add("EC-01", "Firmware dell'EC", "PASS", "EC %s%02dWW, dalla %s (%s%02dWW) in su: con la correzione di %s"
+            % (fam, n, ecp, fam, need, EC_CVE), details,
+            {"ec": "%s%02dWW" % (fam, n), "min": "%s%02dWW" % (fam, need)})
 
 
 def check_smbios(fw, rep):
@@ -1522,6 +1726,7 @@ def main():
     guard(check_fan, "FAN-01", "Ventola e temperature", fw, rep)
     guard(check_tpm, "TPM-01", "TPM", fw, rep)
     guard(check_me, "ME-01", "Intel ME", fw, rep)
+    guard(check_ec, "EC-01", "Firmware dell'EC", fw, rep)
     guard(check_vboot, "VB-01", "vboot", fw, rep)
     guard(check_update, "UPD-01", "Aggiornamenti", fw, rep)
     guard(check_flash, "FLASH-01", "Protezione del flash", fw, rep)

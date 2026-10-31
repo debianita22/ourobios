@@ -15,7 +15,7 @@
 #   sudo python3 tools/update.py cancel
 #   python3 tools/update.py info w541-coreboot-v1.2.1-mrc.cap
 #   python3 tools/update.py vboot flash.bin            # da sudo flashrom -p internal -r flash.bin
-#   sudo python3 tools/update.py protection            # protezione del flash del M920x, solo letture
+#   sudo python3 tools/update.py protection            # protezione del flash (M920x, W541), solo letture
 #
 # Al posto della .cap va bene anche il pacchetto fwupd della release (.cab,
 # tools/fwupd-cab.py): se ne usa la capsula che contiene.
@@ -31,6 +31,7 @@
 # Solo la libreria standard di Python; openssl, se c'e', verifica anche la
 # firma (con --cert, o keys/capsule-signing.pem accanto a questo script).
 import argparse
+import errno
 import fcntl
 import gzip
 import hashlib
@@ -728,6 +729,36 @@ ME_MODE_TEXT = {
     5: "security override (messaggio HECI)",
 }
 ME_HFSTS_RE = re.compile(r"ME HFSTS: ((?:[0-9A-F]{8} ){5}[0-9A-F]{8})")
+# Sul W541 (ME 9, Lynx Point) le stesse due stringhe, da una copia dei
+# registri presa all'inizio di BS_DEV_INIT, prima che me_disable nasconda
+# l'HECI (mainboard/lenovo/haswell/me_status.c): HFS 0x40, HFS2 0x48 e 0x60,
+# 0x64, 0x68, 0x6c. Il riassunto guarda prima HFS2: un ME fermo nel BUP non e'
+# mai "acceso". Le frasi del firmware, in italiano
+ME9_TEXT = (
+    (r"Disabled \(AltMeDisable, BUP\)", "disattivata (AltMeDisable, BUP)"),
+    (r"Stopped in BUP \(state (0x[0-9a-f]{2})\)", "ferma nel BUP (stato %s)"),
+    (r"Disabled \(soft temporary disable\)", "disattivata (soft temporary disable)"),
+    (r"Enabled", "attiva"),
+    (r"Enabled, not ready \(state (\d+)\)", "attiva ma non pronta (stato %s)"),
+    (r"Security override \(jumper\)", "security override (jumper)"),
+    (r"Security override \(HECI message\)", "security override (messaggio HECI)"),
+    (r"Debug", "modo debug"),
+    (r"Mode (\d+)", "modo %s"),
+    (r"Not available", "non letta dal firmware (HECI spenta o nascosta all'avvio)"),
+)
+# lynxpoint/me.h: ME_HFS2_PHASE_BUP, ME_HFS2_STATE_BUP_CHECK_STRAP
+ME9_PHASE_BUP, ME9_STATE_CHECK_STRAP = 1, 0x0a
+# La prima release di ogni variante che scrive le stringhe (lo slot di una
+# release di prima, anche dopo un ritorno di vboot, non le ha). Sul W541 la
+# release che porta mainboard/lenovo/haswell/me_status.c non ha ancora un
+# tag: None finche' non esce, e il testo dice solo "la release con lo stato
+# del ME"
+ME_STRINGS_SINCE = {"m920x-fsp": "v1.4.0-rc4", "mrc": None, "nri": None}
+
+
+def me_strings_since(variant):
+    """La release dalla quale la variante scrive le stringhe del ME, per il testo."""
+    return ME_STRINGS_SINCE.get(variant) or "release con lo stato del ME"
 
 
 def smbios_structures(data):
@@ -765,19 +796,60 @@ def oem_strings():
     return None
 
 
-def me_status():
-    """Lo stato del ME dalle stringhe OEM di coreboot, in italiano; None se
-    il firmware non le scrive. PermissionError senza root."""
+def me_strings(strings):
+    """(riassunto, [6 parole]) delle stringhe OEM del ME, None dove mancano."""
     summary = words = None
-    for s in oem_strings() or []:
+    for s in strings or []:
         m = ME_HFSTS_RE.fullmatch(s)
         if m:
             words = [int(w, 16) for w in m.group(1).split()]
         elif s.startswith("ME: "):
             summary = s[4:]
+    return summary, words
+
+
+def me9_summary(h1, h2):
+    """Il riassunto di coreboot sul W541 (mainboard_me_summary()) da HFS e HFS2."""
+    ws, err, mode = h1 & 0xF, (h1 >> 12) & 0xF, (h1 >> 16) & 0xF
+    phase, state = h2 >> 28, (h2 >> 16) & 0xFF
+    if phase == ME9_PHASE_BUP and state == ME9_STATE_CHECK_STRAP and err == 0:
+        return "Disabled (AltMeDisable, BUP)"
+    if phase == ME9_PHASE_BUP:
+        return "Stopped in BUP (state 0x%02x)" % state
+    if mode == 0:
+        return "Enabled" if ws == ME_HFS1_CWS_NORMAL else "Enabled, not ready (state %d)" % ws
+    return {3: "Disabled (soft temporary disable)", 4: "Security override (jumper)",
+            5: "Security override (HECI message)", 2: "Debug"}.get(mode, "Mode %d" % mode)
+
+
+def me9_text(summary, words):
+    """Lo stato del ME del W541 in italiano: la frase del firmware (o, senza,
+    quella che direbbe dalle parole) e i numeri di HFS e HFS2."""
+    if summary is None and words:
+        summary = me9_summary(words[0], words[1])
+    text = summary
+    for rx, it in ME9_TEXT:
+        m = re.fullmatch(rx, summary or "")
+        if m:
+            text = it % m.groups() if m.groups() else it
+            break
+    if words:
+        h1, h2 = words[0], words[1]
+        text += ", stato di lavoro %d, modo %d, codice di errore %d, fase %d stato 0x%02x" % (
+            h1 & 0xF, (h1 >> 16) & 0xF, (h1 >> 12) & 0xF, h2 >> 28, (h2 >> 16) & 0xFF)
+    return text
+
+
+def me_status(board=None):
+    """Lo stato del ME dalle stringhe OEM di coreboot, in italiano; None se
+    il firmware non le scrive. board "w541": quelle del ME 9 (me9_text()).
+    PermissionError senza root."""
+    summary, words = me_strings(oem_strings())
     if words is None and summary is None:
         return None
-    if words:
+    if board == "w541":
+        text = me9_text(summary, words)
+    elif words:
         h1 = words[0]
         ws, err, mode = h1 & 0xF, (h1 >> 12) & 0xF, (h1 >> 16) & 0xF
         if mode == 0:
@@ -973,18 +1045,17 @@ def cmd_status(args):
         print("mappa:     vboot, due slot RW (una capsula scrive quello che non gira)")
     print("versione:  %s, minima per una capsula %s" % (version_str(fw["version"]), version_str(fw["lsv"])))
     board = FLAVOURS.get(fw["variant"], (None,))[0]
-    if board != "w541":
-        try:
-            me = me_status()
-        except PermissionError:
-            me = "non leggibile senza root (sudo)"
-        except OSError as e:
-            me = "tabelle SMBIOS non lette: %s" % e
-        if me is None and fw["variant"] == "m920x-fsp":
-            # anche lo slot di una release di prima, dopo un ritorno di vboot
-            me = "non indicato da questo firmware (prima della v1.4.0-rc4)"
-        if me:
-            print("ME:        %s" % me)
+    try:
+        me = me_status(board)
+    except PermissionError:
+        me = "non leggibile senza root (sudo)"
+    except OSError as e:
+        me = "tabelle SMBIOS non lette: %s" % e
+    if me is None and fw["variant"] in ME_STRINGS_SINCE:
+        # anche lo slot di una release di prima, dopo un ritorno di vboot
+        me = "non indicato da questo firmware (prima della %s)" % me_strings_since(fw["variant"])
+    if me:
+        print("ME:        %s" % me)
     if fw["last_version"]:
         print("ultimo:    %s, %s" % (version_str(fw["last_version"]), attempt_str(fw["last_status"])))
         # riuscito vuol dire scritto: se lo slot nuovo non si verifica o non
@@ -1004,7 +1075,8 @@ def cmd_status(args):
     print("su disco:  %s" % ("supportato" if cod_supported() else "NON supportato da questo firmware"))
     # prima dell'ESP: senza root o senza ESP status finisce li'
     for label, text in protection_lines():
-        print("%-11s%s" % (label + ":", text))
+        # "protezione:" e' lunga quanto la colonna
+        print("%-11s%s" % (label + ":" + (" " if len(label) >= 10 else ""), text))
     armed = bool(os_indications() & FILE_CAPSULE_DELIVERY)
     try:
         esp = find_esp(args.esp)
@@ -1501,13 +1573,15 @@ def nv_try_other(region, tries=2):
 
 def build_flavour(name, size):
     """La variante (chiave di FLAVOURS) di una build dal suo nome
-    (ouroBIOS-v1.4.0-rc4-m920x-fsp, ouroBIOS-ci-151-d0aaa35-m920x-fsp), o dalla
-    dimensione del flash."""
-    m = re.search(r"-((?:[a-z0-9]+-)?(?:mrc|nri|fsp))$", name or "")
-    if m and m.group(1) in FLAVOURS:
-        return m.group(1)
+    (ouroBIOS-v1.4.0-rc4-m920x-fsp, ouroBIOS-ci-151-d0aaa35-m920x-fsp,
+    ouroBIOS-v1.4.0-rc4-nri), o dalla dimensione del flash se una sola
+    variante ce l'ha; None se non si sa (chi chiama usa REGIONS: rifa' il
+    training, il lato sicuro)."""
+    for f in sorted(FLAVOURS, key=len, reverse=True):
+        if (name or "").endswith("-" + f):
+            return f
     sized = [f for f, (_, _, s) in FLAVOURS.items() if s == size]
-    return sized[0] if sized else None
+    return sized[0] if len(sized) == 1 else None
 
 
 def cmd_other_slot(args):
@@ -1801,16 +1875,23 @@ def cb_options(region, names, region_size=None):
 # --- la protezione del flash ---------------------------------------------------
 #
 # Solo letture, e mai flashrom: anche per leggere riscrive BIOS_CNTL e, con
-# FLOCKDN spento, toglie i Protected Range. Lo spazio PCI del controller SPI
-# 00:1f.5, alcuni registri del suo BAR0 (mmap PROT_READ di resource0) e la
-# regione BIOS come la vede la CPU sotto i 4 GiB (/dev/mem): la FMAP e le
-# opzioni in SMMSTORE. Registri da soc/intel/common/block/fast_spi/fast_spi_def.h,
-# FRACC, FREG e GPR0 da flashrom (ichspi.c) e dal kernel (spi-intel.c). I file
-# intel_spi_protected e intel_spi_bios_locked del kernel dicono la politica del
-# driver, non i registri: non si usano. Sul W541 00:1f.5 e' un altro dispositivo.
+# FLOCKDN spento, toglie i Protected Range. Sul M920x lo spazio PCI del
+# controller SPI 00:1f.5 e alcuni registri del suo BAR0 (mmap PROT_READ di
+# resource0); sul W541 lo spazio PCI dell'LPC 00:1f.0 e una pagina di /dev/mem
+# a RCBA + 0x3000 (lpt_protection()). Poi su tutti e due la regione BIOS come
+# la vede la CPU sotto i 4 GiB (/dev/mem): la FMAP e le opzioni in SMMSTORE.
+# Registri da soc/intel/common/block/fast_spi/fast_spi_def.h e
+# southbridge/intel/common/spi.c, FRACC/FRAP, FREG e GPR0 da flashrom
+# (ichspi.c) e dal kernel (spi-intel.c). I file intel_spi_protected e
+# intel_spi_bios_locked del kernel dicono la politica del driver, non i
+# registri: non si usano. Sul W541 00:1f.5 e' un altro dispositivo.
 FAST_SPI_IDS = {0xa324: "Cannon Point-H"}
 SPI_BIOS_CONTROL = 0xdc
+# BIOS_CNTL: i bit 0, 1 e 5 hanno lo stesso posto su Cannon Point (WPD, BLE,
+# EISS) e su Lynx Point (BIOSWE, BLE, SMM_BWP); BILD e' il bit 7 solo su
+# Cannon Point (su Lynx Point e' riservato, e il bit 4 e' TSS, il Top Swap)
 BC_WPD, BC_BLE, BC_EISS, BC_BILD = 1 << 0, 1 << 1, 1 << 5, 1 << 7
+BC_SMM_BWP, BC_TSS = BC_EISS, 1 << 4
 SPIBAR_BFPREG, SPIBAR_HSFSTS, SPIBAR_DLOCK, SPIBAR_FRACC = 0x00, 0x04, 0x0c, 0x50
 SPIBAR_FREG0, SPIBAR_FPR0, SPIBAR_GPR0 = 0x54, 0x84, 0x98
 FREG_COUNT, FPR_COUNT = 12, 5
@@ -1830,28 +1911,74 @@ LOCK_OPTIONS = {"bootmedia_lock": 1, "bios_lock": 0}
 # Le regioni che scrive una capsula: lo slot, il record di vboot, le variabili
 CAPSULE_WRITES = ("RW_SECTION_A", "RW_SECTION_B", "RW_NVRAM", "SMMSTORE")
 
+# Lynx Point, il W541: il controller SPI (struct ich9_spi_regs di
+# southbridge/intel/common/spi.c) e' nel RCBA, che l'LPC 00:1f.0 dice a 0xf0
+# (rcba.h). Gli LPC di southbridge/intel/lynxpoint/lpc.c (pci_device_ids,
+# nomi da pci_ids.h), non Wildcat Point, la cui finalize e' un'altra
+LPC_PCI = os.path.join(SYSROOT, "sys/bus/pci/devices/0000:00:1f.0")
+LPT_LPC_IDS = {
+    0x8c41: "Lynx Point mobile, sample", 0x8c42: "Lynx Point desktop, sample", 0x8c44: "Lynx Point Z87",
+    0x8c46: "Lynx Point Z85", 0x8c49: "Lynx Point HM86", 0x8c4a: "Lynx Point H87", 0x8c4b: "Lynx Point HM87",
+    0x8c4c: "Lynx Point Q85", 0x8c4e: "Lynx Point Q87", 0x8c4f: "Lynx Point QM87", 0x8c50: "Lynx Point B85",
+    0x8c52: "Lynx Point C222", 0x8c54: "Lynx Point C224", 0x8c56: "Lynx Point C226", 0x8c5c: "Lynx Point H81",
+    0x8cc1: "Lynx Point mobile, sample (9)", 0x8cc2: "Lynx Point desktop, sample (9)",
+    0x8cc3: "Lynx Point HM97", 0x8cc4: "Lynx Point Z97", 0x8cc6: "Lynx Point H97",
+    0x9c41: "Lynx Point-LP, sample", 0x9c43: "Lynx Point-LP premium", 0x9c45: "Lynx Point-LP mainstream",
+    0x9c47: "Lynx Point-LP value",
+}
+LPC_RCBA, RCBA_EN, RCBA_MASK = 0xf0, 1, 0xffffc000
+# CONFIG_FIXED_RCBA_MMIO_BASE, e i 16 KiB che il DSDT riserva (PDRC, PNP0C02)
+RCBA_FIXED, RCBA_SIZE = 0xfed1c000, 0x4000
+# La pagina letta, RCBA + 0x3000: GCS (BILD, bit 0) e BUC (Top Swap, bit 0)
+# di finalize.c e di flashrom (chipset_enable.c), e i registri SPI da 0x800
+RCBA_PAGE, LPT_GCS, LPT_BUC, LPT_SPIBAR = 0x3000, 0x410, 0x414, 0x800
+GCS_BILD, BUC_TS = 1 << 0, 1 << 0
+LPT_BFPR, LPT_HSFS, LPT_FRAP, LPT_FREG0, LPT_PR0 = 0x00, 0x04, 0x50, 0x54, 0x74
+LPT_FREG_COUNT = 5
+# i soli dword letti dei registri SPI: mai FDATA (0x10-0x4f), SSFS, SSFC,
+# PREOP, OPTYPE e OPMENU (0x90-0x9f), FDOC e FDOD (0xb0-0xb7)
+LPT_SPIBAR_READ = ([LPT_BFPR, LPT_HSFS, LPT_FRAP] + [LPT_FREG0 + 4 * n for n in range(LPT_FREG_COUNT)]
+                   + [LPT_PR0 + 4 * n for n in range(FPR_COUNT)])
+# Le altre opzioni del W541 che si leggono da SMMSTORE (southbridge/intel/
+# lynxpoint/cfr.h: me_disable, default CONFIG_DISABLE_ME_PCI, acceso)
+LPT_OPTIONS = {"me_disable": 1}
+# La regione BIOS del W541 (SI_BIOS di configs/w541.fmd), per leggere le
+# opzioni senza i registri SPI quando cbmem non da' la FMAP dell'avvio: vale
+# solo se window_fmap() ci trova la FMAP dove deve essere
+LPT_BIOS_REGION = (0x500000, 0xbfffff)
+# Il driver del kernel del controller SPI di Lynx Point (lpc_ich.c, "intel-spi")
+INTEL_SPI_PLATFORM = os.path.join(SYSROOT, "sys/bus/platform/devices/intel-spi")
+IOMEM = os.path.join(SYSROOT, "proc/iomem")
+LOCKDOWN = os.path.join(SYSROOT, "sys/kernel/security/lockdown")
+
 
 def flash_range(v):
     """(inizio, fine compresa) di un registro FREG, BFPREG, FPR o GPR."""
     return (v & 0x7fff) << 12, (((v >> 16) & 0x7fff) << 12) | 0xfff
 
 
-def read_spibar(path):
-    """I dword SPIBAR_READ del BAR0, da un mmap in sola lettura di resource0."""
+def read_dwords(path, offset, offsets):
+    """I dword agli offset offsets della pagina di 4 KiB di path (resource0, o
+    /dev/mem) che inizia a offset, da un mmap in sola lettura."""
     fd = os.open(path, os.O_RDONLY | os.O_SYNC)
     try:
-        mm = mmap.mmap(fd, 0x1000, mmap.MAP_SHARED, mmap.PROT_READ)
+        mm = mmap.mmap(fd, 0x1000, mmap.MAP_SHARED, mmap.PROT_READ, offset=offset)
     finally:
         os.close(fd)
     try:
         # letture allineate da 32 bit, come un volatile in C
         r = memoryview(mm).cast("I")
         try:
-            return {off: r[off // 4] for off in SPIBAR_READ}
+            return {off: r[off // 4] for off in offsets}
         finally:
             r.release()
     finally:
         mm.close()
+
+
+def read_spibar(path):
+    """I dword SPIBAR_READ del BAR0, da un mmap in sola lettura di resource0."""
+    return read_dwords(path, 0, SPIBAR_READ)
 
 
 def window_fmap(mm, top):
@@ -1872,9 +1999,17 @@ def window_fmap(mm, top):
 
 
 def spi_protection(devmem=None):
-    """La protezione del flash in questo avvio, letta e mai scritta. None se
-    00:1f.5 non e' un controller di FAST_SPI_IDS; {"root": False} senza root.
-    devmem: (file, indirizzo fisico del suo primo byte) al posto di /dev/mem."""
+    """La protezione del flash in questo avvio, letta e mai scritta: il
+    controller del M920x (fast_spi_protection()) o quello del W541
+    (lpt_protection()). None se non c'e' nessuno dei due; {"root": False}
+    senza root. devmem: (file, indirizzo fisico del suo primo byte) al posto
+    di /dev/mem."""
+    p = fast_spi_protection(devmem)
+    return lpt_protection(devmem) if p is None else p
+
+
+def fast_spi_protection(devmem=None):
+    """Cannon Point (M920x): None se 00:1f.5 non e' un controller di FAST_SPI_IDS."""
     try:
         dev = int(read_text(os.path.join(SPI_PCI, "device")) or "", 16)
     except ValueError:
@@ -1891,9 +2026,9 @@ def spi_protection(devmem=None):
     # senza root sysfs da' solo i primi 64 byte dello spazio PCI
     if len(cfg) < 256:
         return {"root": False}
-    p = {"root": True, "device": dev, "bios_cntl": cfg[SPI_BIOS_CONTROL],
+    p = {"root": True, "ctrl": "cnp", "device": dev, "bios_cntl": cfg[SPI_BIOS_CONTROL],
          "bar": struct.unpack_from("<I", cfg, 0x10)[0] & ~0xfff, "regs": None, "areas": None,
-         "fmap": None, "options": dict.fromkeys(LOCK_OPTIONS), "options_note": "non lette"}
+         "fmap": None, "options": dict.fromkeys(LOCK_OPTIONS), "options_note": "non lette", "board_options": {}}
     try:
         p["regs"] = regs = read_spibar(os.path.join(SPI_PCI, "resource0"))
     except OSError as e:
@@ -1901,11 +2036,166 @@ def spi_protection(devmem=None):
         p["error"] = "PRx non leggibili (kernel lockdown o IO_STRICT_DEVMEM: %s)%s" % (
             e.strerror or e, "; FLOCKDN %s (intel_spi_locked)" % locked if locked in ("0", "1") else "")
         return p
+    return bios_window(p, regs, devmem, ())
+
+
+def iomem_entries():
+    """Le righe di /proc/iomem: [(inizio, fine, nome)] (da root, se no gli
+    indirizzi sono 0)."""
+    out = []
+    try:
+        with open(IOMEM) as f:
+            for line in f:
+                m = re.match(r"\s*([0-9a-f]+)-([0-9a-f]+) : (.*)$", line)
+                if m:
+                    out.append((int(m.group(1), 16), int(m.group(2), 16), m.group(3).strip()))
+    except OSError:
+        pass
+    return out
+
+
+def lpt_rcba_ok(base):
+    """Se il RCBA e' quello di coreboot, o almeno dentro una riserva PNP0C02
+    (pnp/system.c) di /proc/iomem: un valore qualunque mapperebbe la pagina di
+    un altro dispositivo."""
+    return base == RCBA_FIXED or any(a <= base and base + RCBA_SIZE - 1 <= b and name.startswith("pnp ")
+                                     for a, b, name in iomem_entries())
+
+
+def lpt_devmem_error(e, page):
+    """Perche' /dev/mem non da' la pagina dei registri, e cosa fare. EPERM e'
+    la kernel lockdown, o IO_STRICT_DEVMEM con i driver che la tengono
+    (intel-spi a RCBA + 0x3800, iTCO_wdt per GCS a RCBA + 0x3410); un altro
+    errore (niente /dev/mem, CONFIG_DEVMEM spento, un mmap rifiutato) si dice
+    com'e', iomem=relaxed li' non serve. Mai modprobe da qui."""
+    text = "registri SPI non leggibili da /dev/mem (%s)" % (getattr(e, "strerror", None) or e)
+    if getattr(e, "errno", None) == errno.EPERM:
+        mode = re.search(r"\[(\w+)\]", read_text(LOCKDOWN) or "")
+        claims = ["%x-%x %s" % (a, b, n) for a, b, n in iomem_entries() if page <= a <= page + 0xfff and b]
+        if mode and mode.group(1) != "none":
+            text += "; kernel lockdown (%s): /dev/mem resta chiusa" % mode.group(1)
+        else:
+            # iomem=relaxed toglie una protezione del kernel: solo per la
+            # verifica, e il rimedio e' ancora da provare su un W541 vero
+            text += "; kernel con IO_STRICT_DEVMEM%s: per questa sola verifica avvia una volta con " \
+                "iomem=relaxed, poi toglilo (da confermare su un W541)" % (
+                    " (la pagina 0x%08x e' anche di %s)" % (page, ", ".join(claims)) if claims else "")
+    locked = read_text(os.path.join(INTEL_SPI_PLATFORM, "intel_spi_locked"))
+    if locked in ("0", "1"):
+        text += "; FLOCKDN %s (intel_spi_locked)" % locked
+    return text
+
+
+def lpt_protection(devmem=None):
+    """Lynx Point (W541): None se 00:1f.0 non e' un LPC di LPT_LPC_IDS.
+    BIOS_CNTL e RCBA dallo spazio PCI dell'LPC, poi una pagina di /dev/mem in
+    sola lettura a RCBA + 0x3000: GCS, BUC e i registri SPI di LPT_SPIBAR_READ."""
+    try:
+        dev = int(read_text(os.path.join(LPC_PCI, "device")) or "", 16)
+    except ValueError:
+        return None
+    cls = read_text(os.path.join(LPC_PCI, "class")) or ""
+    if read_text(os.path.join(LPC_PCI, "vendor")) != "0x8086" or not cls.startswith("0x0601") \
+            or dev not in LPT_LPC_IDS:
+        return None
+    try:
+        with open(os.path.join(LPC_PCI, "config"), "rb") as f:
+            cfg = f.read(256)
+    except PermissionError:
+        cfg = b""
+    if len(cfg) < 256:
+        return {"root": False}
+    rcba = struct.unpack_from("<I", cfg, LPC_RCBA)[0]
+    base = rcba & RCBA_MASK
+    p = {"root": True, "ctrl": "lpt", "device": dev, "bios_cntl": cfg[SPI_BIOS_CONTROL], "rcba": base,
+         "bar": base + RCBA_PAGE + LPT_SPIBAR, "regs": None, "areas": None, "fmap": None,
+         "options": dict.fromkeys(LOCK_OPTIONS), "options_note": "non lette",
+         "board_options": dict.fromkeys(LPT_OPTIONS)}
+    if not rcba & RCBA_EN:
+        p["error"] = "RCBA spento (0xf0 = 0x%08x)" % rcba
+        return lpt_options_only(p, devmem)
+    if not lpt_rcba_ok(base):
+        p["error"] = "RCBA 0x%08x: non e' 0x%08x ne' in una riserva PNP0C02 di /proc/iomem, non lo leggo" % (
+            base, RCBA_FIXED)
+        return lpt_options_only(p, devmem)
+    path, phys = devmem or (DEVMEM, 0)
+    page = base + RCBA_PAGE
+    try:
+        w = read_dwords(path, page - phys, [LPT_GCS, LPT_BUC] + [LPT_SPIBAR + o for o in LPT_SPIBAR_READ])
+    except OSError as e:
+        p["error"] = lpt_devmem_error(e, page)
+        return lpt_options_only(p, devmem)
+    except (ValueError, OverflowError) as e:
+        p["error"] = "pagina 0x%08x non leggibile da %s: %s" % (page, path, e)
+        return lpt_options_only(p, devmem)
+    # Sotto le chiavi del M920x, cosi' spi_verdict() e le righe valgono per
+    # tutti e due: BFPR, HSFS e FRAP dove sono BFPREG, HSFSTS e FRACC, FREG0-4
+    # e PR0-4 dove sono FREG0-4 e FPR0-4 (PR0 qui e' a 0x74, li' a 0x84).
+    # DLOCK e GPR0 su Lynx Point non ci sono: 0, FLOCKDN blocca da solo anche
+    # i PR (flashrom, ichspi.c); FREG5-11 non usati (0x7fff)
+    spi = lambda off: w[LPT_SPIBAR + off]
+    regs = {SPIBAR_BFPREG: spi(LPT_BFPR), SPIBAR_HSFSTS: spi(LPT_HSFS), SPIBAR_FRACC: spi(LPT_FRAP),
+            SPIBAR_DLOCK: 0, SPIBAR_GPR0: 0}
+    for n in range(FREG_COUNT):
+        regs[SPIBAR_FREG0 + 4 * n] = spi(LPT_FREG0 + 4 * n) if n < LPT_FREG_COUNT else 0x7fff
+    for n in range(FPR_COUNT):
+        regs[SPIBAR_FPR0 + 4 * n] = spi(LPT_PR0 + 4 * n)
+    p["regs"], p["gcs"], p["buc"] = regs, w[LPT_GCS], w[LPT_BUC]
+    return bios_window(p, regs, devmem, LPT_OPTIONS)
+
+
+def boot_fmap():
+    """La FMAP di questo avvio da CBMEM (cbmem -r 464d4150), i suoi byte, o
+    None: solo sulla macchina vera e con cbmem."""
+    if SYSROOT != "/" or not shutil.which("cbmem"):
+        return None
+    try:
+        r = subprocess.run(["cbmem", "-r", "464d4150"], capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return r.stdout if r.returncode == 0 and r.stdout else None
+
+
+def fmap_bios_region(raw):
+    """(inizio, fine compresa) di SI_BIOS in una FMAP, se finisce dove finisce
+    il flash come la regione BIOS che la CPU vede sotto i 4 GiB; se no None."""
+    areas = fmap_areas(raw) if raw else None
+    pos = raw.find(b"__FMAP__") if areas else -1
+    if not areas or "SI_BIOS" not in areas or pos < 0 or pos + 22 > len(raw):
+        return None
+    o, s = areas["SI_BIOS"]
+    return (o, o + s - 1) if s and o + s == struct.unpack_from("<I", raw, pos + 18)[0] else None
+
+
+def lpt_options_only(p, devmem):
+    """Lynx Point senza i registri SPI (pagina del RCBA rifiutata, RCBA spento
+    o strano): le opzioni in SMMSTORE si leggono lo stesso dalla finestra della
+    regione BIOS sotto i 4 GiB, che intel-spi e iTCO_wdt non tengono. La regione
+    da SI_BIOS della FMAP dell'avvio, se no LPT_BIOS_REGION; p["error"] resta."""
+    raw = boot_fmap()
+    region = fmap_bios_region(raw)
+    p["bios_from"] = "SI_BIOS della FMAP dell'avvio" if region else "SI_BIOS di configs/w541.fmd"
+    return read_window(p, region or LPT_BIOS_REGION, devmem, LPT_OPTIONS, raw)
+
+
+def bios_window(p, regs, devmem, board_options):
+    """Per tutti e due i controller, con i registri letti: la regione BIOS
+    (BFPREG), poi read_window()."""
     bf = regs[SPIBAR_BFPREG]
     base, limit = flash_range(bf)
     if bf == 0xffffffff or limit <= base:
         p["error"] = "BFPREG 0x%08x non valido: il controller non risponde?" % bf
         return p
+    return read_window(p, (base, limit), devmem, board_options, boot_fmap())
+
+
+def read_window(p, bios, devmem, board_options, boot_raw):
+    """La finestra della regione BIOS bios (inizio, fine compresa) sotto i 4
+    GiB, la FMAP (quella dell'avvio, boot_raw da boot_fmap(), o quella nel
+    flash) e le opzioni in SMMSTORE: LOCK_OPTIONS in p["options"],
+    board_options in p["board_options"]; p["store_read"] se lo store si e'
+    guardato (allora un'opzione che manca e' davvero il suo default)."""
+    base, limit = bios
     p["bios"] = (base, limit)
     size = min(limit + 1 - base, BIOS_WINDOW_MAX)
     win = (1 << 32) - size
@@ -1922,14 +2212,8 @@ def spi_protection(devmem=None):
         p["fmap"] = "regione BIOS non leggibile da %s: %s" % (path, getattr(e, "strerror", None) or e)
     try:
         flash = window_fmap(mm, limit + 1) if mm else None
-        boot = None
         # quella dell'avvio, che i PR seguono (solo sulla macchina vera)
-        if SYSROOT == "/" and shutil.which("cbmem"):
-            try:
-                r = subprocess.run(["cbmem", "-r", "464d4150"], capture_output=True, timeout=30)
-                boot = fmap_areas(r.stdout) if r.returncode == 0 else None
-            except (OSError, subprocess.TimeoutExpired):
-                boot = None
+        boot = fmap_areas(boot_raw) if boot_raw else None
         p["areas"] = boot or flash
         if boot and flash:
             p["fmap"] = "quella dell'avvio (cbmem), uguale a quella nel flash" if boot == flash else \
@@ -1948,9 +2232,14 @@ def spi_protection(devmem=None):
                 hlen = struct.unpack_from("<H", head, 0x30)[0]
                 if hlen + 32 <= len(head):
                     n = min(n, hlen + struct.unpack_from("<I", head, hlen + 16)[0])
-                p["options"], p["options_note"] = cb_options(mm[woff:woff + n], list(LOCK_OPTIONS), smm[1])
+                opts, p["options_note"] = cb_options(mm[woff:woff + n], list(LOCK_OPTIONS) + list(board_options),
+                                                     smm[1])
+                p["options"] = {k: opts[k] for k in LOCK_OPTIONS}
+                p["board_options"] = {k: opts[k] for k in board_options}
             else:
                 p["options_note"] = "SMMSTORE vuota"
+            # vuota, rovinata o non sana coreboot usa i default: si sanno
+            p["store_read"] = True
     finally:
         if mm:
             mm.close()
@@ -1984,6 +2273,27 @@ def range_names(areas, lo, hi):
                   key=lambda n: ov[n])
 
 
+def bios_lock_state(p):
+    """BIOS Lock in questo avvio dal solo BIOS_CNTL (anche senza i registri
+    SPI): (solo SMM scrive la regione BIOS, e lo tiene l'SMI che rimette
+    BIOSWE/WPD a 0). L'opzione in SMMSTORE vale dal prossimo avvio o dalla
+    prossima ripresa da S3: anche li' ramstage rifa' i blocchi (lockdown.c a
+    BS_DEV_RESOURCES, la finalize di lpc.c) con le opzioni che trova."""
+    bc = p["bios_cntl"]
+    if p.get("ctrl") == "lpt":
+        # Lynx Point: SMM_BWP (R/WLO: acceso, resta fino al reset o a S3) basta da
+        # solo, la regione BIOS si scrive solo con InSMM.STS; senza, BLE con BIOSWE a 0,
+        # che l'SMI di BIOSWR rimette a 0 (lynxpoint/smihandler.c). coreboot
+        # scrive 0x09 (spento), 0x2a (acceso)
+        smm = bool(bc & BC_SMM_BWP) or (bool(bc & BC_BLE) and not bc & BC_WPD)
+        return smm, smm and not bc & BC_SMM_BWP
+    # Cannon Point: BLE con EISS, o BLE con WPD a 0. La finalize di SMM
+    # rimette WPD a 1 (fast_spi_init(), che azzera anche EISS) e poi a 0 solo
+    # se SMM applica il BIOS Lock, come l'SMI a ogni 0->1 (smihandler.c)
+    smm = bool(bc & BC_BLE) and (bool(bc & BC_EISS) or not bc & BC_WPD)
+    return smm, smm and not bc & BC_EISS
+
+
 def spi_verdict(p, areas=None):
     """Cosa vuol dire lo stato letto da spi_protection() (con i registri)."""
     regs = p["regs"]
@@ -2008,13 +2318,7 @@ def spi_verdict(p, areas=None):
         v["ro"] = "ok" if full and all(r["locked"] for r in mine) else \
             "unlocked" if full else "partial" if mine else "off"
         v["ro_by"] = [r["name"] for r in mine]
-    bc = p["bios_cntl"]
-    # BIOS Lock in questo avvio, dai registri: BLE con EISS, o BLE con WPD a 0.
-    # La finalize di SMM rimette WPD a 1 (fast_spi_init(), che azzera anche
-    # EISS) e poi a 0 solo se SMM applica il BIOS Lock, come l'SMI a ogni
-    # 0->1 (smihandler.c). L'opzione in SMMSTORE vale dal prossimo avvio
-    v["smm_only"] = bool(bc & BC_BLE) and (bool(bc & BC_EISS) or not bc & BC_WPD)
-    v["smm_by_smi"] = v["smm_only"] and not bc & BC_EISS
+    v["smm_only"], v["smm_by_smi"] = bios_lock_state(p)
     # la regione BIOS (1) e il descrittore (0) scrivibili dalla CPU (BRWA)
     v["bios_host_write"] = bool(fracc & (1 << 9))
     v["desc_writable"] = bool(fracc & (1 << 8)) and not covered(0, 0xfff, wp)
@@ -2039,11 +2343,14 @@ def protection_lines(devmem=None):
     except (OSError, Error, struct.error, ValueError) as e:
         return [("protezione", "non letta: %s" % e)]
     if p is None:
-        return [("protezione", "non verificabile su questa macchina (solo il controller SPI del M920x)")]
+        return [("protezione", "non verificabile su questa macchina (solo i controller SPI del M920x e del W541)")]
     if not p["root"]:
         return [("protezione", "serve root (sudo)")]
     if not p["regs"] or "error" in p:
-        return [("protezione", "%s; BIOS_CNTL 0x%02x" % (p.get("error"), p["bios_cntl"]))]
+        # BIOS_CNTL viene dallo spazio PCI: il BIOS Lock si sa anche cosi'
+        smm, by_smi = bios_lock_state(p)
+        return [("protezione", "%s; BIOS_CNTL 0x%02x" % (p.get("error"), p["bios_cntl"])),
+                ("BIOS Lock", bios_lock_text(p, {"smm_only": smm, "smm_by_smi": by_smi}))]
     v = spi_verdict(p)
     return [("WP_RO", ro_text(p, v)), ("BIOS Lock", bios_lock_text(p, v)), ("slot RW", slots_text(p, v))]
 
@@ -2062,37 +2369,44 @@ def ro_text(p, v):
     if v["ro"] is None:
         return "non trovata: FMAP non letta (%s)" % p.get("fmap")
     if v["ro"] in ("ok", "unlocked"):
-        text = "protetta fino al reset (%s)" % ", ".join(v["ro_by"])
+        text = "protetta fino al prossimo reset o ripresa da S3 (%s)" % ", ".join(v["ro_by"])
         if v["ro"] == "unlocked":
             text += ", ma FLOCKDN e' spento: i PR si possono togliere"
         if v["desc_writable"]:
             text += "; ma il descrittore e' scrivibile dalla CPU (UNLOCK_FLASH_REGIONS): si puo' aggirare"
         if not on:
-            text += "; spenta nel setup, vale dal prossimo avvio"
+            text += "; spenta nel setup, vale dal prossimo avvio o ripresa da S3"
         return text
     text = "protetta solo in parte (%s)" % ", ".join(v["ro_by"]) if v["ro"] == "partial" else "NON protetta"
     if not on:
         return text + " (Firmware protection spenta, anche nel setup)"
     why = "accesa nel setup" if opt is not None else "al default, accesa (%s)" % (p["options_note"] or
                                                                                    "nessuna variabile")
-    return text + "; Firmware protection %s: se cambiata dopo l'avvio vale dal prossimo, se no " \
+    return text + "; Firmware protection %s: se cambiata dopo l'avvio vale dal prossimo avvio o ripresa " \
+        "da S3, se no " \
         "sudo cbmem -1 | grep -E \"BM-LOCKDOWN|FPR\"" % why
 
 
 def bios_lock_text(p, v):
     opt = p["options"].get("bios_lock")
+    lpt = p.get("ctrl") == "lpt"
+    bc = p["bios_cntl"]
     if v["smm_only"]:
         text = "acceso: scrive solo il firmware in SMM"
         if v["smm_by_smi"]:
-            text += " (EISS a 0: lo tiene l'SMI che rimette WPD a 0)"
+            text += " (SMM_BWP a 0: lo tiene l'SMI che rimette BIOSWE a 0)" if lpt else \
+                " (EISS a 0: lo tiene l'SMI che rimette WPD a 0)"
         if opt == 0:
-            text += "; spento nel setup, vale dal prossimo avvio"
+            text += "; spento nel setup, vale dal prossimo avvio o ripresa da S3"
         return text
     text = "spento: il sistema puo' scrivere il flash"
-    if not p["bios_cntl"] & BC_WPD:
+    if not bc & BC_WPD:
         text += " (dopo aver acceso BIOSWE, come fa flashrom)"
+    elif lpt and bc & BC_BLE:
+        # BLE senza SMM_BWP: l'SMI di BIOSWR doveva rimettere BIOSWE a 0
+        text += " (BLE acceso ma BIOSWE a 1: l'SMI non l'ha rimesso a 0)"
     if opt == 1:
-        text += "; acceso nel setup, vale dal prossimo avvio"
+        text += "; acceso nel setup, vale dal prossimo avvio o ripresa da S3"
     return text
 
 
@@ -2116,15 +2430,22 @@ def slots_text(p, v):
 
 def check_flash_writable(areas, regions):
     """Prima di proporre flashrom (other-slot): le regioni sotto un PR non si
-    scrivono. Solo da root, sul controller del M920x, e solo come avviso per
-    il BIOS Lock: la copia del flash puo' venire da un'altra macchina."""
+    scrivono. Solo da root, sui controller del M920x e del W541, e solo come
+    avviso per il BIOS Lock: la copia del flash puo' venire da un'altra macchina."""
     if os.geteuid() != 0:
         return
     try:
         p = spi_protection()
     except (OSError, Error, struct.error, ValueError):
         return
-    if not p or not p.get("regs") or "error" in p:
+    if not p or not p.get("root"):
+        return
+    if not p.get("regs") or "error" in p:
+        # i PR no, ma BIOS_CNTL viene dallo spazio PCI: il BIOS Lock si sa
+        if bios_lock_state(p)[0]:
+            print(BIOS_LOCK_WARNING)
+        print("nota: i Protected Range di questo avvio non si leggono (update.py protection dice perche'): "
+              "se flashrom rifiuta di scrivere, e' li'")
         return
     v = spi_verdict(p, areas)
     blocked = sorted({r["name"] + " " + n for n in regions if n in areas
@@ -2132,25 +2453,77 @@ def check_flash_writable(areas, regions):
     if blocked:
         raise Error("in questo avvio %s: flashrom non le puo' scrivere (update.py protection)" % ", ".join(blocked))
     if v["smm_only"]:
-        print("attenzione: BIOS Lock acceso, flashrom non puo' scrivere: usa la capsula, o spegnilo nel "
-              "setup (Security > Flash protection) e riavvia")
+        print(BIOS_LOCK_WARNING)
+
+
+BIOS_LOCK_WARNING = ("attenzione: BIOS Lock acceso, flashrom non puo' scrivere: usa la capsula, o spegnilo nel "
+                     "setup (Security > Flash protection) e riavvia")
+
+
+def firmware_note():
+    """Una nota se il firmware che gira non e' ouroBIOS (un T440p, il firmware
+    Lenovo): i registri valgono, le opzioni e i default no."""
+    bios = read_text(BIOS_VERSION)
+    if bios and not (RELEASE_RE.search(bios.encode()) or CI_BUILD_RE.search(bios.encode())):
+        return "firmware %s, non ouroBIOS: i registri valgono, le opzioni e i loro default sono quelli di " \
+            "ouroBIOS" % bios
+    return None
+
+
+def print_options(p):
+    print("opzioni:     Firmware protection %s, BIOS Lock %s (in SMMSTORE: valgono dal prossimo avvio o "
+          "ripresa da S3)" % (option_text(p, "bootmedia_lock"), option_text(p, "bios_lock")))
+
+
+def unknown_ro(args, why):
+    """Lo stato di WP_RO non si sa: con --expect-ro esce con 2 (mai 1, che
+    con off vorrebbe dire protetta), se no e' un errore."""
+    if not args.expect_ro:
+        raise Error(why)
+    print("errore: %s" % why, file=sys.stderr)
+    print("atteso: WP_RO %s; stato di WP_RO non noto" % ("protetta" if args.expect_ro == "on" else "non protetta"))
+    return 2
 
 
 def cmd_protection(args):
-    p = spi_protection()
+    try:
+        p = spi_protection()
+    except (OSError, struct.error, ValueError) as e:
+        return unknown_ro(args, "protezione non letta: %s" % e)
     if p is None:
-        raise Error("00:1f.5 non e' il controller SPI del M920x (%s): niente da leggere su questa macchina"
-                    % ", ".join("8086:%04x" % d for d in FAST_SPI_IDS))
+        return unknown_ro(args, "ne' 00:1f.5 e' il controller SPI del M920x (%s) ne' 00:1f.0 un LPC Lynx Point "
+                          "(W541): niente da leggere su questa macchina" % ", ".join("8086:%04x" % d
+                                                                                   for d in FAST_SPI_IDS))
     if not p["root"]:
-        raise Error("serve root (sudo): lo spazio PCI del controller SPI e /dev/mem")
-    print("controller:  00:1f.5, 8086:%04x (%s), SPIBAR 0x%08x" % (p["device"], FAST_SPI_IDS[p["device"]],
-                                                                    p["bar"]))
+        return unknown_ro(args, "serve root (sudo): lo spazio PCI del controller SPI e /dev/mem")
+    lpt = p["ctrl"] == "lpt"
     bc = p["bios_cntl"]
-    print("BIOS_CNTL:   0x%02x: BIOSWE %d, BLE %d, EISS %d, BILD %d" % (
-        bc, bc & BC_WPD, bc >> 1 & 1, bc >> 5 & 1, bc >> 7 & 1))
+    if lpt:
+        print("controller:  00:1f.0 (LPC), 8086:%04x (%s), RCBA 0x%08x, SPIBAR 0x%08x" % (
+            p["device"], LPT_LPC_IDS[p["device"]], p["rcba"], p["bar"]))
+        # il bit 7 qui e' riservato: BILD e' in GCS
+        print("BIOS_CNTL:   0x%02x: BIOSWE %d, BLE %d, SMM_BWP %d, Top Swap %d (TSS)" % (
+            bc, bc & BC_WPD, bc >> 1 & 1, bc >> 5 & 1, bc >> 4 & 1))
+    else:
+        print("controller:  00:1f.5, 8086:%04x (%s), SPIBAR 0x%08x" % (p["device"], FAST_SPI_IDS[p["device"]],
+                                                                        p["bar"]))
+        print("BIOS_CNTL:   0x%02x: BIOSWE %d, BLE %d, EISS %d, BILD %d" % (
+            bc, bc & BC_WPD, bc >> 1 & 1, bc >> 5 & 1, bc >> 7 & 1))
+    note = firmware_note()
+    if note:
+        print("nota:        %s" % note)
     if not p["regs"] or "error" in p:
-        raise Error(p.get("error"))
+        # BIOS_CNTL viene dallo spazio PCI e le opzioni dalla finestra della
+        # regione BIOS: si dicono anche senza i registri SPI
+        if p.get("store_read"):
+            print_options(p)
+        smm, by_smi = bios_lock_state(p)
+        print("BIOS Lock:   %s" % bios_lock_text(p, {"smm_only": smm, "smm_by_smi": by_smi}))
+        return unknown_ro(args, p.get("error") or "registri SPI non letti")
     regs = p["regs"]
+    if lpt:
+        print("GCS:         0x%08x: BILD %d; BUC 0x%02x: Top Swap %d" % (
+            p["gcs"], p["gcs"] & GCS_BILD, p["buc"] & 0xff, p["buc"] & BUC_TS))
     base, limit = p["bios"]
     print("BIOS:        regione 0x%07x-0x%07x (%d MiB), sotto i 4 GiB da 0x%08x" % (
         base, limit, (limit + 1 - base) >> 20, p["window"]))
@@ -2164,20 +2537,25 @@ def cmd_protection(args):
     else:
         print("FMAP:        %s" % p["fmap"])
     hsfs, dlock, fracc = regs[SPIBAR_HSFSTS] & 0xffff, regs[SPIBAR_DLOCK], regs[SPIBAR_FRACC]
-    prl = [n for n in range(FPR_COUNT) if dlock & (DLOCK_PR0LOCKDN << n)]
-    print("blocchi:     FLOCKDN %d, PR bloccati %s (DLOCK 0x%08x), PRR34_LOCKDN %d, WRSDIS %d, "
-          "descrittore %s" % (
-              hsfs >> 15 & 1, ", ".join("PR%d" % n for n in prl) or "nessuno", dlock, hsfs >> 12 & 1,
-              hsfs >> 11 & 1, "attivo" if hsfs & HSFS_FDOPSS else "NON attivo (FDOPSS 0)"))
+    if lpt:
+        # niente DLOCK, PRR34_LOCKDN e WRSDIS: ci sono dalla serie 100
+        print("blocchi:     FLOCKDN %d (blocca anche PR0-PR4), descrittore %s" % (
+            hsfs >> 15 & 1, "attivo" if hsfs & HSFS_FDOPSS else "NON attivo (FDOPSS 0)"))
+    else:
+        prl = [n for n in range(FPR_COUNT) if dlock & (DLOCK_PR0LOCKDN << n)]
+        print("blocchi:     FLOCKDN %d, PR bloccati %s (DLOCK 0x%08x), PRR34_LOCKDN %d, WRSDIS %d, "
+              "descrittore %s" % (
+                  hsfs >> 15 & 1, ", ".join("PR%d" % n for n in prl) or "nessuno", dlock, hsfs >> 12 & 1,
+                  hsfs >> 11 & 1, "attivo" if hsfs & HSFS_FDOPSS else "NON attivo (FDOPSS 0)"))
     used = []
-    for n in range(FREG_COUNT):
+    for n in range(LPT_FREG_COUNT if lpt else FREG_COUNT):
         lo, hi = flash_range(regs[SPIBAR_FREG0 + 4 * n])
         if lo <= hi:
             used.append((n, lo, hi))
     name = lambda n: FREG_NAMES[n] if n < len(FREG_NAMES) else "regione %d" % n
     print("regioni:     %s" % ", ".join("%s 0x%07x-0x%07x" % (name(n), lo, hi) for n, lo, hi in used))
-    print("FRACC:       0x%08x: la CPU legge %s; scrive %s" % (
-        fracc, ", ".join(name(n) for n, _, _ in used if fracc >> n & 1) or "niente",
+    print("%-13s0x%08x: la CPU legge %s; scrive %s" % (
+        "FRAP:" if lpt else "FRACC:", fracc, ", ".join(name(n) for n, _, _ in used if fracc >> n & 1) or "niente",
         ", ".join(name(n) for n, _, _ in used if fracc >> (8 + n) & 1) or "niente"))
     v = spi_verdict(p, areas)
     for r in v["prs"]:
@@ -2186,13 +2564,12 @@ def cmd_protection(args):
             "/".join(k for k, on in (("scrittura", r["wpe"]), ("lettura", r["rpe"])) if on),
             " = " + " ".join(r["areas"]) if r["areas"] else "", "" if r["locked"] else ", NON bloccato"))
     if not v["prs"]:
-        print("PR, GPR0:    tutti vuoti")
-    print("opzioni:     Firmware protection %s, BIOS Lock %s (in SMMSTORE: valgono dal prossimo avvio)" % (
-        option_text(p, "bootmedia_lock"), option_text(p, "bios_lock")))
+        print("PR0-PR4:     tutti vuoti" if lpt else "PR, GPR0:    tutti vuoti")
+    print_options(p)
     print("WP_RO:       %s" % ro_text(p, v))
-    print("descrittore: %s" % ("scrivibile dalla CPU (FRACC, nessun PR su 0x0-0xfff): con WP_RO "
+    print("descrittore: %s" % ("scrivibile dalla CPU (%s, nessun PR su 0x0-0xfff): con WP_RO "
                                "protetta, si aggira al prossimo reset; il BIOS Lock non lo copre"
-                               if v["desc_writable"] else "non scrivibile dalla CPU"))
+                               % ("FRAP" if lpt else "FRACC") if v["desc_writable"] else "non scrivibile dalla CPU"))
     print("BIOS Lock:   %s" % bios_lock_text(p, v))
     unmapped = "non verificabile: %s attivi, %s" % (", ".join(v["unmapped"]), UNMAPPED)
     print("capsula:     %s" % ("NO: %s" % ", ".join(v["capsule_block"]) if v["capsule_block"] else
@@ -2323,12 +2700,12 @@ def main():
     p.add_argument("--all", action="store_true", help="anche quelle cancellate")
     p.set_defaults(func=cmd_vars)
 
-    p = sub.add_parser("protection", help="la protezione del flash in questo avvio (M920x): Protected Range su "
-                       "WP_RO, BIOS Lock, FLOCKDN, regioni della FMAP; solo letture")
+    p = sub.add_parser("protection", help="la protezione del flash in questo avvio (M920x e W541): Protected "
+                       "Range su WP_RO, BIOS Lock, FLOCKDN, regioni della FMAP; solo letture")
     p.add_argument("--flash", help="i nomi delle regioni da una copia del flash o da una release (.rom, .cap, .cab)")
     p.add_argument("--expect-ro", choices=("on", "off"),
                    help="esce con 1 se WP_RO non e' (on) o e' (off) protetta e bloccata, con 2 se non "
-                   "si sa (WP_RO non trovata nella FMAP)")
+                   "si sa (WP_RO non trovata nella FMAP, registri SPI non letti, senza root)")
     p.set_defaults(func=cmd_protection)
 
     p = sub.add_parser("vboot-work", help="cosa ha deciso vboot in questo avvio (sudo cbmem -r 0x78007343 > FILE)")
