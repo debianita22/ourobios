@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sat, 31 Oct 2026 15:04:13 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: No FSP-M HECI retries with the ME
+ disabled
+
+With the ME in soft temporary disable (the "me_state" setup option),
+FspMemoryInit took 15.24 s at every boot, constant to the millisecond,
+with a valid training cache ("does not need update") as after a
+training: FSP-M sends the ME its HECI messages (ChipsetInitMessage,
+SendDidMsg and the rest are on in its defaults), gets no answer and
+retries with its timeouts. A test build with DisableHeciRetry set
+brought FspMemoryInit down to 0.23 s and the boot to 9.9 s.
+
+Set FspmTestConfig.DisableHeciRetry when HFSTS1 says the ME is in soft
+temporary disable, read in romstage before FSP-M; an ME that runs keeps
+the retries, which can help it answer late. The same pattern as
+Dasharo's dasharo-issues #1874, where a default of the FSP waited on a
+bus that never answered.
+
+TEST=On the M920x with the ME disabled: build ci-156 (DisableHeciRetry
+set from the devicetree) gave FspMemoryInit 0.234 s against 15.24 s for
+ci-155 with the same cache. Still to test with this patch: the log line
+"ME disabled: no HECI retries in FSP-M", FspMemoryInit about 0.2 s, and
+with the ME enabled in the setup no such line and a normal boot.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/romstage.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/romstage.c b/src/mainboard/lenovo/m720q_m920q/romstage.c
+index d0ea9454c5..021d63ce2f 100644
+--- a/src/mainboard/lenovo/m720q_m920q/romstage.c
++++ b/src/mainboard/lenovo/m720q_m920q/romstage.c
+@@ -5,6 +5,7 @@
+ #include <device/pci_def.h>
+ #include <device/pci_ops.h>
+ #include <fsp/api.h>
++#include <intelblocks/cse.h>
+ #include <mainboard/ec.h>
+ #include <option.h>
+ #include <soc/cnl_memcfg_init.h>
+@@ -126,4 +127,15 @@ void mainboard_memory_init_params(FSPM_UPD *memupd)
+ 		memupd->FspmConfig.PcieRpEnableMask &= ~(1 << 5);
+ 
+ 	memupd->FspmConfig.Peg0Enable = peg_enable(memupd);
++
++	/*
++	 * With the ME in soft temporary disable (Security > Management Engine),
++	 * FSP-M's HECI messages get no answer, and its retries cost 15.2 s in
++	 * FspMemoryInit at every boot, a valid training cache or not. Without
++	 * them it takes 0.23 s. An ME that runs keeps them.
++	 */
++	if (cse_is_hfs1_com_soft_temp_disable()) {
++		memupd->FspmTestConfig.DisableHeciRetry = 1;
++		printk(BIOS_INFO, "ME disabled: no HECI retries in FSP-M\n");
++	}
+ }
+-- 
+2.47.3
+
