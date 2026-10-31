@@ -160,13 +160,132 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   from the commit of the release instead of `main`. The W541 still empties
   the cache at every update
   ([docs/update.md](docs/update.md#what-changes-and-what-stays)).
-- `tools/update.py status` also shows, on the M920x, the state of the ME
-  (from rc4) and of the flash protection: whether `WP_RO` is in a locked
-  Protected Range, *BIOS Lock*, whether flashrom can write the slots.
+- From rc4, on the W541, the state of its Intel ME, which `me_cleaner -S`
+  stops in its bring-up loader and whose HECI interface the firmware hides
+  by default, so that only the boot log told what it did: *General* →
+  *About this ThinkPad* → *Management Engine* in the setup, with the six
+  status registers (HFS1-6), the working state, the mode, the error code
+  and the progress phase in its help, and the two SMBIOS OEM strings of
+  the M920x (type 11, `ME: ...` and `ME HFSTS: ...`) for `dmidecode -t 11`
+  and `tools/update.py status` (0181). Lynx Point hides HECI before the
+  tables are written, so coreboot reads the registers earlier, when the
+  devices are initialized, without a message to the ME and not on S3
+  resume. The progress phase comes first: an ME stopped in the bring-up
+  loader by the AltMeDisable strap, as the one of the release images, is
+  *Disabled (AltMeDisable, BUP)*, any other stop there *Stopped in BUP
+  (state 0xNN)*, and only then the operation mode gives the texts of the
+  M920x. The help of *Intel ME interface (HECI)* no longer says that the ME
+  keeps running. None of the W541 changes of rc4 has run on the laptop
+  yet: [docs/testing.md](docs/testing.md) lists their tests, marked *not
+  yet tried*.
+- From rc4, *General* → *Boot* of the W541 has two of the switches of the
+  M920x, which its payload reads (0182, `edk2/0037`), both on by default:
+  *Boot from USB drives*, off to keep the USB drives of the laptop and the
+  dock out of the boot order and the boot menu (not a security setting: an
+  entry made by an OS, the Shell, CSMWrap, *Boot From File* and the
+  fallback path still start them), and *Boot menu prompt*, off to hide
+  "Press ESC" on the logo while Esc still opens the boot menu. The *Boot*
+  card is now always shown. No *Option ROMs* switch: the W541 payload runs
+  no option ROMs (`EDK2_LOAD_OPTION_ROMS` stays off), as the VBIOS of the
+  NVIDIA GPU is a legacy image for the OS only, and the one other card with
+  a ROM would be an ExpressCard, whose unsigned code would then run in the
+  firmware.
+- From rc4, three EC settings of the Lenovo setup of the W541, decoded from
+  its firmware, GNET94WW (0183): *Energy Saver* → *Power* → *Power on with
+  AC attached*, off by default, which starts the laptop, or resumes it from
+  hibernation, when the AC adapter is plugged in; *General* → *Sound* →
+  *Keyboard beep*, on by default, the beep of the EC for a key combination
+  that it does not handle; and *USB always on* → *AC and battery*, which
+  now does what it says. Before rc4 the devicetree set the EC bit that
+  keeps the yellow USB port unpowered on battery, so *AC and battery* most
+  likely acted as *AC only* in hibernation and power-off. **A W541 already
+  set to *AC and battery* powers that port on battery in hibernation and
+  power-off from rc4 on, which runs the battery down**; *AC only* keeps the
+  old behaviour, and the help of *USB always on* says what each value does.
+  The EC keeps these bits only while it has power, and a slot before rc4
+  (after a vboot fallback, or with `update.py other-slot`) writes the old
+  ones again. The other H8 ThinkPads, the T440p included, are unchanged.
+  Whether *Keyboard beep* changes anything is for the test on the laptop:
+  the Lenovo firmware also writes a beep mask that differs from ours by one
+  bit.
+- From rc4, *Security* → *Virtualization* → *Untrusted ExpressCard and
+  Thunderbolt* on the W541 (0184), off by default and shown with *Intel
+  VT-d* on: the root ports of the ExpressCard slot and of the Thunderbolt
+  port get the ACPI `ExternalFacingPort` property, and Linux with its
+  IOMMU on (`intel_iommu=on`) treats the devices behind them as untrusted,
+  with a DMA domain of their own and bounce buffers. The DMAR opt-in flag
+  stays off: nothing protects the memory before the OS (the payload has no
+  IOMMU driver), and Windows Kernel DMA Protection needs TPM 2.0, which the
+  W541 does not have. The comments of the DSDT, which called the two ports
+  the WWAN and the ExpressCard slot, are fixed.
+- From rc4, the EC events that the Lenovo firmware of the W541 reports to
+  the OS, which our DSDT dropped (0190), with the same HKEY codes: dock and
+  undock (0x4010, 0x4011), the thermal alarm of the EC (the thermal zone
+  notified, and 0x6022 at its critical level), the battery alarms (0x6011,
+  0x6012), NumLock (0x6000) and the 0x1009 hotkey when the OS enables it;
+  `thinkpad_acpi` makes kernel messages and netlink events of the alarms.
+  And the software mute handshake (`HAUM`, `SAUM`): `thinkpad_acpi` no
+  longer adds its *ThinkPad Console Audio Control* mixer on top of the EC,
+  and mute goes through the codec, as with the Lenovo firmware
+  (`thinkpad_acpi.software_mute=0` keeps the old way). The T440p, whose
+  Lenovo DSDT handles these events the same way, gets them too, NumLock
+  aside. Left out, with the reason in `ec.asl`: the events that the Lenovo
+  firmware drops too or handles in its SMM code, the CPU limits that the EC
+  asks for (they need a `_PPC` policy and a test with a smaller adapter),
+  the radio switch, the Ultrabay and sticky Fn
+  ([docs/roadmap.md](docs/roadmap.md#ec-events-left-out)). Checked in
+  `acpiexec` on the DSDTs of the W541 and the T440p.
+- From rc4, `nri`: the 1D training of the read timing, the write timing and
+  the read voltage of ranks 1-3 of each channel ran with the register file
+  of rank 0, and the W541 of [docs/raminit.md](docs/raminit.md) has four
+  ranks per channel. The fix of Angel Pons, not merged upstream yet
+  ([Gerrit 96694](https://review.coreboot.org/c/coreboot/+/96694), 0185),
+  with the revision of the saved training bumped to 3 (0186): a slot with
+  the fix never boots on a training made without it, and an older slot
+  never boots on one made with it, also after a vboot fallback. The first
+  boot of an rc4 slot trains, as after every W541 capsule. A DIMM with
+  more than the 10 column address bits that Haswell drives, as a 16 GiB
+  SO-DIMM of 8 Gb chips ([coreboot ticket
+  626](https://ticket.coreboot.org/issues/626): margins that look fine,
+  then corrupted memory), is left out with an error that names its slot,
+  and the laptop boots on the others (0188; `mrc.bin` and the Lenovo
+  firmware do not support them either). The native RAM init records its
+  timestamps as `mrc.bin` does, so `cbmem -t` and `tools/hw-report.py`
+  (MEM-01, BOOT-02) see it (0189). On both variants SMBIOS gives each slot
+  the size and ranks of its own module, also with two DIMMs of different
+  sizes in a channel (0187).
+- From rc4, the settings reset on an RTC power loss of the M920x (0175) has
+  its trigger for Haswell (0180): romstage deletes the setup options before
+  the first one is read, with a POST code before and one after, so that a
+  boot that follows one that hung there skips it; on Haswell the option
+  needs `CMOS_POST`. It stays off in the W541 builds
+  (`CONFIG_DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE` is not set in
+  `configs/w541-*.defconfig`) until the M920x passes its test (OPT-05 of
+  [docs/testing.md](docs/testing.md#setup-options-opt)) and the W541 is
+  checked for whether software can set its RTC power loss bit, which would
+  then turn *BIOS Lock* off at the next boot. A CMOS clear still keeps the
+  settings of a W541
+  ([docs/roadmap.md](docs/roadmap.md#settings-reset-on-the-w541)).
+- `tools/update.py status` also shows the state of the ME (on the M920x
+  from rc4, on the W541 from the first release with 0181) and of the flash
+  protection, on both boards: whether `WP_RO` is in a locked Protected
+  Range, *BIOS Lock*, whether flashrom can write the slots.
   `tools/update.py protection` reads it in detail from the registers of
   the SPI controller, each Protected Range mapped onto the regions of the
   flash map, without writing anything; `--expect-ro on|off` gives an exit
-  status for scripts ([docs/update.md](docs/update.md#flash-protection)).
+  status for scripts, 2 whenever it cannot tell
+  ([docs/update.md](docs/update.md#flash-protection)). On the W541 it reads
+  the SPI controller of Lynx Point, behind the LPC bridge, after a check of
+  its RCBA, through one read-only page of `/dev/mem`; *BIOS Lock* counts as
+  on with SMM_BWP set, or with BLE set and BIOSWE clear; `other-slot` warns
+  about *BIOS Lock* and the Protected Ranges there too. A kernel that
+  refuses the page (lockdown, or `IO_STRICT_DEVMEM` while `intel-spi` and
+  `iTCO_wdt` hold it) gets the reason and a hint, and *BIOS Lock* and the
+  saved options are still shown. On both boards the texts now say that the
+  protection holds until the next reset or S3 resume, and that a change of
+  the options applies from the next boot or resume. The names of the
+  release candidates and CI builds of `nri` (`-rc4-nri`, `ci-N-...-nri`),
+  which read as `mrc`, are recognised.
 - `tools/hw-report.py`: a read-only report of a running machine, PASS, WARN
   or FAIL per area with thresholds: boot time, the RAM init against the
   training cache (FspMemoryInit over 2 s with a valid cache is a warning,
@@ -175,6 +294,25 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   SMBIOS and ACPI tables; with a copy of the flash also the event log,
   `RW_NVRAM` and the saved options. [docs/testing.md](docs/testing.md): the
   release test matrix of the M920x and the W541.
+- `tools/hw-report.py` on the W541, written from the code of rc4 (it has not
+  run there yet): BOOT-03 no longer fails at every boot on the `[CRIT]` line
+  of the reduced ME (`intel_me_path: mbp is not ready!`); BOOT-04 no longer
+  takes the GPLV and `_DSM` messages, gone since v1.3.5, for known ones,
+  which would hide them coming back; MEM-01 and BOOT-02 take the RAM init of
+  `nri` from its timestamps (0189; the whole romstage on older slots), and
+  *Using cached memory parameters* counts as a valid cache; FLASH-01 reads
+  the registers through the probe of `update.py` on both boards and, when
+  the kernel refuses them, compares the Protected Range that coreboot logged
+  with `WP_RO` (`INFO`, never `PASS`); a Protected Range over `WP_RO` with
+  FLOCKDN off is a `WARN` on both boards; ME-01 takes the state from the
+  SMBIOS strings of 0181, or the `ME: HFSTS1-6` line of the log, against
+  *Intel ME interface (HECI)*. A new EC-01 warns when the EC firmware is
+  older than 1.15 (GMHT30WW), which fixes CVE-2019-6171 and which only the
+  Lenovo firmware can install
+  ([docs/flashing.md](docs/flashing.md#before-you-start)). CPU-01 also gives
+  whether the TCC offset can be set and its value (both boards), FAN-01 a
+  hint for `thinkpad_acpi`, TPM-01 the state of a TPM 1.2, and a check that
+  misses its log lines names the console log level of the boot.
 - `tools/sbom.py`: the software bill of materials of a ROM, read from the
   image itself: coreboot, vboot, libgfxinit, EDK II, LvglPkg, iPXE, CSMWrap
   and SeaBIOS with versions and licenses; Intel's FSP-M and FSP-S,
