@@ -14,7 +14,12 @@ A test build with DisableHeciRetry set gave 0.23 s. With the retries
 off (ci-159), 3 of 6 boots still took 5.23 s: one HECI request waiting
 out its 5 s timeout once, where it was 3 tries before. So the MBP read
 is skipped too (SkipMbpHob): no coreboot code on Cannon Lake uses the
-MBP HOB.
+MBP HOB. That did not help (ci-160): the wait left is the DRAM Init
+Done message, at which the ME applies its soft temporary disable and
+answers late; FSP-M without that message (SendDidMsg = 0, ci-161) hung
+before ramstage, so it is sent. With the ME disabled the worst case is
+5.2 s instead of 15.2 s; only a ME off by the HAP bit, which FSP-M
+sends nothing, avoids it.
 
 Set FspmTestConfig.DisableHeciRetry and SkipMbpHob when the setup asks
 for the ME disabled, or when HFSTS1 already shows the soft temporary
@@ -31,20 +36,20 @@ TEST=On the M920x with the ME disabled: ci-155 and ci-157 (the HFSTS1
 check alone, which never matched) gave 15.24 s on some warm reboots and
 0.23 s on others; ci-158 (the CSE helper, true in romstage) logged
 HFSTS1 0x80000045 and 15.24 s; ci-156 (DisableHeciRetry from the
-devicetree) 0.23 s; ci-159 (retries off, read from me_state) 0.23 s
-on 3 of 6 reboots and 5.23 s on the others.
-Still to test with this patch: "ME: HFSTS1 before FSP-M" and "ME
-disabled: no HECI retries or MBP read in FSP-M" in the log at every boot and
-FspMemoryInit about 0.2 s on several reboots; with the ME enabled, no
-such line and a normal boot.
+devicetree) 0.23 s; ci-159 (retries off, read from me_state) 0.23 s on
+3 of 6 reboots and 5.23 s on the others; ci-160 (this patch) 0.23 s on
+5 of 16 reboots and 5.23 s on the others, "ME disabled: no HECI
+retries or MBP read in FSP-M" in the log at every boot and HFSTS1
+0x80032044 in ramstage at every boot that logged it.
+Still to test: with the ME enabled, no such line and a normal boot.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- src/mainboard/lenovo/m720q_m920q/romstage.c | 20 ++++++++++++++++++++
- 1 file changed, 20 insertions(+)
+ src/mainboard/lenovo/m720q_m920q/romstage.c | 23 +++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
 
 diff --git a/src/mainboard/lenovo/m720q_m920q/romstage.c b/src/mainboard/lenovo/m720q_m920q/romstage.c
-index d0ea9454c5..065472d083 100644
+index d0ea9454c5..75aab61e7d 100644
 --- a/src/mainboard/lenovo/m720q_m920q/romstage.c
 +++ b/src/mainboard/lenovo/m720q_m920q/romstage.c
 @@ -5,6 +5,7 @@
@@ -55,7 +60,7 @@ index d0ea9454c5..065472d083 100644
  #include <mainboard/ec.h>
  #include <option.h>
  #include <soc/cnl_memcfg_init.h>
-@@ -126,4 +127,23 @@ void mainboard_memory_init_params(FSPM_UPD *memupd)
+@@ -126,4 +127,26 @@ void mainboard_memory_init_params(FSPM_UPD *memupd)
  		memupd->FspmConfig.PcieRpEnableMask &= ~(1 << 5);
  
  	memupd->FspmConfig.Peg0Enable = peg_enable(memupd);
@@ -64,8 +69,11 @@ index d0ea9454c5..065472d083 100644
 +	 * With the ME disabled (Security > Management Engine), FSP-M's HECI
 +	 * messages get no answer on some boots: FspMemoryInit then takes
 +	 * 15.2 s (3 tries of a 5 s timeout) instead of 0.23 s, a valid
-+	 * training cache or not. Without the retries it is one 5 s timeout,
-+	 * so the MBP read (no coreboot code uses its HOB) is skipped as well.
++	 * training cache or not. Without the retries one 5 s timeout is left
++	 * on most boots: the ME applies its disable at the DRAM Init Done
++	 * message and answers it late. Not sending that message hangs the
++	 * boot, so it stays. The MBP read (no coreboot code uses its HOB) is
++	 * skipped too.
 +	 * Before FSP-M the ME still runs normally (HFSTS1 0x80000045, mode 0):
 +	 * the CSE driver disables it again in ramstage at every boot. So the
 +	 * setup option decides; an ME left enabled keeps the default flow.
