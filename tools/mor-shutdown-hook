@@ -1,0 +1,29 @@
+#!/bin/sh
+# mor-shutdown-hook - toglie a uno spegnimento pulito la richiesta TCG MOR
+# che Linux mette a ogni avvio, per Clear memory at power-on "When the OS
+# asks" (docs/flashing.md#clearing-the-memory-at-power-on).
+#
+# Il kernel con CONFIG_RESET_ATTACK_MITIGATION (Debian, Ubuntu, Proxmox lo
+# hanno) mette a 1 il bit 0 di MemoryOverwriteRequestControl a ogni avvio:
+# la memoria contiene dei segreti. Nessuno lo toglie quando il sistema si
+# spegne in ordine, e il firmware allora cancella la memoria a ogni avvio,
+# come con Always. Questo hook di systemd-shutdown lo toglie alla fine dello
+# spegnimento (servizi fermi, quasi tutti i file system smontati; restano la
+# radice e i file system di sistema come efivarfs): dopo un crash, un reset
+# o un'interruzione di corrente il bit resta, e il firmware cancella la
+# memoria prima del sistema operativo successivo.
+#
+# Da installare dove systemd-shutdown lo esegue, come root:
+#   install -m 755 tools/mor-shutdown-hook /usr/lib/systemd/system-shutdown/ourobios-mor
+#
+# Senza la variabile (un altro firmware, o l'opzione su Always o Never) non
+# fa niente.
+v=/sys/firmware/efi/efivars/MemoryOverwriteRequestControl-e20939be-32d4-41be-a150-897f85d49829
+if [ ! -e "${v}" ]; then
+	mountpoint -q /sys/firmware/efi/efivars 2>/dev/null \
+		|| mount -t efivarfs efivarfs /sys/firmware/efi/efivars 2>/dev/null || exit 0
+	[ -e "${v}" ] || exit 0
+fi
+# gli attributi (NV, BS, RT) e il byte: 0, nessuna richiesta
+chattr -i "${v}" 2>/dev/null
+printf '\007\000\000\000\000' > "${v}"

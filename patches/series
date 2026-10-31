@@ -185,3 +185,6 @@
 0189-northbridge-intel-haswell-Timestamps-around-the-nati.patch
 0190-mb-lenovo-haswell-Handle-the-EC-events-the-stock-fir.patch
 0191-mb-lenovo-m720q_m920q-No-FSP-M-HECI-retries-with-the.patch
+0192-security-memory-Clear-DRAM-when-the-OS-asks-through-.patch
+0193-mb-lenovo-haswell-Clear-memory-when-the-OS-asks.patch
+0194-mb-lenovo-m720q_m920q-Clear-memory-when-the-OS-asks.patch

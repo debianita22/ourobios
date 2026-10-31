@@ -6,7 +6,10 @@
 #             (tools/upstream.sh coreboot).
 #   edk2      il ramo uefipayload_AAMM di MrChromebox dopo il commit pinnato
 #             nei defconfig: un issue "EDK2: ...", chiuso quando torna pari
-#             (tools/upstream.sh edk2).
+#             (tools/upstream.sh edk2); poi i tag pin-<12 cifre> dei commit
+#             pinnati (configs/edk2-pins.txt) nei fork del progetto: un
+#             issue "Mirror: ..." finche' ne manca uno (tools/upstream.sh
+#             mirror).
 # I pin si spostano a mano: le patch vanno riviste e le ROM provate sul
 # portatile prima di una release.
 #
@@ -74,4 +77,15 @@ jobs:
             ./tools/upstream.sh edk2 --dry-run
           else
             ./tools/upstream.sh edk2
+          fi
+
+      - name: I commit pinnati nei mirror
+        if: ${{ !cancelled() }}
+        env:
+          IN_DRY: ${{ inputs.dry_run }}
+        run: |
+          if [ "${IN_DRY:-false}" = true ]; then
+            ./tools/upstream.sh mirror --dry-run
+          else
+            ./tools/upstream.sh mirror
           fi
