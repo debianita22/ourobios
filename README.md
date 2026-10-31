@@ -127,9 +127,9 @@ Inside coreboot:
 
   | Category | Settings |
   |---|---|
-  | *General* | *About this ThinkPad*: model, machine type, serial number and UUID (from the VPD), processor, memory, firmware and EC versions; *Boot*: the iPXE and CSMWrap boot entries; *Sound*: beeps and volume; links to the time and date, firmware update, boot splash and UI pages |
-  | *Energy Saver* | battery charge thresholds (OS controlled, 100%, 80%, 60%), Intel SpeedStep, Turbo Boost, C-states, CPU PL1/PL2 limits, cooling policy (active or passive), USB always on, power-on after power failure |
-  | *Security* | *Flash protection*: BIOS Lock (flash writable only by the firmware, off by default) and Firmware protection (the read-only part locked at every boot, on by default); memory cleared at power-on, Intel VT-x, VT-d, the Intel ME interface, Secure Boot, supervisor password (asked for before the setup menu opens) |
+  | *General* | *About this ThinkPad*: model, machine type, serial number and UUID (from the VPD), processor, memory, firmware and EC versions, the state of the Intel ME (from v1.4.0-rc4, also in SMBIOS); *Boot*: the iPXE and CSMWrap boot entries, and from v1.4.0-rc4 the USB drives in the boot order and the boot menu prompt; *Sound*: beeps (from v1.4.0-rc4 the keyboard beep too) and volume; links to the time and date, firmware update, boot splash and UI pages |
+  | *Energy Saver* | battery charge thresholds (OS controlled, 100%, 80%, 60%), Intel SpeedStep, Turbo Boost, C-states, CPU PL1/PL2 limits, cooling policy (active or passive), USB always on (from v1.4.0-rc4 *AC and battery* charges on battery too), power-on with AC attached (from v1.4.0-rc4), power-on after power failure |
+  | *Security* | *Flash protection*: BIOS Lock (flash writable only by the firmware, off by default) and Firmware protection (the read-only part locked at every boot, on by default); memory cleared at power-on, Intel VT-x, VT-d (from v1.4.0-rc4 with the ExpressCard and Thunderbolt ports untrusted for the OS, off by default), the Intel ME interface, Secure Boot, supervisor password (asked for before the setup menu opens) |
   | *Keyboard* | Fn/Ctrl swap, F1-F12 or special keys, sticky Fn, keyboard backlight, TrackPoint, touchpad |
   | *Hardware* | *NVIDIA graphics*: the GPU and the tuning of its PCIe link; *Intel graphics*: graphics stolen memory (native RAM init only: `mrc.bin` reserves a fixed 32 MiB), aperture and the firmware screen resolution; *Storage*: the SATA ports besides the drive bay; *Expansion ports*: ExpressCard and Thunderbolt; *Wireless*: Wi-Fi, Bluetooth, WWAN |
   | *Compatibility* | *macOS*: the options that take the place of parts of an OpenCore configuration (ACPI processor objects as *Processor*, the C-state configuration lock, the NVIDIA GPU off under macOS, the panel, the display audio, the device properties; [docs/macos.md](docs/macos.md)); *Advanced*: NMI |
@@ -195,8 +195,11 @@ Inside coreboot:
 - fixes for wake from suspend (lid, Fn), the Fn hotkeys, Bluetooth and WWAN
   state on resume, xHCI ports, USB over-current mapping, PCIe interrupts, the
   backlight, HDMI/DisplayPort audio clocks, the battery `_UID` and the AES-NI
-  lock, plus fixes and additions to the native RAM init of the `nri` variant
-  ([docs/raminit.md](docs/raminit.md)).
+  lock; from v1.4.0-rc4 the EC events that the Lenovo firmware reports to
+  the OS (dock, thermal and battery alarms, NumLock) and its software mute;
+  plus fixes and additions to the native RAM init of the `nri` variant
+  ([docs/raminit.md](docs/raminit.md)), from v1.4.0-rc4 the rank mapping
+  fix of upstream change 96694 among them.
   [patches/](patches/) lists them all.
 
 > [!NOTE]

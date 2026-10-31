@@ -41,7 +41,55 @@ This project adds:
   round trip latencies go down one qclk at a time while a write and read
   test passes on every rank, and one qclk goes back as a guard band
   ([On the W541](#on-the-w541) for what `mrc.bin` does there). A training
-  redone after a failed memory test leaves them as trained.
+  redone after a failed memory test leaves them as trained;
+- **patch 0185**, from v1.4.0-rc4, the rank mapping fix of Angel Pons,
+  upstream change [96694](https://review.coreboot.org/c/coreboot/+/96694)
+  (Code-Review +2, not merged yet when rc4 came out), taken as it is. The
+  1D margin training selects the rank under test as logical rank 0 and
+  loads its register file; the REUT start address of logical rank 0 is 0,
+  which the code took for a 1:1 mapping, so the read timing, write timing
+  and read voltage centering of ranks 1-3 of each channel ran with the
+  register file of rank 0. The W541 [below](#on-the-w541) has four ranks
+  per channel. The read MPR training passes the rank itself and is not
+  affected;
+- **patch 0186**, the revision of the saved training at 3 (2 since patch
+  0008): the fast boot compares only the DIMMs and the processor, so
+  without it a slot with 0185 could boot on a training that the code
+  before it saved, the other slot after a vboot fallback included, and
+  the other way round. The first boot of an rc4 slot trains once (*MRC:
+  version mismatch: 2 vs 3*, or *no data* after a capsule, which empties
+  the cache anyway);
+- **patch 0188**, a DIMM with more than 10 column address bits left out.
+  Haswell (not its ULT parts) addresses DDR3 chips with 10, and a 16 GiB
+  SO-DIMM of 8 Gb x8 chips has 11, which the controller maps wrongly: with
+  the NRI the margins look fine, then the graphics come out mangled,
+  memtest86+ crashes and the OS hangs
+  ([coreboot ticket 626](https://ticket.coreboot.org/issues/626)), and the
+  memory test of patch 0087 goes through the controller, so it cannot see
+  a column bit that the controller never drives. Such a DIMM is left out
+  with an error that names its slot (`CH0S0: DIMM ignored, 11 column
+  address bits, Haswell has 10`), printed again once CBMEM is up, since
+  the early console of a training boot loses its start, and the laptop
+  boots on the others; with none left the RAM init stops on unsupported
+  memory. It is not quite an empty slot: the module stays on the bus and
+  its mode registers are never written. `mrc.bin` and the Lenovo firmware
+  do not support such DIMMs either;
+- **patch 0189**, the timestamps of the RAM init, `TS_INITRAM_START` and
+  `TS_INITRAM_END`, as the `mrc.bin` path records them: `cbmem -t` lists
+  *before RAM initialization* and *after RAM initialization* on a training
+  boot, a fast boot and an S3 resume, and `tools/hw-report.py` times
+  MEM-01 and BOOT-02 from them. The span leaves out what the native path
+  runs before it, the wait for the ME (up to 1 s), the check for a
+  replaced processor (up to 50 ms) and the early PCH and DMI init, which
+  `mrc.bin` does inside its own span: the RAM init times of the two
+  variants do not compare one to one.
+
+And, for both variants, **patch 0187**: SMBIOS (type 17) takes the size
+and ranks of each slot from the field of the memory controller that
+belongs to it, as the NRI makes the larger DIMM of a channel its DIMM A
+whichever slot it is in; `dmidecode -t 17` then shows each slot with its
+own module. With equal DIMMs, as on the W541 below, the records stay the
+same.
 
 Missing: the steps the upstream author lists as implemented in his tree and
 not published yet ([coreboot ticket 461](https://ticket.coreboot.org/issues/461)),
@@ -89,6 +137,11 @@ tried with `update.py other-slot`:
   minutes over 18.6 GB (75% of the free memory), without errors (rc3);
 - suspend to RAM (S3) and resume, rc2 and rc3: after the wake the
   registers are the trained ones, the shorter round trips included.
+
+These figures predate patch 0185: on these DIMMs the read and write timing
+and the read voltage of ranks 1-3 were centred with the register file of
+rank 0. They are to be measured again with rc4 (MEM-06 of
+[docs/testing.md](testing.md#memory-and-training-cache-mem)).
 
 The registers after `mrc.bin` (v1.3.9-rc1) and after the NRI (rc3), from
 `ddr-report.py`:
@@ -184,3 +237,15 @@ firmware.
 - A training or a memory test that fails twice stops the boot; on a slot
   under trial, as after `update.py other-slot`, vboot goes back to the other
   slot after two tries ([docs/vboot.md](vboot.md)).
+- 16 GiB SO-DIMMs (8 Gb chips, 11 column address bits) do not work on
+  Haswell: from v1.4.0-rc4 the NRI leaves them out (patch 0188), before it
+  booted on them and the memory was corrupted.
+- Upstream changes not taken yet:
+  [96893](https://review.coreboot.org/c/coreboot/+/96893) starts the
+  receive enable training of Haswell from a round trip delta of 0 instead
+  of 2, after a decompiled MemoryInit.efi. It was posted on 2026-10-30
+  with no review yet, it also changes the ULT value, and on the W541 patch
+  0088 already ends at the 4 + 21 of `mrc.bin`. The NRI cleanups merged
+  after the pin (96645-96647) come with the next pin of coreboot, with
+  patches 0087, 0088 and 0185 rebased onto them
+  ([docs/roadmap.md](roadmap.md#upstream-changes-not-taken)).

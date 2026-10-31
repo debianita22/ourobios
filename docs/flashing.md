@@ -45,6 +45,22 @@ v1.3.9, and for any other update of the read-only part.
   also *Firmware protection* off, see [Internal update](#internal-update)).
   The Lenovo firmware does not allow it: the first flash needs an
   [external programmer](#external-programmer).
+- The firmware of the embedded controller (EC), which has a flash of its
+  own: ouroBIOS never updates it, only the Lenovo firmware does, so update
+  that first, before the first flash, while it still runs. EC 1.15
+  (`GMHT30WW`), from the Lenovo firmware 2.40 (`GNET92WW`) on, fixes the
+  *ThinkPad Embedded Controller Update Vulnerability* (LEN-27764,
+  CVE-2019-6171); 2.42 (`GNUJ39US`, `GNET94WW`), the last one for the W540
+  and W541, has the same EC. The *Main* page of the Lenovo setup shows the
+  version of both. From 2.41 on, the Lenovo firmware no longer goes back
+  below 2.41. Take the backup that the conversion starts from after that
+  update. On a W541 that already runs coreboot, *General* → *About this
+  ThinkPad* → *EC firmware*, or `sudo dmidecode -t 11` (the *IBM ThinkPad
+  Embedded Controller* string), shows the build, and `tools/hw-report.py`
+  warns below `GMHT30WW` (EC-01): an older EC gets the fix only by
+  writing the whole original image back with the external programmer,
+  updating it with Lenovo's tool, then flashing ouroBIOS again as the
+  first time.
 - AC adapter connected, battery charged.
 - `flashrom` (`sudo apt install flashrom`). With two chips it switches to
   hardware sequencing by itself and reads and writes all 12 MiB.
@@ -163,6 +179,21 @@ is for the cases a capsule does not cover. On a laptop that runs v1.3.0 or
 later, turn off *Firmware protection* first (*Security* → *Flash
 protection*), save and reboot: otherwise flashrom cannot write `WP_RO`, and
 stops with an error at its first block. Turn it on again afterwards.
+Before the write, `tools/update.py` of v1.4.0-rc4 or later tells whether
+the protection is off in this boot, from the registers of the SPI
+controller, without writing anything
+([docs/update.md](update.md#flash-protection)):
+
+```sh
+sudo python3 tools/update.py protection --expect-ro off
+#   WP_RO:       NON protetta (...)          exit status 0: flashrom can write it
+```
+
+The exit status is 1 while `WP_RO` is still protected, and 2 when the
+registers cannot be read: a kernel built with `IO_STRICT_DEVMEM` refuses
+their page while `intel-spi` and `iTCO_wdt` hold it, and says so; boot once
+with `iomem=relaxed`, as for flashrom ([Before you start](#before-you-start);
+not yet tried on a W541).
 
 ```sh
 sudo flashrom -p internal --ifd -i bios -w w541-coreboot-v1.3.0-mrc.rom
@@ -244,8 +275,9 @@ The same command updates the read-only part of a laptop that already runs
 v1.3.0 or later (a fix in the bootblock, as from v1.3.0-rc1 to rc2), which a
 capsule never writes: first turn *Firmware protection* off in the setup
 (*Security* -> *Flash protection*), save and reboot, check that
-`sudo flashrom -p internal 2>&1 | grep PR0` prints nothing, then run it, and
-turn the protection on again afterwards. flashrom checks after writing the
+`sudo python3 tools/update.py protection --expect-ro off` exits with 0
+([Internal update](#internal-update)), then run it, and turn the protection
+on again afterwards. flashrom checks after writing the
 whole chip, the regions it kept included, against what it read before.
 
 `--fmap-file` takes the map of the new image; flashrom must end with
@@ -272,8 +304,9 @@ settings, boot entries, Secure Boot keys, supervisor password, VPD and
 event log, and empties vboot's state and the memory training, which the
 first boot redoes (a few seconds of black screen). *Firmware protection*
 and *BIOS Lock* must be off (*Security* → *Flash protection*; save, reboot,
-`sudo flashrom -p internal 2>&1 | grep PR0` prints nothing), AC adapter
-connected, battery charged. From v1.3.9 on, releases install again with
+`sudo python3 tools/update.py protection --expect-ro off` exits with 0 and
+its `BIOS Lock:` line says *spento*), AC adapter connected, battery
+charged. From v1.3.9 on, releases install again with
 their capsule, and `update.py other-slot` can try the other variant behind
 the `mrc` read-only part, the one that holds `mrc.bin`.
 
@@ -319,7 +352,8 @@ image: flashrom, not a capsule.
   initialization: see [Recovery](#recovery).
 - coreboot log: `sudo cbmem -c` (build it from coreboot's `util/cbmem`,
   `make -C util/cbmem WERROR=`). Normal on this laptop: `ME: BIOS path:
-  Error` and `MBP not ready` with an ME reduced by me_cleaner, `No RW_VPD
+  Error`, `MBP not ready` and, as `[CRIT ]`, `intel_me_path: mbp is not
+  ready!` with an ME reduced by me_cleaner, `No RW_VPD
   FMAP section` (there is only `RO_VPD`), `RO_VPD is uninitialized` and
   `DMI: Cannot read ... from VPD` without the [VPD](#serial-number-and-machine-type-vpd),
   `fallback/slic' not found`, `1c.3: Timeout waiting for 328h` for the
@@ -327,10 +361,10 @@ image: flashrom, not a capsule.
   overflowed`: vboot's messages fill the console kept before the memory;
   which slot it chose and why, `update.py vboot-work` tells
   ([docs/vboot.md](vboot.md)).
-- Linux log, also normal: `SystemIO range ... conflicts with OpRegion
-  ... GPLV` (`gpio_ich` stays unloaded, the GPIOs belong to ACPI), and
-  `failed to evaluate _DSM` with the path `\` for an Intel Wi-Fi card,
-  which has no node in the ACPI tables (optional settings of `iwlwifi`).
+- Linux log: up to v1.3.4, `SystemIO range ... conflicts with OpRegion
+  ... GPLV` and `failed to evaluate _DSM` with the path `\` for an Intel
+  Wi-Fi card, which v1.3.5 removed (patches 0068 and 0069): seen again,
+  they are a regression, and `tools/hw-report.py` reports them (BOOT-04).
   Up to v1.3.0-rc3, `mei mei0: hw_start failed` too: the ME's interface
   was visible though *Intel Management Engine* (now *Intel ME interface
   (HECI)*) was *Disabled*.
@@ -351,7 +385,16 @@ image: flashrom, not a capsule.
   is intact. From v1.3.1 the bit is set (patch 0063) and the superpages
   work: `dmar1` still shows `cap d2008c20660462`, and the register of
   the engine reads `0x820a5003` at `0xfed91ff0`. With an older release
-  use `intel_iommu=on,sp_off` or `iommu=pt`.
+  use `intel_iommu=on,sp_off` or `iommu=pt`. From v1.4.0-rc4, *Security* →
+  *Virtualization* → *Untrusted ExpressCard and Thunderbolt*, off by
+  default and shown with *Intel VT-d* on, marks the root ports of the
+  ExpressCard slot and of the Thunderbolt port as external facing (an
+  `ExternalFacingPort` property in the SSDT): with the IOMMU on, Linux
+  treats the devices behind them as untrusted, with a DMA domain of their
+  own and bounce buffers, against a card that reads or writes memory it
+  should not; some cards may be slower. The memory is not protected
+  before the OS starts (the payload has no IOMMU driver), and Windows
+  Kernel DMA Protection needs TPM 2.0, which the W541 does not have.
 - Event log: coreboot records every boot, the wake source of a resume
   (lid, Fn, a GPE), each entry into S3 and S5, power failures, watchdog
   resets, the ME state and the last POST code of a boot that hung, in the
@@ -372,8 +415,11 @@ image: flashrom, not a capsule.
   default and when to change it:
   - *General*: *About this ThinkPad*, what the laptop is (model, machine
     type, serial number and UUID from the VPD, processor, memory,
-    firmware and EC versions); *Sound*, the beeps of the EC and its
-    volume at power-on; links to *Time and Date Settings*, *Firmware
+    firmware and EC versions) and, from v1.4.0-rc4, *Management Engine*,
+    the state of the Intel ME at this boot (below); *Sound*, the beeps of
+    the EC and its volume at power-on, from v1.4.0-rc4 with *Keyboard
+    beep* (on by default: the beep for a key combination the EC does not
+    handle); links to *Time and Date Settings*, *Firmware
     Update*, *Boot Splash Settings* and *Graphical UI Configuration*,
     which *System Configuration* lists too; and, from v1.3.6, *Boot*:
     *Network boot (iPXE)* and *Legacy boot (CSMWrap)*, both on by
@@ -394,13 +440,34 @@ image: flashrom, not a capsule.
     services and hides it from the legacy OS, which sees 7 of the 8
     threads of a quad-core i7. It runs unsigned code, so while Secure Boot
     is on its entry goes and the firmware refuses to start it, however it
-    is chosen;
+    is chosen. From v1.4.0-rc4 *Boot* also has *Boot from USB drives* and
+    *Boot menu prompt*, both on by default, as *USB UEFI BIOS Support* and
+    *Option Key Display* of the Lenovo setup. *Boot from USB drives* off
+    keeps the USB drives of the laptop and of the dock out of the boot
+    order and the boot menu; it is not a security setting: a USB drive
+    still starts from an entry that an OS made, from the UEFI Shell, from
+    CSMWrap, from *Boot From File* and through `\EFI\BOOT\BOOTX64.EFI`,
+    which the firmware tries when no entry boots, and a capsule on it
+    still installs. *Boot menu prompt* off hides "Press ESC for Boot
+    Options/Settings" on the logo, and Esc still opens the boot menu, from
+    the keyboard of the laptop too. The setting of the M920x for the
+    option ROMs of the cards is not there: the W541 firmware runs none;
   - *Energy Saver*: battery charge thresholds (*OS controlled* keeps what
     TLP or `thinkpad_acpi` sets) and the battery charged first,
     SpeedStep, Turbo Boost, C-states, CPU PL1/PL2 limits and lock, the
     undervolting options if built in (*Processor voltage*), cooling
     policy, *USB always on* and *After a power loss* (*Restore AC Power
-    Loss* up to v1.3.10-rc11). From v1.3.4 the OS can also stop charging
+    Loss* up to v1.3.10-rc11), and from v1.4.0-rc4 *Power on with AC
+    attached* (*Energy Saver* → *Power*, off by default: plugging the AC
+    adapter in starts the laptop, or resumes it from hibernation, as
+    *Power On with AC Attach* of the Lenovo setup). *USB always on*
+    powers the yellow USB port with the laptop off or asleep; from
+    v1.4.0-rc4 *AC and battery* does that on battery too, in hibernation
+    and power-off, which runs the battery down (before, it most likely
+    acted as *AC only* there), and *AC only* only with the AC adapter
+    attached. The EC keeps these settings only while it has power, and a
+    slot of a release before rc4 writes the old ones again. From v1.3.4 the
+    OS can also stop charging
     or discharge the battery on AC
     (`/sys/class/power_supply/BAT0/charge_behaviour`: `auto`,
     `inhibit-charge`, `force-discharge`); unplugging the AC adapter ends a
@@ -424,7 +491,9 @@ image: flashrom, not a capsule.
   - *Keyboard*: Fn/Ctrl swap, F1-F12 or special keys, sticky Fn, the
     keyboard light, TrackPoint and touchpad;
   - *Security*: *Firmware protection* and *BIOS Lock*, *Clear memory at
-    power-on*, VT-x, VT-d, *Intel ME interface (HECI)* (*Intel Management
+    power-on*, VT-x, VT-d and, from v1.4.0-rc4, *Untrusted ExpressCard
+    and Thunderbolt* (in the VT-d point above), *Intel ME interface
+    (HECI)* (*Intel Management
     Engine* up to v1.3.10-rc11), and links to *Secure Boot Configuration*
     (from v1.3.10) and the supervisor password. *BIOS Lock*,
     off by default, leaves the flash writable only by the firmware in SMM,
@@ -455,6 +524,35 @@ image: flashrom, not a capsule.
 
   Changes apply at the next boot. Graphics stolen memory and aperture
   change the memory map: do not change them between suspend and resume.
+  A CMOS clear (the coin cell out) keeps them on the W541: the reset of
+  the settings that the M920x does on an RTC power loss is in the
+  firmware from v1.4.0-rc4 but off in the W541 builds until it has been
+  tested ([docs/roadmap.md](roadmap.md#settings-reset-on-the-w541)).
+- Intel ME: the ME region of the release images is reduced by
+  `me_cleaner -S` and stops in its bring-up loader (BUP), on the
+  AltMeDisable strap; *Intel ME interface (HECI)*, off by default, hides its
+  PCI interface `00:16.0` from the OS. From v1.4.0-rc4 the firmware reads
+  its six status registers (HFS1-6) at every boot but an S3 resume, before
+  it hides the interface and without a message to the ME, and shows them in
+  *General* → *About this ThinkPad* → *Management Engine*: *Disabled
+  (AltMeDisable, BUP)* for the ME of the release images, *Stopped in BUP
+  (state 0xNN)* for any other stop there, then the states of the M920x
+  (*Disabled (soft temporary disable)*, *Enabled*, *Enabled, not ready
+  (state N)*, *Security override (jumper)* or *(HECI message)*, *Debug*,
+  *Mode N*), or *Not available* when the
+  interface could not be read; the help has the registers and what they
+  mean. The same goes into two SMBIOS OEM strings, which the OS reads
+  without HECI:
+
+  ```sh
+  sudo dmidecode -t 11                       # ME: <state>, ME HFSTS: <the six registers>
+  sudo cbmem -1 | grep 'ME: HFSTS1-6'        # the same six words in the log
+  sudo python3 tools/update.py status | grep '^ME'
+  #   ME:        disattivata (AltMeDisable, BUP), ...; HECI (00:16.0) nascosta al sistema
+  ```
+
+  A slot of a release before rc4 has neither: `update.py status` then
+  says that this firmware does not report it. Not yet tried on the W541.
 
 ## Power at idle
 
@@ -641,7 +739,9 @@ dd if=w541-coreboot-v1.0.2-mrc.rom bs=1M skip=5 count=3 >> my-8mb-chip.rom
 
 On the Lenovo firmware the descriptor is locked and the ME is complete:
 converting a laptop needs its own backup processed as in `legacy/`
-(`ifdtool -u`, `me_cleaner -S`), which this repository does not do.
+(`ifdtool -u`, `me_cleaner -S`), which this repository does not do. Update
+the Lenovo firmware to 2.40 or later first, for the EC
+([Before you start](#before-you-start)), and take that backup after it.
 
 ## Recovery
 

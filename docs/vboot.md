@@ -105,7 +105,8 @@ only the slots.
 Turn it off only to write the whole BIOS region with flashrom (switching
 variant, an update of the read-only part), then on again. *BIOS Lock*, in
 the same menu, still controls who may write the rest of the flash. On the
-M920x, `sudo python3 tools/update.py protection` shows whether `WP_RO` is
+M920x and the W541 (there from the `update.py` of v1.4.0-rc4),
+`sudo python3 tools/update.py protection` shows whether `WP_RO` is
 in a locked range in this boot, and `--expect-ro on` makes that a check
 for scripts ([docs/update.md](update.md#flash-protection)). From
 v1.4.0-rc4 an RTC power loss on the M920x turns the option back on, with
