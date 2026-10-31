@@ -576,38 +576,44 @@ in it cannot be read: about 1.7 s with 32 GB on the W541, 0.5 s per
 *When the OS asks* follows the TCG Platform Reset Attack Mitigation
 specification (MOR): the OS sets bit 0 of the UEFI variable
 `MemoryOverwriteRequestControl` while it holds secrets in memory and
-clears it at a clean shutdown, so that only a reset in between (a crash,
-a power cut, someone pressing reset to read the memory, the cold boot
-attack) wipes it. coreboot reads the bit from the variable store before
-the payload (patch 0192), the payload offers the variable only with
-this setting and clears the bit before the next OS starts
-(`edk2/0039`, `edk2/0040`). The lock of revision 2 of MOR
-(`MemoryOverwriteRequestControlLock`, which Windows Credential Guard
-uses) is not offered with any setting: it needs a variable store behind
-SMM, which the payload does not have. The TPer reset of self-encrypting
-drives that EDK2's TcgMor does is not done either.
+clears it once it has removed them, so that only a reset in between (a
+crash, a power cut, someone pressing reset to read the memory, the cold
+boot attack) wipes it. coreboot reads the bit from the variable store
+before the payload (patch 0192), the payload offers the variable only
+with this setting and clears the bit before the next OS starts
+(`edk2/0039`, `edk2/0040`). A boot that finds no variable clears the
+memory too: the OS before was not offered one, so it could not ask (the
+first boot with this setting, or after a slot of an older release). The
+lock of revision 2 of MOR (`MemoryOverwriteRequestControlLock`, which
+Windows Credential Guard uses) is not offered with any setting: it needs
+a variable store behind SMM, which the payload does not have. The TPer
+reset of self-encrypting drives that EDK2's TcgMor does is not done
+either.
 
-- **Windows** sets the request when BitLocker holds its keys, and
-  clears it at a clean shutdown by itself.
-- **Linux** sets it at every boot when the kernel has
+- **Windows** sets the request while BitLocker holds its keys, removes
+  the keys at a clean shutdown and then clears the request: a boot after
+  a clean shutdown or restart skips the clearing.
+- **Linux** sets the request at every boot when the kernel has
   `CONFIG_RESET_ATTACK_MITIGATION` (Debian, Ubuntu and Proxmox kernels
-  do: `grep RESET_ATTACK /boot/config-$(uname -r)`), but nothing clears
-  it at shutdown, so the memory is still cleared at every boot, as with
-  *Always*. [`tools/mor-shutdown-hook`](../tools/mor-shutdown-hook)
-  clears it at the end of a clean shutdown, after the services have
-  stopped and the file systems are unmounted:
+  do: `grep RESET_ATTACK /boot/config-$(uname -r)`), and never clears
+  it, so the memory is cleared at every boot, as with *Always*. That is
+  right: Linux does not remove its secrets when it shuts down (the key
+  of an encrypted root, the memory of its processes and virtual
+  machines stay in the memory until the power goes), and anyone at the
+  machine can start an orderly restart (Ctrl+Alt+Del, the power button)
+  before booting something else from a USB drive. Clearing the request
+  at shutdown, as a systemd-shutdown hook could, would skip the clearing
+  exactly then. A kernel without the option never asks: with *When the
+  OS asks* its memory is never cleared, as with *Never*. To boot Linux
+  without the clearing, choose *Never*, knowing that.
 
   ```sh
-  sudo install -m 755 tools/mor-shutdown-hook /usr/lib/systemd/system-shutdown/ourobios-mor
-  # after a boot: 07 00 00 00 01 while Linux runs (the request), and in the
-  # coreboot log what the boot before decided
+  # while the OS runs: 07 00 00 00 01 when it has asked, no file when the
+  # setting is not When the OS asks
   od -An -tx1 /sys/firmware/efi/efivars/MemoryOverwriteRequestControl-e20939be-32d4-41be-a150-897f85d49829
-  sudo cbmem -1 | grep -E 'MOR:|DRAM clear:'
-  #   DRAM clear: option when the OS asks, request of the OS no: not clearing
+  sudo cbmem -1 | grep -E 'MOR:|DRAM clear:'      # what this boot decided
+  #   DRAM clear: option when the OS asks, request of the OS yes: clearing
   ```
-
-  A kernel without the option never asks: with *When the OS asks* its
-  memory is never cleared.
 
 The setting is read again at every boot; going back to a slot of a
 release before v1.4.1 with *When the OS asks* clears at every boot

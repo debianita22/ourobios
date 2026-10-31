@@ -344,6 +344,10 @@ hw.check_boot_time(firmware("m920x", valid + [
 assert any(d.startswith("Clear memory at power-on: When the OS asks, richiesta del sistema operativo (MOR) no: "
                         "memoria non cancellata") for d in rep.checks[0]["details"]), rep.checks[0]["details"]
 rep = hw.Report()
+hw.check_boot_time(firmware("m920x", valid + ["[INFO ]  DRAM clear: option always: clearing"], ts(230000)), rep)
+assert "Clear memory at power-on: Always: memoria cancellata (~0.5 s ogni 10 GB)" in rep.checks[0]["details"], \
+    rep.checks[0]["details"]
+rep = hw.Report()
 hw.check_fw_log(firmware("m920x", ["[WARN ]  CBFS: 'fallback/slic' not found.",
                                    "[ERROR]  EC: the CPU fan does not turn (0 rpm): fan failure"], []), rep)
 assert rep.checks[0]["status"] == "FAIL" and "noto" in rep.checks[0]["details"][0]
@@ -2103,10 +2107,33 @@ else
 			fi
 			unset -f git
 		done
+		# il commit c'e' gia' nel clone parziale ma i suoi file no, e upstream
+		# non li ha piu' (ramo riscritto, gc): arrivano dal mirror promisor
+		echo tre > "${t}/work/f"; g -C "${t}/work" commit -q -am tre
+		third="$(g -C "${t}/work" rev-parse HEAD)"
+		g -C "${t}/work" push -q -f "file://${t}/up.git" HEAD:main
+		g -C "${t}/work" push -q "file://${t}/mirror.git" "HEAD:refs/tags/pin-${third:0:12}"
+		g clone -q --filter=blob:none --no-checkout "file://${t}/up.git" "${t}/presente"
+		g -C "${t}/work" push -q -f "file://${t}/up.git" "${pin}:main"
+		g -C "${t}/up.git" reflog expire --expire=now --all; g -C "${t}/up.git" gc -q --prune=now
+		git() { command git -c protocol.file.allow=always "$@"; }
+		pinned_commit "${t}/presente" "${third}" "file://${t}/mirror.git" > /dev/null
+		unset -f git
+		g -C "${t}/presente" checkout -q --detach "${third}" 2> /dev/null
+		[ "$(cat "${t}/presente/f")" = tre ] || { echo "commit gia' presente: i file non vengono dal mirror"; exit 1; }
+		# senza il tag, per hash da un ramo del mirror
+		echo quattro > "${t}/work/f"; g -C "${t}/work" commit -q -am quattro
+		fourth="$(g -C "${t}/work" rev-parse HEAD)"
+		g -C "${t}/mirror.git" config uploadpack.allowReachableSHA1InWant true
+		g -C "${t}/work" push -q "file://${t}/mirror.git" HEAD:refs/heads/copia
+		git() { command git -c protocol.file.allow=always "$@"; }
+		pinned_commit "${t}/intero" "${fourth}" "file://${t}/mirror.git" > /dev/null \
+			|| { echo "senza il tag: il commit non arriva per hash"; exit 1; }
+		unset -f git
 		echo ok
 	)" 2>&1 || true
 	if [ "$(tail -n 1 <<< "${out}")" = ok ]; then
-		ok "dal tag pin-<12 cifre> del mirror, clone intero e parziale"
+		ok "dal mirror: per tag (clone intero e parziale), per hash, i file di un commit gia' presente"
 	else
 		while IFS= read -r line; do [ -n "${line}" ] && bad "pinned_commit: ${line}"; done <<< "${out}"
 	fi

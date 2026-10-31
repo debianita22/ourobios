@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
-Date: Sat, 31 Oct 2026 22:17:52 +0100
+Date: Sat, 31 Oct 2026 23:09:37 +0100
 Subject: [PATCH] UefiPayloadPkg: TCG MOR when the coreboot setup asks for it
 
 coreboot can clear the memory only when the OS asks for it (option
@@ -16,34 +16,39 @@ TcgMor does; there is no TPer reset of self-encrypting drives here.
 With any other setting (Always, the default, or Never) it deletes the
 variable and locks it, as the variable driver without SMM did, so that
 no OS counts on a request coreboot does not look at: the OS sees what
-it saw before. PcdTcgMorWithoutSmm leaves MOR to it; the variable
+it saw before. The setting counts only when this coreboot reads it:
+clear_dram_on_boot must be in its setup data (CFR) and not suppressed,
+as coreboot suppresses it when built without
+SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT; SMMSTORE keeps a setting saved by
+another firmware. PcdTcgMorWithoutSmm leaves MOR to it; the variable
 driver keeps MemoryOverwriteRequestControlLock unsupported.
 
 The variable is read and written only through the runtime services:
 the OS can set the bit as on any MOR platform (Linux does it at every
 boot with RESET_ATTACK_MITIGATION, Windows with BitLocker).
 
-TEST=gcc -fsyntax-only of MorControlDxe.c with the EDK2 headers. No
-EDK2 build here. Remains for the hardware test: with "When the OS asks"
+TEST=gcc -fsyntax-only -Wall -Wextra -Werror of MorControlDxe.c with the
+EDK2 headers, debug and MDEPKG_NDEBUG; the payload builds for both
+boards (CI). Remains for the hardware test: with "When the OS asks"
 the variable exists after a boot and Linux sets it; with the default
 it does not exist.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- UefiPayloadPkg/MorControlDxe/MorControlDxe.c  | 163 ++++++++++++++++++
- .../MorControlDxe/MorControlDxe.inf           |  43 +++++
+ UefiPayloadPkg/MorControlDxe/MorControlDxe.c  | 192 ++++++++++++++++++
+ .../MorControlDxe/MorControlDxe.inf           |  44 ++++
  UefiPayloadPkg/UefiPayloadPkg.dsc             |   6 +
  UefiPayloadPkg/UefiPayloadPkg.fdf             |   1 +
- 4 files changed, 213 insertions(+)
+ 4 files changed, 243 insertions(+)
  create mode 100644 UefiPayloadPkg/MorControlDxe/MorControlDxe.c
  create mode 100644 UefiPayloadPkg/MorControlDxe/MorControlDxe.inf
 
 diff --git a/UefiPayloadPkg/MorControlDxe/MorControlDxe.c b/UefiPayloadPkg/MorControlDxe/MorControlDxe.c
 new file mode 100644
-index 0000000000..b326cd3292
+index 0000000000..6a1f10c4b7
 --- /dev/null
 +++ b/UefiPayloadPkg/MorControlDxe/MorControlDxe.c
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,192 @@
 +/** @file
 +  TCG MOR (Memory Overwrite Request) of the coreboot payload, by the coreboot
 +  setup option "clear_dram_on_boot" (CFR, gEficorebootNvDataGuid).
@@ -56,9 +61,12 @@ index 0000000000..b326cd3292
 +  memory at every boot (Always, 1, the default) or never (Never, 0), whatever
 +  the OS asks: the variable is deleted and locked, as the variable driver
 +  without SMM does when the platform does not honor MOR, so that no OS counts
-+  on it. The variable driver leaves MOR to this driver (PcdTcgMorWithoutSmm)
-+  and keeps MemoryOverwriteRequestControlLock unsupported: it cannot be made
-+  secure without SMM.
++  on it. The setting counts only when this coreboot reads it: it lists the
++  option in its setup data (CFR) and does not suppress it, which it does when
++  built without SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT; a setting that another
++  firmware saved stays in SMMSTORE. The variable driver leaves MOR to this
++  driver (PcdTcgMorWithoutSmm) and keeps MemoryOverwriteRequestControlLock
++  unsupported: it cannot be made secure without SMM.
 +
 +  No TPer reset of self-encrypting drives here, unlike TcgMor.
 +
@@ -67,7 +75,9 @@ index 0000000000..b326cd3292
 +**/
 +
 +#include <Uefi.h>
++#include <Guid/CfrSetupMenuGuid.h>
 +#include <Guid/MemoryOverwriteControl.h>
++#include <Library/CfrHelpersLib.h>
 +#include <Library/DebugLib.h>
 +#include <Library/UefiBootServicesTableLib.h>
 +#include <Library/UefiLib.h>
@@ -106,6 +116,30 @@ index 0000000000..b326cd3292
 +  }
 +
 +  return Value;
++}
++
++/**
++  Whether this coreboot reads clear_dram_on_boot: the option is in its setup
++  data (CFR) and not suppressed.
++
++  @retval TRUE   coreboot honors the setting.
++  @retval FALSE  coreboot has no such option, or does not use it.
++**/
++STATIC
++BOOLEAN
++MorCorebootReadsSetting (
++  VOID
++  )
++{
++  VOID                *DefaultValue;
++  CFR_OPTION_NUMERIC  *Option;
++
++  if (EFI_ERROR (CfrOptionGetDefaultValue (NULL, "clear_dram_on_boot", &DefaultValue, NULL))) {
++    return FALSE;
++  }
++
++  Option = BASE_CR (DefaultValue, CFR_OPTION_NUMERIC, default_value);
++  return (Option->flags & CFR_OPTFLAG_SUPPRESS) == 0;
 +}
 +
 +/**
@@ -163,7 +197,7 @@ index 0000000000..b326cd3292
 +  UINT8                           Mor;
 +  UINTN                           Size;
 +
-+  if (MorClearDramMode () != CLEAR_DRAM_OS_REQUEST) {
++  if ((MorClearDramMode () != CLEAR_DRAM_OS_REQUEST) || !MorCorebootReadsSetting ()) {
 +    //
 +    // Not honored: no variable, and none that the OS or another module can
 +    // create, as the variable driver does without PcdTcgMorWithoutSmm.
@@ -209,10 +243,10 @@ index 0000000000..b326cd3292
 +}
 diff --git a/UefiPayloadPkg/MorControlDxe/MorControlDxe.inf b/UefiPayloadPkg/MorControlDxe/MorControlDxe.inf
 new file mode 100644
-index 0000000000..e347edc707
+index 0000000000..d4c119de1f
 --- /dev/null
 +++ b/UefiPayloadPkg/MorControlDxe/MorControlDxe.inf
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,44 @@
 +## @file
 +#  TCG MOR (Memory Overwrite Request) of the coreboot payload: the variable
 +#  MemoryOverwriteRequestControl exists only when the coreboot setup option
@@ -246,6 +280,7 @@ index 0000000000..e347edc707
 +  UefiLib
 +  DebugLib
 +  VariablePolicyHelperLib
++  CfrHelpersLib
 +
 +[Guids]
 +  gEficorebootNvDataGuid                  ## CONSUMES ## Variable:L"clear_dram_on_boot"

@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
-Date: Sat, 31 Oct 2026 22:18:28 +0100
+Date: Sat, 31 Oct 2026 23:08:35 +0100
 Subject: [PATCH] mb/lenovo/m720q_m920q: Clear memory when the OS asks
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -12,27 +12,31 @@ off. Make it a choice of three, the values of security/memory: Always
 TCG MOR variable MemoryOverwriteRequestControl is set, after a reset
 while the OS held secrets) and Never (0, as off). A saved on or off
 keeps its meaning. On the M920x the clearing takes about 0.5 s per
-10 GB, 2 s with 40 GB, so a clean reboot with the OS's request cleared
-saves that.
+10 GB, 2 s with 40 GB, which a boot after a clean shutdown of an OS
+that clears its request saves. The option itself is suppressed, not
+only its form, when SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT is off: the
+payload offers MOR only for an option that coreboot shows (edk2/0040).
 
 TEST=Builds for the M920x; the setup menu of the build lists the three
 values.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- src/mainboard/lenovo/m720q_m920q/cfr.c | 23 ++++++++++++++++-------
- 1 file changed, 16 insertions(+), 7 deletions(-)
+ src/mainboard/lenovo/m720q_m920q/cfr.c | 25 ++++++++++++++++++-------
+ 1 file changed, 18 insertions(+), 7 deletions(-)
 
 diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
-index e0c3b0e0df..7f1d19a04d 100644
+index e0c3b0e0df..5685d0f196 100644
 --- a/src/mainboard/lenovo/m720q_m920q/cfr.c
 +++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
-@@ -659,15 +659,24 @@ static const struct sm_object bootmedia_lock = SM_DECLARE_BOOL({
+@@ -659,15 +659,26 @@ static const struct sm_object bootmedia_lock = SM_DECLARE_BOOL({
  }, WITH_CALLBACK(update_bootmedia_lock));
  
  /* Read by security_clear_dram_request() (security/memory/memory.c) */
 -static const struct sm_object clear_dram_on_boot = SM_DECLARE_BOOL({
 +static const struct sm_object clear_dram_on_boot = SM_DECLARE_ENUM({
++	/* The payload offers TCG MOR only for an option it sees (MorControlDxe) */
++	.flags		= CONFIG(SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT) ? 0 : CFR_OPTFLAG_SUPPRESS,
  	.opt_name	= "clear_dram_on_boot",
  	.ui_name	= "Clear memory at power-on",
 -	.ui_helptext	= "Clear all the memory at every boot (not when resuming\n"
@@ -45,9 +49,9 @@ index e0c3b0e0df..7f1d19a04d 100644
 +			  "resuming from sleep), so that what the previous OS left in\n"
 +			  "it cannot be read: about 0.5 s more per boot for each 10 GB,\n"
 +			  "2 s with 40 GB. Always: at every boot. When the OS asks:\n"
-+			  "only after a reset while the OS held secrets (TCG MOR:\n"
-+			  "Windows with BitLocker; Linux sets the request at every\n"
-+			  "boot and needs it cleared at a clean shutdown). Never: not\n"
++			  "only after a reset while the OS held secrets (TCG MOR, as\n"
++			  "Windows does with BitLocker; Linux, with the kernel option\n"
++			  "RESET_ATTACK_MITIGATION, asks at every boot). Never: not\n"
 +			  "even then.\n"
 +			  "Default: Always.",
 +	.default_value	= 1,

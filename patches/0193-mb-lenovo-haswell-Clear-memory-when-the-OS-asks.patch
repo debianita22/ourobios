@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
-Date: Sat, 31 Oct 2026 22:18:28 +0100
+Date: Sat, 31 Oct 2026 23:08:35 +0100
 Subject: [PATCH] mb/lenovo/haswell: Clear memory when the OS asks
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -11,28 +11,32 @@ off. Make it a choice of three, the values of security/memory: Always
 (1, the default, as on), When the OS asks (2: only when bit 0 of the
 TCG MOR variable MemoryOverwriteRequestControl is set, after a reset
 while the OS held secrets) and Never (0, as off). A saved on or off
-keeps its meaning. The help says what Linux needs: its kernel sets the
-request at every boot when RESET_ATTACK_MITIGATION is on, so something
-must clear it at a clean shutdown, or the memory is cleared each time.
+keeps its meaning. The help says what Linux does: a kernel with
+RESET_ATTACK_MITIGATION asks at every boot, so the memory is cleared
+each time. The option itself is suppressed, not only its form, when
+SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT is off: the payload offers MOR only
+for an option that coreboot shows (edk2/0040).
 
 TEST=Builds for the W541 (mrc and nri); the setup menu of the build
 lists the three values.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- src/mainboard/lenovo/haswell/cfr.c | 21 +++++++++++++++------
- 1 file changed, 15 insertions(+), 6 deletions(-)
+ src/mainboard/lenovo/haswell/cfr.c | 24 ++++++++++++++++++------
+ 1 file changed, 18 insertions(+), 6 deletions(-)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 02f3f9c402..8ec3b1d04a 100644
+index 02f3f9c402..c4e8a95e33 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
-@@ -474,14 +474,23 @@ static const struct sm_object bootmedia_lock = SM_DECLARE_BOOL({
+@@ -474,14 +474,26 @@ static const struct sm_object bootmedia_lock = SM_DECLARE_BOOL({
  }, WITH_CALLBACK(update_bootmedia_lock));
  
  /* Read by security_clear_dram_request() (security/memory/memory.c) */
 -static const struct sm_object clear_dram_on_boot = SM_DECLARE_BOOL({
 +static const struct sm_object clear_dram_on_boot = SM_DECLARE_ENUM({
++	/* The payload offers TCG MOR only for an option it sees (MorControlDxe) */
++	.flags		= CONFIG(SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT) ? 0 : CFR_OPTFLAG_SUPPRESS,
  	.opt_name	= "clear_dram_on_boot",
  	.ui_name	= "Clear memory at power-on",
 -	.ui_helptext	= "Clear all the memory at every boot (not when resuming\n"
@@ -44,9 +48,10 @@ index 02f3f9c402..8ec3b1d04a 100644
 +			  "resuming from sleep), so that what the previous OS left in\n"
 +			  "it cannot be read: about 1.7 s with 32 GB of memory.\n"
 +			  "Always: at every boot. When the OS asks: only after a\n"
-+			  "reset while the OS held secrets (TCG MOR: Windows with\n"
-+			  "BitLocker; Linux sets the request at every boot and needs\n"
-+			  "it cleared at a clean shutdown). Never: not even then.\n"
++			  "reset while the OS held secrets (TCG MOR, as Windows does\n"
++			  "with BitLocker; Linux, with the kernel option\n"
++			  "RESET_ATTACK_MITIGATION, asks at every boot). Never: not\n"
++			  "even then.\n"
 +			  "Default: Always.",
 +	.default_value	= 1,
 +	.values		= (const struct sm_enum_value[]) {

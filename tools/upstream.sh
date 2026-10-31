@@ -182,17 +182,34 @@ EOF
 # il tag pin-<12 cifre>, perche' MrChromebox riscrive i suoi rami e un commit
 # tolto dal ramo non arriva piu' con un clone. Controlla anche che il
 # submodule LvglPkg del commit di EDK2 sia quello della lista.
+# I tag pin-* del mirror $1, "nome commit" per riga: di un tag annotato il
+# commit a cui punta (la riga ^{} di ls-remote). Niente se il mirror non c'e'
+# (GitHub: 404); se c'e' e non risponde, il controllo si ferma senza issue,
+# come per un errore di rete
+mirror_tags() {
+	local out
+	if out="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags "$1" 'refs/tags/pin-*' 2>/dev/null)"; then
+		awk '{ r = $2; sub("^refs/tags/", "", r)
+		       if (r ~ /\^\{\}$/) { sub(/\^\{\}$/, "", r); peeled[r] = $1 } else { direct[r] = $1 } }
+		     END { for (r in direct) print r, ((r in peeled) ? peeled[r] : direct[r]) }' <<< "${out}"
+	elif gh api "repos/${1#https://github.com/}" --silent 2>/dev/null; then
+		die "${1}: git ls-remote non risponde"
+	fi
+}
+
 check_mirror() {
-	local em lm pins e l r got sub repo missing="" seen=" " n=0
+	local em lm pins e l r got sub repo missing="" seen=" " n=0 et lt
 	em="$(sed -n 's/^EDK2_MIRROR="\([^"]*\)".*/\1/p' "${O}/tools/build.sh")"
 	lm="$(sed -n 's/^LVGLPKG_MIRROR="\([^"]*\)".*/\1/p' "${O}/tools/build.sh")"
 	pins="${O}/configs/edk2-pins.txt"
 	[ -n "${em}" ] && [ -n "${lm}" ] || die "EDK2_MIRROR o LVGLPKG_MIRROR non trovati in tools/build.sh"
 	[ -f "${pins}" ] || die "configs/edk2-pins.txt non c'e'"
+	et="$(mirror_tags "${em}")"
+	lt="$(mirror_tags "${lm}")"
 	while read -r e l r; do
 		case "${e}" in ''|'#'*) continue ;; esac
 		n=$((n + 1))
-		got="$(GIT_TERMINAL_PROMPT=0 git ls-remote "${em}" "refs/tags/pin-${e:0:12}" 2>/dev/null | cut -f1 || true)"
+		got="$(awk -v t="pin-${e:0:12}" '$1 == t { print $2 }' <<< "${et}")"
 		if [ "${got}" != "${e}" ]; then
 			missing="${missing}- EDK2 \`${e:0:12}\` (${r}): tag \`pin-${e:0:12}\` ${got:+su \`${got:0:12}\`}${got:-assente} in ${em}
 "
@@ -200,7 +217,7 @@ check_mirror() {
 		# un commit di LvglPkg una volta sola, anche se piu' pin lo usano
 		if [ "${seen#* "${l}" }" = "${seen}" ]; then
 			seen="${seen}${l} "
-			got="$(GIT_TERMINAL_PROMPT=0 git ls-remote "${lm}" "refs/tags/pin-${l:0:12}" 2>/dev/null | cut -f1 || true)"
+			got="$(awk -v t="pin-${l:0:12}" '$1 == t { print $2 }' <<< "${lt}")"
 			if [ "${got}" != "${l}" ]; then
 				missing="${missing}- LvglPkg \`${l:0:12}\`: tag \`pin-${l:0:12}\` ${got:+su \`${got:0:12}\`}${got:-assente} in ${lm}
 "
