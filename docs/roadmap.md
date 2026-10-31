@@ -4,8 +4,8 @@ What was looked at for v1.4.0 and left for later, with the reason and the
 next step. Most items come from Dasharo's features and test plans, the
 W541 ones also from a comparison with its Lenovo firmware (GNET94WW) and
 with upstream coreboot: each was written up as a design against the code
-of rc4, then checked by a second review against the same code, and the
-parts that held went into rc4 ([CHANGELOG.md](../CHANGELOG.md)). The rest
+of v1.4.0, then checked by a second review against the same code, and the
+parts that held went into v1.4.0 ([CHANGELOG.md](../CHANGELOG.md)). The rest
 is here. None of it is a promise of a date.
 
 | Item | Boards | Why not now | Next step |
@@ -17,7 +17,7 @@ is here. None of it is a promise of a date.
 | [Variable store robustness](#variable-store-robustness) | both | the store has not been seen damaged; the fallbacks are safe | coreboot's reader stopping where EDK2's does |
 | [Measured boot](#measured-boot) | both | it starts in the read-only part, which capsules never write; measuring from ramstage on the W541 gives no root of trust and little on a TPM 1.2 | a test read-only part with `TPM_MEASURED_BOOT` |
 | [Top Swap and the Protected Range test](#top-swap-and-the-protected-range-test) | M920x | the read-only part is never written by an update | FLASH-04 with the protection on; a map with room for a second bootblock |
-| [Settings reset on the W541](#settings-reset-on-the-w541) | W541 | built in rc4 (patch 0180), off: the shared deletion is untested, and the OS may be able to set the RTC power loss bit | OPT-05 on the M920x, the bit checked on the W541, then OPT-05 there |
+| [Settings reset on the W541](#settings-reset-on-the-w541) | W541 | built in v1.4.0 (patch 0180), off: the shared deletion is untested, and the OS may be able to set the RTC power loss bit | OPT-05 on the M920x, the bit checked on the W541, then OPT-05 there |
 | [Memory training across updates on the W541](#memory-training-across-updates-on-the-w541) | W541 | safe for `mrc`, not for `nri`, whose cache version is a number bumped by hand | a variant tag and a key from the code, `mrc` first |
 | [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | no release changes them yet | `fsp_memory_soc_version()` from a Kconfig, checked by `ci-check.sh` |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
@@ -122,7 +122,7 @@ Thunderbolt card.
   separate one.
 
 The W541, whose ExpressCard slot and Thunderbolt port are known, has the
-property from rc4 as its own option, *Security* → *Virtualization* →
+property from v1.4.0 as its own option, *Security* → *Virtualization* →
 *Untrusted ExpressCard and Thunderbolt* (patch 0184), and leaves the flag
 out for the same reason; Windows Kernel DMA Protection also needs a TPM
 2.0, which the W541 does not have.
@@ -159,7 +159,7 @@ coreboot's reader never stops the boot, but it is all or nothing: one
 malformed record before the erased tail and every option falls back to
 its default for that boot, until the payload's reclaim repairs the store.
 The ME option is read with a fallback that sends no command, so this
-causes no reset loop. The settings reset of rc4 refuses such a store and
+causes no reset loop. The settings reset of v1.4.0 refuses such a store and
 writes nothing.
 
 - **Why later**: no damaged store has been seen, and every fallback is
@@ -167,7 +167,7 @@ writes nothing.
 - **Next step**: coreboot's `walk_variables()` stopping at the first
   record without the `0x55AA` start, as EDK2's loop does, and returning the
   matches before it, so that both read the same options after a cut write.
-  And a corner case of the rc4 reset: a fault tolerant write block erased
+  And a corner case of the v1.4.0 reset: a fault tolerant write block erased
   in the middle of its own reclaim counts as no write pending.
 
 ## Measured boot
@@ -192,7 +192,7 @@ reports it, and [docs/testing.md](testing.md) lists it as a known gap
   v1.3.9 did ([docs/vboot.md](vboot.md#the-read-only-part-of-v139)).
 
 For the W541 a design that keeps the read-only part was looked at for
-rc4: ramstage, once CBMEM is up, logs what ran before it (FMAP, the
+v1.4.0: ramstage, once CBMEM is up, logs what ran before it (FMAP, the
 read-only bootblock with verstage, GBB, `mrc.bin`, the microcode) and the
 VBLOCK of the slot that vboot verified, whose signed hash stands for the
 slot, then everything it loads (payload, DSDT, VBT, the NVIDIA ROM), and
@@ -245,9 +245,9 @@ Protected Ranges really stop writes.
 
 ## Settings reset on the W541
 
-From rc4 an RTC power loss resets the setup options of the M920x
+From v1.4.0 an RTC power loss resets the setup options of the M920x
 ([docs/m920x.md](m920x.md#resetting-the-settings)). The W541 has the
-trigger from rc4 too (patch 0180): Haswell romstage calls the shared
+trigger from v1.4.0 too (patch 0180): Haswell romstage calls the shared
 deletion (`drivers/efi`) right after the early PCH init, before the first
 option is read, when the RTC failure bit is set and the boot is not an S3
 resume, with POST codes 0x37 and 0x38 around it, so that a boot that
@@ -276,12 +276,12 @@ through a CMOS clear.
 
 ## Memory training across updates on the W541
 
-The M920x keeps the training across updates from rc4, because its cache
+The M920x keeps the training across updates from v1.4.0, because its cache
 carries a version that changes with the FSP-M of the slot, the processor
 and Hyper-Threading. On the W541 the capsules, `update.py other-slot` and
 *Go back to* still empty `RW_MRC_CACHE`, so every update trains once. A
 vboot fallback does not: the other slot boots on the cache that the new
-one saved, which is why rc4 bumps the revision of the NRI data with its
+one saved, which is why v1.4.0 bumps the revision of the NRI data with its
 rank fix (patch 0186).
 
 - **Why later**: the two variants need different answers. For `mrc`,
@@ -293,7 +293,7 @@ rank fix (patch 0186).
   and 0186), and the fast boot restores the saved settings without a
   test, so a slot could resume a training made by other code (a cache from
   before patch 0086 would have kept the DDR3L at 1.5 V). The gain was never
-  measured on the W541 ("a few seconds"); from rc4 `cbmem -t` shows the
+  measured on the W541 ("a few seconds"); from v1.4.0 `cbmem -t` shows the
   training of `nri` (patch 0189).
 - **Next step**: a tag in the cache version, `M` or `N` in bits 31:24 and
   24 bits of key: for `mrc` the inputs of `mrc.bin` (fields of `pei_data`,
@@ -350,7 +350,7 @@ From the same list of Dasharo options:
 ## Hyper-Threading on the W541
 
 The Lenovo setup has *Intel Hyper-Threading Technology*, on by default;
-the M920x has the option from rc4 (patch 0171), the W541 not. On Haswell
+the M920x has the option from v1.4.0 (patch 0171), the W541 not. On Haswell
 it would be the bit of the PCH that keeps the second thread of each core
 off from the next CPU-only reset (`SOFT_RESET_DATA`, RCBA + 0x38F8),
 which coreboot sets for Sandy Bridge and Ivy Bridge (`model_206ax`).
@@ -488,7 +488,7 @@ gap.
 
 ## TCC offset on the W541
 
-The M920x has *TCC activation offset* from rc4 (patch 0177).
+The M920x has *TCC activation offset* from v1.4.0 (patch 0177).
 
 - **Why later**: on the Haswell client processors of the W541, Intel
   marks the field (MSR 0x1A2 bits 27:24, settable when bit 30 of

@@ -179,7 +179,7 @@ is for the cases a capsule does not cover. On a laptop that runs v1.3.0 or
 later, turn off *Firmware protection* first (*Security* → *Flash
 protection*), save and reboot: otherwise flashrom cannot write `WP_RO`, and
 stops with an error at its first block. Turn it on again afterwards.
-Before the write, `tools/update.py` of v1.4.0-rc4 or later tells whether
+Before the write, `tools/update.py` of v1.4.0 or later tells whether
 the protection is off in this boot, from the registers of the SPI
 controller, without writing anything
 ([docs/update.md](update.md#flash-protection)):
@@ -385,7 +385,7 @@ image: flashrom, not a capsule.
   is intact. From v1.3.1 the bit is set (patch 0063) and the superpages
   work: `dmar1` still shows `cap d2008c20660462`, and the register of
   the engine reads `0x820a5003` at `0xfed91ff0`. With an older release
-  use `intel_iommu=on,sp_off` or `iommu=pt`. From v1.4.0-rc4, *Security* →
+  use `intel_iommu=on,sp_off` or `iommu=pt`. From v1.4.0, *Security* →
   *Virtualization* → *Untrusted ExpressCard and Thunderbolt*, off by
   default and shown with *Intel VT-d* on, marks the root ports of the
   ExpressCard slot and of the Thunderbolt port as external facing (an
@@ -415,9 +415,9 @@ image: flashrom, not a capsule.
   default and when to change it:
   - *General*: *About this ThinkPad*, what the laptop is (model, machine
     type, serial number and UUID from the VPD, processor, memory,
-    firmware and EC versions) and, from v1.4.0-rc4, *Management Engine*,
+    firmware and EC versions) and, from v1.4.0, *Management Engine*,
     the state of the Intel ME at this boot (below); *Sound*, the beeps of
-    the EC and its volume at power-on, from v1.4.0-rc4 with *Keyboard
+    the EC and its volume at power-on, from v1.4.0 with *Keyboard
     beep* (on by default: the beep for a key combination the EC does not
     handle); links to *Time and Date Settings*, *Firmware
     Update*, *Boot Splash Settings* and *Graphical UI Configuration*,
@@ -440,7 +440,7 @@ image: flashrom, not a capsule.
     services and hides it from the legacy OS, which sees 7 of the 8
     threads of a quad-core i7. It runs unsigned code, so while Secure Boot
     is on its entry goes and the firmware refuses to start it, however it
-    is chosen. From v1.4.0-rc4 *Boot* also has *Boot from USB drives* and
+    is chosen. From v1.4.0 *Boot* also has *Boot from USB drives* and
     *Boot menu prompt*, both on by default, as *USB UEFI BIOS Support* and
     *Option Key Display* of the Lenovo setup. *Boot from USB drives* off
     keeps the USB drives of the laptop and of the dock out of the boot
@@ -457,16 +457,16 @@ image: flashrom, not a capsule.
     SpeedStep, Turbo Boost, C-states, CPU PL1/PL2 limits and lock, the
     undervolting options if built in (*Processor voltage*), cooling
     policy, *USB always on* and *After a power loss* (*Restore AC Power
-    Loss* up to v1.3.10-rc11), and from v1.4.0-rc4 *Power on with AC
+    Loss* up to v1.3.10-rc11), and from v1.4.0 *Power on with AC
     attached* (*Energy Saver* → *Power*, off by default: plugging the AC
     adapter in starts the laptop, or resumes it from hibernation, as
     *Power On with AC Attach* of the Lenovo setup). *USB always on*
     powers the yellow USB port with the laptop off or asleep; from
-    v1.4.0-rc4 *AC and battery* does that on battery too, in hibernation
+    v1.4.0 *AC and battery* does that on battery too, in hibernation
     and power-off, which runs the battery down (before, it most likely
     acted as *AC only* there), and *AC only* only with the AC adapter
     attached. The EC keeps these settings only while it has power, and a
-    slot of a release before rc4 writes the old ones again. From v1.3.4 the
+    slot of a release before v1.4.0 writes the old ones again. From v1.3.4 the
     OS can also stop charging
     or discharge the battery on AC
     (`/sys/class/power_supply/BAT0/charge_behaviour`: `auto`,
@@ -491,7 +491,7 @@ image: flashrom, not a capsule.
   - *Keyboard*: Fn/Ctrl swap, F1-F12 or special keys, sticky Fn, the
     keyboard light, TrackPoint and touchpad;
   - *Security*: *Firmware protection* and *BIOS Lock*, *Clear memory at
-    power-on*, VT-x, VT-d and, from v1.4.0-rc4, *Untrusted ExpressCard
+    power-on*, VT-x, VT-d and, from v1.4.0, *Untrusted ExpressCard
     and Thunderbolt* (in the VT-d point above), *Intel ME interface
     (HECI)* (*Intel Management
     Engine* up to v1.3.10-rc11), and links to *Secure Boot Configuration*
@@ -526,12 +526,12 @@ image: flashrom, not a capsule.
   change the memory map: do not change them between suspend and resume.
   A CMOS clear (the coin cell out) keeps them on the W541: the reset of
   the settings that the M920x does on an RTC power loss is in the
-  firmware from v1.4.0-rc4 but off in the W541 builds until it has been
+  firmware from v1.4.0 but off in the W541 builds until it has been
   tested ([docs/roadmap.md](roadmap.md#settings-reset-on-the-w541)).
 - Intel ME: the ME region of the release images is reduced by
   `me_cleaner -S` and stops in its bring-up loader (BUP), on the
   AltMeDisable strap; *Intel ME interface (HECI)*, off by default, hides its
-  PCI interface `00:16.0` from the OS. From v1.4.0-rc4 the firmware reads
+  PCI interface `00:16.0` from the OS. From v1.4.0 the firmware reads
   its six status registers (HFS1-6) at every boot but an S3 resume, before
   it hides the interface and without a message to the ME, and shows them in
   *General* → *About this ThinkPad* → *Management Engine*: *Disabled
@@ -551,7 +551,7 @@ image: flashrom, not a capsule.
   #   ME:        disattivata (AltMeDisable, BUP), ...; HECI (00:16.0) nascosta al sistema
   ```
 
-  A slot of a release before rc4 has neither: `update.py status` then
+  A slot of a release before v1.4.0 has neither: `update.py status` then
   says that this firmware does not report it. Not yet tried on the W541.
 
 ## Power at idle

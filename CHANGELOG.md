@@ -7,7 +7,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.4.0
 
-- From rc4, on the M920x with the Intel ME disabled in the setup, boots
+- After rc3, on the M920x with the Intel ME disabled in the setup, boots
   are at most 5 s slower than the others instead of 15 s: FSP-M no
   longer retries its HECI messages to the disabled ME nor reads its MBP
   (0191). FspMemoryInit takes 0.23 s or, on most boots, 5.23 s: the ME
@@ -85,7 +85,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   ports (0160-0162). The
   TCO watchdog of the PCH works (`iTCO_wdt`), which Proxmox blacklists:
   [docs/m920x.md](docs/m920x.md#status) says how to use it for its HA.
-- From rc4, on the M920x: *Console* → *Serial Console* in the setup, to turn
+- After rc3, on the M920x: *Console* → *Serial Console* in the setup, to turn
   the serial console off (about 1 s less per boot at INFO); the speed of
   the CPU fan in the boot log, or an error when it does not turn (0163);
   no more "LPC IO decode base 0!" error at every boot (0164), nor the
@@ -93,16 +93,16 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   routing and the missing RW_VPD (0165-0167); under Linux, no more "failed
   to evaluate _DSM 2c176672-..." from iwlwifi: the Wi-Fi card has an ACPI
   node (0168).
-- From rc4, the PEG port of the M920x riser slot off when no card is on
+- After rc3, the PEG port of the M920x riser slot off when no card is on
   it (0169): FSP-M's Auto left the empty port on at almost every boot,
   and with it the package stopped at PC3 at idle (about 1.1 W) even with
   0157-0158; the PC9 measured with ci-143 came from a boot on which it
   was off. *Hardware* → *Devices* → *PCIe riser slot*: Auto, Enabled
   (for a card that Auto does not see), Disabled.
-- From rc4, about 0.5 s less at every boot of the M920x and of the W541:
+- After rc3, about 0.5 s less at every boot of the M920x and of the W541:
   SMM no longer reads the *BIOS Lock* option from the flash without
   cache at the end of the boot, ramstage gives it the value (0170).
-- From rc4, the M920x with other processors and cards than the port
+- After rc3, the M920x with other processors and cards than the port
   machine's: PL2 1.25 times the TDP as the OEM firmware, instead of 65 W
   for every processor (a T model drew 65 W in bursts, a 65 W one with
   Turbo Boost stopped under its 81 W); the fan class follows PL1 when it
@@ -114,7 +114,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   and the setup (0172 and the M920x defconfig).
   A machine that already saved its settings keeps the PL2 it had:
   *Energy Saver* → *Processor* → *CPU PL2 power limit* → 0.
-- From rc4, on the M920x, two bugs reported upstream for the M720q and the
+- After rc3, on the M920x, two bugs reported upstream for the M720q and the
   M920q: the DisplayPort output was described as HDMI in the VBT, so a DP
   monitor was not detected under Linux (coreboot bug #670, 0174); a
   memory training cache made with another processor or with
@@ -124,7 +124,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   was already fixed in the coreboot of rc3.
 - `tools/update.py other-slot` also takes the test builds of the CI
   (`ouroBIOS-ci-N-...`), to try one in the slot that is not running.
-- From rc4, on the M920x, an RTC power loss (the coin cell out or flat, the
+- After rc3, on the M920x, an RTC power loss (the coin cell out or flat, the
   clear-CMOS jumper) resets the setup options to their defaults, as with
   the Lenovo firmware: coreboot deletes them before the memory training
   reads the first one, and the setup writes each default back (0175,
@@ -133,20 +133,20 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   flash with flashrom), and so do the boot entries a setup switch had
   removed (iPXE, CSMWrap, USB drives); the other boot entries, the Secure
   Boot keys, the setup password, the VPD and the event log stay. With a
-  flat coin cell every loss of AC power does it. Only the slots of rc4 and
+  flat coin cell every loss of AC power does it. Only the slots of v1.4.0 and
   later do it.
-- From rc4, the state of the Intel ME of the M920x, which the OS cannot ask
+- After rc3, the state of the Intel ME of the M920x, which the OS cannot ask
   once the ME is disabled (no HECI device): *General* → *About this
   ThinkCentre* → *Management Engine* in the setup, with its status
   registers in the help, and two SMBIOS OEM strings (type 11, `ME: ...`
   and `ME HFSTS: ...`) for `dmidecode -t 11` and `tools/update.py status`
   (0176, [docs/m920x.md](docs/m920x.md#intel-me)).
-- From rc4, *Hardware* → *Cooling* → *TCC activation offset* on the M920x,
+- After rc3, *Hardware* → *Cooling* → *TCC activation offset* on the M920x,
   as in the OEM setup: the processor throttles that many °C below its
   TjMax (0-15, default 0), cooler and quieter under a long load; listed
   on the processors that can take it (0177,
   [docs/m920x.md](docs/m920x.md#fan)).
-- From rc4, three switches of the OEM setup in *General* → *Boot* of the
+- After rc3, three switches of the OEM setup in *General* → *Boot* of the
   M920x, which the payload reads (0178, `edk2/0036-0037`,
   [docs/m920x.md](docs/m920x.md#boot-options)): *Option ROMs of the cards*,
   *All* or *Graphics cards only* (NVMe, SATA and USB cards still boot with
@@ -154,19 +154,19 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   of the boot order and the boot menu (not a security setting: the Shell,
   CSMWrap, an OS entry and the fallback path still start them); *Boot menu
   prompt*, off to hide "Press ESC" on the logo, while Esc still works.
-- From rc4, updates of the M920x keep the memory training: the capsules
+- After rc3, updates of the M920x keep the memory training: the capsules
   rewrite the two RW slots only, `tools/update.py other-slot` leaves
   `RW_MRC_CACHE` as it is (`--retrain` empties it), and *Go back to* in
   the setup no longer erases it (0179, `edk2/0038`). The new slot trains
   again only when the cache was made with another FSP-M, processor or
   Hyper-Threading setting (0173), so an update no longer takes the 20-40 s
   of a training; the first update from rc3 or earlier usually still does,
-  once. Staging these capsules takes the `tools/update.py` of rc4 or later,
+  once. Staging these capsules takes the `tools/update.py` of v1.4.0 or later,
   which still takes those of rc1-rc3: the release notes now download it
   from the commit of the release instead of `main`. The W541 still empties
   the cache at every update
   ([docs/update.md](docs/update.md#what-changes-and-what-stays)).
-- From rc4, on the W541, the state of its Intel ME, which `me_cleaner -S`
+- After rc3, on the W541, the state of its Intel ME, which `me_cleaner -S`
   stops in its bring-up loader and whose HECI interface the firmware hides
   by default, so that only the boot log told what it did: *General* →
   *About this ThinkPad* → *Management Engine* in the setup, with the six
@@ -181,10 +181,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   *Disabled (AltMeDisable, BUP)*, any other stop there *Stopped in BUP
   (state 0xNN)*, and only then the operation mode gives the texts of the
   M920x. The help of *Intel ME interface (HECI)* no longer says that the ME
-  keeps running. None of the W541 changes of rc4 has run on the laptop
+  keeps running. None of the W541 changes of v1.4.0 has run on the laptop
   yet: [docs/testing.md](docs/testing.md) lists their tests, marked *not
   yet tried*.
-- From rc4, *General* → *Boot* of the W541 has two of the switches of the
+- After rc3, *General* → *Boot* of the W541 has two of the switches of the
   M920x, which its payload reads (0182, `edk2/0037`), both on by default:
   *Boot from USB drives*, off to keep the USB drives of the laptop and the
   dock out of the boot order and the boot menu (not a security setting: an
@@ -196,25 +196,25 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   NVIDIA GPU is a legacy image for the OS only, and the one other card with
   a ROM would be an ExpressCard, whose unsigned code would then run in the
   firmware.
-- From rc4, three EC settings of the Lenovo setup of the W541, decoded from
+- After rc3, three EC settings of the Lenovo setup of the W541, decoded from
   its firmware, GNET94WW (0183): *Energy Saver* → *Power* → *Power on with
   AC attached*, off by default, which starts the laptop, or resumes it from
   hibernation, when the AC adapter is plugged in; *General* → *Sound* →
   *Keyboard beep*, on by default, the beep of the EC for a key combination
   that it does not handle; and *USB always on* → *AC and battery*, which
-  now does what it says. Before rc4 the devicetree set the EC bit that
+  now does what it says. Before v1.4.0 the devicetree set the EC bit that
   keeps the yellow USB port unpowered on battery, so *AC and battery* most
   likely acted as *AC only* in hibernation and power-off. **A W541 already
   set to *AC and battery* powers that port on battery in hibernation and
-  power-off from rc4 on, which runs the battery down**; *AC only* keeps the
+  power-off from v1.4.0 on, which runs the battery down**; *AC only* keeps the
   old behaviour, and the help of *USB always on* says what each value does.
-  The EC keeps these bits only while it has power, and a slot before rc4
+  The EC keeps these bits only while it has power, and a slot before v1.4.0
   (after a vboot fallback, or with `update.py other-slot`) writes the old
   ones again. The other H8 ThinkPads, the T440p included, are unchanged.
   Whether *Keyboard beep* changes anything is for the test on the laptop:
   the Lenovo firmware also writes a beep mask that differs from ours by one
   bit.
-- From rc4, *Security* → *Virtualization* → *Untrusted ExpressCard and
+- After rc3, *Security* → *Virtualization* → *Untrusted ExpressCard and
   Thunderbolt* on the W541 (0184), off by default and shown with *Intel
   VT-d* on: the root ports of the ExpressCard slot and of the Thunderbolt
   port get the ACPI `ExternalFacingPort` property, and Linux with its
@@ -224,7 +224,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   IOMMU driver), and Windows Kernel DMA Protection needs TPM 2.0, which the
   W541 does not have. The comments of the DSDT, which called the two ports
   the WWAN and the ExpressCard slot, are fixed.
-- From rc4, the EC events that the Lenovo firmware of the W541 reports to
+- After rc3, the EC events that the Lenovo firmware of the W541 reports to
   the OS, which our DSDT dropped (0190), with the same HKEY codes: dock and
   undock (0x4010, 0x4011), the thermal alarm of the EC (the thermal zone
   notified, and 0x6022 at its critical level), the battery alarms (0x6011,
@@ -241,7 +241,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   the radio switch, the Ultrabay and sticky Fn
   ([docs/roadmap.md](docs/roadmap.md#ec-events-left-out)). Checked in
   `acpiexec` on the DSDTs of the W541 and the T440p.
-- From rc4, `nri`: the 1D training of the read timing, the write timing and
+- After rc3, `nri`: the 1D training of the read timing, the write timing and
   the read voltage of ranks 1-3 of each channel ran with the register file
   of rank 0, and the W541 of [docs/raminit.md](docs/raminit.md) has four
   ranks per channel. The fix of Angel Pons, not merged upstream yet
@@ -249,7 +249,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   with the revision of the saved training bumped to 3 (0186): a slot with
   the fix never boots on a training made without it, and an older slot
   never boots on one made with it, also after a vboot fallback. The first
-  boot of an rc4 slot trains, as after every W541 capsule. A DIMM with
+  boot of a v1.4.0 slot trains, as after every W541 capsule. A DIMM with
   more than the 10 column address bits that Haswell drives, as a 16 GiB
   SO-DIMM of 8 Gb chips ([coreboot ticket
   626](https://ticket.coreboot.org/issues/626): margins that look fine,
@@ -260,7 +260,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   (MEM-01, BOOT-02) see it (0189). On both variants SMBIOS gives each slot
   the size and ranks of its own module, also with two DIMMs of different
   sizes in a channel (0187).
-- From rc4, the settings reset on an RTC power loss of the M920x (0175) has
+- After rc3, the settings reset on an RTC power loss of the M920x (0175) has
   its trigger for Haswell (0180): romstage deletes the setup options before
   the first one is read, with a POST code before and one after, so that a
   boot that follows one that hung there skips it; on Haswell the option
@@ -272,8 +272,8 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   then turn *BIOS Lock* off at the next boot. A CMOS clear still keeps the
   settings of a W541
   ([docs/roadmap.md](docs/roadmap.md#settings-reset-on-the-w541)).
-- `tools/update.py status` also shows the state of the ME (on the M920x
-  from rc4, on the W541 from the first release with 0181) and of the flash
+- `tools/update.py status` also shows the state of the ME (from v1.4.0,
+  on both boards) and of the flash
   protection, on both boards: whether `WP_RO` is in a locked Protected
   Range, *BIOS Lock*, whether flashrom can write the slots.
   `tools/update.py protection` reads it in detail from the registers of
@@ -290,7 +290,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   saved options are still shown. On both boards the texts now say that the
   protection holds until the next reset or S3 resume, and that a change of
   the options applies from the next boot or resume. The names of the
-  release candidates and CI builds of `nri` (`-rc4-nri`, `ci-N-...-nri`),
+  release candidates and CI builds of `nri` (`-rc3-nri`, `ci-N-...-nri`),
   which read as `mrc`, are recognised.
 - `tools/hw-report.py`: a read-only report of a running machine, PASS, WARN
   or FAIL per area with thresholds: boot time, the RAM init against the
@@ -300,7 +300,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   SMBIOS and ACPI tables; with a copy of the flash also the event log,
   `RW_NVRAM` and the saved options. [docs/testing.md](docs/testing.md): the
   release test matrix of the M920x and the W541.
-- `tools/hw-report.py` on the W541, written from the code of rc4 (it has not
+- `tools/hw-report.py` on the W541, written from the code of v1.4.0 (it has not
   run there yet): BOOT-03 no longer fails at every boot on the `[CRIT]` line
   of the reduced ME (`intel_me_path: mbp is not ready!`); BOOT-04 no longer
   takes the GPLV and `_DSM` messages, gone since v1.3.5, for known ones,
