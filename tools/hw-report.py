@@ -584,13 +584,14 @@ def check_boot_time(fw, rep):
     # Clear memory at power-on: dalla riga di security/memory (patch 0192),
     # Always, When the OS asks (la richiesta TCG MOR) o Never; prima, solo
     # se ha cancellato
-    clear = fw.grep(r"DRAM clear: option (.+), request of the OS (yes|no): (clearing|not clearing)") \
+    clear = fw.grep(r"DRAM clear: option (always|never|when the OS asks)"
+                    r"(?:, request of the OS (yes|no))?: (clearing|not clearing)") \
         if fw.log is not None else []
     if clear:
         mode, req, act = clear[-1].groups()
-        details.append("Clear memory at power-on: %s, richiesta del sistema operativo (MOR) %s: %s" % (
-            {"always": "Always", "when the OS asks": "When the OS asks", "never": "Never"}.get(mode, mode),
-            "si'" if req == "yes" else "no",
+        details.append("Clear memory at power-on: %s%s: %s" % (
+            {"always": "Always", "when the OS asks": "When the OS asks", "never": "Never"}[mode],
+            "" if req is None else ", richiesta del sistema operativo (MOR) %s" % ("si'" if req == "yes" else "no"),
             "memoria cancellata (~0.5 s ogni 10 GB)" if act == "clearing" else "memoria non cancellata"))
     elif fw.log is not None and fw.grep(r"clear_memory: Clearing DRAM"):
         details.append("Clear memory at power-on acceso (~0.5 s ogni 10 GB)")
