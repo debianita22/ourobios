@@ -7,10 +7,12 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.4.0
 
-- From rc4, on the M920x with the Intel ME disabled in the setup, no more
-  boots 15 s slower than the others: FSP-M no longer retries its HECI
-  messages to the disabled ME nor reads its MBP (0191), FspMemoryInit
-  0.23 s instead of 15.24 s on those boots.
+- From rc4, on the M920x with the Intel ME disabled in the setup, boots
+  are at most 5 s slower than the others instead of 15 s: FSP-M no
+  longer retries its HECI messages to the disabled ME nor reads its MBP
+  (0191). FspMemoryInit takes 0.23 s or, on most boots, 5.23 s: the ME
+  answers the DRAM Init Done message late, as it applies its disable
+  there, and the message cannot be left out (the boot hangs).
 - **ThinkCentre M920x Tiny** (Intel Coffee Lake, Q370): a release of its
   own in every version, `vX.Y.Z-m920x-fsp`, built from coreboot's
   `lenovo/m720q_m920q` board with Intel's FSP-M RAM init and the rest of
