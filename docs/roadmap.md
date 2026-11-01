@@ -113,10 +113,12 @@ Thunderbolt card.
   property alone already makes Linux treat the devices behind the port as
   untrusted, and nothing in the trees says which connector the Lenovo
   Thunderbolt card uses. Neither changes anything on a machine without it.
-- **Next step**: the help of *Hardware* → *Intel VT-d* still says it gives
-  *Kernel DMA Protection*, which needs the flag: to be reworded first.
-  Then, with a Thunderbolt card or Windows to test, the property as its own
-  option behind VT-d (or coreboot's `DRIVERS_INTEL_DTBT`, which finds the
+- **Next step**: (the help of *Hardware* → *Intel VT-d* no longer
+  promises *Kernel DMA Protection*, from v1.5.0, patch 0206.) With a
+  Thunderbolt card or Windows to test, an IOMMU driver in the payload
+  (EDK2's `IntelVTdDxe`) and how it hands the IOMMU over to each OS
+  (macOS, with `DisableIoMapper`, untested with it on); then the property
+  as its own option behind VT-d (or coreboot's `DRIVERS_INTEL_DTBT`, which finds the
   bridge by its PCI ID, with its security level fixed), and the flag as a
   separate one.
 

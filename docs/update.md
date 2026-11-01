@@ -63,6 +63,26 @@ setting. Blocks that are already identical are not written again.
 *BIOS Lock* and *Firmware protection* can stay on: the firmware writes the
 capsule itself, from SMM, and never `WP_RO`.
 
+### Disks sealed to the TPM
+
+From v1.5.0 the firmware measures itself (measured boot): every update
+changes PCR 2, where coreboot measures what it loads, and PCR 1, where
+vboot measures its state. A disk whose key the TPM releases only for
+those PCRs asks for its passphrase or recovery key after the update.
+`update.py stage`, `rollback` and `other-slot` say so when they find one:
+
+- **BitLocker**: with Secure Boot on, Windows seals to PCR 7 and 11,
+  which an update does not change. Without Secure Boot it uses PCR 0, 2
+  and 4 too: suspend it in Windows before the update, `manage-bde
+  -protectors -disable C: -RebootCount 1`, or keep the recovery key at
+  hand.
+- **LUKS with `systemd-cryptenroll`**: enrolled with `--tpm2-pcrs=7`
+  (the Secure Boot state) it is unaffected; with PCR
+  0, 1 or 2, enroll it again after the first boot of the new firmware,
+  with the same PCRs.
+- **clevis**: if its TPM policy has PCR 0, 1 or 2, `clevis luks regen`
+  after the update.
+
 ## The first time
 
 The capsules of v1.3.9 and later need a firmware with the same flash map

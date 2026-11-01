@@ -51,6 +51,16 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   of Linux IMA (patch 0202); the measured boot log starts before vboot's
   first measurement (patch 0204), and the pre-RAM log stays inside its
   2 KiB of cache-as-RAM (patch 0203).
+- `tools/update.py stage`, `rollback` and `other-slot` warn of the disks
+  an update will lock: BitLocker (unaffected with Secure Boot on, which
+  seals to PCR 7 and 11), and LUKS2 volumes sealed by systemd-cryptenroll
+  to PCR 0, 1 or 2, or with a clevis token, with the command that enrolls
+  them again ([docs/update.md](docs/update.md#disks-sealed-to-the-tpm)).
+- The help of *Intel VT-d* on the M920x no longer promises Windows Kernel
+  DMA Protection, which needs protection before the OS that the firmware
+  does not give (patch 0206). [docs/testing.md](docs/testing.md#windows-11-win)
+  has a Windows 11 suite for the M920x, which meets Windows 11's
+  requirements; not yet run. The W541 does not (Haswell, TPM 1.2).
 - `tools/hw-report.py`: TPM-03 replays the firmware's event log against
   PCR 0-7 of each bank and counts coreboot's and vboot's measurements;
   TPM-01 no longer reads PCR 0 alone (coreboot measures into PCR 2).

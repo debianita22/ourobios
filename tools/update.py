@@ -1199,7 +1199,80 @@ def cmd_stage(args):
     print("Il firmware la verifica e la scrive in circa un minuto, con una barra sotto il")
     print("logo: non spegnere. Poi riparte da solo con il firmware nuovo.")
     print_training(cap)
+    print_sealing()
     return finish_stage(args)
+
+
+# I PCR che un aggiornamento del firmware cambia, con il measured boot della
+# v1.5.0: coreboot misura in PCR 2 quello che carica, vboot in PCR 1 il suo
+# stato; PCR 0 (il separatore) per chi lo prende nella politica
+FIRMWARE_PCRS = {0, 1, 2}
+
+
+def sealed_to_firmware(lsblk, dumps):
+    """I volumi cifrati che un aggiornamento del firmware puo' chiudere, da
+    `lsblk -rpno NAME,FSTYPE` e dal JSON di `cryptsetup luksDump
+    --dump-json-metadata` di ogni volume LUKS ({nome: json}): (volume,
+    come, PCR). BitLocker sempre (con Secure Boot sigilla a PCR 7 e 11, che
+    non cambiano; senza, anche a PCR 0 e 2), LUKS2 con un token
+    systemd-tpm2 sigillato a uno dei FIRMWARE_PCRS, o con un token clevis
+    (i suoi PCR sono nel JWE: da controllare a mano)."""
+    found = []
+    for line in lsblk.splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        name, fstype = parts
+        if fstype == "BitLocker":
+            found.append((name, "BitLocker", None))
+        elif fstype == "crypto_LUKS" and name in dumps:
+            try:
+                tokens = json.loads(dumps[name]).get("tokens", {})
+            except ValueError:
+                continue
+            for t in tokens.values():
+                if t.get("type") == "systemd-tpm2":
+                    pcrs = sorted(int(x) for x in t.get("tpm2-pcrs", []))
+                    if set(pcrs) & FIRMWARE_PCRS:
+                        found.append((name, "systemd-tpm2", pcrs))
+                elif t.get("type") == "clevis":
+                    found.append((name, "clevis", None))
+    return found
+
+
+def print_sealing():
+    """Avvisa dei volumi sigillati al TPM che il firmware nuovo non aprira'
+    da solo (il measured boot cambia PCR 1 e 2 a ogni aggiornamento)."""
+    try:
+        lsblk = subprocess.run(["lsblk", "-rpno", "NAME,FSTYPE"], stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, text=True, timeout=30).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return
+    dumps = {}
+    for line in lsblk.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1] == "crypto_LUKS":
+            try:
+                r = subprocess.run(["cryptsetup", "luksDump", "--dump-json-metadata", parts[0]],
+                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=30)
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if r.returncode == 0:
+                dumps[parts[0]] = r.stdout
+    for name, how, pcrs in sealed_to_firmware(lsblk, dumps):
+        if how == "BitLocker":
+            print("Attenzione: %s e' BitLocker. Con Secure Boot acceso Windows lo sigilla a PCR 7 e 11, che"
+                  % name)
+            print("  l'aggiornamento non cambia; senza, anche a PCR 0 e 2: sospendilo prima da Windows")
+            print("  (manage-bde -protectors -disable C: -RebootCount 1), o tieni pronta la chiave di ripristino.")
+        elif how == "systemd-tpm2":
+            print("Attenzione: %s e' sigillato al TPM con i PCR %s: il firmware nuovo cambia PCR 1 e 2,"
+                  % (name, "+".join(str(p) for p in pcrs)))
+            print("  e il volume chiedera' la passphrase. Dopo l'avvio: sudo systemd-cryptenroll --wipe-slot=tpm2")
+            print("  --tpm2-device=auto --tpm2-pcrs=%s %s" % ("+".join(str(p) for p in pcrs), name))
+        else:
+            print("Attenzione: %s ha un token clevis: se la sua politica TPM ha PCR 0, 1 o 2, il firmware" % name)
+            print("  nuovo li cambia e il volume chiedera' la passphrase (clevis luks regen dopo l'avvio).")
 
 
 def print_training(cap):
@@ -1582,6 +1655,7 @@ def cmd_rollback(args):
     print("Il firmware verifica la capsula e chiede a vboot lo slot %s, con due tentativi." % plan["other"])
     print("Se lo slot %s non partisse, vboot tornerebbe allo slot %s." % (plan["other"], plan["current"]))
     print_training(cap)
+    print_sealing()
     return finish_stage(args)
 
 
@@ -1735,6 +1809,7 @@ def cmd_other_slot(args):
     print("di fila (spegnere e riaccendere a ogni blocco), vboot torna allo slot %s. BIOS Lock deve essere"
           % current)
     print("spento.")
+    print_sealing()
     return 0
 
 

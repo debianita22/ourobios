@@ -306,10 +306,20 @@ for ro_mb, slot_mb in ((False, True), (True, False)):
     else:
         raise AssertionError("other-slot ha accettato uno slot di un'altra generazione (RO %s, slot %s)"
                              % (ro_mb, slot_mb))
+# i volumi che un aggiornamento puo' chiudere: BitLocker, LUKS2 sigillato a
+# PCR 0-2 (systemd-tpm2), clevis; non un LUKS2 sigillato a PCR 7 soltanto
+import json
+lsblk = "/dev/sda1 vfat\n/dev/sda2 BitLocker\n/dev/sdb2 crypto_LUKS\n/dev/sdc2 crypto_LUKS\n/dev/sdd crypto_LUKS\n"
+dumps = {"/dev/sdb2": json.dumps({"tokens": {"0": {"type": "systemd-tpm2", "tpm2-pcrs": [7]}}}),
+         "/dev/sdc2": json.dumps({"tokens": {"0": {"type": "systemd-tpm2", "tpm2-pcrs": [0, 2, 7]}}}),
+         "/dev/sdd": json.dumps({"tokens": {"1": {"type": "clevis"}}})}
+assert update.sealed_to_firmware(lsblk, dumps) == [("/dev/sda2", "BitLocker", None),
+                                                   ("/dev/sdc2", "systemd-tpm2", [0, 2, 7]),
+                                                   ("/dev/sdd", "clevis", None)]
 shutil.rmtree(root)
 EOF
 	then
-		ok "tools/update.py: other-slot su un flash finto (M920x: RW_MRC_CACHE resta, vuota con --retrain o verso la rc3; W541: vuota; mai uno slot di un'altra generazione del measured boot)"
+		ok "tools/update.py: other-slot su un flash finto (M920x: RW_MRC_CACHE resta, vuota con --retrain o verso la rc3; W541: vuota; mai uno slot di un'altra generazione del measured boot; i volumi sigillati ai PCR del firmware)"
 	else
 		bad "tools/update.py: other-slot non prepara l'immagine come deve"
 	fi

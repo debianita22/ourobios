@@ -199,3 +199,4 @@
 0203-security-tpm-Keep-the-pre-RAM-TPM-log-inside-its-reg.patch
 0204-security-tpm-Start-the-log-before-vboot-s-first-meas.patch
 0205-security-tpm-256-KiB-for-the-TPM-1.2-log-a-payload-a.patch
+0206-mb-lenovo-Do-not-promise-Kernel-DMA-Protection-in-th.patch
