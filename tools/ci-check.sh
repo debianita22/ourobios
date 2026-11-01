@@ -2065,6 +2065,26 @@ for b in $(boards); do
 	fi
 done
 
+step "fine riga delle patch di EDK2"
+# I file di EDK2 sono quasi tutti CRLF, e le righe di contesto delle patch
+# con loro: una patch riscritta in LF (un editor, uno script in modo testo:
+# la 0040 di 69e98e1, scoperta solo dalla build) non applica piu'. Offline
+# non si sa come finisce ogni file di EDK2; si vede pero' una patch che
+# nell'ultimo commit aveva righe CRLF e ora non ne ha piu' (nella CI i
+# file sono quelli del commit, e le patch le applica check.yml)
+n=0
+for f in patches/edk2/*.patch; do
+	git cat-file -e "HEAD:${f}" 2>/dev/null || continue
+	before="$(git show "HEAD:${f}" | grep -c $'\r$' || true)"
+	now="$(grep -c $'\r$' "${f}" || true)"
+	if [ "${before}" -gt 0 ] && [ "${now}" -eq 0 ]; then
+		bad "${f}: ${before} righe CRLF nell'ultimo commit, nessuna ora (riscritta in LF?)"
+	else
+		n=$((n + 1))
+	fi
+done
+ok "patches/edk2: ${n} patch con le loro righe CRLF come nell'ultimo commit"
+
 step "commit pinnati dal mirror (pinned_commit di tools/build.sh)"
 # Un repository "upstream" che non ha piu' il commit pinnato (riscritto) e
 # un mirror con il suo tag pin-<12 cifre>, in locale: pinned_commit lo deve
