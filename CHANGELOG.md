@@ -52,6 +52,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   load lines for this board instead of generic values. With an i3-8100
   power and voltage are the same; it is the setting Lenovo validated for
   every processor these boards take.
+- On the M920x (and the M720q/M920q), C1E and the C1/C3 auto-demotion of
+  the processor, as Intel's defaults and the Lenovo firmware have them
+  (patch 0196): coreboot's CPU init left them off. Idle 0.54 W instead of
+  0.57 W with an i3-8100, the same package C-states.
 - docs/m920x.md: the fan readout under Linux at every boot
   (`/etc/modules-load.d`, the EC has nothing that loads `nct6683` by
   itself).
