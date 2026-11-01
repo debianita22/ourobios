@@ -191,3 +191,4 @@
 0195-mb-lenovo-m720q_m920q-The-VR-power-delivery-design-o.patch
 0196-soc-intel-cannonlake-mb-lenovo-m720q_m920q-C1E-and-C.patch
 0197-sb-intel-lynxpoint-An-ME-halted-on-purpose-is-not-an.patch
+0198-cpu-intel-haswell-Make-package-C-state-demotion-a-ch.patch
