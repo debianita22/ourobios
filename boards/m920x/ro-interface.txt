@@ -24,7 +24,7 @@ fsp _vboot2_work fef00000
 fsp _tpm_log fef03000
 fsp _etpm_log fef03800
 fsp _car_stack fef03800
-fsp _evboot2_work fef03800
+fsp _evboot2_work fef03000
 fsp _ecar_stack fef23c00
 fsp _preram_cbmem_console fef23c00
 fsp _epreram_cbmem_console fef24a00

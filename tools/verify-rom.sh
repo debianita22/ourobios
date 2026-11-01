@@ -555,6 +555,9 @@ else
 				ok "${st}: le regioni della cache-as-RAM di ${BOARD_RO_INTERFACE}"
 			else
 				bad "${st}: cache-as-RAM diversa da ${BOARD_RO_INTERFACE} ($(diff "${TMP}/car-want" "${TMP}/car-${st}" | sed -n 's/^> //p' | head -3 | paste -sd ' '))"
+				# la tabella intera di questa build, da copiare nel file se la
+				# parte RO cambia di proposito (una generazione nuova)
+				sed "s/^/       ${VARIANT} /" "${TMP}/car-${st}"
 			fi
 		done
 	fi
