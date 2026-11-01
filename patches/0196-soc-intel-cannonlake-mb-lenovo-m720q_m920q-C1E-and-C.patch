@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 1 Nov 2026 09:33:47 +0100
+Subject: [PATCH] soc/intel/cannonlake,mb/lenovo/m720q_m920q: C1E and C-state
+ auto-demotion
+
+FSP-S enables Enhanced C1 and the C1 and C3 auto-demotion and
+un-demotion by default (its C1e, C1StateAutoDemotion, C1StateUnDemotion,
+C3StateAutoDemotion and C3StateUnDemotion), and the Lenovo firmware of
+the M720q, M920q and M920x, which runs its CPU init through FSP, has
+them on ("C-State Auto Demotion: C1 and C3"). coreboot does the CPU
+init itself on Cannon Lake and left them off: MSR_POWER_CTL bit 1 and
+bits 25-28 of MSR_PKG_CST_CONFIG_CONTROL were 0 on an M920x.
+
+Add the devicetree options c1e_enable and cstate_auto_demotion, off by
+default, set in the same writes as the locks of these MSRs on every
+core, and turn both on for these boards. Package C-state demotion stays
+off, as there.
+
+TEST=On the M920x with the i3-8100 (ci-169 against ci-170): MSR 0xE2
+0x00008008 before, 0x1e008008 after on every core; idle (30 s) 0.57
+and 0.54 W, PC9 85.8% both; 60 s on all cores 44.64 and 44.50 W,
+stable. Under Linux, MSR_POWER_CTL bit 1 still reads 0: intel_idle
+turns C1E promotion off on this processor and asks for C1E itself, so
+c1e_enable matters for the other OSes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/devicetree.cb | 5 +++++
+ src/soc/intel/cannonlake/chip.h                | 7 +++++++
+ src/soc/intel/cannonlake/cpu.c                 | 5 +++++
+ 3 files changed, 17 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/devicetree.cb b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+index 4a83c3401f..1f11aba3f5 100644
+--- a/src/mainboard/lenovo/m720q_m920q/devicetree.cb
++++ b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+@@ -24,6 +24,11 @@ chip soc/intel/cannonlake
+ 	# values for it. 0, the default, keeps the generic values of FSP-S
+ 	register "VrPowerDeliveryDesign" = "11"
+ 
++	# C1E and the C1/C3 auto-demotion and un-demotion, as the OEM firmware
++	# (Intel's defaults there, through FSP-S)
++	register "c1e_enable" = "true"
++	register "cstate_auto_demotion" = "true"
++
+ 	# Wake on LAN from S4 and S5, as the OEM firmware (the "wake_on_lan" option)
+ 	register "WolEnableOverride" = "true"
+ 
+diff --git a/src/soc/intel/cannonlake/chip.h b/src/soc/intel/cannonlake/chip.h
+index 27be8f1abd..7bf31a241a 100644
+--- a/src/soc/intel/cannonlake/chip.h
++++ b/src/soc/intel/cannonlake/chip.h
+@@ -253,6 +253,13 @@ struct soc_intel_cannonlake_config {
+ 	bool TetonGlacierMode;
+ 
+ 	bool eist_enable;
++	/*
++	 * Enhanced C1 (C1E: MSR_POWER_CTL bit 1) and the C1 and C3 auto-demotion
++	 * and un-demotion of MSR_PKG_CST_CONFIG_CONTROL (bits 25-28), which FSP-S
++	 * would enable by default but coreboot's CPU init leaves off
++	 */
++	bool c1e_enable;
++	bool cstate_auto_demotion;
+ 	bool enable_c6dram;
+ 
+ 	/*
+diff --git a/src/soc/intel/cannonlake/cpu.c b/src/soc/intel/cannonlake/cpu.c
+index ed211e011a..0c9bcaf05e 100644
+--- a/src/soc/intel/cannonlake/cpu.c
++++ b/src/soc/intel/cannonlake/cpu.c
+@@ -71,6 +71,8 @@ static void configure_misc(void)
+ 	msr = rdmsr(MSR_POWER_CTL);
+ 	msr.lo |= (1 << 0);	/* Enable Bi-directional PROCHOT as an input */
+ 	msr.lo |= (1 << 18);	/* Enable Energy/Performance Bias control */
++	if (conf->c1e_enable)
++		msr.lo |= POWER_CTL_C1E_MASK;	/* Enhanced C1 */
+ 	msr.lo |= (1 << 23);	/* Lock it */
+ 	wrmsr(MSR_POWER_CTL, msr);
+ }
+@@ -83,6 +85,9 @@ static void configure_c_states(const config_t *const cfg)
+ 	if (cfg->max_package_c_state && (msr.lo & 0xf) >= cfg->max_package_c_state) {
+ 		msr.lo = (msr.lo & ~0xf) | ((cfg->max_package_c_state - 1) & 0xf);
+ 	}
++	/* C3 and C1 auto-demotion (bits 25, 26) and un-demotion (27, 28) */
++	if (cfg->cstate_auto_demotion)
++		msr.lo |= (1 << 25) | (1 << 26) | (1 << 27) | (1 << 28);
+ 	/*
+ 	 * CFG Lock, which locks bits 15:0 until the next reset: the "cfg_lock"
+ 	 * option, on by default. macOS writes this MSR, and with the lock it
+-- 
+2.47.3
+
