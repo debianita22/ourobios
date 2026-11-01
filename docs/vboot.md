@@ -274,7 +274,9 @@ with a TPM 2.0 at every boot, and one boot without a TPM. On the M920x of
 the port (Infineon SLB9670, both banks), Linux's event log, 121 events
 with shim and GRUB, replays to PCR 0-7 in SHA-1 and SHA-256, and each of
 coreboot's measurements matches the flash (`tools/hw-report.py`, TPM-03).
-Not yet on a W541.
+On a W541 (`nri`, ST33ZP24 TPM 1.2), after the flashrom command from
+v1.4.1, the TCPA log, 82 events, replays to PCR 0-7 (TPM-03). Suspend
+with the TPM started in verstage is not yet tested.
 
 **Risk.** As with v1.3.9: a read-only part that does not start leaves a
 machine that only an external programmer brings back.

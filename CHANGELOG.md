@@ -61,7 +61,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   M920x with a TPM 2.0 at every boot, and one boot without a TPM.
 - On the M920x of the port (Infineon SLB9670): Linux's event log, 121
   events with shim and GRUB, replays to PCR 0-7 in SHA-1 and SHA-256, and
-  each of coreboot's 11 measurements matches the flash. Not yet on a W541.
+  each of coreboot's 11 measurements matches the flash. On a W541 (`nri`,
+  ST33ZP24 TPM 1.2), the read-only part written with the command above
+  from v1.4.1: its log, 82 events, replays to PCR 0-7, with coreboot's 9
+  measurements and vboot's 3 (TPM-03).
 
 ## v1.4.1
 
