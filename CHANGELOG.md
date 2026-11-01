@@ -46,6 +46,12 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 - `tools/hw-report.py`: BOOT-02 says which *Clear memory at power-on*
   setting the boot read, whether the OS had asked, and whether the memory
   was cleared.
+- On the M920x (and the M720q/M920q), the voltage regulator design of
+  the Lenovo firmware for FSP-S (`VrPowerDeliveryDesign` 11, patch 0195),
+  found in the setup variable of its image: Intel's current limits and
+  load lines for this board instead of generic values. With an i3-8100
+  power and voltage are the same; it is the setting Lenovo validated for
+  every processor these boards take.
 - docs/m920x.md: the fan readout under Linux at every boot
   (`/etc/modules-load.d`, the EC has nothing that loads `nct6683` by
   itself).

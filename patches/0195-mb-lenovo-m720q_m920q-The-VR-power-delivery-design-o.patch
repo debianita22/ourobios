@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 1 Nov 2026 09:33:47 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: The VR power delivery design of the
+ OEM firmware
+
+FSP-S takes the current limits and load lines of the processor's
+voltage regulators from a table of Intel's board designs when
+VrPowerDeliveryDesign names one, and keeps generic values with 0, the
+default coreboot passed. The Lenovo firmware of these boards (M1UKT,
+for the M720q, M920q and M920x) sets 11, CFL_S_35_WATT_8_2: all three
+copies of its Setup variable in the flash of an M920x have it, the last
+one saved with a 65 W i3-8100 (PL2 81.25 W), so it follows the board
+and not the processor. Set the same.
+
+TEST=On the M920x with the i3-8100 (ci-166 against ci-169): the same
+within the noise, idle 0.81 and 0.79 W, under a load on all four cores
+for 60 s 44.61 and 44.64 W at 1.1205 and 1.1213 V, 3599 MHz, stable.
+The table matters at the current limits of the processors with more
+cores, which these boards also take; the gain for those is the OEM's
+validated values, not a measurement here.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/m720q_m920q/devicetree.cb | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/devicetree.cb b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+index 9b19d1e419..4a83c3401f 100644
+--- a/src/mainboard/lenovo/m720q_m920q/devicetree.cb
++++ b/src/mainboard/lenovo/m720q_m920q/devicetree.cb
+@@ -18,6 +18,12 @@ chip soc/intel/cannonlake
+ 	# SATA Power Optimizer, off by default in FSP-S
+ 	register "satapwroptimize" = "true"
+ 
++	# The voltage regulator design of these boards, as the OEM firmware
++	# sets it whatever the processor (its saved setup: 11, also with a
++	# 65 W one): CFL_S_35_WATT_8_2, Intel's VR current and load line
++	# values for it. 0, the default, keeps the generic values of FSP-S
++	register "VrPowerDeliveryDesign" = "11"
++
+ 	# Wake on LAN from S4 and S5, as the OEM firmware (the "wake_on_lan" option)
+ 	register "WolEnableOverride" = "true"
+ 
+-- 
+2.47.3
+
