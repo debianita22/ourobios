@@ -1,7 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sun, 1 Nov 2026 19:42:24 +0100
-Subject: [PATCH] security/tpm: Keep the pre-RAM TPM log inside its region
+Subject: [PATCH 203/203] security/tpm: Keep the pre-RAM TPM log inside its
+ region
 
 The TPM 1.2 and TPM 2.0 formats of the pre-RAM log set its limit to
 MAX_TPM_LOG_ENTRIES (50), the one of the log in cbmem, while the
