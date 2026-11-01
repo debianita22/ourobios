@@ -1,0 +1,56 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 1 Nov 2026 10:13:34 +0100
+Subject: [PATCH] sb/intel/lynxpoint: An ME halted on purpose is not an error
+
+intel_me_path() took the error path whenever the MBP was not ready, so
+an ME halted on purpose (the AltMeDisable bit of me_cleaner -S) logged
+"mbp is not ready!" at BIOS_CRIT and a Management Engine error event at
+every boot: 33 errors in 32 boots in the event log of a ThinkPad W541,
+whose ME stops in its bring-up (operation mode 2, error code 0,
+progress code 1) before it makes the MBP. A real error of the ME looked
+the same.
+
+Without an error code or a bad partition table, in debug or disabled
+mode, the missing MBP is part of the disable path: say so at BIOS_INFO
+and keep that path. The event log still records it (any path but the
+normal one), with the extended data.
+
+TEST=Builds for the W541 (mrc and nri). Remains for the hardware test:
+a boot of the W541 logs "Management Engine disabled" (tools/elog.py)
+instead of an error, and no "mbp is not ready".
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/southbridge/intel/lynxpoint/me.c | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/src/southbridge/intel/lynxpoint/me.c b/src/southbridge/intel/lynxpoint/me.c
+index 1a6de29b2c..0d1bac390a 100644
+--- a/src/southbridge/intel/lynxpoint/me.c
++++ b/src/southbridge/intel/lynxpoint/me.c
+@@ -687,8 +687,19 @@ static enum me_bios_path intel_me_path(struct device *dev)
+ 	if (hfs.error_code || hfs.fpt_bad)
+ 		path = ME_ERROR_BIOS_PATH;
+ 
+-	/* Check if the MBP is ready */
+-	if (!hfs2.mbp_rdy) {
++	/*
++	 * Check if the MBP is ready. An ME halted on purpose, in debug or
++	 * disabled mode without an error code (AltMeDisable, me_cleaner -S),
++	 * stops in its bring-up before it makes the MBP: that is its disable
++	 * path, not an error
++	 */
++	const bool halted = (hfs.operation_mode == ME_HFS_MODE_DEBUG ||
++			     hfs.operation_mode == ME_HFS_MODE_DIS) &&
++			    !hfs.error_code && !hfs.fpt_bad;
++	if (!hfs2.mbp_rdy && halted) {
++		printk(BIOS_INFO, "%s: ME halted in mode %u, no MBP\n", __func__,
++		       hfs.operation_mode);
++	} else if (!hfs2.mbp_rdy) {
+ 		printk(BIOS_CRIT, "%s: mbp is not ready!\n",
+ 		       __func__);
+ 		path = ME_ERROR_BIOS_PATH;
+-- 
+2.47.3
+
