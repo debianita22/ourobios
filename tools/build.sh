@@ -562,7 +562,11 @@ fw_revision() {
 edk2_params() {
 	local p
 	p="$(sed -n 's/^CONFIG_EDK2_CUSTOM_BUILD_PARAMS="\(.*\)"$/\1/p' "$(defconfig "$1")")"
-	printf 'CONFIG_EDK2_CUSTOM_BUILD_PARAMS="%s--pcd gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareRevision=%s"\n' \
+	# il log del TPM 2.0 di Tcg2Dxe: 256 KiB, non 64 (il default), che sul
+	# M920x le variabili di Secure Boot (dbx da sola 21 KiB), le misure di
+	# coreboot e i comandi di GRUB riempivano prima di ExitBootServices: gli
+	# eventi dopo estendevano i PCR senza entrare nel log (PCR 5)
+	printf 'CONFIG_EDK2_CUSTOM_BUILD_PARAMS="%s--pcd gEfiSecurityPkgTokenSpaceGuid.PcdTcgLogAreaMinLen=0x40000 --pcd gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareRevision=%s"\n' \
 		"${p:+${p} }" "$(fw_revision)"
 }
 

@@ -500,6 +500,14 @@ if extract config "${TMP}/config"; then
 	else
 		bad "config: CONFIG_EDK2_CUSTOM_BUILD_PARAMS senza PcdFirmwareRevision=${rev} in fondo"
 	fi
+	# il log del TPM di Tcg2Dxe da 256 KiB: con 64 si riempiva prima di
+	# ExitBootServices (sul M920x), e il log non dava piu' i PCR
+	if grep -qE '^CONFIG_EDK2_CUSTOM_BUILD_PARAMS=".*--pcd gEfiSecurityPkgTokenSpaceGuid.PcdTcgLogAreaMinLen=0x40000 ' \
+		"${TMP}/config"; then
+		ok "config: PcdTcgLogAreaMinLen 0x40000"
+	else
+		bad "config: CONFIG_EDK2_CUSTOM_BUILD_PARAMS senza PcdTcgLogAreaMinLen=0x40000"
+	fi
 	if [ -n "${LOCALVERSION}" ]; then
 		if [ "${lv}" = "${LOCALVERSION}" ]; then ok "versione: ${lv}"; else bad "versione: '${lv}', attesa '${LOCALVERSION}'"; fi
 	else

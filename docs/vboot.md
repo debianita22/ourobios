@@ -260,7 +260,11 @@ banks allocated) the payload hands coreboot's events to Tcg2Dxe
 `EFI_TCG2_PROTOCOL`, and then leaves the ACPI TPM2 table without a log
 area: Linux reads that table's log before the EFI one, and on the M920x it
 showed coreboot's events only, none of the payload's. coreboot extends
-both banks (patch 0201).
+both banks (patch 0201). The log areas are 256 KiB (`PcdTcgLogAreaMinLen`
+of Tcg2Dxe; patch 0205 for the TPM 1.2 log): with EDK2's 64 KiB the
+Secure Boot variables, shim and GRUB, which measures every command it
+runs, filled the M920x's log before ExitBootServices, and the events
+after it were extended without being logged.
 
 Tested in QEMU q35 (`tools/build.sh smoke`, step 11): with swtpm as a TPM
 1.2 and as a TPM 2.0 with the M920x's banks, the log, replayed event by

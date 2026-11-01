@@ -1,0 +1,46 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 1 Nov 2026 22:06:25 +0100
+Subject: [PATCH] security/tpm: 256 KiB for the TPM 1.2 log a payload appends
+ to
+
+The TPM 1.2 log in cbmem, which the ACPI TCPA table publishes as its log
+area, is where a UEFI payload (SecurityPkg TcgDxe) logs its events after
+coreboot's; it got the 64 KiB that acpi.c gives a TCPA log. On a
+ThinkCentre M920x with the same payload and a TPM 2.0, its log area of
+64 KiB (EDK2's default PcdTcgLogAreaMinLen) was full before
+ExitBootServices: the Secure Boot variables (dbx alone 21 KiB), the
+boot variables, shim's and GRUB's events (GRUB measures each command it
+runs). The events after that extend the PCRs and are not logged, and
+the log no longer replays to them (PCR 5 there).
+
+Give the TPM 1.2 log 256 KiB, as ouroBIOS gives Tcg2Dxe on the TPM 2.0
+side.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/security/tpm/tspi/log-tpm1.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/src/security/tpm/tspi/log-tpm1.c b/src/security/tpm/tspi/log-tpm1.c
+index e807b2547a..14886ea820 100644
+--- a/src/security/tpm/tspi/log-tpm1.c
++++ b/src/security/tpm/tspi/log-tpm1.c
+@@ -32,10 +32,12 @@ void *tpm1_log_cbmem_init(void)
+ 		/*
+ 		 * This table is also the log area of the ACPI TCPA table, where
+ 		 * a UEFI payload logs its own events after coreboot's: leave
+-		 * room for them, as much as acpi.c gives a log of its own.
++		 * room for them. The Secure Boot variables, the boot loader's
++		 * events (GRUB measures its commands) and the OS loader's can
++		 * take more than the 64 KiB acpi.c gives a log of its own.
+ 		 */
+ 		tpm_log_len = MAX(sizeof(*tclt) + MAX_TPM_LOG_ENTRIES * sizeof(tclt->entries[0]),
+-				  64 * KiB);
++				  256 * KiB);
+ 		tclt = cbmem_add(CBMEM_ID_TCPA_TCG_LOG, tpm_log_len);
+ 		if (!tclt)
+ 			return NULL;
+-- 
+2.47.3
+
