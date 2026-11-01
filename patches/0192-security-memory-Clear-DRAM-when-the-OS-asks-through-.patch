@@ -30,8 +30,12 @@ the others the OS sees no MOR, as before.
 TEST=Builds for the ThinkCentre M920x and the ThinkPad W541 (CI, with
 the menu check and the QEMU smoke test); gcc -fsyntax-only of memory.c
 for ramstage and postcar, with and without the EFI store and SMMSTORE.
-Remains for the hardware test: the decision at each boot with the
-setting forced to 2, and the default.
+On the M920x (ci-165, the setting forced to 2 by a test patch): the
+first boot, without the variable, cleared (2007 ms) and the payload
+created it, Linux set it to 1; the next boot read 0x01 and cleared;
+with the bit set to 0 from Linux, the next read 0x00 and did not clear
+(22 ms for that step, the boot 2 s shorter). ci-166 (the default):
+"option always: clearing" at both boots, no variable under Linux.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
