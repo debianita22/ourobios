@@ -422,6 +422,17 @@ class UpdateTest:
             for name in ("VBOOT: boot mode", "VBOOT: GBB HWID", "VBOOT: firmware ver"):
                 if not re.search(r"TPM: Digest of `%s` to PCR 1 measured" % name, text):
                     raise Fail("%s: verstage non ha misurato \"%s\" in PCR 1 (serial-%s.log)" % (tag, name, tag))
+        # il registro che coreboot passa al payload, stampato prima di
+        # avviarlo: le misure di vboot ci devono essere, dopo FMAP e
+        # bootblock (patch 0204), non solo nei PCR
+        dump = text.split("coreboot TPM 2.0 measurements:", 1)
+        if len(dump) == 2:
+            names = re.findall(r"PCR-(\d+) [0-9a-f]+ SHA256 \[([^\]]*)\]", dump[1].split("Jumping to boot code")[0])
+            want = [("2", "FMAP: FMAP"), ("2", "CBFS: bootblock"), ("1", "VBOOT: boot mode"),
+                    ("1", "VBOOT: GBB HWID"), ("1", "VBOOT: firmware ver")]
+            if names[:5] != want:
+                raise Fail("%s: il registro di coreboot comincia con %s, atteso %s (serial-%s.log)"
+                           % (tag, names[:5], want, tag))
 
     def close(self, keep_flash=False):
         """QEMU spento, i file temporanei via; con keep_flash il flash in DIR."""
