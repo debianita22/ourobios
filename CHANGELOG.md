@@ -56,6 +56,11 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   the processor, as Intel's defaults and the Lenovo firmware have them
   (patch 0196): coreboot's CPU init left them off. Idle 0.54 W instead of
   0.57 W with an i3-8100, the same package C-states.
+- On the W541 with its ME halted by `me_cleaner -S`, the event log no
+  longer records a *Management Engine error* at every boot, nor the
+  console a critical `mbp is not ready!`: an ME that stops in its
+  bring-up on purpose takes the disable path (patch 0197), so a real
+  error of the ME stands out again.
 - docs/m920x.md: the fan readout under Linux at every boot
   (`/etc/modules-load.d`, the EC has nothing that loads `nct6683` by
   itself).
