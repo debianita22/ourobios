@@ -2,9 +2,12 @@
 # che una capsula ci scrive sopra (docs/vboot.md#limits).
 #
 # Una capsula non scrive mai WP_RO: gli slot di ogni release partono dopo il
-# bootblock e il verstage dell'ultima release scritta con flashrom (la
-# v1.3.9, con una cache-as-RAM uguale per le due varianti; prima la v1.3.0,
-# con la cache-as-RAM della sua variante, nel git di questo file). Questi
+# bootblock e il verstage dell'ultima release scritta con flashrom: la
+# parte RO con il measured boot (in sviluppo, generazione 2: il verstage
+# avvia il TPM, e la cache-as-RAM ha in piu' il registro del TPM, 2 KiB
+# dopo il buffer di vboot, che spostano di 0x800 tutto quello che segue);
+# prima la v1.3.9, con una cache-as-RAM uguale per le due varianti, e la
+# v1.3.0, con la cache-as-RAM della sua variante, nel git di questo file. Questi
 # lasciano il loro stato nella cache-as-RAM per la romstage: il buffer di
 # lavoro di vboot, la console prima della RAM, i timestamp, le cache di FMAP
 # e CBFS. Gli slot devono trovarli agli stessi indirizzi e nello stesso
@@ -22,10 +25,7 @@
 #                               (vboot: vb2_shared_data e nvdata; console, timestamp,
 #                               cache di FMAP e CBFS: struct e indirizzi uguali)
 #   VARIANTE SIMBOLO INDIRIZZO  una regione della cache-as-RAM (car.ld), come la scrive nm
-coreboot 26.09-280-gacdbfd47295d
-# 26.09-438: upstream non tocca car.ld, vboot (stesso submodule), la console,
-# i timestamp ne' le cache di FMAP e CBFS; regioni uguali in bootblock e romstage
-rw-ok 26.09-438-g206078d6d990
+coreboot 26.09-438-g206078d6d990
 mrc _car_region_start ff7c0000
 mrc _vboot2_work ff7c0000
 mrc _evboot2_work ff7c3000
@@ -40,9 +40,11 @@ mrc _efmap_cache ff7c967c
 mrc _preram_cbfs_cache ff7c9680
 mrc _car_ehci_dbg_info ff7cb680
 mrc _epreram_cbfs_cache ff7cb680
-mrc _car_stack ff7cb6d0
-mrc _ecar_ehci_dbg_info ff7cb6d0
-mrc _ecar_stack ff7cd6d0
+mrc _tpm_log ff7cb6d0
+mrc _etpm_log ff7cbed0
+mrc _car_stack ff7cbed0
+mrc _ecar_ehci_dbg_info ff7cbed0
+mrc _ecar_stack ff7cded0
 mrc _car_region_end ff7d0000
 nri _car_region_start ff7c0000
 nri _vboot2_work ff7c0000
@@ -58,7 +60,9 @@ nri _efmap_cache ff7c967c
 nri _preram_cbfs_cache ff7c9680
 nri _car_ehci_dbg_info ff7cb680
 nri _epreram_cbfs_cache ff7cb680
-nri _car_stack ff7cb6d0
-nri _ecar_ehci_dbg_info ff7cb6d0
-nri _ecar_stack ff7eb6d0
+nri _tpm_log ff7cb6d0
+nri _etpm_log ff7cbed0
+nri _car_stack ff7cbed0
+nri _ecar_ehci_dbg_info ff7cbed0
+nri _ecar_stack ff7ebed0
 nri _car_region_end ff800000

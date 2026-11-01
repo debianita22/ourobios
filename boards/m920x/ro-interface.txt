@@ -2,8 +2,11 @@
 # capsula ci scrive sopra (docs/vboot.md#limits), come configs/ro-interface.txt
 # per il W541 (il formato e' spiegato li').
 #
-# La parte RO del M920x e' quella della prima release scritta con flashrom
-# (docs/m920x.md#first-install): bootblock con verstage e microcode. Lascia
+# La parte RO del M920x e' quella dell'ultima release scritta con flashrom
+# (docs/m920x.md#first-install): bootblock con verstage e microcode. Dalla
+# generazione 2 (measured boot, in sviluppo) il verstage avvia il TPM e la
+# cache-as-RAM ha in piu' il registro del TPM, 2 KiB dopo il buffer di vboot,
+# che spostano di 0x800 tutto quello che segue. Lascia
 # il suo stato nella cache-as-RAM per la romstage dello slot (buffer di
 # lavoro di vboot, console prima della RAM, timestamp, cache di FMAP e CBFS):
 # gli slot devono trovarli agli stessi indirizzi. Finche' nessuna release del
@@ -18,19 +21,21 @@
 coreboot 26.09-438-g206078d6d990
 fsp _car_region_start fef00000
 fsp _vboot2_work fef00000
-fsp _car_stack fef03000
-fsp _evboot2_work fef03000
-fsp _ecar_stack fef23400
-fsp _preram_cbmem_console fef23400
-fsp _epreram_cbmem_console fef24200
-fsp _timestamp fef24200
-fsp _cbfs_mcache fef24400
-fsp _etimestamp fef24400
-fsp _ecbfs_mcache fef28400
-fsp _fmap_cache fef28400
-fsp _efmap_cache fef2887c
-fsp _preram_cbfs_cache fef28880
-fsp _car_ehci_dbg_info fef2c880
-fsp _epreram_cbfs_cache fef2c880
-fsp _ecar_ehci_dbg_info fef2c8d0
+fsp _tpm_log fef03000
+fsp _etpm_log fef03800
+fsp _car_stack fef03800
+fsp _evboot2_work fef03800
+fsp _ecar_stack fef23c00
+fsp _preram_cbmem_console fef23c00
+fsp _epreram_cbmem_console fef24a00
+fsp _timestamp fef24a00
+fsp _cbfs_mcache fef24c00
+fsp _etimestamp fef24c00
+fsp _ecbfs_mcache fef28c00
+fsp _fmap_cache fef28c00
+fsp _efmap_cache fef2907c
+fsp _preram_cbfs_cache fef29080
+fsp _car_ehci_dbg_info fef2d080
+fsp _epreram_cbfs_cache fef2d080
+fsp _ecar_ehci_dbg_info fef2d0d0
 fsp _car_region_end fef40000

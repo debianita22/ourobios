@@ -464,8 +464,9 @@ if extract config "${TMP}/config"; then
 	want CONFIG_VBOOT_STARTS_IN_BOOTBLOCK=y
 	want CONFIG_VBOOT_VBNV_FLASH=y
 	want CONFIG_VBOOT_MOCK_SECDATA=y
-	want CONFIG_VBOOT_MOCK_SECDATA_NO_TPM=y
-	want CONFIG_TPM_INIT_RAMSTAGE=y
+	# measured boot (generazione 2 della parte RO): il verstage avvia il TPM
+	want CONFIG_TPM_MEASURED_BOOT=y
+	never CONFIG_VBOOT_MOCK_SECDATA_NO_TPM=y "il verstage non avvierebbe il TPM: niente measured boot"
 	want CONFIG_BOOTMEDIA_LOCK_CONTROLLER=y
 	want CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO=y
 	want CONFIG_BOOTMEDIA_LOCK_RUNTIME_OPTION=y

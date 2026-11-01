@@ -19,8 +19,8 @@ CONFIG_VBOOT_SLOTS_RW_AB=y
 CONFIG_LENOVO_HASWELL_VBOOT_MINIMAL_RO=y
 # una cache-as-RAM uguale per mrc e nri: la parte RO di v1.3.9 parte gli slot di tutte e due
 CONFIG_LENOVO_HASWELL_COMMON_CAR=y
-# Niente dati di vboot nel TPM (anti-rollback degli slot): il TPM lo avvia
-# ramstage come senza vboot, con le stesse misure nei PCR
+# Niente dati di vboot nel TPM (anti-rollback degli slot): il TPM serve solo
+# alle misure, e se non parte l'avvio continua senza (patch 0199)
 CONFIG_VBOOT_MOCK_SECDATA=y
 # Measured boot (in development): verstage starts the TPM and coreboot
 # measures every stage it loads into PCR0/PCR2, with its own event log

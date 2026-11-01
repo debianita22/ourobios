@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 1 Nov 2026 16:30:31 +0100
+Subject: [PATCH] security/vboot: Boot on when the TPM fails with mock secdata
+
+With VBOOT_MOCK_SECDATA vboot keeps nothing in the TPM, yet a TPM that
+does not start makes verstage request recovery (RO_TPM_S_ERROR). On a
+board whose read-only part has no recovery path that stops the boot,
+which is why VBOOT_MOCK_SECDATA_NO_TPM leaves the TPM to ramstage.
+With measured boot the TPM has to start in verstage, and there it only
+takes the measurements.
+
+With mock secdata, report the failure and boot on: the measurements
+are lost, so the PCRs do not match what the OS sealed to them, but the
+machine starts. Failures of the PCR extends and of the CBFS
+measurements already only warn.
+
+TEST=Builds for the ThinkCentre M920x and the ThinkPad W541 with
+TPM_MEASURED_BOOT. Remains: a boot with the TPM off (W541: Security >
+Security Chip off) reaches the payload.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/security/vboot/vboot_logic.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/security/vboot/vboot_logic.c b/src/security/vboot/vboot_logic.c
+index 01d43a08cd..03fd844b2c 100644
+--- a/src/security/vboot/vboot_logic.c
++++ b/src/security/vboot/vboot_logic.c
+@@ -286,6 +286,15 @@ void verstage_main(void)
+ 	if (tpm_rc == TPM_SUCCESS) {
+ 		antirollback_read_space_firmware(ctx);
+ 		antirollback_read_space_kernel(ctx);
++	} else if (CONFIG(VBOOT_MOCK_SECDATA)) {
++		/*
++		 * No secdata in the TPM: it only takes the measurements. A TPM
++		 * that does not start costs those (the PCRs then do not match
++		 * what the OS sealed), not the boot, and a board without a
++		 * recovery path would stop in recovery mode.
++		 */
++		printk(BIOS_ERR, "TPM setup failed (%#x): booting without measurements\n",
++		       tpm_rc);
+ 	} else {
+ 		vb2api_fail(ctx, VB2_RECOVERY_RO_TPM_S_ERROR, tpm_rc);
+ 		if (CONFIG(TPM_SETUP_HIBERNATE_ON_ERR) &&
+-- 
+2.47.3
+
