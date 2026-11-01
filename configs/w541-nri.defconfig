@@ -129,12 +129,14 @@ CONFIG_BOOTMEDIA_LOCK_RUNTIME_OPTION=y
 # capsula porta i due slot RW e il payload scrive solo quello che non gira,
 # poi chiede a vboot di provarlo: la regione RO, le variabili UEFI, la VPD e
 # il registro degli eventi restano. Il GUID e' della variante e della parte
-# RO (cambiato con la mappa del flash in v1.3.0 e con la cache-as-RAM in
-# v1.3.9): una capsula nri non si applica sulla mrc, ne' una della v1.3.9 su
-# un firmware fino alla v1.3.8, e viceversa (tools/update.py). Mai capsule
+# RO (cambiato con la mappa del flash in v1.3.0, con la cache-as-RAM in
+# v1.3.9 e con il measured boot, la generazione 2 di configs/ro-interface.txt):
+# una capsula nri non si applica sulla mrc, ne' una della v1.3.9 su un
+# firmware fino alla v1.3.8, ne' una con il measured boot dietro la parte RO
+# di prima, e viceversa (tools/update.py). Mai capsule
 # piu' vecchie della v1.3.9 (LSV).
 CONFIG_DRIVERS_EFI_FW_INFO=y
-CONFIG_DRIVERS_EFI_MAIN_FW_GUID="5379c75b-87f2-4669-8d87-6fdd92a50ed4"
+CONFIG_DRIVERS_EFI_MAIN_FW_GUID="457afc2a-b6ee-4477-b41b-cc995e6110ae"
 CONFIG_DRIVERS_EFI_MAIN_FW_LSV=0x01030900
 CONFIG_DRIVERS_EFI_UPDATE_CAPSULES=y
 CONFIG_DRIVERS_EFI_CAPSULE_ON_DISK_SUPPORT=y

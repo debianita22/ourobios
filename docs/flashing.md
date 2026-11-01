@@ -23,8 +23,11 @@ setup menu with their capsule, without flashrom ([docs/update.md](update.md));
 flashrom is for the first install of v1.3.0 (from v1.2.x, see
 [From v1.2.x to v1.3.0](#from-v12x-to-v130), or from other firmware), for
 v1.3.9, which writes the read-only part again
-([From v1.3.x to v1.3.9](#from-v13x-to-v139)), for switching variant before
-v1.3.9, and for any other update of the read-only part.
+([From v1.3.x to v1.3.9](#from-v13x-to-v139)), for the first release with
+measured boot, which writes it again too
+([Measured boot: the read-only part](#measured-boot-the-read-only-part)),
+for switching variant before v1.3.9, and for any other update of the
+read-only part.
 
 - [Before you start](#before-you-start)
 - [Boot loader fallback path](#boot-loader-fallback-path)
@@ -32,6 +35,7 @@ v1.3.9, and for any other update of the read-only part.
 - [Internal update](#internal-update)
 - [From v1.2.x to v1.3.0](#from-v12x-to-v130)
 - [From v1.3.x to v1.3.9](#from-v13x-to-v139)
+- [Measured boot: the read-only part](#measured-boot-the-read-only-part)
 - [First boot and settings](#first-boot-and-settings)
 - [Diagnosing a hang](#diagnosing-a-hang)
 - [External programmer](#external-programmer)
@@ -312,6 +316,91 @@ the `mrc` read-only part, the one that holds `mrc.bin`.
 
 Going back to v1.3.8 or earlier is the same command with that release's
 image: flashrom, not a capsule.
+
+## Measured boot: the read-only part
+
+*In development, on the `measured-boot` branch: no release has it yet.*
+
+Measured boot writes the read-only part once more, on the W541 and on the
+M920x: verstage now starts the TPM, and cache-as-RAM holds the TPM's
+early log, 2 KiB after vboot's work buffer, which moves everything after
+it by `0x800` ([docs/vboot.md](vboot.md#the-read-only-part-of-measured-boot)).
+As with v1.3.9, its slots do not boot behind the read-only part before
+it, nor older slots behind the new one (vboot falls back after two
+tries). So these releases have new ESRT GUIDs: their capsule does not
+install on an older firmware, nor an older capsule on them (`update.py
+stage` and fwupd say so), and `update.py other-slot` refuses a slot of the
+other generation even with `--force`. They go in once with flashrom, the
+read-only part and both slots together; then capsules again.
+
+The command writes `WP_RO`, both slots and `RW_NVRAM` (vboot's state, so
+that the first boot starts from slot A) and keeps everything else:
+settings, boot entries, Secure Boot keys, supervisor password, VPD, event
+log and the memory training, which the new slots read as before (the
+cache-as-RAM layout does not change the training). Before it:
+
+- *Firmware protection* off (*Security* → *Flash protection*), save and
+  reboot; `sudo python3 tools/update.py protection --expect-ro off` must
+  exit with 0, and its `BIOS Lock:` line say *spento*.
+- AC adapter connected (and on the W541 the battery charged).
+- An external programmer and a backup at hand: the read-only part runs
+  first at every boot, and if it does not start only the programmer
+  brings the machine back ([Recovery](#recovery); on the M920x,
+  [docs/m920x.md](m920x.md#recovery)).
+
+On the W541, in a subshell that stops at the first error:
+
+```sh
+( set -e
+  R=w541-coreboot-vX.Y.Z-mrc.rom                          # or -nri
+  sha256sum -c SHA256SUMS --ignore-missing
+  sudo modprobe -r spi_intel_platform spi_intel || true   # flashrom must not go through /dev/mtd0
+  sudo flashrom -p internal -r backup.rom                 # keep it off the laptop
+  test "$(stat -c %s backup.rom)" -eq 12582912            # 12 MiB, both chips
+  sudo flashrom -p internal --fmap-file $R \
+    -i RW_NVRAM -i RW_SECTION_A -i RW_SECTION_B -i WP_RO -w $R
+)
+```
+
+On the M920x the same, with Secure Boot off (the kernel's lockdown keeps
+flashrom away from the hardware otherwise) and its SPI module:
+
+```sh
+( set -e
+  R=m920x-coreboot-vX.Y.Z-fsp.rom
+  sha256sum -c SHA256SUMS --ignore-missing
+  grep -q '\[none\]' /sys/kernel/security/lockdown        # Secure Boot is off
+  sudo modprobe -r spi_intel_pci spi_intel || true
+  sudo flashrom -p internal -r backup.rom                 # keep it off the machine
+  test "$(stat -c %s backup.rom)" -eq 25165824            # 24 MiB, both chips
+  sudo flashrom -p internal --fmap-file $R \
+    -i RW_NVRAM -i RW_SECTION_A -i RW_SECTION_B -i WP_RO -w $R
+)
+```
+
+flashrom must end with `VERIFIED`; if it does not, write again straight
+away. After the reboot, turn *Firmware protection* on again. Then:
+
+- `sudo python3 tools/update.py status` names the new generation (no
+  *senza measured boot* line);
+- `sudo cbmem -c | grep -E 'TPM|tpm'` shows the TPM started in verstage
+  and the stages measured (*TPM setup failed ... booting without
+  measurements* means it did not start: the machine boots, without
+  measurements; patch 0199);
+- the event log of the OS replays to the PCRs: `sudo tpm2_eventlog
+  /sys/kernel/security/tpm0/binary_bios_measurements` lists coreboot's
+  events (`CBFS: fallback/romstage` and the others, in PCR 2) before the
+  payload's, and on the M920x each with a SHA-1 and a SHA-256 digest.
+
+**On a W541 whose EC is older than `GMHT30WW`** (EC-01, see [Before you
+start](#before-you-start)), the EC update already needs the external
+programmer: the original image back, Lenovo's updater, then ouroBIOS as
+the first time. Flash the measured boot release then, the whole image
+with the programmer: it is the read-only part change too, and nothing
+above is needed.
+
+Going back to a release without measured boot is the same command with
+that release's image: flashrom, not a capsule.
 
 ## First boot and settings
 

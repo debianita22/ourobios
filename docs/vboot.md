@@ -219,6 +219,56 @@ cache-as-RAM), leaves a laptop that does not start: only an external
 programmer on the 4 MiB chip, with the laptop opened, brings it back. Not
 to be written without a programmer and a backup of the flash at hand.
 
+## The read-only part of measured boot
+
+*In development, on the `measured-boot` branch.* The read-only part of
+the first release with measured boot, on the W541 and on the M920x
+(generation 2 of [`configs/ro-interface.txt`](../configs/ro-interface.txt)
+and [`boards/m920x/ro-interface.txt`](../boards/m920x/ro-interface.txt)),
+written once with flashrom
+([docs/flashing.md](flashing.md#measured-boot-the-read-only-part)). What
+it changes:
+
+- **verstage starts the TPM** (`CONFIG_TPM_MEASURED_BOOT`, in place of
+  ouroBIOS's `VBOOT_MOCK_SECDATA_NO_TPM`), and coreboot measures what it
+  loads into PCR 2 (the FMAP, the bootblock, every stage and the payload)
+  with an event log of its own. vboot's anti-rollback data stays mocked
+  (`VBOOT_MOCK_SECDATA`): the TPM is there for the measurements only.
+- **The TPM's early log in cache-as-RAM**, 2 KiB after vboot's work
+  buffer (`TPM_LOG` in `car.ld`): the measurements of the bootblock and
+  verstage, which romstage copies into cbmem. It moves everything after
+  it by `0x800`: the early console, the timestamps, the CBFS and FMAP
+  caches, the stack. On the M920x each entry carries a SHA-1 and a SHA-256
+  digest (patch 0201), so the entry format is part of what the read-only
+  part leaves too.
+- **A TPM that does not start costs the measurements, not the boot**
+  (patch 0199): with mocked secdata vboot would ask for recovery mode,
+  which these machines do not have. The log says *TPM setup failed ...
+  booting without measurements*.
+- **New ESRT GUIDs**, for the same reason as v1.3.9: these slots and the
+  older ones do not boot behind each other's read-only part. `update.py
+  other-slot` also checks it from the code in the regions (the message of
+  patch 0199 in the read-only part, the copy of the early log in the
+  slot's romstage), since the test builds of the CI carry no version.
+
+What the OS gets: on the W541 (TPM 1.2) the log is coreboot's cbmem log,
+which is also the log area of the ACPI TCPA table; the payload's TcgDxe
+appends its events after coreboot's (patches/edk2/0019; patch 0200 makes
+the area large enough for them). On the M920x (TPM 2.0, SHA-1 and SHA-256
+banks allocated) the payload hands coreboot's events to Tcg2Dxe
+(patches/edk2/0042), which puts them first in the log of
+`EFI_TCG2_PROTOCOL`, the one Linux reads; coreboot extends both banks
+(patch 0201).
+
+Tested in QEMU q35 (`tools/build.sh smoke`, step 11): with swtpm as a TPM
+1.2 and as a TPM 2.0 with the M920x's banks, the log, replayed event by
+event, gives the PCRs read back from the TPM by a UEFI application
+(`tools/efi/tpm-pcr-test.c`), and each of coreboot's measurements is the
+digest of the bytes in the image. Not yet on the machines.
+
+**Risk.** As with v1.3.9: a read-only part that does not start leaves a
+machine that only an external programmer brings back.
+
 ## Later, with another read-only part
 
 Prepared or possible, not in v1.3.9:
@@ -228,7 +278,8 @@ Prepared or possible, not in v1.3.9:
   the one kept in the TPM in verstage, that is in the bootblock of the
   read-only part; today that data is mocked (`VBOOT_MOCK_SECDATA_NO_TPM`)
   and the TPM 1.2 starts only in ramstage (`TPM_INIT_RAMSTAGE`), after
-  verstage. The slots stay writable from the OS by design, so an older slot
+  verstage. The read-only part of measured boot starts the TPM in
+  verstage, but keeps the data mocked. The slots stay writable from the OS by design, so an older slot
   signed with the project key can be put back with flashrom; raising
   `CONFIG_DRIVERS_EFI_MAIN_FW_LSV` stops older capsules, not that. The new
   read-only part would start the TPM before verstage, create the firmware

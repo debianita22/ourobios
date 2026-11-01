@@ -230,7 +230,7 @@ LAYOUT = (("RW_MRC_CACHE", 0x0, 0x10000), ("SMMSTORE", 0x10000, 0x80000), ("RW_N
           ("WP_RO", 0xb00000, 0x100000), ("FMAP", 0xb00000, 0x800))
 
 
-def flash(size, ro, a, b, cache, nvram=True):
+def flash(size, ro, a, b, cache, nvram=True, mb=False):
     base = size - 0xc00000
     areas = {n: (base + o, s) for n, o, s in LAYOUT}
     img = bytearray(b"\xff" * size)
@@ -241,6 +241,10 @@ def flash(size, ro, a, b, cache, nvram=True):
         o = areas[area][0] + (0x20000 if area == "WP_RO" else 0x10000)
         img[o:o + 0x1000] = bytes([fill]) * 0x1000
         img[o + 0x1000:o + 0x1000 + len(name)] = name.encode()
+        if mb:
+            # il codice del measured boot: verstage nella parte RO, romstage negli slot
+            mark = update.MB_RO_MARK if area == "WP_RO" else update.MB_SLOT_MARK
+            img[o + 0x2000:o + 0x2000 + len(mark)] = mark
     o = areas["RW_MRC_CACHE"][0]
     img[o:o + len(cache)] = cache
     o = areas["SMMSTORE"][0]
@@ -255,15 +259,15 @@ def flash(size, ro, a, b, cache, nvram=True):
     return img, areas
 
 
-def other_slot(size, fl, retrain, new=4):
+def other_slot(size, fl, retrain, new=4, ro_mb=False, slot_mb=False, force=False):
     rc = lambda n: "ouroBIOS-v1.4.0-rc%d-%s" % (n, fl)
-    dump, areas = flash(size, rc(3), rc(3), rc(2), b"MRCd" + bytes(range(256)) * 16)
-    rel, _ = flash(size, rc(new), rc(new), rc(new), b"", nvram=False)
+    dump, areas = flash(size, rc(3), rc(3), rc(2), b"MRCd" + bytes(range(256)) * 16, mb=ro_mb)
+    rel, _ = flash(size, rc(new), rc(new), rc(new), b"", nvram=False, mb=slot_mb)
     paths = [os.path.join(root, n) for n in ("dump.bin", "release.rom", "out.rom")]
     for path, data in zip(paths, (dump, rel)):
         open(path, "wb").write(bytes(data))
     out = io.StringIO()
-    args = type("A", (), {"dump": paths[0], "image": paths[1], "out": paths[2], "force": False,
+    args = type("A", (), {"dump": paths[0], "image": paths[1], "out": paths[2], "force": force,
                           "retrain": retrain})()
     with contextlib.redirect_stdout(out):
         update.cmd_other_slot(args)
@@ -290,10 +294,22 @@ assert empty and "--fmap -i RW_SECTION_B -i RW_MRC_CACHE -i RW_NVRAM -w" in cmd,
 # una release del M920x di prima della rc4: la sua capsula lo svuotava
 kept, empty, cmd, text = other_slot(24 << 20, "m920x-fsp", False, new=3)
 assert empty and "--fmap -i RW_SECTION_B -i RW_MRC_CACHE -i RW_NVRAM -w" in cmd, cmd
+# il measured boot: parte RO e slot della stessa generazione si', di
+# generazioni diverse mai, nemmeno con --force (lo slot non parte)
+kept, empty, cmd, text = other_slot(24 << 20, "m920x-fsp", False, ro_mb=True, slot_mb=True)
+assert kept, text
+for ro_mb, slot_mb in ((False, True), (True, False)):
+    try:
+        other_slot(24 << 20, "m920x-fsp", False, ro_mb=ro_mb, slot_mb=slot_mb, force=True)
+    except update.Error as e:
+        assert "measured boot" in str(e), e
+    else:
+        raise AssertionError("other-slot ha accettato uno slot di un'altra generazione (RO %s, slot %s)"
+                             % (ro_mb, slot_mb))
 shutil.rmtree(root)
 EOF
 	then
-		ok "tools/update.py: other-slot su un flash finto (M920x: RW_MRC_CACHE resta, vuota con --retrain o verso la rc3; W541: vuota)"
+		ok "tools/update.py: other-slot su un flash finto (M920x: RW_MRC_CACHE resta, vuota con --retrain o verso la rc3; W541: vuota; mai uno slot di un'altra generazione del measured boot)"
 	else
 		bad "tools/update.py: other-slot non prepara l'immagine come deve"
 	fi

@@ -1216,7 +1216,7 @@ def main():
             esrt = (str(uuid.UUID(guid)), int(version, 16), int(lsv, 16))
         except (AttributeError, ValueError):
             ap.error("--sb-test vuole --esrt GUID:VERSIONE:LSV, per esempio "
-                     "70eab79a-675a-42ef-9543-43abcad96275:0x01030a14:0x01030900")
+                     "75f840a2-af55-4481-84b7-5e2f56cf3a4d:0x01030a14:0x01030900")
     elif args.sb_only:
         ap.error("--sb-only vuole --sb-test")
     size = None
