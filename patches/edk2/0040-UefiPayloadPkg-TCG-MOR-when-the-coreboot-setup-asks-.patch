@@ -29,9 +29,10 @@ boot with RESET_ATTACK_MITIGATION, Windows with BitLocker).
 
 TEST=gcc -fsyntax-only -Wall -Wextra -Werror of MorControlDxe.c with the
 EDK2 headers, debug and MDEPKG_NDEBUG; the payload builds for both
-boards (CI). Remains for the hardware test: with "When the OS asks"
-the variable exists after a boot and Linux sets it; with the default
-it does not exist.
+boards (CI). On the M920x: with "When the OS asks" (forced in
+a test build) the variable was created at the first boot and Linux set
+it (07 00 00 00 01); with the default it was gone at the next boot and
+stayed absent.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
