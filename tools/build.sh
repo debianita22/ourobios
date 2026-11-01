@@ -1875,6 +1875,13 @@ update_test_build() {
 			echo "CONFIG_VBOOT=y"
 			echo "CONFIG_VBOOT_SLOTS_RW_AB=y"
 			echo "CONFIG_VBOOT_MOCK_SECDATA=y"
+			# il measured boot del M920x: verstage avvia il TPM 2.0 (swtpm in
+			# tools/qemu-update.py, i banchi SHA-1 e SHA-256) e misura in
+			# tutti e due; l'ultimo avvio della prova e' senza TPM (patch 0199)
+			echo "CONFIG_TPM2=y"
+			echo "CONFIG_MEMORY_MAPPED_TPM=y"
+			echo "CONFIG_TPM_MEASURED_BOOT=y"
+			echo "CONFIG_TPM_MEASURED_BOOT_SHA1_BANK=y"
 			echo "CONFIG_FMDFILE=\"src/mainboard/emulation/qemu-q35/update-test.fmd\""
 			echo "CONFIG_PAYLOAD_ELF=y"
 			echo "CONFIG_PAYLOAD_FILE=\"${fd}\""

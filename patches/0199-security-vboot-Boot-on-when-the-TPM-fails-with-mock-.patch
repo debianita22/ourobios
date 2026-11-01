@@ -1,7 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sun, 1 Nov 2026 16:30:31 +0100
-Subject: [PATCH] security/vboot: Boot on when the TPM fails with mock secdata
+Subject: [PATCH 199/201] security/vboot: Boot on when the TPM fails with mock
+ secdata
 
 With VBOOT_MOCK_SECDATA vboot keeps nothing in the TPM, yet a TPM that
 does not start makes verstage request recovery (RO_TPM_S_ERROR). On a
@@ -12,8 +13,9 @@ takes the measurements.
 
 With mock secdata, report the failure and boot on: the measurements
 are lost, so the PCRs do not match what the OS sealed to them, but the
-machine starts. Failures of the PCR extends and of the CBFS
-measurements already only warn.
+machine starts. The same for a TPM that starts but then fails to
+extend vboot's PCRs (boot mode, HWID, firmware version), which requests
+recovery too (RO_TPM_U_ERROR). The CBFS measurements already only warn.
 
 TEST=Builds for the ThinkCentre M920x and the ThinkPad W541 with
 TPM_MEASURED_BOOT. Remains: a boot with the TPM off (W541: Security >
@@ -21,11 +23,11 @@ Security Chip off) reaches the payload.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- src/security/vboot/vboot_logic.c | 9 +++++++++
- 1 file changed, 9 insertions(+)
+ src/security/vboot/vboot_logic.c | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
 
 diff --git a/src/security/vboot/vboot_logic.c b/src/security/vboot/vboot_logic.c
-index 01d43a08cd..03fd844b2c 100644
+index 01d43a08cd..3d1b7cb144 100644
 --- a/src/security/vboot/vboot_logic.c
 +++ b/src/security/vboot/vboot_logic.c
 @@ -286,6 +286,15 @@ void verstage_main(void)
@@ -44,6 +46,19 @@ index 01d43a08cd..03fd844b2c 100644
  	} else {
  		vb2api_fail(ctx, VB2_RECOVERY_RO_TPM_S_ERROR, tpm_rc);
  		if (CONFIG(TPM_SETUP_HIBERNATE_ON_ERR) &&
+@@ -391,7 +400,11 @@ void verstage_main(void)
+ 	if (!(ctx->flags & VB2_CONTEXT_S3_RESUME)) {
+ 		timestamp_add_now(TS_TPMPCR_START);
+ 		tpm_rc = extend_pcrs(ctx);
+-		if (tpm_rc) {
++		if (tpm_rc && CONFIG(VBOOT_MOCK_SECDATA)) {
++			/* As above: the measurements are lost, not the boot */
++			printk(BIOS_ERR, "Failed to extend TPM PCRs (%#x): booting on\n",
++			       tpm_rc);
++		} else if (tpm_rc) {
+ 			printk(BIOS_WARNING, "Failed to extend TPM PCRs (%#x)\n",
+ 				tpm_rc);
+ 			vboot_fail_and_reboot(ctx,
 -- 
 2.47.3
 

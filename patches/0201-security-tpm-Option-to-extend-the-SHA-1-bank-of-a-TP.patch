@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sun, 1 Nov 2026 18:23:58 +0100
-Subject: [PATCH] security/tpm: Option to extend the SHA-1 bank of a TPM 2.0
- too
+Subject: [PATCH 201/201] security/tpm: Option to extend the SHA-1 bank of a
+ TPM 2.0 too
 
 coreboot measures into one PCR bank of a TPM 2.0, the one of
 TPM_MEASURE_ALGO (SHA-256). Many TPM 2.0 chips ship with the SHA-1 and
