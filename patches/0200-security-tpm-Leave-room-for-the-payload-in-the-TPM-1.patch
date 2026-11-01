@@ -1,0 +1,58 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 1 Nov 2026 17:51:10 +0100
+Subject: [PATCH 200/204] security/tpm: Leave room for the payload in the TPM
+ 1.2 log
+
+With TPM_LOG_TPM1 the measurement log in cbmem (CBMEM_ID_TCPA_TCG_LOG)
+is also the log area that the ACPI TCPA table points to: acpi.c finds
+the entry and publishes its size as LAML. The entry is sized for
+coreboot's own 50 entries, about 4 KiB. A UEFI payload that logs into
+the bootloader's TCPA table (SecurityPkg TcgDxe as a payload) appends
+its events there, and those of the Secure Boot variables alone carry
+the whole db and KEK: they do not fit, TcgDxe extends the PCR and drops
+the event, and the log no longer replays to the PCRs.
+
+Allocate the log with at least the 64 KiB that acpi.c gives the TCPA
+log when it creates one itself.
+
+TEST=QEMU q35 with swtpm as a TPM 1.2, TPM_MEASURED_BOOT and the
+ouroBIOS payload: the TCPA log holds coreboot's CBFS measurements, then
+the payload's events, and replays to the PCR values read back from the
+TPM.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/security/tpm/tspi/log-tpm1.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/src/security/tpm/tspi/log-tpm1.c b/src/security/tpm/tspi/log-tpm1.c
+index 453e74b4e8..dc1f64eab6 100644
+--- a/src/security/tpm/tspi/log-tpm1.c
++++ b/src/security/tpm/tspi/log-tpm1.c
+@@ -12,6 +12,7 @@
+ #include <string.h>
+ #include <symbols.h>
+ #include <cbmem.h>
++#include <commonlib/bsd/helpers.h>
+ #include <vb2_sha.h>
+ 
+ void *tpm1_log_cbmem_init(void)
+@@ -28,7 +29,13 @@ void *tpm1_log_cbmem_init(void)
+ 		if (tclt)
+ 			return tclt;
+ 
+-		tpm_log_len = sizeof(*tclt) + MAX_TPM_LOG_ENTRIES * sizeof(tclt->entries[0]);
++		/*
++		 * This table is also the log area of the ACPI TCPA table, where
++		 * a UEFI payload logs its own events after coreboot's: leave
++		 * room for them, as much as acpi.c gives a log of its own.
++		 */
++		tpm_log_len = MAX(sizeof(*tclt) + MAX_TPM_LOG_ENTRIES * sizeof(tclt->entries[0]),
++				  64 * KiB);
+ 		tclt = cbmem_add(CBMEM_ID_TCPA_TCG_LOG, tpm_log_len);
+ 		if (!tclt)
+ 			return NULL;
+-- 
+2.47.3
+

@@ -46,7 +46,8 @@
 #                  spostati come li sposta boot.efi di macOS senza
 #                  AvoidRuntimeDefrag (tools/efi/rt-reloc-test.c); l'ESRT
 #                  e Secure Boot (tools/efi/secure-boot-test.c); il TPM 1.2
-#                  di swtpm con il log delle misure. Schermate
+#                  di swtpm con le misure di coreboot e del payload, il log
+#                  rifatto contro i PCR (tools/efi/tpm-pcr-test.c). Schermate
 #                  e seriale in WORK/smoke-<variante>. Una variante con il
 #                  payload, byte per byte, di una gia' provata rifa' solo
 #                  l'ESRT e Secure Boot, con la sua ROM q35. Poi, per la
@@ -561,7 +562,11 @@ fw_revision() {
 edk2_params() {
 	local p
 	p="$(sed -n 's/^CONFIG_EDK2_CUSTOM_BUILD_PARAMS="\(.*\)"$/\1/p' "$(defconfig "$1")")"
-	printf 'CONFIG_EDK2_CUSTOM_BUILD_PARAMS="%s--pcd gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareRevision=%s"\n' \
+	# il log del TPM 2.0 di Tcg2Dxe: 256 KiB, non 64 (il default), che sul
+	# M920x le variabili di Secure Boot (dbx da sola 21 KiB), le misure di
+	# coreboot e i comandi di GRUB riempivano prima di ExitBootServices: gli
+	# eventi dopo estendevano i PCR senza entrare nel log (PCR 5)
+	printf 'CONFIG_EDK2_CUSTOM_BUILD_PARAMS="%s--pcd gEfiSecurityPkgTokenSpaceGuid.PcdTcgLogAreaMinLen=0x40000 --pcd gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareRevision=%s"\n' \
 		"${p:+${p} }" "$(fw_revision)"
 }
 
@@ -1649,9 +1654,9 @@ smoke_sb_app() {
 cmd_smoke() {
 	need_prepared
 	local t
-	for t in qemu-system-x86_64 mformat mmd mcopy clang ld.lld openssl sbsign swtpm; do
+	for t in qemu-system-x86_64 mformat mmd mcopy clang ld.lld openssl sbsign swtpm swtpm_setup; do
 		command -v "${t}" > /dev/null \
-			|| die "smoke: serve ${t} (Debian/Ubuntu: apt install qemu-system-x86 mtools clang lld openssl sbsigntool swtpm)"
+			|| die "smoke: serve ${t} (Debian/Ubuntu: apt install qemu-system-x86 mtools clang lld openssl sbsigntool swtpm swtpm-tools)"
 	done
 	if [ "${TOOLCHAIN}" = crossgcc ]; then
 		xgcc_ok || die "crossgcc mancante in ${XGCC}: prima tools/build.sh toolchain"
@@ -1659,15 +1664,19 @@ cmd_smoke() {
 	fi
 	local reloc="${WORK}/rt-reloc-test.efi"
 	efi_app "${O}/tools/efi/rt-reloc-test.c" "${reloc}" || die "smoke: tools/efi/rt-reloc-test.c non compila"
+	local pcrs="${WORK}/tpm-pcr-test.efi"
+	efi_app "${O}/tools/efi/tpm-pcr-test.c" "${pcrs}" || die "smoke: tools/efi/tpm-pcr-test.c non compila"
 	local sb
 	sb="$(smoke_sb_app "${WORK}/sb-test" "${reloc}")" || die "smoke: tools/efi/secure-boot-test.c"
-	local v q fd guid lsv res x y tested="" tested_v="" esrt
+	local v q fd guid lsv res x y tested="" tested_v="" esrt tpm2
 	for v in "${VARIANTS[@]}"; do
 		fd="${TREE}/build-$(bkey "${v}")/UEFIPAYLOAD.fd"
 		[ -f "${fd}" ] || die "smoke ${v}: manca ${fd}, prima tools/build.sh roms"
 		guid="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_GUID="\(.*\)"$/\1/p' "$(defconfig "${v}")")"
 		lsv="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_LSV=\(.*\)$/\1/p' "$(defconfig "${v}")")"
 		[ -n "${guid}" ] && [ -n "${lsv}" ] || die "smoke ${v}: GUID o LSV dell'ESRT non nel defconfig"
+		tpm2=""
+		if grep -qx 'CONFIG_TPM_MEASURED_BOOT_SHA1_BANK=y' "$(defconfig "${v}")"; then tpm2=--tpm2; fi
 		# 1920x1080 per tutta la prova; le altre risoluzioni della board
 		# (BOARD_SMOKE_SIZES: sul W541 2880x1620, il pannello 3K con
 		# gfx_fb_limit) per il setup soltanto: la VGA di QEMU con 32 MiB, il
@@ -1696,11 +1705,19 @@ cmd_smoke() {
 				echo "CONFIG_DRIVERS_EFI_MAIN_FW_GUID=\"${guid}\""
 				echo "CONFIG_DRIVERS_EFI_MAIN_FW_LSV=${lsv}"
 				echo "CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=$(fw_version)"
-				# il TPM 1.2 come sul W541 (il passo 11: swtpm); senza il
+				# il TPM della board (il passo 11: swtpm), con le misure di
+				# coreboot: il TPM 1.2 come sul W541, o il TPM 2.0 con i
+				# banchi SHA-1 e SHA-256 come sul M920x; senza il
 				# dispositivo in QEMU coreboot non lo trova e va avanti
-				echo "CONFIG_TPM1=y"
+				if [ -n "${tpm2}" ]; then
+					echo "CONFIG_TPM2=y"
+					echo "CONFIG_TPM_MEASURED_BOOT_SHA1_BANK=y"
+				else
+					echo "CONFIG_TPM1=y"
+				fi
 				echo "CONFIG_MEMORY_MAPPED_TPM=y"
 				echo "CONFIG_TPM_INIT_RAMSTAGE=y"
+				echo "CONFIG_TPM_MEASURED_BOOT=y"
 				echo "CONFIG_LOCALVERSION=\"$(localversion "${v}")-q35\""
 				if [ "${TOOLCHAIN}" = host ]; then echo "CONFIG_ANY_TOOLCHAIN=y"; fi
 			} > "${TREE}/build-${q}/defconfig"
@@ -1723,7 +1740,7 @@ cmd_smoke() {
 					|| die "smoke ${v}: l'ESRT o Secure Boot non passano la prova in QEMU (${WORK}/smoke-$(bkey "${v}"))"
 			elif [ "${res}" = 1920x1080 ]; then
 				python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-$(bkey "${v}")" --reloc-test "${reloc}" \
-					--sb-test "${sb}" --esrt "${esrt}" --tpm "${TREE}/build-${q}/coreboot.rom" \
+					--sb-test "${sb}" --esrt "${esrt}" --tpm "${pcrs}" ${tpm2} "${TREE}/build-${q}/coreboot.rom" \
 					|| die "smoke ${v}: il payload non passa la prova in QEMU (${WORK}/smoke-$(bkey "${v}"))"
 				tested="${fd}"
 				tested_v="${v}"
@@ -1862,6 +1879,13 @@ update_test_build() {
 			echo "CONFIG_VBOOT=y"
 			echo "CONFIG_VBOOT_SLOTS_RW_AB=y"
 			echo "CONFIG_VBOOT_MOCK_SECDATA=y"
+			# il measured boot del M920x: verstage avvia il TPM 2.0 (swtpm in
+			# tools/qemu-update.py, i banchi SHA-1 e SHA-256) e misura in
+			# tutti e due; l'ultimo avvio della prova e' senza TPM (patch 0199)
+			echo "CONFIG_TPM2=y"
+			echo "CONFIG_MEMORY_MAPPED_TPM=y"
+			echo "CONFIG_TPM_MEASURED_BOOT=y"
+			echo "CONFIG_TPM_MEASURED_BOOT_SHA1_BANK=y"
 			echo "CONFIG_FMDFILE=\"src/mainboard/emulation/qemu-q35/update-test.fmd\""
 			echo "CONFIG_PAYLOAD_ELF=y"
 			echo "CONFIG_PAYLOAD_FILE=\"${fd}\""

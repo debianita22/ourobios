@@ -28,7 +28,7 @@ HWP, VBO...), so their test cases can be borrowed when ours fall short.
   [vboot](#vboot-slots-and-fallback-vb), [Updates](#updates-upd),
   [Flash protection](#flash-protection-flash),
   [Setup options](#setup-options-opt), [Event log](#event-log-elog),
-  [Identity](#vpd-smbios-and-msdm-id)
+  [Identity](#vpd-smbios-and-msdm-id), [Windows 11](#windows-11-win)
 - [Coverage of hw-report.py](#coverage-of-hw-reportpy)
 
 ## tools/hw-report.py
@@ -351,8 +351,8 @@ power fail).
 | ID | Board | How to run | Pass criteria | Auto |
 |---|---|---|---|---|
 | TPM-01 | both | `ls /dev/tpm0 /dev/tpmrm0`; `/sys/firmware/acpi/tables` | M920x: TPM 2.0 and `TPM2`; W541: TPM 1.2 and `TCPA`; the firmware's event log | TPM-01 |
-| TPM-02 | M920x | `sudo tpm2_getcap properties-fixed`; `sudo tpm2_pcrread sha256` | answers; PCR 1, 4, 5 and 7 extended by the payload | manual |
-| TPM-03 | both | PCR0 against the value of a lone separator | **a known gap**: `CONFIG_TPM_MEASURED_BOOT` is off, coreboot measures nothing and PCR0 holds only the payload's separator; a release that turns it on must show other values | TPM-01 (reported as a note) |
+| TPM-02 | M920x | `sudo tpm2_getcap properties-fixed`; `sudo tpm2_pcrread sha256` | answers; PCRs 0-7 extended | manual |
+| TPM-03 | both | the firmware's event log (`binary_bios_measurements`) replayed event by event against PCR 0-7 of every bank Linux shows | from v1.5.0, measured boot: coreboot's measurements in PCR 2 (FMAP, bootblock, each stage, the payload) and vboot's in PCR 1, and the replay gives every PCR (on the M920x SHA-1 and SHA-256); a PCR that differs means an event extended and not logged, or the other way round (v1.5.0 fixed a full log, a log of coreboot's alone and vboot's events before the log started) | TPM-03 |
 
 ### Intel ME (ME)
 
@@ -433,6 +433,26 @@ write protection).
 | ID-03 | both | the label of the machine against ID-01 | MTM (product name) and serial number match | manual |
 | ID-04 | M920x | Windows in a VM given the MSDM table ([docs/m920x.md](m920x.md#serial-number-and-machine-type-vpd)) | it activates by itself | manual |
 
+### Windows 11 (WIN)
+
+Not yet run. The M920x meets Windows 11's requirements (an 8th-generation
+processor, TPM 2.0, UEFI with Secure Boot); the W541 does not (Haswell, a
+TPM 1.2), so these are for the M920x, installed on a disk of its own.
+What is known not to be there: the lock of MOR (`MemoryOverwriteRequestControlLock`,
+which Credential Guard uses: it needs a variable store behind SMM) and
+Kernel DMA Protection (no IOMMU before the OS, no DMAR opt-in flag;
+[docs/roadmap.md](roadmap.md#dma-protection)).
+
+| ID | Board | How to run | Pass criteria | Auto |
+|---|---|---|---|---|
+| WIN-01 | M920x | install Windows 11 from a USB drive, *Secure Boot* on in the setup, no bypass of the requirements | the installer finds no unmet requirement; it installs and reboots from the disk | manual |
+| WIN-02 | M920x | `msinfo32`; `tpm.msc` | *BIOS mode* UEFI, *Secure Boot state* On; TPM 2.0 ready, manufacturer IFX | manual |
+| WIN-03 | M920x | Device Manager | no unknown device and none with an error; the network, graphics and audio drivers from Windows Update | manual |
+| WIN-04 | M920x | *Sleep* from the Start menu, power button to wake; `powercfg /a` | it wakes with the screen and the network; S3 listed as available | manual |
+| WIN-05 | M920x | turn BitLocker on (`manage-bde -on C:`), two reboots; then a firmware update with Secure Boot on, without suspending BitLocker | no recovery key asked, also after the update (PCR 7 and 11 do not change) | manual |
+| WIN-06 | M920x | *Clear memory at power-on* on *When the OS asks*, BitLocker on; a restart, then a reset from the power button | after the restart `cbmem -1` (from Linux) says *request of the OS no*, after the reset *yes* | manual |
+| WIN-07 | M920x | `slmgr /dli` with a key in the VPD | activated, with the key of the MSDM table (ID-04 on the machine) | manual |
+
 ## Coverage of hw-report.py
 
 | Suite | Automated | Partial | Manual |
@@ -456,15 +476,18 @@ write protection).
 | OPT | 01 | 02, 03, 05 | 04 |
 | ELOG | 01 | 02 | |
 | ID | 01, 02 | | 03, 04 |
+| WIN | | | 01-07 |
 
-`hw-report.py` has run on the M920x only. On the W541 the parts written
+`hw-report.py` has run on the M920x, and on a W541 its TPM-01 and TPM-03
+(v1.5.0: the `TCPA` table, the TPM 1.2 log replayed to its PCRs). On the
+W541 the other parts written
 for it from the code and these docs are not yet tried there: the SPI
 registers of Lynx Point through the probe of `update.py` (one page at
 RCBA + 0x3000, which a kernel with `IO_STRICT_DEVMEM` refuses while
 `intel-spi` and `iTCO_wdt` hold it), the ME state from the SMBIOS strings
 of patch 0181 (or the ME lines with names of `lynxpoint/me_status.c` on
 older slots), the EC version (EC-01), the RAM init timestamps of patch
-0189, the `TCPA` table and TPM 1.2 PCRs, the fan of `thinkpad_acpi`, and
+0189, the fan of `thinkpad_acpi`, and
 the boot time thresholds; MEM-01 has thresholds measured on FSP only. The
 W541 cases of `tools/ci-check.sh` use logs built from the strings of the
 sources, to be replaced by real ones.

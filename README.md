@@ -350,14 +350,25 @@ must load. The ESRT must carry the one
 entry of the variant, with the GUID the payload reads from the coreboot
 table: the second variant, whose payload is the first one's byte for byte,
 runs this step only, on its own q35 image. Last, with the TPM 1.2 of
-`swtpm` (the q35 image is built with `CONFIG_TPM1`, as the W541), the
-payload boots to the Shell and the TCPA log in RAM must have the separator
-of every PCR and, in PCR 7, the measurements of `SecureBoot`, `PK`, `KEK`,
-`db` and `dbx` the variable driver makes when EnrollDefaultKeys writes
-them at the first boot, each with the SHA-1 of its event data: with a TPM
-1.2 they are made only then, and v1.3.10-rc19 lost them (its TPM driver
-started after the keys). It needs `qemu-system-x86`, `mtools`, `clang`,
-`lld`, `openssl`, `sbsign` (`sbsigntool`) and `swtpm`; screenshots and the
+`swtpm` (the q35 image is built with `CONFIG_TPM1` and
+`CONFIG_TPM_MEASURED_BOOT`, as the W541), the payload boots
+`tools/efi/tpm-pcr-test.c` from an EFI system partition, which reads PCR
+0 to 7 from the TPM. The TCPA log in RAM, replayed event by event, must
+give those values; it must hold coreboot's measurements in PCR 2 (the
+FMAP area, the bootblock, romstage, ramstage and the payload), each the
+SHA-1 of the bytes in the image, the separator of every PCR and, in PCR 7,
+the measurements of `SecureBoot`, `PK`, `KEK`, `db` and `dbx` the variable
+driver makes when EnrollDefaultKeys writes them at the first boot, each
+with the SHA-1 of its event data: with a TPM 1.2 they are made only then,
+and v1.3.10-rc19 lost them (its TPM driver started after the keys). The
+M920x variant's image gets a TPM 2.0 instead, with the SHA-1 and SHA-256
+banks of the M920x's (`CONFIG_TPM2` and
+`CONFIG_TPM_MEASURED_BOOT_SHA1_BANK`): the log is then the crypto agile one
+of `EFI_TCG2_PROTOCOL`, where coreboot's measurements must be, each with
+both digests matching the image, and both banks must replay to the PCRs
+read from the TPM. It
+needs `qemu-system-x86`, `mtools`, `clang`,
+`lld`, `openssl`, `sbsign` (`sbsigntool`), `swtpm` and `swtpm_setup` (`swtpm-tools`); screenshots and the
 serial console go to `work/smoke-<variant>`. Nothing of the W541 itself
 runs there: it checks the payload and coreboot's common code, not the
 board.
@@ -422,7 +433,7 @@ gh release edit v1.4.0-m920x-fsp --repo debianita22/ourobios --prerelease=false 
 | `assets/` | the logo, `ourobios.svg`, and the boot splash of each board made from it (`tools/logo.py splash`): `bootsplash.bmp` for the W541, `bootsplash-m920x.bmp` for the M920x |
 | `configs/` | `w541-mrc.defconfig` and `w541-nri.defconfig`, the flash map `w541.fmd`, the interface of the read-only part already on the laptops (`ro-interface.txt`), the OpenCore device properties of this W541 for patches 0128 and 0133 (`macos/`), the fwupd remotes (`fwupd/ourobios.conf`, the releases; `fwupd/ourobios-testing.conf`, the candidates too), the EDK2 and LvglPkg commits of every release that the project's forks keep under a tag (`edk2-pins.txt`) |
 | `patches/` | the series applied to coreboot, the patches to EDK2 and its LvglPkg, the q35 patches of the update test and of the setup screenshots; `optional/` for patches to build in with `--with`, none at the moment ([patches/README.md](patches/README.md)) |
-| `tools/` | `build.sh`, the build; `verify-rom.sh`, the checks on a ROM; `ci-check.sh`, `ci.sh` and `upstream.sh`, the CI, the releases and the upstream check; `cfr-dump.sh` and `q35-cfr-rom.sh`, the setup menu of a build (`build.sh menu`) and its screenshots (`qemu-setup-shots.py`); `update.py`, the capsule update from Linux and the flash protection of the running boot; `fwupd-cab.py`, the fwupd package and the metadata of the remote; `vpd.py`, the serial number and machine type; `elog.py`, which reads the event log from a flash dump; `idle-report.py`, package C-states, power, memory traffic and device power states at idle; `hw-report.py`, PASS, WARN or FAIL for each area of a running machine, the automated part of the release tests ([docs/testing.md](docs/testing.md)); `pm-regs.py`, the power management registers the firmware left; `ddr-report.py`, the memory controller as the RAM init left it, and two of its dumps compared; `mem-latency.c`, how long a read from the memory takes; `peg-report.py`, the PCIe link to the NVIDIA GPU; `qemu-smoke.py`, the payload booted in QEMU (with `efi/rt-reloc-test.c`, the runtime services moved as boot.efi of macOS moves them, and `efi/secure-boot-test.c`, the ESRT and Secure Boot image verification, with `pe-hash.py`, the Authenticode hash of a PE image; the TPM 1.2 of swtpm and its measurement log); `qemu-update.py`, capsule updates with vboot A/B in QEMU (with `efi/slot-lock-test.c`, a UEFI application for it); `logo.py`, the logo as an LVGL image or a PNG; `sbom.py`, the software bill of materials of a ROM read from the image itself (versions, licenses, SHA-256 of the binaries, how much is open source), in Markdown or CycloneDX |
+| `tools/` | `build.sh`, the build; `verify-rom.sh`, the checks on a ROM; `ci-check.sh`, `ci.sh` and `upstream.sh`, the CI, the releases and the upstream check; `cfr-dump.sh` and `q35-cfr-rom.sh`, the setup menu of a build (`build.sh menu`) and its screenshots (`qemu-setup-shots.py`); `update.py`, the capsule update from Linux and the flash protection of the running boot; `fwupd-cab.py`, the fwupd package and the metadata of the remote; `vpd.py`, the serial number and machine type; `elog.py`, which reads the event log from a flash dump; `idle-report.py`, package C-states, power, memory traffic and device power states at idle; `hw-report.py`, PASS, WARN or FAIL for each area of a running machine, the automated part of the release tests ([docs/testing.md](docs/testing.md)); `pm-regs.py`, the power management registers the firmware left; `ddr-report.py`, the memory controller as the RAM init left it, and two of its dumps compared; `mem-latency.c`, how long a read from the memory takes; `peg-report.py`, the PCIe link to the NVIDIA GPU; `qemu-smoke.py`, the payload booted in QEMU (with `efi/rt-reloc-test.c`, the runtime services moved as boot.efi of macOS moves them, and `efi/secure-boot-test.c`, the ESRT and Secure Boot image verification, with `pe-hash.py`, the Authenticode hash of a PE image; the TPM 1.2 and 2.0 of swtpm, coreboot's and the payload's measurements, the log replayed against the PCRs that `efi/tpm-pcr-test.c` reads); `qemu-update.py`, capsule updates with vboot A/B in QEMU (with `efi/slot-lock-test.c`, a UEFI application for it); `logo.py`, the logo as an LVGL image or a PNG; `sbom.py`, the software bill of materials of a ROM read from the image itself (versions, licenses, SHA-256 of the binaries, how much is open source), in Markdown or CycloneDX |
 | `keys/` | the certificate of the key that signs the capsules, and vboot's public keys ([keys/README.md](keys/README.md)) |
 | `legacy/coreboot-4.22/` | the coreboot 4.22 image and configuration this project started from, built from the same blobs |
 | `docs/` | [flashing and recovery](docs/flashing.md), [updates with capsules](docs/update.md), [verified boot and A/B](docs/vboot.md), [the native RAM init](docs/raminit.md), [macOS with OpenCore](docs/macos.md), [the ThinkCentre M920x](docs/m920x.md), [release testing](docs/testing.md), [what was evaluated and left for later](docs/roadmap.md) |

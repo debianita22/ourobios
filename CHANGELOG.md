@@ -5,6 +5,77 @@ GitHub include its section; release candidates take the section of the
 version they lead to. For the releases before v1.3.0, see their notes on
 the [releases page](https://github.com/debianita22/ourobios/releases).
 
+## v1.5.0
+
+- **Measured boot**, on both boards: coreboot measures what it runs into
+  the TPM, from the read-only part on, and logs each measurement, and
+  Linux's event log replays to PCR 0-7, so a disk can be sealed to the
+  firmware that booted it (systemd-cryptenroll, clevis) and a remote
+  attestation sees coreboot too. verstage starts the TPM
+  (`CONFIG_TPM_MEASURED_BOOT`, in place of starting it in ramstage) and
+  extends vboot's boot mode, HWID and firmware version into PCR 1;
+  coreboot measures the FMAP, the bootblock, every stage, FSP-M and FSP-S
+  on the M920x, the microcode, the VBT, the DSDT and the payload into
+  PCR 2, each the digest of its bytes in the flash. vboot's anti-rollback
+  data stays mocked: the TPM is there for the measurements only.
+- **v1.5.0 writes the read-only part once more, with flashrom**: the
+  TPM's early log in cache-as-RAM moves what the slots read there, so its
+  slots do not boot behind the read-only part of v1.3.9-v1.4.x, nor older
+  slots behind the new one. It has new ESRT GUIDs (`mrc`
+  `75f840a2-af55-4481-84b7-5e2f56cf3a4d`, `nri`
+  `457afc2a-b6ee-4477-b41b-cc995e6110ae`, M920x
+  `ceef6456-ca3b-4cf3-a784-4895efaf1bde`): its capsule does not install on
+  an older firmware nor an older capsule on it, and `update.py other-slot`
+  refuses a slot of the other generation even with `--force`. The
+  command, which keeps settings, keys, VPD, event log and memory
+  training, is in [docs/flashing.md](docs/flashing.md#measured-boot-the-read-only-part);
+  on a W541 with an EC older than 1.15, flash it with the programmer after
+  the EC update.
+- On the M920x (TPM 2.0, SHA-1 and SHA-256 banks): coreboot measures into
+  both banks, each event with both digests (patch 0201); the payload hands
+  coreboot's events to Tcg2Dxe, which puts them first in the EFI log, and
+  then leaves the ACPI TPM2 table without a log area, which Linux would
+  otherwise read instead, with coreboot's events alone (`edk2/0042`). On
+  the W541 (TPM 1.2) the payload appends its events to coreboot's log, the
+  log area of the ACPI TCPA table (`edk2/0019`, patch 0200).
+- The logs are 256 KiB (`PcdTcgLogAreaMinLen`, patch 0205): with EDK2's
+  64 KiB the Secure Boot variables, shim and GRUB filled the M920x's log
+  before ExitBootServices, and the events after it were extended without
+  being logged.
+- A TPM that does not start, or fails to extend vboot's PCRs, costs the
+  measurements, not the boot (patch 0199): the machine boots without them
+  and the log says *TPM setup failed ... booting without measurements*.
+  Before, vboot would have asked for recovery mode, which these boards do
+  not have.
+- vboot's firmware version goes into PCR 1, not PCR 10, which is the one
+  of Linux IMA (patch 0202); the measured boot log starts before vboot's
+  first measurement (patch 0204), and the pre-RAM log stays inside its
+  2 KiB of cache-as-RAM (patch 0203).
+- `tools/update.py stage`, `rollback` and `other-slot` warn of the disks
+  an update will lock: BitLocker (unaffected with Secure Boot on, which
+  seals to PCR 7 and 11), and LUKS2 volumes sealed by systemd-cryptenroll
+  to PCR 0, 1 or 2, or with a clevis token, with the command that enrolls
+  them again ([docs/update.md](docs/update.md#disks-sealed-to-the-tpm)).
+- The help of *Intel VT-d* on the M920x no longer promises Windows Kernel
+  DMA Protection, which needs protection before the OS that the firmware
+  does not give (patch 0206). [docs/testing.md](docs/testing.md#windows-11-win)
+  has a Windows 11 suite for the M920x, which meets Windows 11's
+  requirements; not yet run. The W541 does not (Haswell, TPM 1.2).
+- `tools/hw-report.py`: TPM-03 replays the firmware's event log against
+  PCR 0-7 of each bank and counts coreboot's and vboot's measurements;
+  TPM-01 no longer reads PCR 0 alone (coreboot measures into PCR 2).
+- Tests: the QEMU smoke test boots a UEFI application that reads the PCRs
+  (`tools/efi/tpm-pcr-test.c`) with swtpm as a TPM 1.2 and as a TPM 2.0
+  with the M920x's banks, replays the log and checks each of coreboot's
+  digests against the image; the A/B update test runs vboot's path of the
+  M920x with a TPM 2.0 at every boot, and one boot without a TPM.
+- On the M920x of the port (Infineon SLB9670): Linux's event log, 121
+  events with shim and GRUB, replays to PCR 0-7 in SHA-1 and SHA-256, and
+  each of coreboot's 11 measurements matches the flash. On a W541 (`nri`,
+  ST33ZP24 TPM 1.2), the read-only part written with the command above
+  from v1.4.1: its log, 82 events, replays to PCR 0-7, with coreboot's 9
+  measurements and vboot's 3 (TPM-03).
+
 ## v1.4.1
 
 - *Security* → *Memory protection* → *Clear memory at power-on*, on both

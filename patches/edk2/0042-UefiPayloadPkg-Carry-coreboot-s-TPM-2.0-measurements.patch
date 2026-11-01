@@ -1,0 +1,350 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 1 Nov 2026 18:26:59 +0100
+Subject: [PATCH] UefiPayloadPkg: Carry coreboot's TPM 2.0 measurements into
+ Tcg2Dxe
+
+With measured boot, coreboot extends the PCRs of a TPM 2.0 with what it
+loads and logs each measurement in its own crypto agile event log, which
+it publishes as the log area of the ACPI TPM2 table. An OS booted through
+UEFI reads the log of EFI_TCG2_PROTOCOL instead (Linux takes the one of
+the EFI configuration table), and Tcg2Dxe starts that log afresh: the
+events of coreboot are missing, and the log no longer replays to PCR 0
+and 2, which hold coreboot's measurements.
+
+Tcg2Dxe already takes the events of the firmware phases before it, as
+gTcgEvent2EntryHobGuid HOBs that it logs without extending again. In
+UefiPayloadEntry, find the TPM2 table among the bootloader's ACPI tables,
+read the spec ID event at its log area for the digest sizes, and build
+one such HOB for each event, up to the first with no digest (coreboot
+clears the rest of the area) or the end of the area. Tcg2Dxe drops the
+digests of banks that are not active; with a bank active for which the
+events have no digest it says so, as for any PEI event.
+
+Then clear the log area of the TPM2 table (LAML and LASA 0, the checksum
+made again), before DXE installs it: Linux reads the log of an ACPI TPM2
+table that has one before the log of the EFI configuration table, and on
+the ThinkCentre M920x it showed coreboot's 14 events and none of the
+payload's (separators, Secure Boot and boot variables, shim, the boot
+loader), so no PCR replayed. Without a log area it reads the one of
+Tcg2Dxe, which has them all.
+
+Nothing changes without a TPM2 table, or with one whose log area does
+not start with a "Spec ID Event03" (a TPM 1.2 log, or none).
+
+TEST=gcc -fsyntax-only -Wall -Wextra -Werror of Tcg2EventLog.c with the
+EDK2 headers, debug and MDEPKG_NDEBUG.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../UefiPayloadEntry/Tcg2EventLog.c           | 229 ++++++++++++++++++
+ .../UefiPayloadEntry/UefiPayloadEntry.c       |   5 +
+ .../UefiPayloadEntry/UefiPayloadEntry.h       |  11 +
+ .../UefiPayloadEntry/UefiPayloadEntry.inf     |   3 +
+ 4 files changed, 248 insertions(+)
+ create mode 100644 UefiPayloadPkg/UefiPayloadEntry/Tcg2EventLog.c
+
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/Tcg2EventLog.c b/UefiPayloadPkg/UefiPayloadEntry/Tcg2EventLog.c
+new file mode 100644
+index 0000000000..c664661ef9
+--- /dev/null
++++ b/UefiPayloadPkg/UefiPayloadEntry/Tcg2EventLog.c
+@@ -0,0 +1,229 @@
++/** @file
++  The TPM 2.0 event log of coreboot as event HOBs for Tcg2Dxe.
++
++  With measured boot, coreboot extends the PCRs with what it loads and logs
++  each measurement in its own TCG event log (crypto agile format), whose
++  address it publishes as the log area (LASA) of the ACPI TPM2 table. An OS
++  that boots through UEFI reads the log of EFI_TCG2_PROTOCOL instead, which
++  Tcg2Dxe starts with the events of the firmware phases before it: those it
++  finds as gTcgEvent2EntryHobGuid HOBs, logged and not extended again. Each
++  event of coreboot's log becomes such a HOB here, so that the log of the OS
++  replays to the PCRs coreboot extended.
++
++  Then the log area of the TPM2 table is cleared (LAML and LASA 0, the
++  checksum made again), before DXE installs the table: Linux reads the log
++  of an ACPI TPM2 table that has one before the log of the EFI configuration
++  table, and coreboot's holds coreboot's events only, none of the payload's
++  (separators, Secure Boot and boot variables, the boot loader). Without a
++  log area, the OS reads the complete one of Tcg2Dxe.
++
++  Copyright (c) 2026, Domenico D'Arrigo. All rights reserved.<BR>
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#include "UefiPayloadEntry.h"
++#include <IndustryStandard/Acpi.h>
++#include <IndustryStandard/UefiTcgPlatform.h>
++#include <Guid/TcgEventHob.h>
++
++//
++// The log area of the ACPI TPM2 table (TCG ACPI Specification, revision 4):
++// after the header, the platform class, the control area, the start method
++// and its 12 bytes of parameters
++//
++#define TPM2_TABLE_LAML_OFFSET  64
++#define TPM2_TABLE_LASA_OFFSET  68
++#define TPM2_TABLE_LOG_LENGTH   76
++
++//
++// The spec ID event that opens a crypto agile log is a TCG_PCR_EVENT (TPM
++// 1.2 format); its TCG_EfiSpecIDEventStruct lists the digest size of each
++// algorithm the events carry
++//
++#define SPEC_ID_ALGORITHM_COUNT_OFFSET  24
++#define SPEC_ID_MAX_ALGORITHMS          5
++
++/**
++  Find a table in the RSDT or XSDT of the bootloader.
++
++  @param[in]  Rsdp       The RSDP.
++  @param[in]  Signature  The signature of the table.
++
++  @return The table, or NULL.
++**/
++STATIC
++EFI_ACPI_DESCRIPTION_HEADER *
++FindAcpiTable (
++  IN EFI_ACPI_3_0_ROOT_SYSTEM_DESCRIPTION_POINTER  *Rsdp,
++  IN UINT32                                        Signature
++  )
++{
++  EFI_ACPI_DESCRIPTION_HEADER  *Root;
++  EFI_ACPI_DESCRIPTION_HEADER  *Table;
++  UINTN                        Count;
++  UINTN                        Index;
++
++  if ((Rsdp->Revision >= 2) && (Rsdp->XsdtAddress != 0)) {
++    Root  = (EFI_ACPI_DESCRIPTION_HEADER *)(UINTN)Rsdp->XsdtAddress;
++    Count = (Root->Length - sizeof (EFI_ACPI_DESCRIPTION_HEADER)) / sizeof (UINT64);
++    for (Index = 0; Index < Count; Index++) {
++      Table = (EFI_ACPI_DESCRIPTION_HEADER *)(UINTN)ReadUnaligned64 ((UINT64 *)(Root + 1) + Index);
++      if ((Table != NULL) && (Table->Signature == Signature)) {
++        return Table;
++      }
++    }
++  }
++
++  if (Rsdp->RsdtAddress != 0) {
++    Root  = (EFI_ACPI_DESCRIPTION_HEADER *)(UINTN)Rsdp->RsdtAddress;
++    Count = (Root->Length - sizeof (EFI_ACPI_DESCRIPTION_HEADER)) / sizeof (UINT32);
++    for (Index = 0; Index < Count; Index++) {
++      Table = (EFI_ACPI_DESCRIPTION_HEADER *)(UINTN)ReadUnaligned32 ((UINT32 *)(Root + 1) + Index);
++      if ((Table != NULL) && (Table->Signature == Signature)) {
++        return Table;
++      }
++    }
++  }
++
++  return NULL;
++}
++
++/**
++  Build a gTcgEvent2EntryHobGuid HOB for each event of coreboot's TPM 2.0
++  event log, if the ACPI tables have one.
++
++  @param[in]  RsdpAddress  The RSDP of the bootloader's ACPI tables.
++**/
++VOID
++BuildTcg2EventHobsFromBootloaderLog (
++  IN UINT64  RsdpAddress
++  )
++{
++  EFI_ACPI_DESCRIPTION_HEADER  *Tpm2;
++  UINT8                        *Log;
++  UINT32                       Laml;
++  UINTN                        Offset;
++  UINTN                        Start;
++  UINT32                       SpecIdSize;
++  UINT8                        *SpecId;
++  UINT32                       AlgorithmCount;
++  UINT16                       AlgorithmId[SPEC_ID_MAX_ALGORITHMS];
++  UINT16                       DigestSize[SPEC_ID_MAX_ALGORITHMS];
++  UINT32                       DigestCount;
++  UINT32                       Index;
++  UINT32                       Algorithm;
++  UINT16                       Id;
++  UINT32                       EventSize;
++  UINT32                       Events;
++  VOID                         *Hob;
++
++  if (RsdpAddress == 0) {
++    return;
++  }
++
++  Tpm2 = FindAcpiTable (
++           (EFI_ACPI_3_0_ROOT_SYSTEM_DESCRIPTION_POINTER *)(UINTN)RsdpAddress,
++           EFI_ACPI_5_0_TRUSTED_COMPUTING_PLATFORM_2_TABLE_SIGNATURE
++           );
++  if ((Tpm2 == NULL) || (Tpm2->Length < TPM2_TABLE_LOG_LENGTH)) {
++    return;
++  }
++
++  Laml = ReadUnaligned32 ((UINT32 *)((UINT8 *)Tpm2 + TPM2_TABLE_LAML_OFFSET));
++  Log  = (UINT8 *)(UINTN)ReadUnaligned64 ((UINT64 *)((UINT8 *)Tpm2 + TPM2_TABLE_LASA_OFFSET));
++  if ((Log == NULL) || (Laml < sizeof (TCG_PCR_EVENT_HDR))) {
++    return;
++  }
++
++  //
++  // The spec ID event: EV_NO_ACTION, "Spec ID Event03", the algorithms
++  //
++  SpecIdSize = ReadUnaligned32 (&((TCG_PCR_EVENT_HDR *)Log)->EventSize);
++  SpecId     = Log + sizeof (TCG_PCR_EVENT_HDR);
++  if ((ReadUnaligned32 (&((TCG_PCR_EVENT_HDR *)Log)->EventType) != EV_NO_ACTION) ||
++      (SpecIdSize < SPEC_ID_ALGORITHM_COUNT_OFFSET + sizeof (UINT32)) ||
++      (sizeof (TCG_PCR_EVENT_HDR) + SpecIdSize > Laml) ||
++      (CompareMem (SpecId, TCG_EfiSpecIDEventStruct_SIGNATURE_03, sizeof (TCG_EfiSpecIDEventStruct_SIGNATURE_03)) != 0))
++  {
++    DEBUG ((DEBUG_WARN, "Bootloader TPM2 log at 0x%p: no crypto agile log\n", Log));
++    return;
++  }
++
++  AlgorithmCount = ReadUnaligned32 ((UINT32 *)(SpecId + SPEC_ID_ALGORITHM_COUNT_OFFSET));
++  if ((AlgorithmCount == 0) || (AlgorithmCount > SPEC_ID_MAX_ALGORITHMS) ||
++      (SPEC_ID_ALGORITHM_COUNT_OFFSET + sizeof (UINT32) + AlgorithmCount * sizeof (TCG_EfiSpecIdEventAlgorithmSize) > SpecIdSize))
++  {
++    return;
++  }
++
++  for (Index = 0; Index < AlgorithmCount; Index++) {
++    AlgorithmId[Index] = ReadUnaligned16 ((UINT16 *)(SpecId + SPEC_ID_ALGORITHM_COUNT_OFFSET + sizeof (UINT32)) + 2 * Index);
++    DigestSize[Index]  = ReadUnaligned16 ((UINT16 *)(SpecId + SPEC_ID_ALGORITHM_COUNT_OFFSET + sizeof (UINT32)) + 2 * Index + 1);
++  }
++
++  //
++  // The TCG_PCR_EVENT2 events up to the first with no digest (coreboot
++  // clears the log area) or the end of the area
++  //
++  Events = 0;
++  Offset = sizeof (TCG_PCR_EVENT_HDR) + SpecIdSize;
++  while (Offset + sizeof (TCG_PCRINDEX) + sizeof (TCG_EVENTTYPE) + sizeof (UINT32) <= Laml) {
++    Start       = Offset;
++    Offset     += sizeof (TCG_PCRINDEX) + sizeof (TCG_EVENTTYPE);
++    DigestCount = ReadUnaligned32 ((UINT32 *)(Log + Offset));
++    Offset     += sizeof (UINT32);
++    if ((DigestCount == 0) || (DigestCount > AlgorithmCount)) {
++      break;
++    }
++
++    for (Index = 0; Index < DigestCount; Index++) {
++      if (Offset + sizeof (UINT16) > Laml) {
++        break;
++      }
++
++      Id        = ReadUnaligned16 ((UINT16 *)(Log + Offset));
++      Algorithm = 0;
++      while (Algorithm < AlgorithmCount && AlgorithmId[Algorithm] != Id) {
++        Algorithm++;
++      }
++
++      if (Algorithm == AlgorithmCount) {
++        break;
++      }
++
++      Offset += sizeof (UINT16) + DigestSize[Algorithm];
++    }
++
++    if ((Index != DigestCount) || (Offset + sizeof (UINT32) > Laml)) {
++      DEBUG ((DEBUG_WARN, "Bootloader TPM2 log: event at 0x%x malformed\n", (UINT32)Start));
++      break;
++    }
++
++    EventSize = ReadUnaligned32 ((UINT32 *)(Log + Offset));
++    Offset   += sizeof (UINT32);
++    if (EventSize > Laml - Offset) {
++      DEBUG ((DEBUG_WARN, "Bootloader TPM2 log: event at 0x%x past the log area\n", (UINT32)Start));
++      break;
++    }
++
++    Offset += EventSize;
++    Hob     = BuildGuidHob (&gTcgEvent2EntryHobGuid, Offset - Start);
++    if (Hob == NULL) {
++      break;
++    }
++
++    CopyMem (Hob, Log + Start, Offset - Start);
++    Events++;
++  }
++
++  DEBUG ((DEBUG_INFO, "Bootloader TPM2 log at 0x%p: %u events for Tcg2Dxe\n", Log, Events));
++
++  //
++  // One log for the OS, the one of Tcg2Dxe: no log area in the TPM2 table
++  //
++  WriteUnaligned32 ((UINT32 *)((UINT8 *)Tpm2 + TPM2_TABLE_LAML_OFFSET), 0);
++  WriteUnaligned64 ((UINT64 *)((UINT8 *)Tpm2 + TPM2_TABLE_LASA_OFFSET), 0);
++  Tpm2->Checksum = 0;
++  Tpm2->Checksum = CalculateCheckSum8 ((UINT8 *)Tpm2, Tpm2->Length);
++}
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+index 8f4be85466..c892b29063 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+@@ -480,6 +480,11 @@ BuildHobFromBl (
+   AcpiBoardInfo = BuildHobFromAcpi (AcpiTableHob->Rsdp);
+   ASSERT (AcpiBoardInfo != NULL);
+ 
++  //
++  // The measurements of coreboot, for the event log of Tcg2Dxe
++  //
++  BuildTcg2EventHobsFromBootloaderLog (AcpiTableHob->Rsdp);
++
+   //
+   // Parse memory info and build memory HOBs for reserved DRAM and MMIO
+   //
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.h b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.h
+index 0d60920142..ab9486b884 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.h
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.h
+@@ -235,6 +235,17 @@ BuildHobFromAcpi (
+   IN   UINT64  AcpiTableBase
+   );
+ 
++/**
++  Build a gTcgEvent2EntryHobGuid HOB for each event of the bootloader's TPM
++  2.0 event log, found through the ACPI TPM2 table.
++
++  @param  RsdpAddress        The RSDP of the bootloader's ACPI tables
++**/
++VOID
++BuildTcg2EventHobsFromBootloaderLog (
++  IN UINT64  RsdpAddress
++  );
++
+ /**
+   Allocates one or more pages .
+ 
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
+index b4f5768f21..e8249a1256 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
+@@ -25,6 +25,7 @@
+   UefiPayloadEntry.c
+   LoadDxeCore.c
+   AcpiTable.c
++  Tcg2EventLog.c
+ 
+ [Sources.Ia32]
+   X64/VirtualMemory.h
+@@ -45,6 +46,7 @@
+   MdeModulePkg/MdeModulePkg.dec
+   UefiCpuPkg/UefiCpuPkg.dec
+   UefiPayloadPkg/UefiPayloadPkg.dec
++  SecurityPkg/SecurityPkg.dec
+ 
+ [LibraryClasses]
+   BaseMemoryLib
+@@ -74,6 +76,7 @@
+   gEfiSmmStoreInfoHobGuid
+   gEfiTcgPhysicalPresenceInfoHobGuid
+   gEfiBootMediaInfoHobGuid
++  gTcgEvent2EntryHobGuid
+ 
+ [FeaturePcd.IA32]
+   gEfiMdeModulePkgTokenSpaceGuid.PcdDxeIplSwitchToLongMode      ## CONSUMES
+-- 
+2.47.3
+

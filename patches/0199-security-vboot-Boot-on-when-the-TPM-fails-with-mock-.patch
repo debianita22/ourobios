@@ -1,0 +1,84 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 1 Nov 2026 16:30:31 +0100
+Subject: [PATCH 199/204] security/vboot: Boot on when the TPM fails with mock
+ secdata
+
+With VBOOT_MOCK_SECDATA vboot keeps nothing in the TPM, yet a TPM that
+does not start makes verstage request recovery (RO_TPM_S_ERROR). On a
+board whose read-only part has no recovery path that stops the boot,
+which is why VBOOT_MOCK_SECDATA_NO_TPM leaves the TPM to ramstage.
+With measured boot the TPM has to start in verstage, and there it only
+takes the measurements.
+
+With mock secdata, report the failure and boot on: the measurements
+are lost, so the PCRs do not match what the OS sealed to them, but the
+machine starts. The same for a TPM that starts but then fails to
+extend vboot's PCRs (boot mode, HWID, firmware version), which requests
+recovery too (RO_TPM_U_ERROR). The CBFS measurements already only warn.
+The mocked secdata spaces are still read, which creates them without
+the TPM: left out, as on the error path, vboot finds no valid secdata
+and asks for recovery all the same (secdata_firmware: version
+incompatible, reason 0x2b).
+
+TEST=QEMU q35 with vboot A/B, VBOOT_MOCK_SECDATA and TPM_MEASURED_BOOT:
+without a TPM device, verstage says it boots on without measurements
+and the slot boots to the payload (before, without the secdata spaces:
+recovery requested, romstage looked for in the read-only CBFS, a hang);
+with swtpm, every boot starts the TPM and extends vboot's PCRs.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/security/vboot/vboot_logic.c | 29 +++++++++++++++++++++++------
+ 1 file changed, 23 insertions(+), 6 deletions(-)
+
+diff --git a/src/security/vboot/vboot_logic.c b/src/security/vboot/vboot_logic.c
+index 01d43a08cd..7b3bca678f 100644
+--- a/src/security/vboot/vboot_logic.c
++++ b/src/security/vboot/vboot_logic.c
+@@ -283,7 +283,18 @@ void verstage_main(void)
+ 		tpm_rc = TPM_SUCCESS;	/* ramstage starts the TPM */
+ 	else
+ 		tpm_rc = vboot_setup_tpm(ctx);
+-	if (tpm_rc == TPM_SUCCESS) {
++	if (tpm_rc != TPM_SUCCESS && CONFIG(VBOOT_MOCK_SECDATA)) {
++		/*
++		 * No secdata in the TPM: it only takes the measurements. A TPM
++		 * that does not start costs those (the PCRs then do not match
++		 * what the OS sealed), not the boot, and a board without a
++		 * recovery path would stop in recovery mode.
++		 */
++		printk(BIOS_ERR, "TPM setup failed (%#x): booting without measurements\n",
++		       tpm_rc);
++	}
++	if (tpm_rc == TPM_SUCCESS || CONFIG(VBOOT_MOCK_SECDATA)) {
++		/* Mocked, these create vboot's secdata without the TPM */
+ 		antirollback_read_space_firmware(ctx);
+ 		antirollback_read_space_kernel(ctx);
+ 	} else {
+@@ -392,11 +403,17 @@ void verstage_main(void)
+ 		timestamp_add_now(TS_TPMPCR_START);
+ 		tpm_rc = extend_pcrs(ctx);
+ 		if (tpm_rc) {
+-			printk(BIOS_WARNING, "Failed to extend TPM PCRs (%#x)\n",
+-				tpm_rc);
+-			vboot_fail_and_reboot(ctx,
+-				VB2_RECOVERY_RO_TPM_U_ERROR,
+-				tpm_rc);
++			if (CONFIG(VBOOT_MOCK_SECDATA)) {
++				/* As above: the measurements are lost, not the boot */
++				printk(BIOS_ERR, "Failed to extend TPM PCRs (%#x): booting on\n",
++				       tpm_rc);
++			} else {
++				printk(BIOS_WARNING, "Failed to extend TPM PCRs (%#x)\n",
++					tpm_rc);
++				vboot_fail_and_reboot(ctx,
++					VB2_RECOVERY_RO_TPM_U_ERROR,
++					tpm_rc);
++			}
+ 		}
+ 		timestamp_add_now(TS_TPMPCR_END);
+ 	}
+-- 
+2.47.3
+

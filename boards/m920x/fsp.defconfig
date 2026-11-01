@@ -18,10 +18,15 @@ CONFIG_FMDFILE="m920x/m920x.fmd"
 CONFIG_VBOOT=y
 CONFIG_VBOOT_SLOTS_RW_AB=y
 CONFIG_LENOVO_M920_VBOOT_MINIMAL_RO=y
-# Niente dati di vboot nel TPM (anti-rollback degli slot): il TPM 2.0 lo
-# avvia ramstage come senza vboot
+# Niente dati di vboot nel TPM (anti-rollback degli slot): il TPM 2.0 serve
+# solo alle misure, e se non parte l'avvio continua senza (patch 0199)
 CONFIG_VBOOT_MOCK_SECDATA=y
-CONFIG_VBOOT_MOCK_SECDATA_NO_TPM=y
+# Measured boot (from v1.5.0): verstage starts the TPM and coreboot
+# measures every stage it loads into PCR0/PCR2, with its own event log
+CONFIG_TPM_MEASURED_BOOT=y
+# Il TPM 2.0 del M920x ha allocati i banchi SHA-1 e SHA-256: le misure in
+# tutti e due, con i due digest in ogni evento (patch 0201)
+CONFIG_TPM_MEASURED_BOOT_SHA1_BANK=y
 # Con vboot il codice grafico comune di Intel accende lo schermo solo se
 # vboot lo chiede (recovery, modo sviluppatore): qui sempre
 CONFIG_VBOOT_ALWAYS_ENABLE_DISPLAY=y
@@ -103,11 +108,14 @@ CONFIG_BOOTMEDIA_LOCK_RUNTIME_OPTION=y
 CONFIG_DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE=y
 
 # Aggiornamento con capsula UEFI (docs/update.md): il GUID dell'ESRT e' del
-# M920x, una capsula del W541 non si applica qui ne' viceversa. LSV: la
+# M920x, una capsula del W541 non si applica qui ne' viceversa; cambiato con
+# la parte RO del measured boot (generazione 2 di ro-interface.txt): una
+# capsula di prima non si applica dietro questa parte RO, ne' viceversa
+# (tools/update.py). LSV: la
 # release piu' vecchia di cui il firmware accetta una capsula, quella della
 # parte RO di oggi (da alzare con una release che riscrive la RO).
 CONFIG_DRIVERS_EFI_FW_INFO=y
-CONFIG_DRIVERS_EFI_MAIN_FW_GUID="2e0b05d4-27d0-4faa-929d-93989c01fee8"
+CONFIG_DRIVERS_EFI_MAIN_FW_GUID="ceef6456-ca3b-4cf3-a784-4895efaf1bde"
 CONFIG_DRIVERS_EFI_MAIN_FW_LSV=0x01030900
 CONFIG_DRIVERS_EFI_UPDATE_CAPSULES=y
 CONFIG_DRIVERS_EFI_CAPSULE_ON_DISK_SUPPORT=y

@@ -192,3 +192,11 @@
 0196-soc-intel-cannonlake-mb-lenovo-m720q_m920q-C1E-and-C.patch
 0197-sb-intel-lynxpoint-An-ME-halted-on-purpose-is-not-an.patch
 0198-cpu-intel-haswell-Make-package-C-state-demotion-a-ch.patch
+0199-security-vboot-Boot-on-when-the-TPM-fails-with-mock-.patch
+0200-security-tpm-Leave-room-for-the-payload-in-the-TPM-1.patch
+0201-security-tpm-Option-to-extend-the-SHA-1-bank-of-a-TP.patch
+0202-security-tpm-Firmware-version-into-PCR-1-outside-Chr.patch
+0203-security-tpm-Keep-the-pre-RAM-TPM-log-inside-its-reg.patch
+0204-security-tpm-Start-the-log-before-vboot-s-first-meas.patch
+0205-security-tpm-256-KiB-for-the-TPM-1.2-log-a-payload-a.patch
+0206-mb-lenovo-Do-not-promise-Kernel-DMA-Protection-in-th.patch

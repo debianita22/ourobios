@@ -230,7 +230,7 @@ LAYOUT = (("RW_MRC_CACHE", 0x0, 0x10000), ("SMMSTORE", 0x10000, 0x80000), ("RW_N
           ("WP_RO", 0xb00000, 0x100000), ("FMAP", 0xb00000, 0x800))
 
 
-def flash(size, ro, a, b, cache, nvram=True):
+def flash(size, ro, a, b, cache, nvram=True, mb=False):
     base = size - 0xc00000
     areas = {n: (base + o, s) for n, o, s in LAYOUT}
     img = bytearray(b"\xff" * size)
@@ -241,6 +241,10 @@ def flash(size, ro, a, b, cache, nvram=True):
         o = areas[area][0] + (0x20000 if area == "WP_RO" else 0x10000)
         img[o:o + 0x1000] = bytes([fill]) * 0x1000
         img[o + 0x1000:o + 0x1000 + len(name)] = name.encode()
+        if mb:
+            # il codice del measured boot: verstage nella parte RO, romstage negli slot
+            mark = update.MB_RO_MARK if area == "WP_RO" else update.MB_SLOT_MARK
+            img[o + 0x2000:o + 0x2000 + len(mark)] = mark
     o = areas["RW_MRC_CACHE"][0]
     img[o:o + len(cache)] = cache
     o = areas["SMMSTORE"][0]
@@ -255,15 +259,15 @@ def flash(size, ro, a, b, cache, nvram=True):
     return img, areas
 
 
-def other_slot(size, fl, retrain, new=4):
+def other_slot(size, fl, retrain, new=4, ro_mb=False, slot_mb=False, force=False):
     rc = lambda n: "ouroBIOS-v1.4.0-rc%d-%s" % (n, fl)
-    dump, areas = flash(size, rc(3), rc(3), rc(2), b"MRCd" + bytes(range(256)) * 16)
-    rel, _ = flash(size, rc(new), rc(new), rc(new), b"", nvram=False)
+    dump, areas = flash(size, rc(3), rc(3), rc(2), b"MRCd" + bytes(range(256)) * 16, mb=ro_mb)
+    rel, _ = flash(size, rc(new), rc(new), rc(new), b"", nvram=False, mb=slot_mb)
     paths = [os.path.join(root, n) for n in ("dump.bin", "release.rom", "out.rom")]
     for path, data in zip(paths, (dump, rel)):
         open(path, "wb").write(bytes(data))
     out = io.StringIO()
-    args = type("A", (), {"dump": paths[0], "image": paths[1], "out": paths[2], "force": False,
+    args = type("A", (), {"dump": paths[0], "image": paths[1], "out": paths[2], "force": force,
                           "retrain": retrain})()
     with contextlib.redirect_stdout(out):
         update.cmd_other_slot(args)
@@ -290,10 +294,32 @@ assert empty and "--fmap -i RW_SECTION_B -i RW_MRC_CACHE -i RW_NVRAM -w" in cmd,
 # una release del M920x di prima della rc4: la sua capsula lo svuotava
 kept, empty, cmd, text = other_slot(24 << 20, "m920x-fsp", False, new=3)
 assert empty and "--fmap -i RW_SECTION_B -i RW_MRC_CACHE -i RW_NVRAM -w" in cmd, cmd
+# il measured boot: parte RO e slot della stessa generazione si', di
+# generazioni diverse mai, nemmeno con --force (lo slot non parte)
+kept, empty, cmd, text = other_slot(24 << 20, "m920x-fsp", False, ro_mb=True, slot_mb=True)
+assert kept, text
+for ro_mb, slot_mb in ((False, True), (True, False)):
+    try:
+        other_slot(24 << 20, "m920x-fsp", False, ro_mb=ro_mb, slot_mb=slot_mb, force=True)
+    except update.Error as e:
+        assert "measured boot" in str(e), e
+    else:
+        raise AssertionError("other-slot ha accettato uno slot di un'altra generazione (RO %s, slot %s)"
+                             % (ro_mb, slot_mb))
+# i volumi che un aggiornamento puo' chiudere: BitLocker, LUKS2 sigillato a
+# PCR 0-2 (systemd-tpm2), clevis; non un LUKS2 sigillato a PCR 7 soltanto
+import json
+lsblk = "/dev/sda1 vfat\n/dev/sda2 BitLocker\n/dev/sdb2 crypto_LUKS\n/dev/sdc2 crypto_LUKS\n/dev/sdd crypto_LUKS\n"
+dumps = {"/dev/sdb2": json.dumps({"tokens": {"0": {"type": "systemd-tpm2", "tpm2-pcrs": [7]}}}),
+         "/dev/sdc2": json.dumps({"tokens": {"0": {"type": "systemd-tpm2", "tpm2-pcrs": [0, 2, 7]}}}),
+         "/dev/sdd": json.dumps({"tokens": {"1": {"type": "clevis"}}})}
+assert update.sealed_to_firmware(lsblk, dumps) == [("/dev/sda2", "BitLocker", None),
+                                                   ("/dev/sdc2", "systemd-tpm2", [0, 2, 7]),
+                                                   ("/dev/sdd", "clevis", None)]
 shutil.rmtree(root)
 EOF
 	then
-		ok "tools/update.py: other-slot su un flash finto (M920x: RW_MRC_CACHE resta, vuota con --retrain o verso la rc3; W541: vuota)"
+		ok "tools/update.py: other-slot su un flash finto (M920x: RW_MRC_CACHE resta, vuota con --retrain o verso la rc3; W541: vuota; mai uno slot di un'altra generazione del measured boot; i volumi sigillati ai PCR del firmware)"
 	else
 		bad "tools/update.py: other-slot non prepara l'immagine come deve"
 	fi
@@ -370,9 +396,52 @@ hw.check_cpu(firmware("m920x", ["[DEBUG]  microcode: sig=0x906eb pf=0x2 revision
                                 "[DEBUG]  Skip microcode update"], []), rep, NoMsr())
 assert rep.checks[0]["data"]["firmware_microcode"] == [0xf6], rep.checks[0]
 assert "coreboot 0xf6 (il log dice 0xf5" in rep.checks[0]["details"][0], rep.checks[0]["details"]
+
+# TPM-03: un registro crypto agile (SHA-1 e SHA-256) e uno del TPM 1.2,
+# rifatti contro i PCR; un evento tolto dal registro (esteso e non scritto)
+# e' un FAIL, un registro senza le misure di coreboot un WARN
+import hashlib
+import struct
+
+
+def agile(events):
+    spec = b"Spec ID Event03\0" + struct.pack("<IBBBBI", 0, 0, 2, 0, 2, 2) + struct.pack("<HHHH", 4, 20, 11, 32) + b"\0"
+    out = struct.pack("<II20sI", 0, 3, bytes(20), len(spec)) + spec
+    for pcr, typ, data in events:
+        out += struct.pack("<III", pcr, typ, 2)
+        out += struct.pack("<H", 4) + hashlib.sha1(data).digest() + struct.pack("<H", 11) + hashlib.sha256(data).digest()
+        out += struct.pack("<I", len(data)) + data
+    return out
+
+
+def pcrs_of(events, banks=("sha1", "sha256")):
+    out = {}
+    for b in banks:
+        for i in range(8):
+            v = bytes(hashlib.new(b).digest_size)
+            for pcr, typ, data in events:
+                if pcr == i:
+                    v = hashlib.new(b, v + hashlib.new(b, data).digest()).digest()
+            out[(b, i)] = v
+    return out
+
+
+name = lambda n: n.encode().ljust(50, b"\0")
+mb = [(2, 5, name("FMAP: FMAP")), (2, 5, name("CBFS: bootblock")), (1, 5, name("VBOOT: boot mode")),
+      (2, 5, name("CBFS: fallback/payload"))] + [(i, 4, bytes(4)) for i in range(8)] + [(5, 0x80000007, b"Exit Boot Services Invocation")]
+st, summary, _, data = hw.measured_boot(agile(mb), pcrs_of(mb))
+assert st == "PASS" and data["coreboot"] == 3 and data["vboot"] == 1, (st, summary)
+st, summary, _, data = hw.measured_boot(agile(mb[:-1]), pcrs_of(mb))
+assert st == "FAIL" and data["differ"] == ["sha1/5", "sha256/5"], (st, summary, data)
+plain = [(i, 4, bytes(4)) for i in range(8)]
+st, summary, _, _ = hw.measured_boot(agile(plain), pcrs_of(plain))
+assert st == "WARN" and "nessuna misura di coreboot" in summary, summary
+tpm12 = b"".join(struct.pack("<II20sI", pcr, typ, hashlib.sha1(d).digest(), len(d)) + d for pcr, typ, d in mb)
+st, summary, _, data = hw.measured_boot(tpm12, pcrs_of(mb, ("sha1",)))
+assert st == "PASS" and data["banks"] == ["sha1"], (st, summary)
 EOF
 	then
-		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, messaggi noti ed eventi del log, microcode con PRMRR"
+		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, messaggi noti ed eventi del log, microcode con PRMRR, il registro del measured boot rifatto contro i PCR (TPM 2.0 e 1.2)"
 	else
 		bad "tools/hw-report.py: i controlli non danno gli esiti attesi"
 	fi

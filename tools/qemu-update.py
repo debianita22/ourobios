@@ -55,6 +55,13 @@
 #  13. con --keep-cache, la capsula di B con i soli due slot nel manifest,
 #      come quelle del M920x (BOARD_CAPSULE_REGIONS): scritto lo slot B,
 #      RW_MRC_CACHE com'era (pieno di 0x5A); vboot prova B
+#  14. un avvio senza TPM: verstage non lo avvia, e la macchina arriva lo
+#      stesso al payload, senza misure (patch 0199)
+# Le ROM hanno il measured boot del M920x (TPM 2.0, banchi SHA-1 e SHA-256):
+# a ogni avvio fino al 13 un TPM 2.0 di swtpm, con lo stato che resta da un
+# avvio all'altro come quello di un TPM vero e un processo nuovo a ogni
+# accensione; verstage lo deve avviare ("TPM: setup succeeded") e nessuna
+# misura deve fallire, anche negli avvii che vboot interrompe o scarta.
 # A ogni avvio fino al payload, l'ESRT che il payload stampa (build DEBUG):
 # il firmware di sistema con la versione dello slot che gira, e l'ultimo
 # tentativo.
@@ -309,6 +316,8 @@ class UpdateTest:
         self.tmp = self.m = None
         self.usb = None
         self.steps = []
+        self.swtpm = None
+        self.measured = 0
 
     def setup(self):
         """Le capsule, il flash dalla ROM della capsula A, l'ESP."""
@@ -352,10 +361,82 @@ class UpdateTest:
                            % (c["path"], c["tag"], update.version_str(c["cap"]["version"])))
         self.ro = self.flash.region("WP_RO")
         self.esp = Esp(os.path.join(self.tmp, "esp.img"))
+        # il TPM 2.0 con i banchi del M920x (libtpms da solo allocherebbe
+        # anche SHA-384 e SHA-512)
+        self.tpm_state = os.path.join(self.tmp, "tpm20")
+        os.makedirs(self.tpm_state)
+        r = subprocess.run(["swtpm_setup", "--tpm2", "--tpmstate", self.tpm_state, "--pcr-banks", "sha1,sha256",
+                            "--config", "/dev/null"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if r.returncode != 0:
+            raise Fail("swtpm_setup: %s" % r.stdout.strip().splitlines()[-1:])
         self.t0 = time.monotonic()
+
+    def tpm_on(self):
+        """swtpm acceso, con lo stato di sempre: le opzioni di QEMU per il TPM."""
+        sock = os.path.join(self.tmp, "swtpm.sock")
+        if os.path.exists(sock):
+            os.remove(sock)
+        self.swtpm = subprocess.Popen(["swtpm", "socket", "--tpm2", "--tpmstate", "dir=" + self.tpm_state,
+                                       "--ctrl", "type=unixio,path=" + sock,
+                                       "--log", "file=%s,level=1" % os.path.join(self.out, "swtpm.log")])
+        end = time.monotonic() + 10
+        while not os.path.exists(sock):
+            if self.swtpm.poll() is not None or time.monotonic() > end:
+                raise Fail("swtpm non ha aperto %s (swtpm.log)" % sock)
+            time.sleep(0.1)
+        return ["-chardev", "socket,id=chrtpm,path=" + sock, "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
+                "-device", "tpm-tis,tpmdev=tpm0"]
+
+    def tpm_off(self):
+        if self.swtpm is not None:
+            self.swtpm.terminate()
+            try:
+                self.swtpm.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.swtpm.kill()
+            self.swtpm = None
+
+    # quello che il measured boot non deve mai dire con il TPM acceso
+    TPM_ERRORS = ("TPM setup failed", "Failed to extend TPM PCRs", "TPM Error", "TPM LOG: log table is full",
+                  "TPM LOG: no SHA-1 digest", "TPM LOG: pre-RAM log is too full", "into TPM log")
+
+    def tpm_check(self, tag, text):
+        """Con il TPM: verstage lo ha avviato, se e' arrivato a scegliere
+        lo slot, e nessuna misura e' fallita."""
+        bad = [e for e in self.TPM_ERRORS if e in text]
+        if bad:
+            raise Fail("%s: measured boot, nella seriale \"%s\" (serial-%s.log)" % (tag, bad[0], tag))
+        # PCR 10 e' del sistema operativo (IMA): il firmware non lo tocca (patch 0202)
+        pcr10 = re.search(r"TPM: Digest of `([^`]*)` to PCR 10", text)
+        if pcr10:
+            raise Fail("%s: il firmware ha esteso PCR 10, quello di IMA, con %s (serial-%s.log)"
+                       % (tag, pcr10.group(1), tag))
+        if re.search(r"Slot [AB] is selected", text):
+            if "TPM: setup succeeded" not in text:
+                raise Fail("%s: vboot ha scelto lo slot senza che verstage avviasse il TPM (serial-%s.log)"
+                           % (tag, tag))
+            self.measured += 1
+        # verificato lo slot, vboot misura modo di avvio, HWID e versione
+        # (in PCR 1, patch 0202) e la romstage dello slot ricopia il registro
+        if "romstage starting" in text:
+            for name in ("VBOOT: boot mode", "VBOOT: GBB HWID", "VBOOT: firmware ver"):
+                if not re.search(r"TPM: Digest of `%s` to PCR 1 measured" % name, text):
+                    raise Fail("%s: verstage non ha misurato \"%s\" in PCR 1 (serial-%s.log)" % (tag, name, tag))
+        # il registro che coreboot passa al payload, stampato prima di
+        # avviarlo: le misure di vboot ci devono essere, dopo FMAP e
+        # bootblock (patch 0204), non solo nei PCR
+        dump = text.split("coreboot TPM 2.0 measurements:", 1)
+        if len(dump) == 2:
+            names = re.findall(r"PCR-(\d+) [0-9a-f]+ SHA256 \[([^\]]*)\]", dump[1].split("Jumping to boot code")[0])
+            want = [("2", "FMAP: FMAP"), ("2", "CBFS: bootblock"), ("1", "VBOOT: boot mode"),
+                    ("1", "VBOOT: GBB HWID"), ("1", "VBOOT: firmware ver")]
+            if names[:5] != want:
+                raise Fail("%s: il registro di coreboot comincia con %s, atteso %s (serial-%s.log)"
+                           % (tag, names[:5], want, tag))
 
     def close(self, keep_flash=False):
         """QEMU spento, i file temporanei via; con keep_flash il flash in DIR."""
+        self.tpm_off()
         if self.m is not None:
             self.m.halt()
             if keep_flash and os.path.exists(self.m.flash):
@@ -370,13 +451,24 @@ class UpdateTest:
 
     # --- gli avvii ------------------------------------------------------------
 
-    def boot(self, tag, trace=None, cut_at=None):
+    def boot(self, tag, trace=None, cut_at=None, tpm=True):
+        """boot_once() con il TPM (tpm) acceso per quell'avvio e spento dopo,
+        e i controlli del measured boot sulla seriale."""
+        try:
+            how, text = self.boot_once(tag, trace, cut_at, self.tpm_on() if tpm else [])
+        finally:
+            self.tpm_off()
+        if tpm:
+            self.tpm_check(tag, text)
+        return how, text
+
+    def boot_once(self, tag, trace, cut_at, tpm_args):
         """Un avvio fino al payload che, pubblicato l'ESRT e fallito l'avvio
         dal disco, aspetta un tasto ("booted"), fino a un reset (QEMU esce:
         "reset") o, con cut_at (una funzione della seriale), finche' e' vera:
         allora si toglie la corrente ("cut"). Torna (come e' finito,
         seriale)."""
-        extra = self.esp.qemu_args() + (self.usb.qemu_args() if self.usb else [])
+        extra = self.esp.qemu_args() + (self.usb.qemu_args() if self.usb else []) + tpm_args
         if trace:
             # i byte scritti uno a uno e quelli del buffer di scrittura (0xE8),
             # le cancellazioni dei blocchi
@@ -536,7 +628,35 @@ class UpdateTest:
         want = self.caps[other_key]["tag"]
         self.flash.fill("RW_MRC_CACHE", 0x5A)
         before = self.flash.data()
-        m.boot(tag, self.esp.qemu_args())
+        try:
+            self.setup_keys(tag, running, other, other_key, want)
+        finally:
+            m.halt()
+            self.tpm_off()
+        text = m.serial_text()
+        self.tpm_check(tag, text)
+        for line in ("VBNV: slot %s next, 2 tries" % other,
+                     "FirmwareUpdate: slot %s next, %s, restarting" % (other, want)):
+            if line not in text:
+                raise Fail("%s: nella seriale manca \"%s\"" % (tag, line))
+
+        after = self.flash.data()
+        for area in ("WP_RO", "RW_SECTION_A", "RW_SECTION_B"):
+            if self.flash.region(area, after) != self.flash.region(area, before):
+                raise Fail("%s: scritto %s" % (tag, area))
+        if self.flash.region("RW_MRC_CACHE", after).strip(b"\xff"):
+            raise Fail("%s: RW_MRC_CACHE non cancellato" % tag)
+        st = self.flash.nv()
+        if (not st["valid"] or SLOTS[st["try_next"]] != other or st["try_count"] != 2
+                or SLOTS[st["tried"]] != running or st["result"] != NV_SUCCESS):
+            raise Fail("%s: RW_NVRAM %s, atteso: prossimo lo slot %s, 2 tentativi, %s confermato"
+                       % (tag, nv_str(st), other, running))
+        return text
+
+    def setup_keys(self, tag, running, other, other_key, want):
+        """L'avvio di setup_other_slot(), con il TPM, fino al riavvio dopo Y."""
+        m = self.m
+        m.boot(tag, self.esp.qemu_args() + self.tpm_on())
         m.wait("%s: coreboot non e' arrivato al payload (serial-%s.log)" % (tag, tag),
                lambda: (m.alive(), "Jumping to boot code" in m.serial_text())[1], self.timeout)
 
@@ -580,25 +700,6 @@ class UpdateTest:
         m.key("y")
         m.wait("%s: confermato con Y, il sistema non e' ripartito (serial-%s.log)" % (tag, tag),
                lambda: m.proc.poll() is not None, self.timeout)
-        m.halt()
-        text = m.serial_text()
-        for line in ("VBNV: slot %s next, 2 tries" % other,
-                     "FirmwareUpdate: slot %s next, %s, restarting" % (other, want)):
-            if line not in text:
-                raise Fail("%s: nella seriale manca \"%s\"" % (tag, line))
-
-        after = self.flash.data()
-        for area in ("WP_RO", "RW_SECTION_A", "RW_SECTION_B"):
-            if self.flash.region(area, after) != self.flash.region(area, before):
-                raise Fail("%s: scritto %s" % (tag, area))
-        if self.flash.region("RW_MRC_CACHE", after).strip(b"\xff"):
-            raise Fail("%s: RW_MRC_CACHE non cancellato" % tag)
-        st = self.flash.nv()
-        if (not st["valid"] or SLOTS[st["try_next"]] != other or st["try_count"] != 2
-                or SLOTS[st["tried"]] != running or st["result"] != NV_SUCCESS):
-            raise Fail("%s: RW_NVRAM %s, atteso: prossimo lo slot %s, 2 tentativi, %s confermato"
-                       % (tag, nv_str(st), other, running))
-        return text
 
     def key_of(self, slot):
         """La ROM (A, B, C, D) che lo slot ha nel flash, dal nome nel suo CBFS."""
@@ -625,13 +726,15 @@ class UpdateTest:
             return any(when == "after" or line.endswith("failed") for line, when, _ in mark.findall(m.serial_text()))
         self.esp.put_os(self.lock_test)
         try:
-            m.boot(tag, self.esp.qemu_args())
+            m.boot(tag, self.esp.qemu_args() + self.tpm_on())
             m.wait("%s: il payload non ha avviato slot-lock-test.efi, o non ha risposto (serial-%s.log)"
                    % (tag, tag), done, self.timeout)
             m.halt()
         finally:
+            self.tpm_off()
             self.esp.del_os()
         text = m.serial_text()
+        self.tpm_check(tag, text)
         got = {when: int(ret) for _, when, ret in mark.findall(text) if when}
         if set(got) != {"before", "after"}:
             raise Fail("%s: %s" % (tag, "; ".join(x[0] for x in mark.findall(text)) or "nessuna risposta"))
@@ -857,6 +960,16 @@ class UpdateTest:
             self.ok("capsula B con i soli slot nel manifest (%s): scritto lo slot B, RW_MRC_CACHE com'era; "
                     "vboot prova B e il payload lo conferma" % " ".join(KEEP_CACHE_REGIONS))
 
+        # 14. senza TPM: verstage non lo avvia, l'avvio continua (patch 0199)
+        slot, key = ("B", "B") if self.keep else ("A", "A")
+        how, text = self.boot("14-senza-TPM", tpm=False)
+        self.expect("14-senza-TPM", how, text, "booted")
+        self.running("14-senza-TPM", text, slot, key)
+        if "booting without measurements" not in text:
+            raise Fail("14-senza-TPM: verstage non dice di continuare senza misure (serial-14-senza-TPM.log)")
+        self.ok("measured boot: in %d avvii verstage ha avviato il TPM 2.0 (SHA-1 e SHA-256) e nessuna misura "
+                "e' fallita; senza TPM l'avvio arriva al payload dallo slot %s, senza misure" % (self.measured, slot))
+
         # alla fine
         if f.region("WP_RO") != self.ro:
             raise Fail("la parte RO e' cambiata")
@@ -887,9 +1000,9 @@ def main():
     ap.add_argument("--out", default="update-test", help="seriale e riassunto (default: update-test/)")
     ap.add_argument("--timeout", type=float, default=300, help="secondi per ogni avvio (default 300)")
     args = ap.parse_args()
-    for tool in ("qemu-system-x86_64", "mformat", "mcopy", "mdir", "mmd", "mdel"):
+    for tool in ("qemu-system-x86_64", "mformat", "mcopy", "mdir", "mmd", "mdel", "swtpm", "swtpm_setup"):
         if not shutil.which(tool):
-            sys.exit("serve %s (Debian/Ubuntu: apt install qemu-system-x86 mtools)" % tool)
+            sys.exit("serve %s (Debian/Ubuntu: apt install qemu-system-x86 mtools swtpm swtpm-tools)" % tool)
     os.makedirs(args.out, exist_ok=True)
     test = UpdateTest(args.caps, args.lock_test, args.out, args.timeout, args.keep_cache)
     passed = False

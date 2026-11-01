@@ -464,8 +464,17 @@ if extract config "${TMP}/config"; then
 	want CONFIG_VBOOT_STARTS_IN_BOOTBLOCK=y
 	want CONFIG_VBOOT_VBNV_FLASH=y
 	want CONFIG_VBOOT_MOCK_SECDATA=y
-	want CONFIG_VBOOT_MOCK_SECDATA_NO_TPM=y
-	want CONFIG_TPM_INIT_RAMSTAGE=y
+	# measured boot (generazione 2 della parte RO): il verstage avvia il TPM
+	want CONFIG_TPM_MEASURED_BOOT=y
+	# la versione del firmware di vboot in PCR 1, non in PCR 10, quello di
+	# IMA (patch 0202)
+	want CONFIG_PCR_FW_VER=1
+	# il TPM 2.0 del M920x ha allocato anche il banco SHA-1 (patch 0201);
+	# il W541 ha un TPM 1.2, un banco solo
+	if [ "${BOARD}" = m920x ]; then
+		want CONFIG_TPM_MEASURED_BOOT_SHA1_BANK=y
+	fi
+	never CONFIG_VBOOT_MOCK_SECDATA_NO_TPM=y "il verstage non avvierebbe il TPM: niente measured boot"
 	want CONFIG_BOOTMEDIA_LOCK_CONTROLLER=y
 	want CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO=y
 	want CONFIG_BOOTMEDIA_LOCK_RUNTIME_OPTION=y
@@ -490,6 +499,14 @@ if extract config "${TMP}/config"; then
 		ok "config: PcdFirmwareRevision ${rev}"
 	else
 		bad "config: CONFIG_EDK2_CUSTOM_BUILD_PARAMS senza PcdFirmwareRevision=${rev} in fondo"
+	fi
+	# il log del TPM di Tcg2Dxe da 256 KiB: con 64 si riempiva prima di
+	# ExitBootServices (sul M920x), e il log non dava piu' i PCR
+	if grep -qE '^CONFIG_EDK2_CUSTOM_BUILD_PARAMS=".*--pcd gEfiSecurityPkgTokenSpaceGuid.PcdTcgLogAreaMinLen=0x40000 ' \
+		"${TMP}/config"; then
+		ok "config: PcdTcgLogAreaMinLen 0x40000"
+	else
+		bad "config: CONFIG_EDK2_CUSTOM_BUILD_PARAMS senza PcdTcgLogAreaMinLen=0x40000"
 	fi
 	if [ -n "${LOCALVERSION}" ]; then
 		if [ "${lv}" = "${LOCALVERSION}" ]; then ok "versione: ${lv}"; else bad "versione: '${lv}', attesa '${LOCALVERSION}'"; fi
@@ -554,6 +571,9 @@ else
 				ok "${st}: le regioni della cache-as-RAM di ${BOARD_RO_INTERFACE}"
 			else
 				bad "${st}: cache-as-RAM diversa da ${BOARD_RO_INTERFACE} ($(diff "${TMP}/car-want" "${TMP}/car-${st}" | sed -n 's/^> //p' | head -3 | paste -sd ' '))"
+				# la tabella intera di questa build, da copiare nel file se la
+				# parte RO cambia di proposito (una generazione nuova)
+				sed "s/^/       ${VARIANT} /" "${TMP}/car-${st}"
 			fi
 		done
 	fi

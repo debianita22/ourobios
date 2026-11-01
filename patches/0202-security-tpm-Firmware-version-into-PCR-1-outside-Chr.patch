@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 1 Nov 2026 19:40:10 +0100
+Subject: [PATCH 202/204] security/tpm: Firmware version into PCR 1 outside
+ ChromeOS
+
+vboot extends the firmware version into PCR_FW_VER, which has no prompt
+and is 10 on every board. PCR 10 is where ChromeOS keeps it, but on
+other systems it is the PCR of the OS: Linux IMA extends its measurement
+list there, starting with boot_aggregate, and a replay of that list
+assumes the PCR was zero when the kernel started. With vboot's extend in
+it the IMA log no longer matches the PCR.
+
+Outside ChromeOS, put it in PCR 1 with vboot's boot mode and HWID
+(PCR_BOOT_MODE and PCR_HWID are 1 there too), the PCR of the platform
+configuration in the TCG PC Client profile.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/security/tpm/Kconfig | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/security/tpm/Kconfig b/src/security/tpm/Kconfig
+index c1d6797d3d..0e602bec15 100644
+--- a/src/security/tpm/Kconfig
++++ b/src/security/tpm/Kconfig
+@@ -173,7 +173,8 @@ config PCR_SRTM
+ 
+ config PCR_FW_VER
+ 	int
+-	default 10
++	default 10 if CHROMEOS
++	default 1
+ 
+ # PCR for measuring data which changes during runtime
+ # e.g. CMOS, NVRAM...
+-- 
+2.47.3
+

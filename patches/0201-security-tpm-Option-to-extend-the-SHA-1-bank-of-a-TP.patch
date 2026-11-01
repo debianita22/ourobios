@@ -1,0 +1,465 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 1 Nov 2026 18:23:58 +0100
+Subject: [PATCH 201/204] security/tpm: Option to extend the SHA-1 bank of a
+ TPM 2.0 too
+
+coreboot measures into one PCR bank of a TPM 2.0, the one of
+TPM_MEASURE_ALGO (SHA-256). Many TPM 2.0 chips ship with the SHA-1 and
+SHA-256 banks both allocated, as the one of the Lenovo ThinkCentre
+M920x: its SHA-1 PCRs then miss everything coreboot measures, and an
+event log imported by a UEFI payload (Tcg2Dxe takes the events of the
+bootloader as HOBs) has events without a digest for an active bank,
+which it logs with that digest missing.
+
+TPM_MEASURED_BOOT_SHA1_BANK hashes every measured CBFS file and region
+with SHA-1 too, extends both banks (two TPM2_PCR_Extend commands, each
+for its bank, are the same as one with both digests) and logs both
+digests in each TCG_PCR_EVENT2, the pre-RAM log in CAR included, which
+is replayed into the TPM when it starts. The vboot digests (boot mode,
+HWID, firmware version) go into the SHA-1 bank truncated to 20 bytes,
+as on a TPM 1.2. A TPM whose SHA-1 bank is not allocated ignores those
+extends. The log entries grow from 100 to 122 bytes: the 15 pre-RAM
+ones still fit in the 2 KiB TPM_LOG region.
+
+The new tpm_extend_pcr_banks() and tspi_cbfs_measurement_banks() take
+the SHA-1 digest; tpm_extend_pcr() and tspi_cbfs_measurement() stay as
+they are for the other callers.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/lib/cbfs.c                         |  9 +++-
+ src/security/tpm/Kconfig               | 11 +++++
+ src/security/tpm/tpm2_log_serialized.h | 14 +++++-
+ src/security/tpm/tspi.h                |  9 ++++
+ src/security/tpm/tspi/crtm.c           | 24 ++++++++++-
+ src/security/tpm/tspi/crtm.h           |  8 ++++
+ src/security/tpm/tspi/log-tpm2.c       | 59 +++++++++++++++++++++++---
+ src/security/tpm/tspi/logs.h           |  6 +++
+ src/security/tpm/tspi/tspi.c           | 37 +++++++++++++---
+ src/security/vboot/tpm_common.c        | 17 +++++---
+ 10 files changed, 173 insertions(+), 21 deletions(-)
+
+diff --git a/src/lib/cbfs.c b/src/lib/cbfs.c
+index 4db3113eee..79cc2d9514 100644
+--- a/src/lib/cbfs.c
++++ b/src/lib/cbfs.c
+@@ -208,8 +208,15 @@ static bool cbfs_file_hash_mismatch(const void *buffer, size_t size,
+ 				hash = &calculated_hash;
+ 		}
+ 
++		/* The SHA-1 bank too (TPM_MEASURED_BOOT_SHA1_BANK) */
++		struct vb2_hash sha1_hash = { .algo = VB2_HASH_INVALID };
++		if (CONFIG(TPM_MEASURED_BOOT_SHA1_BANK) &&
++		    vb2_hash_calculate(false, buffer, size, VB2_HASH_SHA1, &sha1_hash))
++			sha1_hash.algo = VB2_HASH_INVALID;
++
+ 		if (!hash ||
+-		    tspi_cbfs_measurement(mdata->h.filename, be32toh(mdata->h.type), hash))
++		    tspi_cbfs_measurement_banks(mdata->h.filename, be32toh(mdata->h.type), hash,
++						&sha1_hash))
+ 			ERROR("failed to measure '%s' into TPM log\n", mdata->h.filename);
+ 			/* We intentionally continue to boot on measurement errors. */
+ 	}
+diff --git a/src/security/tpm/Kconfig b/src/security/tpm/Kconfig
+index 4a3ea9059d..c1d6797d3d 100644
+--- a/src/security/tpm/Kconfig
++++ b/src/security/tpm/Kconfig
+@@ -131,6 +131,17 @@ config TPM_HASH_SHA512
+ 
+ endchoice
+ 
++config TPM_MEASURED_BOOT_SHA1_BANK
++	bool "Also extend the SHA-1 PCR bank"
++	depends on TPM2 && TPM_LOG_TPM2 && TPM_HASH_SHA256
++	help
++	  Measure every digest into the SHA-1 bank of a TPM 2.0 as well as
++	  into the SHA-256 one, and log both digests in each event. Many
++	  TPMs come with both banks allocated: without this option the SHA-1
++	  PCRs miss coreboot's measurements, and a log that a UEFI payload
++	  imports has events without a digest for an active bank. On a TPM
++	  where the SHA-1 bank is not allocated, its extends are ignored.
++
+ config TPM_MEASURED_BOOT_INIT_BOOTBLOCK
+ 	bool
+ 	depends on TPM_MEASURED_BOOT && !VBOOT
+diff --git a/src/security/tpm/tpm2_log_serialized.h b/src/security/tpm/tpm2_log_serialized.h
+index a11a2f6a7e..520c5781ec 100644
+--- a/src/security/tpm/tpm2_log_serialized.h
++++ b/src/security/tpm/tpm2_log_serialized.h
+@@ -38,11 +38,21 @@
+ #  define TPM_20_LOG_DIGEST_MAX_LENGTH 1 /* To avoid compilation error */
+ #endif
+ 
++#if CONFIG(TPM_MEASURED_BOOT_SHA1_BANK)
++#  define TPM_20_LOG_ALGORITHMS 2
++#else
++#  define TPM_20_LOG_ALGORITHMS 1
++#endif
++
+ /* TCG_PCR_EVENT2 */
+ struct tpm_2_log_entry {
+ 	uint32_t pcr;
+ 	uint32_t event_type;
+-	uint32_t digest_count; /* Always 1 in current implementation */
++	uint32_t digest_count; /* TPM_20_LOG_ALGORITHMS */
++#if CONFIG(TPM_MEASURED_BOOT_SHA1_BANK)
++	uint16_t sha1_type;
++	uint8_t sha1[SHA1_DIGEST_SIZE];
++#endif
+ 	uint16_t digest_type;
+ 	uint8_t digest[TPM_20_LOG_DIGEST_MAX_LENGTH];
+ 	uint32_t data_length;
+@@ -61,7 +71,7 @@ struct tpm_2_vendor {
+ 
+ struct tpm_2_log_table {
+ 	struct tcg_efi_spec_id_event header; /* TCG_PCR_EVENT actually */
+-	struct tpm_digest_sizes digest_sizes[1];
++	struct tpm_digest_sizes digest_sizes[TPM_20_LOG_ALGORITHMS];
+ 	uint8_t vendor_info_size;
+ 	struct tpm_2_vendor vendor;
+ 	struct tpm_2_log_entry entries[]; /* Variable number of entries */
+diff --git a/src/security/tpm/tspi.h b/src/security/tpm/tspi.h
+index 3e7e5f10f5..aa734bfc73 100644
+--- a/src/security/tpm/tspi.h
++++ b/src/security/tpm/tspi.h
+@@ -141,6 +141,15 @@ tpm_result_t tpm_extend_pcr(int pcr, enum vb2_hash_algorithm digest_algo,
+ 			    const uint8_t *digest, size_t digest_len,
+ 			    const char *name);
+ 
++/**
++ * tpm_extend_pcr(), and with TPM_MEASURED_BOOT_SHA1_BANK also the SHA-1
++ * bank of the PCR with sha1, the SHA-1 digest of the same data (logged in
++ * the same event). A NULL sha1 extends the main bank only.
++ */
++tpm_result_t tpm_extend_pcr_banks(int pcr, enum vb2_hash_algorithm digest_algo,
++				  const uint8_t *digest, size_t digest_len,
++				  const uint8_t *sha1, const char *name);
++
+ /**
+  * Issue a TPM_Clear and re-enable/reactivate the TPM.
+  * @return TPM_SUCCESS on success. If not a tpm error is returned
+diff --git a/src/security/tpm/tspi/crtm.c b/src/security/tpm/tspi/crtm.c
+index 899b73f7b1..14abd0cea9 100644
+--- a/src/security/tpm/tspi/crtm.c
++++ b/src/security/tpm/tspi/crtm.c
+@@ -126,6 +126,13 @@ static bool is_runtime_data(const char *name)
+ }
+ 
+ tpm_result_t tspi_cbfs_measurement(const char *name, uint32_t type, const struct vb2_hash *hash)
++{
++	return tspi_cbfs_measurement_banks(name, type, hash, NULL);
++}
++
++tpm_result_t tspi_cbfs_measurement_banks(const char *name, uint32_t type,
++					 const struct vb2_hash *hash,
++					 const struct vb2_hash *sha1)
+ {
+ 	uint32_t pcr_index;
+ 	tpm_result_t rc = TPM_SUCCESS;
+@@ -165,8 +172,9 @@ tpm_result_t tspi_cbfs_measurement(const char *name, uint32_t type, const struct
+ 
+ 	snprintf(tpm_log_metadata, TPM_CB_LOG_PCR_HASH_NAME, "CBFS: %s", name);
+ 
+-	return tpm_extend_pcr(pcr_index, hash->algo, hash->raw, vb2_digest_size(hash->algo),
+-			      tpm_log_metadata);
++	return tpm_extend_pcr_banks(pcr_index, hash->algo, hash->raw, vb2_digest_size(hash->algo),
++				    sha1 && sha1->algo == VB2_HASH_SHA1 ? sha1->raw : NULL,
++				    tpm_log_metadata);
+ }
+ 
+ void *tpm_log_init(void)
+@@ -217,6 +225,18 @@ tpm_result_t tspi_measure_cache_to_pcr(void)
+ 				event_name, rc);
+ 			return rc;
+ 		}
++		/* i was already advanced past this entry */
++		const uint8_t *sha1 = CONFIG(TPM_MEASURED_BOOT_SHA1_BANK) ?
++			tpm2_log_get_sha1(i - 1) : NULL;
++		if (sha1) {
++			rc = tlcl_extend(pcr, sha1, VB2_HASH_SHA1);
++			if (rc != TPM_SUCCESS) {
++				printk(BIOS_ERR,
++				       "TPM: Writing SHA-1 of %s into PCR failed with error %d\n",
++				       event_name, rc);
++				return rc;
++			}
++		}
+ 	}
+ 
+ 	return TPM_SUCCESS;
+diff --git a/src/security/tpm/tspi/crtm.h b/src/security/tpm/tspi/crtm.h
+index 69043e233a..d1065ff783 100644
+--- a/src/security/tpm/tspi/crtm.h
++++ b/src/security/tpm/tspi/crtm.h
+@@ -46,6 +46,14 @@ tpm_result_t tspi_measure_cache_to_pcr(void);
+  */
+ tpm_result_t tspi_cbfs_measurement(const char *name, uint32_t type, const struct vb2_hash *hash);
+ 
++/**
++ * tspi_cbfs_measurement() with also the SHA-1 digest of the file, for
++ * TPM_MEASURED_BOOT_SHA1_BANK (NULL: the main bank only).
++ */
++tpm_result_t tspi_cbfs_measurement_banks(const char *name, uint32_t type,
++					 const struct vb2_hash *hash,
++					 const struct vb2_hash *sha1);
++
+ /*
+  * Provide a function on SoC level to measure the bootblock for cases where bootblock is
+  * neither in FMAP nor in CBFS (e.g. in IFWI).
+diff --git a/src/security/tpm/tspi/log-tpm2.c b/src/security/tpm/tspi/log-tpm2.c
+index 56799a7e94..479c718313 100644
+--- a/src/security/tpm/tspi/log-tpm2.c
++++ b/src/security/tpm/tspi/log-tpm2.c
+@@ -63,16 +63,20 @@ void *tpm2_log_cbmem_init(void)
+ 		hdr = &tclt->header;
+ 
+ 		hdr->event_type = htole32(EV_NO_ACTION);
+-		hdr->event_size = htole32(33 + sizeof(tclt->vendor));
++		hdr->event_size = htole32(29 + sizeof(tclt->digest_sizes) + sizeof(tclt->vendor));
+ 		strcpy((char *)hdr->signature, TPM_20_SPEC_ID_EVENT_SIGNATURE);
+ 		hdr->platform_class = htole32(0x00); // client platform
+ 		hdr->spec_version_minor = 0x00;
+ 		hdr->spec_version_major = 0x02;
+ 		hdr->spec_errata = 0x00;
+ 		hdr->uintn_size = 0x02; // 64-bit UINT
+-		hdr->num_of_algorithms = htole32(1);
+-		hdr->digest_sizes[0].alg_id = htole16(tpmalg_from_vb2_hash(TPM_MEASURE_ALGO));
+-		hdr->digest_sizes[0].digest_size = htole16(vb2_digest_size(TPM_MEASURE_ALGO));
++		hdr->num_of_algorithms = htole32(TPM_20_LOG_ALGORITHMS);
++		tclt->digest_sizes[0].alg_id = htole16(tpmalg_from_vb2_hash(TPM_MEASURE_ALGO));
++		tclt->digest_sizes[0].digest_size = htole16(vb2_digest_size(TPM_MEASURE_ALGO));
++#if CONFIG(TPM_MEASURED_BOOT_SHA1_BANK)
++		tclt->digest_sizes[1].alg_id = htole16(TPM2_ALG_SHA1);
++		tclt->digest_sizes[1].digest_size = htole16(SHA1_DIGEST_SIZE);
++#endif
+ 
+ 		tclt->vendor_info_size = sizeof(tclt->vendor);
+ 		tclt->vendor.reserved = 0;
+@@ -111,6 +115,12 @@ void tpm2_log_dump(void)
+ 			printk(BIOS_INFO, "%02x", tce->digest[j]);
+ 
+ 		printk(BIOS_INFO, " %s [%s]\n", alg_name, tce->data);
++#if CONFIG(TPM_MEASURED_BOOT_SHA1_BANK)
++		printk(BIOS_INFO, "        ");
++		for (j = 0; j < SHA1_DIGEST_SIZE; j++)
++			printk(BIOS_INFO, "%02x", tce->sha1[j]);
++		printk(BIOS_INFO, " SHA1\n");
++#endif
+ 	}
+ 	printk(BIOS_INFO, "\n");
+ }
+@@ -119,6 +129,15 @@ void tpm2_log_add_table_entry(const char *name, const uint32_t pcr,
+ 			      enum vb2_hash_algorithm digest_algo,
+ 			      const uint8_t *digest,
+ 			      const size_t digest_len)
++{
++	tpm2_log_add_entry_banks(name, pcr, digest_algo, digest, digest_len, NULL);
++}
++
++void tpm2_log_add_entry_banks(const char *name, const uint32_t pcr,
++			      enum vb2_hash_algorithm digest_algo,
++			      const uint8_t *digest,
++			      const size_t digest_len,
++			      const uint8_t *sha1)
+ {
+ 	struct tpm_2_log_table *tclt;
+ 	struct tpm_2_log_entry *tce;
+@@ -157,9 +176,20 @@ void tpm2_log_add_table_entry(const char *name, const uint32_t pcr,
+ 	tce->pcr = htole32(pcr);
+ 	tce->event_type = htole32(EV_ACTION);
+ 
+-	tce->digest_count = htole32(1);
++	tce->digest_count = htole32(TPM_20_LOG_ALGORITHMS);
+ 	tce->digest_type = htole16(tpmalg_from_vb2_hash(TPM_MEASURE_ALGO));
+ 	memcpy(tce->digest, digest, vb2_digest_size(TPM_MEASURE_ALGO));
++#if CONFIG(TPM_MEASURED_BOOT_SHA1_BANK)
++	tce->sha1_type = htole16(TPM2_ALG_SHA1);
++	if (sha1) {
++		memcpy(tce->sha1, sha1, SHA1_DIGEST_SIZE);
++	} else {
++		printk(BIOS_WARNING, "TPM LOG: no SHA-1 digest for `%s`\n", name);
++		memset(tce->sha1, 0, SHA1_DIGEST_SIZE);
++	}
++#else
++	(void)sha1;
++#endif
+ 
+ 	tce->data_length = htole32(sizeof(tce->data));
+ 	strncpy((char *)tce->data, name, sizeof(tce->data) - 1);
+@@ -188,6 +218,21 @@ int tpm2_log_get(int entry_idx, int *pcr, const uint8_t **digest_data,
+ 	return 0;
+ }
+ 
++const uint8_t *tpm2_log_get_sha1(int entry_idx)
++{
++#if CONFIG(TPM_MEASURED_BOOT_SHA1_BANK)
++	struct tpm_2_log_table *tclt;
++
++	tclt = tpm_log_init();
++	if (!tclt || entry_idx < 0 || entry_idx >= le16toh(tclt->vendor.num_entries))
++		return NULL;
++
++	return tclt->entries[entry_idx].sha1;
++#else
++	return NULL;
++#endif
++}
++
+ uint16_t tpm2_log_get_size(const void *log_table)
+ {
+ 	const struct tpm_2_log_table *tclt = log_table;
+@@ -226,6 +271,10 @@ void tpm2_log_copy_entries(const void *from, void *to)
+ 		tce->event_type = from_log->entries[i].event_type;
+ 
+ 		tce->digest_count = from_log->entries[i].digest_count;
++#if CONFIG(TPM_MEASURED_BOOT_SHA1_BANK)
++		tce->sha1_type = from_log->entries[i].sha1_type;
++		memcpy(tce->sha1, from_log->entries[i].sha1, sizeof(tce->sha1));
++#endif
+ 		tce->digest_type = from_log->entries[i].digest_type;
+ 		memcpy(tce->digest, from_log->entries[i].digest, sizeof(tce->digest));
+ 
+diff --git a/src/security/tpm/tspi/logs.h b/src/security/tpm/tspi/logs.h
+index 2d802f0bc5..e66b621668 100644
+--- a/src/security/tpm/tspi/logs.h
++++ b/src/security/tpm/tspi/logs.h
+@@ -49,6 +49,12 @@ void tpm2_log_add_table_entry(const char *name, const uint32_t pcr,
+ 			      enum vb2_hash_algorithm digest_algo,
+ 			      const uint8_t *digest,
+ 			      const size_t digest_len);
++void tpm2_log_add_entry_banks(const char *name, const uint32_t pcr,
++			      enum vb2_hash_algorithm digest_algo,
++			      const uint8_t *digest,
++			      const size_t digest_len,
++			      const uint8_t *sha1);
++const uint8_t *tpm2_log_get_sha1(int entry_idx);
+ void tpm2_log_dump(void);
+ 
+ #endif /* LOGS_H_ */
+diff --git a/src/security/tpm/tspi/tspi.c b/src/security/tpm/tspi/tspi.c
+index 56b8fa8ede..0f2ec34c89 100644
+--- a/src/security/tpm/tspi/tspi.c
++++ b/src/security/tpm/tspi/tspi.c
+@@ -221,6 +221,13 @@ tpm_result_t tpm_clear_and_reenable(void)
+ 
+ tpm_result_t tpm_extend_pcr(int pcr, enum vb2_hash_algorithm digest_algo,
+ 			const uint8_t *digest, size_t digest_len, const char *name)
++{
++	return tpm_extend_pcr_banks(pcr, digest_algo, digest, digest_len, NULL, name);
++}
++
++tpm_result_t tpm_extend_pcr_banks(int pcr, enum vb2_hash_algorithm digest_algo,
++				  const uint8_t *digest, size_t digest_len,
++				  const uint8_t *sha1, const char *name)
+ {
+ 	tpm_result_t rc;
+ 
+@@ -241,9 +248,19 @@ tpm_result_t tpm_extend_pcr(int pcr, enum vb2_hash_algorithm digest_algo,
+ 			       rc, name, pcr);
+ 			return rc;
+ 		}
++		if (CONFIG(TPM_MEASURED_BOOT_SHA1_BANK) && sha1) {
++			rc = tlcl_extend(pcr, sha1, VB2_HASH_SHA1);
++			if (rc != TPM_SUCCESS) {
++				printk(BIOS_ERR, "TPM Error (%#x): Extending SHA-1 for `%s` into PCR %d failed.\n",
++				       rc, name, pcr);
++				return rc;
++			}
++		}
+ 	}
+ 
+-	if (CONFIG(TPM_MEASURED_BOOT))
++	if (CONFIG(TPM_MEASURED_BOOT_SHA1_BANK))
++		tpm2_log_add_entry_banks(name, pcr, digest_algo, digest, digest_len, sha1);
++	else if (CONFIG(TPM_MEASURED_BOOT))
+ 		tpm_log_add_table_entry(name, pcr, digest_algo, digest, digest_len);
+ 
+ 	printk(BIOS_DEBUG, "TPM: Digest of `%s` to PCR %d %s\n",
+@@ -257,10 +274,11 @@ tpm_result_t tpm_measure_region(const struct region_device *rdev, uint8_t pcr,
+ 			    const char *rname)
+ {
+ 	uint8_t digest[TPM_PCR_MAX_LEN], digest_len;
++	uint8_t sha1[VB2_SHA1_DIGEST_SIZE];
+ 	uint8_t buf[HASH_DATA_CHUNK_SIZE];
+ 	uint32_t offset;
+ 	size_t len;
+-	struct vb2_digest_context ctx;
++	struct vb2_digest_context ctx, ctx_sha1;
+ 
+ 	if (!rdev || !rname)
+ 		return TPM_CB_INVALID_ARG;
+@@ -272,6 +290,11 @@ tpm_result_t tpm_measure_region(const struct region_device *rdev, uint8_t pcr,
+ 		printk(BIOS_ERR, "TPM: Error initializing hash.\n");
+ 		return TPM_CB_HASH_ERROR;
+ 	}
++	if (CONFIG(TPM_MEASURED_BOOT_SHA1_BANK) &&
++	    vb2_digest_init(&ctx_sha1, false, VB2_HASH_SHA1, region_device_sz(rdev))) {
++		printk(BIOS_ERR, "TPM: Error initializing SHA-1.\n");
++		return TPM_CB_HASH_ERROR;
++	}
+ 	/*
+ 	 * Though one can mmap the full needed region on x86 this is not the
+ 	 * case for e.g. ARM. In order to make this code as universal as
+@@ -284,15 +307,19 @@ tpm_result_t tpm_measure_region(const struct region_device *rdev, uint8_t pcr,
+ 			       rname);
+ 			return TPM_CB_READ_FAILURE;
+ 		}
+-		if (vb2_digest_extend(&ctx, buf, len)) {
++		if (vb2_digest_extend(&ctx, buf, len) ||
++		    (CONFIG(TPM_MEASURED_BOOT_SHA1_BANK) && vb2_digest_extend(&ctx_sha1, buf, len))) {
+ 			printk(BIOS_ERR, "TPM: Error extending hash.\n");
+ 			return TPM_CB_HASH_ERROR;
+ 		}
+ 	}
+-	if (vb2_digest_finalize(&ctx, digest, digest_len)) {
++	if (vb2_digest_finalize(&ctx, digest, digest_len) ||
++	    (CONFIG(TPM_MEASURED_BOOT_SHA1_BANK) &&
++	     vb2_digest_finalize(&ctx_sha1, sha1, sizeof(sha1)))) {
+ 		printk(BIOS_ERR, "TPM: Error finalizing hash.\n");
+ 		return TPM_CB_HASH_ERROR;
+ 	}
+-	return tpm_extend_pcr(pcr, TPM_MEASURE_ALGO, digest, digest_len, rname);
++	return tpm_extend_pcr_banks(pcr, TPM_MEASURE_ALGO, digest, digest_len,
++				    CONFIG(TPM_MEASURED_BOOT_SHA1_BANK) ? sha1 : NULL, rname);
+ }
+ #endif /* VBOOT_LIB */
+diff --git a/src/security/vboot/tpm_common.c b/src/security/vboot/tpm_common.c
+index dedf8dfebc..525178487b 100644
+--- a/src/security/vboot/tpm_common.c
++++ b/src/security/vboot/tpm_common.c
+@@ -46,20 +46,25 @@ tpm_result_t vboot_extend_pcr(struct vb2_context *ctx, int pcr,
+ 		       "Buffer needs to be able to fit at least a SHA256");
+ 	enum vb2_hash_algorithm algo = tlcl_get_family() == TPM_1 ?
+ 		VB2_HASH_SHA1 : VB2_HASH_SHA256;
++	/*
++	 * The SHA-1 bank of a TPM 2.0 (TPM_MEASURED_BOOT_SHA1_BANK) gets the
++	 * same digest truncated to 20 bytes, as a TPM 1.2 does.
++	 */
++	const uint8_t *sha1 = CONFIG(TPM_MEASURED_BOOT_SHA1_BANK) ? buffer : NULL;
+ 
+ 	switch (which_digest) {
+ 	/* SHA1 of (devmode|recmode|keyblock) bits */
+ 	case BOOT_MODE_PCR:
+-		return tpm_extend_pcr(pcr, algo, buffer, vb2_digest_size(algo),
+-				      TPM_PCR_BOOT_MODE);
++		return tpm_extend_pcr_banks(pcr, algo, buffer, vb2_digest_size(algo), sha1,
++					    TPM_PCR_BOOT_MODE);
+ 	 /* SHA256 of HWID */
+ 	case HWID_DIGEST_PCR:
+-		return tpm_extend_pcr(pcr, algo, buffer, vb2_digest_size(algo),
+-				      TPM_PCR_GBB_HWID_NAME);
++		return tpm_extend_pcr_banks(pcr, algo, buffer, vb2_digest_size(algo), sha1,
++					    TPM_PCR_GBB_HWID_NAME);
+ 	/* firmware version */
+ 	case FIRMWARE_VERSION_PCR:
+-		return tpm_extend_pcr(pcr, algo, buffer, vb2_digest_size(algo),
+-				      TPM_PCR_FIRMWARE_VERSION);
++		return tpm_extend_pcr_banks(pcr, algo, buffer, vb2_digest_size(algo), sha1,
++					    TPM_PCR_FIRMWARE_VERSION);
+ 	default:
+ 		return TPM_CB_FAIL;
+ 	}
+-- 
+2.47.3
+

@@ -1,0 +1,55 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 1 Nov 2026 23:03:54 +0100
+Subject: [PATCH] mb/lenovo: Do not promise Kernel DMA Protection in the VT-d
+ help
+
+The help of Intel VT-d on the ThinkCentre M920x said it gives Kernel DMA
+Protection. Windows turns that on only when the DMAR table has the
+platform opt-in flag, which tells the OS that the firmware protected the
+memory from DMA before it started; this firmware sets neither the flag
+nor any protection before the OS. Say what VT-d gives (passthrough, the
+OS's own DMA protection) and what it does not. The W541's help of the
+untrusted ports option names the same condition next to TPM 2.0.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/mainboard/lenovo/haswell/cfr.c     | 5 +++--
+ src/mainboard/lenovo/m720q_m920q/cfr.c | 5 ++++-
+ 2 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index c4e8a95e33..c4e4bb2076 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -528,8 +528,9 @@ static const struct sm_object dma_untrusted_ports = SM_DECLARE_BOOL({
+ 			  "of their own and bounce buffers, against a card that\n"
+ 			  "reads or writes memory it should not. Some cards may be\n"
+ 			  "slower.\n"
+-			  "Not Windows Kernel DMA Protection (that needs TPM 2.0),\n"
+-			  "and no protection before the OS starts.\n"
++			  "Not Windows Kernel DMA Protection (that needs TPM 2.0\n"
++			  "and the memory protected before the OS starts), and no\n"
++			  "protection before the OS starts.\n"
+ 			  "Default: off. Shown with Intel VT-d on.",
+ 	.default_value	= false,
+ }, WITH_DEP_VALUES(&vtd, true));
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index 5685d0f196..db7b6ea8d0 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -686,7 +686,10 @@ static const struct sm_object vtd = SM_DECLARE_BOOL({
+ 	.opt_name	= "vtd",
+ 	.ui_name	= "Intel VT-d",
+ 	.ui_helptext	= "The IOMMU, for device passthrough to virtual machines and\n"
+-			  "DMA protection (intel_iommu, Kernel DMA Protection).\n"
++			  "DMA protection by the OS (intel_iommu on Linux).\n"
++			  "Not Windows Kernel DMA Protection, which also needs the\n"
++			  "memory protected before the OS starts: the firmware does\n"
++			  "not do that.\n"
+ 			  "Default: on.",
+ 	.default_value	= true,
+ });
+-- 
+2.47.3
+

@@ -63,6 +63,26 @@ setting. Blocks that are already identical are not written again.
 *BIOS Lock* and *Firmware protection* can stay on: the firmware writes the
 capsule itself, from SMM, and never `WP_RO`.
 
+### Disks sealed to the TPM
+
+From v1.5.0 the firmware measures itself (measured boot): every update
+changes PCR 2, where coreboot measures what it loads, and PCR 1, where
+vboot measures its state. A disk whose key the TPM releases only for
+those PCRs asks for its passphrase or recovery key after the update.
+`update.py stage`, `rollback` and `other-slot` say so when they find one:
+
+- **BitLocker**: with Secure Boot on, Windows seals to PCR 7 and 11,
+  which an update does not change. Without Secure Boot it uses PCR 0, 2
+  and 4 too: suspend it in Windows before the update, `manage-bde
+  -protectors -disable C: -RebootCount 1`, or keep the recovery key at
+  hand.
+- **LUKS with `systemd-cryptenroll`**: enrolled with `--tpm2-pcrs=7`
+  (the Secure Boot state) it is unaffected; with PCR
+  0, 1 or 2, enroll it again after the first boot of the new firmware,
+  with the same PCRs.
+- **clevis**: if its TPM policy has PCR 0, 1 or 2, `clevis luks regen`
+  after the update.
+
 ## The first time
 
 The capsules of v1.3.9 and later need a firmware with the same flash map
@@ -439,10 +459,14 @@ a capsule installs only on its own variant. The ThinkCentre M920x
 is refused there and the other way round, and the rest of this page applies
 to it with its `m920x-coreboot-vX.Y.Z-fsp` files ([docs/m920x.md](m920x.md)). The GUIDs change whenever a
 release needs something a capsule does not write: with the flash map in
-v1.3.0, and with the read-only part in v1.3.9 (one cache-as-RAM layout for
-both variants, [docs/flashing.md](flashing.md#from-v13x-to-v139)), so
+v1.3.0, with the read-only part in v1.3.9 (one cache-as-RAM layout for
+both variants, [docs/flashing.md](flashing.md#from-v13x-to-v139)), and with
+the read-only part of measured boot in v1.5.0, on both boards
+([docs/flashing.md](flashing.md#measured-boot-the-read-only-part)), so
 fwupd and `update.py` do not offer a v1.3.0 package to a v1.2.x firmware,
-nor a v1.3.9 one to v1.3.0-v1.3.8; both go in once with flashrom. To switch
+a v1.3.9 one to v1.3.0-v1.3.8, nor a v1.5.0 one to v1.3.9-v1.4.x; each goes
+in once with flashrom. `update.py other-slot` refuses a slot of the other
+generation of the read-only part too, even with `--force`. To switch
 variant, flash the other image with flashrom
 ([docs/flashing.md](flashing.md#internal-update)), or, from v1.3.9 behind
 the `mrc` read-only part, try the other variant's slot

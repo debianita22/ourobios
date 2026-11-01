@@ -55,11 +55,18 @@ REPO = "debianita22/ourobios"
 # Cambia con la parte RO: una capsula scrive solo gli slot, e il firmware accetta
 # solo capsule con il suo GUID, cosi' una release i cui slot vogliono un'altra
 # parte RO non si installa con la capsula, ma una volta con flashrom.
-#   dalla v1.3.9: la parte RO con una cache-as-RAM uguale per mrc e nri
+#   con il measured boot: la parte RO che avvia il TPM, con il suo registro
+#   nella cache-as-RAM (generazione 2 di configs/ro-interface.txt)
 VARIANTS = {
+    "mrc": uuid.UUID("75f840a2-af55-4481-84b7-5e2f56cf3a4d"),
+    "nri": uuid.UUID("457afc2a-b6ee-4477-b41b-cc995e6110ae"),
+    "m920x-fsp": uuid.UUID("ceef6456-ca3b-4cf3-a784-4895efaf1bde"),
+}
+#   v1.3.9-v1.4.x (W541), v1.4.0-v1.4.x (M920x, dalla sua prima release): la
+#   parte RO senza measured boot, con una cache-as-RAM uguale per mrc e nri
+PRE_MB_VARIANTS = {
     "mrc": uuid.UUID("70eab79a-675a-42ef-9543-43abcad96275"),
     "nri": uuid.UUID("5379c75b-87f2-4669-8d87-6fdd92a50ed4"),
-    # ThinkCentre M920x (boards/m920x), dalla sua prima release
     "m920x-fsp": uuid.UUID("2e0b05d4-27d0-4faa-929d-93989c01fee8"),
 }
 # La board e la variante di ogni nome di release (vX.Y.Z-<nome>): i file
@@ -108,6 +115,7 @@ LEGACY_REGIONS = ["RW_MRC_CACHE", "COREBOOT"]
 KEEP_CACHE_SINCE = (1, 4, 0, 4)
 MIGRATION = "docs/flashing.md, \"From v1.2.x to v1.3.0\""
 RO_MIGRATION = "docs/flashing.md, \"From v1.3.x to v1.3.9\""
+MB_MIGRATION = "docs/flashing.md, \"Measured boot: the read-only part\""
 ROM_SIZE = 12 * 1024 * 1024
 
 FMP_CAPSULE_GUID = uuid.UUID("6dcbd5ed-e82d-4c44-bda1-7194199ad92a")
@@ -227,6 +235,13 @@ def legacy_variant_of(guid):
     return None
 
 
+def pre_mb_variant_of(guid):
+    for name, g in PRE_MB_VARIANTS.items():
+        if g == guid:
+            return name
+    return None
+
+
 def ro1_variant_of(guid):
     for name, g in RO1_VARIANTS.items():
         if g == guid:
@@ -235,7 +250,7 @@ def ro1_variant_of(guid):
 
 
 def any_variant_of(guid):
-    return variant_of(guid) or ro1_variant_of(guid) or legacy_variant_of(guid)
+    return variant_of(guid) or pre_mb_variant_of(guid) or ro1_variant_of(guid) or legacy_variant_of(guid)
 
 
 # --- capsule -----------------------------------------------------------------
@@ -518,7 +533,8 @@ def check_capsule(cap, fw=None, current_only=False):
     prima che stage accetta ancora."""
     legacy = legacy_variant_of(cap["type_id"])
     ro1 = ro1_variant_of(cap["type_id"])
-    variant = cap["variant"] or ro1 or legacy
+    pre_mb = pre_mb_variant_of(cap["type_id"])
+    variant = cap["variant"] or pre_mb or ro1 or legacy
     if variant is None:
         raise Error("capsula per un firmware sconosciuto (%s)" % cap["type_id"])
     if fw and fw["legacy"] and not legacy:
@@ -527,7 +543,16 @@ def check_capsule(cap, fw=None, current_only=False):
     if fw and not fw["legacy"] and legacy:
         raise Error("capsula della v1.2.x (mappa del flash senza vboot): da un firmware v1.3.0 in su "
                     "si torna alla v1.2.x solo con flashrom")
-    if fw and fw.get("ro1") and cap["variant"]:
+    if fw and fw.get("pre_mb") and cap["variant"]:
+        raise Error("qui gira la %s dietro la parte RO senza measured boot: dalla v1.5.0 le release con il measured "
+                    "boot riscrivono la parte RO (il verstage avvia il TPM, la cache-as-RAM ha il suo "
+                    "registro) e si installano una volta con flashrom (%s), poi con le capsule"
+                    % (version_str(fw["version"]), MB_MIGRATION))
+    if fw and not fw["legacy"] and not fw.get("ro1") and not fw.get("pre_mb") and pre_mb:
+        raise Error("capsula di una release senza measured boot: i suoi slot non partono dietro la "
+                    "parte RO del measured boot, indietro si va solo con flashrom (tutta l'immagine di "
+                    "quella release)")
+    if fw and fw.get("ro1") and (cap["variant"] or pre_mb):
         raise Error("qui gira la %s dietro la parte RO della v1.3.0: la v1.3.9 riscrive la parte RO "
                     "(una cache-as-RAM per mrc e nri) e si installa una volta con flashrom (%s), "
                     "poi con le capsule" % (version_str(fw["version"]), RO_MIGRATION))
@@ -575,15 +600,17 @@ def esrt_entry():
         except (TypeError, ValueError):
             continue
         name = variant_of(guid)
+        pre_mb = pre_mb_variant_of(guid)
         ro1 = ro1_variant_of(guid)
         legacy = legacy_variant_of(guid)
-        if name is None and ro1 is None and legacy is None:
+        if name is None and pre_mb is None and ro1 is None and legacy is None:
             continue
         num = lambda f: int(read_text(os.path.join(d, f)) or "0", 0)
         return {
-            "variant": name or ro1 or legacy,
+            "variant": name or pre_mb or ro1 or legacy,
             "legacy": legacy is not None,
             "ro1": ro1 is not None,
+            "pre_mb": pre_mb is not None,
             "guid": guid,
             "version": num("fw_version"),
             "lsv": num("lowest_supported_fw_version"),
@@ -976,9 +1003,11 @@ def print_capsule(path, cap):
     print("capsula:   %s" % (path if "cab" not in cap else "firmware.bin"))
     legacy = legacy_variant_of(cap["type_id"])
     ro1 = ro1_variant_of(cap["type_id"])
+    pre_mb = pre_mb_variant_of(cap["type_id"])
     print("firmware:  ouroBIOS, variante %s%s (%s)" % (
-        cap["variant"] or ro1 or legacy or "?",
-        ", v1.2.x senza vboot" if legacy else ", v1.3.0-v1.3.8 (la prima parte RO)" if ro1 else "",
+        cap["variant"] or pre_mb or ro1 or legacy or "?",
+        ", v1.2.x senza vboot" if legacy else ", v1.3.0-v1.3.8 (la prima parte RO)" if ro1
+        else ", senza measured boot (la parte RO di prima)" if pre_mb else "",
         cap["type_id"]))
     print("versione:  %s, minima %s" % (version_str(cap["version"]), version_str(cap["lsv"])))
     print("regioni:   %s" % (" ".join(cap["regions"]) or "tutto il flash"))
@@ -1040,6 +1069,9 @@ def cmd_status(args):
     elif fw["ro1"]:
         print("mappa:     vboot, due slot RW, la parte RO della v1.3.0: la v1.3.9 la riscrive e si "
               "installa una volta con flashrom (%s)" % RO_MIGRATION)
+    elif fw["pre_mb"]:
+        print("mappa:     vboot, due slot RW, la parte RO senza measured boot: dalla v1.5.0 le release con il "
+              "measured boot la riscrivono e si installano una volta con flashrom (%s)" % MB_MIGRATION)
     else:
         print("mappa:     vboot, due slot RW (una capsula scrive quello che non gira)")
     print("versione:  %s, minima per una capsula %s" % (version_str(fw["version"]), version_str(fw["lsv"])))
@@ -1167,7 +1199,80 @@ def cmd_stage(args):
     print("Il firmware la verifica e la scrive in circa un minuto, con una barra sotto il")
     print("logo: non spegnere. Poi riparte da solo con il firmware nuovo.")
     print_training(cap)
+    print_sealing()
     return finish_stage(args)
+
+
+# I PCR che un aggiornamento del firmware cambia, con il measured boot della
+# v1.5.0: coreboot misura in PCR 2 quello che carica, vboot in PCR 1 il suo
+# stato; PCR 0 (il separatore) per chi lo prende nella politica
+FIRMWARE_PCRS = {0, 1, 2}
+
+
+def sealed_to_firmware(lsblk, dumps):
+    """I volumi cifrati che un aggiornamento del firmware puo' chiudere, da
+    `lsblk -rpno NAME,FSTYPE` e dal JSON di `cryptsetup luksDump
+    --dump-json-metadata` di ogni volume LUKS ({nome: json}): (volume,
+    come, PCR). BitLocker sempre (con Secure Boot sigilla a PCR 7 e 11, che
+    non cambiano; senza, anche a PCR 0 e 2), LUKS2 con un token
+    systemd-tpm2 sigillato a uno dei FIRMWARE_PCRS, o con un token clevis
+    (i suoi PCR sono nel JWE: da controllare a mano)."""
+    found = []
+    for line in lsblk.splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        name, fstype = parts
+        if fstype == "BitLocker":
+            found.append((name, "BitLocker", None))
+        elif fstype == "crypto_LUKS" and name in dumps:
+            try:
+                tokens = json.loads(dumps[name]).get("tokens", {})
+            except ValueError:
+                continue
+            for t in tokens.values():
+                if t.get("type") == "systemd-tpm2":
+                    pcrs = sorted(int(x) for x in t.get("tpm2-pcrs", []))
+                    if set(pcrs) & FIRMWARE_PCRS:
+                        found.append((name, "systemd-tpm2", pcrs))
+                elif t.get("type") == "clevis":
+                    found.append((name, "clevis", None))
+    return found
+
+
+def print_sealing():
+    """Avvisa dei volumi sigillati al TPM che il firmware nuovo non aprira'
+    da solo (il measured boot cambia PCR 1 e 2 a ogni aggiornamento)."""
+    try:
+        lsblk = subprocess.run(["lsblk", "-rpno", "NAME,FSTYPE"], stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, text=True, timeout=30).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return
+    dumps = {}
+    for line in lsblk.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1] == "crypto_LUKS":
+            try:
+                r = subprocess.run(["cryptsetup", "luksDump", "--dump-json-metadata", parts[0]],
+                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=30)
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if r.returncode == 0:
+                dumps[parts[0]] = r.stdout
+    for name, how, pcrs in sealed_to_firmware(lsblk, dumps):
+        if how == "BitLocker":
+            print("Attenzione: %s e' BitLocker. Con Secure Boot acceso Windows lo sigilla a PCR 7 e 11, che"
+                  % name)
+            print("  l'aggiornamento non cambia; senza, anche a PCR 0 e 2: sospendilo prima da Windows")
+            print("  (manage-bde -protectors -disable C: -RebootCount 1), o tieni pronta la chiave di ripristino.")
+        elif how == "systemd-tpm2":
+            print("Attenzione: %s e' sigillato al TPM con i PCR %s: il firmware nuovo cambia PCR 1 e 2,"
+                  % (name, "+".join(str(p) for p in pcrs)))
+            print("  e il volume chiedera' la passphrase. Dopo l'avvio: sudo systemd-cryptenroll --wipe-slot=tpm2")
+            print("  --tpm2-device=auto --tpm2-pcrs=%s %s" % ("+".join(str(p) for p in pcrs), name))
+        else:
+            print("Attenzione: %s ha un token clevis: se la sua politica TPM ha PCR 0, 1 o 2, il firmware" % name)
+            print("  nuovo li cambia e il volume chiedera' la passphrase (clevis luks regen dopo l'avvio).")
 
 
 def print_training(cap):
@@ -1278,6 +1383,21 @@ RELEASE_KEY_RE = re.compile(r"(?:ouroBIOS|w541)-v(\d+)\.(\d+)\.(\d+)(?:-rc(\d+))
 
 # la prima release la cui parte RO parte gli slot di tutte e due le varianti
 RO_COMMON = (1, 3, 9, 0)
+
+# Il measured boot, dal codice nelle regioni e non dalla versione (le build
+# della CI dei due rami valgono tutte come una di oggi): il verstage della
+# parte RO che avvia il TPM e continua senza se non parte (patch 0199), la
+# romstage di uno slot che copia in cbmem il registro del TPM che quella
+# parte RO lascia nella cache-as-RAM (security/tpm/tspi/crtm.c). Una parte RO
+# e uno slot di generazioni diverse cercano la console, i timestamp e le
+# cache di vboot a indirizzi diversi: lo slot non parte
+MB_RO_MARK = b"booting without measurements"
+MB_SLOT_MARK = b"TPM LOG: pre-RAM log is too full"
+
+
+def region_has(data, area, mark):
+    off, size = area
+    return mark in data[off:off + size]
 
 
 def build_release_key(name):
@@ -1535,6 +1655,7 @@ def cmd_rollback(args):
     print("Il firmware verifica la capsula e chiede a vboot lo slot %s, con due tentativi." % plan["other"])
     print("Se lo slot %s non partisse, vboot tornerebbe allo slot %s." % (plan["other"], plan["current"]))
     print_training(cap)
+    print_sealing()
     return finish_stage(args)
 
 
@@ -1625,6 +1746,16 @@ def cmd_other_slot(args):
     # variante ha i suoi; dalla v1.3.9 sono uguali, ma diversi da prima, e solo
     # la parte RO di mrc porta mrc.bin
     ro = region_builds(flash, areas["WP_RO"]) if "WP_RO" in areas else []
+    if "WP_RO" in areas:
+        ro_mb = region_has(flash, areas["WP_RO"], MB_RO_MARK)
+        slot_mb = region_has(image, iareas["FW_MAIN_" + other], MB_SLOT_MARK)
+        if ro_mb != slot_mb:
+            # nemmeno con --force: dietro questa parte RO lo slot non parte
+            raise Error("%s %s il measured boot, la parte RO di questo firmware (%s) %s: lo slot non "
+                        "parte (la cache-as-RAM e' un'altra). La parte RO si cambia una volta con "
+                        "flashrom (%s)"
+                        % (names[0], "ha" if slot_mb else "non ha", " + ".join(ro) or "?",
+                           "si'" if ro_mb else "no", MB_MIGRATION))
     ro_variant = ro[0].rsplit("-", 1)[1] if len(ro) == 1 else None
     ro_common = len(ro) == 1 and build_key_or_ci(ro[0]) >= RO_COMMON
     variant = names[0].rsplit("-", 1)[1]
@@ -1678,6 +1809,7 @@ def cmd_other_slot(args):
     print("di fila (spegnere e riaccendere a ogni blocco), vboot torna allo slot %s. BIOS Lock deve essere"
           % current)
     print("spento.")
+    print_sealing()
     return 0
 
 

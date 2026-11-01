@@ -1,0 +1,77 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 1 Nov 2026 19:42:24 +0100
+Subject: [PATCH 203/204] security/tpm: Keep the pre-RAM TPM log inside its
+ region
+
+The TPM 1.2 and TPM 2.0 formats of the pre-RAM log set its limit to
+MAX_TPM_LOG_ENTRIES (50), the one of the log in cbmem, while the
+TPM_LOG region is 2 KiB on x86 (car.ld), room for 16 to 24 entries
+depending on the format and TPM_MEASURED_BOOT_SHA1_BANK. The entries
+after those go into the region after it, the pre-RAM console in car.ld,
+and recover_tpm_log() then refuses to copy a log of more than
+MAX_PRERAM_TPM_LOG_ENTRIES (15) at all.
+
+Set the limit of the pre-RAM log to the entries that fit in the region,
+and no more than MAX_PRERAM_TPM_LOG_ENTRIES, as the coreboot format
+does: a further measurement is left out of the log ("log table is
+full"; before the TPM starts, out of the PCRs too, as they are replayed
+from the log), and the entries before it reach cbmem.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/security/tpm/tspi/log-tpm1.c |  9 ++++++++-
+ src/security/tpm/tspi/log-tpm2.c | 10 +++++++++-
+ 2 files changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/src/security/tpm/tspi/log-tpm1.c b/src/security/tpm/tspi/log-tpm1.c
+index dc1f64eab6..e807b2547a 100644
+--- a/src/security/tpm/tspi/log-tpm1.c
++++ b/src/security/tpm/tspi/log-tpm1.c
+@@ -138,7 +138,14 @@ void tpm1_preram_log_clear(void)
+ 	 * is not initialized.
+ 	 */
+ 	struct tpm_1_log_table *tclt = (struct tpm_1_log_table *)_tpm_log;
+-	tclt->vendor.max_entries = htole16(MAX_TPM_LOG_ENTRIES);
++	/*
++	 * Only the entries that fit in the TPM_LOG region: past it is the
++	 * pre-RAM console (car.ld). No more than the pre-RAM log may hold
++	 * when it is copied into cbmem (recover_tpm_log()).
++	 */
++	size_t fit = REGION_SIZE(tpm_log) > sizeof(*tclt) ?
++		(REGION_SIZE(tpm_log) - sizeof(*tclt)) / sizeof(tclt->entries[0]) : 0;
++	tclt->vendor.max_entries = htole16(MIN(fit, MAX_PRERAM_TPM_LOG_ENTRIES));
+ 	tclt->vendor.num_entries = htole16(0);
+ }
+ 
+diff --git a/src/security/tpm/tspi/log-tpm2.c b/src/security/tpm/tspi/log-tpm2.c
+index 479c718313..00c227be9e 100644
+--- a/src/security/tpm/tspi/log-tpm2.c
++++ b/src/security/tpm/tspi/log-tpm2.c
+@@ -20,6 +20,7 @@
+ #include <string.h>
+ #include <symbols.h>
+ #include <cbmem.h>
++#include <commonlib/bsd/helpers.h>
+ #include <vb2_sha.h>
+ 
+ static uint16_t tpmalg_from_vb2_hash(enum vb2_hash_algorithm hash_type)
+@@ -247,7 +248,14 @@ void tpm2_preram_log_clear(void)
+ 	 * is not initialized.
+ 	 */
+ 	struct tpm_2_log_table *tclt = (struct tpm_2_log_table *)_tpm_log;
+-	tclt->vendor.max_entries = htole16(MAX_TPM_LOG_ENTRIES);
++	/*
++	 * Only the entries that fit in the TPM_LOG region: past it is the
++	 * pre-RAM console (car.ld). No more than the pre-RAM log may hold
++	 * when it is copied into cbmem (recover_tpm_log()).
++	 */
++	size_t fit = REGION_SIZE(tpm_log) > sizeof(*tclt) ?
++		(REGION_SIZE(tpm_log) - sizeof(*tclt)) / sizeof(tclt->entries[0]) : 0;
++	tclt->vendor.max_entries = htole16(MIN(fit, MAX_PRERAM_TPM_LOG_ENTRIES));
+ 	tclt->vendor.num_entries = htole16(0);
+ }
+ 
+-- 
+2.47.3
+
