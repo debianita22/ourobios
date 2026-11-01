@@ -6,7 +6,7 @@
 #   python3 tools/qemu-smoke.py [--out DIR] [--timeout S] [--setup-only]
 #                               [--vga-mb N] [--size WxH] [--reloc-test EFI]
 #                               [--sb-test EFI --esrt GUID:VERSIONE:LSV [--sb-only]]
-#                               [--tpm] ROM
+#                               [--tpm EFI] ROM
 #
 # Controlla, in ordine:
 #   1. coreboot arriva al payload ("Jumping to boot code" sulla seriale);
@@ -63,10 +63,17 @@
 #      di coreboot (patches/edk2/0033). --sb-only fa questo passo soltanto:
 #      tools/build.sh smoke lo usa per la variante il cui payload e' gia'
 #      stato provato con l'altra (lo stesso, byte per byte);
-#  11. con --tpm, il TPM 1.2 di swtpm (la ROM con CONFIG_TPM1, come il
-#      W541): su un'altra copia nuova della ROM, fino alla Shell, poi la RAM
-#      via QMP e il log TCPA di coreboot, dove il payload scrive le misure.
-#      Ogni PCR 0-7 deve avere il separatore, e in PCR 7 ci devono essere
+#  11. con --tpm, il TPM 1.2 di swtpm (la ROM con CONFIG_TPM1 e
+#      CONFIG_TPM_MEASURED_BOOT, come il W541): su un'altra copia nuova della
+#      ROM, con un'ESP, il payload avvia tools/efi/tpm-pcr-test.c, che legge
+#      dal TPM i PCR 0-7; poi la RAM via QMP e il log TCPA di coreboot, dove
+#      il payload scrive le sue misure dopo quelle di coreboot. Il log deve
+#      dare, rifatto evento per evento, i PCR letti dal TPM; coreboot deve
+#      aver misurato in PCR 2 l'area FMAP, il bootblock, romstage, ramstage
+#      e il payload, ogni file con lo SHA-1 dei suoi byte nella ROM (con il
+#      log di 4 KiB di coreboot gli eventi del payload non ci stavano: la
+#      patch 0200). Ogni PCR 0-7 deve avere il separatore, e in PCR 7 ci
+#      devono essere
 #      le misure di SecureBoot, PK, KEK, db e dbx che il driver delle
 #      variabili fa quando EnrollDefaultKeys le scrive al primo avvio, con
 #      il digest SHA-1 dei dati di ogni evento. Con un TPM 1.2 quelle
@@ -634,9 +641,60 @@ def secure_boot_test(rom, efi, out, timeout, esrt):
 # Il passo 11: il TPM 1.2 di swtpm e il log TCPA del payload. Il tipo e il
 # PCR degli eventi (TCG PC Client, TPM 1.2), e le variabili che il driver
 # delle variabili misura in PCR 7 quando vengono scritte
+EV_NO_ACTION = 0x3
 EV_SEPARATOR = 0x4
 EV_EFI_VARIABLE_DRIVER_CONFIG = 0x80000001
 TPM_POLICY_VARS = ("SecureBoot", "PK", "KEK", "db", "dbx")
+# Le misure di coreboot (security/tpm/tspi/crtm.c, TPM_MEASURED_BOOT): in
+# PCR 2 (PCR_SRTM), ognuna con il nome nei dati dell'evento; quelle che ci
+# devono essere, comunque sia fatta la ROM
+CB_PCR = 2
+CB_MEASURED = ("FMAP: FMAP", "CBFS: bootblock", "CBFS: fallback/romstage", "CBFS: fallback/ramstage",
+               "CBFS: fallback/payload")
+# Il prefisso delle righe di tools/efi/tpm-pcr-test.c sulla seriale
+TPM_MARK = "ouroBIOS tpm test: "
+
+
+def rom_digests(rom):
+    """Lo SHA-1 di quello che coreboot misura, dai byte della ROM: le aree
+    dell'FMAP ("FMAP: nome") e i file di ogni CBFS ("CBFS: nome", i dati
+    come sono nel flash, compressi o no: cbfs.c li misura prima di
+    decomprimerli). Un nome puo' avere piu' digest (un file in piu' CBFS)."""
+    digests = {}
+    # la firma e' anche, come stringa, nel codice che cerca l'FMAP: quello
+    # vero e' la versione 1, grande quanto la ROM
+    o = rom.find(b"__FMAP__")
+    while o >= 0 and not (rom[o + 8] == 1 and struct.unpack_from("<I", rom, o + 18)[0] == len(rom)):
+        o = rom.find(b"__FMAP__", o + 1)
+    if o < 0:
+        raise Fail("nessun FMAP nella ROM")
+    nareas = struct.unpack_from("<H", rom, o + 0x36)[0]
+    for i in range(nareas):
+        off, size, name = struct.unpack_from("<II32s", rom, o + 0x38 + 42 * i)
+        name = name.split(b"\0", 1)[0].decode()
+        digests.setdefault("FMAP: " + name, set()).add(hashlib.sha1(rom[off:off + size]).digest())
+    o = 0
+    while True:
+        o = rom.find(b"LARCHIVE", o)
+        if o < 0:
+            break
+        size, _, _, data = struct.unpack_from(">IIII", rom, o + 8)
+        name = rom[o + 24:o + data].split(b"\0", 1)[0]
+        if data >= 24 and name and o + data + size <= len(rom):
+            digests.setdefault("CBFS: " + name.decode("ascii", "replace"), set()).add(
+                hashlib.sha1(rom[o + data:o + data + size]).digest())
+        o += 8
+    return digests
+
+
+def replay(events):
+    """I PCR 0-7 rifatti dal log TCPA: ogni evento estende il suo PCR,
+    SHA-1 (vecchio || digest), salvo EV_NO_ACTION."""
+    pcrs = {i: bytes(20) for i in range(8)}
+    for pcr, typ, digest, _ in events:
+        if typ != EV_NO_ACTION and pcr in pcrs:
+            pcrs[pcr] = hashlib.sha1(pcrs[pcr] + digest).digest()
+    return pcrs
 
 
 def tcpa_events(dump, base):
@@ -682,14 +740,16 @@ def variable_name(data):
     return data[32:32 + 2 * name_len].decode("utf-16-le", "replace")
 
 
-def tpm_test(rom, out, timeout):
-    """Il passo 11: su una copia nuova della ROM, con il TPM 1.2 di swtpm,
-    il payload fino alla Shell (nessun disco); poi la RAM via QMP e il log
-    TCPA: il driver delle variabili deve aver misurato in PCR 7 le chiavi
-    di Secure Boot che EnrollDefaultKeys scrive al primo avvio (il TPM 1.2
-    le misura solo allora: v1.3.10-rc19 le perdeva, con TcgDxe avviato
-    dopo), con i digest giusti, e ogni PCR deve avere il separatore. Torna
-    la riga del riassunto."""
+def tpm_test(rom, efi, out, timeout):
+    """Il passo 11: su una copia nuova della ROM, con il TPM 1.2 di swtpm e
+    un'ESP, il payload avvia efi (tools/efi/tpm-pcr-test.c), che scrive i
+    PCR 0-7 sulla seriale; poi la RAM via QMP e il log TCPA. Le misure di
+    coreboot in PCR 2 devono essere quelle dei byte della ROM; il driver
+    delle variabili deve aver misurato in PCR 7 le chiavi di Secure Boot
+    che EnrollDefaultKeys scrive al primo avvio (il TPM 1.2 le misura solo
+    allora: v1.3.10-rc19 le perdeva, con TcgDxe avviato dopo), con i
+    digest giusti; ogni PCR deve avere il separatore, e il log rifatto
+    deve dare i PCR del TPM. Torna la riga del riassunto."""
     if not shutil.which("swtpm"):
         raise Fail("serve swtpm per il passo 11 (Debian/Ubuntu: apt install swtpm)")
     os.makedirs(out, exist_ok=True)
@@ -710,20 +770,33 @@ def tpm_test(rom, out, timeout):
                 raise Fail("swtpm non ha aperto %s (swtpm.log)%s"
                            % (sock, "" if swtpm.poll() is None else ": uscito con %d" % swtpm.returncode))
             time.sleep(0.1)
+        disk = os.path.join(sm.tmp, "esp.img")
+        esp_image(disk, efi)
         sm.boot("tpm", ["-chardev", "socket,id=chrtpm,path=" + sock, "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
-                        "-device", "tpm-tis,tpmdev=tpm0"])
+                        "-device", "tpm-tis,tpmdev=tpm0",
+                        "-drive", "file=%s,format=raw,if=none,id=esp" % disk, "-device", "ide-hd,drive=esp,bus=ide.0"])
         sm.wait("coreboot non e' arrivato al payload con il TPM (serial-tpm.log)",
                 lambda: (sm.alive(), "Jumping to boot code" in sm.serial_text())[1], timeout)
-        # la Shell: testo su fondo nero (pochi colori, non uno solo, come lo
-        # schermo prima che il payload disegni); e' dopo ReadyToBoot, quando
-        # il log ha anche le misure delle variabili di boot
 
-        def shell():
-            time.sleep(1.0)
-            img = sm.shot()
-            return img if 1 < img.colors() <= 8 else None
-        sm.wait("il payload non e' arrivato alla Shell UEFI con il TPM (serial-tpm.log)", shell, timeout)
-        time.sleep(2.0)
+        # le righe di tpm-pcr-test.efi, che dopo l'ultima aspetta: dopo
+        # ReadyToBoot, quando il log ha anche le misure delle variabili di
+        # boot e i separatori
+        def lines():
+            return [line.split(TPM_MARK, 1)[1].strip() for line in sm.serial_text().splitlines()
+                    if TPM_MARK in line]
+        sm.wait("tpm-pcr-test.efi non ha finito (serial-tpm.log): il payload non l'ha avviato dall'ESP?",
+                lambda: (sm.alive(), any(line.startswith("RESULT") for line in lines()))[1], timeout)
+        got = lines()
+        if "RESULT OK" not in got:
+            raise Fail("tpm-pcr-test.efi: %s (serial-tpm.log)"
+                       % "; ".join(line for line in got if "FAIL" in line))
+        if "tpm 1.2 sha1" not in got:
+            raise Fail("tpm-pcr-test.efi non ha trovato EFI_TCG_PROTOCOL: %s" % got[0])
+        tpm_pcrs = {}
+        for line in got:
+            m = re.fullmatch(r"pcr (\d+) ([0-9a-f]{40})", line)
+            if m:
+                tpm_pcrs[int(m.group(1))] = bytes.fromhex(m.group(2))
         sm.shot("tpm")
         # la RAM alta di q35 con 2 GiB: la tabella TCPA e il log (cbmem) sono li'
         base, size = 0x70000000, 0x10000000
@@ -735,6 +808,30 @@ def tpm_test(rom, out, timeout):
         sm.halt()
         if not events:
             raise Fail("il log TCPA e' vuoto")
+        with open(os.path.join(out, "tcpa-log.txt"), "w") as f:
+            for pcr, typ, digest, data in events:
+                f.write("PCR %d type %#x %s %s\n" % (pcr, typ, digest.hex(),
+                                                     data[:64].split(b"\0", 1)[0].decode("ascii", "replace")))
+        # le misure di coreboot: il nome nei dati dell'evento (50 byte, una
+        # stringa), il digest quello dei byte nella ROM
+        with open(rom, "rb") as f:
+            digests = rom_digests(f.read())
+        cb, bad = [], []
+        for pcr, typ, digest, data in events:
+            name = data.split(b"\0", 1)[0].decode("ascii", "replace")
+            if not name.startswith(("FMAP: ", "CBFS: ")):
+                continue
+            if pcr != CB_PCR:
+                bad.append("%s in PCR %d" % (name, pcr))
+            elif digest not in digests.get(name, ()):
+                bad.append("%s: il digest non e' lo SHA-1 dei byte nella ROM" % name)
+            cb.append(name)
+        if bad:
+            raise Fail("misure di coreboot sbagliate: %s (tcpa-log.txt)" % "; ".join(bad))
+        missing = [n for n in CB_MEASURED if n not in cb]
+        if missing:
+            raise Fail("nel log TCPA mancano le misure di coreboot di %s (tcpa-log.txt): la ROM ha "
+                       "CONFIG_TPM_MEASURED_BOOT?" % ", ".join(missing))
         separators = sorted(pcr for pcr, typ, _, _ in events if typ == EV_SEPARATOR)
         if separators != list(range(8)):
             raise Fail("separatori nel log TCPA per i PCR %s, attesi 0-7" % separators)
@@ -756,9 +853,18 @@ def tpm_test(rom, out, timeout):
             raise Fail("in PCR 7 mancano le misure di %s (misurate: %s): il driver delle variabili ha "
                        "scritto le chiavi di Secure Boot senza il driver del TPM (v1.3.10-rc19)"
                        % (", ".join(missing), ", ".join(measured) or "nessuna"))
-        return ("TPM 1.2 (swtpm): %d eventi nel log TCPA, i separatori dei PCR 0-7, in PCR 7 le %d misure "
-                "delle chiavi di Secure Boot scritte al primo avvio (%s) con i digest giusti"
-                % (len(events), len(measured), ", ".join(measured)))
+        # il log, rifatto, deve dare i PCR del TPM: un evento esteso ma non
+        # scritto (il log pieno) o scritto ma non esteso non passa
+        logged = replay(events)
+        differ = [str(i) for i in range(8) if tpm_pcrs.get(i) != logged[i]]
+        if differ:
+            raise Fail("i PCR %s del TPM non sono quelli del log TCPA rifatto (serial-tpm.log, tcpa-log.txt)"
+                       % ", ".join(differ))
+        return ("TPM 1.2 (swtpm): %d eventi nel log TCPA, che rifatto da' i PCR 0-7 letti dal TPM; in PCR 2 "
+                "le %d misure di coreboot (%s), con lo SHA-1 dei byte della ROM; i separatori dei PCR 0-7; "
+                "in PCR 7 le %d misure delle chiavi di Secure Boot scritte al primo avvio (%s) con i digest giusti"
+                % (len(events), len(cb), ", ".join(n.split(": ", 1)[1] for n in cb), len(measured),
+                   ", ".join(measured)))
     finally:
         sm.close()
         if swtpm is not None:
@@ -770,7 +876,7 @@ def tpm_test(rom, out, timeout):
 
 
 def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=None, sb_efi=None,
-        esrt=None, sb_only=False, tpm=False):
+        esrt=None, sb_only=False, tpm=None):
     os.makedirs(out, exist_ok=True)
     if sb_only:
         t0 = time.monotonic()
@@ -933,7 +1039,7 @@ def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=Non
             steps.append("%s  %s" % (at(), line))
         # 6. il TPM 1.2 e il log delle misure, su un'altra copia nuova
         if tpm:
-            line = tpm_test(rom, out, timeout)
+            line = tpm_test(rom, tpm, out, timeout)
             steps.append("%s  %s" % (at(), line))
         return steps
     finally:
@@ -955,8 +1061,9 @@ def main():
     ap.add_argument("--esrt", metavar="GUID:VERSIONE:LSV",
                     help="la voce attesa nell'ESRT al passo 10 (versione e LSV esadecimali)")
     ap.add_argument("--sb-only", action="store_true", help="solo il passo 10 (con --sb-test e --esrt)")
-    ap.add_argument("--tpm", action="store_true",
-                    help="il passo 11: il TPM 1.2 di swtpm e il log TCPA (ROM con CONFIG_TPM1)")
+    ap.add_argument("--tpm", metavar="EFI",
+                    help="tools/efi/tpm-pcr-test.c compilato: il passo 11, il TPM 1.2 di swtpm e il log "
+                    "TCPA (ROM con CONFIG_TPM1 e CONFIG_TPM_MEASURED_BOOT)")
     args = ap.parse_args()
     esrt = None
     if args.sb_test:
@@ -982,10 +1089,12 @@ def main():
     if args.reloc_test:
         if not os.path.isfile(args.reloc_test):
             sys.exit("--reloc-test: %s non c'e'" % args.reloc_test)
-    if args.reloc_test or args.sb_test:
+    if args.tpm and not os.path.isfile(args.tpm):
+        sys.exit("--tpm: %s non c'e'" % args.tpm)
+    if args.reloc_test or args.sb_test or args.tpm:
         for tool in ("mformat", "mmd", "mcopy"):
             if not shutil.which(tool):
-                sys.exit("serve %s per i passi 9 e 10 (Debian/Ubuntu: apt install mtools)" % tool)
+                sys.exit("serve %s per i passi 9, 10 e 11 (Debian/Ubuntu: apt install mtools)" % tool)
     try:
         steps = run(args.rom, args.out, args.timeout, args.setup_only, args.vga_mb, size,
                     args.reloc_test, args.sb_test, esrt, args.sb_only, args.tpm)

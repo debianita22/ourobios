@@ -46,7 +46,8 @@
 #                  spostati come li sposta boot.efi di macOS senza
 #                  AvoidRuntimeDefrag (tools/efi/rt-reloc-test.c); l'ESRT
 #                  e Secure Boot (tools/efi/secure-boot-test.c); il TPM 1.2
-#                  di swtpm con il log delle misure. Schermate
+#                  di swtpm con le misure di coreboot e del payload, il log
+#                  rifatto contro i PCR (tools/efi/tpm-pcr-test.c). Schermate
 #                  e seriale in WORK/smoke-<variante>. Una variante con il
 #                  payload, byte per byte, di una gia' provata rifa' solo
 #                  l'ESRT e Secure Boot, con la sua ROM q35. Poi, per la
@@ -1659,6 +1660,8 @@ cmd_smoke() {
 	fi
 	local reloc="${WORK}/rt-reloc-test.efi"
 	efi_app "${O}/tools/efi/rt-reloc-test.c" "${reloc}" || die "smoke: tools/efi/rt-reloc-test.c non compila"
+	local pcrs="${WORK}/tpm-pcr-test.efi"
+	efi_app "${O}/tools/efi/tpm-pcr-test.c" "${pcrs}" || die "smoke: tools/efi/tpm-pcr-test.c non compila"
 	local sb
 	sb="$(smoke_sb_app "${WORK}/sb-test" "${reloc}")" || die "smoke: tools/efi/secure-boot-test.c"
 	local v q fd guid lsv res x y tested="" tested_v="" esrt
@@ -1696,11 +1699,13 @@ cmd_smoke() {
 				echo "CONFIG_DRIVERS_EFI_MAIN_FW_GUID=\"${guid}\""
 				echo "CONFIG_DRIVERS_EFI_MAIN_FW_LSV=${lsv}"
 				echo "CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=$(fw_version)"
-				# il TPM 1.2 come sul W541 (il passo 11: swtpm); senza il
-				# dispositivo in QEMU coreboot non lo trova e va avanti
+				# il TPM 1.2 come sul W541 (il passo 11: swtpm), con le
+				# misure di coreboot; senza il dispositivo in QEMU coreboot
+				# non lo trova e va avanti
 				echo "CONFIG_TPM1=y"
 				echo "CONFIG_MEMORY_MAPPED_TPM=y"
 				echo "CONFIG_TPM_INIT_RAMSTAGE=y"
+				echo "CONFIG_TPM_MEASURED_BOOT=y"
 				echo "CONFIG_LOCALVERSION=\"$(localversion "${v}")-q35\""
 				if [ "${TOOLCHAIN}" = host ]; then echo "CONFIG_ANY_TOOLCHAIN=y"; fi
 			} > "${TREE}/build-${q}/defconfig"
@@ -1723,7 +1728,7 @@ cmd_smoke() {
 					|| die "smoke ${v}: l'ESRT o Secure Boot non passano la prova in QEMU (${WORK}/smoke-$(bkey "${v}"))"
 			elif [ "${res}" = 1920x1080 ]; then
 				python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-$(bkey "${v}")" --reloc-test "${reloc}" \
-					--sb-test "${sb}" --esrt "${esrt}" --tpm "${TREE}/build-${q}/coreboot.rom" \
+					--sb-test "${sb}" --esrt "${esrt}" --tpm "${pcrs}" "${TREE}/build-${q}/coreboot.rom" \
 					|| die "smoke ${v}: il payload non passa la prova in QEMU (${WORK}/smoke-$(bkey "${v}"))"
 				tested="${fd}"
 				tested_v="${v}"
