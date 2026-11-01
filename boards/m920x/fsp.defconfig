@@ -24,6 +24,9 @@ CONFIG_VBOOT_MOCK_SECDATA=y
 # Measured boot (in development): verstage starts the TPM and coreboot
 # measures every stage it loads into PCR0/PCR2, with its own event log
 CONFIG_TPM_MEASURED_BOOT=y
+# Il TPM 2.0 del M920x ha allocati i banchi SHA-1 e SHA-256: le misure in
+# tutti e due, con i due digest in ogni evento (patch 0201)
+CONFIG_TPM_MEASURED_BOOT_SHA1_BANK=y
 # Con vboot il codice grafico comune di Intel accende lo schermo solo se
 # vboot lo chiede (recovery, modo sviluppatore): qui sempre
 CONFIG_VBOOT_ALWAYS_ENABLE_DISPLAY=y

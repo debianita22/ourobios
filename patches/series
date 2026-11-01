@@ -194,3 +194,4 @@
 0198-cpu-intel-haswell-Make-package-C-state-demotion-a-ch.patch
 0199-security-vboot-Boot-on-when-the-TPM-fails-with-mock-.patch
 0200-security-tpm-Leave-room-for-the-payload-in-the-TPM-1.patch
+0201-security-tpm-Option-to-extend-the-SHA-1-bank-of-a-TP.patch

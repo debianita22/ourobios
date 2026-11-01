@@ -6,7 +6,9 @@
 # (docs/m920x.md#first-install): bootblock con verstage e microcode. Dalla
 # generazione 2 (measured boot, in sviluppo) il verstage avvia il TPM e la
 # cache-as-RAM ha in piu' il registro del TPM, 2 KiB dopo il buffer di vboot,
-# che spostano di 0x800 tutto quello che segue. Lascia
+# che spostano di 0x800 tutto quello che segue; le voci di quel registro
+# hanno i digest SHA-1 e SHA-256 (patch 0201), e la romstage dello slot le
+# copia in cbmem. Lascia
 # il suo stato nella cache-as-RAM per la romstage dello slot (buffer di
 # lavoro di vboot, console prima della RAM, timestamp, cache di FMAP e CBFS):
 # gli slot devono trovarli agli stessi indirizzi. Finche' nessuna release del

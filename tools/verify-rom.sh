@@ -466,6 +466,8 @@ if extract config "${TMP}/config"; then
 	want CONFIG_VBOOT_MOCK_SECDATA=y
 	# measured boot (generazione 2 della parte RO): il verstage avvia il TPM
 	want CONFIG_TPM_MEASURED_BOOT=y
+	# anche nel banco SHA-1, allocato nel TPM del M920x (patch 0201)
+	want CONFIG_TPM_MEASURED_BOOT_SHA1_BANK=y
 	never CONFIG_VBOOT_MOCK_SECDATA_NO_TPM=y "il verstage non avvierebbe il TPM: niente measured boot"
 	want CONFIG_BOOTMEDIA_LOCK_CONTROLLER=y
 	want CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO=y

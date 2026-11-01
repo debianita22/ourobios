@@ -6,7 +6,7 @@
 #   python3 tools/qemu-smoke.py [--out DIR] [--timeout S] [--setup-only]
 #                               [--vga-mb N] [--size WxH] [--reloc-test EFI]
 #                               [--sb-test EFI --esrt GUID:VERSIONE:LSV [--sb-only]]
-#                               [--tpm EFI] ROM
+#                               [--tpm EFI [--tpm2]] ROM
 #
 # Controlla, in ordine:
 #   1. coreboot arriva al payload ("Jumping to boot code" sulla seriale);
@@ -72,8 +72,13 @@
 #      aver misurato in PCR 2 l'area FMAP, il bootblock, romstage, ramstage
 #      e il payload, ogni file con lo SHA-1 dei suoi byte nella ROM (con il
 #      log di 4 KiB di coreboot gli eventi del payload non ci stavano: la
-#      patch 0200). Ogni PCR 0-7 deve avere il separatore, e in PCR 7 ci
-#      devono essere
+#      patch 0200). Con --tpm2 il TPM 2.0 di swtpm con i banchi SHA-1 e
+#      SHA-256, come il M920x (la ROM con CONFIG_TPM2 e
+#      CONFIG_TPM_MEASURED_BOOT_SHA1_BANK): il log e' quello crypto agile di
+#      EFI_TCG2_PROTOCOL, dove Tcg2Dxe mette le misure di coreboot
+#      (patches/edk2/0042), ognuna con i due digest (patch 0201); i due
+#      banchi rifatti devono dare i PCR del TPM. Ogni PCR 0-7 deve avere il
+#      separatore, e con il TPM 1.2 in PCR 7 ci devono essere
 #      le misure di SecureBoot, PK, KEK, db e dbx che il driver delle
 #      variabili fa quando EnrollDefaultKeys le scrive al primo avvio, con
 #      il digest SHA-1 dei dati di ogni evento. Con un TPM 1.2 quelle
@@ -655,8 +660,8 @@ CB_MEASURED = ("FMAP: FMAP", "CBFS: bootblock", "CBFS: fallback/romstage", "CBFS
 TPM_MARK = "ouroBIOS tpm test: "
 
 
-def rom_digests(rom):
-    """Lo SHA-1 di quello che coreboot misura, dai byte della ROM: le aree
+def rom_digests(rom, algo="sha1"):
+    """Il digest (algo di hashlib) di quello che coreboot misura, dai byte della ROM: le aree
     dell'FMAP ("FMAP: nome") e i file di ogni CBFS ("CBFS: nome", i dati
     come sono nel flash, compressi o no: cbfs.c li misura prima di
     decomprimerli). Un nome puo' avere piu' digest (un file in piu' CBFS)."""
@@ -672,7 +677,7 @@ def rom_digests(rom):
     for i in range(nareas):
         off, size, name = struct.unpack_from("<II32s", rom, o + 0x38 + 42 * i)
         name = name.split(b"\0", 1)[0].decode()
-        digests.setdefault("FMAP: " + name, set()).add(hashlib.sha1(rom[off:off + size]).digest())
+        digests.setdefault("FMAP: " + name, set()).add(hashlib.new(algo, rom[off:off + size]).digest())
     o = 0
     while True:
         o = rom.find(b"LARCHIVE", o)
@@ -682,9 +687,58 @@ def rom_digests(rom):
         name = rom[o + 24:o + data].split(b"\0", 1)[0]
         if data >= 24 and name and o + data + size <= len(rom):
             digests.setdefault("CBFS: " + name.decode("ascii", "replace"), set()).add(
-                hashlib.sha1(rom[o + data:o + data + size]).digest())
+                hashlib.new(algo, rom[o + data:o + data + size]).digest())
         o += 8
     return digests
+
+
+# Il log crypto agile di EFI_TCG2_PROTOCOL (TCG PC Client Platform Firmware
+# Profile): gli algoritmi dei banchi che il passo 11 rifa'
+TPM2_ALGS = {0x0004: "sha1", 0x000B: "sha256"}
+
+
+def tcg2_events(dump, base, location, last):
+    """Gli eventi del log crypto agile che parte a location, fino a quello a
+    last compreso, in un dump della RAM che parte da base: (pcr, tipo,
+    {banco: digest}, dati). Il primo evento (Spec ID Event03, formato TPM
+    1.2) da' la lunghezza dei digest di ogni algoritmo."""
+    o = location - base
+    if o < 0 or last < location or last - base >= len(dump):
+        raise Fail("il log di EFI_TCG2_PROTOCOL (0x%x-0x%x) e' fuori dal dump della RAM" % (location, last))
+    size = struct.unpack_from("<I", dump, o + 28)[0]
+    spec = dump[o + 32:o + 32 + size]
+    if not spec.startswith(b"Spec ID Event03"):
+        raise Fail("il log di EFI_TCG2_PROTOCOL non comincia con Spec ID Event03")
+    count = struct.unpack_from("<I", spec, 24)[0]
+    sizes = dict(struct.unpack_from("<HH", spec, 28 + 4 * i) for i in range(count))
+    events = []
+    o += 32 + size
+    while o <= last - base:
+        pcr, typ, n = struct.unpack_from("<III", dump, o)
+        o += 12
+        digests = {}
+        for _ in range(n):
+            alg = struct.unpack_from("<H", dump, o)[0]
+            if alg not in sizes:
+                raise Fail("evento del log TCG2 a 0x%x: algoritmo 0x%x non nello Spec ID" % (o + base, alg))
+            digests[TPM2_ALGS.get(alg, "0x%x" % alg)] = dump[o + 2:o + 2 + sizes[alg]]
+            o += 2 + sizes[alg]
+        data_size = struct.unpack_from("<I", dump, o)[0]
+        events.append((pcr, typ, digests, dump[o + 4:o + 4 + data_size]))
+        o += 4 + data_size
+    return sorted(TPM2_ALGS[a] for a in sizes if a in TPM2_ALGS), events
+
+
+def replay_bank(events, bank):
+    """I PCR 0-7 di un banco del TPM 2.0 rifatti dal log TCG2 (EV_NO_ACTION
+    non estende)."""
+    pcrs = {i: bytes(hashlib.new(bank).digest_size) for i in range(8)}
+    for pcr, typ, digests, _ in events:
+        if typ != EV_NO_ACTION and pcr in pcrs:
+            if bank not in digests:
+                return None
+            pcrs[pcr] = hashlib.new(bank, pcrs[pcr] + digests[bank]).digest()
+    return pcrs
 
 
 def replay(events):
@@ -740,7 +794,80 @@ def variable_name(data):
     return data[32:32 + 2 * name_len].decode("utf-16-le", "replace")
 
 
-def tpm_test(rom, efi, out, timeout):
+def tpm2_check(sm, rom, got, out):
+    """Il passo 11 con il TPM 2.0 (--tpm2, la ROM con CONFIG_TPM2 e
+    CONFIG_TPM_MEASURED_BOOT_SHA1_BANK, come il M920x): il log crypto agile
+    di EFI_TCG2_PROTOCOL, all'indirizzo che tpm-pcr-test.efi ha scritto,
+    deve avere le misure di coreboot in PCR 2 (patches/edk2/0042), ognuna
+    con lo SHA-1 e lo SHA-256 dei byte della ROM (patch 0201), i separatori
+    dei PCR 0-7, e rifatto deve dare i PCR dei due banchi letti dal TPM."""
+    m = next((re.fullmatch(r"log 0x([0-9a-f]+) last 0x([0-9a-f]+) truncated (\d+)", line) for line in got
+              if line.startswith("log ")), None)
+    if not m:
+        raise Fail("tpm-pcr-test.efi non ha scritto l'indirizzo del log TCG2 (serial-tpm.log)")
+    location, last, truncated = int(m.group(1), 16), int(m.group(2), 16), int(m.group(3))
+    if truncated:
+        raise Fail("il log di EFI_TCG2_PROTOCOL e' troncato")
+    tpm_pcrs = {}
+    for line in got:
+        p = re.fullmatch(r"pcr (\d+) (sha1|sha256) ([0-9a-f]+)", line)
+        if p:
+            tpm_pcrs[(p.group(2), int(p.group(1)))] = bytes.fromhex(p.group(3))
+    base = location & ~0xFFF
+    size = (last - base + 0x10000) & ~0xFFF
+    dump = os.path.join(sm.tmp, "tcg2.bin")
+    sm.qmp.cmd("stop")
+    sm.qmp.cmd("pmemsave", val=base, size=size, filename=dump)
+    with open(dump, "rb") as f:
+        banks, events = tcg2_events(f.read(), base, location, last)
+    sm.halt()
+    with open(os.path.join(out, "tcg2-log.txt"), "w") as f:
+        for pcr, typ, digests, data in events:
+            f.write("PCR %d type %#x %s %s\n" % (pcr, typ, " ".join("%s:%s" % (b, d.hex()) for b, d in
+                                                                      sorted(digests.items())),
+                                                 data[:64].split(b"\0", 1)[0].decode("ascii", "replace")))
+    if banks != ["sha1", "sha256"]:
+        raise Fail("il log TCG2 ha i banchi %s, attesi sha1 e sha256 (swtpm_setup --pcr-banks)" % banks)
+    with open(rom, "rb") as f:
+        image = f.read()
+    digests = {b: rom_digests(image, b) for b in banks}
+    cb, bad = [], []
+    for pcr, typ, ds, data in events:
+        name = data.split(b"\0", 1)[0].decode("ascii", "replace")
+        if not name.startswith(("FMAP: ", "CBFS: ")):
+            continue
+        if pcr != CB_PCR:
+            bad.append("%s in PCR %d" % (name, pcr))
+        for b in banks:
+            if ds.get(b) not in digests[b].get(name, ()):
+                bad.append("%s: il digest %s non e' quello dei byte nella ROM" % (name, b))
+        cb.append(name)
+    if bad:
+        raise Fail("misure di coreboot nel log TCG2 sbagliate: %s (tcg2-log.txt)" % "; ".join(bad))
+    missing = [n for n in CB_MEASURED if n not in cb]
+    if missing:
+        raise Fail("nel log TCG2 mancano le misure di coreboot di %s (tcg2-log.txt): Tcg2Dxe non le ha "
+                   "prese dal log di coreboot (patches/edk2/0042)?" % ", ".join(missing))
+    separators = sorted(pcr for pcr, typ, _, _ in events if typ == EV_SEPARATOR)
+    if separators != list(range(8)):
+        raise Fail("separatori nel log TCG2 per i PCR %s, attesi 0-7" % separators)
+    differ = []
+    for b in banks:
+        logged = replay_bank(events, b)
+        if logged is None:
+            differ.append("%s (eventi senza il digest %s)" % (b, b))
+            continue
+        differ += ["%s %d" % (b, i) for i in range(8) if tpm_pcrs.get((b, i)) != logged[i]]
+    if differ:
+        raise Fail("i PCR %s del TPM non sono quelli del log TCG2 rifatto (serial-tpm.log, tcg2-log.txt)"
+                   % ", ".join(differ))
+    return ("TPM 2.0 (swtpm, SHA-1 e SHA-256): %d eventi nel log di EFI_TCG2_PROTOCOL, che rifatto da' i PCR "
+            "0-7 dei due banchi letti dal TPM; in PCR 2 le %d misure di coreboot (%s), con lo SHA-1 e lo SHA-256 "
+            "dei byte della ROM; i separatori dei PCR 0-7"
+            % (len(events), len(cb), ", ".join(n.split(": ", 1)[1] for n in cb)))
+
+
+def tpm_test(rom, efi, out, timeout, tpm2=False):
     """Il passo 11: su una copia nuova della ROM, con il TPM 1.2 di swtpm e
     un'ESP, il payload avvia efi (tools/efi/tpm-pcr-test.c), che scrive i
     PCR 0-7 sulla seriale; poi la RAM via QMP e il log TCPA. Le misure di
@@ -749,19 +876,27 @@ def tpm_test(rom, efi, out, timeout):
     che EnrollDefaultKeys scrive al primo avvio (il TPM 1.2 le misura solo
     allora: v1.3.10-rc19 le perdeva, con TcgDxe avviato dopo), con i
     digest giusti; ogni PCR deve avere il separatore, e il log rifatto
-    deve dare i PCR del TPM. Torna la riga del riassunto."""
-    if not shutil.which("swtpm"):
-        raise Fail("serve swtpm per il passo 11 (Debian/Ubuntu: apt install swtpm)")
+    deve dare i PCR del TPM. Con tpm2, il TPM 2.0 (tpm2_check). Torna la
+    riga del riassunto."""
+    if not shutil.which("swtpm") or (tpm2 and not shutil.which("swtpm_setup")):
+        raise Fail("serve swtpm per il passo 11 (Debian/Ubuntu: apt install swtpm swtpm-tools)")
     os.makedirs(out, exist_ok=True)
     sm = Smoke(rom, out, timeout)
     swtpm = None
     try:
         # un TPM 1.2 (il default di swtpm) con lo stato nuovo, che swtpm crea
-        # da solo: niente swtpm_setup, le misure non vogliono l'EK
-        state = os.path.join(sm.tmp, "tpm12")
+        # da solo: niente swtpm_setup, le misure non vogliono l'EK. Il TPM
+        # 2.0 invece con swtpm_setup, per i banchi del M920x, SHA-1 e
+        # SHA-256 (libtpms da solo allocherebbe anche SHA-384 e SHA-512)
+        state = os.path.join(sm.tmp, "tpm20" if tpm2 else "tpm12")
         os.makedirs(state)
+        if tpm2:
+            r = subprocess.run(["swtpm_setup", "--tpm2", "--tpmstate", state, "--pcr-banks", "sha1,sha256",
+                                "--config", "/dev/null"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            if r.returncode != 0:
+                raise Fail("swtpm_setup: %s" % r.stdout.strip().splitlines()[-1:])
         sock = os.path.join(sm.tmp, "swtpm.sock")
-        swtpm = subprocess.Popen(["swtpm", "socket", "--tpmstate", "dir=" + state,
+        swtpm = subprocess.Popen(["swtpm", "socket"] + (["--tpm2"] if tpm2 else []) + ["--tpmstate", "dir=" + state,
                                   "--ctrl", "type=unixio,path=" + sock,
                                   "--log", "file=%s,level=1" % os.path.join(out, "swtpm.log")])
         end = time.monotonic() + 10
@@ -790,14 +925,18 @@ def tpm_test(rom, efi, out, timeout):
         if "RESULT OK" not in got:
             raise Fail("tpm-pcr-test.efi: %s (serial-tpm.log)"
                        % "; ".join(line for line in got if "FAIL" in line))
-        if "tpm 1.2 sha1" not in got:
-            raise Fail("tpm-pcr-test.efi non ha trovato EFI_TCG_PROTOCOL: %s" % got[0])
+        want = "tpm 2.0" if tpm2 else "tpm 1.2"
+        if want not in got:
+            raise Fail("tpm-pcr-test.efi non ha trovato %s: %s"
+                       % ("EFI_TCG2_PROTOCOL" if tpm2 else "EFI_TCG_PROTOCOL", got[0]))
+        sm.shot("tpm")
+        if tpm2:
+            return tpm2_check(sm, rom, got, out)
         tpm_pcrs = {}
         for line in got:
-            m = re.fullmatch(r"pcr (\d+) ([0-9a-f]{40})", line)
+            m = re.fullmatch(r"pcr (\d+) sha1 ([0-9a-f]{40})", line)
             if m:
                 tpm_pcrs[int(m.group(1))] = bytes.fromhex(m.group(2))
-        sm.shot("tpm")
         # la RAM alta di q35 con 2 GiB: la tabella TCPA e il log (cbmem) sono li'
         base, size = 0x70000000, 0x10000000
         dump = os.path.join(sm.tmp, "ram.bin")
@@ -876,7 +1015,7 @@ def tpm_test(rom, efi, out, timeout):
 
 
 def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=None, sb_efi=None,
-        esrt=None, sb_only=False, tpm=None):
+        esrt=None, sb_only=False, tpm=None, tpm2=False):
     os.makedirs(out, exist_ok=True)
     if sb_only:
         t0 = time.monotonic()
@@ -1039,7 +1178,7 @@ def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=Non
             steps.append("%s  %s" % (at(), line))
         # 6. il TPM 1.2 e il log delle misure, su un'altra copia nuova
         if tpm:
-            line = tpm_test(rom, tpm, out, timeout)
+            line = tpm_test(rom, tpm, out, timeout, tpm2)
             steps.append("%s  %s" % (at(), line))
         return steps
     finally:
@@ -1064,6 +1203,9 @@ def main():
     ap.add_argument("--tpm", metavar="EFI",
                     help="tools/efi/tpm-pcr-test.c compilato: il passo 11, il TPM 1.2 di swtpm e il log "
                     "TCPA (ROM con CONFIG_TPM1 e CONFIG_TPM_MEASURED_BOOT)")
+    ap.add_argument("--tpm2", action="store_true",
+                    help="il passo 11 con il TPM 2.0 di swtpm, banchi SHA-1 e SHA-256, e il log di "
+                    "EFI_TCG2_PROTOCOL (ROM con CONFIG_TPM2 e CONFIG_TPM_MEASURED_BOOT_SHA1_BANK)")
     args = ap.parse_args()
     esrt = None
     if args.sb_test:
@@ -1089,6 +1231,8 @@ def main():
     if args.reloc_test:
         if not os.path.isfile(args.reloc_test):
             sys.exit("--reloc-test: %s non c'e'" % args.reloc_test)
+    if args.tpm2 and not args.tpm:
+        ap.error("--tpm2 vuole --tpm")
     if args.tpm and not os.path.isfile(args.tpm):
         sys.exit("--tpm: %s non c'e'" % args.tpm)
     if args.reloc_test or args.sb_test or args.tpm:
@@ -1097,7 +1241,7 @@ def main():
                 sys.exit("serve %s per i passi 9, 10 e 11 (Debian/Ubuntu: apt install mtools)" % tool)
     try:
         steps = run(args.rom, args.out, args.timeout, args.setup_only, args.vga_mb, size,
-                    args.reloc_test, args.sb_test, esrt, args.sb_only, args.tpm)
+                    args.reloc_test, args.sb_test, esrt, args.sb_only, args.tpm, args.tpm2)
     except Fail as e:
         print("smoke: FALLITO (%s): %s (schermate e seriale in %s)" % (ACCEL.upper(), e, args.out))
         return 1

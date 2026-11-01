@@ -1650,9 +1650,9 @@ smoke_sb_app() {
 cmd_smoke() {
 	need_prepared
 	local t
-	for t in qemu-system-x86_64 mformat mmd mcopy clang ld.lld openssl sbsign swtpm; do
+	for t in qemu-system-x86_64 mformat mmd mcopy clang ld.lld openssl sbsign swtpm swtpm_setup; do
 		command -v "${t}" > /dev/null \
-			|| die "smoke: serve ${t} (Debian/Ubuntu: apt install qemu-system-x86 mtools clang lld openssl sbsigntool swtpm)"
+			|| die "smoke: serve ${t} (Debian/Ubuntu: apt install qemu-system-x86 mtools clang lld openssl sbsigntool swtpm swtpm-tools)"
 	done
 	if [ "${TOOLCHAIN}" = crossgcc ]; then
 		xgcc_ok || die "crossgcc mancante in ${XGCC}: prima tools/build.sh toolchain"
@@ -1664,13 +1664,15 @@ cmd_smoke() {
 	efi_app "${O}/tools/efi/tpm-pcr-test.c" "${pcrs}" || die "smoke: tools/efi/tpm-pcr-test.c non compila"
 	local sb
 	sb="$(smoke_sb_app "${WORK}/sb-test" "${reloc}")" || die "smoke: tools/efi/secure-boot-test.c"
-	local v q fd guid lsv res x y tested="" tested_v="" esrt
+	local v q fd guid lsv res x y tested="" tested_v="" esrt tpm2
 	for v in "${VARIANTS[@]}"; do
 		fd="${TREE}/build-$(bkey "${v}")/UEFIPAYLOAD.fd"
 		[ -f "${fd}" ] || die "smoke ${v}: manca ${fd}, prima tools/build.sh roms"
 		guid="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_GUID="\(.*\)"$/\1/p' "$(defconfig "${v}")")"
 		lsv="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_LSV=\(.*\)$/\1/p' "$(defconfig "${v}")")"
 		[ -n "${guid}" ] && [ -n "${lsv}" ] || die "smoke ${v}: GUID o LSV dell'ESRT non nel defconfig"
+		tpm2=""
+		if grep -qx 'CONFIG_TPM_MEASURED_BOOT_SHA1_BANK=y' "$(defconfig "${v}")"; then tpm2=--tpm2; fi
 		# 1920x1080 per tutta la prova; le altre risoluzioni della board
 		# (BOARD_SMOKE_SIZES: sul W541 2880x1620, il pannello 3K con
 		# gfx_fb_limit) per il setup soltanto: la VGA di QEMU con 32 MiB, il
@@ -1699,10 +1701,16 @@ cmd_smoke() {
 				echo "CONFIG_DRIVERS_EFI_MAIN_FW_GUID=\"${guid}\""
 				echo "CONFIG_DRIVERS_EFI_MAIN_FW_LSV=${lsv}"
 				echo "CONFIG_DRIVERS_EFI_MAIN_FW_VERSION=$(fw_version)"
-				# il TPM 1.2 come sul W541 (il passo 11: swtpm), con le
-				# misure di coreboot; senza il dispositivo in QEMU coreboot
-				# non lo trova e va avanti
-				echo "CONFIG_TPM1=y"
+				# il TPM della board (il passo 11: swtpm), con le misure di
+				# coreboot: il TPM 1.2 come sul W541, o il TPM 2.0 con i
+				# banchi SHA-1 e SHA-256 come sul M920x; senza il
+				# dispositivo in QEMU coreboot non lo trova e va avanti
+				if [ -n "${tpm2}" ]; then
+					echo "CONFIG_TPM2=y"
+					echo "CONFIG_TPM_MEASURED_BOOT_SHA1_BANK=y"
+				else
+					echo "CONFIG_TPM1=y"
+				fi
 				echo "CONFIG_MEMORY_MAPPED_TPM=y"
 				echo "CONFIG_TPM_INIT_RAMSTAGE=y"
 				echo "CONFIG_TPM_MEASURED_BOOT=y"
@@ -1728,7 +1736,7 @@ cmd_smoke() {
 					|| die "smoke ${v}: l'ESRT o Secure Boot non passano la prova in QEMU (${WORK}/smoke-$(bkey "${v}"))"
 			elif [ "${res}" = 1920x1080 ]; then
 				python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-$(bkey "${v}")" --reloc-test "${reloc}" \
-					--sb-test "${sb}" --esrt "${esrt}" --tpm "${pcrs}" "${TREE}/build-${q}/coreboot.rom" \
+					--sb-test "${sb}" --esrt "${esrt}" --tpm "${pcrs}" ${tpm2} "${TREE}/build-${q}/coreboot.rom" \
 					|| die "smoke ${v}: il payload non passa la prova in QEMU (${WORK}/smoke-$(bkey "${v}"))"
 				tested="${fd}"
 				tested_v="${v}"
