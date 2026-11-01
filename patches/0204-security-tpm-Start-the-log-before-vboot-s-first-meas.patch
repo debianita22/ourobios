@@ -1,0 +1,120 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 1 Nov 2026 20:18:43 +0100
+Subject: [PATCH] security/tpm: Start the log before vboot's first measurement
+
+The log of measured boot is started, with the measurements of the CRTM
+(the FMAP, the bootblock) and, in the bootblock, by clearing the pre-RAM
+log, at the first CBFS measurement. With vboot starting in the
+bootblock, verstage extends vboot's PCRs (boot mode, HWID, firmware
+version) before that: their entries go into a pre-RAM log that nothing
+has set up, as the cache-as-RAM came up. In QEMU, where it reads zeros,
+each is dropped ("TPM LOG: log table is full") although the PCR is
+extended, so the log no longer replays to the PCR; on real cache-as-RAM
+the header is whatever the cache held.
+
+Start the log, once, at the first measurement of any kind:
+tspi_crtm_init_once(), which tspi_cbfs_measurement_banks() and
+tpm_extend_pcr_banks() call. The CRTM measurements then come first in
+the log, before vboot's.
+
+TEST=QEMU q35 with vboot A/B, a TPM 2.0 (swtpm), TPM_MEASURED_BOOT: the
+log starts with the FMAP and the bootblock, then vboot's three PCR 1
+measurements, no "log table is full".
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/security/tpm/tspi/crtm.c | 28 +++++++++++++++++++---------
+ src/security/tpm/tspi/crtm.h |  7 +++++++
+ src/security/tpm/tspi/tspi.c | 11 +++++++++++
+ 3 files changed, 37 insertions(+), 9 deletions(-)
+
+diff --git a/src/security/tpm/tspi/crtm.c b/src/security/tpm/tspi/crtm.c
+index 14abd0cea9..629d73bb51 100644
+--- a/src/security/tpm/tspi/crtm.c
++++ b/src/security/tpm/tspi/crtm.c
+@@ -125,6 +125,22 @@ static bool is_runtime_data(const char *name)
+ 	return !strcmp(allowlist, name);
+ }
+ 
++tpm_result_t tspi_crtm_init_once(void)
++{
++	tpm_result_t rc;
++
++	if (tpm_log_available())
++		return TPM_SUCCESS;
++
++	rc = tspi_init_crtm();
++	if (rc) {
++		printk(BIOS_WARNING, "Initializing CRTM failed!\n");
++		return rc;
++	}
++	printk(BIOS_DEBUG, "CRTM initialized.\n");
++	return TPM_SUCCESS;
++}
++
+ tpm_result_t tspi_cbfs_measurement(const char *name, uint32_t type, const struct vb2_hash *hash)
+ {
+ 	return tspi_cbfs_measurement_banks(name, type, hash, NULL);
+@@ -138,15 +154,9 @@ tpm_result_t tspi_cbfs_measurement_banks(const char *name, uint32_t type,
+ 	tpm_result_t rc = TPM_SUCCESS;
+ 	char tpm_log_metadata[TPM_CB_LOG_PCR_HASH_NAME];
+ 
+-	if (!tpm_log_available()) {
+-		rc = tspi_init_crtm();
+-		if (rc) {
+-			printk(BIOS_WARNING,
+-			       "Initializing CRTM failed!\n");
+-			return rc;
+-		}
+-		printk(BIOS_DEBUG, "CRTM initialized.\n");
+-	}
++	rc = tspi_crtm_init_once();
++	if (rc)
++		return rc;
+ 
+ 	switch (type) {
+ 	case CBFS_TYPE_MRC_CACHE:
+diff --git a/src/security/tpm/tspi/crtm.h b/src/security/tpm/tspi/crtm.h
+index d1065ff783..84e4fe32da 100644
+--- a/src/security/tpm/tspi/crtm.h
++++ b/src/security/tpm/tspi/crtm.h
+@@ -46,6 +46,13 @@ tpm_result_t tspi_measure_cache_to_pcr(void);
+  */
+ tpm_result_t tspi_cbfs_measurement(const char *name, uint32_t type, const struct vb2_hash *hash);
+ 
++/**
++ * Start the log (the pre-RAM one in the bootblock) with the measurements of
++ * the CRTM, unless done already. Every measurement does it first, so that
++ * the first one, a CBFS file or vboot's boot mode, is logged after them.
++ */
++tpm_result_t tspi_crtm_init_once(void);
++
+ /**
+  * tspi_cbfs_measurement() with also the SHA-1 digest of the file, for
+  * TPM_MEASURED_BOOT_SHA1_BANK (NULL: the main bank only).
+diff --git a/src/security/tpm/tspi/tspi.c b/src/security/tpm/tspi/tspi.c
+index 0f2ec34c89..fa4227b85e 100644
+--- a/src/security/tpm/tspi/tspi.c
++++ b/src/security/tpm/tspi/tspi.c
+@@ -234,6 +234,17 @@ tpm_result_t tpm_extend_pcr_banks(int pcr, enum vb2_hash_algorithm digest_algo,
+ 	if (!digest)
+ 		return TPM_IOERROR;
+ 
++	/*
++	 * vboot extends its PCRs in verstage before any CBFS measurement: the
++	 * log must be started first, or the pre-RAM log is still as the
++	 * cache-as-RAM came up and the entry is lost.
++	 */
++	if (CONFIG(TPM_MEASURED_BOOT)) {
++		rc = tspi_crtm_init_once();
++		if (rc)
++			return rc;
++	}
++
+ 	if (tspi_tpm_is_setup()) {
+ 		rc = tlcl_lib_init();
+ 		if (rc != TPM_SUCCESS) {
+-- 
+2.47.3
+
