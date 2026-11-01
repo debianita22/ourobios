@@ -469,6 +469,8 @@ if extract config "${TMP}/config"; then
 	# la versione del firmware di vboot in PCR 1, non in PCR 10, quello di
 	# IMA (patch 0202)
 	want CONFIG_PCR_FW_VER=1
+	# il lock di TCG Secure MOR in SMM (patch 0207)
+	want CONFIG_SMMSTORE_MOR_LOCK=y
 	# il TPM 2.0 del M920x ha allocato anche il banco SHA-1 (patch 0201);
 	# il W541 ha un TPM 1.2, un banco solo
 	if [ "${BOARD}" = m920x ]; then

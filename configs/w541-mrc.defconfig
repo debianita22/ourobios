@@ -60,6 +60,10 @@ CONFIG_ENABLE_DDR_2X_REFRESH=y
 # Memoria azzerata a ogni avvio (non alla ripresa da S3): 1,7 s con 32 GB.
 # Si spegne dal menu, Security -> Memory protection (patch 0045-0046).
 CONFIG_SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT=y
+# Il lock di TCG Secure MOR (MemoryOverwriteRequestControlLock) tenuto da SMM
+# (patch 0207, edk2/0043): offerto solo con BIOS Lock acceso e "Clear memory
+# at power-on" su "When the OS asks"
+CONFIG_SMMSTORE_MOR_LOCK=y
 
 # CPU, EC, flash e PCIe come la 4.22
 CONFIG_ENABLE_VMX=y

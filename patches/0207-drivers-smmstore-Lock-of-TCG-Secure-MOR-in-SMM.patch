@@ -1,0 +1,758 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 1 Nov 2026 23:24:05 +0100
+Subject: [PATCH] drivers/smmstore: Lock of TCG Secure MOR in SMM
+
+Revision 2 of the TCG Platform Reset Attack Mitigation specification adds
+MemoryOverwriteRequestControlLock: an OS that has set its request to
+clear the memory at the next boot (bit 0 of MemoryOverwriteRequestControl)
+locks it, so that code that runs in the OS after it cannot clear the
+request and then reset to read the secrets left in memory. Windows uses
+it for Credential Guard. The lock is only worth anything where the OS
+cannot write the variable store but through the firmware: in EDK2 it is
+in SMM, around the variable driver. A coreboot payload's variable driver
+runs outside SMM, so the lock has to be here.
+
+SMMSTORE_CMD_MOR_LOCK, for the payload's variable driver: lock, with or
+without a key, and unlock with the key, as the specification has it (a
+wrong key drops the key: locked until the next boot). While the lock
+holds and the OS had asked for the clearing when it locked (or had no
+variable, which counts as asking), every raw write and erase of this
+handler that touches the SMMSTORE region is first applied to a view of
+the variable store as the flash would be after it (programmed: bits are
+only cleared; erased: 0xff), and refused when efi_fv_get_mor(), which the
+decision to clear the memory at boot now reads too, would then find the
+request gone. Other variables are written as before. The data is copied
+into SMRAM before it is checked and written from there.
+
+The state is in a small SMRAM region kept across S3
+(SMM_MOR_LOCK_STATE_SMRAM, below the OPAL S3 state), zeroed on every
+other boot, as the lock lasts until the next boot.
+
+Only with SMM-only flash writes (enable_smm_bios_protection(), BIOS
+Lock): otherwise the OS writes the flash without SMM, and the command
+says the lock is unsupported. SMMSTORE_MOR_LOCK_ANY_BIOS_LOCK offers it
+anyway, for tests in QEMU.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/cpu/x86/Kconfig                  |  13 ++
+ src/cpu/x86/smm/smm_module_handler.c |   8 +
+ src/cpu/x86/smm/smm_module_loader.c  |  17 ++
+ src/cpu/x86/smm/tseg_region.c        |  13 +-
+ src/drivers/efi/efivars.c            |  13 ++
+ src/drivers/efi/efivars.h            |  13 ++
+ src/drivers/smmstore/Kconfig         |  19 +++
+ src/drivers/smmstore/Makefile.mk     |   1 +
+ src/drivers/smmstore/mor_lock.c      | 224 +++++++++++++++++++++++++++
+ src/drivers/smmstore/smi.c           |  13 ++
+ src/drivers/smmstore/store.c         |  56 ++++++-
+ src/include/cpu/x86/smm.h            |   9 ++
+ src/include/smmstore.h               |  52 +++++++
+ src/security/memory/memory.c         |   8 +-
+ 14 files changed, 451 insertions(+), 8 deletions(-)
+ create mode 100644 src/drivers/smmstore/mor_lock.c
+
+diff --git a/src/cpu/x86/Kconfig b/src/cpu/x86/Kconfig
+index 10764aee58..9c7dbe3bd9 100644
+--- a/src/cpu/x86/Kconfig
++++ b/src/cpu/x86/Kconfig
+@@ -211,6 +211,19 @@ config SMM_OPAL_S3_STATE_SMRAM_SIZE
+ 	  secret/state. Must be large enough to store the OPAL S3 state
+ 	  structure and should be kept minimal to reduce SMRAM pressure.
+ 
++config SMM_MOR_LOCK_STATE_SMRAM
++	bool
++	help
++	  Reserve a small persistent region in SMRAM for the state of the TCG
++	  MOR lock (SMMSTORE_MOR_LOCK), so that a lock the OS took survives the
++	  reload of the SMM handler on S3 resume. It is cleared on every other
++	  boot, where the lock starts over.
++
++config SMM_MOR_LOCK_STATE_SMRAM_SIZE
++	hex
++	default 0x1000 if SMM_MOR_LOCK_STATE_SMRAM
++	default 0x0
++
+ config SMM_OPAL_S3_SCRATCH_CBMEM
+ 	bool
+ 	depends on HAVE_ACPI_RESUME
+diff --git a/src/cpu/x86/smm/smm_module_handler.c b/src/cpu/x86/smm/smm_module_handler.c
+index 1833c0e70c..abec3c97ca 100644
+--- a/src/cpu/x86/smm/smm_module_handler.c
++++ b/src/cpu/x86/smm/smm_module_handler.c
+@@ -91,6 +91,14 @@ void smm_get_opal_s3_state_buffer(uintptr_t *base, size_t *size)
+ }
+ #endif
+ 
++#if CONFIG(SMM_MOR_LOCK_STATE_SMRAM)
++void smm_get_mor_lock_state_buffer(uintptr_t *base, size_t *size)
++{
++	*base = smm_runtime.mor_lock_state_base;
++	*size = smm_runtime.mor_lock_state_size;
++}
++#endif
++
+ void smm_get_cbmemc_buffer(void **buffer_out, size_t *size_out)
+ {
+ 	*buffer_out = smm_runtime.cbmemc;
+diff --git a/src/cpu/x86/smm/smm_module_loader.c b/src/cpu/x86/smm/smm_module_loader.c
+index 665b251cd0..f0fd2246a6 100644
+--- a/src/cpu/x86/smm/smm_module_loader.c
++++ b/src/cpu/x86/smm/smm_module_loader.c
+@@ -416,6 +416,23 @@ static void setup_smihandler_params(struct smm_runtime *mod_params,
+ 			memset((void *)state_base, 0, state_size);
+ 	}
+ #endif
++
++#if CONFIG(SMM_MOR_LOCK_STATE_SMRAM)
++	uintptr_t mor_base = 0;
++	size_t mor_size = 0;
++	if (smm_subregion(SMM_SUBREGION_MOR_LOCK_STATE, &mor_base, &mor_size)) {
++		printk(BIOS_ERR, "SMM: Failed to locate MOR lock state SMRAM region\n");
++		mod_params->mor_lock_state_base = 0;
++		mod_params->mor_lock_state_size = 0;
++	} else {
++		mod_params->mor_lock_state_base = mor_base;
++		mod_params->mor_lock_state_size = mor_size;
++
++		/* A lock lasts until the next boot: kept across S3 only. */
++		if (!acpi_is_wakeup_s3())
++			memset((void *)mor_base, 0, mor_size);
++	}
++#endif
+ }
+ 
+ static void print_region(const char *name, const struct region region)
+diff --git a/src/cpu/x86/smm/tseg_region.c b/src/cpu/x86/smm/tseg_region.c
+index d02f9d8e08..eadc7b2b4e 100644
+--- a/src/cpu/x86/smm/tseg_region.c
++++ b/src/cpu/x86/smm/tseg_region.c
+@@ -17,6 +17,8 @@
+  *     +-------------------------+
+  *     |   OPAL S3 State (opt)   | SMM_OPAL_S3_STATE_SMRAM_SIZE
+  *     +-------------------------+
++ *     |  MOR lock state (opt)   | SMM_MOR_LOCK_STATE_SMRAM_SIZE
++ *     +-------------------------+
+  *     |      code and data      |
+  *     |         (TSEG)          |
+  *     +-------------------------+ TSEG
+@@ -28,6 +30,7 @@ int smm_subregion(int sub, uintptr_t *start, size_t *size)
+ 	const size_t ied_size = CONFIG_IED_REGION_SIZE;
+ 	const size_t cache_size = CONFIG_SMM_RESERVED_SIZE;
+ 	const size_t opal_state_size = CONFIG_SMM_OPAL_S3_STATE_SMRAM_SIZE;
++	const size_t mor_state_size = CONFIG_SMM_MOR_LOCK_STATE_SMRAM_SIZE;
+ 
+ 	if (CONFIG(SMM_TSEG))
+ 		smm_region(&sub_base, &sub_size);
+@@ -37,7 +40,7 @@ int smm_subregion(int sub, uintptr_t *start, size_t *size)
+ 		return -1;
+ 
+ 	ASSERT(IS_ALIGNED(sub_base, sub_size));
+-	ASSERT(sub_size > (cache_size + ied_size + opal_state_size));
++	ASSERT(sub_size > (cache_size + ied_size + opal_state_size + mor_state_size));
+ 
+ 	switch (sub) {
+ 	case SMM_SUBREGION_HANDLER:
+@@ -45,6 +48,14 @@ int smm_subregion(int sub, uintptr_t *start, size_t *size)
+ 		sub_size -= ied_size;
+ 		sub_size -= cache_size;
+ 		sub_size -= opal_state_size;
++		sub_size -= mor_state_size;
++		break;
++	case SMM_SUBREGION_MOR_LOCK_STATE:
++		if (!mor_state_size)
++			return -1;
++		/* Persistent MOR lock state lives below the OPAL S3 state. */
++		sub_base += sub_size - (ied_size + cache_size + opal_state_size + mor_state_size);
++		sub_size = mor_state_size;
+ 		break;
+ 	case SMM_SUBREGION_OPAL_S3_STATE:
+ 		if (!opal_state_size)
+diff --git a/src/drivers/efi/efivars.c b/src/drivers/efi/efivars.c
+index e72ba8c2f4..d88ef9f5e7 100644
+--- a/src/drivers/efi/efivars.c
++++ b/src/drivers/efi/efivars.c
+@@ -731,6 +731,19 @@ enum cb_err efi_fv_get_option(const struct region_device *rdev,
+ 	return walk_variables(&store_rdev, auth_format, find_and_copy, &args, NULL);
+ }
+ 
++enum cb_err efi_fv_get_mor(const struct region_device *rdev, uint8_t *mor)
++{
++	static const EFI_GUID mor_guid = {
++		0xe20939be, 0x32d4, 0x41be, { 0xa1, 0x50, 0x89, 0x7f, 0x85, 0xd4, 0x98, 0x29 } };
++	uint32_t size = sizeof(*mor);
++	enum cb_err ret;
++
++	ret = efi_fv_get_option(rdev, &mor_guid, "MemoryOverwriteRequestControl", mor, &size);
++	if (ret == CB_SUCCESS && size != sizeof(*mor))
++		return CB_EFI_VS_CORRUPTED_INVALID;
++	return ret;
++}
++
+ static enum cb_err variable_write_sizes(const struct region_device *rdev, const char *name,
+ 					size_t header_size, size_t data_size,
+ 					size_t *name_size)
+diff --git a/src/drivers/efi/efivars.h b/src/drivers/efi/efivars.h
+index f9c2b1babe..f3383fc3ff 100644
+--- a/src/drivers/efi/efivars.h
++++ b/src/drivers/efi/efivars.h
+@@ -33,6 +33,19 @@ enum cb_err efi_fv_get_option(const struct region_device *rdev,
+ 			      void *dest,
+ 			      uint32_t *size);
+ 
++/**
++ * efi_fv_get_mor
++ * The TCG MOR variable MemoryOverwriteRequestControl in the variable store,
++ * as the decision to clear the memory at boot reads it (security/memory) and
++ * as SMMSTORE_MOR_LOCK protects it: one function, so that both agree.
++ * @rdev: the readable region of the variable store
++ * @mor: the variable, on CB_SUCCESS
++ * Returns CB_SUCCESS with a variable of one byte, CB_EFI_OPTION_NOT_FOUND
++ * without one, another error when the store or the variable cannot be read
++ * (a variable of another size included).
++ */
++enum cb_err efi_fv_get_mor(const struct region_device *rdev, uint8_t *mor);
++
+ /**
+  * efi_fv_set_option
+  * Use the provided EFI variable store inside the region device as variable store.
+diff --git a/src/drivers/smmstore/Kconfig b/src/drivers/smmstore/Kconfig
+index d47493b3ea..65666fffd0 100644
+--- a/src/drivers/smmstore/Kconfig
++++ b/src/drivers/smmstore/Kconfig
+@@ -29,6 +29,25 @@ config SMMSTORE_BLOCK_SIZE
+ 	  Sets the logical block size used by the SMMSTORE protocol. This is
+ 	  an internal SoC or board policy value, not a user-visible option.
+ 
++config SMMSTORE_MOR_LOCK
++	bool "TCG Secure MOR lock (MemoryOverwriteRequestControlLock)"
++	depends on DRIVERS_EFI_VARIABLE_STORE && SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT
++	select SMM_MOR_LOCK_STATE_SMRAM
++	help
++	  SMMSTORE_CMD_MOR_LOCK: the lock of revision 2 of TCG MOR, which a UEFI
++	  payload offers the OS. While the OS holds it, the handler refuses the
++	  writes of the variable store that would clear the request to clear
++	  the memory at the next boot. Only with the flash written by SMM alone
++	  (BIOS Lock); the OS sees the lock as unsupported otherwise.
++
++config SMMSTORE_MOR_LOCK_ANY_BIOS_LOCK
++	bool
++	depends on SMMSTORE_MOR_LOCK
++	help
++	  Offer the MOR lock without SMM-only flash writes too. For tests in
++	  QEMU, where the flash has no such protection: the lock can be
++	  bypassed there, by writing the flash directly.
++
+ endif
+ 
+ # Outside "if SMMSTORE": a board selects it whatever its payload
+diff --git a/src/drivers/smmstore/Makefile.mk b/src/drivers/smmstore/Makefile.mk
+index 33d3e6f757..403466d654 100644
+--- a/src/drivers/smmstore/Makefile.mk
++++ b/src/drivers/smmstore/Makefile.mk
+@@ -5,3 +5,4 @@ all-$(CONFIG_SMMSTORE) += store.c
+ ramstage-$(CONFIG_SMMSTORE) += ramstage.c
+ 
+ smm-$(CONFIG_SMMSTORE) += store.c smi.c
++smm-$(CONFIG_SMMSTORE_MOR_LOCK) += mor_lock.c
+diff --git a/src/drivers/smmstore/mor_lock.c b/src/drivers/smmstore/mor_lock.c
+new file mode 100644
+index 0000000000..2236aea401
+--- /dev/null
++++ b/src/drivers/smmstore/mor_lock.c
+@@ -0,0 +1,224 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * The lock of TCG Secure MOR (SMMSTORE_CMD_MOR_LOCK, smmstore.h): its state
++ * in SMRAM, and the check of the writes of the variable store while it holds.
++ */
++
++#include <boot_device.h>
++#include <commonlib/helpers.h>
++#include <commonlib/region.h>
++#include <console/console.h>
++#include <cpu/x86/smm.h>
++#include <drivers/efi/efivars.h>
++#include <fmap.h>
++#include <security/lockdown/lockdown.h>
++#include <smmstore.h>
++#include <string.h>
++#include <types.h>
++
++#define MOR_LOCK_SIGNATURE 0x4b4c524d /* "MRLK" */
++
++struct mor_lock_state {
++	uint32_t signature;
++	uint8_t locked;
++	uint8_t has_key;
++	/* The OS asked for the clearing when it locked: keep that request */
++	uint8_t protect;
++	uint8_t reserved;
++	uint8_t key[SMMSTORE_MOR_LOCK_KEY_SIZE];
++} __packed;
++
++/* In the SMRAM region kept across S3, zeroed on every other boot */
++static struct mor_lock_state *mor_state(void)
++{
++	struct mor_lock_state *state;
++	uintptr_t base;
++	size_t size;
++
++	smm_get_mor_lock_state_buffer(&base, &size);
++	if (!base || size < sizeof(*state))
++		return NULL;
++
++	state = (struct mor_lock_state *)base;
++	if (state->signature != MOR_LOCK_SIGNATURE) {
++		memset(state, 0, sizeof(*state));
++		state->signature = MOR_LOCK_SIGNATURE;
++	}
++	return state;
++}
++
++/*
++ * The variable store itself, not smmstore_lookup_region(): that one keeps the
++ * region of its first call, the whole flash when capsules came first.
++ */
++static int variable_store(struct region_device *rdev)
++{
++	struct region region;
++
++	if (fmap_locate_area(SMMSTORE_REGION, &region))
++		return -1;
++	return boot_device_ro_subregion(&region, rdev);
++}
++
++/*
++ * The request as the next boot reads it (security/memory): a variable that is
++ * missing or unreadable counts as one.
++ */
++static bool mor_requested(const struct region_device *store)
++{
++	uint8_t mor;
++
++	if (efi_fv_get_mor(store, &mor) != CB_SUCCESS)
++		return true;
++	return mor & 1;
++}
++
++/*
++ * The variable store as the flash would be after a write (@data, programmed
++ * over what is there: only bits that are set can be cleared) or an erase
++ * (@data NULL) of [@offset, @offset + @size).
++ */
++struct after_write {
++	struct region_device rdev;
++	const struct region_device *store;
++	size_t offset;
++	size_t size;
++	const uint8_t *data;
++	bool read_error;
++};
++
++static ssize_t after_write_readat(const struct region_device *rd, void *b, size_t offset,
++				  size_t size)
++{
++	struct after_write *aw = container_of((struct region_device *)rd, struct after_write,
++					      rdev);
++	const size_t start = MAX(offset, aw->offset);
++	const size_t end = MIN(offset + size, aw->offset + aw->size);
++	uint8_t *buf = b;
++
++	if (rdev_readat(aw->store, b, offset, size) != size) {
++		aw->read_error = true;
++		return -1;
++	}
++
++	for (size_t i = start; i < end; i++)
++		buf[i - offset] = aw->data ? buf[i - offset] & aw->data[i - aw->offset] : 0xff;
++
++	return size;
++}
++
++static void *after_write_mmap(const struct region_device *rd, size_t offset, size_t size)
++{
++	return NULL;
++}
++
++static int after_write_munmap(const struct region_device *rd, void *mapping)
++{
++	return 0;
++}
++
++static const struct region_device_ops after_write_ops = {
++	.mmap = after_write_mmap,
++	.munmap = after_write_munmap,
++	.readat = after_write_readat,
++};
++
++bool smmstore_mor_protecting(void)
++{
++	const struct mor_lock_state *state = mor_state();
++
++	return state && state->locked && state->protect;
++}
++
++bool smmstore_mor_write_allowed(size_t offset, const void *data, size_t size)
++{
++	struct region_device store;
++	struct after_write aw;
++	bool requested;
++
++	if (!smmstore_mor_protecting())
++		return true;
++
++	if (variable_store(&store)) {
++		printk(BIOS_ERR, "MOR lock: no variable store, write refused\n");
++		return false;
++	}
++
++	aw = (struct after_write){
++		.store = &store,
++		.offset = offset,
++		.size = size,
++		.data = data,
++	};
++	region_device_init(&aw.rdev, &after_write_ops, 0, region_device_sz(&store));
++
++	requested = mor_requested(&aw.rdev);
++	if (aw.read_error) {
++		/* Not the content: the flash could not be read, the check failed */
++		printk(BIOS_ERR, "MOR lock: variable store unreadable, write refused\n");
++		return false;
++	}
++	if (!requested)
++		printk(BIOS_WARNING, "MOR lock: refused a %s of the variable store that clears "
++		       "the request of the OS\n", data ? "write" : "erase");
++	return requested;
++}
++
++uint32_t smmstore_mor_lock(const struct smmstore_params_mor_lock *params)
++{
++	struct mor_lock_state *state = mor_state();
++	struct smmstore_params_mor_lock p;
++	struct region_device store;
++	uint8_t diff = 0;
++
++	if (!state)
++		return SMMSTORE_RET_UNSUPPORTED;
++	/* Without SMM-only flash writes the OS gets around any lock */
++	if (!enable_smm_bios_protection() && !CONFIG(SMMSTORE_MOR_LOCK_ANY_BIOS_LOCK))
++		return SMMSTORE_RET_UNSUPPORTED;
++
++	/* Read once: the parameters are in the memory of the OS */
++	memcpy(&p, params, sizeof(p));
++
++	switch (p.op) {
++	case SMMSTORE_MOR_LOCK_STATUS:
++		return SMMSTORE_RET_SUCCESS;
++
++	case SMMSTORE_MOR_LOCK_WITHOUT_KEY:
++	case SMMSTORE_MOR_LOCK_WITH_KEY:
++		if (state->locked)
++			return SMMSTORE_RET_FAILURE;
++		state->protect = variable_store(&store) || mor_requested(&store);
++		state->has_key = p.op == SMMSTORE_MOR_LOCK_WITH_KEY;
++		if (state->has_key)
++			memcpy(state->key, p.key, sizeof(state->key));
++		state->locked = 1;
++		memset(&p, 0, sizeof(p));
++		printk(BIOS_INFO, "MOR lock: locked %s a key, request of the OS %s\n",
++		       state->has_key ? "with" : "without", state->protect ? "yes" : "no");
++		return SMMSTORE_RET_SUCCESS;
++
++	case SMMSTORE_MOR_UNLOCK_WITH_KEY:
++		if (!state->locked)
++			return SMMSTORE_RET_SUCCESS;
++		if (!state->has_key)
++			return SMMSTORE_RET_FAILURE;
++		for (size_t i = 0; i < sizeof(state->key); i++)
++			diff |= state->key[i] ^ p.key[i];
++		/* Right or wrong, the key is used up */
++		memset(state->key, 0, sizeof(state->key));
++		memset(&p, 0, sizeof(p));
++		state->has_key = 0;
++		if (diff) {
++			printk(BIOS_WARNING, "MOR lock: wrong key, locked until the next boot\n");
++			return SMMSTORE_RET_FAILURE;
++		}
++		state->locked = 0;
++		state->protect = 0;
++		printk(BIOS_INFO, "MOR lock: unlocked with its key\n");
++		return SMMSTORE_RET_SUCCESS;
++	}
++
++	return SMMSTORE_RET_UNSUPPORTED;
++}
+diff --git a/src/drivers/smmstore/smi.c b/src/drivers/smmstore/smi.c
+index 5c902fc55a..7aa7268912 100644
+--- a/src/drivers/smmstore/smi.c
++++ b/src/drivers/smmstore/smi.c
+@@ -345,6 +345,19 @@ uint32_t smmstore_exec(uint8_t command, void *param)
+ 	case SMMSTORE_CMD_VBOOT_TRY_OTHER:
+ 		ret = vboot_try_other();
+ 		break;
++	case SMMSTORE_CMD_MOR_LOCK: {
++		struct smmstore_params_mor_lock *params = param;
++
++		if (!CONFIG(SMMSTORE_MOR_LOCK)) {
++			ret = SMMSTORE_RET_UNSUPPORTED;
++			break;
++		}
++		if (range_check(params, sizeof(*params)) != 0)
++			break;
++
++		ret = smmstore_mor_lock(params);
++		break;
++	}
+ 	default:
+ 		printk(BIOS_DEBUG, "Unknown SMM store command: 0x%02x\n", command);
+ 		ret = SMMSTORE_RET_UNSUPPORTED;
+diff --git a/src/drivers/smmstore/store.c b/src/drivers/smmstore/store.c
+index 9ecb31a935..95f3b7fd57 100644
+--- a/src/drivers/smmstore/store.c
++++ b/src/drivers/smmstore/store.c
+@@ -8,9 +8,9 @@
+ #include <fmap.h>
+ #include <fmap_config.h>
+ #include <smmstore.h>
++#include <string.h>
+ #include <types.h>
+ 
+-#define SMMSTORE_REGION "SMMSTORE"
+ 
+ #define SMMSTORE_MIN_SIZE (64 * KiB)
+ 
+@@ -24,6 +24,40 @@ _Static_assert(FMAP_SECTION_SMMSTORE_SIZE >= SMM_BLOCK_SIZE,
+ 	       "SMMSTORE FMAP region must fit at least one logical block");
+ 
+ static int smmstore_use_full_flash;
++
++static enum cb_err lookup_store_region(struct region *region);
++
++#if ENV_SMM && CONFIG(SMMSTORE_MOR_LOCK)
++/*
++ * For SMMSTORE_MOR_LOCK: the part of a write (or, @data NULL, an erase) at
++ * @store_offset of the store, the SMMSTORE region or the whole flash for
++ * capsules, that falls in the SMMSTORE region, the variable store.
++ */
++static bool mor_lock_allows(size_t store_offset, const void *data, size_t size)
++{
++	struct region store, vars;
++	size_t start, end;
++
++	if (!smmstore_mor_protecting())
++		return true;
++	if (lookup_store_region(&store) != CB_SUCCESS ||
++	    fmap_locate_area(SMMSTORE_REGION, &vars))
++		return false;
++
++	start = MAX(region_offset(&store) + store_offset, region_offset(&vars));
++	end = MIN(region_offset(&store) + store_offset + size,
++		  region_offset(&vars) + region_sz(&vars));
++	if (start >= end)
++		return true;
++
++	return smmstore_mor_write_allowed(start - region_offset(&vars),
++		data ? (const uint8_t *)data + (start - region_offset(&store) - store_offset) : NULL,
++		end - start);
++}
++
++/* A write checked for the MOR lock is checked and written from here, in SMRAM */
++static uint8_t mor_lock_copy[SMM_BLOCK_SIZE];
++#endif
+ static int has_capsules = -1;
+ 
+ int smmstore_preprocess_cmd(uint8_t *cmd, void *param)
+@@ -324,7 +358,20 @@ int smmstore_rawwrite_region(uint32_t block_id, uint32_t offset, uint32_t bufsiz
+ 	printk(BIOS_DEBUG, "smm store: writing %p block %d, offset=0x%x, size=%x\n",
+ 	       ptr, block_id, offset, bufsize);
+ 
+-	ssize_t ret = rdev_writeat(&store, ptr, 0, bufsize);
++	const void *data = ptr;
++#if ENV_SMM && CONFIG(SMMSTORE_MOR_LOCK)
++	if (smmstore_mor_protecting()) {
++		/* The OS cannot change it between the check and the write */
++		memcpy(mor_lock_copy, ptr, bufsize);
++		data = mor_lock_copy;
++		if (!mor_lock_allows((size_t)block_id * SMM_BLOCK_SIZE + offset, data, bufsize)) {
++			rdev_munmap(&com_buf, ptr);
++			return -1;
++		}
++	}
++#endif
++
++	ssize_t ret = rdev_writeat(&store, data, 0, bufsize);
+ 	rdev_munmap(&com_buf, ptr);
+ 	if (ret < 0)
+ 		return -1;
+@@ -346,6 +393,11 @@ int smmstore_rawclear_region(uint32_t block_id)
+ 	if (lookup_block_in_store(&store, block_id) < 0)
+ 		return -1;
+ 
++#if ENV_SMM && CONFIG(SMMSTORE_MOR_LOCK)
++	if (!mor_lock_allows((size_t)block_id * SMM_BLOCK_SIZE, NULL, SMM_BLOCK_SIZE))
++		return -1;
++#endif
++
+ 	ssize_t ret = rdev_eraseat(&store, block_id * SMM_BLOCK_SIZE, SMM_BLOCK_SIZE);
+ 	if (ret != SMM_BLOCK_SIZE) {
+ 		printk(BIOS_ERR, "smm store: erasing block failed\n");
+diff --git a/src/include/cpu/x86/smm.h b/src/include/cpu/x86/smm.h
+index a65034d7fa..224775425c 100644
+--- a/src/include/cpu/x86/smm.h
++++ b/src/include/cpu/x86/smm.h
+@@ -110,6 +110,10 @@ struct smm_runtime {
+ 	uintptr_t opal_s3_state_base;
+ 	size_t opal_s3_state_size;
+ #endif
++#if CONFIG(SMM_MOR_LOCK_STATE_SMRAM)
++	uintptr_t mor_lock_state_base;
++	size_t mor_lock_state_size;
++#endif
+ } __packed;
+ 
+ struct smm_module_params {
+@@ -218,6 +222,8 @@ enum {
+ 	SMM_SUBREGION_HANDLER,
+ 	/* Persistent OPAL S3 state area. */
+ 	SMM_SUBREGION_OPAL_S3_STATE,
++	/* Persistent TCG MOR lock state area. */
++	SMM_SUBREGION_MOR_LOCK_STATE,
+ 	/* SMM cache region. */
+ 	SMM_SUBREGION_CACHE,
+ 	/* Chipset specific area. */
+@@ -260,5 +266,8 @@ void smm_get_opal_s3_scratch_buffer(uintptr_t *base, size_t *size);
+ #if CONFIG(SMM_OPAL_S3_STATE_SMRAM)
+ void smm_get_opal_s3_state_buffer(uintptr_t *base, size_t *size);
+ #endif
++#if CONFIG(SMM_MOR_LOCK_STATE_SMRAM)
++void smm_get_mor_lock_state_buffer(uintptr_t *base, size_t *size);
++#endif
+ 
+ #endif /* CPU_X86_SMM_H */
+diff --git a/src/include/smmstore.h b/src/include/smmstore.h
+index 1eea78171c..97da694a86 100644
+--- a/src/include/smmstore.h
++++ b/src/include/smmstore.h
+@@ -3,9 +3,12 @@
+ #ifndef _SMMSTORE_H_
+ #define _SMMSTORE_H_
+ 
++#include <stdbool.h>
+ #include <stddef.h>
+ #include <stdint.h>
+ 
++#define SMMSTORE_REGION "SMMSTORE"
++
+ #define SMMSTORE_RET_SUCCESS 0
+ #define SMMSTORE_RET_FAILURE 1
+ #define SMMSTORE_RET_UNSUPPORTED 2
+@@ -54,6 +57,39 @@
+ #define SMMSTORE_CMD_VBOOT_TRY_OTHER 9
+ #define SMMSTORE_CMD_VBOOT_LOCK 10
+ 
++/*
++ * The lock of TCG Secure MOR (MemoryOverwriteRequestControlLock, revision 2
++ * of the TCG Platform Reset Attack Mitigation specification), with
++ * struct smmstore_params_mor_lock: the variable driver of the payload asks
++ * for it when the OS writes the lock variable. While the lock holds, every
++ * write and erase of the variable store through this handler is first applied
++ * to a view of the store, as the flash would be after it, and refused when
++ * efi_fv_get_mor() would then find MemoryOverwriteRequestControl with bit 0
++ * clear while it found the request set (or no variable, which counts as a
++ * request) when the lock was taken: the OS that locked it cannot be made to
++ * skip the clearing at the next boot by code that runs after it. The state is
++ * in SMRAM, kept across S3 (SMM_MOR_LOCK_STATE_SMRAM), gone at the next boot.
++ *
++ * Only with SMM-only flash writes (enable_smm_bios_protection(), "BIOS Lock"):
++ * otherwise the OS writes the flash without SMM, and every operation but
++ * STATUS returns SMMSTORE_RET_UNSUPPORTED.
++ *
++ * STATUS: SMMSTORE_RET_SUCCESS when the lock is supported.
++ * LOCK, LOCK_WITH_KEY: lock until the next boot, the second with @key;
++ * SMMSTORE_RET_FAILURE when it is locked already.
++ * UNLOCK_WITH_KEY: SMMSTORE_RET_SUCCESS and unlocked with the key of the
++ * lock (or when not locked); a lock without a key, or another key, returns
++ * SMMSTORE_RET_FAILURE, and a wrong key drops the key: locked until the next
++ * boot, as the specification has it.
++ */
++#define SMMSTORE_CMD_MOR_LOCK 11
++
++#define SMMSTORE_MOR_LOCK_STATUS		0
++#define SMMSTORE_MOR_LOCK_WITHOUT_KEY		1
++#define SMMSTORE_MOR_LOCK_WITH_KEY		2
++#define SMMSTORE_MOR_UNLOCK_WITH_KEY		3
++#define SMMSTORE_MOR_LOCK_KEY_SIZE		8
++
+ /*
+  * Used by capsule updates as a standalone command or modifier to v2 commands.
+  *
+@@ -128,6 +164,12 @@ struct smmstore_params_raw_clear {
+ 	uint32_t block_id;
+ } __packed;
+ 
++/* SMMSTORE_CMD_MOR_LOCK: @op one of SMMSTORE_MOR_*, @key for the keyed ones */
++struct smmstore_params_mor_lock {
++	uint32_t op;
++	uint8_t key[SMMSTORE_MOR_LOCK_KEY_SIZE];
++} __packed;
++
+ 
+ /* SMM handler */
+ uint32_t smmstore_exec(uint8_t command, void *param);
+@@ -144,6 +186,16 @@ int smmstore_lookup_region(struct region_device *rstore);
+ /* Returns 0 if normal parsing should continue, 1 otherwise */
+ int smmstore_preprocess_cmd(uint8_t *cmd, void *param);
+ 
++/* SMMSTORE_CMD_MOR_LOCK (mor_lock.c) */
++uint32_t smmstore_mor_lock(const struct smmstore_params_mor_lock *params);
++/* Whether the MOR lock holds a request to protect: writes are checked */
++bool smmstore_mor_protecting(void);
++/*
++ * Whether a write (@data, @size bytes) or, with @data NULL, an erase at
++ * @offset of the SMMSTORE region keeps the request of a held MOR lock.
++ */
++bool smmstore_mor_write_allowed(size_t offset, const void *data, size_t size);
++
+ /* Advertise SMMSTORE support */
+ struct lb_header;
+ void lb_smmstorev2(struct lb_header *header);
+diff --git a/src/security/memory/memory.c b/src/security/memory/memory.c
+index 2eef831cca..e7efd0e104 100644
+--- a/src/security/memory/memory.c
++++ b/src/security/memory/memory.c
+@@ -32,11 +32,8 @@ enum {
+ static bool tcg_mor_clear_requested(void)
+ {
+ #if CONFIG(DRIVERS_EFI_VARIABLE_STORE) && CONFIG(SMMSTORE)
+-	static const EFI_GUID mor_guid = {
+-		0xe20939be, 0x32d4, 0x41be, { 0xa1, 0x50, 0x89, 0x7f, 0x85, 0xd4, 0x98, 0x29 } };
+ 	struct region_device rdev;
+ 	uint8_t mor = 0;
+-	uint32_t size = sizeof(mor);
+ 	enum cb_err ret;
+ 
+ 	/* The store driver is not in every stage; only ramstage clears */
+@@ -46,13 +43,14 @@ static bool tcg_mor_clear_requested(void)
+ 		printk(BIOS_WARNING, "MOR: no variable store, counted as a request\n");
+ 		return true;
+ 	}
+-	ret = efi_fv_get_option(&rdev, &mor_guid, "MemoryOverwriteRequestControl", &mor, &size);
++	/* SMMSTORE_MOR_LOCK protects what this reads: the same function */
++	ret = efi_fv_get_mor(&rdev, &mor);
+ 	if (ret == CB_EFI_OPTION_NOT_FOUND) {
+ 		printk(BIOS_INFO, "MOR: no MemoryOverwriteRequestControl variable, the OS before "
+ 		       "could not ask: counted as a request\n");
+ 		return true;
+ 	}
+-	if (ret != CB_SUCCESS || size != sizeof(mor)) {
++	if (ret != CB_SUCCESS) {
+ 		printk(BIOS_WARNING, "MOR: MemoryOverwriteRequestControl unreadable (%d), "
+ 		       "counted as a request\n", ret);
+ 		return true;
+-- 
+2.47.3
+

@@ -1,0 +1,889 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 1 Nov 2026 23:28:03 +0100
+Subject: [PATCH] UefiPayloadPkg: TCG Secure MOR with the lock that coreboot
+ keeps in SMM
+
+The variable driver without SMM (VariableRuntimeDxe) reports
+MemoryOverwriteRequestControlLock as unsupported: a lock in its memory
+is no lock against code in the OS, which is what revision 2 of the TCG
+Platform Reset Attack Mitigation specification guards against. Windows
+needs it for Credential Guard's protection of its secrets across a reset.
+
+coreboot can keep the lock (SMMSTORE_CMD_MOR_LOCK, with SMMSTORE_MOR_LOCK):
+in SMM, where the OS cannot reach it, it refuses the writes of the
+variable store that would clear the request of the OS while the lock
+holds, and it decides whether the lock is offered at all (only with the
+flash written by SMM alone, BIOS Lock).
+
+- MdeModulePkg: EDKII_PLATFORM_MOR_LOCK_PROTOCOL, the lock of a
+  platform for the variable driver without SMM. TcgMorLockDxe.c, with
+  PcdTcgMorWithoutSmm, the protocol and a MOR variable that the platform
+  created, offers the lock to the OS as the SMM version does (lock, lock
+  with a key, unlock with the key; a wrong key locks until the next boot;
+  MOR refused while locked) and takes each lock and unlock through the
+  protocol, which decides; the variable is set to 0 at EndOfDxe. Without
+  any of the three, the driver does what it did.
+- UefiPayloadPkg: SmmStoreLibMorLock(), and MorLockSmmStoreDxe, which
+  installs the protocol when coreboot keeps the lock in this boot.
+
+TEST=gcc -fsyntax-only -Wall -Wextra -Werror of TcgMorLockDxe.c,
+MorLockSmmStoreDxe.c and SmmStore.c with the EDK2 headers, debug and
+MDEPKG_NDEBUG.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../Include/Protocol/PlatformMorLock.h        |  79 +++++
+ MdeModulePkg/MdeModulePkg.dec                 |   4 +
+ .../Variable/RuntimeDxe/TcgMorLockDxe.c       | 277 +++++++++++++++++-
+ .../RuntimeDxe/VariableRuntimeDxe.inf         |   1 +
+ UefiPayloadPkg/Include/Library/SmmStoreLib.h  |  28 ++
+ UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c |  40 +++
+ UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h |  21 +-
+ UefiPayloadPkg/MorControlDxe/MorControlDxe.c  |   6 +-
+ .../MorLockSmmStoreDxe/MorLockSmmStoreDxe.c   | 164 +++++++++++
+ .../MorLockSmmStoreDxe/MorLockSmmStoreDxe.inf |  39 +++
+ UefiPayloadPkg/UefiPayloadPkg.dsc             |   1 +
+ UefiPayloadPkg/UefiPayloadPkg.fdf             |   1 +
+ 12 files changed, 648 insertions(+), 13 deletions(-)
+ create mode 100644 MdeModulePkg/Include/Protocol/PlatformMorLock.h
+ create mode 100644 UefiPayloadPkg/MorLockSmmStoreDxe/MorLockSmmStoreDxe.c
+ create mode 100644 UefiPayloadPkg/MorLockSmmStoreDxe/MorLockSmmStoreDxe.inf
+
+diff --git a/MdeModulePkg/Include/Protocol/PlatformMorLock.h b/MdeModulePkg/Include/Protocol/PlatformMorLock.h
+new file mode 100644
+index 0000000000..e81e4c8f00
+--- /dev/null
++++ b/MdeModulePkg/Include/Protocol/PlatformMorLock.h
+@@ -0,0 +1,79 @@
++/** @file
++  The lock of TCG Secure MOR (MemoryOverwriteRequestControlLock) kept by the
++  platform, for the variable driver that runs outside SMM.
++
++  The variable driver without SMM (VariableRuntimeDxe) cannot make the lock
++  secure itself: code in the OS can change its memory. A platform whose
++  firmware keeps the lock where the OS cannot reach it (on a coreboot
++  payload, coreboot's SMM, which then refuses the writes of the variable
++  store that would clear the request of the OS) installs this protocol, and
++  the variable driver offers MemoryOverwriteRequestControlLock through it
++  (PcdTcgMorWithoutSmm). Every function is callable at runtime.
++
++  Copyright (c) 2026, Domenico D'Arrigo. All rights reserved.<BR>
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++
++#ifndef PLATFORM_MOR_LOCK_H_
++#define PLATFORM_MOR_LOCK_H_
++
++#define EDKII_PLATFORM_MOR_LOCK_PROTOCOL_GUID \
++  { 0xf1dba97f, 0xa870, 0x4608, { 0x9a, 0x90, 0x3d, 0x93, 0x51, 0xa7, 0x0d, 0x3b } }
++
++#define EDKII_PLATFORM_MOR_LOCK_KEY_SIZE  8
++
++typedef struct _EDKII_PLATFORM_MOR_LOCK_PROTOCOL EDKII_PLATFORM_MOR_LOCK_PROTOCOL;
++
++/**
++  Whether the platform keeps the lock in this boot.
++
++  @retval EFI_SUCCESS      The lock can be taken.
++  @retval EFI_UNSUPPORTED  Not in this boot (for example a flash that the OS
++                           can write directly).
++**/
++typedef
++EFI_STATUS
++(EFIAPI *EDKII_PLATFORM_MOR_LOCK_SUPPORTED)(
++  VOID
++  );
++
++/**
++  Lock until the next boot: the request of MemoryOverwriteRequestControl
++  cannot be cleared any more.
++
++  @param[in] Key  EDKII_PLATFORM_MOR_LOCK_KEY_SIZE bytes that unlock it, or
++                  NULL for a lock without a key.
++
++  @retval EFI_SUCCESS  Locked.
++  @retval Others       Not locked.
++**/
++typedef
++EFI_STATUS
++(EFIAPI *EDKII_PLATFORM_MOR_LOCK_LOCK)(
++  IN CONST UINT8  *Key OPTIONAL
++  );
++
++/**
++  Unlock with the key of the lock. A wrong key leaves it locked until the
++  next boot, and no key opens it any more.
++
++  @param[in] Key  EDKII_PLATFORM_MOR_LOCK_KEY_SIZE bytes.
++
++  @retval EFI_SUCCESS  Unlocked.
++  @retval Others       Still locked.
++**/
++typedef
++EFI_STATUS
++(EFIAPI *EDKII_PLATFORM_MOR_LOCK_UNLOCK)(
++  IN CONST UINT8  *Key
++  );
++
++struct _EDKII_PLATFORM_MOR_LOCK_PROTOCOL {
++  EDKII_PLATFORM_MOR_LOCK_SUPPORTED    Supported;
++  EDKII_PLATFORM_MOR_LOCK_LOCK         Lock;
++  EDKII_PLATFORM_MOR_LOCK_UNLOCK       Unlock;
++};
++
++extern EFI_GUID  gEdkiiPlatformMorLockProtocolGuid;
++
++#endif
+diff --git a/MdeModulePkg/MdeModulePkg.dec b/MdeModulePkg/MdeModulePkg.dec
+index 33b2f815e6..d87fd6e313 100644
+--- a/MdeModulePkg/MdeModulePkg.dec
++++ b/MdeModulePkg/MdeModulePkg.dec
+@@ -771,6 +771,10 @@
+   ## Include/Protocol/VariablePolicy.h
+   gEdkiiVariablePolicyProtocolGuid = { 0x81D1675C, 0x86F6, 0x48DF, { 0xBD, 0x95, 0x9A, 0x6E, 0x4F, 0x09, 0x25, 0xC3 } }
+ 
++  ## The lock of TCG Secure MOR kept by the platform, for the variable driver without SMM.
++  # Include/Protocol/PlatformMorLock.h
++  gEdkiiPlatformMorLockProtocolGuid = { 0xf1dba97f, 0xa870, 0x4608, { 0x9a, 0x90, 0x3d, 0x93, 0x51, 0xa7, 0x0d, 0x3b } }
++
+   ## Include/Protocol/UsbEthernetProtocol.h
+   gEdkIIUsbEthProtocolGuid = { 0x8d8969cc, 0xfeb0, 0x4303, { 0xb2, 0x1a, 0x1f, 0x11, 0x6f, 0x38, 0x56, 0x43 } }
+ 
+diff --git a/MdeModulePkg/Universal/Variable/RuntimeDxe/TcgMorLockDxe.c b/MdeModulePkg/Universal/Variable/RuntimeDxe/TcgMorLockDxe.c
+index 45d7b2b019..44c996e431 100644
+--- a/MdeModulePkg/Universal/Variable/RuntimeDxe/TcgMorLockDxe.c
++++ b/MdeModulePkg/Universal/Variable/RuntimeDxe/TcgMorLockDxe.c
+@@ -4,6 +4,13 @@
+   This module clears MemoryOverwriteRequestControlLock variable to indicate
+   MOR lock control unsupported.
+ 
++  Unless the platform keeps the lock itself where the OS cannot reach it
++  (EDKII_PLATFORM_MOR_LOCK_PROTOCOL, PcdTcgMorWithoutSmm, and a MOR variable
++  that the platform created): then this module offers the lock to the OS as
++  the SMM version does, and each lock and unlock goes through the protocol,
++  which decides. The state kept here only answers the OS; what protects the
++  request is the platform's.
++
+ Copyright (c) 2016, Intel Corporation. All rights reserved.<BR>
+ Copyright (c) Microsoft Corporation.
+ SPDX-License-Identifier: BSD-2-Clause-Patent
+@@ -11,17 +18,150 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ **/
+ 
+ #include <PiDxe.h>
++#include <Guid/EventGroup.h>
+ #include <Guid/MemoryOverwriteControl.h>
+ #include <IndustryStandard/MemoryOverwriteRequestControlLock.h>
+ #include <Library/DebugLib.h>
+ #include <Library/BaseLib.h>
+ #include <Library/BaseMemoryLib.h>
+ #include <Library/PcdLib.h>
++#include <Library/UefiBootServicesTableLib.h>
++#include <Library/UefiRuntimeLib.h>
+ #include "Variable.h"
+ 
++#include <Protocol/PlatformMorLock.h>
+ #include <Protocol/VariablePolicy.h>
+ #include <Library/VariablePolicyHelperLib.h>
+ 
++#define MOR_LOCK_DATA_UNLOCKED            0x0
++#define MOR_LOCK_DATA_LOCKED_WITHOUT_KEY  0x1
++#define MOR_LOCK_DATA_LOCKED_WITH_KEY     0x2
++
++#define MOR_LOCK_V1_SIZE      1
++#define MOR_LOCK_V2_KEY_SIZE  8
++
++#define MOR_ATTRIBUTES  (EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS)
++
++//
++// The lock of the platform, when it offers one
++//
++EDKII_PLATFORM_MOR_LOCK_PROTOCOL  *mPlatformMorLock = NULL;
++EFI_EVENT                         mPlatformMorLockVirtualAddressChangeEvent = NULL;
++BOOLEAN                           mMorLockPassThru = FALSE;
++UINT8                             mMorLockData     = MOR_LOCK_DATA_UNLOCKED;
++
++/**
++  Set MOR lock variable, through the variable driver.
++
++  @param  Data  MOR Lock variable data.
++
++  @return The status of the variable driver.
++**/
++STATIC
++EFI_STATUS
++SetMorLockVariable (
++  IN UINT8  Data
++  )
++{
++  EFI_STATUS  Status;
++
++  mMorLockPassThru = TRUE;
++  Status           = VariableServiceSetVariable (
++                       MEMORY_OVERWRITE_REQUEST_CONTROL_LOCK_NAME,
++                       &gEfiMemoryOverwriteRequestControlLockGuid,
++                       MOR_ATTRIBUTES,
++                       sizeof (Data),
++                       &Data
++                       );
++  mMorLockPassThru = FALSE;
++  return Status;
++}
++
++/**
++  The writes of the OS to MemoryOverwriteRequestControlLock, with the lock of
++  the platform (as SetVariableCheckHandlerMorLock() of the SMM version).
++
++  @retval  EFI_INVALID_PARAMETER  The data, size or attributes are not those
++                                  of the lock.
++  @retval  EFI_ACCESS_DENIED      It is locked.
++  @retval  EFI_WRITE_PROTECTED    It cannot be deleted.
++  @retval  EFI_DEVICE_ERROR       The platform did not lock.
++  @retval  EFI_ALREADY_STARTED    Handled here: the variable driver returns
++                                  EFI_SUCCESS.
++**/
++STATIC
++EFI_STATUS
++SetVariableCheckHandlerPlatformMorLock (
++  IN UINT32  Attributes,
++  IN UINTN   DataSize,
++  IN VOID    *Data
++  )
++{
++  EFI_STATUS  Status;
++  UINT8       NewData;
++
++  if ((Attributes == 0) || (DataSize == 0) || (Data == NULL)) {
++    return mMorLockPassThru ? EFI_SUCCESS : EFI_WRITE_PROTECTED;
++  }
++
++  if ((Attributes != MOR_ATTRIBUTES) ||
++      ((DataSize != MOR_LOCK_V1_SIZE) && (DataSize != MOR_LOCK_V2_KEY_SIZE)))
++  {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  if (mMorLockPassThru) {
++    return EFI_SUCCESS;
++  }
++
++  if (mMorLockData == MOR_LOCK_DATA_UNLOCKED) {
++    if (DataSize == MOR_LOCK_V1_SIZE) {
++      if (*(UINT8 *)Data == MOR_LOCK_DATA_UNLOCKED) {
++        Status = SetMorLockVariable (MOR_LOCK_DATA_UNLOCKED);
++        return EFI_ERROR (Status) ? Status : EFI_ALREADY_STARTED;
++      }
++
++      if (*(UINT8 *)Data != MOR_LOCK_DATA_LOCKED_WITHOUT_KEY) {
++        return EFI_INVALID_PARAMETER;
++      }
++
++      Status  = mPlatformMorLock->Lock (NULL);
++      NewData = MOR_LOCK_DATA_LOCKED_WITHOUT_KEY;
++    } else {
++      Status  = mPlatformMorLock->Lock (Data);
++      NewData = MOR_LOCK_DATA_LOCKED_WITH_KEY;
++    }
++
++    if (EFI_ERROR (Status)) {
++      return EFI_DEVICE_ERROR;
++    }
++
++    mMorLockData = NewData;
++    SetMorLockVariable (NewData);
++    return EFI_ALREADY_STARTED;
++  }
++
++  //
++  // Locked: only the key of a lock with a key opens it
++  //
++  if ((mMorLockData != MOR_LOCK_DATA_LOCKED_WITH_KEY) || (DataSize != MOR_LOCK_V2_KEY_SIZE)) {
++    return EFI_ACCESS_DENIED;
++  }
++
++  if (!EFI_ERROR (mPlatformMorLock->Unlock (Data))) {
++    mMorLockData = MOR_LOCK_DATA_UNLOCKED;
++    SetMorLockVariable (MOR_LOCK_DATA_UNLOCKED);
++    return EFI_ALREADY_STARTED;
++  }
++
++  //
++  // A wrong key: locked until the next boot, without a key
++  //
++  mMorLockData = MOR_LOCK_DATA_LOCKED_WITHOUT_KEY;
++  SetMorLockVariable (MOR_LOCK_DATA_LOCKED_WITHOUT_KEY);
++  return EFI_ACCESS_DENIED;
++}
++
+ /**
+   This service is an MOR/MorLock checker handler for the SetVariable().
+ 
+@@ -51,8 +191,29 @@ SetVariableCheckHandlerMor (
+   )
+ {
+   //
+-  // Just let it pass. No need provide protection for DXE version.
++  // Without the lock of the platform: just let it pass. No need provide
++  // protection for DXE version.
+   //
++  if (mPlatformMorLock == NULL) {
++    return EFI_SUCCESS;
++  }
++
++  if ((StrCmp (VariableName, MEMORY_OVERWRITE_REQUEST_CONTROL_LOCK_NAME) == 0) &&
++      CompareGuid (VendorGuid, &gEfiMemoryOverwriteRequestControlLockGuid))
++  {
++    return SetVariableCheckHandlerPlatformMorLock (Attributes, DataSize, Data);
++  }
++
++  if ((StrCmp (VariableName, MEMORY_OVERWRITE_REQUEST_VARIABLE_NAME) == 0) &&
++      CompareGuid (VendorGuid, &gEfiMemoryOverwriteControlDataGuid) &&
++      (mMorLockData != MOR_LOCK_DATA_UNLOCKED))
++  {
++    //
++    // The platform refuses it too; this answers the OS
++    //
++    return EFI_ACCESS_DENIED;
++  }
++
+   return EFI_SUCCESS;
+ }
+ 
+@@ -71,14 +232,18 @@ MorLockInit (
+   // Always clear variable to report unsupported to OS.
+   // The reason is that the DXE version is not proper to provide *protection*.
+   // BIOS should use SMM version variable driver to provide such capability.
++  // Unless the platform keeps the lock itself: that is known at EndOfDxe
++  // (MorLockInitAtEndOfDxe()), which then sets or clears the variable.
+   //
+-  VariableServiceSetVariable (
+-    MEMORY_OVERWRITE_REQUEST_CONTROL_LOCK_NAME,
+-    &gEfiMemoryOverwriteRequestControlLockGuid,
+-    0,                                          // Attributes
+-    0,                                          // DataSize
+-    NULL                                        // Data
+-    );
++  if (!FeaturePcdGet (PcdTcgMorWithoutSmm)) {
++    VariableServiceSetVariable (
++      MEMORY_OVERWRITE_REQUEST_CONTROL_LOCK_NAME,
++      &gEfiMemoryOverwriteRequestControlLockGuid,
++      0,                                          // Attributes
++      0,                                          // DataSize
++      NULL                                        // Data
++      );
++  }
+ 
+   //
+   // The MOR variable can effectively improve platform security only when the
+@@ -104,6 +269,78 @@ MorLockInit (
+   return EFI_SUCCESS;
+ }
+ 
++/**
++  The pointer to the lock of the platform, in virtual mode.
++
++  @param[in]  Event    Event whose notification function is being invoked
++  @param[in]  Context  Unused
++**/
++STATIC
++VOID
++EFIAPI
++PlatformMorLockVirtualAddressChange (
++  IN EFI_EVENT  Event,
++  IN VOID       *Context
++  )
++{
++  EfiConvertPointer (0x0, (VOID **)&mPlatformMorLock);
++}
++
++/**
++  Whether to offer the lock of the platform: the protocol, which keeps it in
++  this boot, and a MOR variable, which the platform creates only when it
++  honors MOR (PcdTcgMorWithoutSmm).
++
++  @retval TRUE   Offer it: mPlatformMorLock is set.
++  @retval FALSE  The lock stays unsupported.
++**/
++STATIC
++BOOLEAN
++PlatformMorLockOffered (
++  VOID
++  )
++{
++  EDKII_PLATFORM_MOR_LOCK_PROTOCOL  *PlatformMorLock;
++  EFI_STATUS                        Status;
++  UINTN                             MorSize;
++
++  if (!FeaturePcdGet (PcdTcgMorWithoutSmm)) {
++    return FALSE;
++  }
++
++  Status = gBS->LocateProtocol (&gEdkiiPlatformMorLockProtocolGuid, NULL, (VOID **)&PlatformMorLock);
++  if (EFI_ERROR (Status) || EFI_ERROR (PlatformMorLock->Supported ())) {
++    return FALSE;
++  }
++
++  MorSize = 0;
++  Status  = VariableServiceGetVariable (
++              MEMORY_OVERWRITE_REQUEST_VARIABLE_NAME,
++              &gEfiMemoryOverwriteControlDataGuid,
++              NULL,
++              &MorSize,
++              NULL
++              );
++  if (Status != EFI_BUFFER_TOO_SMALL) {
++    return FALSE;
++  }
++
++  Status = gBS->CreateEventEx (
++                  EVT_NOTIFY_SIGNAL,
++                  TPL_NOTIFY,
++                  PlatformMorLockVirtualAddressChange,
++                  NULL,
++                  &gEfiEventVirtualAddressChangeGuid,
++                  &mPlatformMorLockVirtualAddressChangeEvent
++                  );
++  if (EFI_ERROR (Status)) {
++    return FALSE;
++  }
++
++  mPlatformMorLock = PlatformMorLock;
++  return TRUE;
++}
++
+ /**
+   Delayed initialization for MOR Control Lock at EndOfDxe.
+ 
+@@ -117,6 +354,30 @@ MorLockInitAtEndOfDxe (
+   EFI_STATUS                      Status;
+   EDKII_VARIABLE_POLICY_PROTOCOL  *VariablePolicy;
+ 
++  //
++  // The lock of the platform: the variable says it is supported, unlocked
++  //
++  if (PlatformMorLockOffered ()) {
++    Status = SetMorLockVariable (MOR_LOCK_DATA_UNLOCKED);
++    DEBUG ((DEBUG_INFO, "%a - MOR lock of the platform offered: %r\n", __func__, Status));
++    return;
++  }
++
++  if (FeaturePcdGet (PcdTcgMorWithoutSmm)) {
++    //
++    // Deleted here rather than in MorLockInit(): unsupported after all
++    //
++    mMorLockPassThru = TRUE;
++    VariableServiceSetVariable (
++      MEMORY_OVERWRITE_REQUEST_CONTROL_LOCK_NAME,
++      &gEfiMemoryOverwriteRequestControlLockGuid,
++      0,
++      0,
++      NULL
++      );
++    mMorLockPassThru = FALSE;
++  }
++
+   // First, we obviously need to locate the VariablePolicy protocol.
+   Status = gBS->LocateProtocol (&gEdkiiVariablePolicyProtocolGuid, NULL, (VOID **)&VariablePolicy);
+   if (EFI_ERROR (Status)) {
+diff --git a/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf b/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
+index 189ce1f856..ccd135c96d 100644
+--- a/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
++++ b/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
+@@ -86,6 +86,7 @@
+   gEdkiiVariableLockProtocolGuid                ## PRODUCES
+   gEdkiiVariablePolicyProtocolGuid              ## PRODUCES
+   gEdkiiVarCheckProtocolGuid                    ## PRODUCES
++  gEdkiiPlatformMorLockProtocolGuid             ## SOMETIMES_CONSUMES # The MOR lock of the platform (TcgMorLockDxe.c)
+ 
+ [Guids]
+   ## SOMETIMES_CONSUMES   ## GUID # Signature of Variable store header
+diff --git a/UefiPayloadPkg/Include/Library/SmmStoreLib.h b/UefiPayloadPkg/Include/Library/SmmStoreLib.h
+index 6d42d4442f..eece414744 100644
+--- a/UefiPayloadPkg/Include/Library/SmmStoreLib.h
++++ b/UefiPayloadPkg/Include/Library/SmmStoreLib.h
+@@ -218,6 +218,34 @@ SmmStoreLibVbootLockSlots (
+   and operation of EfiConvertPointer.
+ 
+ **/
++//
++// SmmStoreLibMorLock(): the operations of SMMSTORE_CMD_MOR_LOCK
++//
++#define SMMSTORE_MOR_LOCK_STATUS        0
++#define SMMSTORE_MOR_LOCK_WITHOUT_KEY   1
++#define SMMSTORE_MOR_LOCK_WITH_KEY      2
++#define SMMSTORE_MOR_UNLOCK_WITH_KEY    3
++#define SMMSTORE_MOR_LOCK_KEY_SIZE      8
++
++/**
++  The lock of TCG Secure MOR that coreboot keeps in SMM.
++
++  @param[in] Op   One of SMMSTORE_MOR_*.
++  @param[in] Key  SMMSTORE_MOR_LOCK_KEY_SIZE bytes for the operations with a
++                  key, else NULL.
++
++  @retval EFI_SUCCESS       Done (STATUS: the lock is supported).
++  @retval EFI_NO_MEDIA      SmmStore is not initialized.
++  @retval EFI_UNSUPPORTED   No lock in this coreboot, or BIOS Lock off.
++  @retval EFI_DEVICE_ERROR  Refused (locked already, no key, wrong key).
++
++**/
++EFI_STATUS
++SmmStoreLibMorLock (
++  IN       UINT32  Op,
++  IN CONST UINT8   *Key OPTIONAL
++  );
++
+ typedef EFI_STATUS EFIAPI (*CONVERT_POINTER_CALLBACK) (
+   IN UINTN     DebugDisposition,
+   IN OUT VOID  **Address
+diff --git a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+index 1d010de619..7b2e817144 100644
+--- a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
++++ b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+@@ -482,6 +482,46 @@ SmmStoreLibVbootLockSlots (
+   return CallSmm (mSmmStoreInfo->ApmCmd, SMMSTORE_CMD_VBOOT_LOCK, mArgComBufPhys);
+ }
+ 
++/**
++  The lock of TCG Secure MOR that coreboot keeps in SMM
++  (SMMSTORE_CMD_MOR_LOCK): while it holds, coreboot refuses the writes of the
++  variable store that would clear the request of the OS to clear the memory.
++
++  @param[in] Op   SMMSTORE_MOR_LOCK_STATUS, SMMSTORE_MOR_LOCK_WITHOUT_KEY,
++                  SMMSTORE_MOR_LOCK_WITH_KEY or SMMSTORE_MOR_UNLOCK_WITH_KEY.
++  @param[in] Key  The 8 bytes of the key for the last two, else NULL.
++
++  @retval EFI_SUCCESS       Done (STATUS: the lock is supported).
++  @retval EFI_NO_MEDIA      SmmStore is not initialized.
++  @retval EFI_UNSUPPORTED   No lock: a coreboot without it, or flash writes
++                            not limited to SMM (BIOS Lock off).
++  @retval EFI_DEVICE_ERROR  Refused: locked already, a lock without a key or
++                            a wrong key (then locked until the next boot).
++
++**/
++EFI_STATUS
++SmmStoreLibMorLock (
++  IN       UINT32  Op,
++  IN CONST UINT8   *Key OPTIONAL
++  )
++{
++  EFI_STATUS  Status;
++
++  if (mSmmStoreInfo == NULL) {
++    return EFI_NO_MEDIA;
++  }
++
++  ZeroMem (&mArgComBuf->MorLock, sizeof (mArgComBuf->MorLock));
++  mArgComBuf->MorLock.Op = Op;
++  if (Key != NULL) {
++    CopyMem (mArgComBuf->MorLock.Key, Key, sizeof (mArgComBuf->MorLock.Key));
++  }
++
++  Status = CallSmm (mSmmStoreInfo->ApmCmd, SMMSTORE_CMD_MOR_LOCK, mArgComBufPhys);
++  ZeroMem (&mArgComBuf->MorLock, sizeof (mArgComBuf->MorLock));
++  return Status;
++}
++
+ /**
+   Fixup internal data so that EFI can be called in virtual mode.
+   Converts any pointers in lib to virtual mode. This function is meant to
+diff --git a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h
+index f899b5dca5..a835d20a2f 100644
+--- a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h
++++ b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h
+@@ -31,6 +31,11 @@
+ #define SMMSTORE_CMD_VBOOT_TRY_OTHER  9
+ #define SMMSTORE_CMD_VBOOT_LOCK       10
+ 
++//
++// coreboot with SMMSTORE_MOR_LOCK: the lock of TCG Secure MOR, kept in SMM.
++//
++#define SMMSTORE_CMD_MOR_LOCK  11
++
+ /* Used by capsule updates as a standalone command or modifier to v2 commands */
+ #define SMMSTORE_CMD_USE_FULL_FLASH  0x80
+ 
+@@ -78,10 +83,20 @@ typedef struct {
+   UINT32    BlockId;
+ } SMM_STORE_PARAMS_CLEAR;
+ 
++/*
++ * SMMSTORE_CMD_MOR_LOCK: Op one of SMMSTORE_MOR_* (Library/SmmStoreLib.h),
++ * Key for the ones with a key.
++ */
++typedef struct {
++  UINT32    Op;
++  UINT8     Key[8];
++} SMM_STORE_PARAMS_MOR_LOCK;
++
+ typedef union {
+-  SMM_STORE_PARAMS_WRITE    Write;
+-  SMM_STORE_PARAMS_READ     Read;
+-  SMM_STORE_PARAMS_CLEAR    Clear;
++  SMM_STORE_PARAMS_WRITE       Write;
++  SMM_STORE_PARAMS_READ        Read;
++  SMM_STORE_PARAMS_CLEAR       Clear;
++  SMM_STORE_PARAMS_MOR_LOCK    MorLock;
+ } SMM_STORE_COM_BUF;
+ 
+ #pragma pack(0)
+diff --git a/UefiPayloadPkg/MorControlDxe/MorControlDxe.c b/UefiPayloadPkg/MorControlDxe/MorControlDxe.c
+index 6a1f10c4b7..d088f639e2 100644
+--- a/UefiPayloadPkg/MorControlDxe/MorControlDxe.c
++++ b/UefiPayloadPkg/MorControlDxe/MorControlDxe.c
+@@ -14,8 +14,10 @@
+   option in its setup data (CFR) and does not suppress it, which it does when
+   built without SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT; a setting that another
+   firmware saved stays in SMMSTORE. The variable driver leaves MOR to this
+-  driver (PcdTcgMorWithoutSmm) and keeps MemoryOverwriteRequestControlLock
+-  unsupported: it cannot be made secure without SMM.
++  driver (PcdTcgMorWithoutSmm). It offers MemoryOverwriteRequestControlLock
++  when this variable exists and coreboot keeps the lock in SMM
++  (MorLockSmmStoreDxe: SMMSTORE_MOR_LOCK, with BIOS Lock on); otherwise the
++  lock stays unsupported, as it cannot be made secure outside SMM.
+ 
+   No TPer reset of self-encrypting drives here, unlike TcgMor.
+ 
+diff --git a/UefiPayloadPkg/MorLockSmmStoreDxe/MorLockSmmStoreDxe.c b/UefiPayloadPkg/MorLockSmmStoreDxe/MorLockSmmStoreDxe.c
+new file mode 100644
+index 0000000000..d8b75b74a9
+--- /dev/null
++++ b/UefiPayloadPkg/MorLockSmmStoreDxe/MorLockSmmStoreDxe.c
+@@ -0,0 +1,164 @@
++/** @file
++  The lock of TCG Secure MOR (MemoryOverwriteRequestControlLock) of a
++  coreboot payload: coreboot keeps it in SMM (SMMSTORE_CMD_MOR_LOCK) and,
++  while it holds, refuses the writes of the variable store that would clear
++  the request of the OS to clear the memory at the next boot. This driver
++  gives it to the variable driver, which offers it to the OS, as
++  EDKII_PLATFORM_MOR_LOCK_PROTOCOL.
++
++  Installed only when coreboot keeps the lock in this boot: built with
++  SMMSTORE_MOR_LOCK, and with the flash written by SMM alone (BIOS Lock on).
++  Without it the variable driver reports the lock as unsupported, as before.
++
++  Copyright (c) 2026, Domenico D'Arrigo. All rights reserved.<BR>
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++
++#include <Uefi.h>
++#include <Guid/EventGroup.h>
++#include <Library/DebugLib.h>
++#include <Library/SmmStoreLib.h>
++#include <Library/UefiBootServicesTableLib.h>
++#include <Library/UefiRuntimeLib.h>
++#include <Protocol/PlatformMorLock.h>
++
++STATIC EFI_EVENT  mVirtualAddressChangeEvent;
++
++/**
++  Whether coreboot keeps the lock in this boot.
++
++  @retval EFI_SUCCESS      It does.
++  @retval EFI_UNSUPPORTED  It does not.
++**/
++STATIC
++EFI_STATUS
++EFIAPI
++MorLockSupported (
++  VOID
++  )
++{
++  return EFI_ERROR (SmmStoreLibMorLock (SMMSTORE_MOR_LOCK_STATUS, NULL)) ? EFI_UNSUPPORTED : EFI_SUCCESS;
++}
++
++/**
++  Lock until the next boot.
++
++  @param[in] Key  EDKII_PLATFORM_MOR_LOCK_KEY_SIZE bytes, or NULL.
++
++  @retval EFI_SUCCESS  Locked.
++  @retval Others       Not locked.
++**/
++STATIC
++EFI_STATUS
++EFIAPI
++MorLockLock (
++  IN CONST UINT8  *Key OPTIONAL
++  )
++{
++  return SmmStoreLibMorLock (Key == NULL ? SMMSTORE_MOR_LOCK_WITHOUT_KEY : SMMSTORE_MOR_LOCK_WITH_KEY, Key);
++}
++
++/**
++  Unlock with the key of the lock.
++
++  @param[in] Key  EDKII_PLATFORM_MOR_LOCK_KEY_SIZE bytes.
++
++  @retval EFI_SUCCESS  Unlocked.
++  @retval Others       Still locked.
++**/
++STATIC
++EFI_STATUS
++EFIAPI
++MorLockUnlock (
++  IN CONST UINT8  *Key
++  )
++{
++  return SmmStoreLibMorLock (SMMSTORE_MOR_UNLOCK_WITH_KEY, Key);
++}
++
++STATIC EDKII_PLATFORM_MOR_LOCK_PROTOCOL  mPlatformMorLock = {
++  MorLockSupported,
++  MorLockLock,
++  MorLockUnlock
++};
++
++/**
++  The library and the protocol in virtual mode.
++
++  @param[in]  Event    Event whose notification function is being invoked
++  @param[in]  Context  Unused
++**/
++STATIC
++VOID
++EFIAPI
++MorLockVirtualAddressChange (
++  IN EFI_EVENT  Event,
++  IN VOID       *Context
++  )
++{
++  SmmStoreLibVirtualAddressChange (EfiConvertPointer);
++  EfiConvertPointer (0x0, (VOID **)&mPlatformMorLock.Supported);
++  EfiConvertPointer (0x0, (VOID **)&mPlatformMorLock.Lock);
++  EfiConvertPointer (0x0, (VOID **)&mPlatformMorLock.Unlock);
++}
++
++/**
++  Installs EDKII_PLATFORM_MOR_LOCK_PROTOCOL when coreboot keeps the lock.
++
++  @param[in]  ImageHandle  The image handle of the driver
++  @param[in]  SystemTable  The system table
++
++  @retval EFI_SUCCESS      Installed.
++  @retval EFI_UNSUPPORTED  No lock in this boot: the driver unloads.
++**/
++EFI_STATUS
++EFIAPI
++MorLockSmmStoreDxeEntryPoint (
++  IN EFI_HANDLE        ImageHandle,
++  IN EFI_SYSTEM_TABLE  *SystemTable
++  )
++{
++  EFI_STATUS  Status;
++  EFI_HANDLE  Handle;
++
++  Status = SmmStoreLibInitialize ();
++  if (EFI_ERROR (Status)) {
++    return EFI_UNSUPPORTED;
++  }
++
++  Status = SmmStoreLibMorLock (SMMSTORE_MOR_LOCK_STATUS, NULL);
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_INFO, "MorLockSmmStoreDxe: no MOR lock in coreboot this boot: %r\n", Status));
++    SmmStoreLibDeinitialize ();
++    return EFI_UNSUPPORTED;
++  }
++
++  Status = gBS->CreateEventEx (
++                  EVT_NOTIFY_SIGNAL,
++                  TPL_NOTIFY,
++                  MorLockVirtualAddressChange,
++                  NULL,
++                  &gEfiEventVirtualAddressChangeGuid,
++                  &mVirtualAddressChangeEvent
++                  );
++  if (EFI_ERROR (Status)) {
++    SmmStoreLibDeinitialize ();
++    return EFI_UNSUPPORTED;
++  }
++
++  Handle = NULL;
++  Status = gBS->InstallProtocolInterface (
++                  &Handle,
++                  &gEdkiiPlatformMorLockProtocolGuid,
++                  EFI_NATIVE_INTERFACE,
++                  &mPlatformMorLock
++                  );
++  DEBUG ((DEBUG_INFO, "MorLockSmmStoreDxe: MOR lock of coreboot: %r\n", Status));
++  if (EFI_ERROR (Status)) {
++    gBS->CloseEvent (mVirtualAddressChangeEvent);
++    SmmStoreLibDeinitialize ();
++    return EFI_UNSUPPORTED;
++  }
++
++  return EFI_SUCCESS;
++}
+diff --git a/UefiPayloadPkg/MorLockSmmStoreDxe/MorLockSmmStoreDxe.inf b/UefiPayloadPkg/MorLockSmmStoreDxe/MorLockSmmStoreDxe.inf
+new file mode 100644
+index 0000000000..047f9cd6e3
+--- /dev/null
++++ b/UefiPayloadPkg/MorLockSmmStoreDxe/MorLockSmmStoreDxe.inf
+@@ -0,0 +1,39 @@
++## @file
++#  The lock of TCG Secure MOR that coreboot keeps in SMM, as
++#  EDKII_PLATFORM_MOR_LOCK_PROTOCOL for the variable driver.
++#
++#  Copyright (c) 2026, Domenico D'Arrigo. All rights reserved.<BR>
++#  SPDX-License-Identifier: BSD-2-Clause-Patent
++##
++
++[Defines]
++  INF_VERSION                    = 0x00010005
++  BASE_NAME                      = MorLockSmmStoreDxe
++  FILE_GUID                      = 95CF01A8-BAB6-437B-9D9C-6BA66C75B947
++  MODULE_TYPE                    = DXE_RUNTIME_DRIVER
++  VERSION_STRING                 = 1.0
++  ENTRY_POINT                    = MorLockSmmStoreDxeEntryPoint
++
++[Sources]
++  MorLockSmmStoreDxe.c
++
++[Packages]
++  MdePkg/MdePkg.dec
++  MdeModulePkg/MdeModulePkg.dec
++  UefiPayloadPkg/UefiPayloadPkg.dec
++
++[LibraryClasses]
++  DebugLib
++  SmmStoreLib
++  UefiBootServicesTableLib
++  UefiDriverEntryPoint
++  UefiRuntimeLib
++
++[Guids]
++  gEfiEventVirtualAddressChangeGuid  ## CONSUMES ## Event
++
++[Protocols]
++  gEdkiiPlatformMorLockProtocolGuid  ## SOMETIMES_PRODUCES
++
++[Depex]
++  TRUE
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
+index b8713738b5..78d1cbb7ad 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dsc
++++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
+@@ -1519,6 +1519,7 @@
+       NULL|EmbeddedPkg/Library/NvVarStoreFormattedLib/NvVarStoreFormattedLib.inf
+   }
+   UefiPayloadPkg/MorControlDxe/MorControlDxe.inf
++  UefiPayloadPkg/MorLockSmmStoreDxe/MorLockSmmStoreDxe.inf
+ !elseif $(VARIABLE_SUPPORT) == "SPI"
+   MdeModulePkg/Universal/Variable/RuntimeDxe/VariableSmm.inf {
+     <LibraryClasses>
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
+index c2989df0ff..bcefe4cfc2 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.fdf
++++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
+@@ -272,6 +272,7 @@ INF MdeModulePkg/Universal/ResetSystemRuntimeDxe/ResetSystemRuntimeDxe.inf
+   INF MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteDxe.inf
+   INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
+   INF UefiPayloadPkg/MorControlDxe/MorControlDxe.inf
++  INF UefiPayloadPkg/MorLockSmmStoreDxe/MorLockSmmStoreDxe.inf
+ !elseif $(VARIABLE_SUPPORT) == "SPI"
+   INF UefiPayloadPkg/FvbRuntimeDxe/FvbSmm.inf
+   INF MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteSmm.inf
+-- 
+2.47.3
+

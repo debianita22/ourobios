@@ -56,6 +56,10 @@ CONFIG_VALIDATE_INTEL_DESCRIPTOR=y
 # Memoria azzerata a ogni avvio (non alla ripresa da S3); si spegne dal
 # menu, Security -> Memory protection.
 CONFIG_SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT=y
+# Il lock di TCG Secure MOR (MemoryOverwriteRequestControlLock) tenuto da SMM
+# (patch 0207, edk2/0043): offerto solo con BIOS Lock acceso e "Clear memory
+# at power-on" su "When the OS asks"
+CONFIG_SMMSTORE_MOR_LOCK=y
 
 # PCIe: Resizable BAR per una scheda grafica sul riser, come nella build
 # coreboot che girava sul M920x
