@@ -61,6 +61,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   console a critical `mbp is not ready!`: an ME that stops in its
   bring-up on purpose takes the disable path (patch 0197), so a real
   error of the ME stands out again.
+- On the W541, package C-state demotion off, as Intel's reference code and
+  the Lenovo firmware (GNET94WW, its update package analyzed) have it
+  (patch 0198): coreboot turned it on. Not yet measured on the laptop,
+  which stays in PC6 at idle and never reaches PC7.
 - docs/m920x.md: the fan readout under Linux at every boot
   (`/etc/modules-load.d`, the EC has nothing that loads `nct6683` by
   itself).
