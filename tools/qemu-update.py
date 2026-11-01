@@ -406,11 +406,22 @@ class UpdateTest:
         bad = [e for e in self.TPM_ERRORS if e in text]
         if bad:
             raise Fail("%s: measured boot, nella seriale \"%s\" (serial-%s.log)" % (tag, bad[0], tag))
+        # PCR 10 e' del sistema operativo (IMA): il firmware non lo tocca (patch 0202)
+        pcr10 = re.search(r"TPM: Digest of `([^`]*)` to PCR 10", text)
+        if pcr10:
+            raise Fail("%s: il firmware ha esteso PCR 10, quello di IMA, con %s (serial-%s.log)"
+                       % (tag, pcr10.group(1), tag))
         if re.search(r"Slot [AB] is selected", text):
             if "TPM: setup succeeded" not in text:
                 raise Fail("%s: vboot ha scelto lo slot senza che verstage avviasse il TPM (serial-%s.log)"
                            % (tag, tag))
             self.measured += 1
+        # verificato lo slot, vboot misura modo di avvio, HWID e versione
+        # (in PCR 1, patch 0202) e la romstage dello slot ricopia il registro
+        if "romstage starting" in text:
+            for name in ("VBOOT: boot mode", "VBOOT: GBB HWID", "VBOOT: firmware ver"):
+                if not re.search(r"TPM: Digest of `%s` to PCR 1 measured" % name, text):
+                    raise Fail("%s: verstage non ha misurato \"%s\" in PCR 1 (serial-%s.log)" % (tag, name, tag))
 
     def close(self, keep_flash=False):
         """QEMU spento, i file temporanei via; con keep_flash il flash in DIR."""

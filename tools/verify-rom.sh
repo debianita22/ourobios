@@ -466,6 +466,9 @@ if extract config "${TMP}/config"; then
 	want CONFIG_VBOOT_MOCK_SECDATA=y
 	# measured boot (generazione 2 della parte RO): il verstage avvia il TPM
 	want CONFIG_TPM_MEASURED_BOOT=y
+	# la versione del firmware di vboot in PCR 1, non in PCR 10, quello di
+	# IMA (patch 0202)
+	want CONFIG_PCR_FW_VER=1
 	# il TPM 2.0 del M920x ha allocato anche il banco SHA-1 (patch 0201);
 	# il W541 ha un TPM 1.2, un banco solo
 	if [ "${BOARD}" = m920x ]; then
