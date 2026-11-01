@@ -177,3 +177,4 @@ CONFIG_EDK2_CSMWRAP_FILE="w541/csmwrap.efi"
 # Secure Boot, capsule, password and TPM drivers use its protocol instead
 # of a copy each; the variable driver keeps its own at runtime
 CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D UFS_ENABLE=FALSE -D UHCI_ENABLE=FALSE -D EBC_ENABLE=FALSE -D EXTRA_FS_DRIVERS=FALSE -D CRYPTO_PROTOCOL_SUPPORT=TRUE"
+# CONFIG_CPU_INTEL_HASWELL_PKG_CSTATE_DEMOTION is not set

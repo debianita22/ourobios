@@ -1,0 +1,69 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <DCHEM88@hotmail.it>
+Date: Sun, 1 Nov 2026 10:19:10 +0100
+Subject: [PATCH] cpu/intel/haswell: Make package C-state demotion a choice
+
+configure_c_states() turned on package C-state demotion and
+un-demotion (MSR_PKG_CST_CONFIG_CONTROL bits 29 and 30) on every
+Haswell. Intel's reference code leaves them off by default, and so
+does the Lenovo firmware of the ThinkPad W541 (GNET94WW: Package C
+State Demotion and UnDemotion disabled in its CPU setup, the core C1
+and C3 demotion on, as coreboot has them). On the W541 the package
+stays in PC6 at idle, about 90% of the time, and never reaches PC7,
+which its processor has.
+
+Add CPU_INTEL_HASWELL_PKG_CSTATE_DEMOTION, on by default as before;
+with it off, both bits are cleared.
+
+TEST=Builds for the W541 with the option off. Remains for the hardware
+test: tools/idle-report.py on the W541 with the screen off, the package
+C-states and power with and without the option.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/cpu/intel/haswell/Kconfig        | 9 +++++++++
+ src/cpu/intel/haswell/haswell_init.c | 8 ++++++--
+ 2 files changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/src/cpu/intel/haswell/Kconfig b/src/cpu/intel/haswell/Kconfig
+index 8025aa528d..7ce913a9b0 100644
+--- a/src/cpu/intel/haswell/Kconfig
++++ b/src/cpu/intel/haswell/Kconfig
+@@ -37,6 +37,15 @@ config MAX_CPUS
+ 	int
+ 	default 8
+ 
++config CPU_INTEL_HASWELL_PKG_CSTATE_DEMOTION
++	bool "Package C-state demotion and un-demotion"
++	default y
++	help
++	  Let the processor demote a package C-state request to a shallower
++	  one, and promote it back (MSR_PKG_CST_CONFIG_CONTROL bits 29 and
++	  30). Intel's reference code leaves both off by default, as the OEM
++	  firmware of the ThinkPad W541 does; coreboot has turned them on.
++
+ config CPU_INTEL_NUM_FIT_ENTRIES
+ 	default 6
+ endif
+diff --git a/src/cpu/intel/haswell/haswell_init.c b/src/cpu/intel/haswell/haswell_init.c
+index a376943321..e0e400dc7d 100644
+--- a/src/cpu/intel/haswell/haswell_init.c
++++ b/src/cpu/intel/haswell/haswell_init.c
+@@ -382,8 +382,12 @@ static unsigned int max_non_turbo_ratio(void)
+ static void configure_c_states(void)
+ {
+ 	msr_t msr = rdmsr(MSR_PKG_CST_CONFIG_CONTROL);
+-	msr.lo |= (1 << 30);	// Package c-state Undemotion Enable
+-	msr.lo |= (1 << 29);	// Package c-state Demotion Enable
++	if (CONFIG(CPU_INTEL_HASWELL_PKG_CSTATE_DEMOTION)) {
++		msr.lo |= (1 << 30);	// Package c-state Undemotion Enable
++		msr.lo |= (1 << 29);	// Package c-state Demotion Enable
++	} else {
++		msr.lo &= ~((1 << 30) | (1 << 29));
++	}
+ 	msr.lo |= (1 << 28);	// C1 Auto Undemotion Enable
+ 	msr.lo |= (1 << 27);	// C3 Auto Undemotion Enable
+ 	msr.lo |= (1 << 26);	// C1 Auto Demotion Enable
+-- 
+2.47.3
+
