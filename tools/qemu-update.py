@@ -398,7 +398,7 @@ class UpdateTest:
 
     # quello che il measured boot non deve mai dire con il TPM acceso
     TPM_ERRORS = ("TPM setup failed", "Failed to extend TPM PCRs", "TPM Error", "TPM LOG: log table is full",
-                  "TPM LOG: no SHA-1 digest", "into TPM log")
+                  "TPM LOG: no SHA-1 digest", "TPM LOG: pre-RAM log is too full", "into TPM log")
 
     def tpm_check(self, tag, text):
         """Con il TPM: verstage lo ha avviato, se e' arrivato a scegliere

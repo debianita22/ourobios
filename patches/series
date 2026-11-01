@@ -196,3 +196,4 @@
 0200-security-tpm-Leave-room-for-the-payload-in-the-TPM-1.patch
 0201-security-tpm-Option-to-extend-the-SHA-1-bank-of-a-TP.patch
 0202-security-tpm-Firmware-version-into-PCR-1-outside-Chr.patch
+0203-security-tpm-Keep-the-pre-RAM-TPM-log-inside-its-reg.patch
