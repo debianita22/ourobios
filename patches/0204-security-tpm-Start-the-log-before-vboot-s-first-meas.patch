@@ -1,7 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sun, 1 Nov 2026 20:18:43 +0100
-Subject: [PATCH] security/tpm: Start the log before vboot's first measurement
+Subject: [PATCH 204/204] security/tpm: Start the log before vboot's first
+ measurement
 
 The log of measured boot is started, with the measurements of the CRTM
 (the FMAP, the bootblock) and, in the bootblock, by clearing the pre-RAM

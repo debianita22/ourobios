@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sun, 1 Nov 2026 19:40:10 +0100
-Subject: [PATCH 202/203] security/tpm: Firmware version into PCR 1 outside
+Subject: [PATCH 202/204] security/tpm: Firmware version into PCR 1 outside
  ChromeOS
 
 vboot extends the firmware version into PCR_FW_VER, which has no prompt
