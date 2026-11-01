@@ -544,7 +544,7 @@ def check_capsule(cap, fw=None, current_only=False):
         raise Error("capsula della v1.2.x (mappa del flash senza vboot): da un firmware v1.3.0 in su "
                     "si torna alla v1.2.x solo con flashrom")
     if fw and fw.get("pre_mb") and cap["variant"]:
-        raise Error("qui gira la %s dietro la parte RO senza measured boot: le release con il measured "
+        raise Error("qui gira la %s dietro la parte RO senza measured boot: dalla v1.5.0 le release con il measured "
                     "boot riscrivono la parte RO (il verstage avvia il TPM, la cache-as-RAM ha il suo "
                     "registro) e si installano una volta con flashrom (%s), poi con le capsule"
                     % (version_str(fw["version"]), MB_MIGRATION))
@@ -1070,7 +1070,7 @@ def cmd_status(args):
         print("mappa:     vboot, due slot RW, la parte RO della v1.3.0: la v1.3.9 la riscrive e si "
               "installa una volta con flashrom (%s)" % RO_MIGRATION)
     elif fw["pre_mb"]:
-        print("mappa:     vboot, due slot RW, la parte RO senza measured boot: le release con il "
+        print("mappa:     vboot, due slot RW, la parte RO senza measured boot: dalla v1.5.0 le release con il "
               "measured boot la riscrivono e si installano una volta con flashrom (%s)" % MB_MIGRATION)
     else:
         print("mappa:     vboot, due slot RW (una capsula scrive quello che non gira)")

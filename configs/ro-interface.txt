@@ -3,7 +3,7 @@
 #
 # Una capsula non scrive mai WP_RO: gli slot di ogni release partono dopo il
 # bootblock e il verstage dell'ultima release scritta con flashrom: la
-# parte RO con il measured boot (in sviluppo, generazione 2: il verstage
+# parte RO con il measured boot (della v1.5.0, generazione 2: il verstage
 # avvia il TPM, e la cache-as-RAM ha in piu' il registro del TPM, 2 KiB
 # dopo il buffer di vboot, che spostano di 0x800 tutto quello che segue);
 # prima la v1.3.9, con una cache-as-RAM uguale per le due varianti, e la

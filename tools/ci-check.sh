@@ -386,9 +386,52 @@ hw.check_cpu(firmware("m920x", ["[DEBUG]  microcode: sig=0x906eb pf=0x2 revision
                                 "[DEBUG]  Skip microcode update"], []), rep, NoMsr())
 assert rep.checks[0]["data"]["firmware_microcode"] == [0xf6], rep.checks[0]
 assert "coreboot 0xf6 (il log dice 0xf5" in rep.checks[0]["details"][0], rep.checks[0]["details"]
+
+# TPM-03: un registro crypto agile (SHA-1 e SHA-256) e uno del TPM 1.2,
+# rifatti contro i PCR; un evento tolto dal registro (esteso e non scritto)
+# e' un FAIL, un registro senza le misure di coreboot un WARN
+import hashlib
+import struct
+
+
+def agile(events):
+    spec = b"Spec ID Event03\0" + struct.pack("<IBBBBI", 0, 0, 2, 0, 2, 2) + struct.pack("<HHHH", 4, 20, 11, 32) + b"\0"
+    out = struct.pack("<II20sI", 0, 3, bytes(20), len(spec)) + spec
+    for pcr, typ, data in events:
+        out += struct.pack("<III", pcr, typ, 2)
+        out += struct.pack("<H", 4) + hashlib.sha1(data).digest() + struct.pack("<H", 11) + hashlib.sha256(data).digest()
+        out += struct.pack("<I", len(data)) + data
+    return out
+
+
+def pcrs_of(events, banks=("sha1", "sha256")):
+    out = {}
+    for b in banks:
+        for i in range(8):
+            v = bytes(hashlib.new(b).digest_size)
+            for pcr, typ, data in events:
+                if pcr == i:
+                    v = hashlib.new(b, v + hashlib.new(b, data).digest()).digest()
+            out[(b, i)] = v
+    return out
+
+
+name = lambda n: n.encode().ljust(50, b"\0")
+mb = [(2, 5, name("FMAP: FMAP")), (2, 5, name("CBFS: bootblock")), (1, 5, name("VBOOT: boot mode")),
+      (2, 5, name("CBFS: fallback/payload"))] + [(i, 4, bytes(4)) for i in range(8)] + [(5, 0x80000007, b"Exit Boot Services Invocation")]
+st, summary, _, data = hw.measured_boot(agile(mb), pcrs_of(mb))
+assert st == "PASS" and data["coreboot"] == 3 and data["vboot"] == 1, (st, summary)
+st, summary, _, data = hw.measured_boot(agile(mb[:-1]), pcrs_of(mb))
+assert st == "FAIL" and data["differ"] == ["sha1/5", "sha256/5"], (st, summary, data)
+plain = [(i, 4, bytes(4)) for i in range(8)]
+st, summary, _, _ = hw.measured_boot(agile(plain), pcrs_of(plain))
+assert st == "WARN" and "nessuna misura di coreboot" in summary, summary
+tpm12 = b"".join(struct.pack("<II20sI", pcr, typ, hashlib.sha1(d).digest(), len(d)) + d for pcr, typ, d in mb)
+st, summary, _, data = hw.measured_boot(tpm12, pcrs_of(mb, ("sha1",)))
+assert st == "PASS" and data["banks"] == ["sha1"], (st, summary)
 EOF
 	then
-		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, messaggi noti ed eventi del log, microcode con PRMRR"
+		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, messaggi noti ed eventi del log, microcode con PRMRR, il registro del measured boot rifatto contro i PCR (TPM 2.0 e 1.2)"
 	else
 		bad "tools/hw-report.py: i controlli non danno gli esiti attesi"
 	fi

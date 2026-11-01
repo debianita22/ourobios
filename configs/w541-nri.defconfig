@@ -21,7 +21,7 @@ CONFIG_LENOVO_HASWELL_COMMON_CAR=y
 # Niente dati di vboot nel TPM (anti-rollback degli slot): il TPM serve solo
 # alle misure, e se non parte l'avvio continua senza (patch 0199)
 CONFIG_VBOOT_MOCK_SECDATA=y
-# Measured boot (in development): verstage starts the TPM and coreboot
+# Measured boot (from v1.5.0): verstage starts the TPM and coreboot
 # measures every stage it loads into PCR0/PCR2, with its own event log
 CONFIG_TPM_MEASURED_BOOT=y
 # Le chiavi del progetto, da keys/vboot (tools/build.sh le copia in

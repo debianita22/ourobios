@@ -15,7 +15,6 @@ is here. None of it is a promise of a date.
 | [DMA protection](#dma-protection) | M920x | no pre-boot DMA protection to report; the FSP-M has no PMR data | reword the help of *Intel VT-d*; find the slot of the Thunderbolt card |
 | [Capsule regions in the payload](#capsule-regions-in-the-payload) | both | only the project key signs capsules, and the build checks each manifest | an allowlist in `FmpDeviceSmmLib`, one release before anything needs another region |
 | [Variable store robustness](#variable-store-robustness) | both | the store has not been seen damaged; the fallbacks are safe | coreboot's reader stopping where EDK2's does |
-| [Measured boot](#measured-boot) | both | it starts in the read-only part, which capsules never write; measuring from ramstage on the W541 gives no root of trust and little on a TPM 1.2 | a test read-only part with `TPM_MEASURED_BOOT` |
 | [Top Swap and the Protected Range test](#top-swap-and-the-protected-range-test) | M920x | the read-only part is never written by an update | FLASH-04 with the protection on; a map with room for a second bootblock |
 | [Settings reset on the W541](#settings-reset-on-the-w541) | W541 | built in v1.4.0 (patch 0180), off: the shared deletion is untested, and the OS may be able to set the RTC power loss bit | OPT-05 on the M920x, the bit checked on the W541, then OPT-05 there |
 | [Memory training across updates on the W541](#memory-training-across-updates-on-the-w541) | W541 | safe for `mrc`, not for `nri`, whose cache version is a number bumped by hand | a variant tag and a key from the code, `mrc` first |
@@ -169,55 +168,6 @@ writes nothing.
   matches before it, so that both read the same options after a cut write.
   And a corner case of the v1.4.0 reset: a fault tolerant write block erased
   in the middle of its own reclaim counts as no write pending.
-
-## Measured boot
-
-`CONFIG_TPM_MEASURED_BOOT` is off on both boards, so coreboot measures
-nothing: PCR 0 holds only the separator of the payload, and only the
-payload measures (PCRs 1, 4, 5 and 7 on the M920x). `tools/hw-report.py`
-reports it, and [docs/testing.md](testing.md) lists it as a known gap
-(TPM-03).
-
-- **Why later**: measurements start in the read-only part, with the
-  bootblock and verstage, which is where the root of trust is, and the TPM
-  is started in ramstage (`TPM_INIT_RAMSTAGE`, vboot's secure data mocked
-  without the TPM). Turning it on means a new read-only part, written once
-  with flashrom, never by a capsule. The read-only parts on the machines
-  are old (on the M920x of the port it is still ci-130), and measurements
-  from the slots alone would not cover the code that verifies them.
-- **Next step**: a test read-only part with measured boot and the TPM
-  started early, its cost in boot time, PCR 0 and 2 against the event log
-  on both boards (TPM 2.0 on the M920x, TPM 1.2 on the W541); then a
-  release that changes the read-only part for it, with its own GUIDs as
-  v1.3.9 did ([docs/vboot.md](vboot.md#the-read-only-part-of-v139)).
-
-For the W541 a design that keeps the read-only part was looked at for
-v1.4.0: ramstage, once CBMEM is up, logs what ran before it (FMAP, the
-read-only bootblock with verstage, GBB, `mrc.bin`, the microcode) and the
-VBLOCK of the slot that vboot verified, whose signed hash stands for the
-slot, then everything it loads (payload, DSDT, VBT, the NVIDIA ROM), and
-replays the log into the TPM. `TPM_MEASURED_BOOT` as it is would break
-three things: its log in cache-as-RAM moves the regions that the
-read-only part of v1.3.9 leaves to romstage (`configs/ro-interface.txt`);
-with vboot the TPM code expects verstage to have started the TPM, which
-`VBOOT_MOCK_SECDATA_NO_TPM` leaves to ramstage; and coreboot's TPM 1.2 log
-would have about 4 KiB where the TCPA area of today has 64 KiB, too small
-for the events that the payload adds to it (`edk2/0019`). Heads measures the W541 from ramstage too
-(`TPM_INIT_RAMSTAGE`), without vboot.
-
-- **Why later**: it has no root of trust of its own. The bootblock and
-  verstage run unmeasured, and the trust rests on `WP_RO` and the
-  signature of vboot, which root can get around while *BIOS Lock* is at
-  its default, off: `bootmedia_lock` written to 0 in `SMMSTORE` with
-  flashrom, a reboot, then the read-only part rewritten.
-  It measures no setup option either: PCR 2 is the same with VT-d or the
-  flash protection off. And on Linux a TPM 1.2 has few users: the sealing
-  and attestation tools target TPM 2.0.
-- **Next step**, if it is done: *BIOS Lock* required (or the help and the
-  docs saying that it is needed), the security options measured, the
-  read-only microcode and FIT too, `mrc.bin` only for an `mrc` slot (an
-  `nri` slot behind the `mrc` read-only part never runs it), and explicit
-  ramstage guards in the TPM code instead of dead code removal.
 
 ## Top Swap and the Protected Range test
 

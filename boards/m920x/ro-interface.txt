@@ -4,7 +4,7 @@
 #
 # La parte RO del M920x e' quella dell'ultima release scritta con flashrom
 # (docs/m920x.md#first-install): bootblock con verstage e microcode. Dalla
-# generazione 2 (measured boot, in sviluppo) il verstage avvia il TPM e la
+# generazione 2 (measured boot, v1.5.0) il verstage avvia il TPM e la
 # cache-as-RAM ha in piu' il registro del TPM, 2 KiB dopo il buffer di vboot,
 # che spostano di 0x800 tutto quello che segue; le voci di quel registro
 # hanno i digest SHA-1 e SHA-256 (patch 0201), e la romstage dello slot le

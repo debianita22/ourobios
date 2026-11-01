@@ -351,8 +351,8 @@ power fail).
 | ID | Board | How to run | Pass criteria | Auto |
 |---|---|---|---|---|
 | TPM-01 | both | `ls /dev/tpm0 /dev/tpmrm0`; `/sys/firmware/acpi/tables` | M920x: TPM 2.0 and `TPM2`; W541: TPM 1.2 and `TCPA`; the firmware's event log | TPM-01 |
-| TPM-02 | M920x | `sudo tpm2_getcap properties-fixed`; `sudo tpm2_pcrread sha256` | answers; PCR 1, 4, 5 and 7 extended by the payload | manual |
-| TPM-03 | both | PCR0 against the value of a lone separator | **a known gap**: `CONFIG_TPM_MEASURED_BOOT` is off, coreboot measures nothing and PCR0 holds only the payload's separator; a release that turns it on must show other values | TPM-01 (reported as a note) |
+| TPM-02 | M920x | `sudo tpm2_getcap properties-fixed`; `sudo tpm2_pcrread sha256` | answers; PCRs 0-7 extended | manual |
+| TPM-03 | both | the firmware's event log (`binary_bios_measurements`) replayed event by event against PCR 0-7 of every bank Linux shows | from v1.5.0, measured boot: coreboot's measurements in PCR 2 (FMAP, bootblock, each stage, the payload) and vboot's in PCR 1, and the replay gives every PCR (on the M920x SHA-1 and SHA-256); a PCR that differs means an event extended and not logged, or the other way round (v1.5.0 fixed a full log, a log of coreboot's alone and vboot's events before the log started) | TPM-03 |
 
 ### Intel ME (ME)
 

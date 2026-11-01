@@ -23,8 +23,8 @@ setup menu with their capsule, without flashrom ([docs/update.md](update.md));
 flashrom is for the first install of v1.3.0 (from v1.2.x, see
 [From v1.2.x to v1.3.0](#from-v12x-to-v130), or from other firmware), for
 v1.3.9, which writes the read-only part again
-([From v1.3.x to v1.3.9](#from-v13x-to-v139)), for the first release with
-measured boot, which writes it again too
+([From v1.3.x to v1.3.9](#from-v13x-to-v139)), for v1.5.0, with measured
+boot, which writes it again too
 ([Measured boot: the read-only part](#measured-boot-the-read-only-part)),
 for switching variant before v1.3.9, and for any other update of the
 read-only part.
@@ -319,10 +319,8 @@ image: flashrom, not a capsule.
 
 ## Measured boot: the read-only part
 
-*In development, on the `measured-boot` branch: no release has it yet.*
-
-Measured boot writes the read-only part once more, on the W541 and on the
-M920x: verstage now starts the TPM, and cache-as-RAM holds the TPM's
+v1.5.0, with measured boot, writes the read-only part once more, on the
+W541 and on the M920x: verstage now starts the TPM, and cache-as-RAM holds the TPM's
 early log, 2 KiB after vboot's work buffer, which moves everything after
 it by `0x800` ([docs/vboot.md](vboot.md#the-read-only-part-of-measured-boot)).
 As with v1.3.9, its slots do not boot behind the read-only part before
@@ -395,7 +393,7 @@ away. After the reboot, turn *Firmware protection* on again. Then:
 **On a W541 whose EC is older than `GMHT30WW`** (EC-01, see [Before you
 start](#before-you-start)), the EC update already needs the external
 programmer: the original image back, Lenovo's updater, then ouroBIOS as
-the first time. Flash the measured boot release then, the whole image
+the first time. Flash v1.5.0 or later then, the whole image
 with the programmer: it is the read-only part change too, and nothing
 above is needed.
 

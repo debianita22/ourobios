@@ -1212,7 +1212,7 @@ def separator_pcr(alg):
 
 
 def check_tpm(fw, rep):
-    """TPM-01: il TPM, la sua tabella ACPI, il registro delle misure, il PCR0."""
+    """TPM-01: il TPM, la sua tabella ACPI, il registro delle misure."""
     base = "/sys/class/tpm/tpm0"
     if not os.path.isdir(base):
         rep.add("TPM-01", "TPM", "WARN" if fw.board else "SKIP", "nessun TPM per Linux (/sys/class/tpm/tpm0)")
@@ -1236,17 +1236,6 @@ def check_tpm(fw, rep):
             status = "WARN"
     except OSError:
         details.append("registro delle misure non leggibile (securityfs non montato?)")
-    pcr0, alg = None, None
-    for a in ("sha256", "sha1"):
-        v = rd("%s/pcr-%s/0" % (base, a))
-        if v:
-            pcr0, alg = v.upper(), a
-            break
-    if pcr0 is None:
-        txt = rd(base + "/pcrs") or rd(base + "/device/pcrs") or ""
-        m = re.search(r"PCR-00:\s*([0-9A-F ]+)", txt)
-        if m:
-            pcr0, alg = m.group(1).replace(" ", ""), "sha1"
     if major == "1":
         # TPM 1.2 (W541): coreboot lo accende e lo attiva (tspi.c); owned dice
         # se il sistema ne ha preso possesso
@@ -1258,18 +1247,119 @@ def check_tpm(fw, rep):
             status = "WARN"
             details.append("TPM 1.2 spento o non attivo")
     summary = "TPM %s.x%s" % (major, ", tabella %s" % want[1] if want and want[1] in tables else "")
-    if pcr0:
-        if set(pcr0) <= {"0"} or set(pcr0) <= {"F"}:
-            status = "WARN"
-            details.append("PCR0 (%s) %s: nessuna misura" % (alg, pcr0[:16]))
-        elif pcr0 == separator_pcr(alg):
-            details.append("PCR0 (%s) contiene solo il separatore: coreboot non misura il firmware "
-                           "(CONFIG_TPM_MEASURED_BOOT spento), misura solo il payload (PCR 1, 4, 5, 7)" % alg)
-            summary += ", PCR0 senza misure di coreboot"
-        else:
-            details.append("PCR0 (%s) %s..." % (alg, pcr0[:16]))
-    rep.add("TPM-01", "TPM", status, summary, details, {"version": major, "pcr0_separator_only":
-                                                        bool(pcr0 and alg and pcr0 == separator_pcr(alg))})
+    rep.add("TPM-01", "TPM", status, summary, details, {"version": major})
+
+
+TCG_ALGS = {0x0004: "sha1", 0x000B: "sha256", 0x000C: "sha384", 0x000D: "sha512"}
+EV_NO_ACTION = 0x3
+
+
+def tcg_events(data):
+    """Gli eventi del registro del firmware come lo da' Linux
+    (binary_bios_measurements): il formato crypto agile del TPM 2.0 se il
+    primo evento e' Spec ID Event03, se no quello del TPM 1.2 (SHA-1).
+    Torna [(pcr, tipo, {banco: digest}, dati)], fino al primo evento che
+    non si legge."""
+    events = []
+    if len(data) < 32:
+        return events
+    size = struct.unpack_from("<I", data, 28)[0]
+    spec = data[32:32 + size]
+    if spec.startswith(b"Spec ID Event03"):
+        n = struct.unpack_from("<I", spec, 24)[0]
+        sizes = dict(struct.unpack_from("<HH", spec, 28 + 4 * i) for i in range(n))
+        o = 32 + size
+        while o + 12 <= len(data):
+            pcr, typ, cnt = struct.unpack_from("<III", data, o)
+            if cnt == 0 or cnt > len(sizes):
+                break
+            p, ds = o + 12, {}
+            for _ in range(cnt):
+                alg = struct.unpack_from("<H", data, p)[0]
+                if alg not in sizes:
+                    return events
+                ds[TCG_ALGS.get(alg, hex(alg))] = data[p + 2:p + 2 + sizes[alg]]
+                p += 2 + sizes[alg]
+            if p + 4 > len(data):
+                break
+            es = struct.unpack_from("<I", data, p)[0]
+            events.append((pcr, typ, ds, data[p + 4:p + 4 + es]))
+            o = p + 4 + es
+        return events
+    o = 0
+    while o + 32 <= len(data):
+        pcr, typ = struct.unpack_from("<II", data, o)
+        es = struct.unpack_from("<I", data, o + 28)[0]
+        if pcr == 0xFFFFFFFF or (typ == 0 and es == 0) or o + 32 + es > len(data):
+            break
+        events.append((pcr, typ, {"sha1": data[o + 8:o + 28]}, data[o + 32:o + 32 + es]))
+        o += 32 + es
+    return events
+
+
+def measured_boot(log, pcrs):
+    """TPM-03 dal registro (byte) e dai PCR letti ({(banco, n): digest}):
+    (stato, riassunto, dettagli, dati). Le misure di coreboot (FMAP:, CBFS:
+    in PCR 2) e di vboot (VBOOT: in PCR 1) ci devono essere, e il registro
+    rifatto evento per evento deve dare i PCR 0-7 di ogni banco letto."""
+    events = tcg_events(log)
+    names = [d.split(b"\0", 1)[0].decode("ascii", "replace") for _, _, _, d in events]
+    cb = sum(1 for (pcr, _, _, _), n in zip(events, names) if pcr == 2 and n.startswith(("FMAP: ", "CBFS: ")))
+    vb = sum(1 for (pcr, _, _, _), n in zip(events, names) if pcr == 1 and n.startswith("VBOOT: "))
+    banks = sorted({b for b, _ in pcrs})
+    differ = []
+    for b in banks:
+        h = getattr(hashlib, b)
+        for i in range(8):
+            if (b, i) not in pcrs:
+                continue
+            v = bytes(h().digest_size)
+            for pcr, typ, ds, _ in events:
+                if pcr == i and typ != EV_NO_ACTION:
+                    if b not in ds:
+                        v = None
+                        break
+                    v = h(v + ds[b]).digest()
+            if v != pcrs[(b, i)]:
+                differ.append("%s/%d" % (b, i))
+    details = ["%d eventi nel registro; %d misure di coreboot in PCR 2, %d di vboot in PCR 1"
+               % (len(events), cb, vb)]
+    data = {"events": len(events), "coreboot": cb, "vboot": vb, "banks": banks, "differ": differ}
+    if not events:
+        return "WARN", "registro delle misure vuoto o illeggibile", details, data
+    if differ:
+        details.append("i PCR %s non sono quelli del registro rifatto: un evento esteso e non scritto "
+                       "(registro pieno?) o scritto e non esteso" % ", ".join(differ))
+        return "FAIL", "il registro non da' i PCR (%s)" % ", ".join(differ), details, data
+    if not cb:
+        details.append("coreboot non misura (CONFIG_TPM_MEASURED_BOOT spento, una release prima della v1.5.0)")
+        return "WARN", "nessuna misura di coreboot; il registro da' i PCR 0-7 (%s)" % ", ".join(banks), details, data
+    return ("PASS", "measured boot: %d misure di coreboot e %d di vboot, il registro da' i PCR 0-7 (%s)"
+            % (cb, vb, ", ".join(banks)), details, data)
+
+
+def check_measured_boot(fw, rep):
+    """TPM-03: il registro delle misure rifatto contro i PCR del TPM."""
+    base = "/sys/class/tpm/tpm0"
+    try:
+        log = open("/sys/kernel/security/tpm0/binary_bios_measurements", "rb").read()
+    except OSError:
+        rep.add("TPM-03", "Measured boot", "SKIP" if not os.path.isdir(base) else "WARN",
+                "registro delle misure non leggibile (nessun TPM, securityfs non montato o senza root)")
+        return
+    pcrs = {}
+    for b in ("sha1", "sha256", "sha384", "sha512"):
+        for i in range(8):
+            v = rd("%s/pcr-%s/%d" % (base, b, i))
+            if v:
+                pcrs[(b, i)] = bytes.fromhex(v)
+    if not pcrs:
+        # TPM 1.2: il file pcrs del dispositivo
+        txt = rd(base + "/pcrs") or rd(base + "/device/pcrs") or ""
+        for m in re.finditer(r"PCR-0([0-7]):\s*([0-9A-Fa-f ]+)", txt):
+            pcrs[("sha1", int(m.group(1)))] = bytes.fromhex(m.group(2).replace(" ", ""))
+    status, summary, details, data = measured_boot(log, pcrs)
+    rep.add("TPM-03", "Measured boot", status, summary, details, data)
 
 
 def flash_spi(p, details):
@@ -1737,6 +1827,7 @@ def main():
         guard(check_peg, "PCI-02", "Porta PEG del riser", fw, rep, pcie_state)
     guard(check_fan, "FAN-01", "Ventola e temperature", fw, rep)
     guard(check_tpm, "TPM-01", "TPM", fw, rep)
+    guard(check_measured_boot, "TPM-03", "Measured boot", fw, rep)
     guard(check_me, "ME-01", "Intel ME", fw, rep)
     guard(check_ec, "EC-01", "Firmware dell'EC", fw, rep)
     guard(check_vboot, "VB-01", "vboot", fw, rep)

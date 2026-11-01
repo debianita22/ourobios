@@ -221,8 +221,7 @@ to be written without a programmer and a backup of the flash at hand.
 
 ## The read-only part of measured boot
 
-*In development, on the `measured-boot` branch.* The read-only part of
-the first release with measured boot, on the W541 and on the M920x
+The read-only part of v1.5.0, on the W541 and on the M920x
 (generation 2 of [`configs/ro-interface.txt`](../configs/ro-interface.txt)
 and [`boards/m920x/ro-interface.txt`](../boards/m920x/ro-interface.txt)),
 written once with flashrom
@@ -270,7 +269,12 @@ Tested in QEMU q35 (`tools/build.sh smoke`, step 11): with swtpm as a TPM
 1.2 and as a TPM 2.0 with the M920x's banks, the log, replayed event by
 event, gives the PCRs read back from the TPM by a UEFI application
 (`tools/efi/tpm-pcr-test.c`), and each of coreboot's measurements is the
-digest of the bytes in the image. Not yet on the machines.
+digest of the bytes in the image; the A/B update test runs vboot's path
+with a TPM 2.0 at every boot, and one boot without a TPM. On the M920x of
+the port (Infineon SLB9670, both banks), Linux's event log, 121 events
+with shim and GRUB, replays to PCR 0-7 in SHA-1 and SHA-256, and each of
+coreboot's measurements matches the flash (`tools/hw-report.py`, TPM-03).
+Not yet on a W541.
 
 **Risk.** As with v1.3.9: a read-only part that does not start leaves a
 machine that only an external programmer brings back.
