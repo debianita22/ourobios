@@ -22,7 +22,9 @@ CONFIG_LENOVO_HASWELL_COMMON_CAR=y
 # Niente dati di vboot nel TPM (anti-rollback degli slot): il TPM lo avvia
 # ramstage come senza vboot, con le stesse misure nei PCR
 CONFIG_VBOOT_MOCK_SECDATA=y
-CONFIG_VBOOT_MOCK_SECDATA_NO_TPM=y
+# Measured boot (in development): verstage starts the TPM and coreboot
+# measures every stage it loads into PCR0/PCR2, with its own event log
+CONFIG_TPM_MEASURED_BOOT=y
 # Le chiavi del progetto, da keys/vboot (tools/build.sh le copia in
 # w541/vboot/). La chiave privata degli slot arriva solo dal secret
 # VBOOT_SIGNING_KEY; senza, tools/build.sh usa le chiavi di prova di vboot
