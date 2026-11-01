@@ -21,6 +21,14 @@ clears the rest of the area) or the end of the area. Tcg2Dxe drops the
 digests of banks that are not active; with a bank active for which the
 events have no digest it says so, as for any PEI event.
 
+Then clear the log area of the TPM2 table (LAML and LASA 0, the checksum
+made again), before DXE installs it: Linux reads the log of an ACPI TPM2
+table that has one before the log of the EFI configuration table, and on
+the ThinkCentre M920x it showed coreboot's 14 events and none of the
+payload's (separators, Secure Boot and boot variables, shim, the boot
+loader), so no PCR replayed. Without a log area it reads the one of
+Tcg2Dxe, which has them all.
+
 Nothing changes without a TPM2 table, or with one whose log area does
 not start with a "Spec ID Event03" (a TPM 1.2 log, or none).
 
@@ -29,19 +37,19 @@ EDK2 headers, debug and MDEPKG_NDEBUG.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- .../UefiPayloadEntry/Tcg2EventLog.c           | 214 ++++++++++++++++++
+ .../UefiPayloadEntry/Tcg2EventLog.c           | 229 ++++++++++++++++++
  .../UefiPayloadEntry/UefiPayloadEntry.c       |   5 +
  .../UefiPayloadEntry/UefiPayloadEntry.h       |  11 +
  .../UefiPayloadEntry/UefiPayloadEntry.inf     |   3 +
- 4 files changed, 233 insertions(+)
+ 4 files changed, 248 insertions(+)
  create mode 100644 UefiPayloadPkg/UefiPayloadEntry/Tcg2EventLog.c
 
 diff --git a/UefiPayloadPkg/UefiPayloadEntry/Tcg2EventLog.c b/UefiPayloadPkg/UefiPayloadEntry/Tcg2EventLog.c
 new file mode 100644
-index 0000000000..f0f2f00359
+index 0000000000..c664661ef9
 --- /dev/null
 +++ b/UefiPayloadPkg/UefiPayloadEntry/Tcg2EventLog.c
-@@ -0,0 +1,214 @@
+@@ -0,0 +1,229 @@
 +/** @file
 +  The TPM 2.0 event log of coreboot as event HOBs for Tcg2Dxe.
 +
@@ -53,6 +61,13 @@ index 0000000000..f0f2f00359
 +  finds as gTcgEvent2EntryHobGuid HOBs, logged and not extended again. Each
 +  event of coreboot's log becomes such a HOB here, so that the log of the OS
 +  replays to the PCRs coreboot extended.
++
++  Then the log area of the TPM2 table is cleared (LAML and LASA 0, the
++  checksum made again), before DXE installs the table: Linux reads the log
++  of an ACPI TPM2 table that has one before the log of the EFI configuration
++  table, and coreboot's holds coreboot's events only, none of the payload's
++  (separators, Secure Boot and boot variables, the boot loader). Without a
++  log area, the OS reads the complete one of Tcg2Dxe.
 +
 +  Copyright (c) 2026, Domenico D'Arrigo. All rights reserved.<BR>
 +  SPDX-License-Identifier: BSD-2-Clause-Patent
@@ -255,6 +270,14 @@ index 0000000000..f0f2f00359
 +  }
 +
 +  DEBUG ((DEBUG_INFO, "Bootloader TPM2 log at 0x%p: %u events for Tcg2Dxe\n", Log, Events));
++
++  //
++  // One log for the OS, the one of Tcg2Dxe: no log area in the TPM2 table
++  //
++  WriteUnaligned32 ((UINT32 *)((UINT8 *)Tpm2 + TPM2_TABLE_LAML_OFFSET), 0);
++  WriteUnaligned64 ((UINT64 *)((UINT8 *)Tpm2 + TPM2_TABLE_LASA_OFFSET), 0);
++  Tpm2->Checksum = 0;
++  Tpm2->Checksum = CalculateCheckSum8 ((UINT8 *)Tpm2, Tpm2->Length);
 +}
 diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
 index 8f4be85466..c892b29063 100644

@@ -7,7 +7,9 @@
  * protocol of the payload's TPM driver, EFI_TCG2_PROTOCOL (TPM 2.0, the SHA-1
  * and SHA-256 banks; with the address of its crypto agile log, from
  * GetEventLog()) or EFI_TCG_PROTOCOL (TPM 1.2, SHA-1), and printed for the
- * harness to replay the log against; "RESULT OK" closes, then the application
+ * harness to replay the log against. With a TPM 2.0 also the log area of the
+ * ACPI TPM2 table (LAML and LASA), which Linux reads before the EFI log:
+ * patches/edk2/0042 leaves it empty. "RESULT OK" closes, then the application
  * waits, for the harness to read the RAM with the log. No library: clang
  * --target=x86_64-unknown-windows, as the other applications of tools/efi.
  */
@@ -34,6 +36,8 @@ struct system_table {
 	void *console_in_handle, *con_in, *console_out_handle, *con_out, *standard_error_handle, *std_err;
 	void *rt;
 	struct boot_services *bs;
+	uint64_t number_of_table_entries;
+	struct configuration_table { struct guid vendor_guid; void *vendor_table; } *configuration_table;
 };
 _Static_assert(offsetof(struct boot_services, locate_protocol) == 0x140, "LocateProtocol");
 
@@ -61,6 +65,48 @@ static void putc_(char c) { int i; for (i = 0; i < 100000 && !(inb(COM1 + 5) & 0
 static void puts_(const char *s) { for (; *s; s++) { if (*s == '\n') putc_('\r'); putc_(*s); } }
 static void puthex(uint64_t v, int digits) { int s; for (s = (digits - 1) * 4; s >= 0; s -= 4) putc_("0123456789abcdef"[(v >> s) & 0xf]); }
 static void putdec(uint64_t v) { char b[21]; int i = 20; b[i] = 0; do { b[--i] = (char)('0' + v % 10); v /= 10; } while (v); puts_(b + i); }
+
+static int same_guid(const struct guid *a, const struct guid *b)
+{
+	const uint8_t *x = (const uint8_t *)a, *y = (const uint8_t *)b;
+	unsigned int i;
+	for (i = 0; i < sizeof(*a); i++)
+		if (x[i] != y[i]) return 0;
+	return 1;
+}
+static uint32_t le32(const uint8_t *p) { return (uint32_t)p[3] << 24 | (uint32_t)p[2] << 16 | (uint32_t)p[1] << 8 | p[0]; }
+static uint64_t le64(const uint8_t *p) { return (uint64_t)le32(p + 4) << 32 | le32(p); }
+
+/* The ACPI TPM2 table, from the RSDP of the EFI configuration table and its
+ * XSDT; its log area (TCG ACPI Specification, revision 4) at 64 and 68 */
+static struct guid acpi20_guid = { 0x8868e871, 0xe4f1, 0x11d3, { 0xbc, 0x22, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81 } };
+static void acpi_tpm2(struct system_table *st)
+{
+	uint64_t i, n;
+	const uint8_t *rsdp = 0, *xsdt;
+	for (i = 0; i < st->number_of_table_entries; i++)
+		if (same_guid(&st->configuration_table[i].vendor_guid, &acpi20_guid))
+			rsdp = st->configuration_table[i].vendor_table;
+	if (!rsdp || !le64(rsdp + 24)) {
+		puts_(MARK "acpi no XSDT\n");
+		return;
+	}
+	xsdt = (const uint8_t *)(uintptr_t)le64(rsdp + 24);
+	n = (le32(xsdt + 4) - 36) / 8;
+	for (i = 0; i < n; i++) {
+		const uint8_t *t = (const uint8_t *)(uintptr_t)le64(xsdt + 36 + 8 * i);
+		if (t && t[0] == 'T' && t[1] == 'P' && t[2] == 'M' && t[3] == '2') {
+			puts_(MARK "acpi tpm2 length "); putdec(le32(t + 4));
+			if (le32(t + 4) >= 76) {
+				puts_(" laml 0x"); puthex(le32(t + 64), 8);
+				puts_(" lasa 0x"); puthex(le64(t + 68), 16);
+			}
+			puts_("\n");
+			return;
+		}
+	}
+	puts_(MARK "acpi no tpm2\n");
+}
 
 static void be16(uint8_t *p, uint16_t v) { p[0] = (uint8_t)(v >> 8); p[1] = (uint8_t)v; }
 static void be32(uint8_t *p, uint32_t v) { be16(p, (uint16_t)(v >> 16)); be16(p + 2, (uint16_t)v); }
@@ -148,6 +194,7 @@ __attribute__((ms_abi)) efi_status efi_main(void *image, struct system_table *st
 		} else {
 			puts_(MARK "log 0x"); puthex(location, 16); puts_(" last 0x"); puthex(last, 16);
 			puts_(" truncated "); putdec(truncated); puts_("\n");
+			acpi_tpm2(st);
 			ok = tpm2_pcrs(tcg2, 0x0004, "sha1", 20) && tpm2_pcrs(tcg2, 0x000b, "sha256", 32);
 		}
 	} else if (!EFI_ERR(st->bs->locate_protocol(&tcg_guid, 0, (void **)&tcg)) && tcg) {

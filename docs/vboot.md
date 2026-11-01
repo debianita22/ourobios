@@ -257,8 +257,10 @@ appends its events after coreboot's (patches/edk2/0019; patch 0200 makes
 the area large enough for them). On the M920x (TPM 2.0, SHA-1 and SHA-256
 banks allocated) the payload hands coreboot's events to Tcg2Dxe
 (patches/edk2/0042), which puts them first in the log of
-`EFI_TCG2_PROTOCOL`, the one Linux reads; coreboot extends both banks
-(patch 0201).
+`EFI_TCG2_PROTOCOL`, and then leaves the ACPI TPM2 table without a log
+area: Linux reads that table's log before the EFI one, and on the M920x it
+showed coreboot's events only, none of the payload's. coreboot extends
+both banks (patch 0201).
 
 Tested in QEMU q35 (`tools/build.sh smoke`, step 11): with swtpm as a TPM
 1.2 and as a TPM 2.0 with the M920x's banks, the log, replayed event by

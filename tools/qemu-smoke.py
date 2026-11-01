@@ -808,6 +808,18 @@ def tpm2_check(sm, rom, got, out):
     location, last, truncated = int(m.group(1), 16), int(m.group(2), 16), int(m.group(3))
     if truncated:
         raise Fail("il log di EFI_TCG2_PROTOCOL e' troncato")
+    # Linux legge il registro della tabella ACPI TPM2, se ne ha uno, prima di
+    # quello EFI: il payload la lascia senza (patches/edk2/0042), cosi' il
+    # sistema legge quello completo di Tcg2Dxe (sul M920x vedeva solo i 14
+    # eventi di coreboot)
+    acpi = next((line for line in got if line.startswith("acpi ")), "acpi ?")
+    a = re.fullmatch(r"acpi tpm2 length (\d+)(?: laml 0x([0-9a-f]+) lasa 0x([0-9a-f]+))?", acpi)
+    if not a:
+        raise Fail("tpm-pcr-test.efi: %s, attesa la tabella ACPI TPM2 (serial-tpm.log)" % acpi)
+    if a.group(2) is not None and (int(a.group(2), 16) or int(a.group(3), 16)):
+        raise Fail("la tabella ACPI TPM2 che vede il sistema ha ancora un registro (LAML 0x%s, LASA 0x%s): "
+                   "Linux leggerebbe quello di coreboot, non quello completo di EFI_TCG2_PROTOCOL"
+                   % (a.group(2), a.group(3)))
     tpm_pcrs = {}
     for line in got:
         p = re.fullmatch(r"pcr (\d+) (sha1|sha256) ([0-9a-f]+)", line)
@@ -863,7 +875,8 @@ def tpm2_check(sm, rom, got, out):
                    % ", ".join(differ))
     return ("TPM 2.0 (swtpm, SHA-1 e SHA-256): %d eventi nel log di EFI_TCG2_PROTOCOL, che rifatto da' i PCR "
             "0-7 dei due banchi letti dal TPM; in PCR 2 le %d misure di coreboot (%s), con lo SHA-1 e lo SHA-256 "
-            "dei byte della ROM; i separatori dei PCR 0-7"
+            "dei byte della ROM; i separatori dei PCR 0-7; la tabella ACPI TPM2 senza registro, il sistema "
+            "legge quello EFI"
             % (len(events), len(cb), ", ".join(n.split(": ", 1)[1] for n in cb)))
 
 
