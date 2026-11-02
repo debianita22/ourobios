@@ -5,6 +5,25 @@ GitHub include its section; release candidates take the section of the
 version they lead to. For the releases before v1.3.0, see their notes on
 the [releases page](https://github.com/debianita22/ourobios/releases).
 
+## v1.5.1
+
+- *BIOS Lock* (*Security* → *Flash protection*) is on by default on the
+  W541 (`CONFIG_BOOTMEDIA_SMM_BWP`, the default of the option only): a
+  setting already saved in `SMMSTORE` is kept, a store without one and a
+  settings reset get the lock on. With it the flash is written only by
+  the firmware in SMM: the capsule updates, the settings, the event log
+  and the lock of TCG MOR work as before, and flashrom from the OS only
+  reads. To write with flashrom (the read-only part, a fresh ROM) turn it
+  off in the setup first ([docs/flashing.md](docs/flashing.md)).
+  `tools/update.py protection` and `status` report the default of the
+  running version and board. On the M920x the default stays off: there
+  the lock is applied at `BS_DEV_RESOURCES`, before ramstage writes the
+  event log, and with it on every write fails (*SPI Transaction Error*,
+  *ELOG: NV Write failed*, BOOT-03 of `hw-report.py`), the boot count,
+  wake and reset events among them; the entries written from SMM (S3,
+  S5) still go in. Turn it on by hand knowing that, until the event log
+  of ramstage goes through SMM or the lock comes later.
+
 ## v1.5.0
 
 - **Measured boot**, on both boards: coreboot measures what it runs into

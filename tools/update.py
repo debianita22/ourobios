@@ -2037,8 +2037,29 @@ FREG_NAMES = ("descrittore", "BIOS", "ME", "GbE", "Platform Data")
 # la finestra della regione BIOS sotto i 4 GiB e' al piu' di 16 MiB
 BIOS_WINDOW_MAX = 16 << 20
 # Il default delle opzioni che coreboot legge senza variabile
-# (security/lockdown/lockdown.h; CONFIG_BOOTMEDIA_SMM_BWP spento sulle due board)
+# (security/lockdown/lockdown.h): Firmware protection sempre accesa; BIOS Lock
+# il CONFIG_BOOTMEDIA_SMM_BWP della build: spento fino alla v1.5.0, dalla
+# v1.5.1 acceso sul W541 (mrc, nri) e ancora spento sul M920x (fsp), dove il
+# lock da ramstage fa fallire le scritture del registro degli eventi
+# (lock_option_default)
 LOCK_OPTIONS = {"bootmedia_lock": 1, "bios_lock": 0}
+BIOS_LOCK_DEFAULT_ON_SINCE = (1, 5, 1, 0)
+BIOS_LOCK_DEFAULT_ON_VARIANTS = ("mrc", "nri")
+VARIANT_RE = re.compile(r"-(mrc|nri|fsp)\b")
+
+
+def lock_option_default(name):
+    """Il default di un'opzione di LOCK_OPTIONS per il firmware che gira: BIOS
+    Lock acceso dalla v1.5.1 (rc comprese) sulle varianti del W541, spento
+    prima, sul M920x, o quando la versione non si legge o non e' una release
+    (una build di prova della CI)."""
+    if name == "bios_lock":
+        bios = read_text(BIOS_VERSION) or ""
+        key = build_release_key(bios)
+        variant = VARIANT_RE.search(bios)
+        return 1 if key and key[:3] >= BIOS_LOCK_DEFAULT_ON_SINCE[:3] and variant and \
+            variant.group(1) in BIOS_LOCK_DEFAULT_ON_VARIANTS else 0
+    return LOCK_OPTIONS[name]
 # Le regioni che scrive una capsula: lo slot, il record di vboot, le variabili
 CAPSULE_WRITES = ("RW_SECTION_A", "RW_SECTION_B", "RW_NVRAM", "SMMSTORE")
 
@@ -2491,12 +2512,13 @@ def option_text(p, name):
     val = p["options"].get(name)
     if val is not None:
         return "%d" % val
-    return "%d (default%s)" % (LOCK_OPTIONS[name], ": " + p["options_note"] if p["options_note"] else "")
+    return "%d (default%s)" % (lock_option_default(name),
+                               ": " + p["options_note"] if p["options_note"] else "")
 
 
 def ro_text(p, v):
     opt = p["options"].get("bootmedia_lock")
-    on = opt if opt is not None else LOCK_OPTIONS["bootmedia_lock"]
+    on = opt if opt is not None else lock_option_default("bootmedia_lock")
     if v["ro"] is None:
         return "non trovata: FMAP non letta (%s)" % p.get("fmap")
     if v["ro"] in ("ok", "unlocked"):

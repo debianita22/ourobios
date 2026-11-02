@@ -98,10 +98,14 @@ CONFIG_SMBIOS_UUID_FROM_VPD=y
 CONFIG_SMBIOS_SYSTEM_DATA_FROM_VPD=y
 # CONFIG_VPD_SMBIOS_VERSION is not set
 
-# BIOS Lock nel menu (Security -> Flash protection), spento di default:
-# acceso, solo l'SMM scrive il flash (variabili UEFI e registro degli
-# eventi, patch 0044, e gli aggiornamenti con capsula), flashrom dall'OS
-# puo' solo leggere.
+# BIOS Lock nel menu (Security -> Flash protection), acceso di default
+# dalla v1.5.1 (spento fino alla v1.5.0): acceso, solo l'SMM scrive il
+# flash (variabili UEFI e registro degli eventi, patch 0044, gli
+# aggiornamenti con capsula e il lock del TCG MOR, patch 0207), flashrom
+# dall'OS puo' solo leggere. BOOTMEDIA_SMM_BWP e' solo il default
+# dell'opzione (security/lockdown/lockdown.h): un'impostazione salvata
+# resta, e un reset delle impostazioni torna al lock acceso.
+CONFIG_BOOTMEDIA_SMM_BWP=y
 CONFIG_BOOTMEDIA_SMM_BWP_RUNTIME_OPTION=y
 # Firmware protection, nello stesso menu e accesa di default: la regione RO
 # (WP_RO, con la chiave root di vboot) protetta in scrittura dai Protected
