@@ -1,0 +1,56 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 2 Nov 2026 21:10:00 +0100
+Subject: [PATCH] payloads/external/edk2: Two options of MrChromebox's tree for
+ a custom one
+
+The Makefile passes the options of the downstream trees (FOLLOW_BGRT_SPEC,
+LOAD_OPTION_ROMS, NETWORK_IPXE, CSMWRAP, LVGL_ENABLE and the others) to
+any repository but the official one, and most of their Kconfig symbols
+depend on !EDK2_REPO_OFFICIAL accordingly. Two depend on
+EDK2_REPO_MRCHROMEBOX instead: EDK2_SECURE_BOOT_DEFAULT_ENABLE and
+EDK2_USE_LVGL_RENDERER. A custom repository whose platform has the same
+defines, such as upstream edk2 with a package outside the tree that
+carries MrChromebox's modules (EDK2_PLATFORM_DSC, EDK2_PACKAGES_PATH),
+cannot select them, and its setup loses the LVGL renderer.
+
+Make both depend on !EDK2_REPO_OFFICIAL, as the options they sit with.
+Their defaults stay as they are; for MrChromebox's repository nothing
+changes. A custom repository without the defines gets LVGL_ENABLE=TRUE
+from the default of EDK2_USE_LVGL_RENDERER, which a platform without it
+ignores, as it ignores the other downstream options.
+
+TEST=make defconfig of ouroBIOS's W541 configuration with
+EDK2_REPO_CUSTOM, EDK2_REPOSITORY the upstream edk2 and the package of
+ouroBIOS: EDK2_USE_LVGL_RENDERER=y as with EDK2_REPO_MRCHROMEBOX, and
+-D LVGL_ENABLE=TRUE in the build summary. With EDK2_REPO_MRCHROMEBOX the
+.config is the same as before.
+---
+ payloads/external/edk2/Kconfig | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/payloads/external/edk2/Kconfig b/payloads/external/edk2/Kconfig
+index ebcac778..a2ac9f5c 100644
+--- a/payloads/external/edk2/Kconfig
++++ b/payloads/external/edk2/Kconfig
+@@ -300,7 +300,7 @@ config EDK2_SECURE_BOOT_SUPPORT
+ 
+ config EDK2_SECURE_BOOT_DEFAULT_ENABLE
+ 	bool "Enable UEFI Secure Boot by default"
+-	depends on EDK2_SECURE_BOOT_SUPPORT && EDK2_REPO_MRCHROMEBOX
++	depends on EDK2_SECURE_BOOT_SUPPORT && !EDK2_REPO_OFFICIAL
+ 	help
+ 	  After EnrollDefaultKeys provisions the default PK/KEK/db/dbx on
+ 	  first boot, leave Secure Boot enabled instead of forcing it off.
+@@ -308,7 +308,7 @@ config EDK2_SECURE_BOOT_DEFAULT_ENABLE
+ config EDK2_USE_LVGL_RENDERER
+ 	bool "Use the LVGL graphical setup renderer"
+ 	default y if !EDK2_SERIAL_SUPPORT
+-	depends on EDK2_REPO_MRCHROMEBOX
++	depends on !EDK2_REPO_OFFICIAL
+ 	help
+ 	  Render the firmware setup and boot menu with the LVGL-based
+ 	  graphical HII display engine (LvglDisplayEngineDxe) instead of the
+-- 
+2.43.0
+

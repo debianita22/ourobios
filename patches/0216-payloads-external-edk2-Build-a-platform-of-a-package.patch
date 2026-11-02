@@ -12,23 +12,26 @@ in the tree nor in PACKAGES_PATH.
 
 EDK2_PLATFORM_DSC names the .dsc to build, UefiPayloadPkg's by default,
 and EDK2_PACKAGES_PATH the directories to look in before the edk2 tree,
-none by default: with the defaults the build is what it was. Such a
-platform keeps the output directory and the flash device of
-UefiPayloadPkg, which the rest of the Makefile reads. The two options
-go to the edk2 Makefile with the others, for the payload and for the
-capsule keys.
+none by default: with the defaults the build is what it was. A relative
+directory is relative to the top of the coreboot tree, as the other
+files of the payload's options, so that a defconfig can name one
+without the path of the machine it is built on. Such a platform keeps
+the output directory and the flash device of UefiPayloadPkg, which the
+rest of the Makefile reads. The two options go to the edk2 Makefile
+with the others, for the payload and for the capsule keys.
 
 TEST=make print in payloads/external/edk2, with the defaults (Packages
 path the edk2 tree, Payload UefiPayloadPkg/UefiPayloadPkg.dsc, as
 before) and with EDK2_PLATFORM_DSC="OuroBiosPkg/OuroBiosPkg.dsc" and
-EDK2_PACKAGES_PATH="/w/edk2-packages" (that directory before the tree,
-the package's .dsc). The q35 image of ouroBIOS's tools/build.sh
-edk2-upstream built from OuroBiosPkg outside the tree.
+EDK2_PACKAGES_PATH="payloads/external/edk2/workspace/packages:/abs/other"
+(the first under the top of the tree, the second as it is, both before
+the edk2 tree). The q35 image of ouroBIOS's tools/build.sh edk2-upstream
+built from OuroBiosPkg outside the tree.
 ---
  payloads/external/Makefile.mk   |  4 ++++
- payloads/external/edk2/Kconfig  | 19 +++++++++++++++++++
- payloads/external/edk2/Makefile |  9 ++++++++-
- 3 files changed, 31 insertions(+), 1 deletion(-)
+ payloads/external/edk2/Kconfig  | 20 ++++++++++++++++++++
+ payloads/external/edk2/Makefile | 14 +++++++++++++-
+ 3 files changed, 37 insertions(+), 1 deletion(-)
 
 diff --git a/payloads/external/Makefile.mk b/payloads/external/Makefile.mk
 index 2ad8a9d6..7cfa0990 100644
@@ -53,10 +56,10 @@ index 2ad8a9d6..7cfa0990 100644
  	CONFIG_EDK2_RELEASE=$(CONFIG_EDK2_RELEASE) \
  	CONFIG_EDK2_BOOTSPLASH_FILE=$(CONFIG_EDK2_BOOTSPLASH_FILE) \
 diff --git a/payloads/external/edk2/Kconfig b/payloads/external/edk2/Kconfig
-index acb29c5b..79c5e30a 100644
+index acb29c5b..ebcac778 100644
 --- a/payloads/external/edk2/Kconfig
 +++ b/payloads/external/edk2/Kconfig
-@@ -114,6 +114,25 @@ config EDK2_PLATFORMS_TAG_OR_REV
+@@ -114,6 +114,26 @@ config EDK2_PLATFORMS_TAG_OR_REV
  
  endif
  
@@ -75,23 +78,29 @@ index acb29c5b..79c5e30a 100644
 +	string "Directories of edk2 packages outside the edk2 tree"
 +	default ""
 +	help
-+	  Absolute paths, separated by colons, put before the edk2 tree in PACKAGES_PATH:
-+	  where the edk2 build finds EDK2_PLATFORM_DSC and the packages of its modules that
-+	  are not in the edk2 tree. Empty: the edk2 tree only.
++	  Paths, separated by colons, put before the edk2 tree in PACKAGES_PATH: where the
++	  edk2 build finds EDK2_PLATFORM_DSC and the packages of its modules that are not in
++	  the edk2 tree. A relative path is relative to the top of the coreboot tree, as
++	  the other files of the payload's options. Empty: the edk2 tree only.
 +
  choice
  	prompt "edk2 build"
  	default EDK2_RELEASE
 diff --git a/payloads/external/edk2/Makefile b/payloads/external/edk2/Makefile
-index 56951811..54492a74 100644
+index 56951811..72ec4ee2 100644
 --- a/payloads/external/edk2/Makefile
 +++ b/payloads/external/edk2/Makefile
-@@ -34,11 +34,18 @@ else
+@@ -34,11 +34,23 @@ else
  export PACKAGES_PATH := $(EDK2_PATH)
  endif
  
-+# Packages outside the edk2 tree, looked up before it
-+EDK2_EXTRA_PACKAGES_PATH := $(call strip_quotes,$(CONFIG_EDK2_PACKAGES_PATH))
++# Packages outside the edk2 tree, looked up before it: absolute paths, or
++# relative to the top of the coreboot tree
++edk2_empty :=
++edk2_space := $(edk2_empty) $(edk2_empty)
++EDK2_EXTRA_PACKAGES_PATH := $(subst $(edk2_space),:,$(strip $(foreach p, \
++	$(subst :, ,$(call strip_quotes,$(CONFIG_EDK2_PACKAGES_PATH))), \
++	$(if $(filter /%,$(p)),$(p),$(abspath $(top)/$(p))))))
 +ifneq ($(EDK2_EXTRA_PACKAGES_PATH),)
 +export PACKAGES_PATH := $(EDK2_EXTRA_PACKAGES_PATH):$(PACKAGES_PATH)
 +endif
