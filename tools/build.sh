@@ -203,6 +203,13 @@ EDK2_UPSTREAM_GAPS=(
 	"TPM 1.2:no EFI_TCG2_PROTOCOL or EFI_TCG_PROTOCOL"
 	"variabili autenticate:store normale (gEfiVariableGuid)"
 )
+# Le lacune della ROM del package (edk2/OuroBiosPkg con patches/tianocore):
+# quelle di EDK2_UPSTREAM_TAG che il package e le patch portate non chiudono
+# ancora
+EDK2_PACKAGE_GAPS=(
+	"servizi runtime:SetVariable OuroRelocA: FAIL 0x8000000000000007"
+	"TPM 1.2:no EFI_TCG2_PROTOCOL or EFI_TCG_PROTOCOL"
+)
 # I font della schermata di aggiornamento del firmware (patches/edk2/0026):
 # tools/ui-font.py li fa da quelli di LVGL nell'albero di EDK2, dopo le patch
 UI_FONT_LVGL="LvglPkg/Library/LvglLib/lvgl/src/font"
@@ -2081,6 +2088,22 @@ edk2_package() {
 	done
 }
 
+# Le patch portate (patches/tianocore/series, la fase (c)) sull'albero di
+# TianoCore, per la ROM del package soltanto: dopo le ROM di EDK2_UPSTREAM_TAG
+# com'e'. Con i file modificati il Makefile di coreboot non lo riporta al
+# commit ("Working directory not clean; will not overwrite"), come l'EDK2 di
+# MrChromebox con patches/edk2; prepare_edk2_upstream lo rimette com'era
+edk2_upstream_carry() {
+	local d="${TREE}/${EDK2_UPSTREAM_SUBDIR}" p n=0
+	while read -r p; do
+		[ -f "${O}/patches/tianocore/${p}" ] || die "patches/tianocore/series: ${p} non c'e'"
+		git -C "${d}" apply --whitespace=nowarn "${O}/patches/tianocore/${p}" \
+			|| die "patches/tianocore/${p} non applica su ${EDK2_UPSTREAM_TAG}"
+		n=$((n + 1))
+	done < <(series tianocore)
+	echo "  ${n} patch di patches/tianocore/series su ${EDK2_UPSTREAM_TAG}"
+}
+
 # Una ROM per QEMU q35 con il payload di EDK2_UPSTREAM_TAG in build-$1
 # dell'albero; le altre righe ($2...) vanno nel suo defconfig. Torna 1 se
 # la build non riesce (il resto di edk2-upstream va avanti)
@@ -2161,9 +2184,10 @@ cmd_edk2_upstream() {
 	fi
 	# e una terza dal package del progetto fuori dall'albero (edk2/OuroBiosPkg,
 	# la fase (b)): il .dsc e l'.fdf di UefiPayloadPkg con le sue patch, Secure
-	# Boot e un FD di 12 MiB compresi
+	# Boot e un FD di 12 MiB compresi, sull'albero con le patch portate (c)
 	pkg="${TREE}/build-${q}-pkg"
 	say "edk2-upstream: la stessa da edk2/OuroBiosPkg, fuori dall'albero di EDK II"
+	edk2_upstream_carry
 	edk2_package
 	if ! edk2_upstream_rom "${q}-pkg" "CONFIG_EDK2_PLATFORM_DSC=\"OuroBiosPkg/OuroBiosPkg.dsc\"" \
 		"CONFIG_EDK2_PACKAGES_PATH=\"${WORK}/edk2-packages\""; then
@@ -2184,10 +2208,10 @@ cmd_edk2_upstream() {
 		--tpm "${pcrs}" ${sb:+--auth-rom "${sb}/coreboot.rom"} "${gaps[@]}" "${b}/coreboot.rom" \
 		|| bad+=("qualche passo non passa con ${EDK2_UPSTREAM_TAG} (${WORK}/edk2-upstream)")
 	if [ -n "${pkg}" ]; then
-		# gli stessi passi e le stesse lacune; con Secure Boot nel package,
-		# anche quelli delle variabili autenticate sulla stessa ROM
+		# gli stessi passi, le lacune del package; con Secure Boot nel
+		# package anche quelli delle variabili autenticate, sulla stessa ROM
 		gaps=()
-		for g in "${EDK2_UPSTREAM_GAPS[@]}"; do gaps+=(--gap "${g}"); done
+		for g in "${EDK2_PACKAGE_GAPS[@]}"; do gaps+=(--gap "${g}"); done
 		say "edk2-upstream: QEMU con edk2/OuroBiosPkg"
 		python3 "${O}/tools/qemu-smoke.py" --upstream --out "${WORK}/edk2-upstream/pkg" --reloc-test "${reloc}" \
 			--tpm "${pcrs}" --auth-rom "${pkg}/coreboot.rom" "${gaps[@]}" "${pkg}/coreboot.rom" \

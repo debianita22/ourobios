@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 2 Nov 2026 19:30:00 +0100
+Subject: [PATCH] UefiPayloadPkg/SmmStoreFvb: Format the store for
+ authenticated variables
+
+InitializeFvAndVariableStoreHeaders() formats an erased store with
+gEfiVariableGuid. The variable driver takes the format of the store it
+finds, so a payload built with SECURE_BOOT_ENABLE, on an erased store,
+says "Variable driver will work without auth variable support!" and
+Secure Boot has nowhere to keep PK, KEK, db and dbx.
+
+Format it with gEfiAuthenticatedVariableGuid, as the variable driver
+formats a store of its own (InitEmuNonVolatileVariableStore(), "for
+potential auth variable support"). Without AuthVariableLib the driver
+keeps working on such a store, with the header of the authenticated
+format; a store already formatted is left as it is, since
+ValidateFvHeader() takes both.
+
+TEST=coreboot for QEMU q35 with SMMSTORE and this tree, the payload
+built with SECURE_BOOT_ENABLE on an erased SMMSTORE: the store is
+authenticated and AuthVariableLib writes CustomMode, certdb and
+VendorKeysNv (ouroBIOS, tools/build.sh edk2-upstream).
+---
+ UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntimeDxe.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntimeDxe.c b/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntimeDxe.c
+index 63cb760..cf29719 100644
+--- a/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntimeDxe.c
++++ b/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntimeDxe.c
+@@ -154,10 +154,11 @@ InitializeFvAndVariableStoreHeaders (
+   //
+   VariableStoreHeader = (VARIABLE_STORE_HEADER *)((UINTN)Headers + FirmwareVolumeHeader->HeaderLength);
+   //
+-  // Should be gEfiVariableGuid as SMM doesn't authenticate, but userspace does
+-  // Caveat: SecureBoot requires gEfiAuthenticatedVariableGuid type of storage
++  // The authenticated format, as the variable driver formats a store of its
++  // own: it works on it also without authenticated variables, and Secure
++  // Boot needs it
+   //
+-  CopyGuid (&VariableStoreHeader->Signature, &gEfiVariableGuid);
++  CopyGuid (&VariableStoreHeader->Signature, &gEfiAuthenticatedVariableGuid);
+   VariableStoreHeader->Size   = PcdGet32 (PcdFlashNvStorageVariableSize) - FirmwareVolumeHeader->HeaderLength;
+   VariableStoreHeader->Format = VARIABLE_STORE_FORMATTED;
+   VariableStoreHeader->State  = VARIABLE_STORE_HEALTHY;
+-- 
+2.43.0
+

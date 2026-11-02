@@ -205,6 +205,19 @@ a clean tree to the pinned commit but leaves a modified one alone.
 | `lvglpkg/0016-0017` | the setup at 2880×1620: the fix of LVGL v9.6.0 to the circle mask, which for some radii from 922 px on wrote past its buffer (with the firmware screen at 2880×1620 of v1.3.10-rc3 the setup stopped on a page fault as it opened: a black screen), taken into the LVGL submodule of LvglLib; the orbs of the wallpaper, up to 1004 px of radius at that height, drawn without a circle mask, which only clipped pixels that their gradient leaves transparent |
 | `lvglpkg/0018` | the *Compatibility* category of the setup with its icon, crossing arrows in orange |
 
+## TianoCore EDK II, for the package
+
+`patches/tianocore/series` applies to upstream TianoCore EDK II at
+`EDK2_UPSTREAM_TAG` (`tools/build.sh`), for the image of
+[`edk2/OuroBiosPkg`](../edk2/README.md) only: step (c) of the move to
+TianoCore ([docs/edk2-migration.md](../docs/edk2-migration.md)). Each one
+closes a gap of the upstream payload and is to be proposed upstream; the
+images of the tag as it is are built before it is applied.
+
+| Patch | What it does |
+|---|---|
+| `tianocore/0001` | SmmStoreFvbRuntimeDxe formats an erased store with `gEfiAuthenticatedVariableGuid`, as the variable driver formats a store of its own: with `SECURE_BOOT_ENABLE`, the authenticated variables on a new SMMSTORE (MrChromebox's `2686758` changes the same line) |
+
 ## Optional patches
 
 `optional/` holds patches that never go into a release. `tools/build.sh --with

@@ -18,7 +18,8 @@
 #   3. i workflow (actionlint, se c'e')
 #   4. blobs/, assets/, legacy/ e i blob delle altre board (boards/*/blobs):
 #      i file corrispondono ai loro SHA256SUMS
-#   5. patches/series, patches/edk2/series e patches/lvglpkg/series: ogni
+#   5. patches/series, patches/edk2/series, patches/lvglpkg/series e
+#      patches/tianocore/series: ogni
 #      patch elencata c'e', ogni .patch della cartella e' elencata, ognuna e'
 #      una mail di git format-patch
 #   6. la chiave Optimus NVIDIA solo in blobs/opvk.inc (lista di byte con la
@@ -1706,6 +1707,7 @@ step "serie di patch"
 check_series patches
 check_series patches/edk2
 check_series patches/lvglpkg
+check_series patches/tianocore
 n=0
 for p in patches/optional/*.patch; do
 	[ -e "${p}" ] || continue
@@ -2142,7 +2144,7 @@ step "fine riga delle patch di EDK2"
 # nell'ultimo commit aveva righe CRLF e ora non ne ha piu' (nella CI i
 # file sono quelli del commit, e le patch le applica check.yml)
 n=0
-for f in patches/edk2/*.patch edk2/OuroBiosPkg/*.patch edk2/OuroBiosPkg/*.dec; do
+for f in patches/edk2/*.patch patches/tianocore/*.patch edk2/OuroBiosPkg/*.patch edk2/OuroBiosPkg/*.dec; do
 	git cat-file -e "HEAD:${f}" 2>/dev/null || continue
 	before="$(git show "HEAD:${f}" | grep -c $'\r$' || true)"
 	now="$(grep -c $'\r$' "${f}" || true)"
@@ -2152,7 +2154,7 @@ for f in patches/edk2/*.patch edk2/OuroBiosPkg/*.patch edk2/OuroBiosPkg/*.dec; d
 		n=$((n + 1))
 	fi
 done
-ok "patches/edk2 e edk2/OuroBiosPkg: ${n} file con le loro righe CRLF come nell'ultimo commit"
+ok "patches/edk2, patches/tianocore e edk2/OuroBiosPkg: ${n} file con le loro righe CRLF come nell'ultimo commit"
 
 step "commit pinnati dal mirror (pinned_commit di tools/build.sh)"
 # Un repository "upstream" che non ha piu' il commit pinnato (riscritto) e
