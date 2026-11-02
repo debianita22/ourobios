@@ -245,7 +245,7 @@ FormatAttemptStatus (
   if (Status < ARRAY_SIZE (Text)) {
     StrCpyS (Buffer, BufferSize / sizeof (CHAR16), Text[Status]);
   } else if (Status == 0x1800) {
-    StrCpyS (Buffer, BufferSize / sizeof (CHAR16), L"refused: image without region manifest");
+    StrCpyS (Buffer, BufferSize / sizeof (CHAR16), L"refused: invalid image or region manifest");
   } else if (Status == 0x1801) {
     StrCpyS (Buffer, BufferSize / sizeof (CHAR16), L"refused: capsule for another flash layout");
   } else if (Status == 0x1802) {

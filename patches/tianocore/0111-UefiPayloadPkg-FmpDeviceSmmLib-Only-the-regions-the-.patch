@@ -5,7 +5,7 @@ Subject: [PATCH] UefiPayloadPkg/FmpDeviceSmmLib: Only the regions the platform
  allows
 
 [ouroBIOS: patches/edk2/0045, without the files that TianoCore's tree
-does not have (tools/edk2-import.py): 1 in edk2/OuroBiosPkg]
+does not have (tools/edk2-import.py): 2 in edk2/OuroBiosPkg]
 
 The library writes every region that the manifest of a signed capsule
 names, through the SMMSTORE handler, which serves the whole flash on a
@@ -23,16 +23,21 @@ LAST_ATTEMPT_STATUS_SMMSTORE_INVALID_IMAGE. A list without names, the
 default, allows every region, as before. The platform allows the two
 slots and RW_MRC_CACHE, the regions of the capsules of ouroBIOS. A
 flash with both slots takes only a manifest with both, or refuses the
-image the same way.
+image the same way. The Firmware Update page of the setup names that
+status for all it covers now: an invalid image or region manifest.
 
 FmpDeviceSmmManifest.h includes UefiBaseType.h for EFI_STATUS, so that
 FmpDeviceSmmVboot.c builds in the host unit test too.
 
 TEST=The host unit tests (UefiPayloadPkg/Test/UefiPayloadPkgHostTest.dsc),
-19 of 19: the regions of the release capsules allowed in any order;
-SMMSTORE, SI_GBE, a prefix or a longer name refused; a list without
-names allowing every region; a flash with both slots taking only a
-manifest with both. FmpDxe built with the library (DEBUG, X64).
+19 of 19, on the host and in the CI of ouroBIOS: the regions of the
+release capsules allowed in any order; SMMSTORE, SI_GBE, a prefix or a
+longer name refused; a list without names allowing every region; a
+flash with both slots taking only a manifest with both.
+tools/qemu-update.py of ouroBIOS: a capsule naming SMMSTORE next to the
+slots, and one with the running slot alone, are refused with nothing
+written (QEMU's trace of the flash), 0x1800 in the ESRT; the release
+capsules are written as before.
 ---
 diff --git a/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c b/UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.c
 index 2e7c347..a707531 100644
