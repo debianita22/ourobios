@@ -49,6 +49,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   smoke test that need no setup of the project, each reported on its own
   (`qemu-smoke.py --upstream`; the workflow `edk2-upstream.yml`, by hand
   or on a push to `ci-edk2/**`). No release image changes.
+- [docs/edk2-migration.md](docs/edk2-migration.md): the 100 commits of
+  MrChromebox's branch over `edk2-stable202608`, each with what it
+  becomes in the move to TianoCore (the project's package, a patch to
+  carry, a fix to propose upstream, left out, or already upstream).
 - README and docs/m920x.md: the M920x releases are releases, as they
   have been since v1.4.0.
 

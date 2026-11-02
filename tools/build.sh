@@ -2066,6 +2066,9 @@ cmd_edk2_upstream() {
 		echo "CONFIG_PAYLOAD_EDK2=y"
 		echo "CONFIG_EDK2_REPO_OFFICIAL=y"
 		echo "CONFIG_EDK2_TAG_OR_REV=\"${EDK2_UPSTREAM_COMMIT}\""
+		# il payload DEBUG: i suoi messaggi (variabili, FTW, FVB, TPM) sulla
+		# seriale, che qemu-smoke.py --upstream riporta di un passo fallito
+		echo "CONFIG_EDK2_DEBUG=y"
 		echo "CONFIG_GENERIC_LINEAR_FRAMEBUFFER=y"
 		echo "CONFIG_DRIVERS_EMULATION_QEMU_XRES=1920"
 		echo "CONFIG_DRIVERS_EMULATION_QEMU_YRES=1080"
@@ -2084,6 +2087,8 @@ cmd_edk2_upstream() {
 		failure_report "edk2-upstream: build" "${b}/errors.log" "${b}/make.log"
 		die "edk2-upstream: build per q35 fallita (build-${q}/make.log nell'albero)"
 	fi
+	# le opzioni con cui il Makefile di coreboot ha costruito il payload
+	sed -n '/##### edk2 Build Summary #####/,/Toolchain:/p' "${b}/make.log" | head -n 60 || true
 	reloc="${WORK}/rt-reloc-test.efi"
 	efi_app "${O}/tools/efi/rt-reloc-test.c" "${reloc}" || die "edk2-upstream: tools/efi/rt-reloc-test.c non compila"
 	pcrs="${WORK}/tpm-pcr-test.efi"

@@ -512,6 +512,10 @@ coreboot's `payloads/external/edk2/Makefile` passes for the fork
 packages outside `UefiPayloadPkg`: `0001` (UiApp), `0004` (OvmfPkg
 SioBusDxe), `0007` (Ps2MouseDxe), `0019` (TcgDxe), `0032` (DxeCore),
 `0039` (Variable, MOR), `0041` (already in mainline: it goes).
+MrChromebox's branch itself is `edk2-stable202608` and 100 commits of his:
+[docs/edk2-migration.md](edk2-migration.md) lists them, each with what it
+becomes (39 to the package, 23 carried, 17 to propose upstream, 19 left
+out, 2 already in TianoCore's `master`).
 
 The order, each step tested in the QEMU smoke and update tests before any
 ROM: (a) the upstream payload built against coreboot at `EDK2_REPO_OFFICIAL`

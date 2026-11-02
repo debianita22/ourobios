@@ -1029,6 +1029,12 @@ def tpm_test(rom, efi, out, timeout, tpm2=False):
                 swtpm.kill()
 
 
+# Le righe della seriale che spiegano un passo di --upstream che non passa:
+# SMMSTORE in SMM (coreboot) e le variabili, FTW, FVB, TPM nel payload DEBUG
+UPSTREAM_DIAG = re.compile(r"smm ?store|SMMSTORE|Raw (read|write|clear)|Variable|FTW|Fvb|FVB|NvStorage|"
+                           r"ASSERT|ERROR|Error|TCG|Tcg|TPM|Tpm|SetVariable|Shell>", re.I)
+
+
 def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None):
     """--upstream: il payload di EDK II di TianoCore senza le patch del
     progetto (tools/build.sh edk2-upstream, la prima fase del passaggio a
@@ -1046,12 +1052,22 @@ def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None):
     def at():
         return "%3.0f s" % (time.monotonic() - t0)
 
-    def step(name, fn):
+    def step(name, fn, serials):
         try:
             lines.append("ok  %s  %s" % (at(), fn()))
         except Fail as e:
             failed.append(name)
             lines.append("NO  %s  %s: %s" % (at(), name, e))
+            # nella CI gli artifact non si leggono sempre: le righe della
+            # seriale che dicono perche' (coreboot in SMM, il payload DEBUG)
+            for serial in serials:
+                path = os.path.join(out, serial)
+                if not os.path.isfile(path):
+                    continue
+                with open(path, errors="replace") as f:
+                    hits = [l.rstrip() for l in f if UPSTREAM_DIAG.search(l)]
+                lines.append("    %s: %d righe utili%s" % (serial, len(hits), ", le ultime 40:" if hits else ""))
+                lines.extend("      " + l[:200] for l in hits[-40:])
 
     def shell_vars():
         sm = Smoke(rom, out, timeout)
@@ -1082,11 +1098,11 @@ def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None):
         finally:
             sm.close()
 
-    step("SMMSTORE", shell_vars)
+    step("SMMSTORE", shell_vars, ["serial-upstream-shell-1.log", "serial-upstream-shell-2.log"])
     if reloc_efi:
-        step("servizi runtime", lambda: reloc_test(rom, reloc_efi, out, timeout))
+        step("servizi runtime", lambda: reloc_test(rom, reloc_efi, out, timeout), ["serial-reloc.log"])
     if tpm:
-        step("TPM 1.2", lambda: tpm_test(rom, tpm, out, timeout))
+        step("TPM 1.2", lambda: tpm_test(rom, tpm, out, timeout), ["serial-tpm.log"])
     return lines, failed
 
 
