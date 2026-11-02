@@ -65,6 +65,19 @@ CONFIG_SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT=y
 # (patch 0207, edk2/0043): offerto solo con BIOS Lock acceso e "Clear memory
 # at power-on" su "When the OS asks"
 CONFIG_SMMSTORE_MOR_LOCK=y
+# Gli argomenti dei comandi SMMSTORE solo nella pagina dopo il blocco dati
+# del com buffer (patch 0215, edk2/0044): nessun indirizzo scelto dall'OS
+# letto da SMM. Con il GSMI chiuso all'OS (0211) e il reroute xHCI rifiutato
+# dopo la finalize (0213), la tabella WSMT (0214) dichiara i tre flag:
+# FIXED_COMM_BUFFERS, COMM_BUFFER_NESTED_PTR_PROTECTION (nessun puntatore
+# dentro gli argomenti: offset nel blocco, chiave del MOR lock in linea),
+# SYSTEM_RESOURCE_PROTECTION (dopo la finalize restano ACPI enable/disable,
+# SMMSTORE, i comandi vboot e il MOR lock: solo il flash).
+CONFIG_SMMSTORE_PARAMS_IN_COM_BUFFER=y
+CONFIG_ACPI_WSMT=y
+CONFIG_ACPI_WSMT_FIXED_COMM_BUFFERS=y
+CONFIG_ACPI_WSMT_COMM_BUFFER_NESTED_PTR_PROTECTION=y
+CONFIG_ACPI_WSMT_SYSTEM_RESOURCE_PROTECTION=y
 
 # CPU, EC, flash e PCIe come la 4.22
 CONFIG_ENABLE_VMX=y
@@ -77,8 +90,11 @@ CONFIG_PCIEXP_HOTPLUG=y
 # sorgenti di wake, cadute di alimentazione, reset del watchdog. Si legge
 # con elogtool (util/cbfstool di coreboot) o con tools/elog.py.
 CONFIG_ELOG=y
-# Anche l'entrata in S3 e S5, scritta dal gestore SMI prima di SLP_EN
+# Anche l'entrata in S3 e S5, scritta dal gestore SMI prima di SLP_EN; i
+# comandi GSMI dall'OS (aggiungi evento, cancella il registro) no: nessun
+# OS qui li usa, e qualunque codice in ring 0 potrebbe (patch 0211)
 CONFIG_ELOG_GSMI=y
+# CONFIG_ELOG_GSMI_APMC is not set
 # I codici POST anche in CMOS (byte 0x70-0x7A: senza tabella delle opzioni
 # CMOS sono liberi). Se un avvio o una ripresa da S3 si ferma, l'avvio dopo
 # mette nel registro l'ultimo codice e dove era arrivato (un dispositivo, o

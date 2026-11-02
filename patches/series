@@ -204,3 +204,8 @@
 0208-nb-intel-haswell-Default-the-graphics-stolen-memory-.patch
 0209-soc-intel-common-Option-to-set-the-SMM-BIOS-write-pr.patch
 0210-mb-lenovo-haswell-ec-lenovo-h8-gma-No-value-from-the.patch
+0211-drivers-elog-Option-to-answer-no-GSMI-command-from-t.patch
+0212-drivers-elog-gsmi-Refuse-parameters-that-point-into-.patch
+0213-sb-intel-lynxpoint-Route-all-ports-to-xHCI-only-befo.patch
+0214-acpi-Add-the-Windows-SMM-Security-Mitigations-Table-.patch
+0215-drivers-smmstore-Option-to-take-the-parameters-only-.patch

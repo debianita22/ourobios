@@ -1,0 +1,164 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 2 Nov 2026 16:52:57 +0100
+Subject: [PATCH] acpi: Add the Windows SMM Security Mitigations Table (WSMT)
+
+Windows reads the WSMT to decide which of its SMM related mitigations
+it can enable (Device Guard, Credential Guard with HVCI, virtualization
+based security): without the table, or with a flag off, the OS assumes
+the SMI handlers can be made to read or write arbitrary memory, and
+reports it in its device security page. The table is a header and one
+dword of flags, defined by Microsoft's "Windows SMM Security
+Mitigations Table" specification, revision 1.
+
+Add ACPI_WSMT and one option per flag, FIXED_COMM_BUFFERS,
+COMM_BUFFER_NESTED_PTR_PROTECTION and SYSTEM_RESOURCE_PROTECTION, each
+a claim about every SMI handler of the image, so that a platform sets
+only the ones it keeps after reading its handlers; the generator
+publishes the table with the flags set. Nothing is selected by
+default.
+
+TEST=Not built. With ACPI_WSMT and the three flags on, acpidump on the
+machine shows a WSMT of 40 bytes, revision 1, with "Protection Flags :
+00000007"; fwts wsmt passes; without ACPI_WSMT no table.
+---
+ src/acpi/Kconfig        | 35 +++++++++++++++++++++++++++++++++++
+ src/acpi/acpi.c         | 28 ++++++++++++++++++++++++++++
+ src/include/acpi/acpi.h | 15 +++++++++++++++
+ 3 files changed, 78 insertions(+)
+
+diff --git a/src/acpi/Kconfig b/src/acpi/Kconfig
+index 703eaf6e..4b605d32 100644
+--- a/src/acpi/Kconfig
++++ b/src/acpi/Kconfig
+@@ -100,6 +100,41 @@ config ACPI_LPIT
+ 	help
+ 	  Selected by platforms that support and fill Intel Low Power Idle Table.
+ 
++config ACPI_WSMT
++	bool "Publish the Windows SMM Security Mitigations Table (WSMT)"
++	depends on HAVE_ACPI_TABLES && HAVE_SMI_HANDLER
++	help
++	  Publish a WSMT table with the flags below. Each flag is a claim
++	  about every SMI handler of the image, and Windows enables SMM
++	  related mitigations on the strength of them: set a flag only once
++	  the handlers have been read against its definition in Microsoft's
++	  "Windows SMM Security Mitigations Table" specification.
++
++config ACPI_WSMT_FIXED_COMM_BUFFERS
++	bool "FIXED_COMM_BUFFERS: SMI handlers use only fixed communication buffers"
++	depends on ACPI_WSMT
++	help
++	  Every SMI handler takes its input and output only from buffers at
++	  fixed addresses, outside SMRAM, known since boot (as the SMMSTORE
++	  com buffer in CBMEM with SMMSTORE_PARAMS_IN_COM_BUFFER), never from
++	  an address that the caller passes in a register.
++
++config ACPI_WSMT_COMM_BUFFER_NESTED_PTR_PROTECTION
++	bool "COMM_BUFFER_NESTED_PTR_PROTECTION: pointers inside the buffers are checked"
++	depends on ACPI_WSMT_FIXED_COMM_BUFFERS
++	help
++	  A pointer found inside a communication buffer is checked to point
++	  into a fixed buffer or outside SMRAM before the handler follows it.
++
++config ACPI_WSMT_SYSTEM_RESOURCE_PROTECTION
++	bool "SYSTEM_RESOURCE_PROTECTION: no SMI reconfigures system resources"
++	depends on ACPI_WSMT
++	help
++	  No SMI handler lets the OS reconfigure system resources (memory
++	  maps, IOMMU, PCI resources, the routing of devices) outside the
++	  architectural ACPI interfaces: the handlers that do so for the
++	  firmware refuse once the chipset is finalized.
++
+ config ACPI_GTDT
+ 	bool
+ 	depends on HAVE_ACPI_TABLES
+diff --git a/src/acpi/acpi.c b/src/acpi/acpi.c
+index 5288b136..6dd578a0 100644
+--- a/src/acpi/acpi.c
++++ b/src/acpi/acpi.c
+@@ -1345,6 +1345,31 @@ static void acpi_create_iort(acpi_header_t *header, void *unused)
+ 	header->length = current - (unsigned long)iort;
+ }
+ 
++/*
++ * The flags are claims about every SMI handler of the image: a platform
++ * sets only the ones its handlers keep, after reading them. An OS that
++ * finds the table enables its SMM-related mitigations (Windows: Device
++ * Guard, Credential Guard with HVCI, VBS) on the strength of the flags.
++ */
++static void acpi_create_wsmt(acpi_header_t *header, void *unused)
++{
++	if (!CONFIG(ACPI_WSMT))
++		return;
++
++	acpi_wsmt_t *wsmt = (acpi_wsmt_t *)header;
++
++	if (acpi_fill_header(header, "WSMT", WSMT, sizeof(acpi_wsmt_t)) != CB_SUCCESS)
++		return;
++
++	wsmt->protection_flags = 0;
++	if (CONFIG(ACPI_WSMT_FIXED_COMM_BUFFERS))
++		wsmt->protection_flags |= ACPI_WSMT_FIXED_COMM_BUFFERS;
++	if (CONFIG(ACPI_WSMT_COMM_BUFFER_NESTED_PTR_PROTECTION))
++		wsmt->protection_flags |= ACPI_WSMT_COMM_BUFFER_NESTED_PTR_PROTECTION;
++	if (CONFIG(ACPI_WSMT_SYSTEM_RESOURCE_PROTECTION))
++		wsmt->protection_flags |= ACPI_WSMT_SYSTEM_RESOURCE_PROTECTION;
++}
++
+ static void acpi_create_wdat(acpi_header_t *header, void *unused)
+ {
+ 	if (!CONFIG(ACPI_WDAT_WDT))
+@@ -1622,6 +1647,7 @@ static unsigned long write_acpi_tables(const unsigned long start)
+ 		{ acpi_create_pptt, NULL, sizeof(acpi_pptt_t) },
+ 		{ acpi_create_iort, NULL, sizeof(acpi_iort_t) },
+ 		{ acpi_create_wdat, NULL, sizeof(acpi_wdat_t) },
++		{ acpi_create_wsmt, NULL, sizeof(acpi_wsmt_t) },
+ 		{ acpi_create_vfct, NULL, sizeof(acpi_vfct_t)},
+ 	};
+ 
+@@ -2045,6 +2071,8 @@ int get_acpi_table_revision(enum acpi_tables table)
+ 		return 6;
+ 	case WDAT:
+ 		return 1;
++	case WSMT:
++		return 1;
+ 	default:
+ 		return -1;
+ 	}
+diff --git a/src/include/acpi/acpi.h b/src/include/acpi/acpi.h
+index fa3dea4b..c5c235bc 100644
+--- a/src/include/acpi/acpi.h
++++ b/src/include/acpi/acpi.h
+@@ -106,6 +106,7 @@ enum acpi_tables {
+ 	TCPA,   /* Trusted Computing Platform Alliance Table */
+ 	TPM2,   /* Trusted Platform Module 2.0 Table */
+ 	WDAT,   /* Watchdog Action Table */
++	WSMT,   /* Windows SMM Security Mitigations Table */
+ 	XSDT,   /* Extended System Description Table */
+ 	/* Additional proprietary tables used by coreboot */
+ 	CRAT,   /* Component Resource Attribute Table */
+@@ -1534,6 +1535,20 @@ typedef struct acpi_table_wdat {
+ 	u32 entries;
+ } __packed acpi_wdat_t;
+ 
++/*
++ * WSMT (Windows SMM Security Mitigations Table): what the SMI handlers
++ * guarantee, as Microsoft's "Windows SMM Security Mitigations Table"
++ * specification (revision 1) defines the three flags.
++ */
++#define ACPI_WSMT_FIXED_COMM_BUFFERS			(1 << 0)
++#define ACPI_WSMT_COMM_BUFFER_NESTED_PTR_PROTECTION	(1 << 1)
++#define ACPI_WSMT_SYSTEM_RESOURCE_PROTECTION		(1 << 2)
++
++typedef struct acpi_wsmt {
++	acpi_header_t header;
++	u32 protection_flags;
++} __packed acpi_wsmt_t;
++
+ uintptr_t get_coreboot_rsdp(void);
+ 
+ unsigned long fw_cfg_acpi_tables(unsigned long start);
+-- 
+2.43.0
+

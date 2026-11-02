@@ -1,0 +1,70 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 2 Nov 2026 16:50:27 +0100
+Subject: [PATCH] drivers/elog: Option to answer no GSMI command from the OS
+
+ELOG_GSMI gives two things: the SMI handler logs the entries into S3 and
+S5, the wake sources and the power button on its own, and the OS can
+send commands through the APMC port (APM_CNT_ELOG_GSMI): add an event,
+clear the log, log an S0ix entry or exit. Linux's gsmi driver uses them
+on Google boards. Elsewhere nothing does, while any code in ring 0 can
+clear the event log of the firmware or fill it, and the handler reads
+the parameters at the pointers the caller passes.
+
+Add ELOG_GSMI_APMC, default y, so that nothing changes for the boards
+that have it: without it gsmi_exec() answers every command as
+unsupported, in one place for every SMI handler that calls it, and the
+logging of the SMI handler stays.
+
+TEST=Not built. With the option off, on a Lynx Point board: the event
+log still has the S3 entry and the wake source of a suspend cycle, and
+"outb 0xef, 0xb2" from the OS with the GSMI handshake in EAX returns
+0x83 (unsupported) instead of 0x7f.
+---
+ src/drivers/elog/Kconfig | 14 ++++++++++++++
+ src/drivers/elog/gsmi.c  |  4 ++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/src/drivers/elog/Kconfig b/src/drivers/elog/Kconfig
+index 19b33318..a26966b1 100644
+--- a/src/drivers/elog/Kconfig
++++ b/src/drivers/elog/Kconfig
+@@ -33,6 +33,20 @@ config ELOG_GSMI
+ 	  available with CONFIG_GOOGLE_GSMI and can be used to write
+ 	  kernel reset/shutdown messages to the event log.
+ 
++config ELOG_GSMI_APMC
++	bool "GSMI commands from the OS through the APMC port"
++	depends on ELOG_GSMI
++	default y
++	help
++	  Answer the GSMI commands that the OS sends to the SMI handler
++	  (APM_CNT_ELOG_GSMI): add an event, clear the log, log an S0ix
++	  entry or exit. The Linux driver (CONFIG_GOOGLE_GSMI) uses them on
++	  Google boards; any other code that runs in ring 0 can use them too,
++	  and clear the log or fill it. Without this option gsmi_exec() answers
++	  every command as unsupported, and the SMI handler keeps logging on
++	  its own: the entries into S3 and S5, the wake sources, the power
++	  button. Say N on a board whose OS has no use for the interface.
++
+ config ELOG_BOOT_COUNT
+ 	bool "Maintain a monotonic boot number in CMOS"
+ 	default n
+diff --git a/src/drivers/elog/gsmi.c b/src/drivers/elog/gsmi.c
+index 36940f1c..2b17cc81 100644
+--- a/src/drivers/elog/gsmi.c
++++ b/src/drivers/elog/gsmi.c
+@@ -51,6 +51,10 @@ u32 gsmi_exec(u8 command, u32 *param)
+ 	struct gsmi_clear_eventlog_param *cel;
+ 	u32 ret = GSMI_RET_UNSUPPORTED;
+ 
++	/* The SMI handler logs on its own; the OS gets no command */
++	if (!CONFIG(ELOG_GSMI_APMC))
++		return ret;
++
+ 	switch (command) {
+ 	case GSMI_CMD_HANDSHAKE_TYPE:
+ 		/* Used by kernel to verify basic SMI functionality */
+-- 
+2.43.0
+

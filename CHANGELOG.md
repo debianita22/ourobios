@@ -41,7 +41,23 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `iasl -w3` (coreboot builds at `-w1`, warnings as errors) and prints
   the count and the kinds of warnings of that level, with the whole
   output in `build-<variant>/dsdt-w3.log`; not fatal yet.
-- README: the specifications the firmware is built against, as the pinned
+- **WSMT**: both boards publish the Windows SMM Security Mitigations
+  Table with its three flags (patch 0214), after the SMI handlers were
+  read against them: the parameters of every SMMSTORE command are taken
+  only from the page after the data block of the com buffer, fixed
+  since boot, where the payload now passes them from the first command
+  (0215, `edk2/0044`; a command with them elsewhere fails and the
+  console says so); the GSMI commands of the OS (add an event, clear
+  the event log) are answered as unsupported (0211), as no OS on these
+  boards uses them and any ring 0 code could clear the log, and the
+  pointers they follow are checked against SMRAM anyway (0212); on the
+  W541 the xHCI rerouting SMI is refused once the chipset is finalized
+  (0213). After the finalize the SMI handlers answer the ACPI enable
+  and disable commands, SMMSTORE, the vboot slot commands and the MOR
+  lock: all of them write the flash and nothing else. Windows reads the
+  table for Device Guard, Credential Guard with HVCI and VBS; `fwts
+  wsmt` and `acpidump` show it.
+, as the pinned
   trees declare them, and the known limits of the two machines (Windows
   11 on the W541, DMA protection, WSMT and HSTI, the MOR lock, XMP).
 

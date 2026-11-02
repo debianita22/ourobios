@@ -1,0 +1,138 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 2 Nov 2026 16:54:02 +0100
+Subject: [PATCH] drivers/smmstore: Option to take the parameters only from the
+ com buffer page
+
+The SMI handler reads the parameters of a command (block, offset and
+size of a read, a write or a clear; the key of the MOR lock) where EBX
+points, anywhere outside SMRAM. The data already goes through the com
+buffer in CBMEM, at an address fixed since boot, and the loader gives
+that entry a page more than the data block, where the EDK2 payload
+passes the parameters at runtime (the boot loader of macOS moves the
+runtime services data, and the page is runtime MMIO). What is still
+read at an address the caller chooses is the parameter structure
+itself, which WSMT's FIXED_COMM_BUFFERS says an SMI handler never does.
+
+Add SMMSTORE_PARAMS_IN_COM_BUFFER: the SMM runtime learns the size of
+the page after the block (smm_get_smmstore_com_args()), and
+range_check() refuses parameters outside it, with a line on the
+console. The payload has to pass them there at boot time too, which
+EDK2's SmmStoreLib does with the matching change; without the option
+nothing changes.
+
+TEST=Not built. With the option and the matching payload: the setup
+saves its settings, Secure Boot keys enroll at the first boot, a
+capsule installs, and Linux writes a variable through efivarfs; a
+command with its parameters on the stack of the caller returns
+SMMSTORE_RET_FAILURE and logs the address.
+---
+ src/cpu/x86/smm/smm_module_handler.c |  6 ++++++
+ src/cpu/x86/smm/smm_module_loader.c  |  1 +
+ src/drivers/smmstore/Kconfig         | 14 ++++++++++++++
+ src/drivers/smmstore/smi.c           | 13 +++++++++++++
+ src/include/cpu/x86/smm.h            |  3 +++
+ 5 files changed, 37 insertions(+)
+
+diff --git a/src/cpu/x86/smm/smm_module_handler.c b/src/cpu/x86/smm/smm_module_handler.c
+index abec3c97..83307abc 100644
+--- a/src/cpu/x86/smm/smm_module_handler.c
++++ b/src/cpu/x86/smm/smm_module_handler.c
+@@ -75,6 +75,12 @@ void smm_get_smmstore_com_buffer(uintptr_t *base, size_t *size)
+ 	*size = smm_runtime.smmstore_com_buffer_size;
+ }
+ 
++void smm_get_smmstore_com_args(uintptr_t *base, size_t *size)
++{
++	*base = smm_runtime.smmstore_com_buffer_base + smm_runtime.smmstore_com_buffer_size;
++	*size = smm_runtime.smmstore_com_args_size;
++}
++
+ #if CONFIG(SMM_OPAL_S3_SCRATCH_CBMEM)
+ void smm_get_opal_s3_scratch_buffer(uintptr_t *base, size_t *size)
+ {
+diff --git a/src/cpu/x86/smm/smm_module_loader.c b/src/cpu/x86/smm/smm_module_loader.c
+index f0fd2246..472e5a67 100644
+--- a/src/cpu/x86/smm/smm_module_loader.c
++++ b/src/cpu/x86/smm/smm_module_loader.c
+@@ -378,6 +378,7 @@ static void setup_smihandler_params(struct smm_runtime *mod_params,
+ 		}
+ 		mod_params->smmstore_com_buffer_base = (uintptr_t)ptr;
+ 		mod_params->smmstore_com_buffer_size = info.block_size;
++		mod_params->smmstore_com_args_size = 4 * KiB;
+ 	}
+ 
+ #if CONFIG(SMM_OPAL_S3_SCRATCH_CBMEM)
+diff --git a/src/drivers/smmstore/Kconfig b/src/drivers/smmstore/Kconfig
+index 65666fff..f65af669 100644
+--- a/src/drivers/smmstore/Kconfig
++++ b/src/drivers/smmstore/Kconfig
+@@ -29,6 +29,20 @@ config SMMSTORE_BLOCK_SIZE
+ 	  Sets the logical block size used by the SMMSTORE protocol. This is
+ 	  an internal SoC or board policy value, not a user-visible option.
+ 
++config SMMSTORE_PARAMS_IN_COM_BUFFER
++	bool "The parameters of a command only in the page after the com buffer"
++	help
++	  The SMI handler reads the parameters of a command (the block, the
++	  offset and the size of a read, a write or a clear; the key of the
++	  MOR lock) where EBX points. Normally anywhere outside SMRAM; with
++	  this option only in the page that follows the data block of the
++	  com buffer in CBMEM, which the coreboot table reports to the
++	  payload as part of the com buffer, so that every address the
++	  handler reads is fixed since boot (WSMT FIXED_COMM_BUFFERS). The
++	  payload must put them there: EDK2's SmmStoreLib does, when the com
++	  buffer has the room, from the patch that makes it do so at boot
++	  time too. A command whose parameters are elsewhere fails.
++
+ config SMMSTORE_MOR_LOCK
+ 	bool "TCG Secure MOR lock (MemoryOverwriteRequestControlLock)"
+ 	depends on DRIVERS_EFI_VARIABLE_STORE && SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT
+diff --git a/src/drivers/smmstore/smi.c b/src/drivers/smmstore/smi.c
+index 7aa72689..ebfce2a3 100644
+--- a/src/drivers/smmstore/smi.c
++++ b/src/drivers/smmstore/smi.c
+@@ -27,6 +27,19 @@ static int range_check(void *start, size_t size)
+ 	if (smm_points_to_smram(start, size))
+ 		return -1;
+ 
++	/* Only in the page after the data block: a fixed address since boot */
++	if (CONFIG(SMMSTORE_PARAMS_IN_COM_BUFFER)) {
++		uintptr_t base, p = (uintptr_t)start;
++		size_t len;
++
++		smm_get_smmstore_com_args(&base, &len);
++		if (!len || p < base || size > len || p - base > len - size) {
++			printk(BIOS_WARNING, "SMMSTORE: parameters at %p not in the com buffer page\n",
++			       start);
++			return -1;
++		}
++	}
++
+ 	return 0;
+ }
+ 
+diff --git a/src/include/cpu/x86/smm.h b/src/include/cpu/x86/smm.h
+index 22477542..a68f0a6e 100644
+--- a/src/include/cpu/x86/smm.h
++++ b/src/include/cpu/x86/smm.h
+@@ -102,6 +102,8 @@ struct smm_runtime {
+ #endif
+ 	uintptr_t smmstore_com_buffer_base;
+ 	size_t smmstore_com_buffer_size;
++	/* The page after the data block, where the payload passes the parameters */
++	size_t smmstore_com_args_size;
+ #if CONFIG(SMM_OPAL_S3_SCRATCH_CBMEM)
+ 	uintptr_t opal_s3_scratch_base;
+ 	size_t opal_s3_scratch_size;
+@@ -260,6 +262,7 @@ bool smm_pci_resource_store_fill_resources(struct smm_pci_resource_info *slots,
+ void smm_pci_resource_store_init(struct smm_runtime *smm_runtime);
+ 
+ void smm_get_smmstore_com_buffer(uintptr_t *base, size_t *size);
++void smm_get_smmstore_com_args(uintptr_t *base, size_t *size);
+ #if CONFIG(SMM_OPAL_S3_SCRATCH_CBMEM)
+ void smm_get_opal_s3_scratch_buffer(uintptr_t *base, size_t *size);
+ #endif
+-- 
+2.43.0
+

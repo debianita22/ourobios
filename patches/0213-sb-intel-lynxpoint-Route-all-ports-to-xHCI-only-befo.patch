@@ -1,0 +1,42 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 2 Nov 2026 16:50:46 +0100
+Subject: [PATCH] sb/intel/lynxpoint: Route all ports to xHCI only before the
+ finalize
+
+APM_CNT_ROUTE_ALL_XHCI switches every USB port from the EHCI
+controllers to the xHCI one from SMM. Ramstage asks for it at the
+init of the xHCI device, before the finalize; after it, the only code
+that can write the APMC port is the OS, and nothing in the OS should
+move the ports behind the drivers' back. Refuse the command once the
+chipset is finalized, as the finalize itself is refused a second time.
+Without it the SMI handler is a way for ring 0 to reconfigure a system
+resource outside the ACPI methods, which the WSMT table would promise
+is not there.
+
+TEST=Not built. On a W541: the ports still route to xHCI at boot
+(lsusb -t shows the devices under the xHCI root hubs), and "outb 0xca,
+0xb2" from the OS logs the refusal on the console and changes nothing.
+---
+ src/southbridge/intel/lynxpoint/smihandler.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/southbridge/intel/lynxpoint/smihandler.c b/src/southbridge/intel/lynxpoint/smihandler.c
+index fb9ba87b..8e009844 100644
+--- a/src/southbridge/intel/lynxpoint/smihandler.c
++++ b/src/southbridge/intel/lynxpoint/smihandler.c
+@@ -368,6 +368,11 @@ static void southbridge_smi_apmc(void)
+ 		break;
+ #if !CONFIG(SOUTHBRIDGE_INTEL_WILDCATPOINT)
+ 	case APM_CNT_ROUTE_ALL_XHCI:
++		/* Ramstage asks for it at device init; after the finalize only the OS could */
++		if (chipset_finalized) {
++			printk(BIOS_WARNING, "SMI#: xHCI route all refused after the finalize\n");
++			break;
++		}
+ 		usb_xhci_route_all();
+ 		break;
+ #endif
+-- 
+2.43.0
+

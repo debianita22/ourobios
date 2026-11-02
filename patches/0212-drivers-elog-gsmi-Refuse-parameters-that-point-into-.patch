@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 2 Nov 2026 16:50:27 +0100
+Subject: [PATCH] drivers/elog/gsmi: Refuse parameters that point into SMRAM
+
+gsmi_exec() reads the set-event-log parameters, the type 1 event they
+point to and the clear-event-log parameters at the addresses the caller
+gives, checking only for NULL. A pointer into SMRAM makes the handler
+read SMRAM: with the set-event-log command the type and instance read
+there go into the event log, which the OS reads back, 6 bytes of SMRAM
+per call. Check each of the three with smm_points_to_smram(), as the
+SMMSTORE handler does, and answer GSMI_RET_INVALID_PARAMETER.
+
+TEST=Not built. From the OS, GSMI set-event-log with a data pointer
+inside TSEG returns 0x82 and adds nothing to the event log; with a
+buffer in RAM it logs the event as before.
+---
+ src/drivers/elog/gsmi.c | 13 ++++++++++---
+ 1 file changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/src/drivers/elog/gsmi.c b/src/drivers/elog/gsmi.c
+index 2b17cc81..3c5a030e 100644
+--- a/src/drivers/elog/gsmi.c
++++ b/src/drivers/elog/gsmi.c
+@@ -1,6 +1,7 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
+ #include <console/console.h>
++#include <cpu/x86/smm.h>
+ #include <elog.h>
+ #include <stdint.h>
+ 
+@@ -65,8 +66,10 @@ u32 gsmi_exec(u8 command, u32 *param)
+ 	case GSMI_CMD_SET_EVENT_LOG:
+ 		/* Look for a type1 event */
+ 		sel = (struct gsmi_set_eventlog_param *)(uintptr_t)(*param);
+-		if (!sel)
++		if (!sel || smm_points_to_smram(sel, sizeof(*sel))) {
++			ret = GSMI_RET_INVALID_PARAMETER;
+ 			break;
++		}
+ 
+ 		/* Make sure the input is usable */
+ 		if (sel->type != 1 && sel->data_ptr != 0 &&
+@@ -75,8 +78,10 @@ u32 gsmi_exec(u8 command, u32 *param)
+ 
+ 		/* Event structure within the data buffer */
+ 		type1 = (struct gsmi_set_eventlog_type1 *)(uintptr_t)(sel->data_ptr);
+-		if (!type1)
++		if (!type1 || smm_points_to_smram(type1, sizeof(*type1))) {
++			ret = GSMI_RET_INVALID_PARAMETER;
+ 			break;
++		}
+ 
+ 		printk(BIOS_DEBUG, "GSMI Set Event Log "
+ 		       "(type=0x%x instance=0x%x)\n",
+@@ -96,8 +101,10 @@ u32 gsmi_exec(u8 command, u32 *param)
+ 	case GSMI_CMD_CLEAR_EVENT_LOG:
+ 		/* Get parameter buffer even though we don't use it */
+ 		cel = (struct gsmi_clear_eventlog_param *)(uintptr_t)(*param);
+-		if (!cel)
++		if (!cel || smm_points_to_smram(cel, sizeof(*cel))) {
++			ret = GSMI_RET_INVALID_PARAMETER;
+ 			break;
++		}
+ 
+ 		printk(BIOS_DEBUG, "GSMI Clear Event Log (%u%% type=%u)\n",
+ 		       cel->percentage, cel->data_type);
+-- 
+2.43.0
+

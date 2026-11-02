@@ -60,14 +60,28 @@ CONFIG_SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT=y
 # (patch 0207, edk2/0043): offerto solo con BIOS Lock acceso e "Clear memory
 # at power-on" su "When the OS asks"
 CONFIG_SMMSTORE_MOR_LOCK=y
+# Gli argomenti dei comandi SMMSTORE solo nella pagina dopo il blocco dati
+# del com buffer (patch 0215, edk2/0044): nessun indirizzo scelto dall'OS
+# letto da SMM. Con il GSMI chiuso all'OS (0211) la tabella WSMT (0214) dichiara i tre flag:
+# FIXED_COMM_BUFFERS, COMM_BUFFER_NESTED_PTR_PROTECTION (nessun puntatore
+# dentro gli argomenti: offset nel blocco, chiave del MOR lock in linea),
+# SYSTEM_RESOURCE_PROTECTION (dopo la finalize restano ACPI enable/disable,
+# SMMSTORE, i comandi vboot e il MOR lock: solo il flash).
+CONFIG_SMMSTORE_PARAMS_IN_COM_BUFFER=y
+CONFIG_ACPI_WSMT=y
+CONFIG_ACPI_WSMT_FIXED_COMM_BUFFERS=y
+CONFIG_ACPI_WSMT_COMM_BUFFER_NESTED_PTR_PROTECTION=y
+CONFIG_ACPI_WSMT_SYSTEM_RESOURCE_PROTECTION=y
 
 # PCIe: Resizable BAR per una scheda grafica sul riser, come nella build
 # coreboot che girava sul M920x
 CONFIG_PCIEXP_SUPPORT_RESIZABLE_BARS=y
 
-# Registro degli eventi nel flash (RW_ELOG), anche l'entrata in S3 e S5
+# Registro degli eventi nel flash (RW_ELOG), anche l'entrata in S3 e S5;
+# i comandi GSMI dall'OS no (patch 0211), come sul W541
 CONFIG_ELOG=y
 CONFIG_ELOG_GSMI=y
+# CONFIG_ELOG_GSMI_APMC is not set
 # I codici POST anche in CMOS (byte 0x70-0x7A, liberi nella cmos.layout
 # della board): l'avvio dopo un blocco mette nel registro dove era arrivato
 CONFIG_CMOS_POST=y
