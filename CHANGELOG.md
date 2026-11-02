@@ -51,6 +51,27 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   of Linux IMA (patch 0202); the measured boot log starts before vboot's
   first measurement (patch 0204), and the pre-RAM log stays inside its
   2 KiB of cache-as-RAM (patch 0203).
+- **The lock of TCG MOR** (`MemoryOverwriteRequestControlLock`, revision
+  2 of the Platform Reset Attack Mitigation specification, which Windows
+  Credential Guard uses), on both boards, with *Clear memory at power-on*
+  on *When the OS asks* and *BIOS Lock* on. coreboot keeps the lock in
+  SMM (patch 0207): while the OS holds it, every write of the variable
+  store that would clear the OS's request to clear the memory is refused,
+  judged on the store as the flash would be after the write with the
+  same reader that decides the clearing at boot, so code that runs in
+  the OS after the lock cannot drop the request and reset to read the
+  memory. The lock lasts one boot, survives suspend, takes a key or
+  none, and a wrong key locks it until the next boot. The variable
+  driver of the payload offers it through a protocol of the platform
+  (`edk2/0043`); with *BIOS Lock* off, where the OS can write the flash
+  without SMM, it stays unsupported, as before. The SMM stack grows to
+  4 KiB for the walk of the store. Tried on the M920x from Linux: the
+  lock taken, other variables still written, the clearing of the request
+  refused, the memory cleared at the next boot and the lock reset
+  ([docs/testing.md](docs/testing.md#memory-and-training-cache-mem),
+  MEM-09). Two test builds before it hung the machine in SMM at the
+  first protected write: the check's region device was recovered with
+  `container_of()` from a copy, then chained to itself as a root.
 - `tools/update.py stage`, `rollback` and `other-slot` warn of the disks
   an update will lock: BitLocker (unaffected with Secure Boot on, which
   seals to PCR 7 and 11), and LUKS2 volumes sealed by systemd-cryptenroll
