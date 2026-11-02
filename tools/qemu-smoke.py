@@ -489,6 +489,29 @@ def tftp_requests(pcap):
     return names
 
 
+def auth_convert(flash):
+    """Lo store di SMMSTORE nel flash di QEMU come lo formatta il payload di
+    MrChromebox (2686758): la testata con gEfiAuthenticatedVariableGuid e
+    nessuna variabile (il resto dello store a 0xFF). Il firmware volume, il
+    work space di FTW e lo spare restano come sono."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import update                           # noqa: E402 (tools/update.py)
+    with open(flash, "r+b") as f:
+        data = bytearray(f.read())
+        areas = update.fmap_areas(bytes(data))
+        if not areas or "SMMSTORE" not in areas:
+            raise Fail("la ROM non ha una regione SMMSTORE")
+        off = areas["SMMSTORE"][0]
+        if data[off + 0x28:off + 0x2c] != b"_FVH":
+            raise Fail("SMMSTORE: niente firmware volume, lo store non c'e' ancora")
+        hlen = struct.unpack_from("<H", data, off + 0x30)[0]
+        vsize = struct.unpack_from("<I", data, off + hlen + 16)[0]
+        data[off + hlen:off + hlen + 16] = update.AUTH_VAR_GUID
+        data[off + hlen + 28:off + hlen + vsize] = b"\xff" * (vsize - 28)
+        f.seek(0)
+        f.write(data)
+
+
 def store_copies(flash, name=VAR_NAME, guid=VAR_GUID):
     """Le copie di una variabile (quella di prova, se non si dice) nello
     store di SMMSTORE della ROM: [(stato, attributi, dati)]."""
@@ -1062,8 +1085,10 @@ def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None, auth_rom=None, gap
     progetto, iPXE, CSMWrap o EnrollDefaultKeys: coreboot arriva al payload,
     senza dischi il payload arriva alla Shell e setvar scrive in SMMSTORE
     (due avvii, come il passo 6), poi i servizi runtime spostati (passo 9),
-    il TPM 1.2 con il log (passo 11) e, con auth_rom (il payload con
-    SECURE_BOOT_ENABLE), lo store autenticato. Ogni passo per conto suo: uno
+    il TPM 1.2 con il log (passo 11), uno store gia' autenticato (come lo
+    formatta il payload di oggi) che deve restare tale e, con auth_rom (il
+    payload con SECURE_BOOT_ENABLE), lo store che formatta su un SMMSTORE
+    vuoto e AuthVariableLib su uno gia' autenticato. Ogni passo per conto suo: uno
     che non passa non nasconde gli altri, che e' quel che la prova deve
     dire. gaps: {passo: testo} dei passi che non passano per una lacuna nota
     del payload (docs/edk2-migration.md), con testo nel messaggio (vuoto:
@@ -1153,28 +1178,76 @@ def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None, auth_rom=None, gap
         finally:
             sm.close()
 
+    def to_shell(sm, tag):
+        sm.boot(tag)
+        sm.wait("coreboot non e' arrivato al payload (\"Jumping to boot code\" nella seriale)",
+                lambda: (sm.alive(), "Jumping to boot code" in sm.serial_text())[1], timeout)
+        sm.wait("il payload non e' arrivato al prompt della Shell UEFI (\"Shell>\" nella seriale)",
+                lambda: (sm.alive(), "Shell>" in sm.serial_text())[1], timeout)
+
+    def auth_lib_vars(flash, where):
+        found, _, info = store_vars(flash, header=True)
+        if not info["auth"]:
+            raise Fail("%s il payload ha formattato uno store normale (gEfiVariableGuid): il driver delle "
+                       "variabili lavora senza variabili autenticate, e Secure Boot non ha dove scrivere PK, "
+                       "KEK, db e dbx" % where)
+        names = {v["name"] for v in found if v["state"] in VAR_VALID}
+        missing = [n for n in AUTH_LIB_VARS if n not in names]
+        if missing:
+            raise Fail("%s lo store e' autenticato, ma AuthVariableLib non vi ha scritto %s"
+                       % (where, ", ".join(missing)))
+
     def auth_vars():
         # un solo avvio fino alla Shell, sull'SMMSTORE vuoto della ROM
         sm = Smoke(auth_rom, out, timeout)
         try:
-            sm.boot("upstream-auth")
-            sm.wait("coreboot non e' arrivato al payload (\"Jumping to boot code\" nella seriale)",
-                    lambda: (sm.alive(), "Jumping to boot code" in sm.serial_text())[1], timeout)
-            sm.wait("il payload non e' arrivato al prompt della Shell UEFI (\"Shell>\" nella seriale)",
-                    lambda: (sm.alive(), "Shell>" in sm.serial_text())[1], timeout)
+            to_shell(sm, "upstream-auth")
             sm.shot("upstream-auth")
             sm.halt()
-            found, _, info = store_vars(sm.flash, header=True)
-            if not info["auth"]:
-                raise Fail("su un SMMSTORE vuoto il payload ha formattato uno store normale (gEfiVariableGuid): "
-                           "il driver delle variabili lavora senza variabili autenticate, e Secure Boot non ha "
-                           "dove scrivere PK, KEK, db e dbx")
-            names = {v["name"] for v in found if v["state"] in VAR_VALID}
-            missing = [n for n in AUTH_LIB_VARS if n not in names]
-            if missing:
-                raise Fail("store autenticato, ma AuthVariableLib non vi ha scritto %s" % ", ".join(missing))
+            auth_lib_vars(sm.flash, "su un SMMSTORE vuoto")
             return ("SECURE_BOOT_ENABLE: su un SMMSTORE vuoto lo store e' autenticato, con %s di "
                     "AuthVariableLib" % ", ".join(AUTH_LIB_VARS))
+        finally:
+            sm.close()
+
+    def auth_kept():
+        # lo store del W541 e del M920x, formattato dal payload di oggi:
+        # il primo avvio lo crea, poi diventa come quello di 2686758
+        sm = Smoke(rom, out, timeout)
+        try:
+            to_shell(sm, "upstream-kept-1")
+            sm.halt()
+            auth_convert(sm.flash)
+            to_shell(sm, "upstream-kept-2")
+            sm.stable("il payload non e' arrivato alla Shell UEFI", timeout)
+            value = VAR_DATA[0]
+            sm.type("setvar %s -guid %s -bs -rt -nv =%s\n" % (VAR_NAME, VAR_GUID, value))
+            sm.wait("setvar non ha scritto %s nello store autenticato" % VAR_NAME,
+                    lambda: (sm.alive(), any(c[0] in VAR_VALID and c[2] == value
+                                             for c in store_copies(sm.flash)))[1], timeout)
+            sm.halt()
+            _, _, info = store_vars(sm.flash, header=True)
+            if not info["auth"]:
+                raise Fail("il payload ha riformattato come normale uno store autenticato")
+            if "will work with auth variable format" not in sm.serial_text():
+                raise Fail("lo store e' autenticato, ma il driver delle variabili non dice di usarlo "
+                           "(\"Variable driver will work with auth variable format!\" non e' nella seriale)")
+            return ("uno store gia' autenticato, come lo formatta il payload di oggi, resta tale: setvar vi "
+                    "scrive %s in quel formato" % VAR_NAME)
+        finally:
+            sm.close()
+
+    def auth_lib_kept():
+        sm = Smoke(auth_rom, out, timeout)
+        try:
+            to_shell(sm, "upstream-auth-kept-1")
+            sm.halt()
+            auth_convert(sm.flash)
+            to_shell(sm, "upstream-auth-kept-2")
+            sm.halt()
+            auth_lib_vars(sm.flash, "su uno store gia' autenticato")
+            return ("SECURE_BOOT_ENABLE su uno store gia' autenticato: AuthVariableLib vi scrive %s"
+                    % ", ".join(AUTH_LIB_VARS))
         finally:
             sm.close()
 
@@ -1183,8 +1256,10 @@ def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None, auth_rom=None, gap
         step("servizi runtime", lambda: reloc_test(rom, reloc_efi, out, timeout), ["serial-reloc.log"])
     if tpm:
         step("TPM 1.2", lambda: tpm_test(rom, tpm, out, timeout), ["serial-tpm.log"])
+    step("store autenticato", auth_kept, ["serial-upstream-kept-2.log"])
     if auth_rom:
         step("variabili autenticate", auth_vars, ["serial-upstream-auth.log"])
+        step("Secure Boot su store autenticato", auth_lib_kept, ["serial-upstream-auth-kept-2.log"])
     for name in gaps:
         if name not in failed and name not in known:
             failed.append(name)
