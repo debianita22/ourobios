@@ -1032,7 +1032,8 @@ def tpm_test(rom, efi, out, timeout, tpm2=False):
 # Le righe della seriale che spiegano un passo di --upstream che non passa:
 # SMMSTORE in SMM (coreboot) e le variabili, FTW, FVB, TPM nel payload DEBUG
 UPSTREAM_DIAG = re.compile(r"smm ?store|SMMSTORE|Raw (read|write|clear)|Variable|FTW|Fvb|FVB|NvStorage|"
-                           r"ASSERT|ERROR|Error|TCG|Tcg|TPM|Tpm|SetVariable|Shell>", re.I)
+                           r"ASSERT|ERROR|Error|TCG|Tcg|TPM|Tpm|SetVariable|Shell>|setvar|"
+                           r"not recognized|start failed", re.I)
 
 
 def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None):
@@ -1065,7 +1066,13 @@ def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None):
                 if not os.path.isfile(path):
                     continue
                 with open(path, errors="replace") as f:
-                    hits = [l.rstrip() for l in f if UPSTREAM_DIAG.search(l)]
+                    text = f.read().splitlines()
+                # di un'immagine che non parte ("Image at 0007F706000 start
+                # failed") anche la riga che dice quale fosse
+                failed_at = {m.group(1).lstrip("0").upper() for m in
+                             (re.search(r"Image at 0*([0-9A-Fa-f]+) start failed", l) for l in text) if m}
+                hits = [l.rstrip() for l in text if UPSTREAM_DIAG.search(l) or any(
+                    re.search(r"Loading driver at 0x0*%s\b" % a, l, re.I) for a in failed_at)]
                 lines.append("    %s: %d righe utili%s" % (serial, len(hits), ", le ultime 40:" if hits else ""))
                 lines.extend("      " + l[:200] for l in hits[-40:])
 
@@ -1076,6 +1083,14 @@ def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None):
                 sm.boot("upstream-shell-%d" % (i + 1))
                 sm.wait("coreboot non e' arrivato al payload (\"Jumping to boot code\" nella seriale)",
                         lambda: (sm.alive(), "Jumping to boot code" in sm.serial_text())[1], timeout)
+                # la Shell di TianoCore conta 5 s prima di startup.nsh
+                # (PcdShellDefaultDelay; MrChromebox toglie lo script,
+                # 4373c47) e ogni secondo legge un tasto: la prima lettera
+                # del comando, se arriva nel conto, che stable() non vede
+                # (cambia una cifra, meno dell'1%). Si aspetta il prompt,
+                # che la Shell scrive anche sulla seriale
+                sm.wait("il payload non e' arrivato al prompt della Shell UEFI (\"Shell>\" nella seriale)",
+                        lambda: (sm.alive(), "Shell>" in sm.serial_text())[1], timeout)
                 shell = sm.stable("il payload non e' arrivato alla Shell UEFI", timeout)
                 sm.shot("upstream-shell-%d" % (i + 1))
                 if shell.colors() > 8:
