@@ -27,9 +27,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   before it writes anything, a capsule whose manifest names a region other
   than the two vboot slots and `RW_MRC_CACHE`
   (`PcdFmpDeviceSmmAllowedRegions`, `edk2/0045`), and, on a flash with
-  both slots, one that does not name both, which could write the slot
-  that runs: *immagine non valida* (0x1800) in the ESRT and in `update.py
-  status`. Up to v1.5.1 the payload wrote whatever a signed manifest
+  both slots, one that does not name both (a slot alone could be the one
+  that runs): *immagine non valida* (0x1800) in the ESRT and in
+  `update.py status`. Up to v1.5.1 the payload wrote whatever a signed manifest
   named, checked only by the build and `update.py`; the capsules of every
   release name only those regions, so they still install, rollbacks
   included. A boot with capsules also confirms the slot that runs before
