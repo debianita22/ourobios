@@ -5,6 +5,47 @@ GitHub include its section; release candidates take the section of the
 version they lead to. For the releases before v1.3.0, see their notes on
 the [releases page](https://github.com/debianita22/ourobios/releases).
 
+## v1.6.0
+
+- **WSMT**: both boards publish the Windows SMM Security Mitigations
+  Table with its three flags (patch 0214), after the SMI handlers were
+  read against them: the parameters of every SMMSTORE command are taken
+  only from the page after the data block of the com buffer, fixed
+  since boot, where the payload now passes them from the first command
+  (0215, `edk2/0044`; a command with them elsewhere fails and the
+  console says so); the GSMI commands of the OS (add an event, clear
+  the event log) are answered as unsupported (0211), as no OS on these
+  boards uses them and any ring 0 code could clear the log, and the
+  pointers they follow are checked against SMRAM anyway (0212); on the
+  W541 the xHCI rerouting SMI is refused once the chipset is finalized
+  (0213). After the finalize the SMI handlers answer the ACPI enable
+  and disable commands, SMMSTORE, the vboot slot commands and the MOR
+  lock: all of them write the flash and nothing else. Windows reads the
+  table for Device Guard, Credential Guard with HVCI and VBS; `fwts
+  wsmt` and `acpidump` show it.
+- `docs/testing.md`: a conformance suite (CONF): the WSMT and its flags
+  (`hw-report.py` CONF-01), the tables compiled again with `iasl -w3`,
+  FWTS, chipsec with what each module must say on these boards (the
+  descriptor left writable by design), the UEFI SCT and the HLK
+  families for the M920x.
+- `upstream.yml` compares every week the dbx that the payload enrolls at
+  the first boot with the hash lists of Microsoft's latest signed release
+  of `microsoft/secureboot_objects` (`tools/upstream.sh dbx`, by git blob
+  id, nothing downloaded) and opens an issue when they differ. On
+  2026-11-02 they are the same, v1.7.1-signed; its SVN entries (the
+  Windows boot manager at SVN 11) stay out of the defaults, as Windows
+  writes them itself after updating its boot manager.
+- `tools/build.sh roms` stops when the DSDT of a build, compiled again
+  with `iasl -w3`, has a warning: v1.5.1 compiles without one on every
+  board, the *object is not referenced* (4089) of the names and fields
+  that only the OS reads aside, which the check leaves out.
+- `tools/hw-report.py` MEM-02 reads the sizes of the memory devices in
+  the binary units of recent dmidecode versions (GiB, MiB) too: a W541
+  got *SMBIOS non elenca moduli* with every slot populated; when the
+  entries are there and no size is read, it lists what dmidecode said.
+- README and docs/m920x.md: the M920x releases are releases, as they
+  have been since v1.4.0.
+
 ## v1.5.1
 
 - *BIOS Lock* (*Security* → *Flash protection*) is on by default, on both
@@ -41,34 +82,6 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `iasl -w3` (coreboot builds at `-w1`, warnings as errors) and prints
   the count and the kinds of warnings of that level, with the whole
   output in `build-<variant>/dsdt-w3.log`; not fatal yet.
-- **WSMT**: both boards publish the Windows SMM Security Mitigations
-  Table with its three flags (patch 0214), after the SMI handlers were
-  read against them: the parameters of every SMMSTORE command are taken
-  only from the page after the data block of the com buffer, fixed
-  since boot, where the payload now passes them from the first command
-  (0215, `edk2/0044`; a command with them elsewhere fails and the
-  console says so); the GSMI commands of the OS (add an event, clear
-  the event log) are answered as unsupported (0211), as no OS on these
-  boards uses them and any ring 0 code could clear the log, and the
-  pointers they follow are checked against SMRAM anyway (0212); on the
-  W541 the xHCI rerouting SMI is refused once the chipset is finalized
-  (0213). After the finalize the SMI handlers answer the ACPI enable
-  and disable commands, SMMSTORE, the vboot slot commands and the MOR
-  lock: all of them write the flash and nothing else. Windows reads the
-  table for Device Guard, Credential Guard with HVCI and VBS; `fwts
-  wsmt` and `acpidump` show it.
-- `docs/testing.md`: a conformance suite (CONF): the WSMT and its flags
-  (`hw-report.py` CONF-01), the tables compiled again with `iasl -w3`,
-  FWTS, chipsec with what each module must say on these boards (the
-  descriptor left writable by design), the UEFI SCT and the HLK
-  families for the M920x.
-- `upstream.yml` compares every week the dbx that the payload enrolls at
-  the first boot with the hash lists of Microsoft's latest signed release
-  of `microsoft/secureboot_objects` (`tools/upstream.sh dbx`, by git blob
-  id, nothing downloaded) and opens an issue when they differ. On
-  2026-11-02 they are the same, v1.7.1-signed; its SVN entries (the
-  Windows boot manager at SVN 11) stay out of the defaults, as Windows
-  writes them itself after updating its boot manager.
 - README: the specifications the firmware is built against, as the pinned
   trees declare them, and the known limits of the two machines (Windows
   11 on the W541, DMA protection, WSMT and HSTI, the MOR lock, XMP).

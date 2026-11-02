@@ -1344,11 +1344,13 @@ cmd_keys() {
 # suo GBB, e in una build con la chiave del progetto quella root e' la nostra
 # The DSDT of a build, as preprocessed for iasl (build-x/dsdt.asl), compiled
 # again at iasl's highest warning level (-w3, the build uses -w1 with -we):
-# what coreboot's build does not report. Empty resource templates are ignored
-# as in coreboot's Makefile.mk (3150). Not fatal yet: the count goes in the
-# log and the output next to the build; a release with warnings here is a
-# thing to fix, not to stop. Remarks (2173, named objects in a method, which
-# the BAR-at-the-moment methods create on purpose) do not count.
+# what coreboot's build does not report. Ignored: empty resource templates
+# as in coreboot's Makefile.mk (3150), and "object is not referenced"
+# (4089), which -w3 says of every name, field and method that only the OS
+# reads or calls (PSWP, the EC fields, ...). Any other warning stops the
+# build: from v1.5.1 there is none on any board. Remarks (2173, named
+# objects in a method, which the BAR-at-the-moment methods create on
+# purpose) do not count.
 check_dsdt_w3() {
 	local v="$1" b asl out n
 	b="${TREE}/build-$(bkey "$1")"
@@ -1357,14 +1359,15 @@ check_dsdt_w3() {
 	out="${b}/dsdt-w3.log"
 	local iasl="${XGCC}/bin/iasl"
 	if [ "${TOOLCHAIN}" = host ]; then iasl="$(command -v iasl)"; fi
-	( cd "${b}" && "${iasl}" -w3 -vw 3150 -p "${b}/dsdt-w3" dsdt.asl ) > "${out}" 2>&1 || true
+	( cd "${b}" && "${iasl}" -w3 -vw 3150 -vw 4089 -p "${b}/dsdt-w3" dsdt.asl ) > "${out}" 2>&1 || true
 	n="$(grep -c '^Warning' "${out}" || true)"
 	rm -f "${b}/dsdt-w3.aml" "${b}/dsdt-w3.hex"
 	if [ "${n}" = 0 ] && grep -q 'Compilation successful' "${out}"; then
-		echo "  DSDT con iasl -w3: nessun warning"
+		echo "  ok  DSDT con iasl -w3: nessun warning (4089 a parte)"
 	else
-		echo "  DSDT con iasl -w3: ${n} warning (build-$(bkey "$1")/dsdt-w3.log):"
-		grep -E '^(Warning|Error)' "${out}" | sed 's/^/    /' | sort | uniq -c | sort -rn | head -n 12
+		echo "  NO  DSDT con iasl -w3: ${n} warning (build-$(bkey "$1")/dsdt-w3.log):"
+		grep -E -B1 '^(Warning|Error)' "${out}" | sed 's/^/    /' | head -n 40
+		die "${v}: il DSDT ha warning con iasl -w3"
 	fi
 }
 
