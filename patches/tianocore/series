@@ -111,3 +111,4 @@
 0108-UefiPayloadPkg-Carry-coreboot-s-TPM-2.0-measurements.patch
 0109-UefiPayloadPkg-TCG-Secure-MOR-with-the-lock-that-cor.patch
 0110-UefiPayloadPkg-SmmStoreLib-The-arguments-in-the-com-.patch
+0111-UefiPayloadPkg-FmpDeviceSmmLib-Only-the-regions-the-.patch

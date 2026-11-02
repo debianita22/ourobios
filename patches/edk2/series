@@ -42,3 +42,4 @@
 0042-UefiPayloadPkg-Carry-coreboot-s-TPM-2.0-measurements.patch
 0043-UefiPayloadPkg-TCG-Secure-MOR-with-the-lock-that-cor.patch
 0044-UefiPayloadPkg-SmmStoreLib-The-arguments-in-the-com-.patch
+0045-UefiPayloadPkg-FmpDeviceSmmLib-Only-the-regions-the-.patch
