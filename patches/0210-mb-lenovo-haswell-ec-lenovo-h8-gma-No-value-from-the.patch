@@ -1,0 +1,141 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 2 Nov 2026 16:45:10 +0100
+Subject: [PATCH] mb/lenovo/haswell, ec/lenovo/h8, gma: No value from the void
+ methods
+
+PWMX of the PNLF device, SBLV of the Intel GPU and the _PSW of the lid
+and of the sleep button leave early with "Return ()" and otherwise fall
+off their end. iasl at -w3 reports each as "Not all control paths return
+a value" (3115): a bare Return gives Zero, the other path gives nothing.
+None of the four has a caller that uses a value. Write them as one
+If/ElseIf chain, so that no path returns anything. No change in what
+they do.
+
+TEST=Not built. The DSDT of a build, disassembled and compiled again
+with iasl -w3, must no longer report 3115 for \_SB.PCI0.GFX0.PNLF.PWMX,
+\_SB.PCI0.GFX0.SBLV, \_SB.PCI0.LPCB.EC.LID._PSW and
+\_SB.PCI0.LPCB.EC.SLPB._PSW; brightness keys, the lid and Fn wake, and
+PNLF under macOS as before.
+---
+ src/drivers/intel/gma/acpi/gma.asl         | 19 ++++++-------
+ src/ec/lenovo/h8/acpi/lid.asl              |  6 ++--
+ src/ec/lenovo/h8/acpi/sleepbutton.asl      |  6 ++--
+ src/mainboard/lenovo/haswell/acpi/pnlf.asl | 32 ++++++++++------------
+ 4 files changed, 28 insertions(+), 35 deletions(-)
+
+diff --git a/src/drivers/intel/gma/acpi/gma.asl b/src/drivers/intel/gma/acpi/gma.asl
+index 7f2734d2..90b27a5f 100644
+--- a/src/drivers/intel/gma/acpi/gma.asl
++++ b/src/drivers/intel/gma/acpi/gma.asl
+@@ -73,17 +73,16 @@ Scope (GFX0)
+ 	Method (SBLV, 1, Serialized)
+ 	{
+ 		Local0 = GMMB ()
+-		If (Local0 == 0) {
+-			Return ()
+-		}
+-		OperationRegion (GFRG, SystemMemory,
+-				 Local0 + (CONFIG_INTEL_GMA_BCLV_OFFSET & 0xfffffffc), 4)
+-		Field (GFRG, DWordAcc, NoLock, Preserve)
+-		{
+-			Offset (GMA_BCLV_BYTE),
+-			XBLV, CONFIG_INTEL_GMA_BCLV_WIDTH,
++		If (Local0 != 0) {
++			OperationRegion (GFRG, SystemMemory,
++					 Local0 + (CONFIG_INTEL_GMA_BCLV_OFFSET & 0xfffffffc), 4)
++			Field (GFRG, DWordAcc, NoLock, Preserve)
++			{
++				Offset (GMA_BCLV_BYTE),
++				XBLV, CONFIG_INTEL_GMA_BCLV_WIDTH,
++			}
++			XBLV = Arg0
+ 		}
+-		XBLV = Arg0
+ 	}
+ 
+ 	Method (BCLM, 0, Serialized)
+diff --git a/src/ec/lenovo/h8/acpi/lid.asl b/src/ec/lenovo/h8/acpi/lid.asl
+index eafd2c08..04786fea 100644
+--- a/src/ec/lenovo/h8/acpi/lid.asl
++++ b/src/ec/lenovo/h8/acpi/lid.asl
+@@ -51,11 +51,9 @@ Device(LID)
+ 		 */
+ 		If (!ECAV) {
+ 			PSWP = Arg0
+-			Return ()
+-		}
+-		if (Arg0) {
++		} ElseIf (Arg0) {
+ 			WKLD = 1
+-		} else {
++		} Else {
+ 			WKLD = 0
+ 		}
+ 	}
+diff --git a/src/ec/lenovo/h8/acpi/sleepbutton.asl b/src/ec/lenovo/h8/acpi/sleepbutton.asl
+index eb34a1b3..e17caefe 100644
+--- a/src/ec/lenovo/h8/acpi/sleepbutton.asl
++++ b/src/ec/lenovo/h8/acpi/sleepbutton.asl
+@@ -31,12 +31,10 @@ Device(SLPB)
+ 		/* No ERAM before _REG (3, 1): _REG passes it on */
+ 		If (!ECAV) {
+ 			PSWP = Arg0
+-			Return ()
+-		}
+-		if (Arg0) {
++		} ElseIf (Arg0) {
+ 			FNKY = 6 /* Fn key acts as wake button */
+ 			WKFN = 1
+-		} else {
++		} Else {
+ 			FNKY = 0 /* Fn key normal operation */
+ 			WKFN = 0
+ 		}
+diff --git a/src/mainboard/lenovo/haswell/acpi/pnlf.asl b/src/mainboard/lenovo/haswell/acpi/pnlf.asl
+index eca95e05..efe98a19 100644
+--- a/src/mainboard/lenovo/haswell/acpi/pnlf.asl
++++ b/src/mainboard/lenovo/haswell/acpi/pnlf.asl
+@@ -77,24 +77,22 @@ Scope (\_SB.PCI0.GFX0)
+ 		Method (PWMX, 0, Serialized)
+ 		{
+ 			Local0 = ^^GMMB ()
+-			If (Local0 == 0) {
+-				Return ()
++			If (Local0 != 0) {
++				OperationRegion (PWMR, SystemMemory, Local0 + 0xc8254, 4)
++				Field (PWMR, DWordAcc, NoLock, Preserve)
++				{
++					LEVX, 32,	/* BLC_PWM_PCH_CTL2: maximum, duty cycle */
++				}
++				Local1 = LEVX
++				Local2 = Local1 >> 16
++				If (Local2 != 0 && Local2 != 0xad9) {
++					Local3 = (Local1 & 0xffff) * 0xad9 / Local2
++					If (Local3 > 0xad9) {
++						Local3 = 0xad9
++					}
++					LEVX = (0xad9 << 16) | Local3
++				}
+ 			}
+-			OperationRegion (PWMR, SystemMemory, Local0 + 0xc8254, 4)
+-			Field (PWMR, DWordAcc, NoLock, Preserve)
+-			{
+-				LEVX, 32,	/* BLC_PWM_PCH_CTL2: maximum, duty cycle */
+-			}
+-			Local1 = LEVX
+-			Local2 = Local1 >> 16
+-			If (Local2 == 0 || Local2 == 0xad9) {
+-				Return ()
+-			}
+-			Local3 = (Local1 & 0xffff) * 0xad9 / Local2
+-			If (Local3 > 0xad9) {
+-				Local3 = 0xad9
+-			}
+-			LEVX = (0xad9 << 16) | Local3
+ 		}
+ 
+ 		Method (_INI)
+-- 
+2.43.0
+

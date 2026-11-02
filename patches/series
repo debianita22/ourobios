@@ -203,3 +203,4 @@
 0207-drivers-smmstore-Lock-of-TCG-Secure-MOR-in-SMM.patch
 0208-nb-intel-haswell-Default-the-graphics-stolen-memory-.patch
 0209-soc-intel-common-Option-to-set-the-SMM-BIOS-write-pr.patch
+0210-mb-lenovo-haswell-ec-lenovo-h8-gma-No-value-from-the.patch
