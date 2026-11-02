@@ -456,7 +456,10 @@ if extract config "${TMP}/config"; then
 	want CONFIG_HAVE_ME_BIN=y
 	want CONFIG_HAVE_GBE_BIN=y
 	want CONFIG_UNLOCK_FLASH_REGIONS=y
-	never CONFIG_BOOTMEDIA_SMM_BWP=y "flash scrivibile solo da SMM senza scelta: flashrom -p internal non aggiornerebbe piu'"
+	# BIOS Lock acceso di default (v1.5.1), ma sempre un'opzione del setup:
+	# senza RUNTIME_OPTION il flash sarebbe scrivibile solo da SMM senza
+	# scelta, e flashrom -p internal non aggiornerebbe piu'
+	want CONFIG_BOOTMEDIA_SMM_BWP=y
 	want CONFIG_BOOTMEDIA_SMM_BWP_RUNTIME_OPTION=y
 	# vboot (docs/vboot.md)
 	want CONFIG_VBOOT=y
