@@ -30,6 +30,7 @@ is here. None of it is a promise of a date.
 | [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | the field is reserved on Haswell client processors | the TCC line of `hw-report.py` on a W541 |
 | [Upstream changes not taken](#upstream-changes-not-taken) | W541 | 96893 unreviewed and no gain here; 95880 and 95912 at Code-Review -2 | the next coreboot pin; `rfkill` on a W541 |
 | [EDK II from TianoCore](#edk-ii-from-tianocore) | both | the setup (CFR, LvglPkg), the splash, the password and the Secure Boot keys exist only in MrChromebox's branch | the upstream payload in the QEMU smoke test; the setup as a package outside the tree |
+| [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
 | [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
 | [Openness score](#openness-score) | both | already in `tools/sbom.py` | a comparison with Dasharo's own tool |
 
@@ -536,4 +537,23 @@ DMA protection) next to what they do (BIOS Lock, Secure Boot, the WSMT):
 a protocol that reports part "no" tells Windows what the known limits
 of the README already say. Not planned; the WSMT (patches 0211-0215)
 covers what Windows acts on.
+
+## The _OSI queries of the DSDT
+
+The common platform ASL of coreboot (`southbridge/intel/common/acpi/platform.asl`)
+asks `_OSI` for the Windows strings up to "Windows 2006" and sets `OSYS`,
+which the DSDT of these boards reads only to hide the HPET from versions
+of Windows before XP (`HPTS`). The OS answers `_OSI`; the firmware asks.
+No Microsoft requirement (WHCP, the Windows ACPI requirements) asks the
+firmware to query the recent strings: they exist for firmware that wants
+to behave differently with each version of Windows, which these tables
+do not. Asking for "Windows 2012" or later would not change what Windows
+does, but it changes Linux, which answers yes to every Windows string and
+remembers the newest one the firmware asked for: from "Windows 2012" on,
+`acpi_osi_is_win8()` is true, and `drivers/acpi/video_detect.c` then
+prefers the native backlight of i915 to the ACPI one (`acpi_video0`), and
+reports no backlight instead of the vendor one when neither is there
+(checked on Linux mainline at 6628e7d, 2026-11-01). That is a change of the
+brightness path on the W541 for no gain elsewhere: not planned. macOS
+answers "Darwin" only, unless an OpenCore configuration renames `_OSI`.
 
