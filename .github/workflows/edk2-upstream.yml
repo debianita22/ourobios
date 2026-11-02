@@ -62,8 +62,8 @@ jobs:
           name: edk2-upstream-${{ github.sha }}
           path: |
             work/edk2-upstream/
-            work/coreboot/build-q35-tianocore/make.log
-            work/coreboot/build-q35-tianocore/errors.log
-            work/coreboot/build-q35-tianocore/.config
+            work/coreboot/build-q35-tianocore*/make.log
+            work/coreboot/build-q35-tianocore*/errors.log
+            work/coreboot/build-q35-tianocore*/.config
           retention-days: 14
           if-no-files-found: ignore

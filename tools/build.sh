@@ -65,9 +65,11 @@
 #                  W541 non c'entrano. Seriale in WORK/update-test/out
 #   edk2-upstream  la prima fase del passaggio a EDK II di TianoCore: il
 #                  payload di EDK2_UPSTREAM_TAG senza patch in una ROM per
-#                  QEMU q35, e i passi della prova di fumo che non chiedono
-#                  il setup del progetto (tools/qemu-smoke.py --upstream).
-#                  Esito in WORK/edk2-upstream; mai in una release
+#                  QEMU q35 (e in una seconda con SECURE_BOOT_ENABLE), e i
+#                  passi della prova di fumo che non chiedono il setup del
+#                  progetto (tools/qemu-smoke.py --upstream); le lacune note
+#                  in EDK2_UPSTREAM_GAPS. Esito in WORK/edk2-upstream; mai
+#                  in una release
 #   keys           controlla le chiavi di firma dell'ambiente (CAPSULE_SIGNING_KEY,
 #                  VBOOT_SIGNING_KEY) senza build: con --release devono esserci
 #   toolchain-key  stampa la chiave della cache del crossgcc (build.yml)
@@ -185,6 +187,16 @@ EDK2_UPSTREAM_COMMIT="2970e5699ba6267f3384ffab20f96647578aebc8"
 EDK2_UPSTREAM_SUBDIR="payloads/external/edk2/workspace/tianocore"
 EDK2_UPSTREAM_SUBMODULES=(CryptoPkg/Library/OpensslLib/openssl BaseTools/Source/C/BrotliCompress/brotli
 	MdePkg/Library/BaseFdtLib/libfdt)
+# I passi di qemu-smoke.py --upstream che EDK2_UPSTREAM_TAG non passa per una
+# lacuna nota, con quello che la colma (docs/edk2-migration.md, "Step (a)"):
+# non fermano edk2-upstream, e uno di loro che passa la ferma, perche' va
+# tolto da qui e dalla pagina.
+#   servizi runtime: SmmStoreLib passa a SMM gli argomenti in dati dei
+#     servizi runtime, che boot.efi sposta (la patch 0134 e edk2/0029, 0044)
+#   TPM 1.2: UefiPayloadPkg non ha i driver TCG (c111515 di MrChromebox)
+#   variabili autenticate: SmmStoreFvbRuntimeDxe formatta lo store con
+#     gEfiVariableGuid (la riga di SmmStoreFvbRuntimeDxe.c di 2686758)
+EDK2_UPSTREAM_GAPS=("servizi runtime" "TPM 1.2" "variabili autenticate")
 # I font della schermata di aggiornamento del firmware (patches/edk2/0026):
 # tools/ui-font.py li fa da quelli di LVGL nell'albero di EDK2, dopo le patch
 UI_FONT_LVGL="LvglPkg/Library/LvglLib/lvgl/src/font"
@@ -2041,21 +2053,12 @@ prepare_edk2_upstream() {
 # spostati come da boot.efi di macOS, le misure nel log del TPM. Dice cosa
 # manca prima del setup, di Secure Boot e delle capsule. Mai in una release:
 # build in build-q35-tianocore dell'albero, esito in WORK/edk2-upstream
-cmd_edk2_upstream() {
-	need_prepared
-	local t q b reloc pcrs
-	for t in qemu-system-x86_64 mformat mmd mcopy clang ld.lld swtpm; do
-		command -v "${t}" > /dev/null \
-			|| die "edk2-upstream: serve ${t} (Debian/Ubuntu: apt install qemu-system-x86 mtools clang lld swtpm)"
-	done
-	if [ "${TOOLCHAIN}" = crossgcc ]; then
-		xgcc_ok || die "crossgcc mancante in ${XGCC}: prima tools/build.sh toolchain"
-		export PATH="${XGCC}/bin:${PATH}"
-	fi
-	prepare_edk2_upstream
-	q="q35-tianocore"
-	b="${TREE}/build-${q}"
-	say "edk2-upstream: coreboot per QEMU q35 con il payload di ${EDK2_UPSTREAM_TAG}"
+# Una ROM per QEMU q35 con il payload di EDK2_UPSTREAM_TAG in build-$1
+# dell'albero; le altre righe ($2...) vanno nel suo defconfig. Torna 1 se
+# la build non riesce (il resto di edk2-upstream va avanti)
+edk2_upstream_rom() {
+	local q="$1" b="${TREE}/build-$1" l
+	shift
 	rm -rf "${b:?}"
 	mkdir -p "${b}"
 	{
@@ -2078,25 +2081,65 @@ cmd_edk2_upstream() {
 		echo "CONFIG_TPM_MEASURED_BOOT=y"
 		echo "CONFIG_LOCALVERSION=\"ouroBIOS-${VERSION}-tianocore-q35\""
 		if [ "${TOOLCHAIN}" = host ]; then echo "CONFIG_ANY_TOOLCHAIN=y"; fi
+		for l in "$@"; do echo "${l}"; done
 	} > "${b}/defconfig"
 	mk "${q}" defconfig KBUILD_DEFCONFIG="build-${q}/defconfig" > "${b}/defconfig.log" 2>&1 \
-		|| { cat "${b}/defconfig.log"; die "edk2-upstream: make defconfig fallito"; }
-	defconfig_kept "${b}" || die "edk2-upstream: il .config di q35 non ha tutto il defconfig"
+		|| { cat "${b}/defconfig.log"; die "edk2-upstream: make defconfig di ${q} fallito"; }
+	defconfig_kept "${b}" || die "edk2-upstream: il .config di ${q} non ha tutto il defconfig"
 	if ! mk "${q}" -j"${JOBS}" > "${b}/make.log" 2>&1; then
 		grep -n -i -B2 -A6 'error' "${b}/make.log" | tail -n 60 > "${b}/errors.log" || true
-		failure_report "edk2-upstream: build" "${b}/errors.log" "${b}/make.log"
-		die "edk2-upstream: build per q35 fallita (build-${q}/make.log nell'albero)"
+		failure_report "edk2-upstream: build di ${q}" "${b}/errors.log" "${b}/make.log"
+		return 1
 	fi
-	# le opzioni con cui il Makefile di coreboot ha costruito il payload
+	# le opzioni con cui il Makefile di coreboot ha costruito il payload, e
+	# quanto occupa nella ROM
 	sed -n '/##### edk2 Build Summary #####/,/Toolchain:/p' "${b}/make.log" | head -n 60 || true
+	"${b}/cbfstool" "${b}/coreboot.rom" print -r COREBOOT | grep -E '^(Name|fallback/payload|\(empty\))' || true
+}
+
+cmd_edk2_upstream() {
+	need_prepared
+	local t q b sb reloc pcrs g
+	local gaps=() bad=()
+	for t in qemu-system-x86_64 mformat mmd mcopy clang ld.lld swtpm; do
+		command -v "${t}" > /dev/null \
+			|| die "edk2-upstream: serve ${t} (Debian/Ubuntu: apt install qemu-system-x86 mtools clang lld swtpm)"
+	done
+	if [ "${TOOLCHAIN}" = crossgcc ]; then
+		xgcc_ok || die "crossgcc mancante in ${XGCC}: prima tools/build.sh toolchain"
+		export PATH="${XGCC}/bin:${PATH}"
+	fi
+	prepare_edk2_upstream
+	q="q35-tianocore"
+	b="${TREE}/build-${q}"
+	say "edk2-upstream: coreboot per QEMU q35 con il payload di ${EDK2_UPSTREAM_TAG}"
+	edk2_upstream_rom "${q}" || die "edk2-upstream: build per q35 fallita (build-${q}/make.log nell'albero)"
+	# la stessa ROM con Secure Boot (AuthVariableLib, SecureBootConfigDxe):
+	# il Kconfig di coreboot non da' EDK2_SECURE_BOOT_SUPPORT con
+	# EDK2_REPO_OFFICIAL, il .dsc di UefiPayloadPkg ha SECURE_BOOT_ENABLE
+	sb="${TREE}/build-${q}-sb"
+	say "edk2-upstream: la stessa con SECURE_BOOT_ENABLE"
+	if ! edk2_upstream_rom "${q}-sb" "CONFIG_EDK2_CUSTOM_BUILD_PARAMS=\"-D SECURE_BOOT_ENABLE=TRUE\""; then
+		bad+=("la build con SECURE_BOOT_ENABLE (build-${q}-sb/make.log nell'albero)")
+		sb=""
+	fi
 	reloc="${WORK}/rt-reloc-test.efi"
 	efi_app "${O}/tools/efi/rt-reloc-test.c" "${reloc}" || die "edk2-upstream: tools/efi/rt-reloc-test.c non compila"
 	pcrs="${WORK}/tpm-pcr-test.efi"
 	efi_app "${O}/tools/efi/tpm-pcr-test.c" "${pcrs}" || die "edk2-upstream: tools/efi/tpm-pcr-test.c non compila"
+	for g in "${EDK2_UPSTREAM_GAPS[@]}"; do
+		# senza la ROM con Secure Boot il suo passo non c'e'
+		[ -n "${sb}" ] || [ "${g}" != "variabili autenticate" ] || continue
+		gaps+=(--gap "${g}")
+	done
 	say "edk2-upstream: QEMU"
 	python3 "${O}/tools/qemu-smoke.py" --upstream --out "${WORK}/edk2-upstream" --reloc-test "${reloc}" \
-		--tpm "${pcrs}" "${b}/coreboot.rom" \
-		|| die "edk2-upstream: qualche passo non passa con ${EDK2_UPSTREAM_TAG} (${WORK}/edk2-upstream)"
+		--tpm "${pcrs}" ${sb:+--auth-rom "${sb}/coreboot.rom"} "${gaps[@]}" "${b}/coreboot.rom" \
+		|| bad+=("qualche passo non passa con ${EDK2_UPSTREAM_TAG} (${WORK}/edk2-upstream)")
+	if [ ${#bad[@]} -ne 0 ]; then
+		for g in "${bad[@]}"; do echo "  NO  ${g}"; done
+		die "edk2-upstream: ${bad[0]}$([ ${#bad[@]} -eq 1 ] || echo " (e altro: sopra)")"
+	fi
 }
 
 # I comandi di una board (config, roms, repro, menu, smoke) per ogni board

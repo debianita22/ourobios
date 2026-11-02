@@ -8,7 +8,7 @@
 #                               [--sb-test EFI --esrt GUID:VERSIONE:LSV [--sb-only]]
 #                               [--tpm EFI [--tpm2]] ROM
 #   python3 tools/qemu-smoke.py --upstream [--out DIR] [--reloc-test EFI]
-#                               [--tpm EFI] ROM
+#                               [--tpm EFI] [--auth-rom ROM] [--gap PASSO ...] ROM
 #
 # Controlla, in ordine:
 #   1. coreboot arriva al payload ("Jumping to boot code" sulla seriale);
@@ -96,6 +96,14 @@
 # tools/build.sh smoke prova cosi' anche il setup alla risoluzione del
 # pannello 3K del W541 (gfx_fb_limit), dove v1.3.10-rc3 si fermava su un page
 # fault di LVGL (patches/lvglpkg/0016).
+#
+# --upstream prova il payload di EDK II di TianoCore senza le patch del
+# progetto (tools/build.sh edk2-upstream): solo i passi che non chiedono il
+# setup del progetto, ognuno per conto suo (run_upstream). --auth-rom e' la
+# stessa ROM con il payload costruito con SECURE_BOOT_ENABLE: lo store che
+# crea su un SMMSTORE vuoto deve essere autenticato. --gap PASSO dice un
+# passo che non passa per una lacuna nota (docs/edk2-migration.md): non
+# ferma la prova; se invece passa la ferma, perche' la lacuna va tolta.
 #
 # Il W541 non si emula: qui girano il payload (UEFIPayloadPkg, LvglPkg, le
 # patch di patches/edk2) e il codice comune di coreboot, non quello della
@@ -386,9 +394,11 @@ VAR_DATA = ("4F55524F", "424F4F5432")      # "OURO", "BOOT2"
 VAR_VALID = (0x3F, 0x3E)                   # VAR_ADDED, e in cancellazione
 
 
-def store_vars(flash):
+def store_vars(flash, header=False):
     """Le variabili dello store di SMMSTORE della ROM e la regione, per i
-    dati: ([record di update.var_store], regione)."""
+    dati: ([record di update.var_store], regione); con header anche la
+    testata dello store (l'info di update.var_store: "auth" e' il formato
+    autenticato)."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import update                           # noqa: E402 (tools/update.py)
     with open(flash, "rb") as f:
@@ -398,8 +408,11 @@ def store_vars(flash):
         raise Fail("la ROM non ha una regione SMMSTORE")
     off, size = areas["SMMSTORE"]
     region = data[off:off + size]
-    found, _ = update.var_store(region)
-    return found, region
+    try:
+        found, info = update.var_store(region)
+    except update.Error as e:
+        raise Fail(str(e))
+    return (found, region, info) if header else (found, region)
 
 
 def boot_option_number(flash, description):
@@ -1033,21 +1046,30 @@ def tpm_test(rom, efi, out, timeout, tpm2=False):
 # SMMSTORE in SMM (coreboot) e le variabili, FTW, FVB, TPM nel payload DEBUG
 UPSTREAM_DIAG = re.compile(r"smm ?store|SMMSTORE|Raw (read|write|clear)|Variable|FTW|Fvb|FVB|NvStorage|"
                            r"ASSERT|ERROR|Error|TCG|Tcg|TPM|Tpm|SetVariable|Shell>|setvar|"
-                           r"not recognized|start failed", re.I)
+                           r"not recognized|start failed|auth", re.I)
+
+# Le variabili non volatili che AuthVariableLib di SecurityPkg scrive al
+# primo avvio quando lo store e' autenticato (AuthVariableLib.c: CustomMode,
+# il database dei certificati, VendorKeysNv)
+AUTH_LIB_VARS = ("CustomMode", "certdb", "VendorKeysNv")
 
 
-def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None):
+def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None, auth_rom=None, gaps=()):
     """--upstream: il payload di EDK II di TianoCore senza le patch del
     progetto (tools/build.sh edk2-upstream, la prima fase del passaggio a
     TianoCore, docs/roadmap.md). Solo i passi che non chiedono il setup del
     progetto, iPXE, CSMWrap o EnrollDefaultKeys: coreboot arriva al payload,
     senza dischi il payload arriva alla Shell e setvar scrive in SMMSTORE
-    (due avvii, come il passo 6), poi i servizi runtime spostati (passo 9) e
-    il TPM 1.2 con il log (passo 11). Ogni passo per conto suo: uno che non
-    passa non nasconde gli altri, che e' quel che la prova deve dire.
-    Torna (righe, passi falliti)."""
+    (due avvii, come il passo 6), poi i servizi runtime spostati (passo 9),
+    il TPM 1.2 con il log (passo 11) e, con auth_rom (il payload con
+    SECURE_BOOT_ENABLE), lo store autenticato. Ogni passo per conto suo: uno
+    che non passa non nasconde gli altri, che e' quel che la prova deve
+    dire. gaps: i passi che non passano per una lacuna nota del payload
+    (docs/edk2-migration.md); uno di loro che passa e' un errore, perche'
+    la lacuna va tolta dall'elenco. Torna (righe, passi falliti, lacune
+    confermate)."""
     os.makedirs(out, exist_ok=True)
-    lines, failed = [], []
+    lines, failed, known = [], [], []
     t0 = time.monotonic()
 
     def at():
@@ -1055,10 +1077,14 @@ def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None):
 
     def step(name, fn, serials):
         try:
-            lines.append("ok  %s  %s" % (at(), fn()))
+            result = fn()
         except Fail as e:
-            failed.append(name)
-            lines.append("NO  %s  %s: %s" % (at(), name, e))
+            if name in gaps:
+                known.append(name)
+                lines.append("--  %s  %s: %s (lacuna nota)" % (at(), name, e))
+            else:
+                failed.append(name)
+                lines.append("NO  %s  %s: %s" % (at(), name, e))
             # nella CI gli artifact non si leggono sempre: le righe della
             # seriale che dicono perche' (coreboot in SMM, il payload DEBUG)
             for serial in serials:
@@ -1073,8 +1099,17 @@ def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None):
                              (re.search(r"Image at 0*([0-9A-Fa-f]+) start failed", l) for l in text) if m}
                 hits = [l.rstrip() for l in text if UPSTREAM_DIAG.search(l) or any(
                     re.search(r"Loading driver at 0x0*%s\b" % a, l, re.I) for a in failed_at)]
-                lines.append("    %s: %d righe utili%s" % (serial, len(hits), ", le ultime 40:" if hits else ""))
-                lines.extend("      " + l[:200] for l in hits[-40:])
+                # di una lacuna nota bastano le ultime righe
+                n = 12 if name in gaps else 40
+                lines.append("    %s: %d righe utili%s" % (serial, len(hits), ", le ultime %d:" % n if hits else ""))
+                lines.extend("      " + l[:200] for l in hits[-n:])
+            return
+        if name in gaps:
+            failed.append(name)
+            lines.append("NO  %s  %s: passa (%s), ma e' tra le lacune note: va tolto da EDK2_UPSTREAM_GAPS "
+                         "(tools/build.sh) e da docs/edk2-migration.md" % (at(), name, result))
+        else:
+            lines.append("ok  %s  %s" % (at(), result))
 
     def shell_vars():
         sm = Smoke(rom, out, timeout)
@@ -1113,12 +1148,43 @@ def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None):
         finally:
             sm.close()
 
+    def auth_vars():
+        # un solo avvio fino alla Shell, sull'SMMSTORE vuoto della ROM
+        sm = Smoke(auth_rom, out, timeout)
+        try:
+            sm.boot("upstream-auth")
+            sm.wait("coreboot non e' arrivato al payload (\"Jumping to boot code\" nella seriale)",
+                    lambda: (sm.alive(), "Jumping to boot code" in sm.serial_text())[1], timeout)
+            sm.wait("il payload non e' arrivato al prompt della Shell UEFI (\"Shell>\" nella seriale)",
+                    lambda: (sm.alive(), "Shell>" in sm.serial_text())[1], timeout)
+            sm.shot("upstream-auth")
+            sm.halt()
+            found, _, info = store_vars(sm.flash, header=True)
+            if not info["auth"]:
+                raise Fail("su un SMMSTORE vuoto il payload ha formattato uno store normale (gEfiVariableGuid): "
+                           "il driver delle variabili lavora senza variabili autenticate, e Secure Boot non ha "
+                           "dove scrivere PK, KEK, db e dbx")
+            names = {v["name"] for v in found if v["state"] in VAR_VALID}
+            missing = [n for n in AUTH_LIB_VARS if n not in names]
+            if missing:
+                raise Fail("store autenticato, ma AuthVariableLib non vi ha scritto %s" % ", ".join(missing))
+            return ("SECURE_BOOT_ENABLE: su un SMMSTORE vuoto lo store e' autenticato, con %s di "
+                    "AuthVariableLib" % ", ".join(AUTH_LIB_VARS))
+        finally:
+            sm.close()
+
     step("SMMSTORE", shell_vars, ["serial-upstream-shell-1.log", "serial-upstream-shell-2.log"])
     if reloc_efi:
         step("servizi runtime", lambda: reloc_test(rom, reloc_efi, out, timeout), ["serial-reloc.log"])
     if tpm:
         step("TPM 1.2", lambda: tpm_test(rom, tpm, out, timeout), ["serial-tpm.log"])
-    return lines, failed
+    if auth_rom:
+        step("variabili autenticate", auth_vars, ["serial-upstream-auth.log"])
+    for name in gaps:
+        if name not in failed and name not in known:
+            failed.append(name)
+            lines.append("NO  %s  %s: tra le lacune note, ma non e' un passo di questa prova" % (at(), name))
+    return lines, failed, known
 
 
 def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=None, sb_efi=None,
@@ -1312,11 +1378,19 @@ def main():
                     "TCPA (ROM con CONFIG_TPM1 e CONFIG_TPM_MEASURED_BOOT)")
     ap.add_argument("--upstream", action="store_true",
                     help="il payload di EDK II di TianoCore (tools/build.sh edk2-upstream): solo la Shell "
-                    "con SMMSTORE, --reloc-test e --tpm, ogni passo per conto suo")
+                    "con SMMSTORE, --reloc-test, --tpm e --auth-rom, ogni passo per conto suo")
+    ap.add_argument("--auth-rom", metavar="ROM",
+                    help="con --upstream: la ROM con il payload costruito con SECURE_BOOT_ENABLE, il cui "
+                    "store su un SMMSTORE vuoto deve essere autenticato")
+    ap.add_argument("--gap", metavar="PASSO", action="append", default=[],
+                    help="con --upstream: un passo che non passa per una lacuna nota del payload "
+                    "(docs/edk2-migration.md); se passa, la prova non passa")
     ap.add_argument("--tpm2", action="store_true",
                     help="il passo 11 con il TPM 2.0 di swtpm, banchi SHA-1 e SHA-256, e il log di "
                     "EFI_TCG2_PROTOCOL (ROM con CONFIG_TPM2 e CONFIG_TPM_MEASURED_BOOT_SHA1_BANK)")
     args = ap.parse_args()
+    if (args.auth_rom or args.gap) and not args.upstream:
+        ap.error("--auth-rom e --gap vanno con --upstream")
     esrt = None
     if args.sb_test:
         if not os.path.isfile(args.sb_test):
@@ -1351,15 +1425,19 @@ def main():
                 sys.exit("serve %s per i passi 9, 10 e 11 (Debian/Ubuntu: apt install mtools)" % tool)
     if args.upstream:
         if args.sb_test or args.sb_only or args.setup_only or args.tpm2:
-            ap.error("--upstream: solo --reloc-test e --tpm")
-        lines, failed = run_upstream(args.rom, args.out, args.timeout, args.reloc_test, args.tpm)
+            ap.error("--upstream: solo --reloc-test, --tpm, --auth-rom e --gap")
+        if args.auth_rom and not os.path.isfile(args.auth_rom):
+            sys.exit("--auth-rom: %s non c'e'" % args.auth_rom)
+        lines, failed, known = run_upstream(args.rom, args.out, args.timeout, args.reloc_test, args.tpm,
+                                            args.auth_rom, args.gap)
         for line in lines:
             print("  %s" % line)
+        gaps = " (lacune note: %s)" % ", ".join(known) if known else ""
         if failed:
-            print("smoke upstream: %d passi non passano (%s): %s (schermate e seriale in %s)"
-                  % (len(failed), ACCEL.upper(), ", ".join(failed), args.out))
+            print("smoke upstream: %d passi non passano (%s): %s%s (schermate e seriale in %s)"
+                  % (len(failed), ACCEL.upper(), ", ".join(failed), gaps, args.out))
             return 1
-        print("smoke upstream: passato (%s; schermate in %s)" % (ACCEL.upper(), args.out))
+        print("smoke upstream: passato (%s)%s; schermate in %s" % (ACCEL.upper(), gaps, args.out))
         return 0
     try:
         steps = run(args.rom, args.out, args.timeout, args.setup_only, args.vga_mb, size,
