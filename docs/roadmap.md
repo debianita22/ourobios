@@ -29,6 +29,8 @@ is here. None of it is a promise of a date.
 | [Card reader of the W541](#card-reader-of-the-w541) | W541 | the premise was wrong: the reader is most likely not a Realtek | `lspci -nn` on the laptop |
 | [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | the field is reserved on Haswell client processors | the TCC line of `hw-report.py` on a W541 |
 | [Upstream changes not taken](#upstream-changes-not-taken) | W541 | 96893 unreviewed and no gain here; 95880 and 95912 at Code-Review -2 | the next coreboot pin; `rfkill` on a W541 |
+| [EDK II from TianoCore](#edk-ii-from-tianocore) | both | the setup (CFR, LvglPkg), the splash, the password and the Secure Boot keys exist only in MrChromebox's branch | the upstream payload in the QEMU smoke test; the setup as a package outside the tree |
+| [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
 | [Openness score](#openness-score) | both | already in `tools/sbom.py` | a comparison with Dasharo's own tool |
 
 ## Firmware watchdog
@@ -488,3 +490,50 @@ one.
 - **Next step**: only a comparison with Dasharo's own tool on one image,
   to see whether it counts the descriptor and the GbE region as closed
   binaries, as `sbom.py` does.
+
+## EDK II from TianoCore
+
+The payload is MrChromebox's EDK II at a pinned commit, a fork of
+TianoCore whose `UefiPayloadPkg` boots on coreboot. Upstream TianoCore
+(checked at 2026-10-28) has what the fork once added for coreboot:
+SMMSTORE variables (`SmmStoreFvb`, `VARIABLE_SUPPORT=SMMSTORE`),
+`CAPSULE_SUPPORT` with `BOOTLOADER=COREBOOT`, `BlSupportSmm`,
+`PchSmiDispatchSmm`. What the project uses that upstream has not:
+`CfrSetupMenuDxe` and LvglPkg (the whole setup, the *System Preferences*
+layout), `BootSplashConfigDxe` and the splash, `UserAuthPkg` (the
+supervisor password), `EnrollDefaultKeys` (the Secure Boot keys at the
+first boot; upstream has `SecureBootDefaultKeysDxe` with the keys as
+PCDs, the standard way), `PlatformGopPolicy`, `NetworkDrivers`,
+`EcAcpiBatteryStatusDxe`, the SD/MMC drivers, and the `-D` defines that
+coreboot's `payloads/external/edk2/Makefile` passes for the fork
+(`BOOTSPLASH_IMAGE`, `LVGL_ENABLE`, `CSMWRAP`, `NETWORK_IPXE`,
+`CAPSULE_MAIN_FW_GUID`). Of the 44 patches in `patches/edk2`, seven touch
+packages outside `UefiPayloadPkg`: `0001` (UiApp), `0004` (OvmfPkg
+SioBusDxe), `0007` (Ps2MouseDxe), `0019` (TcgDxe), `0032` (DxeCore),
+`0039` (Variable, MOR), `0041` (already in mainline: it goes).
+
+The order, each step tested in the QEMU smoke and update tests before any
+ROM: (a) the upstream payload built against coreboot at `EDK2_REPO_OFFICIAL`
+on a tag `edk2-stableYYYYMM`, with variables, capsules, the ESRT and
+Secure Boot through `SecureBootDefaultKeysDxe` and the PCDs of the keys,
+without a setup; (b) the setup, splash and password as a package of their
+own outside the tree (`OuroBiosPkg`: CfrSetupMenuDxe, LvglPkg and its
+LVGL, the update screen), built with the upstream tree, so that the
+*System Preferences* setup stays as it is; (c) the six patches on core
+packages proposed upstream or carried as they are, each with a reason;
+(d) `tools/build.sh`, `configs/edk2-pins.txt` and `upstream.yml` on the
+upstream tags, which are stable, instead of the mirror of a moving
+branch. Weeks of work, all in the payload: no change to the read-only
+part, and a slot that does not boot falls back.
+
+## HSTI
+
+The Hardware Security Testability Interface is a UEFI protocol with the
+result of the security tests of the platform's own firmware, which
+Windows reads for its device security report. The tests ask for what
+these machines do not have (a locked descriptor, boot guard, pre-boot
+DMA protection) next to what they do (BIOS Lock, Secure Boot, the WSMT):
+a protocol that reports part "no" tells Windows what the known limits
+of the README already say. Not planned; the WSMT (patches 0211-0215)
+covers what Windows acts on.
+
