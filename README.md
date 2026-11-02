@@ -18,7 +18,7 @@
 
 ouroBIOS is a [coreboot](https://www.coreboot.org) firmware for the **Lenovo
 ThinkPad W541** (Intel Haswell, Lynx Point QM87, NVIDIA Quadro K2100M), with
-the [EDK II](https://github.com/mrchromebox/edk2) UEFI payload. GitHub Actions
+the [EDK II](https://github.com/tianocore/edk2) UEFI payload. GitHub Actions
 builds it from a pinned upstream coreboot commit plus the patches in this
 repository and publishes two complete flash images per version:
 
@@ -108,9 +108,12 @@ address on the machine stay as they are.
 Inside coreboot:
 
 - coreboot `26.09-438-g206078d6d990` plus the [patch series](patches/), EDK2
-  from MrChromebox pinned to a tested commit plus its own
-  [patches](patches/README.md#edk2-and-lvglpkg), with the boot splash in
-  `assets/`;
+  from upstream TianoCore at a stable tag with the project's package
+  [`edk2/OuroBiosPkg`](edk2/README.md) and the
+  [patches it carries](patches/README.md#tianocore-edk-ii-for-the-package):
+  MrChromebox's EDK2 at a tested commit with the project's
+  [patches](patches/README.md#edk2-and-lvglpkg), moved onto the tag, with the
+  boot splash in `assets/`;
 - libgfxinit for the Intel GPU (no Intel VBIOS is executed);
 - the NVIDIA K2100M VBIOS, handed to the operating system through the ACPI
   `_ROM` method of the GPU, with runtime power management (the GPU is switched
@@ -226,7 +229,7 @@ what the two machines cannot meet:
 | Area | Baseline |
 |---|---|
 | coreboot | upstream `main` at the commit `tools/build.sh` pins (`COREBOOT_COMMIT`, 26.09-438 at v1.5.0), its cross toolchain and the [patch series](patches/README.md), each patch written for upstream review |
-| EDK II | MrChromebox's [edk2](https://github.com/mrchromebox/edk2) at the commit of the defconfigs (`CONFIG_EDK2_TAG_OR_REV`, [`configs/edk2-pins.txt`](configs/edk2-pins.txt)), a fork of TianoCore EDK II whose `UefiPayloadPkg` boots on coreboot; the [41 patches](patches/README.md#edk2-and-lvglpkg) stay in `UefiPayloadPkg` but seven (`edk2/0001`, `0004`, `0007`, `0019`, `0032`, `0039`, `0041`) touch `MdeModulePkg`, `SecurityPkg` or `OvmfPkg`. A move to upstream TianoCore is planned ([docs/roadmap.md](docs/roadmap.md)) |
+| EDK II | from v1.6.0, upstream [TianoCore EDK II](https://github.com/tianocore/edk2) at a stable tag (`edk2-stable202608`, `EDK2_UPSTREAM_TAG` of `tools/build.sh`), with the package of the project, [`edk2/OuroBiosPkg`](edk2/README.md) (`.dec`, `.dsc`, `.fdf`, the setup, the splash, the password, the default Secure Boot keys and the other modules that TianoCore does not have), LvglPkg next to it, and [`patches/tianocore`](patches/README.md#tianocore-edk-ii-for-the-package) on TianoCore's own packages: MrChromebox's [edk2](https://github.com/mrchromebox/edk2) at `6c14abf865e0` with the project's [patches](patches/README.md#edk2-and-lvglpkg), moved onto the tag by `tools/edk2-import.py`, the same payload byte for byte (`tools/build.sh edk2-parity`). Up to v1.5.1, MrChromebox's tree itself ([`configs/edk2-pins.txt`](configs/edk2-pins.txt)). The carried patches go upstream, to the package or out over time ([docs/edk2-migration.md](docs/edk2-migration.md)) |
 | UEFI | the system table reports revision 2.7 (`EFI_SYSTEM_TABLE_REVISION` of this EDK II); the runtime services, variables, capsules, ESRT and Secure Boot are implemented and tested against the UEFI 2.10 text (`tools/efi/*.c` cite its sections); PI 1.8 (`PI_SPECIFICATION_VERSION`) for the HOBs the payload reads from coreboot |
 | ACPI | tables from coreboot's generator and ASL, compiled by the iasl of the cross toolchain (ACPICA 20251212 at v1.5.0) with warnings as errors (`-we`) and disassembled back for a check at every build, then compiled once more at `-w3` by `tools/build.sh`, which from v1.6.0 stops on any warning of that level but the names only the OS reads (4089; `build-<variant>/dsdt-w3.log`); the ASL follows the ACPI 6.5 text (no EC RAM before `_REG`, `Device` processors with ACPI0007 by default); from v1.6.0 a WSMT table, revision 1, with the three flags the SMI handlers keep |
 | Secure Boot | PK, KEK, db and dbx enrolled at the first boot by the payload's `EnrollDefaultKeys`: Microsoft's *Windows OEM Devices PK* (so that Microsoft can issue KEK updates for it), the *Microsoft Corporation KEK CA 2011* and *KEK 2K CA 2023*, in db the *Microsoft Corporation UEFI CA 2011*, *Microsoft UEFI CA 2023*, *Microsoft Option ROM UEFI CA 2023*, *Microsoft Windows Production PCA 2011* and *Windows UEFI CA 2023*, and Microsoft's dbx (its hash lists as in [microsoft/secureboot_objects](https://github.com/microsoft/secureboot_objects) v1.7.1-signed, the latest on 2026-11-02, which `upstream.yml` compares every week; not its SVN entries, which revoke older Windows boot managers and which Windows writes itself once its own boot manager is updated: in the defaults they would refuse installation media with an older one); variables authenticated and kept in `SMMSTORE`, setup and user mode from the standard `SecureBootConfigDxe` |
@@ -303,9 +306,11 @@ tools/build.sh --board m920x        # the M920x (docs/m920x.md); --board all: ev
 
 `tools/build.sh` fetches coreboot at the pinned commit into `work/coreboot`,
 applies `patches/series`, copies the blobs (checked against their
-`SHA256SUMS`), fetches MrChromebox's EDK2 at the commit of the defconfigs
+`SHA256SUMS`), fetches TianoCore's EDK II at the tag of the defconfigs and
+applies `patches/tianocore`, stages the package `edk2/OuroBiosPkg` and
+LvglPkg with its patches next to it
 (with the submodules the payload uses: OpenSSL, the brotli of BaseTools,
-LvglPkg and its LVGL; in the paths of the others it leaves the empty
+libfdt, and LVGL in LvglPkg; in the paths of the others it leaves the empty
 include folders their `.dec` files list, which BaseTools wants to find,
 so a `prepare` of a release before rc19 on that tree needs those folders
 removed first) and applies `patches/edk2` and `patches/lvglpkg`,
@@ -443,8 +448,8 @@ every boot
 |---|---|---|
 | [`check.yml`](.github/workflows/check.yml) | every push and pull request | `tools/ci-check.sh` (shellcheck, actionlint, blob checksums, patch series, defconfigs); the series applied to the pinned coreboot and EDK2, and the configuration of every board and variant checked |
 | [`build.yml`](.github/workflows/build.yml) | tag `vX.Y.Z`, *Run workflow*, push to `ci-test/**` | the ROMs of every board with the coreboot toolchain (cached), verified, their setup menu checked (`menu`), their payloads booted in QEMU (`smoke`), their capsules signed, their bill of materials made (`tools/sbom.py`); in parallel, the ROMs built a second time from scratch on another runner (`repro`) and compared bit by bit with the first (`compare`), and the capsule update with vboot A/B in QEMU (`update-test`); the files of each release checked (`tools/ci.sh check`) and published as `vX.Y.Z-mrc`, `vX.Y.Z-nri` and, from v1.4.0, `vX.Y.Z-m920x-fsp` |
-| [`edk2-upstream.yml`](.github/workflows/edk2-upstream.yml) | *Run workflow*, push to `ci-edk2/**` | the payload of upstream TianoCore EDK II at a stable tag, without the project's patches, in three q35 images with this tree's coreboot (one with Secure Boot, one from the project's package [`edk2/OuroBiosPkg`](edk2/README.md)), and the steps of the smoke test that need no setup of the project (`tools/build.sh edk2-upstream`), with the known gaps of [docs/edk2-migration.md](docs/edk2-migration.md#step-a-edk2-stable202608-in-qemu): the first step of the move to TianoCore ([docs/roadmap.md](docs/roadmap.md#edk-ii-from-tianocore)); no release |
-| [`upstream.yml`](.github/workflows/upstream.yml) | every Monday | opens an issue when the series no longer applies on coreboot `main`, a patch was merged upstream, a coreboot release is out, MrChromebox's EDK2 branch moved, a pinned EDK2 or LvglPkg commit has no tag in the project's forks (`configs/edk2-pins.txt`), the default dbx of the payload is not the one of Microsoft's latest signed release, or TianoCore has a stable tag after the one of `edk2-upstream` (with whether the patches of `edk2/OuroBiosPkg` still apply to it) |
+| [`edk2-upstream.yml`](.github/workflows/edk2-upstream.yml) | *Run workflow*, push to `ci-edk2/**` | the move to TianoCore ([docs/edk2-migration.md](docs/edk2-migration.md)): `patches/tianocore` and [`edk2/OuroBiosPkg`](edk2/README.md) checked against MrChromebox's tree with `patches/edk2` (`tools/edk2-import.py --check`); the payload of the TianoCore tag without the project's patches, with the known gaps, and from the package, in q35 images with this tree's coreboot and the steps of the smoke test that need no setup of the project (`tools/build.sh edk2-upstream`); the payload of each board from the package and from MrChromebox's tree, the same byte for byte (`tools/build.sh edk2-parity`); no release |
+| [`upstream.yml`](.github/workflows/upstream.yml) | every Monday | opens an issue when the series no longer applies on coreboot `main`, a patch was merged upstream, a coreboot release is out, MrChromebox's EDK2 branch moved past the commit the package comes from, a pinned EDK2 or LvglPkg commit has no tag in the project's forks (`configs/edk2-pins.txt`), the default dbx of the payload is not the one of Microsoft's latest signed release, or TianoCore has a stable tag after the one of the payload (with whether `patches/tianocore` and the platform of `edk2/OuroBiosPkg` still apply to it) |
 
 A release is made by pushing a version tag (`git tag v1.0.0 && git push origin
 v1.0.0`) or with *Run workflow* and a version. It needs the repository secret
@@ -476,7 +481,7 @@ gh release edit v1.4.0-m920x-fsp --repo debianita22/ourobios --prerelease=false 
 | `configs/` | `w541-mrc.defconfig` and `w541-nri.defconfig`, the flash map `w541.fmd`, the interface of the read-only part already on the laptops (`ro-interface.txt`), the OpenCore device properties of this W541 for patches 0128 and 0133 (`macos/`), the fwupd remotes (`fwupd/ourobios.conf`, the releases; `fwupd/ourobios-testing.conf`, the candidates too), the EDK2 and LvglPkg commits of every release that the project's forks keep under a tag (`edk2-pins.txt`) |
 | `patches/` | the series applied to coreboot, the patches to EDK2 and its LvglPkg, the q35 patches of the update test and of the setup screenshots; `optional/` for patches to build in with `--with`, none at the moment ([patches/README.md](patches/README.md)) |
 | `tools/` | `build.sh`, the build; `verify-rom.sh`, the checks on a ROM; `ci-check.sh`, `ci.sh` and `upstream.sh`, the CI, the releases and the upstream check; `cfr-dump.sh` and `q35-cfr-rom.sh`, the setup menu of a build (`build.sh menu`) and its screenshots (`qemu-setup-shots.py`); `update.py`, the capsule update from Linux and the flash protection of the running boot; `fwupd-cab.py`, the fwupd package and the metadata of the remote; `vpd.py`, the serial number and machine type; `elog.py`, which reads the event log from a flash dump; `idle-report.py`, package C-states, power, memory traffic and device power states at idle; `hw-report.py`, PASS, WARN or FAIL for each area of a running machine, the automated part of the release tests ([docs/testing.md](docs/testing.md)); `pm-regs.py`, the power management registers the firmware left; `ddr-report.py`, the memory controller as the RAM init left it, and two of its dumps compared; `mem-latency.c`, how long a read from the memory takes; `peg-report.py`, the PCIe link to the NVIDIA GPU; `qemu-smoke.py`, the payload booted in QEMU (with `efi/rt-reloc-test.c`, the runtime services moved as boot.efi of macOS moves them, and `efi/secure-boot-test.c`, the ESRT and Secure Boot image verification, with `pe-hash.py`, the Authenticode hash of a PE image; the TPM 1.2 and 2.0 of swtpm, coreboot's and the payload's measurements, the log replayed against the PCRs that `efi/tpm-pcr-test.c` reads); `qemu-update.py`, capsule updates with vboot A/B in QEMU (with `efi/slot-lock-test.c`, a UEFI application for it); `logo.py`, the logo as an LVGL image or a PNG; `sbom.py`, the software bill of materials of a ROM read from the image itself (versions, licenses, SHA-256 of the binaries, how much is open source), in Markdown or CycloneDX |
-| `edk2/` | `OuroBiosPkg`, the package of the payload for upstream TianoCore EDK II, step (b) of the move ([edk2/README.md](edk2/README.md)); not yet in a ROM of a board |
+| `edk2/` | `OuroBiosPkg`, the package of the payload on upstream TianoCore EDK II, in the ROMs from v1.6.0 ([edk2/README.md](edk2/README.md)) |
 | `keys/` | the certificate of the key that signs the capsules, and vboot's public keys ([keys/README.md](keys/README.md)) |
 | `legacy/coreboot-4.22/` | the coreboot 4.22 image and configuration this project started from, built from the same blobs |
 | `docs/` | [flashing and recovery](docs/flashing.md), [updates with capsules](docs/update.md), [verified boot and A/B](docs/vboot.md), [the native RAM init](docs/raminit.md), [macOS with OpenCore](docs/macos.md), [the ThinkCentre M920x](docs/m920x.md), [release testing](docs/testing.md), [what was evaluated and left for later](docs/roadmap.md), [moving the payload to TianoCore](docs/edk2-migration.md) |
@@ -497,10 +502,13 @@ NVIDIA.
 
 The scripts, configurations and patches are GPL-2.0, like coreboot
 ([LICENSE](LICENSE)); the package in `edk2/` is BSD-2-Clause-Patent, like
-the EDK II files it derives from. The binary blobs keep their own licenses
+the EDK II files it derives from, but for the file system drivers of
+`edk2/OuroBiosPkg/FSDrivers`, binaries with their GPL licenses
+([edk2/README.md](edk2/README.md)). The binary blobs keep their own licenses
 (see above).
 The images also carry, built from source at the commits each release
-names, MrChromebox's EDK2 (BSD-2-Clause-Patent), iPXE (GPL-2.0-or-later
+names, EDK II of TianoCore with MrChromebox's modules (BSD-2-Clause-Patent; of
+`FSDrivers`, the ext4 driver of rEFInd, GPL-2.0), iPXE (GPL-2.0-or-later
 for the build with the Intel driver) and CSMWrap (LGPL-2.1) with SeaBIOS
 (LGPL-3.0). The setup and the update screen draw their text with Montserrat
 (SIL Open Font License 1.1) and icons of Font Awesome Free (CC BY 4.0), as

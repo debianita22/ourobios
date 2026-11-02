@@ -146,7 +146,7 @@ CONFIG_DRIVERS_EFI_MAIN_FW_GUID="ceef6456-ca3b-4cf3-a784-4895efaf1bde"
 CONFIG_DRIVERS_EFI_MAIN_FW_LSV=0x01030900
 CONFIG_DRIVERS_EFI_UPDATE_CAPSULES=y
 CONFIG_DRIVERS_EFI_CAPSULE_ON_DISK_SUPPORT=y
-# relativo all'albero di EDK2 (payloads/external/edk2/workspace/mrchromebox)
+# relativo all'albero di EDK2 (payloads/external/edk2/workspace/tianocore)
 CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT="../../../../../m920x/capsule-signing.pem"
 # FmpDxe con lo stesso FILE_GUID del W541 (patch 0135): ogni macchina ha le
 # sue variabili; il GUID dell'ESRT arriva dalla tabella di coreboot
@@ -158,9 +158,19 @@ CONFIG_MAINBOARD_USE_LIBGFXINIT=y
 CONFIG_LINEAR_FRAMEBUFFER_MAX_WIDTH=1920
 CONFIG_LINEAR_FRAMEBUFFER_MAX_HEIGHT=1080
 
-# Payload: EDK2 di MrChromebox allo stesso commit del W541
+# Payload: EDK II di TianoCore al tag stabile (edk2-stable202608) con
+# patches/tianocore e il package del progetto, edk2/OuroBiosPkg con LvglPkg
+# accanto (patch 0216, 0217): le righe di EDK2_PACKAGE_CONFIG di
+# tools/build.sh. Gli stessi sorgenti dell'EDK2 di MrChromebox 6c14abf con
+# patches/edk2 (tools/edk2-import.py), lo stesso payload byte per byte
+# (tools/build.sh edk2-parity)
 CONFIG_PAYLOAD_EDK2=y
-CONFIG_EDK2_TAG_OR_REV="6c14abf865e093452edc775651df61775bf99c9f"
+CONFIG_EDK2_REPO_CUSTOM=y
+CONFIG_EDK2_REPOSITORY="https://github.com/tianocore/edk2"
+CONFIG_EDK2_TAG_OR_REV="2970e5699ba6267f3384ffab20f96647578aebc8"
+CONFIG_EDK2_PLATFORM_DSC="OuroBiosPkg/OuroBiosPkg.dsc"
+CONFIG_EDK2_PACKAGES_PATH="payloads/external/edk2/workspace/packages"
+CONFIG_EDK2_SECURE_BOOT_SUPPORT=y
 CONFIG_EDK2_BOOTSPLASH_FILE="m920x/bootsplash.bmp"
 CONFIG_EDK2_BOOT_MANAGER_ESCAPE=y
 CONFIG_EDK2_FOLLOW_BGRT_SPEC=y

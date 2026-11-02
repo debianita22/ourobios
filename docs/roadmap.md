@@ -29,7 +29,7 @@ is here. None of it is a promise of a date.
 | [Card reader of the W541](#card-reader-of-the-w541) | W541 | the premise was wrong: the reader is most likely not a Realtek | `lspci -nn` on the laptop |
 | [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | the field is reserved on Haswell client processors | the TCC line of `hw-report.py` on a W541 |
 | [Upstream changes not taken](#upstream-changes-not-taken) | W541 | 96893 unreviewed and no gain here; 95880 and 95912 at Code-Review -2 | the next coreboot pin; `rfkill` on a W541 |
-| [EDK II from TianoCore](#edk-ii-from-tianocore) | both | the setup (CFR, LvglPkg), the splash, the password and the Secure Boot keys exist only in MrChromebox's branch | step (a) in CI (`tools/build.sh edk2-upstream`, `edk2-upstream.yml`): SMMSTORE passes, three known gaps ([docs/edk2-migration.md](edk2-migration.md#step-a-edk2-stable202608-in-qemu)); step (b) started, the package [`edk2/OuroBiosPkg`](../edk2/README.md) built outside the tree |
+| [EDK II from TianoCore](#edk-ii-from-tianocore) | both | moved in v1.6.0: the payload of the ROMs is TianoCore's tag with the package [`edk2/OuroBiosPkg`](../edk2/README.md) and `patches/tianocore`, the same payload as MrChromebox's tree with `patches/edk2`; what is left is the carried series, 110 patches | the series shorter: the *drop* commits first, then the *package* ones into `OuroBiosPkg`, the *upstream* ones proposed ([docs/edk2-migration.md](edk2-migration.md)) |
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
 | [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
 | [Openness score](#openness-score) | both | already in `tools/sbom.py` | a comparison with Dasharo's own tool |
@@ -550,6 +550,16 @@ built by coreboot with patches 0216 and 0217 into the third image of
 `upstream.yml` on the upstream tags, which are stable, instead of the
 mirror of a moving branch. All in the payload: no change to the
 read-only part, and a slot that does not boot falls back.
+
+Done in v1.6.0, steps (b) to (d): the defconfigs build the payload from
+TianoCore's `edk2-stable202608` with the package and the carried series,
+the same payload byte for byte as MrChromebox's `6c14abf865e0` with
+`patches/edk2` (`tools/build.sh edk2-parity`), and `upstream.yml` watches
+the stable tags of TianoCore and MrChromebox's branch, from which the
+import takes new commits ([docs/edk2-migration.md](edk2-migration.md#step-d-the-boards-on-the-package)).
+Left: the carried series, shorter one commit at a time, each with the
+payload's tests, until what remains of MrChromebox's work is the package
+and the patches proposed upstream.
 
 ## HSTI
 

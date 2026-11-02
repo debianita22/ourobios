@@ -1,10 +1,12 @@
 # Moving the payload to TianoCore EDK II
 
-The payload is MrChromebox's EDK II, branch `uefipayload_2608`, at
-`6c14abf865e0`: the stable tag `edk2-stable202608` of TianoCore
-(`2970e5699ba6`, 2026-08-12) and 100 commits of MrChromebox on top of it,
-then the 44 patches of [`patches/edk2`](../patches/edk2) and the 18 of
-[`patches/lvglpkg`](../patches/lvglpkg). This page lists those 100
+Up to v1.5.1 the payload was MrChromebox's EDK II, branch
+`uefipayload_2608`, at `6c14abf865e0`: the stable tag `edk2-stable202608`
+of TianoCore (`2970e5699ba6`, 2026-08-12) and 100 commits of MrChromebox on
+top of it, then the 44 patches of [`patches/edk2`](../patches/edk2) and the
+18 of [`patches/lvglpkg`](../patches/lvglpkg). From v1.6.0 it is the same
+sources on the TianoCore tag ([step (d)](#step-d-the-boards-on-the-package)).
+This page lists those 100
 commits with what each becomes when the payload moves to TianoCore, in the
 order of [the roadmap](roadmap.md#edk-ii-from-tianocore): (a) TianoCore as
 it is in QEMU (`tools/build.sh edk2-upstream`); (b) the setup and the
@@ -116,26 +118,58 @@ MrChromebox's tree at the commit of the defconfigs:
   the Makefile copies them in the edk2 tree.
 - **Tests**: `edk2-upstream` builds the package into its third q35 image,
   with the boards' options and the steps of `--upstream`, which the
-  upstream tag fails for the gaps above; `tools/build.sh edk2-parity`
+  upstream tag fails for the gaps above: the package passes all six
+  (`2f219ab`): the variables in SMMSTORE across a reboot, the runtime
+  services moved as boot.efi moves them, `ResetSystem()` from the virtual
+  pages included (`edk2/0031`, in the platform), the TPM 1.2 log replayed
+  against the PCRs with the default keys measured in PCR 7, an erased
+  store formatted as authenticated and AuthVariableLib's variables on it
+  and on one already authenticated; `tools/build.sh edk2-parity`
   builds the payload of the first variant of each board from the package
   and from MrChromebox's tree, with the same options, and the two must
   be the same byte for byte (if not, `tools/fv-diff.py` says which
   modules differ and where).
-- **Until step (d)**: a change to the payload goes to `patches/edk2` and
-  the import is run again; the boards build from MrChromebox's tree.
+- **A change to the payload** goes to `patches/edk2`, on MrChromebox's
+  tree, and the import is run again (`tools/edk2-import.py`, then the
+  `edk2-upstream` workflow): the two stay the same sources.
 - **What stays**: the read-only part, the patches of coreboot outside
   `payloads/external/edk2`, the ACPI tables, the setup's options (CFR)
   and their names, the variable store and its format: nothing changes for
   OpenCore or the OSes.
 
-What comes next, each with the payload's tests: the boards on the package
-(step (d): the defconfigs on `EDK2_PACKAGE_CONFIG`, `patches/edk2` and
-MrChromebox's pin retired, `upstream.yml` on the stable tags); then the
-series shorter, commit by commit, as the tables below say: the *package*
-ones out of TianoCore's packages into `OuroBiosPkg` (a
-`PlatformBootManagerLib` of its own, for one), the *upstream* ones
-proposed to TianoCore, the *drop* ones left out (the drivers for hardware
-these boards do not have first).
+## Step (d): the boards on the package
+
+From v1.6.0 the defconfigs of every board have the lines of
+`EDK2_PACKAGE_CONFIG` (`tools/build.sh`) in place of MrChromebox's commit:
+a custom repository, TianoCore at `edk2-stable202608`, the package's
+platform and packages path, Secure Boot. `tools/build.sh prepare` fetches
+TianoCore at the tag with its submodules, applies `patches/tianocore` and
+stages `OuroBiosPkg` and LvglPkg; the release notes, the layout file and
+the bill of materials name the tag, the carried patches, the package and
+the MrChromebox commit they come from (`EDK2_MRCHROMEBOX_COMMIT`).
+
+- **The same payload**: `tools/build.sh edk2-parity` builds the first
+  variant of each board from the package and, with the same defconfig but
+  `EDK2_MRCHROMEBOX_COMMIT` in place of the package's lines, from
+  MrChromebox's tree with `patches/edk2`, and stops if the two
+  `UEFIPAYLOAD.fd` are not the same byte for byte; `edk2-upstream.yml`
+  runs it with the import check.
+- **What is watched**: `tools/upstream.sh edk2` says when MrChromebox's
+  branch moves past `EDK2_MRCHROMEBOX_COMMIT` (to take his commits: the
+  constant moved, `patches/edk2` rebased, the import again), `tianocore`
+  when TianoCore has a newer stable tag (whether the series and the
+  platform still apply), `dbx` reads the dbx of the package.
+- **Going back**: the defconfigs with `CONFIG_EDK2_TAG_OR_REV` of
+  MrChromebox in place of the package's lines build the payload of v1.5.1's
+  base again (`tools/build.sh` follows the defconfigs).
+
+What comes next, each with the payload's tests: the series shorter, commit
+by commit, as the tables below say: the *package* ones out of TianoCore's
+packages into `OuroBiosPkg` (a `PlatformBootManagerLib` of its own, for
+one), the *upstream* ones proposed to TianoCore, the *drop* ones left out
+(the drivers for hardware these boards do not have first); when a change
+lives only in the package or the series, `patches/edk2` and the import
+retire.
 
 ## Setup menu and the other screens of the firmware
 

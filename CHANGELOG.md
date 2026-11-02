@@ -57,6 +57,18 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   current payload gives; the runtime services moved as boot.efi moves them,
   the TPM 1.2 and an authenticated store on an erased SMMSTORE are known
   gaps, each with what closes it. No release image changes.
+- **EDK II from upstream TianoCore**: the payload of every board is built
+  from TianoCore's `edk2-stable202608` with the project's package
+  [`edk2/OuroBiosPkg`](edk2/README.md) and the patches it carries on
+  TianoCore's packages, no longer from MrChromebox's fork (step (d) of
+  [the move](docs/edk2-migration.md#step-d-the-boards-on-the-package)): the
+  same sources as MrChromebox's `6c14abf865e0` with `patches/edk2`, and the
+  same payload byte for byte (`tools/build.sh edk2-parity`, in
+  `edk2-upstream.yml`), so the setup, the boot options, Secure Boot, the
+  capsules and the NVRAM are those of v1.5.1. The defconfigs pin the tag
+  (`EDK2_PACKAGE_CONFIG` of `tools/build.sh`); the release notes, the
+  layout and the bill of materials name the tag, the carried patches, the
+  package and the MrChromebox commit they come from.
 - Steps (b) and (c) of the move: the payload of the ROMs as a package
   on TianoCore's tag, with the same sources. `tools/edk2-import.py` makes
   [`edk2/OuroBiosPkg`](edk2/README.md) (the modules that TianoCore does
@@ -72,10 +84,11 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   custom repository; for MrChromebox's nothing changes), into the third
   image of `edk2-upstream`, and `tools/build.sh edk2-parity` builds the
   payload of each board from it to compare it, byte for byte, with the
-  one of the ROMs (`tools/fv-diff.py` says which modules differ). The
-  boards still build from MrChromebox's tree; `tools/upstream.sh
-  tianocore` also checks every week that `patches/tianocore` applies to
-  a newer stable tag.
+  one of MrChromebox's tree (`tools/fv-diff.py` says which modules
+  differ). `tools/upstream.sh tianocore` also checks every week that
+  `patches/tianocore` applies to a newer stable tag, `edk2` watches
+  MrChromebox's branch from the commit the package comes from, `dbx`
+  reads the dbx of the package.
 - [docs/edk2-migration.md](docs/edk2-migration.md): the 100 commits of
   MrChromebox's branch over `edk2-stable202608`, each with what it
   becomes in the move to TianoCore (the project's package, a patch to

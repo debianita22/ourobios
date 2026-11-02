@@ -6,6 +6,10 @@
 # which takes the commit from there when upstream no longer has it);
 # tools/upstream.sh mirror checks every week that the tags are there, and
 # tools/ci-check.sh that the pin of the defconfigs is listed here.
+# From v1.6.0 the defconfigs pin a stable tag of TianoCore, which needs no
+# mirror, with the project's package; the package and patches/tianocore
+# come from the MrChromebox commit of EDK2_MRCHROMEBOX_COMMIT, listed here
+# with the LvglPkg of the package (LVGLPKG_COMMIT).
 #
 # edk2 commit                              lvglpkg commit                           releases
 b061f7a46bdb482db24a3c1fc8275e1c2a6681b5 659b502401d9439443dc636acb10ca711afe8bc5 v1.0.0-v1.3.2
@@ -13,4 +17,4 @@ b061f7a46bdb482db24a3c1fc8275e1c2a6681b5 659b502401d9439443dc636acb10ca711afe8bc
 9c0cb3a58343786240c38b2d115c200351d2882b 659b502401d9439443dc636acb10ca711afe8bc5 v1.3.6-v1.3.7
 f7cbaab0d5a224d15a144c049fc83f8d730b45fb 659b502401d9439443dc636acb10ca711afe8bc5 v1.3.8-v1.3.10-rc11
 ddf612165c8b36e94d5454f01a38e87cf101533f 659b502401d9439443dc636acb10ca711afe8bc5 v1.3.10-rc12-v1.4.0
-6c14abf865e093452edc775651df61775bf99c9f 659b502401d9439443dc636acb10ca711afe8bc5 v1.4.1-
+6c14abf865e093452edc775651df61775bf99c9f 659b502401d9439443dc636acb10ca711afe8bc5 v1.4.1-v1.5.1, the package from v1.6.0

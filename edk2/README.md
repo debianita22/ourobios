@@ -1,13 +1,12 @@
 # edk2/: the project's package for EDK II
 
 `OuroBiosPkg` is the payload of ouroBIOS as a package built against
-upstream TianoCore EDK II, steps (b) and (c) of the move to TianoCore
+upstream TianoCore EDK II, the payload of the ROMs from v1.6.0
 ([docs/edk2-migration.md](../docs/edk2-migration.md#steps-b-and-c-the-package-and-the-carried-patches)):
 with [`patches/tianocore`](../patches/README.md#tianocore-edk-ii-for-the-package)
 on the tree of `EDK2_UPSTREAM_TAG` (`tools/build.sh`) and LvglPkg next to
-it, it has the same sources, file for file, as the payload of the ROMs
-today, MrChromebox's EDK II at the commit of the defconfigs with
-`patches/edk2`.
+it, it has the same sources, file for file, as MrChromebox's EDK II at
+`EDK2_MRCHROMEBOX_COMMIT` with `patches/edk2`, the payload up to v1.5.1.
 
 | File | What it is |
 |---|---|
@@ -24,7 +23,7 @@ today, MrChromebox's EDK II at the commit of the defconfigs with
 | `Library/CsmWrapSecureBootLib/` | CSMWrap refused while Secure Boot is on (`edk2/0025`) |
 | `EcAcpiBatteryStatusDxe/`, `Library/CbfsLib/` | the battery on the front page, files read from coreboot's CBFS |
 | `PlatformGopPolicy/`, `SdMmcPciGliDxe/`, `SdhciNonPciDxe/`, `UfsPlatformDxe/`, `Test/` | MrChromebox's modules for hardware these boards do not have (built only with their switches, or not at all), to leave out later ([docs/edk2-migration.md](../docs/edk2-migration.md)) |
-| `FSDrivers/` | the ext4 (rEFInd 0.12.0) and the exFAT, ext2 and NTFS drivers, binaries of MrChromebox's tree (GPL-3.0, `LICENSE_GPL.txt`); the boards build with ext4 only (`EXTRA_FS_DRIVERS=FALSE`) |
+| `FSDrivers/` | file system drivers, binaries of MrChromebox's tree with their license files: ext4 of rEFInd 0.12.0 (GPL-2.0), exFAT and ext2 of EfiFs 1.10 (GPL-3.0, from GRUB), NTFS of ntfs-3g (GPL-2.0); the boards build with ext4 only (`EXTRA_FS_DRIVERS=FALSE`) |
 
 `tools/edk2-import.py` makes all of it, and `patches/tianocore`, from
 MrChromebox's tree: the commits of MrChromebox between the stable tag and
@@ -40,7 +39,7 @@ of the edk2 tree). Before it writes, it checks that the tag with the new
 series gives MrChromebox's tree with `patches/edk2` in every other file;
 `--check` (in `edk2-upstream.yml`) checks the files of the repository the
 same way. A change to the payload goes to `patches/edk2` and the import is
-run again, until the boards move to the package (step (d)).
+run again.
 
 `tools/build.sh` stages the package in
 `payloads/external/edk2/workspace/packages` of the coreboot tree
@@ -55,12 +54,14 @@ kept as a patch says what it changes, and one that no longer applies to a
 new stable tag stops the build there, where it has to be looked at again
 (`tools/upstream.sh tianocore` says so every week).
 
-No ROM of a board is built from it yet. `tools/build.sh edk2-upstream`
-builds it into a q35 image and runs the steps of `qemu-smoke.py
---upstream` on it; `tools/build.sh edk2-parity` builds the payload of the
-first variant of each board from it and from MrChromebox's tree, which
-must be the same byte for byte.
+The defconfigs of the boards have those lines (step (d)): the ROMs are
+built from it. `tools/build.sh edk2-upstream` builds it into a q35 image
+and runs the steps of `qemu-smoke.py --upstream` on it;
+`tools/build.sh edk2-parity` builds the payload of the first variant of
+each board from it and from MrChromebox's tree, which must be the same
+byte for byte.
 
 The files of `OuroBiosPkg` are CRLF where those of EDK II are
 (`.gitattributes` keeps them as they are), and keep the licenses of the
-files they come from: BSD-2-Clause-Patent, but the binaries of `FSDrivers`.
+files they come from: BSD-2-Clause-Patent, but the binaries of `FSDrivers`
+(above).

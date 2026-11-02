@@ -163,7 +163,7 @@ CONFIG_DRIVERS_EFI_MAIN_FW_GUID="75f840a2-af55-4481-84b7-5e2f56cf3a4d"
 CONFIG_DRIVERS_EFI_MAIN_FW_LSV=0x01030900
 CONFIG_DRIVERS_EFI_UPDATE_CAPSULES=y
 CONFIG_DRIVERS_EFI_CAPSULE_ON_DISK_SUPPORT=y
-# relativo all'albero di EDK2 (payloads/external/edk2/workspace/mrchromebox)
+# relativo all'albero di EDK2 (payloads/external/edk2/workspace/tianocore)
 CONFIG_DRIVERS_EFI_CAPSULE_TRUSTED_PUBLIC_CERT="../../../../../w541/capsule-signing.pem"
 # FmpDxe del payload con un FILE_GUID fisso, lo stesso nelle due varianti
 # (patch 0135): il GUID dell'ESRT lo legge dalla tabella di coreboot a ogni
@@ -185,9 +185,19 @@ CONFIG_VGA_BIOS_DGPU_ID="10de,11fc"
 # blobs/opvk.inc: tools/build.sh la copia dove la include il DSDT
 CONFIG_LENOVO_HASWELL_NVIDIA_OPVK=y
 
-# Payload: EDK2 di MrChromebox al commit provato in QEMU
+# Payload: EDK II di TianoCore al tag stabile (edk2-stable202608) con
+# patches/tianocore e il package del progetto, edk2/OuroBiosPkg con LvglPkg
+# accanto (patch 0216, 0217): le righe di EDK2_PACKAGE_CONFIG di
+# tools/build.sh. Gli stessi sorgenti dell'EDK2 di MrChromebox 6c14abf con
+# patches/edk2 (tools/edk2-import.py), lo stesso payload byte per byte
+# (tools/build.sh edk2-parity)
 CONFIG_PAYLOAD_EDK2=y
-CONFIG_EDK2_TAG_OR_REV="6c14abf865e093452edc775651df61775bf99c9f"
+CONFIG_EDK2_REPO_CUSTOM=y
+CONFIG_EDK2_REPOSITORY="https://github.com/tianocore/edk2"
+CONFIG_EDK2_TAG_OR_REV="2970e5699ba6267f3384ffab20f96647578aebc8"
+CONFIG_EDK2_PLATFORM_DSC="OuroBiosPkg/OuroBiosPkg.dsc"
+CONFIG_EDK2_PACKAGES_PATH="payloads/external/edk2/workspace/packages"
+CONFIG_EDK2_SECURE_BOOT_SUPPORT=y
 CONFIG_EDK2_BOOTSPLASH_FILE="w541/bootsplash.bmp"
 CONFIG_EDK2_BOOT_MANAGER_ESCAPE=y
 CONFIG_EDK2_FOLLOW_BGRT_SPEC=y

@@ -147,11 +147,15 @@ for upstream review (one change each, with the reasoning in the message).
 ## EDK2 and LvglPkg
 
 `edk2/` and `lvglpkg/` hold the patches to the payload: `edk2/series` on
-MrChromebox's EDK2 at the commit of the defconfigs
-(`CONFIG_EDK2_TAG_OR_REV`), `lvglpkg/series` on its `LvglPkg` submodule (the
-graphical setup UI) at the commit that EDK2 pins. `tools/build.sh prepare`
-fetches EDK2 into the coreboot tree, where the payload build expects it, and
-applies both series as changes, not commits: coreboot's EDK2 Makefile resets
+MrChromebox's EDK2 at `EDK2_MRCHROMEBOX_COMMIT` (`tools/build.sh`),
+`lvglpkg/series` on its `LvglPkg` submodule (the graphical setup UI) at the
+commit that EDK2 pins (`LVGLPKG_COMMIT`). From v1.6.0 the ROMs build from
+TianoCore's tag with [`tianocore/`](#tianocore-edk-ii-for-the-package) and
+the package `edk2/OuroBiosPkg`, which `tools/edk2-import.py` makes from
+MrChromebox's tree with `edk2/series`: a change to the payload is a patch
+here, then the import. `tools/build.sh prepare` fetches the EDK2 of the
+defconfigs into the coreboot tree, where the payload build expects it, and
+applies the series as changes, not commits: coreboot's EDK2 Makefile resets
 a clean tree to the pinned commit but leaves a modified one alone.
 
 | Patches | What |
@@ -223,10 +227,10 @@ its message:
 | `tianocore/0001-0079` | the commits of MrChromebox's branch after `edk2-stable202608`, in order, each without the files that TianoCore's tree does not have (its new modules, which are in the package, the `.dsc` and `.fdf` of `UefiPayloadPkg`, which are the package's platform, LvglPkg, a package of its own, and the binary network drivers, left out); the 21 commits with nothing else are not there. What each one becomes, carried, proposed upstream or left out, is the table of [docs/edk2-migration.md](../docs/edk2-migration.md) |
 | `tianocore/0080-0110` | the patches of `patches/edk2` in order, the same way: the 13 that change only the package or its platform are not there |
 
-The series is the payload of the ROMs today on the TianoCore tag; it gets
-shorter as its patches go upstream, move to the package or are left out,
-each step with the payload's tests. `tools/upstream.sh tianocore` says
-every week whether it still applies to a newer stable tag.
+The series, with the package, is the payload of the ROMs from v1.6.0; it
+gets shorter as its patches go upstream, move to the package or are left
+out, each step with the payload's tests. `tools/upstream.sh tianocore`
+says every week whether it still applies to a newer stable tag.
 
 ## Optional patches
 
