@@ -37,6 +37,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   level are the disassembler's (objects it cannot see referenced) and
   the named objects that the BAR-at-the-moment methods create on
   purpose (0101-0103).
+- `tools/build.sh roms` compiles the DSDT of each build once more with
+  `iasl -w3` (coreboot builds at `-w1`, warnings as errors) and prints
+  the count and the kinds of warnings of that level, with the whole
+  output in `build-<variant>/dsdt-w3.log`; not fatal yet.
 - README: the specifications the firmware is built against, as the pinned
   trees declare them, and the known limits of the two machines (Windows
   11 on the W541, DMA protection, WSMT and HSTI, the MOR lock, XMP).
