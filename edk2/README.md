@@ -22,7 +22,8 @@ it, it has the same sources, file for file, as MrChromebox's EDK II at
 | `Library/Tcg*PhysicalPresence*/` | the physical presence libraries of the TPM 1.2 and 2.0 (MrChromebox's `c111515`) |
 | `Library/CsmWrapSecureBootLib/` | CSMWrap refused while Secure Boot is on (`edk2/0025`) |
 | `EcAcpiBatteryStatusDxe/`, `Library/CbfsLib/` | the battery on the front page, files read from coreboot's CBFS |
-| `PlatformGopPolicy/`, `SdMmcPciGliDxe/`, `SdhciNonPciDxe/`, `UfsPlatformDxe/`, `Test/` | MrChromebox's modules for hardware these boards do not have (built only with their switches, or not at all), to leave out later ([docs/edk2-migration.md](../docs/edk2-migration.md)) |
+| `Test/` | `UefiPayloadPkgHostTest.dsc`, the platform of the host unit tests of `FmpDeviceSmmLib` (in `patches/tianocore`, with the library): `tools/build.sh edk2-unit-test` builds and runs them, in `check.yml` and before the update test of `build.yml` |
+| `PlatformGopPolicy/`, `SdMmcPciGliDxe/`, `SdhciNonPciDxe/`, `UfsPlatformDxe/` | MrChromebox's modules for hardware these boards do not have (built only with their switches, or not at all), to leave out later ([docs/edk2-migration.md](../docs/edk2-migration.md)) |
 | `FSDrivers/` | file system drivers, binaries of MrChromebox's tree with their license files: ext4 of rEFInd 0.12.0 (GPL-2.0), exFAT and ext2 of EfiFs 1.10 (GPL-3.0, from GRUB), NTFS of ntfs-3g (GPL-2.0); the boards build with ext4 only (`EXTRA_FS_DRIVERS=FALSE`) |
 
 `tools/edk2-import.py` makes all of it, and `patches/tianocore`, from
