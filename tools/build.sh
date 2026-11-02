@@ -2160,7 +2160,8 @@ cmd_edk2_upstream() {
 		sb=""
 	fi
 	# e una terza dal package del progetto fuori dall'albero (edk2/OuroBiosPkg,
-	# la fase (b)), con il .dsc di UefiPayloadPkg e le sue patch
+	# la fase (b)): il .dsc e l'.fdf di UefiPayloadPkg con le sue patch, Secure
+	# Boot e un FD di 12 MiB compresi
 	pkg="${TREE}/build-${q}-pkg"
 	say "edk2-upstream: la stessa da edk2/OuroBiosPkg, fuori dall'albero di EDK II"
 	edk2_package
@@ -2183,15 +2184,13 @@ cmd_edk2_upstream() {
 		--tpm "${pcrs}" ${sb:+--auth-rom "${sb}/coreboot.rom"} "${gaps[@]}" "${b}/coreboot.rom" \
 		|| bad+=("qualche passo non passa con ${EDK2_UPSTREAM_TAG} (${WORK}/edk2-upstream)")
 	if [ -n "${pkg}" ]; then
-		# gli stessi passi e le stesse lacune, senza la ROM con Secure Boot
+		# gli stessi passi e le stesse lacune; con Secure Boot nel package,
+		# anche quelli delle variabili autenticate sulla stessa ROM
 		gaps=()
-		for g in "${EDK2_UPSTREAM_GAPS[@]}"; do
-			[ "${g%%:*}" != "variabili autenticate" ] || continue
-			gaps+=(--gap "${g}")
-		done
+		for g in "${EDK2_UPSTREAM_GAPS[@]}"; do gaps+=(--gap "${g}"); done
 		say "edk2-upstream: QEMU con edk2/OuroBiosPkg"
 		python3 "${O}/tools/qemu-smoke.py" --upstream --out "${WORK}/edk2-upstream/pkg" --reloc-test "${reloc}" \
-			--tpm "${pcrs}" "${gaps[@]}" "${pkg}/coreboot.rom" \
+			--tpm "${pcrs}" --auth-rom "${pkg}/coreboot.rom" "${gaps[@]}" "${pkg}/coreboot.rom" \
 			|| bad+=("qualche passo non passa con edk2/OuroBiosPkg (${WORK}/edk2-upstream/pkg)")
 	fi
 	if [ ${#bad[@]} -ne 0 ]; then

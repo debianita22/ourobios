@@ -9,7 +9,7 @@
  # Bootloader Payload Package
  #
  # Provides drivers and definitions to create uefi payload for bootloaders.
-@@ -18,14 +22,19 @@
+@@ -18,16 +22,20 @@
  #
  ################################################################################
  [Defines]
@@ -25,9 +25,36 @@
    BUILD_ARCH                          = Legacy
 +  #
 +  # coreboot's payloads/external/edk2/Makefile takes the flash device from
-+  # the output directory of UefiPayloadPkg; the flash device is the one of
-+  # UefiPayloadPkg until the package needs one of its own
++  # the output directory of UefiPayloadPkg
 +  #
    OUTPUT_DIRECTORY                    = Build/UefiPayloadPkg$(BUILD_ARCH)
-   FLASH_DEFINITION                    = UefiPayloadPkg/UefiPayloadPkg.fdf
+-  FLASH_DEFINITION                    = UefiPayloadPkg/UefiPayloadPkg.fdf
++  FLASH_DEFINITION                    = OuroBiosPkg/OuroBiosPkg.fdf
    PCD_DYNAMIC_AS_DYNAMICEX            = TRUE
+ 
+   DEFINE SOURCE_DEBUG_ENABLE          = FALSE
+@@ -171,7 +179,12 @@
+   #
+   # Security
+   #
+-  DEFINE SECURE_BOOT_ENABLE       = FALSE
++  #
++  # Secure Boot, as in the payload of the W541 and the M920x: coreboot's
++  # Kconfig has no EDK2_SECURE_BOOT_SUPPORT for this tree. The default
++  # keys come with the provisioning of the package
++  #
++  DEFINE SECURE_BOOT_ENABLE       = TRUE
+ 
+   #
+   # Flat DeviceTree handoff option:
+@@ -598,6 +611,10 @@
+   gUefiCpuPkgTokenSpaceGuid.PcdCpuSmmEnableBspElection|FALSE
+ 
+ [PcdsFixedAtBuild]
++  #
++  # The Shell starts at its prompt, without 5 s for a startup.nsh
++  #
++  gEfiShellPkgTokenSpaceGuid.PcdShellDefaultDelay|0
+   gEfiMdePkgTokenSpaceGuid.PcdHardwareErrorRecordLevel|1
+   gEfiMdeModulePkgTokenSpaceGuid.PcdMaxVariableSize|0x10000
+   gEfiMdeModulePkgTokenSpaceGuid.PcdMaxHardwareErrorVariableSize|0x8000
