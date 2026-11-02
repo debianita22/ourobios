@@ -91,6 +91,13 @@ version.
 The capsule never writes `WP_RO`, `SMMSTORE`, `RO_VPD` or `RW_ELOG`: the
 payload writes the regions that the manifest of the capsule names, and the
 manifests of the releases name the slots, and on the W541 `RW_MRC_CACHE`.
+From v1.6.0 the payload writes nothing else (`edk2/0045`): a manifest with
+another region, or one without both slots, is refused before a byte is
+written, *immagine non valida* (0x1800) in the ESRT. And a boot with
+capsules confirms the slot that runs before it applies them
+(`edk2/0046`), as a normal boot does once its console is up: a capsule
+that fails then, or is refused, does not use up a try of a slot that vboot
+is trying and that works.
 
 ## Firmware protection
 
@@ -371,6 +378,17 @@ at every reset:
 - capsule A on a USB drive instead of the ESP (`edk2/0012`, what *Update
   from a USB drive* of the setup prepares): slot A written, the capsule
   removed from the drive;
+- capsule B made with `SMMSTORE` next to the two slots in its manifest
+  (`B-smmstore.cap`, `--refused-store`): the payload refuses it before
+  writing (`edk2/0045`): with QEMU's trace of the flash not one byte in the
+  slots, `RW_MRC_CACHE` or the read-only part, no request to vboot, the
+  UEFI variable of the test still in the store, the capsule gone, and as
+  last attempt *immagine non valida* (0x1800). vboot was still trying A,
+  with a try left: the payload confirms it before the capsules
+  (`edk2/0046`), and A stays;
+- capsule B with `RW_SECTION_A` alone, the slot that runs (`B-slot.cap`,
+  `--refused-slot`): refused the same way, and the ESRT of the next boot
+  has the version of B and 0x1800 as last attempt, with A running;
 - capsule B again, made with the two slots only in its manifest, as those
   of the M920x from v1.4.0 (`B-cache.cap`, `--keep-cache`): slot B
   written, `RW_MRC_CACHE` left as it was (filled with a pattern before),
@@ -380,9 +398,14 @@ at every reset:
   fallback the last attempt is still the capsule that was written, with
   status 0: the ESRT does not say that vboot went back (`update.py status`
   notes the version mismatch);
-- after the eleven capsules, one of them cut off, and the switch from the
-  setup, the read-only part is the one of ROM A, and a UEFI variable written
-  before the first update is still in the store.
+- after the eleven capsules, one of them cut off, the two refused, and the
+  switch from the setup, the read-only part is the one of ROM A, and a UEFI
+  variable written before the first update is still in the store.
+
+Before it, `tools/build.sh edk2-unit-test` builds and runs the host unit
+tests of `FmpDeviceSmmLib` (EDK II's `UnitTestFrameworkPkg` with cmocka,
+AddressSanitizer on): the region manifest, the regions an update may
+write, the two slots of a flash with both, and the retries on the flash.
 
 The S3 resume path of the lock is not emulated: QEMU's q35 boots no OS
 here that could suspend.

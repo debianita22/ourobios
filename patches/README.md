@@ -197,6 +197,8 @@ a clean tree to the pinned commit but leaves a modified one alone.
 | `edk2/0042` | UefiPayloadEntry: the events of coreboot's TPM 2.0 log (the log area of the ACPI TPM2 table) as `gTcgEvent2EntryHobGuid` HOBs, which Tcg2Dxe puts at the start of the log of `EFI_TCG2_PROTOCOL`; then the TPM2 table loses its log area, which Linux would read before the EFI log: the OS gets one complete log, which replays to the PCRs |
 | `edk2/0044` | SmmStoreLib passes the arguments of a command in the page after the data block of the com buffer from the initialization, when coreboot gives it (patch 0134), not only after `SetVirtualAddressMap()` as `edk2/0029`: coreboot's `SMMSTORE_PARAMS_IN_COM_BUFFER` (0215) accepts nothing else; without the page the library allocates as before |
 | `edk2/0043` | `EDKII_PLATFORM_MOR_LOCK_PROTOCOL`: the variable driver without SMM offers `MemoryOverwriteRequestControlLock` through the lock that coreboot keeps (`MorLockSmmStoreDxe`), when MOR is offered and coreboot supports it in this boot; otherwise unsupported, as before |
+| `edk2/0045` | `PcdFmpDeviceSmmAllowedRegions`, the FMAP regions that an update may write (the platform: `RW_SECTION_A RW_SECTION_B RW_MRC_CACHE`): FmpDeviceSmmLib refuses a manifest with another region, in the image check and again before it writes, with `LAST_ATTEMPT_STATUS_SMMSTORE_INVALID_IMAGE` (0x1800); a flash with both vboot slots takes only a manifest with both, so that no update writes the slot that runs. Without names, as upstream, every region; the host unit tests of the library (`tools/build.sh edk2-unit-test`) cover both checks |
+| `edk2/0046` | a boot with update capsules tells coreboot that the slot it booted works before it applies them (`SMMSTORE_CMD_VBOOT_SLOT_GOOD`, as `PlatformBootManagerAfterConsole` does on a normal boot), since it resets after them: a capsule that fails or is refused no longer uses up a try of a slot that vboot is trying and that works |
 | `lvglpkg/0001-0003` | a 1.25x UI scale, a PCD for the default scale, the stock LVGL widgets styled from `LvglTheme.h` |
 | `lvglpkg/0004` | the setup UI redesigned as System Preferences: menu bar, icon grid on the front page, windows with cards, switches and drop-down menus |
 | `lvglpkg/0005` | password questions in dialogs (current, new, confirmation), as the text UI does |
@@ -225,7 +227,7 @@ its message:
 | Patches | What they are |
 |---|---|
 | `tianocore/0001-0079` | the commits of MrChromebox's branch after `edk2-stable202608`, in order, each without the files that TianoCore's tree does not have (its new modules, which are in the package, the `.dsc` and `.fdf` of `UefiPayloadPkg`, which are the package's platform, LvglPkg, a package of its own, and the binary network drivers, left out); the 21 commits with nothing else are not there. What each one becomes, carried, proposed upstream or left out, is the table of [docs/edk2-migration.md](../docs/edk2-migration.md) |
-| `tianocore/0080-0110` | the patches of `patches/edk2` in order, the same way: the 13 that change only the package or its platform are not there |
+| `tianocore/0080-0112` | the patches of `patches/edk2` in order, the same way: the 13 that change only the package or its platform are not there |
 
 The series, with the package, is the payload of the ROMs from v1.6.0; it
 gets shorter as its patches go upstream, move to the package or are left

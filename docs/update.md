@@ -242,9 +242,10 @@ the old version.
 A capsule that fails a check writes nothing: the laptop restarts on the old
 firmware, and `update.py status` shows why (*firma non valida*: signature,
 *versione non accettata*: version, *immagine non valida*: no region
-manifest or the wrong size, *mappa del flash diversa*: a capsule for
-another flash layout). If there is no capsule to apply, the firmware gives
-the write access back and boots on.
+manifest, the wrong size, or, from v1.6.0, a region other than the two
+slots and `RW_MRC_CACHE`, or one slot alone, *mappa del flash diversa*: a
+capsule for another flash layout). If there is no capsule to apply, the
+firmware gives the write access back and boots on.
 
 ## From the setup, with a USB drive
 
@@ -605,7 +606,8 @@ Any tool that delivers capsules on disk works the same way:
   `sudo python3 update.py stage FILE.cap` (or `--latest`) and reboot again.
 - *Firmware update failed (Security Violation)*: the capsule is not signed by
   the key of the project. *(Aborted)*: version below the lowest supported, a
-  capsule without the region manifest, or one for another flash layout.
+  capsule without the region manifest, one for another flash layout, or,
+  from v1.6.0, one that names a region the firmware does not write.
   *(Not Ready)*: a capsule for the other variant.
 - *Firmware update requested, but the flash is not writable in this boot*:
   the request was set in a way coreboot did not see (for instance an
@@ -669,10 +671,15 @@ The event log (`tools/elog.py`, `elogtool`) shows the reboots of an update.
   `edk2/0015`). An image without a manifest, or whose regions are not
   where the running firmware's flash map has them, is refused: upstream,
   such an image rewrites the whole BIOS region, settings and VPD included.
-  The payload writes whatever regions a signed manifest names: the list is
-  checked by the build and `update.py` (`info`, `stage`), not by the
-  payload, so fwupd and the setup trust the signature alone
-  ([docs/roadmap.md](roadmap.md)).
+  From v1.6.0 the payload checks the list too (`edk2/0045`): only the
+  regions of `PcdFmpDeviceSmmAllowedRegions`, `RW_SECTION_A RW_SECTION_B
+  RW_MRC_CACHE`, and on a flash with both slots only a manifest with both;
+  anything else is refused before a byte is written, also through fwupd
+  and the setup, which trust the signature. Up to v1.5.1 the payload wrote
+  whatever a signed manifest named, checked only by the build and
+  `update.py` (`info`, `stage`). The capsule boot confirms the running
+  slot to vboot before the capsules (`edk2/0046`), as a normal boot does
+  once its console is up, since it restarts after them.
 - After writing, the payload restarts. Without anything to write, it gives
   the whole-flash access back to coreboot (patch 0050) before Driver####
   options, option ROMs or the OS run, or restarts if that fails. It asks the

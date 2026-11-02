@@ -7,7 +7,8 @@
 #             edk2/OuroBiosPkg e LvglPkg + patches/lvglpkg), e i .config di ogni
 #             variante di ogni board (boards/*/board.sh): ogni riga dei
 #             defconfig deve restare (Kconfig la lascia cadere senza errori
-#             se mancano le dipendenze)
+#             se mancano le dipendenze); le prove unitarie del payload
+#             sull'host (tools/build.sh edk2-unit-test)
 name: Check
 
 on:
@@ -49,15 +50,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # nasm e xxd: CSMWrap, che prepare compila con il gcc del sistema
+      # nasm e xxd: CSMWrap, che prepare compila con il gcc del sistema;
+      # uuid-dev: i BaseTools di EDK2 per le prove unitarie del payload
       - name: Pacchetti
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq nasm xxd >/dev/null
+          sudo apt-get install -y -qq nasm xxd uuid-dev >/dev/null
 
       # solo Kconfig: gcc del sistema (--toolchain host), niente crossgcc
       - name: tools/build.sh prepare config
         run: ./tools/build.sh --toolchain host --board all prepare config
+
+      - name: Prove unitarie del payload
+        run: ./tools/build.sh --toolchain host edk2-unit-test
 
       # la bozza per una nuova parte RO (patches/ro-next) non e' in nessuna
       # serie: un avviso, non un errore, se non applica piu' sopra la serie

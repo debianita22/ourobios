@@ -34,8 +34,11 @@
 # con vboot a due slot e il payload EDK2 di queste patch, le capsule devono
 # scrivere solo lo slot che non gira, vboot deve provarlo e tornare indietro
 # se non si verifica o non parte; dal setup si torna all'altro slot, e una
-# voce di boot (boot loader, sistema operativo) non puo'; seriale e
-# schermate del setup nell'artifact update-test-<versione>. E la build
+# voce di boot (boot loader, sistema operativo) non puo', e una capsula con
+# una regione che il payload non scrive, o con uno slot solo, e' rifiutata
+# senza scrivere niente; prima, le prove unitarie di FmpDeviceSmmLib
+# (tools/build.sh edk2-unit-test); seriale, schermate del setup e i log
+# delle prove nell'artifact update-test-<versione>. E la build
 # riproducibile (job repro, anche lui accanto alle ROM, e il job compare dopo
 # tutti e due): un altro runner costruisce le ROM da capo, coreboot, EDK2,
 # iPXE e CSMWrap compresi, e devono essere uguali bit a bit a quelle del job
@@ -374,6 +377,11 @@ jobs:
       - name: crossgcc
         run: ./tools/build.sh toolchain
 
+      # FmpDeviceSmmLib sull'host: il manifest delle capsule, le regioni che
+      # un aggiornamento puo' scrivere, i due slot, i tentativi sul flash
+      - name: Prove unitarie del payload
+        run: ./tools/build.sh edk2-unit-test
+
       - name: Prova dell'aggiornamento in QEMU
         run: ./tools/build.sh update-test
 
@@ -385,6 +393,7 @@ jobs:
           path: |
             work/update-test/out/
             work/update-test/qemu-update.log
+            work/edk2-unit-test/*.log
           retention-days: 14
           if-no-files-found: ignore
 

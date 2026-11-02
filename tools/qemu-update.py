@@ -10,7 +10,8 @@
 # si comporta da sistema operativo (tools/efi/slot-lock-test.c).
 #
 #   python3 tools/qemu-update.py [--out DIR] [--timeout S] --lock-test EFI
-#                                [--keep-cache B-cache.cap] A.cap B.cap C.cap D.cap
+#                                [--keep-cache B-cache.cap] [--refused-store B-smmstore.cap]
+#                                [--refused-slot B-slot.cap] A.cap B.cap C.cap D.cap
 #
 # Il flash parte dalla ROM della capsula A e resta lo stesso da un avvio
 # all'altro. QEMU esce a ogni reset (-no-reboot) e riparte da spento, come
@@ -52,13 +53,28 @@
 #      di 0x5A, cosi' la capsula ne riscrive ogni blocco): vboot resta sullo
 #      slot di prima; la stessa capsula, preparata di nuovo, lo finisce
 #  12. la capsula su una chiavetta USB invece che nell'ESP
-#  13. con --keep-cache, la capsula di B con i soli due slot nel manifest,
+#  13. con --refused-store, la capsula di B con SMMSTORE nel manifest oltre ai
+#      due slot: il payload la rifiuta prima di scrivere, una regione che un
+#      aggiornamento non scrive (PcdFmpDeviceSmmAllowedRegions, patch
+#      edk2/0045). Con la traccia del pflash nessun byte scritto negli slot,
+#      in RW_MRC_CACHE o nella parte RO, nessuna richiesta a vboot, la
+#      variabile di prova ancora nello store, la capsula tolta; FmpState:
+#      l'ultimo tentativo 0x1800 (immagine non valida), versione 0 (lo dice
+#      il controllo dell'immagine, prima di SetImage). vboot prova ancora lo
+#      slot A della capsula 12 (un tentativo rimasto): il payload lo conferma
+#      prima degli aggiornamenti (patch edk2/0046), e vboot lo tiene anche se
+#      dopo la capsula rifiutata si riavvia prima della conferma di sempre
+#  14. con --refused-slot, la capsula di B con il solo RW_SECTION_A, lo slot
+#      che gira, nel manifest: rifiutata allo stesso modo (un flash con i due
+#      slot si aggiorna uno slot alla volta), l'ultimo tentativo 0x1800 con
+#      la versione di B; l'ESRT dell'avvio dopo lo dice
+#  15. con --keep-cache, la capsula di B con i soli due slot nel manifest,
 #      come quelle del M920x (BOARD_CAPSULE_REGIONS): scritto lo slot B,
 #      RW_MRC_CACHE com'era (pieno di 0x5A); vboot prova B
-#  14. un avvio senza TPM: verstage non lo avvia, e la macchina arriva lo
+#  16. un avvio senza TPM: verstage non lo avvia, e la macchina arriva lo
 #      stesso al payload, senza misure (patch 0199)
 # Le ROM hanno il measured boot del M920x (TPM 2.0, banchi SHA-1 e SHA-256):
-# a ogni avvio fino al 13 un TPM 2.0 di swtpm, con lo stato che resta da un
+# a ogni avvio fino al 15 un TPM 2.0 di swtpm, con lo stato che resta da un
 # avvio all'altro come quello di un TPM vero e un processo nuovo a ogni
 # accensione; verstage lo deve avviare ("TPM: setup succeeded") e nessuna
 # misura deve fallire, anche negli avvii che vboot interrompe o scarta.
@@ -123,6 +139,12 @@ SLOTS = "AB"
 ROMS = "ABCD"
 # il manifest di una capsula che lascia il training della RAM (il M920x)
 KEEP_CACHE_REGIONS = ["RW_SECTION_A", "RW_SECTION_B"]
+# i manifest di due capsule che il payload rifiuta (patch edk2/0045): una
+# regione che un aggiornamento non scrive, lo slot che gira da solo
+REFUSED_STORE_REGIONS = ["RW_SECTION_A", "RW_SECTION_B", "SMMSTORE"]
+REFUSED_SLOT_REGIONS = ["RW_SECTION_A"]
+# LAST_ATTEMPT_STATUS_SMMSTORE_INVALID_IMAGE di FmpDeviceSmmLib
+INVALID_IMAGE = 0x1800
 TAG_RE = r"ouroBIOS-v\d+\.\d+\.\d+(?:-rc\d+)?-mrc\+update-test-[A-Z]"
 
 ESP_OFFSET = 1 << 20            # la partizione a 1 MiB, come la fanno gli installer
@@ -310,9 +332,11 @@ class UpdateTest:
     def idle(self, text):
         return any(m in text for m in self.IDLE)
 
-    def __init__(self, caps, lock_test, out, timeout, keep_cache=None):
+    def __init__(self, caps, lock_test, out, timeout, keep_cache=None, refused_store=None, refused_slot=None):
         self.paths, self.lock_test, self.out, self.timeout = caps, lock_test, out, timeout
         self.keep_path, self.keep = keep_cache, None
+        self.refused_paths = {"store": refused_store, "slot": refused_slot}
+        self.refused = {}
         self.tmp = self.m = None
         self.usb = None
         self.steps = []
@@ -336,6 +360,16 @@ class UpdateTest:
                 raise Fail("%s: non e' la capsula di B con le regioni %s (scrive %s)"
                            % (self.keep_path, KEEP_CACHE_REGIONS, cap["regions"]))
             self.keep = {"path": self.keep_path, "cap": cap}
+        # la ROM di B con i manifest che il payload deve rifiutare
+        for kind, regions in (("store", REFUSED_STORE_REGIONS), ("slot", REFUSED_SLOT_REGIONS)):
+            path = self.refused_paths[kind]
+            if not path:
+                continue
+            _, cap = update.load_capsule(path)
+            if cap["regions"] != regions or cap["image"] != self.caps["B"]["image"] \
+                    or cap["type_id"] != self.caps["B"]["cap"]["type_id"]:
+                raise Fail("%s: non e' la capsula di B con le regioni %s (scrive %s)" % (path, regions, cap["regions"]))
+            self.refused[kind] = {"path": path, "cap": cap}
         guids = {c["cap"]["type_id"] for c in self.caps.values()}
         if len(guids) != 1:
             raise Fail("le capsule non sono dello stesso firmware (GUID)")
@@ -586,6 +620,64 @@ class UpdateTest:
             raise Fail("%s: FmpState %s, atteso l'ultimo tentativo %s riuscito"
                        % (tag, fmp, update.version_str(want)))
         return text
+
+    def refused_boot(self, tag, kind, running, why, attempt):
+        """Un avvio con la capsula self.refused[kind] mentre gira lo slot
+        running: il payload la carica e la rifiuta prima di scrivere (why
+        nella seriale), poi riavvia. Nessun byte scritto negli slot, in
+        RW_MRC_CACHE o nella parte RO, nemmeno per la traccia del pflash;
+        nessuna richiesta a vboot; la capsula tolta e il bit spento; FmpState
+        con l'ultimo tentativo (attempt, INVALID_IMAGE). Se vboot stava
+        provando lo slot (tentativi rimasti), il payload lo ha confermato
+        prima degli aggiornamenti (patch edk2/0046): l'avvio non consuma un
+        tentativo di uno slot che funziona."""
+        f = self.flash
+        name = "B-" + kind
+        self.stage(name, path=self.refused[kind]["path"])
+        before = f.data()
+        tries = f.nv()["try_count"]
+        trace = os.path.join(self.tmp, "pflash.trace")
+        how, text = self.boot(tag, trace=trace)
+        self.expect(tag, how, text, "reset")
+        if not re.search(r"Slot %s is selected" % running, text):
+            raise Fail("%s: la capsula non e' partita dallo slot %s" % (tag, running))
+        for want in ("Capsules: firmware slot marked good before the updates: Success",
+                     "Capsules: ouroBIOS-%s.cap loaded" % name, why):
+            if want not in text:
+                raise Fail("%s: nella seriale manca \"%s\" (serial-%s.log)" % (tag, want, tag))
+        m = re.search(r"Capsules: capsule 1 of 1: (\S+)", text)
+        if not m or m.group(1) == "Success":
+            raise Fail("%s: la capsula non e' stata rifiutata (%s)" % (tag, m.group(1) if m else "nessun esito"))
+        if "updating slot" in text:
+            raise Fail("%s: il payload ha cominciato a scrivere uno slot" % tag)
+        areas = ("WP_RO", "RW_SECTION_A", "RW_SECTION_B", "RW_MRC_CACHE")
+        hits, total = traced_writes(trace, f.areas, areas)
+        os.remove(trace)
+        if total == 0:
+            raise Fail("%s: la traccia del pflash di QEMU e' vuota (-trace non supportato?)" % tag)
+        if any(hits.values()):
+            raise Fail("%s: scritti %s" % (tag, ", ".join("%d byte in %s" % (n, a) for a, n in hits.items() if n)))
+        after = f.data()
+        for area in areas:
+            if f.region(area, after) != f.region(area, before):
+                raise Fail("%s: %s cambiato" % (tag, area))
+        st = f.nv()
+        want = NV_SUCCESS if tries > 0 else NV_UNKNOWN
+        if not st["valid"] or SLOTS[st["tried"]] != running or SLOTS[st["try_next"]] != running \
+                or st["result"] != want or st["try_count"] != max(tries - 1, 0):
+            raise Fail("%s: RW_NVRAM %s, atteso lo slot %s %s, %d tentativi, nessuno chiesto per l'altro"
+                       % (tag, nv_str(st), running, update.NV_RESULTS[want], max(tries - 1, 0)))
+        if self.esp.files():
+            raise Fail("%s: la capsula e' ancora nell'ESP: %s" % (tag, self.esp.files()))
+        if f.os_indications() & update.FILE_CAPSULE_DELIVERY:
+            raise Fail("%s: il bit delle capsule su disco e' ancora in OsIndications" % tag)
+        if f.var(MARK_NAME, MARK_GUID) != MARK_DATA:
+            raise Fail("%s: la variabile %s non c'e' piu' (SMMSTORE scritto?)" % (tag, MARK_NAME))
+        fmp = f.fmp_state(FMP_DXE_GUID)
+        if not fmp or fmp["status"] != INVALID_IMAGE or fmp["attempt"] != attempt:
+            raise Fail("%s: FmpState %s, atteso l'ultimo tentativo %s, stato 0x%x"
+                       % (tag, fmp, update.version_str(attempt) if attempt else "0", INVALID_IMAGE))
+        return total, tries
 
     def fill_nv(self):
         """RW_NVRAM pieno: il record corrente ripetuto fino in fondo, come
@@ -949,24 +1041,48 @@ class UpdateTest:
         self.ok("capsula A da una chiavetta USB: scritto lo slot A, capsula tolta dalla chiavetta; vboot "
                 "prova A e il payload lo conferma")
 
-        # 13. la capsula di B senza RW_MRC_CACHE nel manifest, come quelle
+        # 13. la capsula di B con SMMSTORE nel manifest: il payload la
+        # rifiuta prima di scrivere (patch edk2/0045), dal controllo
+        # dell'immagine, che non ha ancora la versione
+        if "store" in self.refused:
+            total, tries = self.refused_boot("13-capsula-B-smmstore", "store", "A",
+                                             "manifest region 'SMMSTORE' is not one an update may write", 0)
+            self.ok("capsula di B con SMMSTORE nel manifest: rifiutata prima di scrivere (%d scritture del "
+                    "pflash, nessuna negli slot, in RW_MRC_CACHE o nella parte RO), nessuna richiesta a vboot, "
+                    "la variabile di prova c'e' ancora; ultimo tentativo 0x%x%s"
+                    % (total, INVALID_IMAGE, "; lo slot A, in prova, confermato prima" if tries else ""))
+
+        # 14. la capsula di B con il solo slot che gira: rifiutata da
+        # SetImage, con la versione di B; l'ESRT dell'avvio dopo lo dice
+        if "slot" in self.refused:
+            total, _ = self.refused_boot("14-capsula-B-slot-A", "slot", "A",
+                                         "the flash has both vboot slots, a manifest without both is refused",
+                                         v["B"])
+            how, text = self.boot("14-A")
+            self.expect("14-A", how, text, "booted")
+            self.confirmed("14-A", text, "A", "A", trying=False, last=(v["B"], INVALID_IMAGE))
+            self.ok("capsula di B con il solo RW_SECTION_A, lo slot che gira: rifiutata prima di scrivere "
+                    "(%d scritture del pflash, nessuna negli slot); l'ESRT dice %s, immagine non valida, e "
+                    "gira ancora A" % (total, update.version_str(v["B"])))
+
+        # 15. la capsula di B senza RW_MRC_CACHE nel manifest, come quelle
         # del M920x: lo slot B (ora C) riscritto, il training della RAM no
         if self.keep:
             self.stage("B", path=self.keep["path"])
-            self.capsule_boot("13-capsula-B-cache", "B", "A", keep_cache=True)
-            how, text = self.boot("13-B")
-            self.expect("13-B", how, text, "booted")
-            self.confirmed("13-B", text, "B", "B", trying=True, last=(v["B"], 0))
+            self.capsule_boot("15-capsula-B-cache", "B", "A", keep_cache=True)
+            how, text = self.boot("15-B")
+            self.expect("15-B", how, text, "booted")
+            self.confirmed("15-B", text, "B", "B", trying=True, last=(v["B"], 0))
             self.ok("capsula B con i soli slot nel manifest (%s): scritto lo slot B, RW_MRC_CACHE com'era; "
                     "vboot prova B e il payload lo conferma" % " ".join(KEEP_CACHE_REGIONS))
 
-        # 14. senza TPM: verstage non lo avvia, l'avvio continua (patch 0199)
+        # 16. senza TPM: verstage non lo avvia, l'avvio continua (patch 0199)
         slot, key = ("B", "B") if self.keep else ("A", "A")
-        how, text = self.boot("14-senza-TPM", tpm=False)
-        self.expect("14-senza-TPM", how, text, "booted")
-        self.running("14-senza-TPM", text, slot, key)
+        how, text = self.boot("16-senza-TPM", tpm=False)
+        self.expect("16-senza-TPM", how, text, "booted")
+        self.running("16-senza-TPM", text, slot, key)
         if "booting without measurements" not in text:
-            raise Fail("14-senza-TPM: verstage non dice di continuare senza misure (serial-14-senza-TPM.log)")
+            raise Fail("16-senza-TPM: verstage non dice di continuare senza misure (serial-16-senza-TPM.log)")
         self.ok("measured boot: in %d avvii verstage ha avviato il TPM 2.0 (SHA-1 e SHA-256) e nessuna misura "
                 "e' fallita; senza TPM l'avvio arriva al payload dallo slot %s, senza misure" % (self.measured, slot))
 
@@ -975,8 +1091,9 @@ class UpdateTest:
             raise Fail("la parte RO e' cambiata")
         if f.var(MARK_NAME, MARK_GUID) != MARK_DATA:
             raise Fail("la variabile %s scritta all'inizio non c'e' piu'" % MARK_NAME)
-        self.ok("dopo %d capsule, una interrotta, e un ritorno dal setup: la parte RO e' quella della ROM A, "
-                "la variabile UEFI scritta prima degli aggiornamenti c'e' ancora" % (11 if self.keep else 10))
+        self.ok("dopo %d capsule, una interrotta, %d rifiutate e un ritorno dal setup: la parte RO e' quella "
+                "della ROM A, la variabile UEFI scritta prima degli aggiornamenti c'e' ancora"
+                % (11 if self.keep else 10, len(self.refused)))
         return self.steps
 
 
@@ -996,7 +1113,13 @@ def main():
                     help="tools/efi/slot-lock-test.c compilato (tools/build.sh update-test)")
     ap.add_argument("--keep-cache", metavar="CAP",
                     help="la capsula di B con i soli due slot nel manifest (tools/build.sh update-test, "
-                    "B-cache.cap): il passo 13")
+                    "B-cache.cap): il passo 15")
+    ap.add_argument("--refused-store", metavar="CAP",
+                    help="la capsula di B con SMMSTORE nel manifest oltre ai due slot (tools/build.sh "
+                    "update-test, B-smmstore.cap): il passo 13, rifiutata")
+    ap.add_argument("--refused-slot", metavar="CAP",
+                    help="la capsula di B con il solo RW_SECTION_A nel manifest (tools/build.sh update-test, "
+                    "B-slot.cap): il passo 14, rifiutata")
     ap.add_argument("--out", default="update-test", help="seriale e riassunto (default: update-test/)")
     ap.add_argument("--timeout", type=float, default=300, help="secondi per ogni avvio (default 300)")
     args = ap.parse_args()
@@ -1004,7 +1127,8 @@ def main():
         if not shutil.which(tool):
             sys.exit("serve %s (Debian/Ubuntu: apt install qemu-system-x86 mtools swtpm swtpm-tools)" % tool)
     os.makedirs(args.out, exist_ok=True)
-    test = UpdateTest(args.caps, args.lock_test, args.out, args.timeout, args.keep_cache)
+    test = UpdateTest(args.caps, args.lock_test, args.out, args.timeout, args.keep_cache,
+                      args.refused_store, args.refused_slot)
     passed = False
     try:
         test.run()

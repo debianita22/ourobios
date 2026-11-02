@@ -3,9 +3,9 @@
 Up to v1.5.1 the payload was MrChromebox's EDK II, branch
 `uefipayload_2608`, at `6c14abf865e0`: the stable tag `edk2-stable202608`
 of TianoCore (`2970e5699ba6`, 2026-08-12) and 100 commits of MrChromebox on
-top of it, then the 44 patches of [`patches/edk2`](../patches/edk2) and the
-18 of [`patches/lvglpkg`](../patches/lvglpkg). From v1.6.0 it is the same
-sources on the TianoCore tag ([step (d)](#step-d-the-boards-on-the-package)).
+top of it, then the patches of [`patches/edk2`](../patches/edk2) (43 in
+v1.5.1, 46 now) and the 18 of [`patches/lvglpkg`](../patches/lvglpkg). From
+v1.6.0 it is the same sources on the TianoCore tag ([step (d)](#step-d-the-boards-on-the-package)).
 This page lists those 100
 commits with what each becomes when the payload moves to TianoCore, in the
 order of [the roadmap](roadmap.md#edk-ii-from-tianocore): (a) TianoCore as
@@ -96,8 +96,8 @@ MrChromebox's tree at the commit of the defconfigs:
 
 - **The carried series**: each of the commits below and each patch of
   `patches/edk2`, in order, without the files that TianoCore's tree does
-  not have: 79 commits of MrChromebox (21 have nothing else) and 31 of
-  the project's 44 patches (13 change only the package or its platform).
+  not have: 79 commits of MrChromebox (21 have nothing else) and 33 of
+  the project's 46 patches (13 change only the package or its platform).
   The tag with the series is MrChromebox's tree with `patches/edk2` in
   every file but those (`edk2-import.py` checks it before it writes, and
   `--check` in `edk2-upstream.yml` checks the files of the repository).

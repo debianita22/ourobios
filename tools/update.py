@@ -153,7 +153,8 @@ FS_IOC_SETFLAGS = 0x40086602
 FS_IMMUTABLE_FL = 0x10
 
 # LastAttemptStatus dell'ESRT (UEFI 2.10, 23.4), e i codici di
-# FmpDeviceSmmLib del payload (patch edk2 0008), da 0x1800
+# FmpDeviceSmmLib del payload (patch edk2 0008; le regioni e gli slot, 0045),
+# da 0x1800
 ATTEMPT = {
     0: "riuscito",
     1: "non riuscito",
@@ -164,7 +165,8 @@ ATTEMPT = {
     6: "alimentatore",
     7: "batteria",
     8: "dipendenze non soddisfatte",
-    0x1800: "immagine non valida (senza manifest delle regioni, o di un'altra dimensione)",
+    0x1800: "immagine non valida (senza manifest delle regioni, di un'altra dimensione, con una regione "
+            "che il firmware non scrive o con uno slot solo)",
     0x1801: "mappa del flash diversa da quella del firmware che gira",
     0x1802: "scrittura del flash fallita",
 }

@@ -23,6 +23,22 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   lock: all of them write the flash and nothing else. Windows reads the
   table for Device Guard, Credential Guard with HVCI and VBS; `fwts
   wsmt` and `acpidump` show it.
+- **Capsules write only the regions of an update**: the payload refuses,
+  before it writes anything, a capsule whose manifest names a region other
+  than the two vboot slots and `RW_MRC_CACHE`
+  (`PcdFmpDeviceSmmAllowedRegions`, `edk2/0045`), and, on a flash with
+  both slots, one that does not name both, which could write the slot
+  that runs: *immagine non valida* (0x1800) in the ESRT and in `update.py
+  status`. Up to v1.5.1 the payload wrote whatever a signed manifest
+  named, checked only by the build and `update.py`; the capsules of every
+  release name only those regions, so they still install, rollbacks
+  included. A boot with capsules also confirms the slot that runs before
+  it applies them (`edk2/0046`): a capsule that fails, or is refused, no
+  longer uses up a try of a slot that vboot is trying after an update.
+  The host unit tests of `FmpDeviceSmmLib` run in CI (`tools/build.sh
+  edk2-unit-test`, in `check.yml` and before the update test), and
+  `tools/qemu-update.py` refuses a capsule naming `SMMSTORE` and one with
+  the running slot alone, with nothing written.
 - `docs/testing.md`: a conformance suite (CONF): the WSMT and its flags
   (`hw-report.py` CONF-01), the tables compiled again with `iasl -w3`,
   FWTS, chipsec with what each module must say on these boards (the
@@ -65,17 +81,18 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   same sources as MrChromebox's `6c14abf865e0` with `patches/edk2`, and the
   same payload byte for byte (`tools/build.sh edk2-parity`, in
   `edk2-upstream.yml`), so the setup, the boot options, Secure Boot, the
-  capsules and the NVRAM are those of v1.5.1. The defconfigs pin the tag
-  (`EDK2_PACKAGE_CONFIG` of `tools/build.sh`); the release notes, the
-  layout and the bill of materials name the tag, the carried patches, the
-  package and the MrChromebox commit they come from.
+  capsules and the NVRAM are those of `patches/edk2`, whatever tree they
+  are built on. The defconfigs pin the tag (`EDK2_PACKAGE_CONFIG` of
+  `tools/build.sh`); the release notes, the layout and the bill of
+  materials name the tag, the carried patches, the package and the
+  MrChromebox commit they come from.
 - Steps (b) and (c) of the move: the payload of the ROMs as a package
   on TianoCore's tag, with the same sources. `tools/edk2-import.py` makes
   [`edk2/OuroBiosPkg`](edk2/README.md) (the modules that TianoCore does
   not have: the setup, the splash, the password, the default Secure Boot
   keys, the update screen..., and the platform, `UefiPayloadPkg.dsc` and
   `.fdf` as patches on TianoCore's) and `patches/tianocore` (79 commits of
-  MrChromebox and 31 patches of `patches/edk2`, each without the files of
+  MrChromebox and 33 patches of `patches/edk2`, each without the files of
   the package) from MrChromebox's tree with `patches/edk2`, and checks
   that the tag with the series is that tree in every other file; LvglPkg
   is a package of its own next to it. coreboot builds it with patch 0216

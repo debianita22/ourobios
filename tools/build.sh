@@ -63,9 +63,17 @@
 #                  la prova; quattro ROM per q35 con vboot a due slot (A, B,
 #                  C e D, che ha anche lo schermo per il setup), costruite in
 #                  un worktree dell'albero con patches/test/q35-update-test.patch;
-#                  le loro capsule, fatte come quelle delle release, e una
-#                  di B senza RW_MRC_CACHE, come quelle del M920x. Le ROM del
-#                  W541 non c'entrano. Seriale in WORK/update-test/out
+#                  le loro capsule, fatte come quelle delle release, una
+#                  di B senza RW_MRC_CACHE, come quelle del M920x, e due di B
+#                  che il payload deve rifiutare senza scrivere (SMMSTORE
+#                  nel manifest, uno slot solo). Le ROM del W541 non
+#                  c'entrano. Seriale in WORK/update-test/out
+#   edk2-unit-test le prove unitarie del payload sull'host (UnitTestFrameworkPkg
+#                  di EDK2 con cmocka): UefiPayloadPkgHostTest, cioe'
+#                  FmpDeviceSmmLib (il manifest delle capsule, le regioni che
+#                  un aggiornamento puo' scrivere, i due slot di vboot, i
+#                  tentativi sul flash), nell'albero di EDK2 di prepare.
+#                  Esito in WORK/edk2-unit-test
 #   edk2-upstream  il passaggio a EDK II di TianoCore: il payload di
 #                  EDK2_UPSTREAM_TAG senza patch in una ROM per QEMU q35 (e
 #                  in una seconda con SECURE_BOOT_ENABLE), poi in una terza
@@ -371,7 +379,7 @@ while [ $# -gt 0 ]; do
 		--dist)      DIST="$(realpath -m "${2:?--dist DIR}")"; shift 2 ;;
 		--jobs)      JOBS="${2:?--jobs N}"; shift 2 ;;
 		-h|--help)   sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
-		prepare|toolchain|config|roms|repro|menu|smoke|update-test|edk2-upstream|edk2-parity|keys|toolchain-key) CMDS+=("$1"); shift ;;
+		prepare|toolchain|config|roms|repro|menu|smoke|update-test|edk2-unit-test|edk2-upstream|edk2-parity|keys|toolchain-key) CMDS+=("$1"); shift ;;
 		*) die "argomento sconosciuto: $1 (tools/build.sh --help)" ;;
 	esac
 done
@@ -1972,7 +1980,8 @@ cmd_update_test() {
 	for rom in "${UPDATE_TEST_ROMS[@]}"; do caps+=("${ut}/${rom%% *}.cap"); done
 	local rc=0 last
 	python3 "${O}/tools/qemu-update.py" --out "${ut}/out" --lock-test "${ut}/slot-lock-test.efi" \
-		--keep-cache "${ut}/B-cache.cap" "${caps[@]}" 2>&1 | tee "${ut}/qemu-update.log" || rc=$?
+		--keep-cache "${ut}/B-cache.cap" --refused-store "${ut}/B-smmstore.cap" --refused-slot "${ut}/B-slot.cap" \
+		"${caps[@]}" 2>&1 | tee "${ut}/qemu-update.log" || rc=$?
 	if [ "${rc}" != 0 ]; then
 		# nella CI il log del job non si legge sempre: l'esito di ogni passo,
 		# il motivo e la fine della seriale dell'ultimo avvio in un'annotazione
@@ -1984,8 +1993,11 @@ cmd_update_test() {
 }
 
 # La chiave di prova, il payload, le ROM A, B, C e D e le loro capsule in $1,
-# con B-cache.cap (B senza RW_MRC_CACHE nel manifest); il worktree in $2. Il nome di ogni ROM ha versione e variante, come quello
-# delle release: il setup le legge dallo slot (patch edk2/0020)
+# con B-cache.cap (B senza RW_MRC_CACHE nel manifest) e due capsule di B che
+# il payload rifiuta (patch edk2/0045): B-smmstore.cap, con SMMSTORE oltre ai
+# due slot, e B-slot.cap, con il solo RW_SECTION_A; il worktree in $2. Il
+# nome di ogni ROM ha versione e variante, come quello delle release: il
+# setup le legge dallo slot (patch edk2/0020)
 update_test_build() {
 	local ut="$1" ab="$2" b d fd rom n ver
 	say "update-test: la chiave delle capsule di prova"
@@ -2109,6 +2121,74 @@ update_test_build() {
 	generate_capsule "${ab}/build-${n}/coreboot.rom" "${ut}/${n}-cache.cap" "${UPDATE_TEST_GUID}" "${ver}" \
 		"${UPDATE_TEST_LSV}" "${ut}/signer.pem" "${ut}/cert.pem" RW_SECTION_A RW_SECTION_B \
 		|| die "update-test: capsula ${n}-cache non fatta"
+	# firmate come le altre, ma il payload non le scrive: una regione che un
+	# aggiornamento non scrive (PcdFmpDeviceSmmAllowedRegions), uno slot solo
+	generate_capsule "${ab}/build-${n}/coreboot.rom" "${ut}/${n}-smmstore.cap" "${UPDATE_TEST_GUID}" "${ver}" \
+		"${UPDATE_TEST_LSV}" "${ut}/signer.pem" "${ut}/cert.pem" RW_SECTION_A RW_SECTION_B SMMSTORE \
+		|| die "update-test: capsula ${n}-smmstore non fatta"
+	generate_capsule "${ab}/build-${n}/coreboot.rom" "${ut}/${n}-slot.cap" "${UPDATE_TEST_GUID}" "${ver}" \
+		"${UPDATE_TEST_LSV}" "${ut}/signer.pem" "${ut}/cert.pem" RW_SECTION_A \
+		|| die "update-test: capsula ${n}-slot non fatta"
+}
+
+# Le prove unitarie del payload sull'host: la piattaforma di prova
+# UefiPayloadPkgHostTest (OuroBiosPkg/Test nel package, UefiPayloadPkg/Test
+# nell'albero di MrChromebox), compilata come la fa
+# UnitTestFrameworkPkgHost.dsc.inc (NOOPT, gcc del sistema, AddressSanitizer)
+# nell'albero di EDK2 delle ROM (EDK2_DIR, con il package accanto), con i
+# submodule che servono solo alle prove: cmocka, e quelli che i .dec di
+# UnitTestFrameworkPkg, MdePkg e MdeModulePkg nominano tra gli include. Build
+# e Conf in WORK/edk2-unit-test, fuori dal workspace del Makefile di
+# coreboot; ogni prova, e il suo esito, in un log li'
+EDK2_UNIT_TEST_SUBMODULES=(UnitTestFrameworkPkg/Library/CmockaLib/cmocka
+	UnitTestFrameworkPkg/Library/GoogleTestLib/googletest UnitTestFrameworkPkg/Library/SubhookLib/subhook
+	MdePkg/Library/MipiSysTLib/mipisyst MdeModulePkg/Library/BrotliCustomDecompressLib/brotli)
+cmd_edk2_unit_test() {
+	need_prepared
+	local ws="${WORK}/edk2-unit-test" dsc pkgs="" t name n=0
+	local -a bad=()
+	if [ "$(edk2_base)" = package ]; then
+		dsc="OuroBiosPkg/Test/UefiPayloadPkgHostTest.dsc"
+		pkgs=":${TREE}/${EDK2_PACKAGES_SUBDIR}"
+	else
+		dsc="UefiPayloadPkg/Test/UefiPayloadPkgHostTest.dsc"
+	fi
+	say "edk2-unit-test: ${dsc}"
+	rm -rf "${ws:?}"
+	mkdir -p "${ws}"
+	git -C "${EDK2_DIR}" submodule update -q --init --force --filter=blob:none -- "${EDK2_UNIT_TEST_SUBMODULES[@]}" \
+		|| die "edk2-unit-test: i submodule delle prove non arrivano (${EDK2_UNIT_TEST_SUBMODULES[*]})"
+	if ! make -C "${EDK2_DIR}/BaseTools/Source/C" -j"${JOBS}" > "${ws}/basetools.log" 2>&1; then
+		failure_report "edk2-unit-test: BaseTools" "${ws}/basetools.log"
+		die "edk2-unit-test: BaseTools non compila (${ws}/basetools.log)"
+	fi
+	# edksetup.sh e build di EDK2 non sono fatti per set -eu
+	if ! (
+		set +eu
+		export WORKSPACE="${ws}" PACKAGES_PATH="${EDK2_DIR}${pkgs}" PYTHON_COMMAND=python3
+		unset CC
+		cd "${ws}" || exit 1
+		# shellcheck source=/dev/null
+		source "${EDK2_DIR}/edksetup.sh" > /dev/null || exit 1
+		build -p "${dsc}" -a X64 -t GCC -b NOOPT -n "${JOBS}"
+	) > "${ws}/build.log" 2>&1; then
+		failure_report "edk2-unit-test: build" "${ws}/build.log"
+		die "edk2-unit-test: le prove non compilano (${ws}/build.log)"
+	fi
+	for t in "${ws}"/Build/UefiPayloadPkg/HostTest/NOOPT_GCC/X64/*Test; do
+		[ -f "${t}" ] && [ -x "${t}" ] || continue
+		name="$(basename "${t}")"
+		n=$((n + 1))
+		if "${t}" > "${ws}/${name}.log" 2>&1; then
+			echo "  ok  ${name}: $(grep -o '[0-9]* test(s) run' "${ws}/${name}.log" | tail -n 1 | cut -d' ' -f1) prove passate"
+		else
+			grep -E '^\[  (FAILED|ERROR) ' "${ws}/${name}.log" | sed "s/^/  NO  ${name}: /" || true
+			failure_report "edk2-unit-test: ${name}" "${ws}/${name}.log"
+			bad+=("${name}")
+		fi
+	done
+	[ "${n}" -gt 0 ] || die "edk2-unit-test: nessuna prova in ${ws}/Build/UefiPayloadPkg/HostTest"
+	[ ${#bad[@]} -eq 0 ] || die "edk2-unit-test: non passano ${bad[*]} (${ws})"
 }
 
 # L'EDK2 di TianoCore al commit di EDK2_UPSTREAM_TAG, con i suoi soli
@@ -2474,6 +2554,7 @@ for c in "${CMDS[@]}"; do
 		menu)          each_board cmd_menu ;;
 		smoke)         each_board cmd_smoke ;;
 		update-test)   cmd_update_test ;;
+		edk2-unit-test) cmd_edk2_unit_test ;;
 		edk2-upstream) cmd_edk2_upstream ;;
 		edk2-parity)
 			each_board cmd_edk2_parity

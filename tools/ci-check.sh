@@ -2016,7 +2016,10 @@ step "le board negli strumenti"
 # flash, GUID dell'ESRT; CURRENT_REGIONS: le regioni delle capsule,
 # BOARD_CAPSULE_REGIONS o CAPSULE_REGIONS di tools/build.sh) e
 # tools/fwupd-cab.py (BOARDS, VARIANTS) devono conoscere ogni variante di
-# ogni board, e nient'altro
+# ogni board, e nient'altro. Le regioni di ogni capsula che stage accetta
+# (ACCEPTED_REGIONS, quelle di oggi comprese) devono essere tra quelle che
+# il payload lascia scrivere (PcdFmpDeviceSmmAllowedRegions della
+# piattaforma, patch edk2/0045): se no la capsula sarebbe rifiutata
 rows="$(mktemp)"
 r_default="$(sed -n 's/^CAPSULE_REGIONS=(\(.*\))$/\1/p' tools/build.sh | tr ' ' ',')"
 for b in $(boards); do
@@ -2039,6 +2042,8 @@ for b in $(boards); do
 done
 if out="$(python3 -I - "${O}/tools" "${rows}" 2>&1 <<'PY'
 import importlib.util
+import os
+import re
 import sys
 
 tools, rows = sys.argv[1], sys.argv[2]
@@ -2075,7 +2080,19 @@ for fl in sorted(set(upd.FLAVOURS) - seen):
     bad.append("tools/update.py: FLAVOURS[%r] di nessuna board" % fl)
 for fl in sorted((set(upd.CURRENT_REGIONS) | set(upd.ACCEPTED_REGIONS)) - seen):
     bad.append("tools/update.py: CURRENT_REGIONS o ACCEPTED_REGIONS[%r] di nessuna board" % fl)
-print("\n".join(bad) if bad else ", ".join(sorted(seen)))
+dsc = "edk2/OuroBiosPkg/OuroBiosPkg.dsc.patch"
+with open(os.path.join(os.path.dirname(tools), dsc), newline="") as f:
+    found = re.findall(r'^\+\s*gUefiPayloadPkgTokenSpaceGuid\.PcdFmpDeviceSmmAllowedRegions\|"([^"]*)"', f.read(), re.M)
+allowed = set(found[0].split()) if len(found) == 1 else set()
+if not allowed:
+    bad.append("%s: PcdFmpDeviceSmmAllowedRegions %d volte o senza nomi, attesa una con le regioni" % (dsc, len(found)))
+for fl, lists in sorted(upd.ACCEPTED_REGIONS.items()):
+    for regions in lists:
+        if allowed and not set(regions) <= allowed:
+            bad.append("tools/update.py: ACCEPTED_REGIONS[%r] con %s, che il payload non scrive (%s: %s)"
+                       % (fl, " ".join(sorted(set(regions) - allowed)), dsc, " ".join(sorted(allowed))))
+print("\n".join(bad) if bad else "%s; le regioni delle capsule tra quelle del payload (%s)"
+      % (", ".join(sorted(seen)), " ".join(sorted(allowed))))
 sys.exit(1 if bad else 0)
 PY
 )"; then

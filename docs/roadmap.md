@@ -13,7 +13,7 @@ is here. None of it is a promise of a date.
 | [Firmware watchdog](#firmware-watchdog) | both | never used on Cannon Point upstream; testing it means resetting the machine on purpose; the W541 is a laptop someone sits at | a read-only check of the timer on hardware, then a build with the option off |
 | [Firmware update mode](#firmware-update-mode) | both | capsules need none of it; touches the lockdown code of both boards | the attribute check in coreboot, a test of the Secure Boot one-shot |
 | [DMA protection](#dma-protection) | M920x | no pre-boot DMA protection to report; the FSP-M has no PMR data | reword the help of *Intel VT-d*; find the slot of the Thunderbolt card |
-| [Capsule regions in the payload](#capsule-regions-in-the-payload) | both | only the project key signs capsules, and the build checks each manifest | an allowlist in `FmpDeviceSmmLib`, one release before anything needs another region |
+| [Capsule regions in the payload](#capsule-regions-in-the-payload) | both | done in v1.6.0 (`edk2/0045`): the payload writes only the two slots and `RW_MRC_CACHE`, and on a flash with both slots only an update of one slot at a time | a new region in `PcdFmpDeviceSmmAllowedRegions` one release before any capsule that writes it |
 | [Variable store robustness](#variable-store-robustness) | both | the store has not been seen damaged; the fallbacks are safe | coreboot's reader stopping where EDK2's does |
 | [Top Swap and the Protected Range test](#top-swap-and-the-protected-range-test) | M920x | the read-only part is never written by an update | FLASH-04 with the protection on; a map with room for a second bootblock |
 | [Settings reset on the W541](#settings-reset-on-the-w541) | W541 | built in v1.4.0 (patch 0180), off: the shared deletion is untested, and the OS may be able to set the RTC power loss bit | OPT-05 on the M920x, the bit checked on the W541, then OPT-05 there |
@@ -29,7 +29,7 @@ is here. None of it is a promise of a date.
 | [Card reader of the W541](#card-reader-of-the-w541) | W541 | the premise was wrong: the reader is most likely not a Realtek | `lspci -nn` on the laptop |
 | [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | the field is reserved on Haswell client processors | the TCC line of `hw-report.py` on a W541 |
 | [Upstream changes not taken](#upstream-changes-not-taken) | W541 | 96893 unreviewed and no gain here; 95880 and 95912 at Code-Review -2 | the next coreboot pin; `rfkill` on a W541 |
-| [EDK II from TianoCore](#edk-ii-from-tianocore) | both | moved in v1.6.0: the payload of the ROMs is TianoCore's tag with the package [`edk2/OuroBiosPkg`](../edk2/README.md) and `patches/tianocore`, the same payload as MrChromebox's tree with `patches/edk2`; what is left is the carried series, 110 patches | the series shorter: the *drop* commits first, then the *package* ones into `OuroBiosPkg`, the *upstream* ones proposed ([docs/edk2-migration.md](edk2-migration.md)) |
+| [EDK II from TianoCore](#edk-ii-from-tianocore) | both | moved in v1.6.0: the payload of the ROMs is TianoCore's tag with the package [`edk2/OuroBiosPkg`](../edk2/README.md) and `patches/tianocore`, the same payload as MrChromebox's tree with `patches/edk2`; what is left is the carried series, 112 patches | the series shorter: the *drop* commits first, then the *package* ones into `OuroBiosPkg`, the *upstream* ones proposed ([docs/edk2-migration.md](edk2-migration.md)) |
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
 | [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
 | [Openness score](#openness-score) | both | already in `tools/sbom.py` | a comparison with Dasharo's own tool |
@@ -133,25 +133,31 @@ out for the same reason; Windows Kernel DMA Protection also needs a TPM
 
 ## Capsule regions in the payload
 
-The payload writes every region that the manifest of a signed capsule
-names (`FmpDeviceSmmLib`), through the SMMSTORE handler, which serves the
-whole flash on an update boot, descriptor, GbE and ME included (the
-release descriptor leaves them writable). `tools/update.py` and the build
-check the list of each capsule (`update.py info`); fwupd and the setup's
-USB update do not. A signed capsule built wrong, naming `SI_GBE`,
-`SMMSTORE` or `RO_VPD`, would be written.
+Up to v1.5.1 the payload wrote every region that the manifest of a signed
+capsule named (`FmpDeviceSmmLib`), through the SMMSTORE handler, which
+serves the whole flash on an update boot, descriptor, GbE and ME included
+(the release descriptor leaves them writable). `tools/update.py` and the
+build check the list of each capsule (`update.py info`); fwupd and the
+setup's USB update do not. A signed capsule built wrong, naming `SI_GBE`,
+`SMMSTORE` or `RO_VPD`, would have been written.
 
-- **Why later**: only the project key signs capsules, and every release
-  capsule goes through `update.py info` in `tools/build.sh`. An allowlist
-  is enforced by the payload that runs, so it must ship one release before
-  any capsule that needs another region.
-- **Next step**: refuse before any write
-  (`LAST_ATTEMPT_STATUS_SMMSTORE_INVALID_IMAGE`) a manifest with a name
-  outside `RW_SECTION_A`, `RW_SECTION_B` and `RW_MRC_CACHE`, and one that
-  is not an A/B update while the flash has both slots (a manifest naming
-  `SI_GBE` alone would skip a check made only for A/B updates); unit tests
-  for both, and a QEMU capsule naming `SMMSTORE` that must be refused with
-  nothing written.
+- **Done in v1.6.0** (`edk2/0045`): `PcdFmpDeviceSmmAllowedRegions` of the
+  platform, `RW_SECTION_A RW_SECTION_B RW_MRC_CACHE`. The image check and
+  the write refuse, before anything is written and with
+  `LAST_ATTEMPT_STATUS_SMMSTORE_INVALID_IMAGE`, a manifest with another
+  name, and one that is not an update of one slot at a time while the
+  flash has both slots (a manifest with the running slot alone would write
+  it). Host unit tests for both (`tools/build.sh edk2-unit-test`, in
+  `check.yml` and `build.yml`), and two QEMU capsules, one naming
+  `SMMSTORE` next to the slots, one with the running slot alone, refused
+  with nothing written (`tools/qemu-update.py`). The capsules of every
+  release so far name only those regions, so they still install, rollbacks
+  included. Found with them: a boot with capsules restarted before it
+  confirmed the slot that runs, so a refused capsule could use up the
+  tries of a slot that vboot was trying; it confirms it first now
+  (`edk2/0046`).
+- **Next step**: a capsule that needs another region needs it in the
+  allowlist one release before: the payload that runs enforces it.
 
 ## Variable store robustness
 
@@ -508,7 +514,7 @@ PCDs, the standard way), `PlatformGopPolicy`, `NetworkDrivers`,
 `EcAcpiBatteryStatusDxe`, the SD/MMC drivers, and the `-D` defines that
 coreboot's `payloads/external/edk2/Makefile` passes for the fork
 (`BOOTSPLASH_IMAGE`, `LVGL_ENABLE`, `CSMWRAP`, `NETWORK_IPXE`,
-`CAPSULE_MAIN_FW_GUID`). Of the 44 patches in `patches/edk2`, seven touch
+`CAPSULE_MAIN_FW_GUID`). Of the 46 patches in `patches/edk2`, seven touch
 packages outside `UefiPayloadPkg`: `0001` (UiApp), `0004` (OvmfPkg
 SioBusDxe), `0007` (Ps2MouseDxe), `0019` (TcgDxe), `0032` (DxeCore),
 `0039` (Variable, MOR), `0041` (already in mainline: it goes).

@@ -436,9 +436,12 @@ started from the disk (`tools/efi/slot-lock-test.c`) must be refused, before
 and after `ExitBootServices()`; a full `RW_NVRAM`, a power cut halfway
 through a slot and a capsule on a USB drive must leave a laptop that boots
 and finishes the update; a capsule that names the two slots only, as those
-of the M920x, must leave `RW_MRC_CACHE` as it was; the ESRT is checked at
-every boot
-([docs/vboot.md](docs/vboot.md#how-it-is-tested)). It needs
+of the M920x, must leave `RW_MRC_CACHE` as it was, and one that names
+`SMMSTORE`, or the running slot alone, must be refused with nothing
+written; the ESRT is checked at every boot
+([docs/vboot.md](docs/vboot.md#how-it-is-tested)). Before it, the unit
+tests of `FmpDeviceSmmLib` run on the host (`tools/build.sh
+edk2-unit-test`, also in `check.yml`). It needs
 `qemu-system-x86`, `mtools`, `clang` and `lld`; the serial console goes to
 `work/update-test/out`.
 
@@ -446,7 +449,7 @@ every boot
 
 | Workflow | When | What |
 |---|---|---|
-| [`check.yml`](.github/workflows/check.yml) | every push and pull request | `tools/ci-check.sh` (shellcheck, actionlint, blob checksums, patch series, defconfigs); the series applied to the pinned coreboot and EDK2, and the configuration of every board and variant checked |
+| [`check.yml`](.github/workflows/check.yml) | every push and pull request | `tools/ci-check.sh` (shellcheck, actionlint, blob checksums, patch series, defconfigs); the series applied to the pinned coreboot and EDK2, and the configuration of every board and variant checked; the unit tests of the payload on the host (`tools/build.sh edk2-unit-test`) |
 | [`build.yml`](.github/workflows/build.yml) | tag `vX.Y.Z`, *Run workflow*, push to `ci-test/**` | the ROMs of every board with the coreboot toolchain (cached), verified, their setup menu checked (`menu`), their payloads booted in QEMU (`smoke`), their capsules signed, their bill of materials made (`tools/sbom.py`); in parallel, the ROMs built a second time from scratch on another runner (`repro`) and compared bit by bit with the first (`compare`), and the capsule update with vboot A/B in QEMU (`update-test`); the files of each release checked (`tools/ci.sh check`) and published as `vX.Y.Z-mrc`, `vX.Y.Z-nri` and, from v1.4.0, `vX.Y.Z-m920x-fsp` |
 | [`edk2-upstream.yml`](.github/workflows/edk2-upstream.yml) | *Run workflow*, push to `ci-edk2/**` | the move to TianoCore ([docs/edk2-migration.md](docs/edk2-migration.md)): `patches/tianocore` and [`edk2/OuroBiosPkg`](edk2/README.md) checked against MrChromebox's tree with `patches/edk2` (`tools/edk2-import.py --check`); the payload of the TianoCore tag without the project's patches, with the known gaps, and from the package, in q35 images with this tree's coreboot and the steps of the smoke test that need no setup of the project (`tools/build.sh edk2-upstream`); the payload of each board from the package and from MrChromebox's tree, the same byte for byte (`tools/build.sh edk2-parity`); no release |
 | [`upstream.yml`](.github/workflows/upstream.yml) | every Monday | opens an issue when the series no longer applies on coreboot `main`, a patch was merged upstream, a coreboot release is out, MrChromebox's EDK2 branch moved past the commit the package comes from, a pinned EDK2 or LvglPkg commit has no tag in the project's forks (`configs/edk2-pins.txt`), the default dbx of the payload is not the one of Microsoft's latest signed release, or TianoCore has a stable tag after the one of the payload (with whether `patches/tianocore` and the platform of `edk2/OuroBiosPkg` still apply to it) |
