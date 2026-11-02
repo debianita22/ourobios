@@ -216,6 +216,43 @@ Inside coreboot:
 > [docs/flashing.md](docs/flashing.md#diagnosing-a-hang) shows how to find
 > where, and suspend-to-idle (`mem_sleep_default=s2idle`) works meanwhile.
 
+## Specifications and known limits
+
+What the firmware is built against, as the pinned trees declare it, and
+what the two machines cannot meet:
+
+| Area | Baseline |
+|---|---|
+| coreboot | upstream `main` at the commit `tools/build.sh` pins (`COREBOOT_COMMIT`, 26.09-438 at v1.5.0), its cross toolchain and the [patch series](patches/README.md), each patch written for upstream review |
+| EDK II | MrChromebox's [edk2](https://github.com/mrchromebox/edk2) at the commit of the defconfigs (`CONFIG_EDK2_TAG_OR_REV`, [`configs/edk2-pins.txt`](configs/edk2-pins.txt)), a fork of TianoCore EDK II whose `UefiPayloadPkg` boots on coreboot; the [41 patches](patches/README.md#edk2-and-lvglpkg) stay in `UefiPayloadPkg` but seven (`edk2/0001`, `0004`, `0007`, `0019`, `0032`, `0039`, `0041`) touch `MdeModulePkg`, `SecurityPkg` or `OvmfPkg`. A move to upstream TianoCore is planned ([docs/roadmap.md](docs/roadmap.md)) |
+| UEFI | the system table reports revision 2.7 (`EFI_SYSTEM_TABLE_REVISION` of this EDK II); the runtime services, variables, capsules, ESRT and Secure Boot are implemented and tested against the UEFI 2.10 text (`tools/efi/*.c` cite its sections); PI 1.8 (`PI_SPECIFICATION_VERSION`) for the HOBs the payload reads from coreboot |
+| ACPI | tables from coreboot's generator and ASL, compiled by the iasl of the cross toolchain (ACPICA 20251212 at v1.5.0) with warnings as errors (`-we`) and disassembled back for a check at every build; the ASL follows the ACPI 6.5 text (no EC RAM before `_REG`, `Device` processors with ACPI0007 by default) |
+| Secure Boot | PK, KEK, db and dbx enrolled at the first boot by the payload's `EnrollDefaultKeys`: Microsoft's *Windows OEM Devices PK* (so that Microsoft can issue KEK updates for it), the *Microsoft Corporation KEK CA 2011* and *KEK 2K CA 2023*, in db the *Microsoft Corporation UEFI CA 2011*, *Microsoft UEFI CA 2023*, *Microsoft Option ROM UEFI CA 2023*, *Microsoft Windows Production PCA 2011* and *Windows UEFI CA 2023*, and Microsoft's dbx; variables authenticated and kept in `SMMSTORE`, setup and user mode from the standard `SecureBootConfigDxe` |
+| Measured boot | from v1.5.0, coreboot and the payload measure into the TPM of the machine, TPM 1.2 on the W541 and 2.0 on the M920x, with a log the OS can replay ([docs/vboot.md](docs/vboot.md)) |
+
+Known limits, by hardware or by design, not open bugs:
+
+- **Windows 11 on the W541**: its Haswell processors are not in Microsoft's
+  processor list for Windows 11, and its TPM is a 1.2 (no TPM 2.0, and no
+  firmware TPM is faked). Windows 10 runs; the M920x meets the Windows 11
+  requirements ([docs/testing.md](docs/testing.md#windows-11-win)).
+- **Kernel DMA Protection** (Windows) and pre-boot DMA protection: not
+  given; VT-d and the untrusted-port marking of the ExpressCard and
+  Thunderbolt ports are for the OS, after it starts (patch 0184, 0206).
+- **WSMT and HSTI**: no WSMT table is published, since the SMI handlers
+  have not been audited against its three claims, and no HSTI. Windows
+  boots without them; its *Device security* page reports accordingly.
+- **The lock of TCG MOR** needs *BIOS Lock* on, the default on the W541
+  from v1.5.1; with it off the OS can write the flash without SMM and the
+  lock is not offered. On the M920x the lock is applied before ramstage
+  writes the event log, so with *BIOS Lock* on those entries are lost
+  (`CHANGELOG.md`, v1.5.1): its default stays off until that is fixed.
+- **XMP profiles**: the memory runs at its JEDEC timings.
+- **macOS**: supported through OpenCore, with the firmware options of
+  [docs/macos.md](docs/macos.md), on the same ACPI tables as Linux and
+  Windows; the Darwin-only paths are gated by `_OSI ("Darwin")`, which
+  Windows never answers and Linux only on Apple hardware.
+
 ## Flashing
 
 On a W541 that already runs coreboot with an unlocked flash (as the 4.22 image

@@ -28,6 +28,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `mrc.bin` reserves (patch 0208): the two variants boot with the same
   memory map and the same OpenCore configuration. A saved setting is
   kept; 64 MB stays among the values.
+- README: the specifications the firmware is built against, as the pinned
+  trees declare them, and the known limits of the two machines (Windows
+  11 on the W541, DMA protection, WSMT and HSTI, the MOR lock, XMP).
 
 ## v1.5.0
 
