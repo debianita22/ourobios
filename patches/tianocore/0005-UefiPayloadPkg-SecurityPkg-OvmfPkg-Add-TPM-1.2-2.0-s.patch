@@ -1,0 +1,4123 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patrick Rudolph <patrick.rudolph@9elements.com>
+Date: Tue, 26 Jan 2021 13:53:56 +0100
+Subject: [PATCH] UefiPayloadPkg/SecurityPkg/OvmfPkg: Add TPM 1.2/2.0 support
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+
+[ouroBIOS: MrChromebox's c111515 on edk2-stable202608, for the package
+edk2/OuroBiosPkg. Its changes to UefiPayloadPkg.dsc and .fdf are in
+OuroBiosPkg.dsc.patch and .fdf.patch; the GUID it adds to
+UefiPayloadPkg.dec goes at the end of upstream's [Guids].]
+---
+ OvmfPkg/Include/Dsc/OvmfTpmLibs.dsc.inc       |    1 +
+ .../Library/Tcg2PhysicalPresencePlatformLib.h |   29 +
+ .../DxeTcg2PhysicalPresenceLib.c              |   76 +-
+ .../DxeTcg2PhysicalPresenceLib.inf            |    2 +-
+ .../DxeTcg2PhysicalPresencePlatformLib.c      |   56 +
+ .../DxeTcg2PhysicalPresencePlatformLib.inf    |   36 +
+ .../Include/Library/TcgPhysicalPresenceLib.h  |   27 +-
+ SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c             |   16 +
+ SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf           |    1 +
+ SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf |    1 +
+ SecurityPkg/Tcg/TcgConfigDxe/TcgConfigImpl.c  |   19 +-
+ UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c    |   23 +
+ UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf  |    4 +
+ UefiPayloadPkg/Include/Coreboot.h             |   26 +
+ .../Include/Guid/TcgPhysicalPresenceGuid.h    |   30 +
+ UefiPayloadPkg/Include/Library/BlParseLib.h   |   16 +
+ .../Library/CbParseLib/CbParseLib.c           |   46 +
+ .../PlatformBootManager.c                     |    8 +
+ .../PlatformBootManager.h                     |    2 +
+ .../PlatformBootManagerLib.inf                |    3 +
+ .../Library/SblParseLib/SblParseLib.c         |   15 +
+ .../DxeTcg2PhysicalPresenceLib.c              |  965 ++++++++++
+ .../DxeTcg2PhysicalPresenceLib.inf            |   72 +
+ .../DxeTcg2PhysicalPresencePlatformLib.c      |   80 +
+ .../DxeTcg2PhysicalPresencePlatformLib.inf    |   44 +
+ .../PhysicalPresenceStrings.uni               |   38 +
+ .../DxeTcgPhysicalPresenceLib.c               |   19 +
+ .../DxeTcgPhysicalPresenceLib.inf             |   29 +
+ .../DxeTcgPhysicalPresenceLib.c               | 1710 +++++++++++++++++
+ .../DxeTcgPhysicalPresenceLib.inf             |   74 +
+ .../DxeTcgPhysicalPresenceLib.uni             |   22 +
+ .../PhysicalPresenceStrings.uni               |   46 +
+ UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c   |   13 +
+ .../UefiPayloadEntry/UefiPayloadEntry.c       |   13 +
+ .../UefiPayloadEntry/UefiPayloadEntry.h       |    1 +
+ .../UefiPayloadEntry/UefiPayloadEntry.inf     |    1 +
+ UefiPayloadPkg/UefiPayloadPkg.dec             |    2 +
+ 37 files changed, 3520 insertions(+), 46 deletions(-)
+ create mode 100644 OvmfPkg/Include/Library/Tcg2PhysicalPresencePlatformLib.h
+ create mode 100644 OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.c
+ create mode 100644 OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.inf
+ create mode 100644 UefiPayloadPkg/Include/Guid/TcgPhysicalPresenceGuid.h
+ create mode 100644 UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresenceLib.c
+ create mode 100644 UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresenceLib.inf
+ create mode 100644 UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresencePlatformLib.c
+ create mode 100644 UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresencePlatformLib.inf
+ create mode 100644 UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/PhysicalPresenceStrings.uni
+ create mode 100644 UefiPayloadPkg/Library/TcgPhysicalPresenceLibNull/DxeTcgPhysicalPresenceLib.c
+ create mode 100644 UefiPayloadPkg/Library/TcgPhysicalPresenceLibNull/DxeTcgPhysicalPresenceLib.inf
+ create mode 100644 UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/DxeTcgPhysicalPresenceLib.c
+ create mode 100644 UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/DxeTcgPhysicalPresenceLib.inf
+ create mode 100644 UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/DxeTcgPhysicalPresenceLib.uni
+ create mode 100644 UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/PhysicalPresenceStrings.uni
+
+diff --git a/OvmfPkg/Include/Dsc/OvmfTpmLibs.dsc.inc b/OvmfPkg/Include/Dsc/OvmfTpmLibs.dsc.inc
+index d664775..04541f5 100644
+--- a/OvmfPkg/Include/Dsc/OvmfTpmLibs.dsc.inc
++++ b/OvmfPkg/Include/Dsc/OvmfTpmLibs.dsc.inc
+@@ -10,6 +10,7 @@
+ !endif
+   Tpm2CommandLib|SecurityPkg/Library/Tpm2CommandLib/Tpm2CommandLib.inf
+   Tcg2PhysicalPresenceLib|OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.inf
++  Tcg2PhysicalPresencePlatformLib|OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.inf
+   Tcg2PpVendorLib|SecurityPkg/Library/Tcg2PpVendorLibNull/Tcg2PpVendorLibNull.inf
+ !else
+   Tcg2PhysicalPresenceLib|OvmfPkg/Library/Tcg2PhysicalPresenceLibNull/DxeTcg2PhysicalPresenceLib.inf
+diff --git a/OvmfPkg/Include/Library/Tcg2PhysicalPresencePlatformLib.h b/OvmfPkg/Include/Library/Tcg2PhysicalPresencePlatformLib.h
+new file mode 100644
+index 0000000..76bfd2a
+--- /dev/null
++++ b/OvmfPkg/Include/Library/Tcg2PhysicalPresencePlatformLib.h
+@@ -0,0 +1,29 @@
++/** @file
++  Returns the platform specific Physical Presence configuration.
++
++  Copyright (C) 2020 9elements GmbH
++
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++
++#ifndef __TCG2_PHYSICAL_PRESENCE_PLATFORM_LIB_H__
++#define __TCG2_PHYSICAL_PRESENCE_PLATFORM_LIB_H__
++
++#include <IndustryStandard/QemuTpm.h>
++
++/**
++  Reads the platform specific Physical Presence configuration.
++
++  @param[out]  The Config structure to read to.
++  @param[out]  The PPIinMMIO is True when the PPI is in MMIO memory space
++
++  @retval EFI_SUCCESS           Operation completed successfully.
++  @retval EFI_PROTOCOL_ERROR    Invalid fw_cfg entry size.
++**/
++EFI_STATUS
++TpmPPIPlatformReadConfig (
++  OUT QEMU_FWCFG_TPM_CONFIG *Config,
++  OUT BOOLEAN               *PPIinMMIO
++  );
++
++#endif
+diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c b/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c
+index 4038020..cc9bd9f 100644
+--- a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c
++++ b/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c
+@@ -27,8 +27,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Library/HobLib.h>
+ #include <Library/MemoryAllocationLib.h>
+ #include <Library/PrintLib.h>
+-#include <Library/QemuFwCfgLib.h>
+ #include <Library/Tpm2CommandLib.h>
++#include <Library/Tcg2PhysicalPresencePlatformLib.h>
+ #include <Library/UefiBootServicesTableLib.h>
+ #include <Library/UefiLib.h>
+ #include <Library/UefiRuntimeServicesTableLib.h>
+@@ -40,42 +40,13 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ 
+ EFI_HII_HANDLE  mTcg2PpStringPackHandle;
+ 
++/* Wait 3 minutes for user input */
++#define TIMEOUT                     (1000 * 1000 * 60 * 3)
++
+ #define TPM_PPI_FLAGS  (QEMU_TPM_PPI_FUNC_ALLOWED_USR_REQ)
+ 
+ STATIC volatile QEMU_TPM_PPI  *mPpi;
+ 
+-/**
+-  Reads QEMU PPI config from fw_cfg.
+-
+-  @param[out]  The Config structure to read to.
+-
+-  @retval EFI_SUCCESS           Operation completed successfully.
+-  @retval EFI_PROTOCOL_ERROR    Invalid fw_cfg entry size.
+-**/
+-STATIC
+-EFI_STATUS
+-QemuTpmReadConfig (
+-  OUT QEMU_FWCFG_TPM_CONFIG  *Config
+-  )
+-{
+-  EFI_STATUS            Status;
+-  FIRMWARE_CONFIG_ITEM  FwCfgItem;
+-  UINTN                 FwCfgSize;
+-
+-  Status = QemuFwCfgFindFile ("etc/tpm/config", &FwCfgItem, &FwCfgSize);
+-  if (EFI_ERROR (Status)) {
+-    return Status;
+-  }
+-
+-  if (FwCfgSize != sizeof (*Config)) {
+-    return EFI_PROTOCOL_ERROR;
+-  }
+-
+-  QemuFwCfgSelectItem (FwCfgItem);
+-  QemuFwCfgReadBytes (sizeof (*Config), Config);
+-  return EFI_SUCCESS;
+-}
+-
+ /**
+   Initializes QEMU PPI memory region.
+ 
+@@ -90,6 +61,7 @@ QemuTpmInitPPI (
+ {
+   EFI_STATUS                       Status;
+   QEMU_FWCFG_TPM_CONFIG            Config;
++  BOOLEAN                          PPIinMMIO;
+   EFI_PHYSICAL_ADDRESS             PpiAddress64;
+   EFI_GCD_MEMORY_SPACE_DESCRIPTOR  Descriptor;
+   UINTN                            Idx;
+@@ -98,7 +70,7 @@ QemuTpmInitPPI (
+     return EFI_SUCCESS;
+   }
+ 
+-  Status = QemuTpmReadConfig (&Config);
++  Status = TpmPPIPlatformReadConfig (&Config, &PPIinMMIO);
+   if (EFI_ERROR (Status)) {
+     return Status;
+   }
+@@ -124,12 +96,20 @@ QemuTpmInitPPI (
+     goto InvalidPpiAddress;
+   }
+ 
+-  if (!EFI_ERROR (Status) &&
+-      ((Descriptor.GcdMemoryType != EfiGcdMemoryTypeMemoryMappedIo) &&
+-       (Descriptor.GcdMemoryType != EfiGcdMemoryTypeNonExistent)))
+-  {
+-    DEBUG ((DEBUG_ERROR, "[TPM2PP] mPpi has an invalid memory type\n"));
+-    goto InvalidPpiAddress;
++  if (PPIinMMIO) {
++    if (!EFI_ERROR (Status) &&
++        (Descriptor.GcdMemoryType != EfiGcdMemoryTypeMemoryMappedIo &&
++        Descriptor.GcdMemoryType != EfiGcdMemoryTypeNonExistent)) {
++      DEBUG ((DEBUG_ERROR, "[TPM2PP] mPpi has an invalid memory type\n"));
++      goto InvalidPpiAddress;
++    }
++  } else {
++    if (!EFI_ERROR (Status) &&
++      (Descriptor.GcdMemoryType != EfiGcdMemoryTypeReserved &&
++       Descriptor.GcdMemoryType != EfiGcdMemoryTypeSystemMemory)) {
++      DEBUG ((DEBUG_ERROR, "[TPM2PP] mPpi has an invalid memory type\n"));
++      goto InvalidPpiAddress;
++    }
+   }
+ 
+   for (Idx = 0; Idx < ARRAY_SIZE (mPpi->Func); Idx++) {
+@@ -359,12 +339,16 @@ Tcg2ExecutePhysicalPresence (
+ STATIC
+ BOOLEAN
+ Tcg2ReadUserKey (
+-  IN     BOOLEAN  CautionKey
++  IN     BOOLEAN  CautionKey,
++  IN     UINTN    Timeout
+   )
+ {
+   EFI_STATUS     Status;
+   EFI_INPUT_KEY  Key;
+   UINT16         InputKey;
++  UINTN          Delay;
++
++  Delay = Timeout / 50;
+ 
+   InputKey = 0;
+   do {
+@@ -383,7 +367,13 @@ Tcg2ReadUserKey (
+         InputKey = Key.ScanCode;
+       }
+     }
+-  } while (InputKey == 0);
++    gBS->Stall (50);
++    Delay--;
++  } while (InputKey == 0 && Delay > 0);
++
++  if (Delay == 0) {
++    return FALSE;
++  }
+ 
+   if (InputKey != SCAN_ESC) {
+     return TRUE;
+@@ -652,7 +642,7 @@ Tcg2UserConfirm (
+   FreePool (ConfirmText);
+   HiiRemovePackages (mTcg2PpStringPackHandle);
+ 
+-  if (Tcg2ReadUserKey (CautionKey)) {
++  if (Tcg2ReadUserKey (CautionKey, TIMEOUT)) {
+     return TRUE;
+   }
+ 
+diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.inf b/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.inf
+index 7cfc080..904eafe 100644
+--- a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.inf
++++ b/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.inf
+@@ -57,12 +57,12 @@
+   HobLib
+   MemoryAllocationLib
+   PrintLib
+-  QemuFwCfgLib
+   Tpm2CommandLib
+   UefiBootManagerLib
+   UefiBootServicesTableLib
+   UefiLib
+   UefiRuntimeServicesTableLib
++  Tcg2PhysicalPresencePlatformLib
+ 
+ [Protocols]
+   gEfiTcg2ProtocolGuid                 ## SOMETIMES_CONSUMES
+diff --git a/OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.c b/OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.c
+new file mode 100644
+index 0000000..baef59d
+--- /dev/null
++++ b/OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.c
+@@ -0,0 +1,56 @@
++/** @file
++  Returns the platform specific configuration for the QEMU PPI.
++
++  Caution: This module requires additional review when modified.
++  This driver will have external input - variable.
++  This external input must be validated carefully to avoid security issue.
++
++Copyright (C) 2018, Red Hat, Inc.
++Copyright (c) 2018, IBM Corporation. All rights reserved.<BR>
++Copyright (c) 2013 - 2016, Intel Corporation. All rights reserved.<BR>
++SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#include <PiDxe.h>
++
++#include <IndustryStandard/QemuTpm.h>
++
++#include <Library/QemuFwCfgLib.h>
++#include <Library/Tcg2PhysicalPresencePlatformLib.h>
++
++/**
++  Reads QEMU PPI config from fw_cfg.
++
++  @param[out]  The Config structure to read to.
++  @param[out]  The PPIinMMIO is True when the PPI is in MMIO memory space
++
++  @retval EFI_SUCCESS           Operation completed successfully.
++  @retval EFI_PROTOCOL_ERROR    Invalid fw_cfg entry size.
++**/
++EFI_STATUS
++TpmPPIPlatformReadConfig (
++  OUT QEMU_FWCFG_TPM_CONFIG *Config,
++  OUT BOOLEAN               *PPIinMMIO
++  )
++{
++  EFI_STATUS           Status;
++  FIRMWARE_CONFIG_ITEM FwCfgItem;
++  UINTN                FwCfgSize;
++
++  Status = QemuFwCfgFindFile ("etc/tpm/config", &FwCfgItem, &FwCfgSize);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  if (FwCfgSize != sizeof (*Config)) {
++    return EFI_PROTOCOL_ERROR;
++  }
++
++  QemuFwCfgSelectItem (FwCfgItem);
++  QemuFwCfgReadBytes (sizeof (*Config), Config);
++
++  *PPIinMMIO = TRUE;
++
++  return EFI_SUCCESS;
++}
+diff --git a/OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.inf b/OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.inf
+new file mode 100644
+index 0000000..0ea0c08
+--- /dev/null
++++ b/OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.inf
+@@ -0,0 +1,36 @@
++## @file
++# Returns the platform specific configuration for the QEMU PPI.
++#
++#  Caution: This module requires additional review when modified.
++#  This driver will have external input - variable.
++#  This external input must be validated carefully to avoid security issue.
++#
++# Copyright (C) 2018, Red Hat, Inc.
++# Copyright (c) 2013 - 2018, Intel Corporation. All rights reserved.<BR>
++# SPDX-License-Identifier: BSD-2-Clause-Patent
++#
++##
++
++[Defines]
++  INF_VERSION                    = 0x00010005
++  BASE_NAME                      = Tcg2PhysicalPresencePlatformLibQemu
++  FILE_GUID                      = 9336E7F0-6CA1-4E6D-A0E9-DFE5F077AA02
++  MODULE_TYPE                    = DXE_DRIVER
++  VERSION_STRING                 = 1.0
++  LIBRARY_CLASS                  = Tcg2PhysicalPresencePlatformLib|DXE_DRIVER DXE_RUNTIME_DRIVER UEFI_APPLICATION UEFI_DRIVER
++
++#
++# The following information is for reference only and not required by the build tools.
++#
++#  VALID_ARCHITECTURES           = IA32 X64 EBC
++#
++
++[Sources]
++  DxeTcg2PhysicalPresencePlatformLib.c
++
++[Packages]
++  OvmfPkg/OvmfPkg.dec
++  MdePkg/MdePkg.dec
++
++[LibraryClasses]
++  QemuFwCfgLib
+diff --git a/SecurityPkg/Include/Library/TcgPhysicalPresenceLib.h b/SecurityPkg/Include/Library/TcgPhysicalPresenceLib.h
+index a23ed7c..7b5322a 100644
+--- a/SecurityPkg/Include/Library/TcgPhysicalPresenceLib.h
++++ b/SecurityPkg/Include/Library/TcgPhysicalPresenceLib.h
+@@ -21,8 +21,11 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+   to display request information and get user input to confirm the request. This API should also
+   be invoked as early as possible as TPM is locked in this function.
+ 
++  @retval EFI_SUCCESS       Flags were returns successfully.
++  @retval other             Failed to process.
++
+ **/
+-VOID
++EFI_STATUS
+ EFIAPI
+ TcgPhysicalPresenceLibProcessRequest (
+   VOID
+@@ -43,3 +46,25 @@ EFIAPI
+ TcgPhysicalPresenceLibNeedUserConfirm (
+   VOID
+   );
++
++/**
++  The handler for TPM physical presence function:
++  Submit TPM Operation Request to Pre-OS Environment and
++  Submit TPM Operation Request to Pre-OS Environment 2.
++
++  This API should be invoked in OS runtime phase to interface with ACPI method.
++
++  Caution: This function may receive untrusted input.
++
++  @param[in]      OperationRequest TPM physical presence operation request.
++  @param[in]      RequestParameter TPM physical presence operation request parameter.
++
++  @return Return Code for Submit TPM Operation Request to Pre-OS Environment and
++          Submit TPM Operation Request to Pre-OS Environment 2.
++**/
++UINT32
++EFIAPI
++TcgPhysicalPresenceLibSubmitRequestToPreOSFunction (
++  IN UINT32  OperationRequest,
++  IN UINT32  RequestParameter
++  );
+diff --git a/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c b/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c
+index 096e3ef..ea89b29 100644
+--- a/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c
++++ b/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c
+@@ -2776,6 +2776,7 @@ DriverEntry (
+   EFI_TCG2_EVENT_ALGORITHM_BITMAP  TpmHashAlgorithmBitmap;
+   UINT32                           ActivePCRBanks;
+   UINT32                           NumberOfPCRBanks;
++  UINT32                           Tpm2PcrMask;
+ 
+   mImageHandle = ImageHandle;
+ 
+@@ -2883,6 +2884,21 @@ DriverEntry (
+   DEBUG ((DEBUG_INFO, "Tcg2.NumberOfPCRBanks      - 0x%08x\n", mTcgDxeData.BsCap.NumberOfPCRBanks));
+   DEBUG ((DEBUG_INFO, "Tcg2.ActivePcrBanks        - 0x%08x\n", mTcgDxeData.BsCap.ActivePcrBanks));
+ 
++  //
++  // On platforms without a PEI phase (e.g. the UEFI payload), Tcg2Pei never
++  // runs, so its SyncPcrAllocationsAndPcrMask() never reconciles the desired
++  // PCR mask (PcdTpm2HashMask) against the banks the TPM actually supports.
++  // Constrain the mask to the supported bitmap here so later measurements do
++  // not target unsupported banks. On platforms where Tcg2Pei already ran the
++  // values match and this is a no-op.
++  //
++  Tpm2PcrMask = PcdGet32 (PcdTpm2HashMask);
++  if (Tpm2PcrMask != mTcgDxeData.BsCap.HashAlgorithmBitmap) {
++    Tpm2PcrMask &= mTcgDxeData.BsCap.HashAlgorithmBitmap;
++    Status       = PcdSet32S (PcdTpm2HashMask, Tpm2PcrMask);
++    ASSERT_EFI_ERROR (Status);
++  }
++
+   if (mTcgDxeData.BsCap.TPMPresentFlag) {
+     //
+     // Setup the log area and copy event log from hob list to it
+diff --git a/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf b/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf
+index d291c03..cd984de 100644
+--- a/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf
++++ b/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf
+@@ -110,6 +110,7 @@
+   gEfiSecurityPkgTokenSpaceGuid.PcdTpm2AcpiTableLasa                        ## PRODUCES
+   gEfiMdeModulePkgTokenSpaceGuid.PcdTcgPfpMeasurementRevision               ## CONSUMES
+   gEfiMdeModulePkgTokenSpaceGuid.PcdEnableSpdmDeviceAuthentication           ## CONSUMES
++  gEfiSecurityPkgTokenSpaceGuid.PcdTpm2HashMask                             ## PRODUCES
+ 
+ [Depex]
+   # According to PcdTpm2AcpiTableRev definition in SecurityPkg.dec
+diff --git a/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf b/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf
+index 24428e0..ee43dc4 100644
+--- a/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf
++++ b/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf
+@@ -48,6 +48,7 @@
+   PcdLib
+   PrintLib
+   Tpm12DeviceLib
++  TcgPhysicalPresenceLib
+ 
+ [Guids]
+   ## SOMETIMES_PRODUCES ## Variable:L"PhysicalPresence"
+diff --git a/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigImpl.c b/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigImpl.c
+index 52ea1ac..2570b9c 100644
+--- a/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigImpl.c
++++ b/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigImpl.c
+@@ -7,6 +7,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ **/
+ 
+ #include "TcgConfigImpl.h"
++#include <IndustryStandard/TcgPhysicalPresence.h>
++#include <Library//TcgPhysicalPresenceLib.h>
+ 
+ CHAR16  mTcgStorageName[] = L"TCG_CONFIGURATION";
+ 
+@@ -41,6 +43,8 @@ HII_VENDOR_DEVICE_PATH  mTcgHiiVendorDevicePath = {
+   }
+ };
+ 
++UINT8  mCurrentPpRequest;
++
+ /**
+   Get current state of TPM device.
+ 
+@@ -302,6 +306,7 @@ SavePpRequest (
+   EFI_STATUS             Status;
+   UINTN                  DataSize;
+   EFI_PHYSICAL_PRESENCE  PpData;
++  UINT32      ReturnCode;
+ 
+   //
+   // Save TPM command to variable.
+@@ -330,7 +335,19 @@ SavePpRequest (
+     return Status;
+   }
+ 
+-  return EFI_SUCCESS;
++  ReturnCode = TcgPhysicalPresenceLibSubmitRequestToPreOSFunction (PpRequest, 0);
++  if (ReturnCode == TCG_PP_SUBMIT_REQUEST_TO_PREOS_SUCCESS) {
++    mCurrentPpRequest = PpRequest;
++    Status            = EFI_SUCCESS;
++  } else if (ReturnCode == TCG_PP_SUBMIT_REQUEST_TO_PREOS_GENERAL_FAILURE) {
++    Status = EFI_OUT_OF_RESOURCES;
++  } else if (ReturnCode == TCG_PP_SUBMIT_REQUEST_TO_PREOS_NOT_IMPLEMENTED) {
++    Status = EFI_UNSUPPORTED;
++  } else {
++    Status = EFI_DEVICE_ERROR;
++  }
++
++  return Status;
+ }
+ 
+ /**
+diff --git a/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c b/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c
+index 866ca70..0696e86 100644
+--- a/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c
++++ b/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c
+@@ -7,6 +7,7 @@
+ 
+ **/
+ #include "BlSupportDxe.h"
++#include <Guid/TpmInstance.h>
+ 
+ /**
+   Main entry for the bootloader support DXE module.
+@@ -32,6 +33,7 @@ BlDxeEntryPoint (
+   FIRMWARE_INFO              *FirmwareInfo;
+   EFI_SYSTEM_RESOURCE_TABLE  *Esrt;
+   EFI_SYSTEM_RESOURCE_ENTRY  *Esre;
++  UINTN                      Size;
+ 
+   //
+   // Find the frame buffer information and update PCDs
+@@ -59,6 +61,27 @@ BlDxeEntryPoint (
+     ASSERT_EFI_ERROR (Status);
+     Status = PcdSet64S (PcdPciExpressBaseSize, AcpiBoardInfo->PcieBaseSize);
+     ASSERT_EFI_ERROR (Status);
++
++    if (AcpiBoardInfo->TPM12Present)
++    {
++      Size = sizeof (gEfiTpmDeviceInstanceTpm12Guid);
++      Status = PcdSetPtrS (
++               PcdTpmInstanceGuid,
++               &Size,
++               &gEfiTpmDeviceInstanceTpm12Guid
++               );
++      ASSERT_EFI_ERROR (Status);
++    }
++    else if (AcpiBoardInfo->TPM20Present)
++    {
++      Size = sizeof (gEfiTpmDeviceInstanceTpm20DtpmGuid);
++      Status = PcdSetPtrS (
++                 PcdTpmInstanceGuid,
++                 &Size,
++                 &gEfiTpmDeviceInstanceTpm20DtpmGuid
++                 );
++      ASSERT_EFI_ERROR (Status);
++    }
+   }
+ 
+   Status = BlArchAdditionalOps (ImageHandle, SystemTable);
+diff --git a/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf b/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf
+index c1fe073..731455f 100644
+--- a/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf
++++ b/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf
+@@ -38,6 +38,7 @@
+   MdeModulePkg/MdeModulePkg.dec
+   UefiPayloadPkg/UefiPayloadPkg.dec
+   UefiCpuPkg/UefiCpuPkg.dec
++  SecurityPkg/SecurityPkg.dec
+ 
+ [LibraryClasses]
+   UefiDriverEntryPoint
+@@ -55,6 +56,8 @@
+   gEfiFirmwareInfoHobGuid
+   gEfiGraphicsInfoHobGuid
+   gEfiSystemResourceTableGuid
++  gEfiTpmDeviceInstanceTpm20DtpmGuid  ## SOMETIMES_CONSUMES
++  gEfiTpmDeviceInstanceTpm12Guid      ## SOMETIMES_CONSUMES
+ 
+ [Protocols]
+   gEfiCpuArchProtocolGuid
+@@ -66,6 +69,7 @@
+   gEfiMdeModulePkgTokenSpaceGuid.PcdSetupVideoVerticalResolution
+   gEfiMdePkgTokenSpaceGuid.PcdPciExpressBaseAddress
+   gEfiMdePkgTokenSpaceGuid.PcdPciExpressBaseSize
++  gEfiSecurityPkgTokenSpaceGuid.PcdTpmInstanceGuid        ## SOMETIMES_PRODUCES
+ 
+ [Pcd.AARCH64]
+   gEfiMdeModulePkgTokenSpaceGuid.PcdSerialRegisterBase
+diff --git a/UefiPayloadPkg/Include/Coreboot.h b/UefiPayloadPkg/Include/Coreboot.h
+index 4d0d2cc..395cb6e 100644
+--- a/UefiPayloadPkg/Include/Coreboot.h
++++ b/UefiPayloadPkg/Include/Coreboot.h
+@@ -302,4 +302,30 @@ struct cb_range {
+ 
+ typedef struct cb_memory CB_MEMORY;
+ 
++#define CB_TAG_TPM_PPI_HANDOFF       0x003a
++
++enum lb_tmp_ppi_tpm_version {
++	LB_TPM_VERSION_UNSPEC = 0,
++	LB_TPM_VERSION_TPM_VERSION_1_2,
++	LB_TPM_VERSION_TPM_VERSION_2,
++};
++
++/*
++ * Handoff buffer for TPM Physical Presence Interface.
++ * * ppi_address   Pointer to PPI buffer shared with ACPI
++ *                 The layout of the buffer matches the QEMU virtual memory device
++ *                 that is generated by QEMU.
++ *                 See files 'hw/i386/acpi-build.c' and 'include/hw/acpi/tpm.h'
++ *                 for details.
++ * * tpm_version   TPM version: 1 for TPM1.2, 2 for TPM2.0
++ * * ppi_version   BCD encoded version of TPM PPI interface
++ */
++struct cb_tpm_physical_presence {
++	UINT32 tag;
++	UINT32 size;
++	UINT32 ppi_address;	/* Address of ACPI PPI communication buffer */
++	UINT8 tpm_version;	/* 1: TPM1.2, 2: TPM2.0 */
++	UINT8 ppi_version;	/* BCD encoded */
++} __attribute__((packed));
++
+ #endif // _COREBOOT_PEI_H_INCLUDED_
+diff --git a/UefiPayloadPkg/Include/Guid/TcgPhysicalPresenceGuid.h b/UefiPayloadPkg/Include/Guid/TcgPhysicalPresenceGuid.h
+new file mode 100644
+index 0000000..1f8ca6e
+--- /dev/null
++++ b/UefiPayloadPkg/Include/Guid/TcgPhysicalPresenceGuid.h
+@@ -0,0 +1,30 @@
++/** @file
++  This file defines the hob structure for Tcg Physical Presence Interface.
++
++  Copyright (c) 2020, 9elements Agency GmbH<BR>
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#ifndef __TCG_PHYSICAL_PRESENCE_GUID_H__
++#define __TCG_PHYSICAL_PRESENCE_GUID_H__
++
++///
++/// TCG Physical Presence Information GUID
++///
++extern EFI_GUID gEfiTcgPhysicalPresenceInfoHobGuid;
++
++typedef struct {
++  UINT32 PpiAddress;
++  UINT8  TpmVersion;
++  UINT8  PpiVersion;
++} TCG_PHYSICAL_PRESENCE_INFO;
++
++#define UEFIPAYLOAD_TPM_VERSION_UNSPEC    0
++#define UEFIPAYLOAD_TPM_VERSION_1_2       1
++#define UEFIPAYLOAD_TPM_VERSION_2         2
++
++#define UEFIPAYLOAD_TPM_PPI_VERSION_NONE  0
++#define UEFIPAYLOAD_TPM_PPI_VERSION_1_30  1
++
++#endif
+diff --git a/UefiPayloadPkg/Include/Library/BlParseLib.h b/UefiPayloadPkg/Include/Library/BlParseLib.h
+index 365a0f3..19cdc60 100644
+--- a/UefiPayloadPkg/Include/Library/BlParseLib.h
++++ b/UefiPayloadPkg/Include/Library/BlParseLib.h
+@@ -17,6 +17,7 @@
+ #include <Guid/FirmwareInfoGuid.h>
+ #include <UniversalPayload/AcpiTable.h>
+ #include <UniversalPayload/SmbiosTable.h>
++#include <Guid/TcgPhysicalPresenceGuid.h>
+ 
+ #define GET_BOOTLOADER_PARAMETER()  PcdGet64 (PcdBootloaderParameter)
+ 
+@@ -182,3 +183,18 @@ EFIAPI
+ ParseCapsules (
+   IN BL_CAPSULE_CALLBACK  CapsuleCallback
+   );
++
++/**
++  Find the Tcg Physical Presence store information
++
++  @param  PPIInfo       Pointer to the TCG_PHYSICAL_PRESENCE_INFO structure
++
++  @retval RETURN_SUCCESS     Successfully find the SMM store buffer information.
++  @retval RETURN_NOT_FOUND   Failed to find the SMM store buffer information .
++
++**/
++RETURN_STATUS
++EFIAPI
++ParseTPMPPIInfo (
++  OUT TCG_PHYSICAL_PRESENCE_INFO       *PPIInfo
++  );
+diff --git a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
+index 0f6d1d5..852dd1d 100644
+--- a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
++++ b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
+@@ -750,3 +750,49 @@ ParseCapsules (
+ 
+   return RETURN_SUCCESS;
+ }
++
++/**
++  Find the Tcg Physical Presence store information
++  @param  PPIInfo       Pointer to the TCG_PHYSICAL_PRESENCE_INFO structure
++  @retval RETURN_SUCCESS     Successfully find the SMM store buffer information.
++  @retval RETURN_NOT_FOUND   Failed to find the SMM store buffer information .
++**/
++RETURN_STATUS
++EFIAPI
++ParseTPMPPIInfo (
++  OUT TCG_PHYSICAL_PRESENCE_INFO       *PPIInfo
++  )
++{
++  struct cb_tpm_physical_presence       *CbTPPRec;
++  UINT8 VersionMajor;
++  UINT8 VersionMinor;
++
++  if (PPIInfo == NULL) {
++    return RETURN_INVALID_PARAMETER;
++  }
++
++  CbTPPRec = FindCbTag (CB_TAG_TPM_PPI_HANDOFF);
++  if (CbTPPRec == NULL) {
++    return RETURN_NOT_FOUND;
++  }
++
++  VersionMajor = CbTPPRec->ppi_version >> 4;
++  VersionMinor = CbTPPRec->ppi_version & 0xF;
++
++  DEBUG ((DEBUG_INFO, "Found Tcg Physical Presence information\n"));
++  DEBUG ((DEBUG_INFO, "PpiAddress: 0x%x\n", CbTPPRec->ppi_address));
++  DEBUG ((DEBUG_INFO, "TpmVersion: 0x%x\n", CbTPPRec->tpm_version));
++  DEBUG ((DEBUG_INFO, "PpiVersion: %x.%x\n", VersionMajor, VersionMinor));
++
++  PPIInfo->PpiAddress = CbTPPRec->ppi_address;
++  if (CbTPPRec->tpm_version == LB_TPM_VERSION_TPM_VERSION_1_2) {
++    PPIInfo->TpmVersion = UEFIPAYLOAD_TPM_VERSION_1_2;
++  } else if (CbTPPRec->tpm_version == LB_TPM_VERSION_TPM_VERSION_2) {
++    PPIInfo->TpmVersion = UEFIPAYLOAD_TPM_VERSION_2;
++  }
++  if (VersionMajor == 1 && VersionMinor >= 3) {
++    PPIInfo->PpiVersion = UEFIPAYLOAD_TPM_PPI_VERSION_1_30;
++  }
++
++  return RETURN_SUCCESS;
++}
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+index 0788d85..7ecaab3 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+@@ -350,6 +350,14 @@ PlatformBootManagerAfterConsole (
+     gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
+   }
+ 
++  //
++  // Process TPM PPI request
++  //
++  Status=TcgPhysicalPresenceLibProcessRequest (); // Check for TPM1.2 First
++  if (EFI_ERROR (Status)) {
++	  Tcg2PhysicalPresenceLibProcessRequest (NULL); //Check for TPM2.0
++  }
++
+   //
+   // Register UEFI Shell
+   //
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
+index 9f54b38..56e2207 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
+@@ -27,6 +27,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Library/BootLogoLib.h>
+ #include <Library/CapsuleLib.h>
+ #include <Library/HobLib.h>
++#include <Library/TcgPhysicalPresenceLib.h>
++#include <Library/Tcg2PhysicalPresenceLib.h>
+ #include <Protocol/SmmAccess2.h>
+ 
+ typedef struct {
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+index e803cc8..ee52266 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+@@ -32,6 +32,7 @@
+   MdeModulePkg/MdeModulePkg.dec
+   UefiPayloadPkg/UefiPayloadPkg.dec
+   ShellPkg/ShellPkg.dec
++  SecurityPkg/SecurityPkg.dec
+ 
+ [LibraryClasses]
+   BaseLib
+@@ -49,6 +50,8 @@
+   PlatformHookLib
+   CapsuleLib
+   HobLib
++  TcgPhysicalPresenceLib
++  Tcg2PhysicalPresenceLib
+ 
+ [Guids]
+   gEfiEndOfDxeEventGroupGuid
+diff --git a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c b/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
+index 7cc615a..2721e04 100644
+--- a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
++++ b/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
+@@ -345,3 +345,18 @@ ParseCapsules (
+   //
+   return RETURN_SUCCESS;
+ }
++
++/**
++  Find the Tcg Physical Presence store information
++  @param  PPIInfo       Pointer to the TCG_PHYSICAL_PRESENCE_INFO structure
++  @retval RETURN_SUCCESS     Successfully find the SMM store buffer information.
++  @retval RETURN_NOT_FOUND   Failed to find the SMM store buffer information .
++**/
++RETURN_STATUS
++EFIAPI
++ParseTPMPPIInfo (
++  OUT TCG_PHYSICAL_PRESENCE_INFO       *PPIInfo
++  )
++{
++  return RETURN_NOT_FOUND;
++}
+diff --git a/UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresenceLib.c b/UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresenceLib.c
+new file mode 100644
+index 0000000..a387150
+--- /dev/null
++++ b/UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresenceLib.c
+@@ -0,0 +1,965 @@
++/** @file
++  Execute pending TPM2 requests from OS or BIOS.
++
++  Caution: This module requires additional review when modified.
++  This driver will have external input - variable.
++  This external input must be validated carefully to avoid security issue.
++
++  Tcg2ExecutePendingTpmRequest() will receive untrusted input and do validation.
++
++Copyright (C) 2018, Red Hat, Inc.
++Copyright (c) 2018, IBM Corporation. All rights reserved.<BR>
++Copyright (c) 2013 - 2016, Intel Corporation. All rights reserved.<BR>
++SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#include <PiDxe.h>
++
++#include <Guid/Tcg2PhysicalPresenceData.h>
++#include <IndustryStandard/QemuTpm.h>
++#include <Protocol/Tcg2Protocol.h>
++
++#include <Library/BaseMemoryLib.h>
++#include <Library/DebugLib.h>
++#include <Library/DxeServicesTableLib.h>
++#include <Library/HiiLib.h>
++#include <Library/HobLib.h>
++#include <Library/MemoryAllocationLib.h>
++#include <Library/PrintLib.h>
++#include <Library/Tpm2CommandLib.h>
++#include <Library/Tcg2PhysicalPresencePlatformLib.h>
++#include <Library/UefiBootServicesTableLib.h>
++#include <Library/UefiLib.h>
++#include <Library/UefiRuntimeServicesTableLib.h>
++#include <Library/UefiBootManagerLib.h>
++
++#include <Library/Tcg2PhysicalPresenceLib.h>
++
++#define CONFIRM_BUFFER_SIZE  4096
++
++EFI_HII_HANDLE  mTcg2PpStringPackHandle;
++
++/* Wait 3 minutes for user input */
++#define TIMEOUT                     (1000 * 1000 * 60 * 3)
++
++#define TPM_PPI_FLAGS  (QEMU_TPM_PPI_FUNC_ALLOWED_USR_REQ)
++
++STATIC volatile QEMU_TPM_PPI  *mPpi;
++
++#define CACHELINE_SIZE	64
++
++/**
++ Add Function to flush cached PPI data to memory
++ Need to Flush cache to RAM otherwise mPpi are not stored ...
++
++ @param[in] FLUSH_ALL_CACHE    Flush whole Cache.
++ 
++ @retval EFI_SUCCESS           Operation completed successfully. 
++ @retval EFI_PROTOCOL_ERROR    PPI address is invalid or Len is invalid.
++**/ 
++EFI_STATUS
++Flush_PPI_Cache (
++   BOOLEAN FLUSH_ALL_CACHE
++   )
++{   
++  EFI_PHYSICAL_ADDRESS Ppi_address = (UINTN)mPpi;
++  UINTN Param_Len    = (sizeof(QEMU_TPM_PPI) -1) | (CACHELINE_SIZE-1); 
++  
++  if (( Ppi_address == (UINTN)NULL) || (Param_Len <=0)) return EFI_PROTOCOL_ERROR;
++  
++  DEBUG ((DEBUG_INFO, "[TPM2PP] Address=%p Len=%X\n", Ppi_address, Param_Len));
++  
++  switch (FLUSH_ALL_CACHE)
++  {
++  	case 0: 	//Flush Only mPPI struct
++  		for (EFI_PHYSICAL_ADDRESS Flush=Ppi_address; Flush <= Ppi_address+Param_Len; Flush+=CACHELINE_SIZE) {
++			  AsmFlushCacheLine((char*)Flush);	  	  
++			  //DEBUG ((DEBUG_INFO, "[TPM2PP] Flush cache addr=%p\n", Flush));
++  		}
++  		break;
++  	case 1:  		 		
++  	default:
++  		AsmWbinvd (); //Flush All cache
++  		//DEBUG ((DEBUG_INFO, "[TPM2PP] Flush whole cache\n"));
++  		break; 		
++  }
++  
++  return EFI_SUCCESS;
++}  
++
++
++/**
++  Initializes QEMU PPI memory region.
++
++  @retval EFI_SUCCESS           Operation completed successfully.
++  @retval EFI_PROTOCOL_ERROR    PPI address is invalid.
++**/
++STATIC
++EFI_STATUS
++QemuTpmInitPPI (
++  VOID
++  )
++{
++  EFI_STATUS                       Status;
++  QEMU_FWCFG_TPM_CONFIG            Config;
++  BOOLEAN                          PPIinMMIO;
++  EFI_PHYSICAL_ADDRESS             PpiAddress64;
++  EFI_GCD_MEMORY_SPACE_DESCRIPTOR  Descriptor;
++  UINTN                            Idx;
++
++  if (mPpi != NULL) {
++    return EFI_SUCCESS;
++  }
++
++  Status = TpmPPIPlatformReadConfig (&Config, &PPIinMMIO);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  mPpi = (QEMU_TPM_PPI *)(UINTN)Config.PpiAddress;
++  if (mPpi == NULL) {
++    return EFI_PROTOCOL_ERROR;
++  }
++
++  DEBUG ((DEBUG_INFO, "[TPM2PP] mPpi=%p version=%d\n", mPpi, Config.TpmVersion));
++
++  PpiAddress64 = (UINTN)mPpi;
++  if ((PpiAddress64 & ~(UINT64)EFI_PAGE_MASK) !=
++      ((PpiAddress64 + sizeof *mPpi - 1) & ~(UINT64)EFI_PAGE_MASK))
++  {
++    DEBUG ((DEBUG_ERROR, "[TPM2PP] mPpi crosses a page boundary\n"));
++    goto InvalidPpiAddress;
++  }
++
++  Status = gDS->GetMemorySpaceDescriptor (PpiAddress64, &Descriptor);
++  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
++    ASSERT_EFI_ERROR (Status);
++    goto InvalidPpiAddress;
++  }
++
++  if (PPIinMMIO) {
++    if (!EFI_ERROR (Status) &&
++        (Descriptor.GcdMemoryType != EfiGcdMemoryTypeMemoryMappedIo &&
++        Descriptor.GcdMemoryType != EfiGcdMemoryTypeNonExistent)) {
++      DEBUG ((DEBUG_ERROR, "[TPM2PP] mPpi has an invalid memory type\n"));
++      goto InvalidPpiAddress;
++    }
++  } else {
++    if (!EFI_ERROR (Status) &&
++      (Descriptor.GcdMemoryType != EfiGcdMemoryTypeReserved &&
++       Descriptor.GcdMemoryType != EfiGcdMemoryTypeSystemMemory)) {
++      DEBUG ((DEBUG_ERROR, "[TPM2PP] mPpi has an invalid memory type\n"));
++      goto InvalidPpiAddress;
++    }
++  }
++
++  for (Idx = 0; Idx < ARRAY_SIZE (mPpi->Func); Idx++) {
++    mPpi->Func[Idx] = 0;
++  }
++
++  if (Config.TpmVersion == QEMU_TPM_VERSION_2) {
++    mPpi->Func[TCG2_PHYSICAL_PRESENCE_NO_ACTION]         = TPM_PPI_FLAGS;
++    mPpi->Func[TCG2_PHYSICAL_PRESENCE_CLEAR]             = TPM_PPI_FLAGS;
++    mPpi->Func[TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR]      = TPM_PPI_FLAGS;
++    mPpi->Func[TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_2]    = TPM_PPI_FLAGS;
++    mPpi->Func[TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_3]    = TPM_PPI_FLAGS;
++    mPpi->Func[TCG2_PHYSICAL_PRESENCE_SET_PCR_BANKS]     = TPM_PPI_FLAGS;
++    mPpi->Func[TCG2_PHYSICAL_PRESENCE_CHANGE_EPS]        = TPM_PPI_FLAGS;
++    mPpi->Func[TCG2_PHYSICAL_PRESENCE_LOG_ALL_DIGESTS]   = TPM_PPI_FLAGS;
++    mPpi->Func[TCG2_PHYSICAL_PRESENCE_ENABLE_BLOCK_SID]  = TPM_PPI_FLAGS;
++    mPpi->Func[TCG2_PHYSICAL_PRESENCE_DISABLE_BLOCK_SID] = TPM_PPI_FLAGS;
++  }
++
++  if (mPpi->In == 0) {
++    mPpi->In          = 1;
++    mPpi->Request     = TCG2_PHYSICAL_PRESENCE_NO_ACTION;
++    mPpi->LastRequest = TCG2_PHYSICAL_PRESENCE_NO_ACTION;
++    mPpi->NextStep    = TCG2_PHYSICAL_PRESENCE_NO_ACTION;
++  }
++
++  return EFI_SUCCESS;
++
++InvalidPpiAddress:
++  mPpi = NULL;
++  return EFI_PROTOCOL_ERROR;
++}
++
++/**
++  Get string by string id from HII Interface.
++
++  @param[in] Id          String ID.
++
++  @retval    CHAR16 *    String from ID.
++  @retval    NULL        If error occurs.
++
++**/
++STATIC
++CHAR16 *
++Tcg2PhysicalPresenceGetStringById (
++  IN  EFI_STRING_ID  Id
++  )
++{
++  return HiiGetString (mTcg2PpStringPackHandle, Id, NULL);
++}
++
++/**
++  Send ClearControl and Clear command to TPM.
++
++  @param[in]  PlatformAuth      platform auth value. NULL means no platform auth change.
++
++  @retval EFI_SUCCESS           Operation completed successfully.
++  @retval EFI_TIMEOUT           The register can't run into the expected status in time.
++  @retval EFI_BUFFER_TOO_SMALL  Response data buffer is too small.
++  @retval EFI_DEVICE_ERROR      Unexpected device behavior.
++
++**/
++EFI_STATUS
++EFIAPI
++Tpm2CommandClear (
++  IN TPM2B_AUTH  *PlatformAuth  OPTIONAL
++  )
++{
++  EFI_STATUS         Status;
++  TPMS_AUTH_COMMAND  *AuthSession;
++  TPMS_AUTH_COMMAND  LocalAuthSession;
++
++  if (PlatformAuth == NULL) {
++    AuthSession = NULL;
++  } else {
++    AuthSession = &LocalAuthSession;
++    ZeroMem (&LocalAuthSession, sizeof (LocalAuthSession));
++    LocalAuthSession.sessionHandle = TPM_RS_PW;
++    LocalAuthSession.hmac.size     = PlatformAuth->size;
++    CopyMem (LocalAuthSession.hmac.buffer, PlatformAuth->buffer, PlatformAuth->size);
++  }
++
++  DEBUG ((DEBUG_INFO, "Tpm2ClearControl ... \n"));
++  Status = Tpm2ClearControl (TPM_RH_PLATFORM, AuthSession, NO);
++  DEBUG ((DEBUG_INFO, "Tpm2ClearControl - %r\n", Status));
++  if (EFI_ERROR (Status)) {
++    goto Done;
++  }
++
++  DEBUG ((DEBUG_INFO, "Tpm2Clear ... \n"));
++  Status = Tpm2Clear (TPM_RH_PLATFORM, AuthSession);
++  DEBUG ((DEBUG_INFO, "Tpm2Clear - %r\n", Status));
++
++Done:
++  ZeroMem (&LocalAuthSession.hmac, sizeof (LocalAuthSession.hmac));
++  return Status;
++}
++
++/**
++  Change EPS.
++
++  @param[in]  PlatformAuth      platform auth value. NULL means no platform auth change.
++
++  @retval EFI_SUCCESS Operation completed successfully.
++**/
++STATIC
++EFI_STATUS
++Tpm2CommandChangeEps (
++  IN TPM2B_AUTH  *PlatformAuth  OPTIONAL
++  )
++{
++  EFI_STATUS         Status;
++  TPMS_AUTH_COMMAND  *AuthSession;
++  TPMS_AUTH_COMMAND  LocalAuthSession;
++
++  if (PlatformAuth == NULL) {
++    AuthSession = NULL;
++  } else {
++    AuthSession = &LocalAuthSession;
++    ZeroMem (&LocalAuthSession, sizeof (LocalAuthSession));
++    LocalAuthSession.sessionHandle = TPM_RS_PW;
++    LocalAuthSession.hmac.size     = PlatformAuth->size;
++    CopyMem (LocalAuthSession.hmac.buffer, PlatformAuth->buffer, PlatformAuth->size);
++  }
++
++  Status = Tpm2ChangeEPS (TPM_RH_PLATFORM, AuthSession);
++  DEBUG ((DEBUG_INFO, "Tpm2ChangeEPS - %r\n", Status));
++
++  ZeroMem (&LocalAuthSession.hmac, sizeof (LocalAuthSession.hmac));
++  return Status;
++}
++
++/**
++  Execute physical presence operation requested by the OS.
++
++  @param[in]      PlatformAuth        platform auth value. NULL means no platform auth change.
++  @param[in]      CommandCode         Physical presence operation value.
++  @param[in]      CommandParameter    Physical presence operation parameter.
++
++  @retval TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE   Unknown physical presence operation.
++  @retval TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE   Error occurred during sending command to TPM or
++                                                   receiving response from TPM.
++  @retval Others                                   Return code from the TPM device after command execution.
++**/
++STATIC
++UINT32
++Tcg2ExecutePhysicalPresence (
++  IN      TPM2B_AUTH  *PlatformAuth   OPTIONAL,
++  IN      UINT32      CommandCode,
++  IN      UINT32      CommandParameter
++  )
++{
++  EFI_STATUS                       Status;
++  EFI_TCG2_EVENT_ALGORITHM_BITMAP  TpmHashAlgorithmBitmap;
++  UINT32                           ActivePcrBanks;
++
++  switch (CommandCode) {
++    case TCG2_PHYSICAL_PRESENCE_CLEAR:
++    case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR:
++    case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_2:
++    case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_3:
++      Status = Tpm2CommandClear (PlatformAuth);
++      if (EFI_ERROR (Status)) {
++        return TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE;
++      } else {
++        return TCG_PP_OPERATION_RESPONSE_SUCCESS;
++      }
++
++    case TCG2_PHYSICAL_PRESENCE_SET_PCR_BANKS:
++      Status = Tpm2GetCapabilitySupportedAndActivePcrs (&TpmHashAlgorithmBitmap, &ActivePcrBanks);
++      ASSERT_EFI_ERROR (Status);
++
++      //
++      // PP spec requirements:
++      //    Firmware should check that all requested (set) hashing algorithms are supported with respective PCR banks.
++      //    Firmware has to ensure that at least one PCR banks is active.
++      // If not, an error is returned and no action is taken.
++      //
++      if ((CommandParameter == 0) || ((CommandParameter & (~TpmHashAlgorithmBitmap)) != 0)) {
++        DEBUG ((DEBUG_ERROR, "PCR banks %x to allocate are not supported by TPM. Skip operation\n", CommandParameter));
++        return TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE;
++      }
++
++      Status = Tpm2PcrAllocateBanks (PlatformAuth, TpmHashAlgorithmBitmap, CommandParameter);
++      if (EFI_ERROR (Status)) {
++        return TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE;
++      } else {
++        return TCG_PP_OPERATION_RESPONSE_SUCCESS;
++      }
++
++    case TCG2_PHYSICAL_PRESENCE_CHANGE_EPS:
++      Status = Tpm2CommandChangeEps (PlatformAuth);
++      if (EFI_ERROR (Status)) {
++        return TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE;
++      } else {
++        return TCG_PP_OPERATION_RESPONSE_SUCCESS;
++      }
++
++    case TCG2_PHYSICAL_PRESENCE_LOG_ALL_DIGESTS:
++      Status = Tpm2GetCapabilitySupportedAndActivePcrs (&TpmHashAlgorithmBitmap, &ActivePcrBanks);
++      ASSERT_EFI_ERROR (Status);
++      Status = Tpm2PcrAllocateBanks (PlatformAuth, TpmHashAlgorithmBitmap, TpmHashAlgorithmBitmap);
++      if (EFI_ERROR (Status)) {
++        return TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE;
++      } else {
++        return TCG_PP_OPERATION_RESPONSE_SUCCESS;
++      }
++
++    default:
++      if (CommandCode <= TCG2_PHYSICAL_PRESENCE_NO_ACTION_MAX) {
++        return TCG_PP_OPERATION_RESPONSE_SUCCESS;
++      } else {
++        return TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE;
++      }
++  }
++}
++
++/**
++  Read the specified key for user confirmation.
++
++  @param[in]  CautionKey  If true,  F12 is used as confirm key;
++                          If false, F10 is used as confirm key.
++
++  @retval     TRUE        User confirmed the changes by input.
++  @retval     FALSE       User discarded the changes.
++**/
++STATIC
++BOOLEAN
++Tcg2ReadUserKey (
++  IN     BOOLEAN  CautionKey,
++  IN     UINTN    Timeout
++  )
++{
++  EFI_STATUS     Status;
++  EFI_INPUT_KEY  Key;
++  UINT16         InputKey;
++  UINTN          Delay;
++
++  Delay = Timeout / 50;
++
++  InputKey = 0;
++  do {
++    Status = gBS->CheckEvent (gST->ConIn->WaitForKey);
++    if (!EFI_ERROR (Status)) {
++      Status = gST->ConIn->ReadKeyStroke (gST->ConIn, &Key);
++      if (Key.ScanCode == SCAN_ESC) {
++        InputKey = Key.ScanCode;
++      }
++
++      if ((Key.ScanCode == SCAN_F10) && !CautionKey) {
++        InputKey = Key.ScanCode;
++      }
++
++      if ((Key.ScanCode == SCAN_F12) && CautionKey) {
++        InputKey = Key.ScanCode;
++      }
++    }
++    gBS->Stall (50);
++    Delay--;
++  } while (InputKey == 0 && Delay > 0);
++
++  if (Delay == 0) {
++    return FALSE;
++  }
++
++  if (InputKey != SCAN_ESC) {
++    return TRUE;
++  }
++
++  return FALSE;
++}
++
++/**
++  Fill Buffer With BootHashAlg.
++
++  @param[in] Buffer               Buffer to be filled.
++  @param[in] BufferSize           Size of buffer.
++  @param[in] BootHashAlg          BootHashAlg.
++
++**/
++STATIC
++VOID
++Tcg2FillBufferWithBootHashAlg (
++  IN UINT16  *Buffer,
++  IN UINTN   BufferSize,
++  IN UINT32  BootHashAlg
++  )
++{
++  Buffer[0] = 0;
++  if ((BootHashAlg & EFI_TCG2_BOOT_HASH_ALG_SHA1) != 0) {
++    if (Buffer[0] != 0) {
++      StrnCatS (Buffer, BufferSize / sizeof (CHAR16), L", ", (BufferSize / sizeof (CHAR16)) - StrLen (Buffer) - 1);
++    }
++
++    StrnCatS (Buffer, BufferSize / sizeof (CHAR16), L"SHA1", (BufferSize / sizeof (CHAR16)) - StrLen (Buffer) - 1);
++  }
++
++  if ((BootHashAlg & EFI_TCG2_BOOT_HASH_ALG_SHA256) != 0) {
++    if (Buffer[0] != 0) {
++      StrnCatS (Buffer, BufferSize / sizeof (CHAR16), L", ", (BufferSize / sizeof (CHAR16)) - StrLen (Buffer) - 1);
++    }
++
++    StrnCatS (Buffer, BufferSize / sizeof (CHAR16), L"SHA256", (BufferSize / sizeof (CHAR16)) - StrLen (Buffer) - 1);
++  }
++
++  if ((BootHashAlg & EFI_TCG2_BOOT_HASH_ALG_SHA384) != 0) {
++    if (Buffer[0] != 0) {
++      StrnCatS (Buffer, BufferSize / sizeof (CHAR16), L", ", (BufferSize / sizeof (CHAR16)) - StrLen (Buffer) - 1);
++    }
++
++    StrnCatS (Buffer, BufferSize / sizeof (CHAR16), L"SHA384", (BufferSize / sizeof (CHAR16)) - StrLen (Buffer) - 1);
++  }
++
++  if ((BootHashAlg & EFI_TCG2_BOOT_HASH_ALG_SHA512) != 0) {
++    if (Buffer[0] != 0) {
++      StrnCatS (Buffer, BufferSize / sizeof (CHAR16), L", ", (BufferSize / sizeof (CHAR16)) - StrLen (Buffer) - 1);
++    }
++
++    StrnCatS (Buffer, BufferSize / sizeof (CHAR16), L"SHA512", (BufferSize / sizeof (CHAR16)) - StrLen (Buffer) - 1);
++  }
++
++  if ((BootHashAlg & EFI_TCG2_BOOT_HASH_ALG_SM3_256) != 0) {
++    if (Buffer[0] != 0) {
++      StrnCatS (Buffer, BufferSize / sizeof (CHAR16), L", ", (BufferSize / sizeof (CHAR16)) - StrLen (Buffer) - 1);
++    }
++
++    StrnCatS (Buffer, BufferSize / sizeof (CHAR16), L"SM3_256", (BufferSize / sizeof (CHAR16)) - StrLen (Buffer) - 1);
++  }
++}
++
++/**
++  Display the confirm text and get user confirmation.
++
++  @param[in] TpmPpCommand             The requested TPM physical presence command.
++  @param[in] TpmPpCommandParameter    The requested TPM physical presence command parameter.
++
++  @retval    TRUE          The user has confirmed the changes.
++  @retval    FALSE         The user doesn't confirm the changes.
++**/
++STATIC
++BOOLEAN
++Tcg2UserConfirm (
++  IN      UINT32  TpmPpCommand,
++  IN      UINT32  TpmPpCommandParameter
++  )
++{
++  CHAR16                            *ConfirmText;
++  CHAR16                            *TmpStr1;
++  CHAR16                            *TmpStr2;
++  UINTN                             BufSize;
++  BOOLEAN                           CautionKey;
++  BOOLEAN                           NoPpiInfo;
++  UINT16                            Index;
++  CHAR16                            DstStr[81];
++  CHAR16                            TempBuffer[1024];
++  CHAR16                            TempBuffer2[1024];
++  EFI_TCG2_PROTOCOL                 *Tcg2Protocol;
++  EFI_TCG2_BOOT_SERVICE_CAPABILITY  ProtocolCapability;
++  UINT32                            CurrentPCRBanks;
++  EFI_STATUS                        Status;
++
++  TmpStr2     = NULL;
++  CautionKey  = FALSE;
++  NoPpiInfo   = FALSE;
++  BufSize     = CONFIRM_BUFFER_SIZE;
++  ConfirmText = AllocateZeroPool (BufSize);
++  ASSERT (ConfirmText != NULL);
++
++  mTcg2PpStringPackHandle = HiiAddPackages (&gEfiTcg2PhysicalPresenceGuid, gImageHandle, Tcg2PhysicalPresenceLibQemuStrings, NULL);
++  ASSERT (mTcg2PpStringPackHandle != NULL);
++
++  switch (TpmPpCommand) {
++    case TCG2_PHYSICAL_PRESENCE_CLEAR:
++    case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR:
++    case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_2:
++    case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_3:
++      CautionKey = TRUE;
++      TmpStr2    = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TPM_CLEAR));
++
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING_CLEAR));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), L" \n\n", (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      break;
++
++    case TCG2_PHYSICAL_PRESENCE_SET_PCR_BANKS:
++      Status = gBS->LocateProtocol (&gEfiTcg2ProtocolGuid, NULL, (VOID **)&Tcg2Protocol);
++      ASSERT_EFI_ERROR (Status);
++
++      ProtocolCapability.Size = sizeof (ProtocolCapability);
++      Status                  = Tcg2Protocol->GetCapability (
++                                                Tcg2Protocol,
++                                                &ProtocolCapability
++                                                );
++      ASSERT_EFI_ERROR (Status);
++
++      Status = Tcg2Protocol->GetActivePcrBanks (
++                               Tcg2Protocol,
++                               &CurrentPCRBanks
++                               );
++      ASSERT_EFI_ERROR (Status);
++
++      CautionKey = TRUE;
++      TmpStr2    = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TPM_SET_PCR_BANKS));
++
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING_SET_PCR_BANKS_1));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING_SET_PCR_BANKS_2));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      Tcg2FillBufferWithBootHashAlg (TempBuffer, sizeof (TempBuffer), TpmPpCommandParameter);
++      Tcg2FillBufferWithBootHashAlg (TempBuffer2, sizeof (TempBuffer2), CurrentPCRBanks);
++
++      TmpStr1 = AllocateZeroPool (BufSize);
++      ASSERT (TmpStr1 != NULL);
++      UnicodeSPrint (TmpStr1, BufSize, L"Current PCRBanks is 0x%x. (%s)\nNew PCRBanks is 0x%x. (%s)\n", CurrentPCRBanks, TempBuffer2, TpmPpCommandParameter, TempBuffer);
++
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), L" \n", (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      break;
++
++    case TCG2_PHYSICAL_PRESENCE_CHANGE_EPS:
++      CautionKey = TRUE;
++      TmpStr2    = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TPM_CHANGE_EPS));
++
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING_CHANGE_EPS_1));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING_CHANGE_EPS_2));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      break;
++
++    case TCG2_PHYSICAL_PRESENCE_ENABLE_BLOCK_SID:
++      TmpStr2 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TCG_STORAGE_ENABLE_BLOCK_SID));
++
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TCG_STORAGE_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++      break;
++
++    case TCG2_PHYSICAL_PRESENCE_DISABLE_BLOCK_SID:
++      TmpStr2 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TCG_STORAGE_DISABLE_BLOCK_SID));
++
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TCG_STORAGE_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++      break;
++
++    default:
++      ;
++  }
++
++  if (TmpStr2 == NULL) {
++    FreePool (ConfirmText);
++    return FALSE;
++  }
++
++  // Console for user interaction
++  // We need to connect all trusted consoles for TCG PP. Here we treat all consoles in OVMF to be trusted consoles.
++  EfiBootManagerConnectAllDefaultConsoles ();
++
++  if (TpmPpCommand < TCG2_PHYSICAL_PRESENCE_STORAGE_MANAGEMENT_BEGIN) {
++    if (CautionKey) {
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TPM_CAUTION_KEY));
++    } else {
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++    }
++
++    StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++    FreePool (TmpStr1);
++
++    if (NoPpiInfo) {
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TPM_NO_PPI_INFO));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++    }
++
++    TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TPM_REJECT_KEY));
++  } else {
++    if (CautionKey) {
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TCG_STORAGE_CAUTION_KEY));
++    } else {
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TCG_STORAGE_ACCEPT_KEY));
++    }
++
++    StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++    FreePool (TmpStr1);
++
++    if (NoPpiInfo) {
++      TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TCG_STORAGE_NO_PPI_INFO));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++    }
++
++    TmpStr1 = Tcg2PhysicalPresenceGetStringById (STRING_TOKEN (TCG_STORAGE_REJECT_KEY));
++  }
++
++  BufSize -= StrSize (ConfirmText);
++  UnicodeSPrint (ConfirmText + StrLen (ConfirmText), BufSize, TmpStr1, TmpStr2);
++
++  DstStr[80] = L'\0';
++  for (Index = 0; Index < StrLen (ConfirmText); Index += 80) {
++    StrnCpyS (DstStr, sizeof (DstStr) / sizeof (CHAR16), ConfirmText + Index, sizeof (DstStr) / sizeof (CHAR16) - 1);
++    Print (DstStr);
++  }
++
++  FreePool (TmpStr1);
++  FreePool (TmpStr2);
++  FreePool (ConfirmText);
++  HiiRemovePackages (mTcg2PpStringPackHandle);
++
++  if (Tcg2ReadUserKey (CautionKey, TIMEOUT)) {
++    return TRUE;
++  }
++
++  return FALSE;
++}
++
++/**
++  Check if there is a valid physical presence command request. Also updates parameter value
++  to whether the requested physical presence command already confirmed by user
++
++   @param[out] RequestConfirmed          If the physical presence operation command required user confirm from UI.
++                                           True, it indicates the command doesn't require user confirm, or already confirmed
++                                                 in last boot cycle by user.
++                                           False, it indicates the command need user confirm from UI.
++
++   @retval  TRUE        Physical Presence operation command is valid.
++   @retval  FALSE       Physical Presence operation command is invalid.
++
++**/
++STATIC
++BOOLEAN
++Tcg2HaveValidTpmRequest  (
++  OUT     BOOLEAN  *RequestConfirmed
++  )
++{
++  EFI_TCG2_PROTOCOL  *Tcg2Protocol;
++  EFI_STATUS         Status;
++
++  *RequestConfirmed = FALSE;
++
++  if (mPpi->Request <= TCG2_PHYSICAL_PRESENCE_NO_ACTION_MAX) {
++    //
++    // Need TCG2 protocol.
++    //
++    Status = gBS->LocateProtocol (&gEfiTcg2ProtocolGuid, NULL, (VOID **)&Tcg2Protocol);
++    if (EFI_ERROR (Status)) {
++      return FALSE;
++    }
++  }
++
++  switch (mPpi->Request) {
++    case TCG2_PHYSICAL_PRESENCE_NO_ACTION:
++    case TCG2_PHYSICAL_PRESENCE_LOG_ALL_DIGESTS:
++      *RequestConfirmed = TRUE;
++      return TRUE;
++
++    case TCG2_PHYSICAL_PRESENCE_CLEAR:
++    case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR:
++    case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_2:
++    case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_3:
++    case TCG2_PHYSICAL_PRESENCE_SET_PCR_BANKS:
++    case TCG2_PHYSICAL_PRESENCE_CHANGE_EPS:
++    case TCG2_PHYSICAL_PRESENCE_ENABLE_BLOCK_SID:
++    case TCG2_PHYSICAL_PRESENCE_DISABLE_BLOCK_SID:
++      break;
++
++    default:
++      //
++      // Wrong Physical Presence command
++      //
++      return FALSE;
++  }
++
++  //
++  // Physical Presence command is correct
++  //
++  return TRUE;
++}
++
++/**
++  Check and execute the requested physical presence command.
++
++  @param[in]      PlatformAuth      platform auth value. NULL means no platform auth change.
++**/
++STATIC
++VOID
++Tcg2ExecutePendingTpmRequest (
++  IN      TPM2B_AUTH  *PlatformAuth OPTIONAL
++  )
++{
++  BOOLEAN  RequestConfirmed;
++
++  if (mPpi->Request == TCG2_PHYSICAL_PRESENCE_NO_ACTION) {
++    //
++    // No operation request
++    //
++    return;
++  }
++
++  if (!Tcg2HaveValidTpmRequest (&RequestConfirmed)) {
++    //
++    // Invalid operation request.
++    //
++    if (mPpi->Request <= TCG2_PHYSICAL_PRESENCE_NO_ACTION_MAX) {
++      mPpi->Response = TCG_PP_OPERATION_RESPONSE_SUCCESS;
++    } else {
++      mPpi->Response = TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE;
++    }
++
++    mPpi->LastRequest      = mPpi->Request;
++    mPpi->Request          = TCG2_PHYSICAL_PRESENCE_NO_ACTION;
++    mPpi->RequestParameter = 0;
++    return;
++  }
++
++  if (!RequestConfirmed) {
++    //
++    // Print confirm text and wait for approval.
++    //
++    RequestConfirmed = Tcg2UserConfirm (mPpi->Request, mPpi->RequestParameter);
++  }
++
++  //
++  // Execute requested physical presence command
++  //
++  mPpi->Response = TCG_PP_OPERATION_RESPONSE_USER_ABORT;
++  if (RequestConfirmed) {
++    mPpi->Response = Tcg2ExecutePhysicalPresence (
++                       PlatformAuth,
++                       mPpi->Request,
++                       mPpi->RequestParameter
++                       );
++  }
++
++  //
++  // Clear request
++  //
++  mPpi->LastRequest      = mPpi->Request;
++  mPpi->Request          = TCG2_PHYSICAL_PRESENCE_NO_ACTION;
++  mPpi->RequestParameter = 0;
++
++  if (mPpi->Response == TCG_PP_OPERATION_RESPONSE_USER_ABORT) {
++    return;
++  }
++
++  //
++  // Reset system to make new TPM settings in effect
++  //
++  switch (mPpi->LastRequest) {
++    case TCG2_PHYSICAL_PRESENCE_CLEAR:
++    case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR:
++    case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_2:
++    case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_3:
++    case TCG2_PHYSICAL_PRESENCE_SET_PCR_BANKS:
++    case TCG2_PHYSICAL_PRESENCE_CHANGE_EPS:
++    case TCG2_PHYSICAL_PRESENCE_LOG_ALL_DIGESTS:
++      break;
++
++    case TCG2_PHYSICAL_PRESENCE_ENABLE_BLOCK_SID:
++    case TCG2_PHYSICAL_PRESENCE_DISABLE_BLOCK_SID:
++      break;
++
++    default:
++      if (mPpi->Request != TCG2_PHYSICAL_PRESENCE_NO_ACTION) {
++        break;
++      }
++
++      return;
++  }
++
++  Print (L"Rebooting system to make TPM2 settings in effect\n");
++  
++  Flush_PPI_Cache(TRUE);  //Need to Flush cache to RAM otherwise mPpi are not stored in RAM.
++  
++  gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
++  ASSERT (FALSE);
++}
++
++/**
++   Check and execute the pending TPM request.
++
++   The TPM request may come from OS or BIOS. This API will display request information and wait
++   for user confirmation if TPM request exists. The TPM request will be sent to TPM device after
++   the TPM request is confirmed, and one or more reset may be required to make TPM request to
++   take effect.
++
++   This API should be invoked after console in and console out are all ready as they are required
++   to display request information and get user input to confirm the request.
++
++   @param[in]  PlatformAuth                   platform auth value. NULL means no platform auth change.
++**/
++VOID
++EFIAPI
++Tcg2PhysicalPresenceLibProcessRequest (
++  IN      TPM2B_AUTH  *PlatformAuth  OPTIONAL
++  )
++{
++  EFI_STATUS  Status;
++
++  Status = QemuTpmInitPPI ();
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_INFO, "[TPM2PP] no PPI\n"));
++    return;
++  }
++
++  //
++  // Check S4 resume
++  //
++  if (GetBootModeHob () == BOOT_ON_S4_RESUME) {
++    DEBUG ((DEBUG_INFO, "S4 Resume, Skip TPM PP process!\n"));
++    return;
++  }
++
++  DEBUG ((DEBUG_INFO, "[TPM2PP] PPRequest=%x (PPRequestParameter=%x)\n", mPpi->Request, mPpi->RequestParameter));
++  Tcg2ExecutePendingTpmRequest (PlatformAuth);
++}
++
++/**
++  The handler for TPM physical presence function:
++  Return TPM Operation Response to OS Environment.
++
++  @param[out]     MostRecentRequest Most recent operation request.
++  @param[out]     Response          Response to the most recent operation request.
++
++  @return Return Code for Return TPM Operation Response to OS Environment.
++**/
++UINT32
++EFIAPI
++Tcg2PhysicalPresenceLibReturnOperationResponseToOsFunction (
++  OUT UINT32  *MostRecentRequest,
++  OUT UINT32  *Response
++  )
++{
++  EFI_STATUS  Status;
++
++  DEBUG ((DEBUG_INFO, "[TPM2PP] ReturnOperationResponseToOsFunction\n"));
++
++  Status = QemuTpmInitPPI ();
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_INFO, "[TPM2PP] no PPI\n"));
++    *MostRecentRequest = 0;
++    *Response          = 0;
++    return TCG_PP_RETURN_TPM_OPERATION_RESPONSE_FAILURE;
++  }
++
++  *MostRecentRequest = mPpi->LastRequest;
++  *Response          = mPpi->Response;
++
++  return TCG_PP_RETURN_TPM_OPERATION_RESPONSE_SUCCESS;
++}
++
++/**
++  The handler for TPM physical presence function:
++  Submit TPM Operation Request to Pre-OS Environment and
++  Submit TPM Operation Request to Pre-OS Environment 2.
++
++  Caution: This function may receive untrusted input.
++
++  @param[in]      OperationRequest TPM physical presence operation request.
++  @param[in]      RequestParameter TPM physical presence operation request parameter.
++
++  @return Return Code for Submit TPM Operation Request to Pre-OS Environment and
++          Submit TPM Operation Request to Pre-OS Environment 2.
++**/
++UINT32
++EFIAPI
++Tcg2PhysicalPresenceLibSubmitRequestToPreOSFunction (
++  IN UINT32  OperationRequest,
++  IN UINT32  RequestParameter
++  )
++{
++  EFI_STATUS  Status;
++
++  DEBUG ((DEBUG_INFO, "[TPM2PP] SubmitRequestToPreOSFunction, Request = %x, %x\n", OperationRequest, RequestParameter));
++
++  Status = QemuTpmInitPPI ();
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_INFO, "[TPM2PP] no PPI\n"));
++    return TCG_PP_SUBMIT_REQUEST_TO_PREOS_GENERAL_FAILURE;
++  }
++
++  mPpi->Request          = OperationRequest;
++  mPpi->RequestParameter = RequestParameter;
++
++  Flush_PPI_Cache(FALSE); //Need to flush mPpi to RAM.
++
++  return TCG_PP_SUBMIT_REQUEST_TO_PREOS_SUCCESS;
++}
+diff --git a/UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresenceLib.inf b/UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresenceLib.inf
+new file mode 100644
+index 0000000..ababaec
+--- /dev/null
++++ b/UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresenceLib.inf
+@@ -0,0 +1,72 @@
++## @file
++#  Executes TPM 2.0 requests from OS or BIOS
++#
++#  This library will check and execute TPM 2.0 request from OS or
++#  BIOS. The request may ask for user confirmation before
++#  execution. It is a clone of
++#  "SecurityPkg/Library/DxeTcg2PhysicalPresenceLib" with:
++#
++#  - removed all the functions that are unreachable from
++#    Tcg2PhysicalPresenceLibProcessRequest() [called from platform
++#    BDS], or SubmitRequestToPreOSFunction() and
++#    ReturnOperationResponseToOsFunction() [called from Tcg2Dxe].
++#
++#  - replaced everything that's related to the
++#    TCG2_PHYSICAL_PRESENCE*_VARIABLE variables, with direct access to
++#    the QEMU structures.
++#
++#  Caution: This module requires additional review when modified.
++#  This driver will have external input - variable.
++#  This external input must be validated carefully to avoid security issue.
++#
++# Copyright (C) 2018, Red Hat, Inc.
++# Copyright (c) 2013 - 2018, Intel Corporation. All rights reserved.<BR>
++# SPDX-License-Identifier: BSD-2-Clause-Patent
++#
++##
++
++[Defines]
++  INF_VERSION                    = 0x00010005
++  BASE_NAME                      = Tcg2PhysicalPresenceLibQemu
++  FILE_GUID                      = 41D3E698-9EEC-41FF-9CBB-5FE79A0CF326
++  MODULE_TYPE                    = DXE_DRIVER
++  VERSION_STRING                 = 1.0
++  LIBRARY_CLASS                  = Tcg2PhysicalPresenceLib|DXE_DRIVER DXE_RUNTIME_DRIVER UEFI_APPLICATION UEFI_DRIVER
++
++#
++# The following information is for reference only and not required by the build tools.
++#
++#  VALID_ARCHITECTURES           = IA32 X64 EBC
++#
++
++[Sources]
++  DxeTcg2PhysicalPresenceLib.c
++  PhysicalPresenceStrings.uni
++
++[Packages]
++  MdePkg/MdePkg.dec
++  MdeModulePkg/MdeModulePkg.dec
++  OvmfPkg/OvmfPkg.dec
++  SecurityPkg/SecurityPkg.dec
++
++[LibraryClasses]
++  BaseMemoryLib
++  DebugLib
++  DxeServicesTableLib
++  HiiLib
++  HobLib
++  MemoryAllocationLib
++  PrintLib
++  Tpm2CommandLib
++  UefiBootManagerLib
++  UefiBootServicesTableLib
++  UefiLib
++  UefiRuntimeServicesTableLib
++  Tcg2PhysicalPresencePlatformLib
++
++[Protocols]
++  gEfiTcg2ProtocolGuid                 ## SOMETIMES_CONSUMES
++
++[Guids]
++  ## SOMETIMES_CONSUMES ## HII
++  gEfiTcg2PhysicalPresenceGuid
+diff --git a/UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresencePlatformLib.c b/UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresencePlatformLib.c
+new file mode 100644
+index 0000000..a35d73c
+--- /dev/null
++++ b/UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresencePlatformLib.c
+@@ -0,0 +1,80 @@
++/** @file
++  Returns the platform specific configuration for the QEMU PPI.
++
++  Caution: This module requires additional review when modified.
++  This driver will have external input - variable.
++  This external input must be validated carefully to avoid security issue.
++
++Copyright (C) 2018, Red Hat, Inc.
++Copyright (c) 2018, IBM Corporation. All rights reserved.<BR>
++Copyright (c) 2013 - 2016, Intel Corporation. All rights reserved.<BR>
++SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#include <PiDxe.h>
++
++#include <IndustryStandard/QemuTpm.h>
++
++#include <Library/Tcg2PhysicalPresencePlatformLib.h>
++#include <Library/HobLib.h>
++#include <Library/DebugLib.h>
++#include <Library/DxeServicesTableLib.h>
++
++#include <Guid/TcgPhysicalPresenceGuid.h>
++
++/**
++  Reads QEMU PPI config from TcgPhysicalPresenceInfoHobGuid.
++
++  @param[out]  The Config structure to read to.
++  @param[out]  The PPIinMMIO is True when the PPI is in MMIO memory space
++
++  @retval EFI_SUCCESS           Operation completed successfully.
++  @retval EFI_PROTOCOL_ERROR    Invalid HOB entry.
++**/
++EFI_STATUS
++TpmPPIPlatformReadConfig (
++  OUT QEMU_FWCFG_TPM_CONFIG *Config,
++  OUT BOOLEAN               *PPIinMMIO
++  )
++{
++  EFI_HOB_GUID_TYPE                       *GuidHob;
++  TCG_PHYSICAL_PRESENCE_INFO              *pPPInfo;
++
++  //
++  // Find the TPM Physical Presence HOB
++  //
++  GuidHob = GetFirstGuidHob (&gEfiTcgPhysicalPresenceInfoHobGuid);
++
++  if (GuidHob == NULL) {
++    return EFI_NOT_FOUND;
++  }
++
++  pPPInfo = (TCG_PHYSICAL_PRESENCE_INFO *)GET_GUID_HOB_DATA (GuidHob);
++
++  if (pPPInfo->PpiAddress == 0 || pPPInfo->PpiAddress == ~0) {
++    return EFI_NOT_FOUND;
++  } else {
++    Config->PpiAddress = pPPInfo->PpiAddress;
++  }
++
++  if (pPPInfo->TpmVersion == UEFIPAYLOAD_TPM_VERSION_1_2) {
++    Config->TpmVersion = QEMU_TPM_VERSION_1_2;
++  } else if (pPPInfo->TpmVersion == UEFIPAYLOAD_TPM_VERSION_2) {
++    Config->TpmVersion = QEMU_TPM_VERSION_2;
++  } else {
++    return EFI_UNSUPPORTED;
++  }
++
++  if (pPPInfo->PpiVersion == UEFIPAYLOAD_TPM_PPI_VERSION_NONE) {
++    Config->PpiVersion = QEMU_TPM_PPI_VERSION_NONE;
++  } else if (pPPInfo->PpiVersion == UEFIPAYLOAD_TPM_PPI_VERSION_1_30) {
++    Config->PpiVersion = QEMU_TPM_PPI_VERSION_1_30;
++  } else {
++    return EFI_UNSUPPORTED;
++  }
++
++  *PPIinMMIO = FALSE;
++
++  return EFI_SUCCESS;
++}
+diff --git a/UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresencePlatformLib.inf b/UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresencePlatformLib.inf
+new file mode 100644
+index 0000000..1201453
+--- /dev/null
++++ b/UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresencePlatformLib.inf
+@@ -0,0 +1,44 @@
++## @file
++# Returns the platform specific configuration for the QEMU PPI.
++#
++#  Caution: This module requires additional review when modified.
++#  This driver will have external input - variable.
++#  This external input must be validated carefully to avoid security issue.
++#
++# Copyright (C) 2018, Red Hat, Inc.
++# Copyright (c) 2013 - 2018, Intel Corporation. All rights reserved.<BR>
++# SPDX-License-Identifier: BSD-2-Clause-Patent
++#
++##
++
++[Defines]
++  INF_VERSION                    = 0x00010005
++  BASE_NAME                      = Tcg2PhysicalPresencePlatformLibUefipayload
++  FILE_GUID                      = F5967F4F-B53F-4669-91A5-A3DA0F30AF22
++  MODULE_TYPE                    = DXE_DRIVER
++  VERSION_STRING                 = 1.0
++  LIBRARY_CLASS                  = Tcg2PhysicalPresencePlatformLib|DXE_DRIVER DXE_RUNTIME_DRIVER UEFI_APPLICATION UEFI_DRIVER
++
++#
++# The following information is for reference only and not required by the build tools.
++#
++#  VALID_ARCHITECTURES           = IA32 X64 EBC
++#
++
++[Packages]
++  MdePkg/MdePkg.dec
++  MdeModulePkg/MdeModulePkg.dec
++  OvmfPkg/OvmfPkg.dec
++  UefiPayloadPkg/UefiPayloadPkg.dec
++
++[Sources]
++  DxeTcg2PhysicalPresencePlatformLib.c
++
++[LibraryClasses]
++  BlParseLib
++  HobLib
++  DebugLib
++  DxeServicesTableLib
++
++[Guids]
++  gEfiTcgPhysicalPresenceInfoHobGuid
+diff --git a/UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/PhysicalPresenceStrings.uni b/UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/PhysicalPresenceStrings.uni
+new file mode 100644
+index 0000000..ea9ff41
+--- /dev/null
++++ b/UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/PhysicalPresenceStrings.uni
+@@ -0,0 +1,38 @@
++/** @file
++  String definitions for TPM 2.0 physical presence confirm text.
++
++Copyright (c) 2013 - 2014, Intel Corporation. All rights reserved.<BR>
++SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#langdef en-US "English"
++
++#string TPM_HEAD_STR                  #language en-US    "A configuration change was requested to %s this computer's TPM (Trusted Platform Module)\n\n"
++
++#string TPM_ACCEPT_KEY                #language en-US    "Press F10 "
++#string TPM_CAUTION_KEY               #language en-US    "Press F12 "
++#string TPM_REJECT_KEY                #language en-US    "to %s the TPM \nPress ESC to reject this change request and continue\n"
++
++#string TPM_CLEAR                     #language en-US    "clear"
++#string TPM_SET_PCR_BANKS                       #language en-US    "change the boot measurements to use PCR bank(s) of"
++#string TPM_CHANGE_EPS                          #language en-US    "clear and change identity of"
++
++#string TPM_NO_PPI_INFO               #language en-US    "to approve future Operating System requests "
++
++#string TPM_WARNING_CLEAR             #language en-US    "WARNING: Clearing erases information stored on the TPM. You will lose all created keys and access to data encrypted by these keys. "
++#string TPM_WARNING_SET_PCR_BANKS_1                     #language en-US    "WARNING: Changing the PCR bank(s) of the boot measurements may prevent the Operating System from properly processing the measurements. Please check if your Operating System supports the new PCR bank(s).\n\n"
++#string TPM_WARNING_SET_PCR_BANKS_2                     #language en-US    "WARNING: Secrets in the TPM that are bound to the boot state of your machine may become unusable.\n\n"
++#string TPM_WARNING_CHANGE_EPS_1                        #language en-US    "WARNING: Clearing erases information stored on the TPM. You will lose all created keys and access to data encrypted with these keys.\n\n"
++#string TPM_WARNING_CHANGE_EPS_2                        #language en-US    "WARNING: Changing the identity of the TPM may require additional steps to establish trust into the new identity.\n\n"
++
++#string TCG_STORAGE_HEAD_STR                  #language en-US    "A configuration change was requested to %s on subsequent boots\n\n"
++
++#string TCG_STORAGE_ACCEPT_KEY                #language en-US    "Press F10 "
++#string TCG_STORAGE_CAUTION_KEY               #language en-US    "Press F12 "
++#string TCG_STORAGE_REJECT_KEY                #language en-US    "to %s\nPress ESC to reject this change request and continue\n"
++
++#string TCG_STORAGE_NO_PPI_INFO               #language en-US    "to approve future Operating System requests "
++
++#string TCG_STORAGE_ENABLE_BLOCK_SID          #language en-US    "issue a Block SID authentication command"
++#string TCG_STORAGE_DISABLE_BLOCK_SID         #language en-US    "disable issuing a Block SID authentication command"
+diff --git a/UefiPayloadPkg/Library/TcgPhysicalPresenceLibNull/DxeTcgPhysicalPresenceLib.c b/UefiPayloadPkg/Library/TcgPhysicalPresenceLibNull/DxeTcgPhysicalPresenceLib.c
+new file mode 100644
+index 0000000..edcdb9f
+--- /dev/null
++++ b/UefiPayloadPkg/Library/TcgPhysicalPresenceLibNull/DxeTcgPhysicalPresenceLib.c
+@@ -0,0 +1,19 @@
++/** @file
++  NULL TcgPhysicalPresenceLib library instance
++
++  Copyright (c) 2018, Red Hat, Inc.
++  Copyright (c) 2013 - 2016, Intel Corporation. All rights reserved.<BR>
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#include <Library/TcgPhysicalPresenceLib.h>
++
++EFI_STATUS
++EFIAPI
++TcgPhysicalPresenceLibProcessRequest (
++  VOID
++  )
++{
++  return EFI_SUCCESS;
++}
+diff --git a/UefiPayloadPkg/Library/TcgPhysicalPresenceLibNull/DxeTcgPhysicalPresenceLib.inf b/UefiPayloadPkg/Library/TcgPhysicalPresenceLibNull/DxeTcgPhysicalPresenceLib.inf
+new file mode 100644
+index 0000000..61284ac
+--- /dev/null
++++ b/UefiPayloadPkg/Library/TcgPhysicalPresenceLibNull/DxeTcgPhysicalPresenceLib.inf
+@@ -0,0 +1,29 @@
++## @file
++#  NULL TcgPhysicalPresenceLib library instance
++#
++# Under SecurityPkg, the corresponding library instance will check and
++# execute TPM 1.2 request from OS or BIOS; the request may ask for user
++# confirmation before execution. This Null instance implements a no-op
++# Tcg2PhysicalPresenceLibProcessRequest(), without user interaction.
++#
++# Copyright (C) 2018, Red Hat, Inc.
++# Copyright (c) 2013 - 2018, Intel Corporation. All rights reserved.<BR>
++# SPDX-License-Identifier: BSD-2-Clause-Patent
++#
++##
++
++[Defines]
++  INF_VERSION                    = 0x00010005
++  BASE_NAME                      = DxeTcgPhysicalPresenceLibNull
++  FILE_GUID                      = F5967F4F-B53F-4669-91A5-A3DA0F30AF22
++  MODULE_TYPE                    = DXE_DRIVER
++  VERSION_STRING                 = 1.0
++  LIBRARY_CLASS                  = TcgPhysicalPresenceLib|DXE_DRIVER DXE_RUNTIME_DRIVER UEFI_APPLICATION UEFI_DRIVER
++
++[Sources]
++  DxeTcgPhysicalPresenceLib.c
++
++[Packages]
++  MdePkg/MdePkg.dec
++  SecurityPkg/SecurityPkg.dec
++  UefiPayloadPkg/UefiPayloadPkg.dec
+diff --git a/UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/DxeTcgPhysicalPresenceLib.c b/UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/DxeTcgPhysicalPresenceLib.c
+new file mode 100644
+index 0000000..182eff7
+--- /dev/null
++++ b/UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/DxeTcgPhysicalPresenceLib.c
+@@ -0,0 +1,1710 @@
++/** @file
++
++  Execute pending TPM requests from OS or BIOS and Lock TPM.
++
++  It is a clone of
++  "SecurityPkg/Library/DxeTcgPhysicalPresenceLib" with:
++
++  - add: access to QEMU_TPM_PPI structures
++
++  - TBD: Code cleanup to remove 
++    PHYSICAL_PRESENCE*_VARIABLE variables, because we are using direct access to
++    the QEMU structures.
++
++  Caution: This module requires additional review when modified.
++  This driver will have external input - variable.
++  This external input must be validated carefully to avoid security issue.
++
++
++  ExecutePendingTpmRequest() will receive untrusted input and do validation.
++
++Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved.<BR>
++SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#include <PiDxe.h>
++
++#include <Protocol/TcgService.h>
++#include <Protocol/VariableLock.h>
++#include <Library/DebugLib.h>
++#include <Library/BaseMemoryLib.h>
++#include <Library/UefiRuntimeServicesTableLib.h>
++#include <Library/UefiDriverEntryPoint.h>
++#include <Library/UefiBootServicesTableLib.h>
++#include <Library/UefiLib.h>
++#include <Library/MemoryAllocationLib.h>
++#include <Library/PrintLib.h>
++#include <Library/HiiLib.h>
++#include <Guid/EventGroup.h>
++#include <Guid/PhysicalPresenceData.h>
++#include <Library/TcgPpVendorLib.h>
++#include <IndustryStandard/QemuTpm.h>
++#include <Library/Tcg2PhysicalPresencePlatformLib.h>
++#include <Library/DxeServicesTableLib.h>
++#include <IndustryStandard/TcgPhysicalPresence.h>
++#include <Library/HobLib.h>
++#include <Library/TimerLib.h>
++
++#define CONFIRM_BUFFER_SIZE  4096
++
++EFI_HII_HANDLE  mPpStringPackHandle;
++
++/* Wait 3 minutes for user input */
++#define TIMEOUT                     (1000 * 1000 * 60 * 3)
++
++STATIC volatile QEMU_TPM_PPI  *mPpi;
++
++#define CACHELINE_SIZE	64
++
++/**
++ Add Function to flush cached PPI data to memory
++ Need to Flush cache to RAM otherwise mPpi are not stored ...
++
++ @param[in] FLUSH_ALL_CACHE    Flush whole Cache.
++ 
++ @retval EFI_SUCCESS           Operation completed successfully. 
++ @retval EFI_PROTOCOL_ERROR    PPI address is invalid or Len is invalid.
++**/ 
++EFI_STATUS
++Flush_PPI_Cache12 (
++   BOOLEAN FLUSH_ALL_CACHE
++   )
++{   
++  EFI_PHYSICAL_ADDRESS Ppi_address = (UINTN)mPpi;
++  UINTN Param_Len    = (sizeof(QEMU_TPM_PPI) -1) | (CACHELINE_SIZE-1); 
++  
++  if (( Ppi_address == (UINTN)NULL) || (Param_Len <=0)) return EFI_PROTOCOL_ERROR;
++  
++  DEBUG ((DEBUG_INFO, "[TPMPP] Address=%p Len=%X\n", Ppi_address, Param_Len));
++  
++  switch (FLUSH_ALL_CACHE)
++  {
++  	case 0: 	//Flush Only mPPI struct
++  		for (EFI_PHYSICAL_ADDRESS Flush=Ppi_address; Flush <= Ppi_address+Param_Len; Flush+=CACHELINE_SIZE) {
++			  AsmFlushCacheLine((char*)Flush);	  	  
++			  //DEBUG ((DEBUG_INFO, "[TPMPP] Flush cache addr=%p\n", Flush));
++  		}
++  		break;
++  	case 1:  		 		
++  	default:
++  		AsmWbinvd (); //Flush All cache
++  		//DEBUG ((DEBUG_INFO, "[TPMPP] Flush whole cache\n"));
++  		break; 		
++  }
++  
++  return EFI_SUCCESS;
++}  
++
++
++/**
++  Initializes QEMU PPI memory region.
++
++  @retval EFI_SUCCESS           Operation completed successfully.
++  @retval EFI_PROTOCOL_ERROR    PPI address is invalid.
++**/
++STATIC
++EFI_STATUS
++QemuTpmInitPPI12 (
++  VOID
++  )
++{
++  EFI_STATUS                       Status;
++  QEMU_FWCFG_TPM_CONFIG            Config;
++  BOOLEAN                          PPIinMMIO;
++  EFI_PHYSICAL_ADDRESS             PpiAddress64;
++  EFI_GCD_MEMORY_SPACE_DESCRIPTOR  Descriptor;
++  UINTN                            Idx;
++
++  if (mPpi != NULL) {
++    return EFI_SUCCESS;
++  }
++
++  Status = TpmPPIPlatformReadConfig (&Config, &PPIinMMIO);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  mPpi = (QEMU_TPM_PPI *)(UINTN)Config.PpiAddress;
++  if (mPpi == NULL) {
++    return EFI_PROTOCOL_ERROR;
++  }
++
++  DEBUG ((DEBUG_INFO, "[TPMPP] mPpi=%p version=%d\n", mPpi, Config.TpmVersion));
++
++  PpiAddress64 = (UINTN)mPpi;
++  if ((PpiAddress64 & ~(UINT64)EFI_PAGE_MASK) !=
++      ((PpiAddress64 + sizeof *mPpi - 1) & ~(UINT64)EFI_PAGE_MASK))
++  {
++    DEBUG ((DEBUG_ERROR, "[TPMPP] mPpi crosses a page boundary\n"));
++    goto InvalidPpiAddress;
++  }
++
++  Status = gDS->GetMemorySpaceDescriptor (PpiAddress64, &Descriptor);
++  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
++    ASSERT_EFI_ERROR (Status);
++    goto InvalidPpiAddress;
++  }
++
++  if (PPIinMMIO) {
++    if (!EFI_ERROR (Status) &&
++        (Descriptor.GcdMemoryType != EfiGcdMemoryTypeMemoryMappedIo &&
++        Descriptor.GcdMemoryType != EfiGcdMemoryTypeNonExistent)) {
++      DEBUG ((DEBUG_ERROR, "[TPMPP] mPpi has an invalid memory type\n"));
++      goto InvalidPpiAddress;
++    }
++  } else {
++    if (!EFI_ERROR (Status) &&
++      (Descriptor.GcdMemoryType != EfiGcdMemoryTypeReserved &&
++       Descriptor.GcdMemoryType != EfiGcdMemoryTypeSystemMemory)) {
++      DEBUG ((DEBUG_ERROR, "[TPMPP] mPpi has an invalid memory type\n"));
++      goto InvalidPpiAddress;
++    }
++  }
++
++  for (Idx = 0; Idx < ARRAY_SIZE (mPpi->Func); Idx++) {
++    mPpi->Func[Idx] = 0;
++  }
++
++  //if (Config.TpmVersion == QEMU_TPM_VERSION_2) {
++  //  mPpi->Func[TCG2_PHYSICAL_PRESENCE_NO_ACTION]         = TPM_PPI_FLAGS;
++  //  mPpi->Func[TCG2_PHYSICAL_PRESENCE_CLEAR]             = TPM_PPI_FLAGS;
++  //  mPpi->Func[TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR]      = TPM_PPI_FLAGS;
++  //  mPpi->Func[TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_2]    = TPM_PPI_FLAGS;
++  //  mPpi->Func[TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_3]    = TPM_PPI_FLAGS;
++  //  mPpi->Func[TCG2_PHYSICAL_PRESENCE_SET_PCR_BANKS]     = TPM_PPI_FLAGS;
++  //  mPpi->Func[TCG2_PHYSICAL_PRESENCE_CHANGE_EPS]        = TPM_PPI_FLAGS;
++  //  mPpi->Func[TCG2_PHYSICAL_PRESENCE_LOG_ALL_DIGESTS]   = TPM_PPI_FLAGS;
++  //  mPpi->Func[TCG2_PHYSICAL_PRESENCE_ENABLE_BLOCK_SID]  = TPM_PPI_FLAGS;
++  //  mPpi->Func[TCG2_PHYSICAL_PRESENCE_DISABLE_BLOCK_SID] = TPM_PPI_FLAGS;
++  //}
++
++  if (mPpi->In == 0) {
++    mPpi->In          = 1;
++    mPpi->Request     = TCG_PHYSICAL_PRESENCE_NO_ACTION;
++    mPpi->LastRequest = TCG_PHYSICAL_PRESENCE_NO_ACTION;
++    mPpi->NextStep    = TCG_PHYSICAL_PRESENCE_NO_ACTION;
++  }
++
++  return EFI_SUCCESS;
++
++InvalidPpiAddress:
++  mPpi = NULL;
++  return EFI_PROTOCOL_ERROR;
++}
++
++/**
++  Check if there is a valid physical presence command request.
++
++  This API should be invoked in BIOS boot phase to process pending request.
++
++  Caution: This function may receive untrusted input.
++
++  If OperationRequest < 128, then ASSERT().
++
++  @param[in]      OperationRequest TPM physical presence operation request.
++  @param[in]      ManagementFlags  BIOS TPM Management Flags.
++  @param[out]     RequestConfirmed If the physical presence operation command required user confirm from UI.
++                                   True, it indicates the command doesn't require user confirm.
++                                   False, it indicates the command need user confirm from UI.
++
++  @retval  TRUE        Physical Presence operation command is valid.
++  @retval  FALSE       Physical Presence operation command is invalid.
++**/
++BOOLEAN
++EFIAPI
++TcgPpVendorLibHasValidRequest (
++  IN UINT32    OperationRequest,
++  IN UINT32    ManagementFlags,
++  OUT BOOLEAN  *RequestConfirmed
++  )
++{
++  ASSERT (OperationRequest >= TCG_PHYSICAL_PRESENCE_VENDOR_SPECIFIC_OPERATION);
++  return FALSE;
++}
++
++/**
++  Get string by string id from HII Interface.
++
++  @param[in] Id          String ID.
++
++  @retval    CHAR16 *    String from ID.
++  @retval    NULL        If error occurs.
++
++**/
++CHAR16 *
++PhysicalPresenceGetStringById (
++  IN  EFI_STRING_ID  Id
++  )
++{
++  return HiiGetString (mPpStringPackHandle, Id, NULL);
++}
++
++/**
++  Get TPM physical presence permanent flags.
++
++  @param[in]  TcgProtocol   EFI TCG Protocol instance.
++  @param[out] LifetimeLock  physicalPresenceLifetimeLock permanent flag.
++  @param[out] CmdEnable     physicalPresenceCMDEnable permanent flag.
++
++  @retval EFI_SUCCESS       Flags were returns successfully.
++  @retval other             Failed to locate EFI TCG Protocol.
++
++**/
++EFI_STATUS
++GetTpmCapability (
++  IN   EFI_TCG_PROTOCOL  *TcgProtocol,
++  OUT  BOOLEAN           *LifetimeLock,
++  OUT  BOOLEAN           *CmdEnable
++  )
++{
++  EFI_STATUS           Status;
++  TPM_RQU_COMMAND_HDR  *TpmRqu;
++  TPM_RSP_COMMAND_HDR  *TpmRsp;
++  UINT32               *SendBufPtr;
++  UINT8                SendBuffer[sizeof (*TpmRqu) + sizeof (UINT32) * 3];
++  TPM_PERMANENT_FLAGS  *TpmPermanentFlags;
++  UINT8                RecvBuffer[40];
++
++  //
++  // Fill request header
++  //
++  TpmRsp = (TPM_RSP_COMMAND_HDR *)RecvBuffer;
++  TpmRqu = (TPM_RQU_COMMAND_HDR *)SendBuffer;
++
++  TpmRqu->tag       = SwapBytes16 (TPM_TAG_RQU_COMMAND);
++  TpmRqu->paramSize = SwapBytes32 (sizeof (SendBuffer));
++  TpmRqu->ordinal   = SwapBytes32 (TPM_ORD_GetCapability);
++
++  //
++  // Set request parameter
++  //
++  SendBufPtr = (UINT32 *)(TpmRqu + 1);
++  WriteUnaligned32 (SendBufPtr++, SwapBytes32 (TPM_CAP_FLAG));
++  WriteUnaligned32 (SendBufPtr++, SwapBytes32 (sizeof (TPM_CAP_FLAG_PERMANENT)));
++  WriteUnaligned32 (SendBufPtr, SwapBytes32 (TPM_CAP_FLAG_PERMANENT));
++
++  Status = TcgProtocol->PassThroughToTpm (
++                          TcgProtocol,
++                          sizeof (SendBuffer),
++                          (UINT8 *)TpmRqu,
++                          sizeof (RecvBuffer),
++                          (UINT8 *)&RecvBuffer
++                          );
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  if ((TpmRsp->tag != SwapBytes16 (TPM_TAG_RSP_COMMAND)) || (TpmRsp->returnCode != 0)) {
++    return EFI_DEVICE_ERROR;
++  }
++
++  TpmPermanentFlags = (TPM_PERMANENT_FLAGS *)&RecvBuffer[sizeof (TPM_RSP_COMMAND_HDR) + sizeof (UINT32)];
++
++  if (LifetimeLock != NULL) {
++    *LifetimeLock = TpmPermanentFlags->physicalPresenceLifetimeLock;
++  }
++
++  if (CmdEnable != NULL) {
++    *CmdEnable = TpmPermanentFlags->physicalPresenceCMDEnable;
++  }
++
++  return Status;
++}
++
++/**
++  Issue TSC_PhysicalPresence command to TPM.
++
++  @param[in] TcgProtocol          EFI TCG Protocol instance.
++  @param[in] PhysicalPresence     The state to set the TPM's Physical Presence flags.
++
++  @retval EFI_SUCCESS             TPM executed the command successfully.
++  @retval EFI_SECURITY_VIOLATION  TPM returned error when executing the command.
++  @retval other                   Failed to locate EFI TCG Protocol.
++
++**/
++EFI_STATUS
++TpmPhysicalPresence (
++  IN      EFI_TCG_PROTOCOL       *TcgProtocol,
++  IN      TPM_PHYSICAL_PRESENCE  PhysicalPresence
++  )
++{
++  EFI_STATUS             Status;
++  TPM_RQU_COMMAND_HDR    *TpmRqu;
++  TPM_PHYSICAL_PRESENCE  *TpmPp;
++  TPM_RSP_COMMAND_HDR    TpmRsp;
++  UINT8                  Buffer[sizeof (*TpmRqu) + sizeof (*TpmPp)];
++
++  TpmRqu = (TPM_RQU_COMMAND_HDR *)Buffer;
++  TpmPp  = (TPM_PHYSICAL_PRESENCE *)(TpmRqu + 1);
++
++  TpmRqu->tag       = SwapBytes16 (TPM_TAG_RQU_COMMAND);
++  TpmRqu->paramSize = SwapBytes32 (sizeof (Buffer));
++  TpmRqu->ordinal   = SwapBytes32 (TSC_ORD_PhysicalPresence);
++  WriteUnaligned16 (TpmPp, (TPM_PHYSICAL_PRESENCE)SwapBytes16 (PhysicalPresence));
++
++  Status = TcgProtocol->PassThroughToTpm (
++                          TcgProtocol,
++                          sizeof (Buffer),
++                          (UINT8 *)TpmRqu,
++                          sizeof (TpmRsp),
++                          (UINT8 *)&TpmRsp
++                          );
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  if (TpmRsp.tag != SwapBytes16 (TPM_TAG_RSP_COMMAND)) {
++    return EFI_DEVICE_ERROR;
++  }
++
++  if (TpmRsp.returnCode != 0) {
++    //
++    // If it fails, some requirements may be needed for this command.
++    //
++    return EFI_SECURITY_VIOLATION;
++  }
++
++  return Status;
++}
++
++/**
++  Issue a TPM command for which no additional output data will be returned.
++
++  @param[in] TcgProtocol              EFI TCG Protocol instance.
++  @param[in] Ordinal                  TPM command code.
++  @param[in] AdditionalParameterSize  Additional parameter size.
++  @param[in] AdditionalParameters     Pointer to the Additional parameters.
++
++  @retval TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE  Error occurred during sending command to TPM or
++                                                  receiving response from TPM.
++  @retval Others                                  Return code from the TPM device after command execution.
++
++**/
++UINT32
++TpmCommandNoReturnData (
++  IN      EFI_TCG_PROTOCOL  *TcgProtocol,
++  IN      TPM_COMMAND_CODE  Ordinal,
++  IN      UINTN             AdditionalParameterSize,
++  IN      VOID              *AdditionalParameters
++  )
++{
++  EFI_STATUS           Status;
++  TPM_RQU_COMMAND_HDR  *TpmRqu;
++  TPM_RSP_COMMAND_HDR  TpmRsp;
++  UINT32               Size;
++
++  TpmRqu = (TPM_RQU_COMMAND_HDR *)AllocatePool (sizeof (*TpmRqu) + AdditionalParameterSize);
++  if (TpmRqu == NULL) {
++    return TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE;
++  }
++
++  TpmRqu->tag       = SwapBytes16 (TPM_TAG_RQU_COMMAND);
++  Size              = (UINT32)(sizeof (*TpmRqu) + AdditionalParameterSize);
++  TpmRqu->paramSize = SwapBytes32 (Size);
++  TpmRqu->ordinal   = SwapBytes32 (Ordinal);
++  CopyMem (TpmRqu + 1, AdditionalParameters, AdditionalParameterSize);
++
++  Status = TcgProtocol->PassThroughToTpm (
++                          TcgProtocol,
++                          Size,
++                          (UINT8 *)TpmRqu,
++                          (UINT32)sizeof (TpmRsp),
++                          (UINT8 *)&TpmRsp
++                          );
++  FreePool (TpmRqu);
++  if (EFI_ERROR (Status) || (TpmRsp.tag != SwapBytes16 (TPM_TAG_RSP_COMMAND))) {
++    return TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE;
++  }
++
++  return SwapBytes32 (TpmRsp.returnCode);
++}
++
++/**
++  Execute physical presence operation requested by the OS.
++
++  @param[in]      TcgProtocol         EFI TCG Protocol instance.
++  @param[in]      CommandCode         Physical presence operation value.
++  @param[in, out] PpiFlags            The physical presence interface flags.
++
++  @retval TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE  Unknown physical presence operation.
++  @retval TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE  Error occurred during sending command to TPM or
++                                                  receiving response from TPM.
++  @retval Others                                  Return code from the TPM device after command execution.
++
++**/
++UINT32
++ExecutePhysicalPresence (
++  IN      EFI_TCG_PROTOCOL             *TcgProtocol,
++  IN      UINT32                       CommandCode,
++  IN OUT  EFI_PHYSICAL_PRESENCE_FLAGS  *PpiFlags
++  )
++{
++  BOOLEAN  BoolVal;
++  UINT32   TpmResponse;
++  UINT32   InData[5];
++
++  switch (CommandCode) {
++    case PHYSICAL_PRESENCE_ENABLE:
++      return TpmCommandNoReturnData (
++               TcgProtocol,
++               TPM_ORD_PhysicalEnable,
++               0,
++               NULL
++               );
++
++    case PHYSICAL_PRESENCE_DISABLE:
++      return TpmCommandNoReturnData (
++               TcgProtocol,
++               TPM_ORD_PhysicalDisable,
++               0,
++               NULL
++               );
++
++    case PHYSICAL_PRESENCE_ACTIVATE:
++      BoolVal = FALSE;
++      return TpmCommandNoReturnData (
++               TcgProtocol,
++               TPM_ORD_PhysicalSetDeactivated,
++               sizeof (BoolVal),
++               &BoolVal
++               );
++
++    case PHYSICAL_PRESENCE_DEACTIVATE:
++      BoolVal = TRUE;
++      return TpmCommandNoReturnData (
++               TcgProtocol,
++               TPM_ORD_PhysicalSetDeactivated,
++               sizeof (BoolVal),
++               &BoolVal
++               );
++
++    case PHYSICAL_PRESENCE_CLEAR:
++      return TpmCommandNoReturnData (
++               TcgProtocol,
++               TPM_ORD_ForceClear,
++               0,
++               NULL
++               );
++
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE:
++      TpmResponse = ExecutePhysicalPresence (TcgProtocol, PHYSICAL_PRESENCE_ENABLE, PpiFlags);
++      if (TpmResponse == 0) {
++        TpmResponse = ExecutePhysicalPresence (TcgProtocol, PHYSICAL_PRESENCE_ACTIVATE, PpiFlags);
++      }
++
++      return TpmResponse;
++
++    case PHYSICAL_PRESENCE_DEACTIVATE_DISABLE:
++      TpmResponse = ExecutePhysicalPresence (TcgProtocol, PHYSICAL_PRESENCE_DEACTIVATE, PpiFlags);
++      if (TpmResponse == 0) {
++        TpmResponse = ExecutePhysicalPresence (TcgProtocol, PHYSICAL_PRESENCE_DISABLE, PpiFlags);
++      }
++
++      return TpmResponse;
++
++    case PHYSICAL_PRESENCE_SET_OWNER_INSTALL_TRUE:
++      BoolVal = TRUE;
++      return TpmCommandNoReturnData (
++               TcgProtocol,
++               TPM_ORD_SetOwnerInstall,
++               sizeof (BoolVal),
++               &BoolVal
++               );
++
++    case PHYSICAL_PRESENCE_SET_OWNER_INSTALL_FALSE:
++      BoolVal = FALSE;
++      return TpmCommandNoReturnData (
++               TcgProtocol,
++               TPM_ORD_SetOwnerInstall,
++               sizeof (BoolVal),
++               &BoolVal
++               );
++
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE_OWNER_TRUE:
++      //
++      // PHYSICAL_PRESENCE_ENABLE_ACTIVATE + PHYSICAL_PRESENCE_SET_OWNER_INSTALL_TRUE
++      // PHYSICAL_PRESENCE_SET_OWNER_INSTALL_TRUE will be executed after reboot
++      //
++      if ((PpiFlags->PPFlags & TCG_VENDOR_LIB_FLAG_RESET_TRACK) == 0) {
++        TpmResponse        = ExecutePhysicalPresence (TcgProtocol, PHYSICAL_PRESENCE_ENABLE_ACTIVATE, PpiFlags);
++        PpiFlags->PPFlags |= TCG_VENDOR_LIB_FLAG_RESET_TRACK;
++      } else {
++        TpmResponse        = ExecutePhysicalPresence (TcgProtocol, PHYSICAL_PRESENCE_SET_OWNER_INSTALL_TRUE, PpiFlags);
++        PpiFlags->PPFlags &= ~TCG_VENDOR_LIB_FLAG_RESET_TRACK;
++      }
++
++      return TpmResponse;
++
++    case PHYSICAL_PRESENCE_DEACTIVATE_DISABLE_OWNER_FALSE:
++      TpmResponse = ExecutePhysicalPresence (TcgProtocol, PHYSICAL_PRESENCE_SET_OWNER_INSTALL_FALSE, PpiFlags);
++      if (TpmResponse == 0) {
++        TpmResponse = ExecutePhysicalPresence (TcgProtocol, PHYSICAL_PRESENCE_DEACTIVATE_DISABLE, PpiFlags);
++      }
++
++      return TpmResponse;
++
++    case PHYSICAL_PRESENCE_DEFERRED_PP_UNOWNERED_FIELD_UPGRADE:
++      InData[0] = SwapBytes32 (TPM_SET_STCLEAR_DATA);            // CapabilityArea
++      InData[1] = SwapBytes32 (sizeof (UINT32));                 // SubCapSize
++      InData[2] = SwapBytes32 (TPM_SD_DEFERREDPHYSICALPRESENCE); // SubCap
++      InData[3] = SwapBytes32 (sizeof (UINT32));                 // SetValueSize
++      InData[4] = SwapBytes32 (1);                               // UnownedFieldUpgrade; bit0
++      return TpmCommandNoReturnData (
++               TcgProtocol,
++               TPM_ORD_SetCapability,
++               sizeof (UINT32) * 5,
++               InData
++               );
++
++    case PHYSICAL_PRESENCE_SET_OPERATOR_AUTH:
++      //
++      // TPM_SetOperatorAuth
++      // This command requires UI to prompt user for Auth data
++      // Here it is NOT implemented
++      //
++      return TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE;
++
++    case PHYSICAL_PRESENCE_CLEAR_ENABLE_ACTIVATE:
++      TpmResponse = ExecutePhysicalPresence (TcgProtocol, PHYSICAL_PRESENCE_CLEAR, PpiFlags);
++      if (TpmResponse == 0) {
++        TpmResponse = ExecutePhysicalPresence (TcgProtocol, PHYSICAL_PRESENCE_ENABLE_ACTIVATE, PpiFlags);
++      }
++
++      return TpmResponse;
++
++    case PHYSICAL_PRESENCE_SET_NO_PPI_PROVISION_FALSE:
++      PpiFlags->PPFlags &= ~TCG_BIOS_TPM_MANAGEMENT_FLAG_NO_PPI_PROVISION;
++      return 0;
++
++    case PHYSICAL_PRESENCE_SET_NO_PPI_PROVISION_TRUE:
++      PpiFlags->PPFlags |= TCG_BIOS_TPM_MANAGEMENT_FLAG_NO_PPI_PROVISION;
++      return 0;
++
++    case PHYSICAL_PRESENCE_SET_NO_PPI_CLEAR_FALSE:
++      PpiFlags->PPFlags &= ~TCG_BIOS_TPM_MANAGEMENT_FLAG_NO_PPI_CLEAR;
++      return 0;
++
++    case PHYSICAL_PRESENCE_SET_NO_PPI_CLEAR_TRUE:
++      PpiFlags->PPFlags |= TCG_BIOS_TPM_MANAGEMENT_FLAG_NO_PPI_CLEAR;
++      return 0;
++
++    case PHYSICAL_PRESENCE_SET_NO_PPI_MAINTENANCE_FALSE:
++      PpiFlags->PPFlags &= ~TCG_BIOS_TPM_MANAGEMENT_FLAG_NO_PPI_MAINTENANCE;
++      return 0;
++
++    case PHYSICAL_PRESENCE_SET_NO_PPI_MAINTENANCE_TRUE:
++      PpiFlags->PPFlags |= TCG_BIOS_TPM_MANAGEMENT_FLAG_NO_PPI_MAINTENANCE;
++      return 0;
++
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE_CLEAR:
++      //
++      // PHYSICAL_PRESENCE_ENABLE_ACTIVATE + PHYSICAL_PRESENCE_CLEAR
++      // PHYSICAL_PRESENCE_CLEAR will be executed after reboot.
++      //
++      if ((PpiFlags->PPFlags & TCG_VENDOR_LIB_FLAG_RESET_TRACK) == 0) {
++        TpmResponse        = ExecutePhysicalPresence (TcgProtocol, PHYSICAL_PRESENCE_ENABLE_ACTIVATE, PpiFlags);
++        PpiFlags->PPFlags |= TCG_VENDOR_LIB_FLAG_RESET_TRACK;
++      } else {
++        TpmResponse        = ExecutePhysicalPresence (TcgProtocol, PHYSICAL_PRESENCE_CLEAR, PpiFlags);
++        PpiFlags->PPFlags &= ~TCG_VENDOR_LIB_FLAG_RESET_TRACK;
++      }
++
++      return TpmResponse;
++
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE_CLEAR_ENABLE_ACTIVATE:
++      //
++      // PHYSICAL_PRESENCE_ENABLE_ACTIVATE + PHYSICAL_PRESENCE_CLEAR_ENABLE_ACTIVATE
++      // PHYSICAL_PRESENCE_CLEAR_ENABLE_ACTIVATE will be executed after reboot.
++      //
++      if ((PpiFlags->PPFlags & TCG_VENDOR_LIB_FLAG_RESET_TRACK) == 0) {
++        TpmResponse        = ExecutePhysicalPresence (TcgProtocol, PHYSICAL_PRESENCE_ENABLE_ACTIVATE, PpiFlags);
++        PpiFlags->PPFlags |= TCG_VENDOR_LIB_FLAG_RESET_TRACK;
++      } else {
++        TpmResponse        = ExecutePhysicalPresence (TcgProtocol, PHYSICAL_PRESENCE_CLEAR_ENABLE_ACTIVATE, PpiFlags);
++        PpiFlags->PPFlags &= ~TCG_VENDOR_LIB_FLAG_RESET_TRACK;
++      }
++
++      return TpmResponse;
++
++    default:
++      ;
++  }
++
++  return TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE;
++}
++
++/**
++  Read the specified key for user confirmation.
++
++  @param[in]  CautionKey  If true,  F12 is used as confirm key;
++                          If false, ENTER is used as confirm key.
++
++  @retval     TRUE        User confirmed the changes by input.
++  @retval     FALSE       User discarded the changes or device error.
++
++**/
++BOOLEAN
++ReadUserKey (
++  IN     BOOLEAN  CautionKey,
++  IN     UINTN    Timeout
++  )
++{
++  EFI_STATUS     Status;
++  EFI_INPUT_KEY  Key;
++  UINT16         InputKey;
++  UINTN          Delay;
++
++  Delay = Timeout / 50;
++
++  InputKey = 0;
++do {
++    Status = gBS->CheckEvent (gST->ConIn->WaitForKey);
++    if (!EFI_ERROR (Status)) {
++      Status = gST->ConIn->ReadKeyStroke (gST->ConIn, &Key);
++
++      if (Key.ScanCode == SCAN_ESC) {
++        InputKey = Key.ScanCode;
++      }
++
++      if ((Key.UnicodeChar == CHAR_CARRIAGE_RETURN) && !CautionKey) {
++        InputKey = Key.UnicodeChar;
++      }
++
++     if ((Key.ScanCode == SCAN_F12) && CautionKey) {
++       InputKey = Key.ScanCode;
++     }
++    }
++    gBS->Stall (50);
++    Delay--;
++  } while (InputKey == 0 && Delay > 0);
++
++  if (Delay == 0) {
++    return FALSE;
++  }
++
++  if (InputKey != SCAN_ESC) {
++    return TRUE;
++  }
++
++  return FALSE;
++}
++
++/**
++  The constructor function register UNI strings into imageHandle.
++
++  It will ASSERT() if that operation fails and it will always return EFI_SUCCESS.
++
++  @param  ImageHandle   The firmware allocated handle for the EFI image.
++  @param  SystemTable   A pointer to the EFI System Table.
++
++  @retval EFI_SUCCESS   The constructor successfully added string package.
++  @retval Other value   The constructor can't add string package.
++
++**/
++EFI_STATUS
++EFIAPI
++TcgPhysicalPresenceLibConstructor (
++  IN EFI_HANDLE        ImageHandle,
++  IN EFI_SYSTEM_TABLE  *SystemTable
++  )
++{
++  mPpStringPackHandle = HiiAddPackages (&gEfiPhysicalPresenceGuid, ImageHandle, DxeTcgPhysicalPresenceLibStrings, NULL);
++  ASSERT (mPpStringPackHandle != NULL);
++
++  return EFI_SUCCESS;
++}
++
++/**
++  Display the confirm text and get user confirmation.
++
++  @param[in] TpmPpCommand  The requested TPM physical presence command.
++
++  @retval    TRUE          The user has confirmed the changes.
++  @retval    FALSE         The user doesn't confirm the changes.
++**/
++BOOLEAN
++UserConfirm (
++  IN      UINT32  TpmPpCommand
++  )
++{
++  CHAR16   *ConfirmText;
++  CHAR16   *TmpStr1;
++  CHAR16   *TmpStr2;
++  UINTN    BufSize;
++  BOOLEAN  CautionKey;
++  UINT16   Index;
++  CHAR16   DstStr[81];
++
++  TmpStr2     = NULL;
++  CautionKey  = FALSE;
++  BufSize     = CONFIRM_BUFFER_SIZE;
++  ConfirmText = AllocateZeroPool (BufSize);
++  ASSERT (ConfirmText != NULL);
++
++  switch (TpmPpCommand) {
++    case PHYSICAL_PRESENCE_ENABLE:
++      TmpStr2 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ENABLE));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_DISABLE:
++      TmpStr2 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_DISABLE));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_ACTIVATE:
++      TmpStr2 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACTIVATE));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_DEACTIVATE:
++      TmpStr2 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_DEACTIVATE));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_CLEAR:
++      CautionKey = FALSE;
++      TmpStr2    = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_CLEAR));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING_CLEAR));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), L" \n\n", (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE:
++      TmpStr2 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ENABLE_ACTIVATE));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_NOTE_ON));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_DEACTIVATE_DISABLE:
++      TmpStr2 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_DEACTIVATE_DISABLE));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_NOTE_OFF));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_SET_OWNER_INSTALL_TRUE:
++      TmpStr2 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ALLOW_TAKE_OWNERSHIP));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_SET_OWNER_INSTALL_FALSE:
++      TmpStr2 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_DISALLOW_TAKE_OWNERSHIP));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE_OWNER_TRUE:
++      TmpStr2 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_TURN_ON));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_NOTE_ON));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_DEACTIVATE_DISABLE_OWNER_FALSE:
++      TmpStr2 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_TURN_OFF));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_NOTE_OFF));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_DEFERRED_PP_UNOWNERED_FIELD_UPGRADE:
++      CautionKey = FALSE;
++      TmpStr2    = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_UNOWNED_FIELD_UPGRADE));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_UPGRADE_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING_MAINTAIN));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_SET_OPERATOR_AUTH:
++      //
++      // TPM_SetOperatorAuth
++      // This command requires UI to prompt user for Auth data
++      // Here it is NOT implemented
++      //
++      break;
++
++    case PHYSICAL_PRESENCE_CLEAR_ENABLE_ACTIVATE:
++      CautionKey = FALSE;
++      TmpStr2    = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_CLEAR_TURN_ON));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_NOTE_ON));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING_CLEAR));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING_CLEAR_CONT));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_SET_NO_PPI_PROVISION_TRUE:
++      TmpStr2 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_NO_PPI_PROVISION));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_PPI_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_NO_PPI_INFO));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_SET_NO_PPI_CLEAR_TRUE:
++      CautionKey = FALSE;
++      TmpStr2    = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_CLEAR));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_PPI_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_NOTE_CLEAR));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING_CLEAR));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), L" \n\n", (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_NO_PPI_INFO));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_SET_NO_PPI_MAINTENANCE_TRUE:
++      CautionKey = FALSE;
++      TmpStr2    = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_NO_PPI_MAINTAIN));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_PPI_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING_MAINTAIN));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_NO_PPI_INFO));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE_CLEAR:
++      CautionKey = FALSE;
++      TmpStr2    = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ENABLE_ACTIVATE_CLEAR));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING_CLEAR));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), L" \n\n", (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE_CLEAR_ENABLE_ACTIVATE:
++      CautionKey = FALSE;
++      TmpStr2    = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ENABLE_ACTIVATE_CLEAR_ENABLE_ACTIVATE));
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_HEAD_STR));
++      UnicodeSPrint (ConfirmText, BufSize, TmpStr1, TmpStr2);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_NOTE_ON));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING_CLEAR));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_WARNING_CLEAR_CONT));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++
++      TmpStr1 = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_ACCEPT_KEY));
++      StrnCatS (ConfirmText, BufSize / sizeof (CHAR16), TmpStr1, (BufSize / sizeof (CHAR16)) - StrLen (ConfirmText) - 1);
++      FreePool (TmpStr1);
++      break;
++
++    default:
++      ;
++  }
++
++  if (TmpStr2 == NULL) {
++    FreePool (ConfirmText);
++    return FALSE;
++  }
++
++  TmpStr1  = PhysicalPresenceGetStringById (STRING_TOKEN (TPM_REJECT_KEY));
++  BufSize -= StrSize (ConfirmText);
++  UnicodeSPrint (ConfirmText + StrLen (ConfirmText), BufSize, TmpStr1, TmpStr2);
++
++  DstStr[80] = L'\0';
++  for (Index = 0; Index < StrLen (ConfirmText); Index += 80) {
++    StrnCpyS (DstStr, sizeof (DstStr) / sizeof (CHAR16), ConfirmText + Index, sizeof (DstStr) / sizeof (CHAR16) - 1);
++    Print (DstStr);
++  }
++
++  FreePool (TmpStr1);
++  FreePool (TmpStr2);
++  FreePool (ConfirmText);
++
++  if (ReadUserKey (CautionKey, TIMEOUT)) {
++    return TRUE;
++  }
++
++  return FALSE;
++}
++
++/**
++  Check if there is a valid physical presence command request. Also updates parameter value
++  to whether the requested physical presence command already confirmed by user
++
++   @param[in]  TcgPpData           EFI TCG Physical Presence request data.
++   @param[in]  Flags               The physical presence interface flags.
++   @param[out] RequestConfirmed    If the physical presence operation command required user confirm from UI.
++                                   True, it indicates the command doesn't require user confirm, or already confirmed
++                                   in last boot cycle by user.
++                                   False, it indicates the command need user confirm from UI.
++
++   @retval  TRUE        Physical Presence operation command is valid.
++   @retval  FALSE       Physical Presence operation command is invalid.
++
++**/
++BOOLEAN
++HaveValidTpmRequest  (
++  IN      EFI_PHYSICAL_PRESENCE        *TcgPpData,
++  IN      EFI_PHYSICAL_PRESENCE_FLAGS  Flags,
++  OUT     BOOLEAN                      *RequestConfirmed
++  )
++{
++  BOOLEAN  IsRequestValid;
++
++  *RequestConfirmed = FALSE;
++
++  switch (TcgPpData->PPRequest) {
++    case PHYSICAL_PRESENCE_NO_ACTION:
++      *RequestConfirmed = TRUE;
++      return TRUE;
++    case PHYSICAL_PRESENCE_ENABLE:
++    case PHYSICAL_PRESENCE_DISABLE:
++    case PHYSICAL_PRESENCE_ACTIVATE:
++    case PHYSICAL_PRESENCE_DEACTIVATE:
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE:
++    case PHYSICAL_PRESENCE_DEACTIVATE_DISABLE:
++    case PHYSICAL_PRESENCE_SET_OWNER_INSTALL_TRUE:
++    case PHYSICAL_PRESENCE_SET_OWNER_INSTALL_FALSE:
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE_OWNER_TRUE:
++    case PHYSICAL_PRESENCE_DEACTIVATE_DISABLE_OWNER_FALSE:
++    case PHYSICAL_PRESENCE_SET_OPERATOR_AUTH:
++      if ((Flags.PPFlags & TCG_BIOS_TPM_MANAGEMENT_FLAG_NO_PPI_PROVISION) != 0) {
++        *RequestConfirmed = TRUE;
++      }
++
++      break;
++
++    case PHYSICAL_PRESENCE_CLEAR:
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE_CLEAR:
++      if ((Flags.PPFlags & TCG_BIOS_TPM_MANAGEMENT_FLAG_NO_PPI_CLEAR) != 0) {
++        *RequestConfirmed = TRUE;
++      }
++
++      break;
++
++    case PHYSICAL_PRESENCE_DEFERRED_PP_UNOWNERED_FIELD_UPGRADE:
++      if ((Flags.PPFlags & TCG_BIOS_TPM_MANAGEMENT_FLAG_NO_PPI_MAINTENANCE) != 0) {
++        *RequestConfirmed = TRUE;
++      }
++
++      break;
++
++    case PHYSICAL_PRESENCE_CLEAR_ENABLE_ACTIVATE:
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE_CLEAR_ENABLE_ACTIVATE:
++      if (((Flags.PPFlags & TCG_BIOS_TPM_MANAGEMENT_FLAG_NO_PPI_CLEAR) != 0) && ((Flags.PPFlags & TCG_BIOS_TPM_MANAGEMENT_FLAG_NO_PPI_PROVISION) != 0)) {
++        *RequestConfirmed = TRUE;
++      }
++
++      break;
++
++    case PHYSICAL_PRESENCE_SET_NO_PPI_PROVISION_FALSE:
++    case PHYSICAL_PRESENCE_SET_NO_PPI_CLEAR_FALSE:
++    case PHYSICAL_PRESENCE_SET_NO_PPI_MAINTENANCE_FALSE:
++      *RequestConfirmed = TRUE;
++      break;
++
++    case PHYSICAL_PRESENCE_SET_NO_PPI_PROVISION_TRUE:
++    case PHYSICAL_PRESENCE_SET_NO_PPI_CLEAR_TRUE:
++    case PHYSICAL_PRESENCE_SET_NO_PPI_MAINTENANCE_TRUE:
++      break;
++
++    default:
++      if (TcgPpData->PPRequest >= TCG_PHYSICAL_PRESENCE_VENDOR_SPECIFIC_OPERATION) {
++        IsRequestValid = TcgPpVendorLibHasValidRequest (TcgPpData->PPRequest, Flags.PPFlags, RequestConfirmed);
++        if (!IsRequestValid) {
++          return FALSE;
++        } else {
++          break;
++        }
++      } else {
++        //
++        // Wrong Physical Presence command
++        //
++        return FALSE;
++      }
++  }
++
++  if ((Flags.PPFlags & TCG_VENDOR_LIB_FLAG_RESET_TRACK) != 0) {
++    //
++    // It had been confirmed in last boot, it doesn't need confirm again.
++    //
++    *RequestConfirmed = TRUE;
++  }
++
++  //
++  // Physical Presence command is correct
++  //
++  return TRUE;
++}
++
++/**
++  Check and execute the requested physical presence command.
++
++  Caution: This function may receive untrusted input.
++  TcgPpData variable is external input, so this function will validate
++  its data structure to be valid value.
++
++  @param[in] TcgProtocol          EFI TCG Protocol instance.
++  @param[in] TcgPpData            Point to the physical presence NV variable.
++  @param[in] Flags                The physical presence interface flags.
++
++**/
++VOID
++ExecutePendingTpmRequest (
++  IN      EFI_TCG_PROTOCOL             *TcgProtocol,
++  IN      EFI_PHYSICAL_PRESENCE        *TcgPpData,
++  IN      EFI_PHYSICAL_PRESENCE_FLAGS  Flags
++  )
++{
++  EFI_STATUS                   Status;
++  UINTN                        DataSize;
++  BOOLEAN                      RequestConfirmed;
++  EFI_PHYSICAL_PRESENCE_FLAGS  NewFlags;
++  BOOLEAN                      ResetRequired;
++  UINT32                       NewPPFlags;
++
++  if (!HaveValidTpmRequest (TcgPpData, Flags, &RequestConfirmed)) {
++    //
++    // Invalid operation request.
++    //
++    DEBUG ((DEBUG_INFO, "[TPMPP] Bad TpmRequest\n"));
++    mPpi->Response 	     = TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE;
++    mPpi->LastRequest        = mPpi->Request;
++    mPpi->Request            = TCG_PHYSICAL_PRESENCE_NO_ACTION;
++    mPpi->RequestParameter   = 0;
++    
++    TcgPpData->PPResponse    = TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE;
++    TcgPpData->LastPPRequest = TcgPpData->PPRequest;
++    TcgPpData->PPRequest     = PHYSICAL_PRESENCE_NO_ACTION;
++    DataSize                 = sizeof (EFI_PHYSICAL_PRESENCE);
++    Status                   = gRT->SetVariable (
++                                      PHYSICAL_PRESENCE_VARIABLE,
++                                      &gEfiPhysicalPresenceGuid,
++                                      EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
++                                      DataSize,
++                                      TcgPpData
++                                      );
++    return;
++  }
++
++  ResetRequired = FALSE;
++  if (TcgPpData->PPRequest >= TCG_PHYSICAL_PRESENCE_VENDOR_SPECIFIC_OPERATION) {
++    NewFlags              = Flags;
++    NewPPFlags            = NewFlags.PPFlags;
++//    TcgPpData->PPResponse = TcgPpVendorLibExecutePendingRequest (TcgPpData->PPRequest, &NewPPFlags, &ResetRequired); //Modif H.E To be fixed
++    NewFlags.PPFlags      = (UINT8)NewPPFlags;
++  } else {
++    if (!RequestConfirmed) {
++      // Clear screen
++      if (gST != NULL && gST->ConOut != NULL) {
++        gST->ConOut->ClearScreen (gST->ConOut);
++      }
++
++	  //
++      // Print confirm text and wait for approval.
++      //
++      RequestConfirmed = UserConfirm (TcgPpData->PPRequest);
++    }
++
++    //
++    // Execute requested physical presence command
++    //
++    TcgPpData->PPResponse = TCG_PP_OPERATION_RESPONSE_USER_ABORT;
++    mPpi->Response        = TCG_PP_OPERATION_RESPONSE_USER_ABORT;
++    NewFlags              = Flags;
++    if (RequestConfirmed) {
++      TcgPpData->PPResponse = ExecutePhysicalPresence (TcgProtocol, TcgPpData->PPRequest, &NewFlags);
++      mPpi->Response = TcgPpData->PPResponse;
++    }
++  }
++
++  //
++  // Save the flags if it is updated.
++  //
++  if (CompareMem (&Flags, &NewFlags, sizeof (EFI_PHYSICAL_PRESENCE_FLAGS)) != 0) {
++    Status = gRT->SetVariable (
++                    PHYSICAL_PRESENCE_FLAGS_VARIABLE,
++                    &gEfiPhysicalPresenceGuid,
++                    EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
++                    sizeof (EFI_PHYSICAL_PRESENCE_FLAGS),
++                    &NewFlags
++                    );
++    if (EFI_ERROR (Status)) {
++      return;
++    }
++  }
++
++  //
++  // Clear request
++  //
++  if ((NewFlags.PPFlags & TCG_VENDOR_LIB_FLAG_RESET_TRACK) == 0) {
++    TcgPpData->LastPPRequest = TcgPpData->PPRequest;
++    TcgPpData->PPRequest     = PHYSICAL_PRESENCE_NO_ACTION;
++
++    mPpi->LastRequest      = mPpi->Request;
++    mPpi->Request          = PHYSICAL_PRESENCE_NO_ACTION;
++    mPpi->RequestParameter = 0;  
++  }
++
++  //
++  // Save changes
++  //
++  DataSize = sizeof (EFI_PHYSICAL_PRESENCE);
++  Status   = gRT->SetVariable (
++                    PHYSICAL_PRESENCE_VARIABLE,
++                    &gEfiPhysicalPresenceGuid,
++                    EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
++                    DataSize,
++                    TcgPpData
++                    );
++  if (EFI_ERROR (Status)) {
++    return;
++  }
++
++  if (TcgPpData->PPResponse == TCG_PP_OPERATION_RESPONSE_USER_ABORT) {
++    return;
++  }
++
++  //
++  // Reset system to make new TPM settings in effect
++  //
++  switch (TcgPpData->LastPPRequest) {
++    case PHYSICAL_PRESENCE_ACTIVATE:
++    case PHYSICAL_PRESENCE_DEACTIVATE:
++    case PHYSICAL_PRESENCE_CLEAR:
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE:
++    case PHYSICAL_PRESENCE_DEACTIVATE_DISABLE:
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE_OWNER_TRUE:
++    case PHYSICAL_PRESENCE_DEACTIVATE_DISABLE_OWNER_FALSE:
++    case PHYSICAL_PRESENCE_DEFERRED_PP_UNOWNERED_FIELD_UPGRADE:
++    case PHYSICAL_PRESENCE_CLEAR_ENABLE_ACTIVATE:
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE_CLEAR:
++    case PHYSICAL_PRESENCE_ENABLE_ACTIVATE_CLEAR_ENABLE_ACTIVATE:
++      break;
++    default:
++      if (TcgPpData->LastPPRequest >= TCG_PHYSICAL_PRESENCE_VENDOR_SPECIFIC_OPERATION) {
++        if (ResetRequired) {
++          break;
++        } else {
++          return;
++        }
++      }
++
++      if (TcgPpData->PPRequest != PHYSICAL_PRESENCE_NO_ACTION) {
++        break;
++      }
++
++      return;
++  }
++
++  Flush_PPI_Cache12(TRUE);  //Need to Flush cache to RAM otherwise mPpi are not stored in RAM.
++
++  if (RequestConfirmed) {
++    Print (L"\n\nRebooting system to apply changes to TPM settings\n");
++    // Pause so user see that is the system is about to reboot
++    MicroSecondDelay(3000*1000);
++  }
++
++  gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
++  ASSERT (FALSE);
++}
++
++/**
++  Check and execute the pending TPM request and Lock TPM.
++
++  The TPM request may come from OS or BIOS. This API will display request information and wait
++  for user confirmation if TPM request exists. The TPM request will be sent to TPM device after
++  the TPM request is confirmed, and one or more reset may be required to make TPM request to
++  take effect. At last, it will lock TPM to prevent TPM state change by malware.
++
++  This API should be invoked after console in and console out are all ready as they are required
++  to display request information and get user input to confirm the request. This API should also
++  be invoked as early as possible as TPM is locked in this function.
++
++  @retval EFI_SUCCESS       Flags were returns successfully.
++  @retval other             Failed to process.
++
++**/
++EFI_STATUS
++EFIAPI
++TcgPhysicalPresenceLibProcessRequest (
++  VOID
++  )
++{
++  EFI_STATUS                    Status;
++  BOOLEAN                       LifetimeLock;
++  BOOLEAN                       CmdEnable;
++  UINTN                         DataSize;
++  EFI_PHYSICAL_PRESENCE         TcgPpData;
++  EFI_TCG_PROTOCOL              *TcgProtocol;
++//  EDKII_VARIABLE_LOCK_PROTOCOL  *VariableLockProtocol;
++  EFI_PHYSICAL_PRESENCE_FLAGS   PpiFlags;
++
++  Status = gBS->LocateProtocol (&gEfiTcgProtocolGuid, NULL, (VOID **)&TcgProtocol);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  Status = QemuTpmInitPPI12 ();
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_INFO, "[TPMPP] no PPI\n"));
++    return Status;
++  }
++  
++  //
++  // Check S4 resume
++  //
++  if (GetBootModeHob () == BOOT_ON_S4_RESUME) {
++    DEBUG ((DEBUG_INFO, "S4 Resume, Skip TPM PP process!\n"));
++    return EFI_SUCCESS;
++  }
++  
++  //
++  // Initialize physical presence flags.
++  //
++  DataSize = sizeof (EFI_PHYSICAL_PRESENCE_FLAGS);
++  Status   = gRT->GetVariable (
++                    PHYSICAL_PRESENCE_FLAGS_VARIABLE,
++                    &gEfiPhysicalPresenceGuid,
++                    NULL,
++                    &DataSize,
++                    &PpiFlags
++                    );
++  if (EFI_ERROR (Status)) {
++    PpiFlags.PPFlags = TCG_BIOS_TPM_MANAGEMENT_FLAG_NO_PPI_PROVISION;
++    Status           = gRT->SetVariable (
++                              PHYSICAL_PRESENCE_FLAGS_VARIABLE,
++                              &gEfiPhysicalPresenceGuid,
++                              EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
++                              sizeof (EFI_PHYSICAL_PRESENCE_FLAGS),
++                              &PpiFlags
++                              );
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_ERROR, "[TPM] Set physical presence flag failed, Status = %r\n", Status));
++      return Status;
++    }
++  }
++
++  DEBUG ((DEBUG_INFO, "[TPM] PpiFlags = %x\n", PpiFlags.PPFlags));
++
++  //
++  // This flags variable controls whether physical presence is required for TPM command.
++  // It should be protected from malicious software. We set it as read-only variable here.
++  //
++  //Status = gBS->LocateProtocol (&gEdkiiVariableLockProtocolGuid, NULL, (VOID **)&VariableLockProtocol);
++  //if (!EFI_ERROR (Status)) {
++  //Status = VariableLockProtocol->RequestToLock (
++  //                                   VariableLockProtocol,
++  //                                   PHYSICAL_PRESENCE_FLAGS_VARIABLE,
++  //                                   &gEfiPhysicalPresenceGuid
++  //                                   );
++  //  if (EFI_ERROR (Status)) {
++  //    DEBUG ((DEBUG_ERROR, "[TPM] Error when lock variable %s, Status = %r\n", PHYSICAL_PRESENCE_FLAGS_VARIABLE, Status));
++  //    ASSERT_EFI_ERROR (Status);
++  //  }
++  //}
++
++  //
++  // Initialize physical presence variable.
++  //
++  DataSize = sizeof (EFI_PHYSICAL_PRESENCE);
++  Status   = gRT->GetVariable (
++                    PHYSICAL_PRESENCE_VARIABLE,
++                    &gEfiPhysicalPresenceGuid,
++                    NULL,
++                    &DataSize,
++                    &TcgPpData
++                    );
++  if (EFI_ERROR (Status)) {
++    ZeroMem ((VOID *)&TcgPpData, sizeof (TcgPpData));
++    DataSize = sizeof (EFI_PHYSICAL_PRESENCE);
++    Status   = gRT->SetVariable (
++                      PHYSICAL_PRESENCE_VARIABLE,
++                      &gEfiPhysicalPresenceGuid,
++                      EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
++                      DataSize,
++                      &TcgPpData
++                      );
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_ERROR, "[TPM] Set physical presence variable failed, Status = %r\n", Status));
++      return Status;
++    }
++  }
++
++  //Align Variable with mPpi
++  if ((mPpi->Request != TcgPpData.PPRequest) || ( mPpi->LastRequest != TcgPpData.LastPPRequest) || ( mPpi->Response != TcgPpData.PPResponse)) {
++  	DEBUG ((DEBUG_INFO, "[TPM] Align variable to mPpi\n"));
++  	TcgPpData.PPRequest  	= mPpi->Request;
++  	TcgPpData.LastPPRequest = mPpi->LastRequest;
++  	TcgPpData.PPResponse 	= mPpi->Response;
++	
++  	DataSize = sizeof (EFI_PHYSICAL_PRESENCE);
++  	Status   = gRT->SetVariable (
++                      PHYSICAL_PRESENCE_VARIABLE,
++                      &gEfiPhysicalPresenceGuid,
++                      EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
++                      DataSize,
++                      &TcgPpData
++                      );
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_ERROR, "[TPM] Set physical presence variable failed, Status = %r\n", Status));
++      return Status;
++    }
++  }
++  DEBUG ((DEBUG_INFO, "[TPM] Flags=%x, PPRequest=%x\n", PpiFlags.PPFlags, TcgPpData.PPRequest));
++
++  if (TcgPpData.PPRequest == PHYSICAL_PRESENCE_NO_ACTION) {
++    //
++    // No operation request
++    //
++    return EFI_SUCCESS;
++  }
++
++  Status = GetTpmCapability (TcgProtocol, &LifetimeLock, &CmdEnable);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  if (!CmdEnable) {
++    if (LifetimeLock) {
++      //
++      // physicalPresenceCMDEnable is locked, can't execute physical presence command.
++      //
++      return EFI_DEVICE_ERROR;
++    }
++
++    Status = TpmPhysicalPresence (TcgProtocol, TPM_PHYSICAL_PRESENCE_CMD_ENABLE);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++  }
++
++  //
++  // Set operator physical presence flags
++  //
++  Status = TpmPhysicalPresence (TcgProtocol, TPM_PHYSICAL_PRESENCE_PRESENT);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  //
++  // Execute pending TPM request.
++  //
++  ExecutePendingTpmRequest (TcgProtocol, &TcgPpData, PpiFlags);
++  DEBUG ((DEBUG_INFO, "[TPM] PPResponse = %x\n", TcgPpData.PPResponse));
++
++  //
++  // Lock physical presence.
++  //
++  TpmPhysicalPresence (TcgProtocol, TPM_PHYSICAL_PRESENCE_NOTPRESENT | TPM_PHYSICAL_PRESENCE_LOCK);
++  
++  return EFI_SUCCESS;
++}
++
++/**
++  Check if the pending TPM request needs user input to confirm.
++
++  The TPM request may come from OS. This API will check if TPM request exists and need user
++  input to confirmation.
++
++  @retval    TRUE        TPM needs input to confirm user physical presence.
++  @retval    FALSE       TPM doesn't need input to confirm user physical presence.
++
++**/
++BOOLEAN
++EFIAPI
++TcgPhysicalPresenceLibNeedUserConfirm (
++  VOID
++  )
++{
++  EFI_STATUS                   Status;
++  EFI_PHYSICAL_PRESENCE        TcgPpData;
++  UINTN                        DataSize;
++  BOOLEAN                      RequestConfirmed;
++  BOOLEAN                      LifetimeLock;
++  BOOLEAN                      CmdEnable;
++  EFI_TCG_PROTOCOL             *TcgProtocol;
++  EFI_PHYSICAL_PRESENCE_FLAGS  PpiFlags;
++
++  Status = gBS->LocateProtocol (&gEfiTcgProtocolGuid, NULL, (VOID **)&TcgProtocol);
++  if (EFI_ERROR (Status)) {
++    return FALSE;
++  }
++
++  //
++  // Check Tpm requests
++  //
++  DataSize = sizeof (EFI_PHYSICAL_PRESENCE);
++  Status   = gRT->GetVariable (
++                    PHYSICAL_PRESENCE_VARIABLE,
++                    &gEfiPhysicalPresenceGuid,
++                    NULL,
++                    &DataSize,
++                    &TcgPpData
++                    );
++  if (EFI_ERROR (Status)) {
++    return FALSE;
++  }
++
++  DataSize = sizeof (EFI_PHYSICAL_PRESENCE_FLAGS);
++  Status   = gRT->GetVariable (
++                    PHYSICAL_PRESENCE_FLAGS_VARIABLE,
++                    &gEfiPhysicalPresenceGuid,
++                    NULL,
++                    &DataSize,
++                    &PpiFlags
++                    );
++  if (EFI_ERROR (Status)) {
++    return FALSE;
++  }
++
++  if (TcgPpData.PPRequest == PHYSICAL_PRESENCE_NO_ACTION) {
++    //
++    // No operation request
++    //
++    return FALSE;
++  }
++
++  if (!HaveValidTpmRequest (&TcgPpData, PpiFlags, &RequestConfirmed)) {
++    //
++    // Invalid operation request.
++    //
++    return FALSE;
++  }
++
++  //
++  // Check Tpm Capability
++  //
++  Status = GetTpmCapability (TcgProtocol, &LifetimeLock, &CmdEnable);
++  if (EFI_ERROR (Status)) {
++    return FALSE;
++  }
++
++  if (!CmdEnable) {
++    if (LifetimeLock) {
++      //
++      // physicalPresenceCMDEnable is locked, can't execute physical presence command.
++      //
++      return FALSE;
++    }
++  }
++
++  if (!RequestConfirmed) {
++    //
++    // Need UI to confirm
++    //
++    return TRUE;
++  }
++
++  return FALSE;
++}
++
++/**
++  The handler for TPM physical presence function:
++  Submit TPM Operation Request to Pre-OS Environment and
++  Submit TPM Operation Request to Pre-OS Environment 2.
++
++  Caution: This function may receive untrusted input.
++
++  @param[in]      OperationRequest TPM physical presence operation request.
++  @param[in]      RequestParameter TPM physical presence operation request parameter.
++
++  @return Return Code for Submit TPM Operation Request to Pre-OS Environment and
++          Submit TPM Operation Request to Pre-OS Environment 2.
++**/
++UINT32
++EFIAPI
++TcgPhysicalPresenceLibSubmitRequestToPreOSFunction (
++  IN UINT32  OperationRequest,
++  IN UINT32  RequestParameter
++  )
++{
++  EFI_STATUS     Status;
++
++  DEBUG ((DEBUG_INFO, "[TPMPP] SubmitRequestToPreOSFunction, Request = %x, %x\n", OperationRequest, RequestParameter));
++
++  Status = QemuTpmInitPPI12 ();
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_INFO, "[TPMPP] no PPI\n"));
++    return TCG_PP_SUBMIT_REQUEST_TO_PREOS_GENERAL_FAILURE;
++  }
++
++  mPpi->Request          = OperationRequest;
++  mPpi->RequestParameter = RequestParameter;
++  
++  Flush_PPI_Cache12(FALSE); //Need to flush mPpi to RAM.
++
++  return TCG_PP_SUBMIT_REQUEST_TO_PREOS_SUCCESS;
++}
+diff --git a/UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/DxeTcgPhysicalPresenceLib.inf b/UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/DxeTcgPhysicalPresenceLib.inf
+new file mode 100644
+index 0000000..af4f12e
+--- /dev/null
++++ b/UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/DxeTcgPhysicalPresenceLib.inf
+@@ -0,0 +1,74 @@
++## @file
++#  Executes pending TPM 1.2 requests from OS or BIOS and Locks TPM
++#
++#  This library will check and execute TPM 1.2 request from OS or BIOS. The request may
++#  ask for user confirmation before execution. This Library will also lock TPM physical
++#  presence at last.
++#
++#  It is a clone of
++#  "SecurityPkg/Library/DxeTcgPhysicalPresenceLib" with:
++#
++#  - add: access to QEMU_TPM_PPI structures
++#
++#  - TBD: Code cleanup to remove 
++#    PHYSICAL_PRESENCE*_VARIABLE variables, because we are using direct access to
++#    the QEMU structures.
++#
++#  Caution: This module requires additional review when modified.
++#  This driver will have external input - variable.
++#  This external input must be validated carefully to avoid security issue.
++#
++# Copyright (c) 2009 - 2018, Intel Corporation. All rights reserved.<BR>
++# SPDX-License-Identifier: BSD-2-Clause-Patent
++#
++##
++
++[Defines]
++  INF_VERSION                    = 0x00010005
++  BASE_NAME                      = DxeTcgPhysicalPresenceLib
++  MODULE_UNI_FILE                = DxeTcgPhysicalPresenceLib.uni
++  FILE_GUID                      = EBC43A46-34AC-4F07-A7F5-A5394619361C
++  MODULE_TYPE                    = DXE_DRIVER
++  VERSION_STRING                 = 1.0
++  LIBRARY_CLASS                  = TcgPhysicalPresenceLib|DXE_DRIVER DXE_RUNTIME_DRIVER UEFI_APPLICATION UEFI_DRIVER
++  CONSTRUCTOR                    = TcgPhysicalPresenceLibConstructor
++
++#
++# The following information is for reference only and not required by the build tools.
++#
++#  VALID_ARCHITECTURES           = IA32 X64 EBC
++#
++
++[Sources]
++  DxeTcgPhysicalPresenceLib.c
++  PhysicalPresenceStrings.uni
++
++[Packages]
++  MdePkg/MdePkg.dec
++  MdeModulePkg/MdeModulePkg.dec
++  OvmfPkg/OvmfPkg.dec  
++  SecurityPkg/SecurityPkg.dec
++
++[LibraryClasses]
++  MemoryAllocationLib
++  UefiLib
++  UefiBootServicesTableLib
++  UefiRuntimeServicesTableLib
++  BaseMemoryLib
++  DebugLib
++  PrintLib
++  HiiLib
++  TimerLib
++  Tcg2PhysicalPresencePlatformLib
++
++[Protocols]
++  gEfiTcgProtocolGuid                   ## SOMETIMES_CONSUMES
++  gEdkiiVariableLockProtocolGuid        ## SOMETIMES_CONSUMES
++
++[Guids]
++  ## SOMETIMES_CONSUMES ## HII
++  ## SOMETIMES_PRODUCES ## Variable:L"PhysicalPresence"
++  ## SOMETIMES_CONSUMES ## Variable:L"PhysicalPresence"
++  ## SOMETIMES_PRODUCES ## Variable:L"PhysicalPresenceFlags"
++  ## SOMETIMES_CONSUMES ## Variable:L"PhysicalPresenceFlags"
++  gEfiPhysicalPresenceGuid
+diff --git a/UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/DxeTcgPhysicalPresenceLib.uni b/UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/DxeTcgPhysicalPresenceLib.uni
+new file mode 100644
+index 0000000..c7fcca5
+--- /dev/null
++++ b/UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/DxeTcgPhysicalPresenceLib.uni
+@@ -0,0 +1,22 @@
++// /** @file
++// Executes pending TPM 1.2 requests from OS or BIOS and Locks TPM
++//
++// This library will check and execute TPM 1.2 request from OS or BIOS. The request may
++// ask for user confirmation before execution. This Library will also lock TPM physical
++// presence at last.
++//
++// Caution: This module requires additional review when modified.
++// This driver will have external input - variable.
++// This external input must be validated carefully to avoid security issue.
++//
++// Copyright (c) 2009 - 2018, Intel Corporation. All rights reserved.<BR>
++//
++// SPDX-License-Identifier: BSD-2-Clause-Patent
++//
++// **/
++
++
++#string STR_MODULE_ABSTRACT             #language en-US "Executes pending TPM 1.2 requests from OS or BIOS and Locks TPM"
++
++#string STR_MODULE_DESCRIPTION          #language en-US "This library will ask for user confirmation for the pending TPM physical present requests. Once confirmed, it will execute the request, and locks TPM physical presence at last. Caution: This module requires additional review when modified. This driver will have external input - variable. This external input must be validated carefully to avoid security issue."
++
+diff --git a/UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/PhysicalPresenceStrings.uni b/UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/PhysicalPresenceStrings.uni
+new file mode 100644
+index 0000000..b6ae881
+--- /dev/null
++++ b/UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/PhysicalPresenceStrings.uni
+@@ -0,0 +1,46 @@
++/** @file
++  String definitions for TPM 1.2 physical presence confirm text.
++
++Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved.<BR>
++(C) Copyright 2016 Hewlett Packard Enterprise Development LP<BR>
++SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#langdef en-US "English"
++
++#string TPM_HEAD_STR                  #language en-US    "A configuration change was requested to %s this computer's TPM (Trusted Platform Module)\n\n"
++#string TPM_PPI_HEAD_STR              #language en-US    "A configuration change was requested to allow the Operating System to %s the computer's TPM (Trusted Platform Module) without asking for user confirmation in the future.\n\n"
++#string TPM_UPGRADE_HEAD_STR          #language en-US    "A configuration change was requested to %s to the TPM's (Trusted Platform Module) firmware.\n\n"
++
++#string TPM_ACCEPT_KEY                #language en-US    "Press ENTER "
++#string TPM_CAUTION_KEY               #language en-US    "Press F12 "
++#string TPM_REJECT_KEY                #language en-US    "to %s the TPM \nPress ESC to reject this change request and continue\n"
++
++#string TPM_ENABLE                    #language en-US    "enable"
++#string TPM_DISABLE                   #language en-US    "disable"
++#string TPM_ACTIVATE                  #language en-US    "activate"
++#string TPM_DEACTIVATE                #language en-US    "deactivate"
++#string TPM_CLEAR                     #language en-US    "clear"
++#string TPM_ENABLE_ACTIVATE           #language en-US    "enable and activate"
++#string TPM_DEACTIVATE_DISABLE        #language en-US    "deactivate and disable"
++#string TPM_ALLOW_TAKE_OWNERSHIP      #language en-US    "allow a user to take ownership of"
++#string TPM_DISALLOW_TAKE_OWNERSHIP   #language en-US    "disallow a user to take ownership of"
++#string TPM_TURN_ON                   #language en-US    "enable, activate, and allow a user to take ownership of"
++#string TPM_TURN_OFF                  #language en-US    "deactivate, disable, and disallow a user to take ownership of"
++#string TPM_CLEAR_TURN_ON             #language en-US    "clear, enable, and activate"
++#string TPM_ENABLE_ACTIVATE_CLEAR     #language en-US    "enable, activate and clear"
++#string TPM_ENABLE_ACTIVATE_CLEAR_ENABLE_ACTIVATE        #language en-US    "enable, activate, clear, enable, and activate"
++#string TPM_UNOWNED_FIELD_UPGRADE     #language en-US    "allow field upgrade"
++
++#string TPM_NO_PPI_PROVISION          #language en-US    "provision"
++#string TPM_NO_PPI_MAINTAIN           #language en-US    "maintain"
++#string TPM_NO_PPI_INFO               #language en-US    "to approve future Operating System requests "
++
++#string TPM_WARNING_MAINTAIN          #language en-US    "WARNING: Allowing changes to the TPM's firmware may affect the operation of the TPM and may erase information stored on the TPM.\nYou may lose all created keys and access to data encrypted by these keys.\n\n"
++#string TPM_WARNING                   #language en-US    "WARNING: Doing so might prevent security applications that rely on the TPM from functioning as expected\n\n"
++#string TPM_WARNING_CLEAR             #language en-US    "WARNING: Clearing erases information stored on the TPM. You will lose all created keys and access to data encrypted by these keys. "
++#string TPM_WARNING_CLEAR_CONT        #language en-US    "Take ownership as soon as possible after this step.\n\n"
++#string TPM_NOTE_OFF                  #language en-US    "NOTE: This action will turn off the TPM\n\n"
++#string TPM_NOTE_ON                   #language en-US    "NOTE: This action will turn on the TPM\n\n"
++#string TPM_NOTE_CLEAR                #language en-US    "NOTE: This action does not clear the TPM, but by approving this configuration change, future actions to clear the TPM will not require user confirmation.\n\n"
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c b/UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c
+index 6f4ae20..131bb95 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c
++++ b/UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c
+@@ -44,6 +44,9 @@ ParseAcpiInfo (
+   DEBUG ((DEBUG_INFO, "Rsdp at 0x%p\n", Rsdp));
+   DEBUG ((DEBUG_INFO, "Rsdt at 0x%x, Xsdt at 0x%lx\n", Rsdp->RsdtAddress, Rsdp->XsdtAddress));
+ 
++  TPM2TablePresent = 0;
++  TCPATablePresent = 0;
++
+   //
+   // Search Rsdt First
+   //
+@@ -72,6 +75,10 @@ ParseAcpiInfo (
+       if (*Signature == EFI_ACPI_5_0_TRUSTED_COMPUTING_PLATFORM_ALLIANCE_CAPABILITIES_TABLE_SIGNATURE) {
+         TCPATablePresent = 1;
+       }
++
++     if ((Fadt != NULL) && (MmCfgHdr != NULL) && (TPM2TablePresent || TCPATablePresent ))   {
++        goto TpmDectectDone;
++      }
+     }
+   }
+ 
+@@ -101,6 +108,10 @@ ParseAcpiInfo (
+       if (*Signature == EFI_ACPI_5_0_TRUSTED_COMPUTING_PLATFORM_ALLIANCE_CAPABILITIES_TABLE_SIGNATURE) {
+         TCPATablePresent = 1;
+       }
++
++      if ((Fadt != NULL) && (MmCfgHdr != NULL) && (TPM2TablePresent || TCPATablePresent)) {
++        goto TpmDectectDone;
++      }
+     }
+   }
+ 
+@@ -108,6 +119,8 @@ ParseAcpiInfo (
+     return RETURN_NOT_FOUND;
+   }
+ 
++TpmDectectDone:
++
+   AcpiBoardInfo->TPM20Present = TPM2TablePresent;
+   AcpiBoardInfo->TPM12Present = TCPATablePresent;
+ 
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+index 921ce7d..bcfed6b 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+@@ -344,6 +344,8 @@ BuildHobFromBl (
+   SMMSTORE_INFO                     *NewSmmStoreInfo;
+   FIRMWARE_INFO                     FirmwareInfo;
+   FIRMWARE_INFO                     *NewFirmwareInfo;
++  TCG_PHYSICAL_PRESENCE_INFO        PhysicalPresenceInfo;
++  TCG_PHYSICAL_PRESENCE_INFO        *NewPhysicalPresenceInfo;
+   EFI_PEI_GRAPHICS_INFO_HOB         GfxInfo;
+   EFI_PEI_GRAPHICS_INFO_HOB         *NewGfxInfo;
+   EFI_PEI_GRAPHICS_DEVICE_INFO_HOB  GfxDeviceInfo;
+@@ -412,6 +414,17 @@ BuildHobFromBl (
+     DEBUG ((DEBUG_INFO, "Created firmware info hob\n"));
+   }
+ 
++  //
++  // Create guid hob for Tcg Physical Presence Interface
++  //
++  Status = ParseTPMPPIInfo (&PhysicalPresenceInfo);
++  if (!EFI_ERROR (Status)) {
++    NewPhysicalPresenceInfo = BuildGuidHob (&gEfiTcgPhysicalPresenceInfoHobGuid, sizeof (TCG_PHYSICAL_PRESENCE_INFO));
++    ASSERT (NewPhysicalPresenceInfo != NULL);
++    CopyMem (NewPhysicalPresenceInfo, &PhysicalPresenceInfo, sizeof (TCG_PHYSICAL_PRESENCE_INFO));
++    DEBUG ((DEBUG_INFO, "Created Tcg Physical Presence info hob\n"));
++  }
++
+   //
+   // Create SmBios table Hob
+   //
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.h b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.h
+index f314ffb..0d60920 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.h
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.h
+@@ -39,6 +39,7 @@
+ #include <Guid/PcdDataBaseSignatureGuid.h>
+ #include <Guid/FirmwareInfoGuid.h>
+ #include <Guid/SmmStoreInfoGuid.h>
++#include <Guid/TcgPhysicalPresenceGuid.h>
+ 
+ #define LEGACY_8259_MASK_REGISTER_MASTER  0x21
+ #define LEGACY_8259_MASK_REGISTER_SLAVE   0xA1
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
+index 56489cb..11198c0 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
+@@ -72,6 +72,7 @@
+   gUniversalPayloadSerialPortInfoGuid
+   gEfiFirmwareInfoHobGuid
+   gEfiSmmStoreInfoHobGuid
++  gEfiTcgPhysicalPresenceInfoHobGuid
+ 
+ [FeaturePcd.IA32]
+   gEfiMdeModulePkgTokenSpaceGuid.PcdDxeIplSwitchToLongMode      ## CONSUMES
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
+index 2e13500..a845c38 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dec
++++ b/UefiPayloadPkg/UefiPayloadPkg.dec
+@@ -50,6 +50,8 @@
+   gEfiSmmStoreInfoHobGuid  = { 0xf585ca19, 0x881b, 0x44fb, { 0x3f, 0x3d, 0x81, 0x89, 0x7c, 0x57, 0xbb, 0x01 } }
+   gEfiFirmwareInfoHobGuid  = { 0xe0653829, 0x274e, 0x4b1e, { 0x87, 0x2d, 0xa2, 0x20, 0xf5, 0xaf, 0x8f, 0x3d } }
+ 
++  gEfiTcgPhysicalPresenceInfoHobGuid = { 0xf367be59, 0x5891, 0x40eb, { 0x21, 0x44, 0xed, 0x2e, 0xac, 0x57, 0xfd, 0x14 }}
++
+ [Ppis]
+   gEfiPayLoadHobBasePpiGuid = { 0xdbe23aa1, 0xa342, 0x4b97, {0x85, 0xb6, 0xb2, 0x26, 0xf1, 0x61, 0x73, 0x89} }
+ 
+-- 
+2.43.0
+

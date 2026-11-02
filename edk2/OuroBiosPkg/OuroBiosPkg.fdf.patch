@@ -27,3 +27,20 @@
  !endif
  
  ################################################################################
+@@ -327,6 +337,16 @@
+ !endif
+ 
+ #
++# TPM support (MrChromebox's c111515)
++#
++!if $(TPM_ENABLE) == TRUE
++INF  SecurityPkg/Tcg/TcgDxe/TcgDxe.inf
++INF  SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf
++INF  SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf
++INF  SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigDxe.inf
++!endif
++
++#
+ # Usb Support
+ #
+ INF MdeModulePkg/Bus/Pci/UhciDxe/UhciDxe.inf

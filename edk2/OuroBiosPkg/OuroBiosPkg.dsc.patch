@@ -33,7 +33,7 @@
    PCD_DYNAMIC_AS_DYNAMICEX            = TRUE
  
    DEFINE SOURCE_DEBUG_ENABLE          = FALSE
-@@ -171,7 +179,12 @@
+@@ -171,7 +179,19 @@
    #
    # Security
    #
@@ -44,10 +44,54 @@
 +  # keys come with the provisioning of the package
 +  #
 +  DEFINE SECURE_BOOT_ENABLE       = TRUE
++  #
++  # TPM 1.2 and 2.0, as in the payload of the W541 (a TPM 1.2) and of the
++  # M920x (a TPM 2.0): MrChromebox's c111515, patches/tianocore/0004-0005
++  #
++  DEFINE TPM_ENABLE               = TRUE
++  DEFINE TPM2_ENABLE              = TRUE
++  DEFINE TPM1_ENABLE              = TRUE
  
    #
    # Flat DeviceTree handoff option:
-@@ -598,6 +611,10 @@
+@@ -377,12 +397,36 @@
+ !if $(VARIABLE_SUPPORT) == "EMU"
+   TpmMeasurementLib|MdeModulePkg/Library/TpmMeasurementLibNull/TpmMeasurementLibNull.inf
+ !elseif $(VARIABLE_SUPPORT) == "SMMSTORE"
++!if $(TPM_ENABLE) == TRUE
++  TpmMeasurementLib|SecurityPkg/Library/DxeTpmMeasurementLib/DxeTpmMeasurementLib.inf
++!else
+   TpmMeasurementLib|MdeModulePkg/Library/TpmMeasurementLibNull/TpmMeasurementLibNull.inf
++!endif
+ !elseif $(VARIABLE_SUPPORT) == "SPI"
+   PlatformSecureLib|SecurityPkg/Library/PlatformSecureLibNull/PlatformSecureLibNull.inf
+   TpmMeasurementLib|SecurityPkg/Library/DxeTpmMeasurementLib/DxeTpmMeasurementLib.inf
+   S3BootScriptLib|MdePkg/Library/BaseS3BootScriptLibNull/BaseS3BootScriptLibNull.inf
+   MmUnblockMemoryLib|MdePkg/Library/MmUnblockMemoryLib/MmUnblockMemoryLibNull.inf
++!endif
++
++#
++# The TPM (c111515, with the Tpm2HelpLib of 5dc4840); PlatformBootManagerLib
++# processes the physical presence requests, also without a TPM
++#
++!if $(TPM_ENABLE) == TRUE
++  Tpm12CommandLib|SecurityPkg/Library/Tpm12CommandLib/Tpm12CommandLib.inf
++  TcgPhysicalPresenceLib|UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/DxeTcgPhysicalPresenceLib.inf
++  TcgPpVendorLib|SecurityPkg/Library/TcgPpVendorLibNull/TcgPpVendorLibNull.inf
++  Tpm2CommandLib|SecurityPkg/Library/Tpm2CommandLib/Tpm2CommandLib.inf
++  Tpm2HelpLib|SecurityPkg/Library/Tpm2HelpLib/Tpm2HelpLib.inf
++  Tcg2PhysicalPresenceLib|UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresenceLib.inf
++  Tcg2PhysicalPresencePlatformLib|UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresencePlatformLib.inf
++  Tcg2PpVendorLib|SecurityPkg/Library/Tcg2PpVendorLibNull/Tcg2PpVendorLibNull.inf
++  Tpm12DeviceLib|SecurityPkg/Library/Tpm12DeviceLibTcg/Tpm12DeviceLibTcg.inf
++  Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibTcg2/Tpm2DeviceLibTcg2.inf
++!else
++  TcgPhysicalPresenceLib|UefiPayloadPkg/Library/TcgPhysicalPresenceLibNull/DxeTcgPhysicalPresenceLib.inf
++  Tcg2PhysicalPresenceLib|OvmfPkg/Library/Tcg2PhysicalPresenceLibNull/DxeTcg2PhysicalPresenceLib.inf
+ !endif
+ !if $(VARIABLE_SUPPORT) == "SMMSTORE" || ($(CAPSULE_SUPPORT) && $(BOOTLOADER) == "COREBOOT")
+   SmmStoreLib|UefiPayloadPkg/Library/SmmStoreLib/SmmStoreLib.inf
+@@ -598,6 +642,10 @@
    gUefiCpuPkgTokenSpaceGuid.PcdCpuSmmEnableBspElection|FALSE
  
  [PcdsFixedAtBuild]
@@ -58,3 +102,58 @@
    gEfiMdePkgTokenSpaceGuid.PcdHardwareErrorRecordLevel|1
    gEfiMdeModulePkgTokenSpaceGuid.PcdMaxVariableSize|0x10000
    gEfiMdeModulePkgTokenSpaceGuid.PcdMaxHardwareErrorVariableSize|0x8000
+@@ -839,6 +887,21 @@
+   gEfiMdeModulePkgTokenSpaceGuid.PcdTestKeyUsed|FALSE
+   gUefiCpuPkgTokenSpaceGuid.PcdSevEsIsEnabled|0
+   gEfiMdeModulePkgTokenSpaceGuid.PcdPciDisableBusEnumeration|TRUE
++
++!if $(TPM_ENABLE) == TRUE
++  ## Patched by BlSupportDxe
++  gEfiSecurityPkgTokenSpaceGuid.PcdTpmInstanceGuid|{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
++  gEfiSecurityPkgTokenSpaceGuid.PcdTpmInitializationPolicy|0
++  ## Match the hash algorithms listed in Tcg2Dxe
++  gEfiSecurityPkgTokenSpaceGuid.PcdTcg2HashAlgorithmBitmap|0x1F
++  gEfiSecurityPkgTokenSpaceGuid.PcdTpmPhysicalPresence|TRUE
++!endif
++
++[PcdsDynamicHii]
++!if $(TPM2_ENABLE) == TRUE
++  gEfiSecurityPkgTokenSpaceGuid.PcdTcgPhysicalPresenceInterfaceVer|L"TCG2_VERSION"|gTcg2ConfigFormSetGuid|0x0|"1.3"|NV,BS
++  gEfiSecurityPkgTokenSpaceGuid.PcdTpm2AcpiTableRev|L"TCG2_VERSION"|gTcg2ConfigFormSetGuid|0x8|4|NV,BS
++!endif
+ 
+ [PcdsDynamicExDefault.IA32, PcdsDynamicExDefault.X64]
+   gPcAtChipsetPkgTokenSpaceGuid.PcdRtcIndexRegister|$(RTC_INDEX_REGISTER)
+@@ -1202,6 +1265,32 @@
+ !endif
+ !endif
+ 
++!if $(TPM_ENABLE) == TRUE
++  SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf {
++    <LibraryClasses>
++      Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibRouter/Tpm2DeviceLibRouterDxe.inf
++      NULL|SecurityPkg/Library/Tpm2DeviceLibDTpm/Tpm2InstanceLibDTpm.inf
++      HashLib|SecurityPkg/Library/HashLibBaseCryptoRouter/HashLibBaseCryptoRouterDxe.inf
++      NULL|SecurityPkg/Library/HashInstanceLibSha1/HashInstanceLibSha1.inf
++      NULL|SecurityPkg/Library/HashInstanceLibSha256/HashInstanceLibSha256.inf
++      NULL|SecurityPkg/Library/HashInstanceLibSha384/HashInstanceLibSha384.inf
++      NULL|SecurityPkg/Library/HashInstanceLibSha512/HashInstanceLibSha512.inf
++      NULL|SecurityPkg/Library/HashInstanceLibSm3/HashInstanceLibSm3.inf
++  }
++  SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigDxe.inf {
++    <LibraryClasses>
++      Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibTcg2/Tpm2DeviceLibTcg2.inf
++  }
++  SecurityPkg/Tcg/TcgDxe/TcgDxe.inf {
++    <LibraryClasses>
++      Tpm12DeviceLib|SecurityPkg/Library/Tpm12DeviceLibDTpm/Tpm12DeviceLibDTpm.inf
++  }
++  SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf {
++    <LibraryClasses>
++      Tpm12DeviceLib|SecurityPkg/Library/Tpm12DeviceLibTcg/Tpm12DeviceLibTcg.inf
++  }
++!endif
++
+ [Components.X64]
+   UefiCpuPkg/CpuDxe/CpuDxe.inf
+ 

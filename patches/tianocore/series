@@ -4,3 +4,5 @@
 0001-UefiPayloadPkg-SmmStoreFvb-Format-the-store-for-auth.patch
 0002-UefiPayloadPkg-SmmStoreLib-The-com-buffer-as-runtime.patch
 0003-UefiPayloadPkg-SmmStoreLib-The-arguments-in-the-com-.patch
+0004-UefiPayloadPkg-Check-more-ACPI-tables.patch
+0005-UefiPayloadPkg-SecurityPkg-OvmfPkg-Add-TPM-1.2-2.0-s.patch

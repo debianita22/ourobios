@@ -1761,7 +1761,7 @@ fi
 k="$(files | grep -i 'opvk' | grep -vx 'blobs/opvk.inc' || true)"
 if [ -n "${k}" ]; then bad "altri file della chiave nel repository: ${k}"; else ok "nessun altro opvk.inc"; fi
 if grep -q '^+++ b/.*opvk\.inc' patches/optional/*.patch patches/*.patch patches/edk2/*.patch patches/lvglpkg/*.patch \
-	patches/test/*.patch 2>/dev/null; then
+	patches/tianocore/*.patch patches/test/*.patch 2>/dev/null; then
 	bad "una patch crea opvk.inc"
 else
 	ok "nessuna patch crea opvk.inc"
