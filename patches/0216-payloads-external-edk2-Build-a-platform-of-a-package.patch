@@ -1,0 +1,111 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 2 Nov 2026 19:05:00 +0100
+Subject: [PATCH] payloads/external/edk2: Build a platform of a package outside
+ the tree
+
+The Makefile builds UefiPayloadPkg/UefiPayloadPkg.dsc of the edk2 tree
+it cloned, with that tree alone in PACKAGES_PATH. A platform that keeps
+its own modules and settings in a package outside the tree, and builds
+against the upstream tree as it is, has no way in: its .dsc is neither
+in the tree nor in PACKAGES_PATH.
+
+EDK2_PLATFORM_DSC names the .dsc to build, UefiPayloadPkg's by default,
+and EDK2_PACKAGES_PATH the directories to look in before the edk2 tree,
+none by default: with the defaults the build is what it was. Such a
+platform keeps the output directory and the flash device of
+UefiPayloadPkg, which the rest of the Makefile reads. The two options
+go to the edk2 Makefile with the others, for the payload and for the
+capsule keys.
+
+TEST=make print in payloads/external/edk2, with the defaults (Packages
+path the edk2 tree, Payload UefiPayloadPkg/UefiPayloadPkg.dsc, as
+before) and with EDK2_PLATFORM_DSC="OuroBiosPkg/OuroBiosPkg.dsc" and
+EDK2_PACKAGES_PATH="/w/edk2-packages" (that directory before the tree,
+the package's .dsc). The q35 image of ouroBIOS's tools/build.sh
+edk2-upstream built from OuroBiosPkg outside the tree.
+---
+ payloads/external/Makefile.mk   |  4 ++++
+ payloads/external/edk2/Kconfig  | 19 +++++++++++++++++++
+ payloads/external/edk2/Makefile |  9 ++++++++-
+ 3 files changed, 31 insertions(+), 1 deletion(-)
+
+diff --git a/payloads/external/Makefile.mk b/payloads/external/Makefile.mk
+index 2ad8a9d6..7cfa0990 100644
+--- a/payloads/external/Makefile.mk
++++ b/payloads/external/Makefile.mk
+@@ -191,6 +191,8 @@ EDK2_CAPSULE_ARGS = \
+ 	CONFIG_EDK2_USE_EDK2_PLATFORMS=$(CONFIG_EDK2_USE_EDK2_PLATFORMS) \
+ 	CONFIG_EDK2_PLATFORMS_REPOSITORY=$(CONFIG_EDK2_PLATFORMS_REPOSITORY) \
+ 	CONFIG_EDK2_PLATFORMS_TAG_OR_REV=$(CONFIG_EDK2_PLATFORMS_TAG_OR_REV) \
++	CONFIG_EDK2_PLATFORM_DSC=$(CONFIG_EDK2_PLATFORM_DSC) \
++	CONFIG_EDK2_PACKAGES_PATH=$(CONFIG_EDK2_PACKAGES_PATH) \
+ 	CONFIG_EDK2_DEBUG=$(CONFIG_EDK2_DEBUG) \
+ 	CONFIG_DRIVERS_EFI_MAIN_FW_GUID=$(CONFIG_DRIVERS_EFI_MAIN_FW_GUID) \
+ 	CONFIG_LOCALVERSION=$(CONFIG_LOCALVERSION) \
+@@ -220,6 +222,8 @@ EDK2_PAYLOAD_ARGS = \
+ 	CONFIG_EDK2_USE_EDK2_PLATFORMS=$(CONFIG_EDK2_USE_EDK2_PLATFORMS) \
+ 	CONFIG_EDK2_PLATFORMS_REPOSITORY=$(CONFIG_EDK2_PLATFORMS_REPOSITORY) \
+ 	CONFIG_EDK2_PLATFORMS_TAG_OR_REV=$(CONFIG_EDK2_PLATFORMS_TAG_OR_REV) \
++	CONFIG_EDK2_PLATFORM_DSC=$(CONFIG_EDK2_PLATFORM_DSC) \
++	CONFIG_EDK2_PACKAGES_PATH=$(CONFIG_EDK2_PACKAGES_PATH) \
+ 	CONFIG_EDK2_DEBUG=$(CONFIG_EDK2_DEBUG) \
+ 	CONFIG_EDK2_RELEASE=$(CONFIG_EDK2_RELEASE) \
+ 	CONFIG_EDK2_BOOTSPLASH_FILE=$(CONFIG_EDK2_BOOTSPLASH_FILE) \
+diff --git a/payloads/external/edk2/Kconfig b/payloads/external/edk2/Kconfig
+index acb29c5b..79c5e30a 100644
+--- a/payloads/external/edk2/Kconfig
++++ b/payloads/external/edk2/Kconfig
+@@ -114,6 +114,25 @@ config EDK2_PLATFORMS_TAG_OR_REV
+ 
+ endif
+ 
++config EDK2_PLATFORM_DSC
++	string "edk2 platform description file to build"
++	default "UefiPayloadPkg/UefiPayloadPkg.dsc"
++	depends on EDK2_UEFIPAYLOAD
++	help
++	  The platform (.dsc) that the edk2 build builds, relative to a directory of
++	  PACKAGES_PATH: the edk2 tree, or one of EDK2_PACKAGES_PATH for a platform of a
++	  package outside it. Such a platform takes the -D options that coreboot passes to
++	  UefiPayloadPkg, and keeps its output directory and its flash device:
++	  Build/UefiPayloadPkgX64 and UEFIPAYLOAD.fd.
++
++config EDK2_PACKAGES_PATH
++	string "Directories of edk2 packages outside the edk2 tree"
++	default ""
++	help
++	  Absolute paths, separated by colons, put before the edk2 tree in PACKAGES_PATH:
++	  where the edk2 build finds EDK2_PLATFORM_DSC and the packages of its modules that
++	  are not in the edk2 tree. Empty: the edk2 tree only.
++
+ choice
+ 	prompt "edk2 build"
+ 	default EDK2_RELEASE
+diff --git a/payloads/external/edk2/Makefile b/payloads/external/edk2/Makefile
+index 56951811..54492a74 100644
+--- a/payloads/external/edk2/Makefile
++++ b/payloads/external/edk2/Makefile
+@@ -34,11 +34,18 @@ else
+ export PACKAGES_PATH := $(EDK2_PATH)
+ endif
+ 
++# Packages outside the edk2 tree, looked up before it
++EDK2_EXTRA_PACKAGES_PATH := $(call strip_quotes,$(CONFIG_EDK2_PACKAGES_PATH))
++ifneq ($(EDK2_EXTRA_PACKAGES_PATH),)
++export PACKAGES_PATH := $(EDK2_EXTRA_PACKAGES_PATH):$(PACKAGES_PATH)
++endif
++EDK2_PLATFORM_DSC := $(or $(call strip_quotes,$(CONFIG_EDK2_PLATFORM_DSC)),UefiPayloadPkg/UefiPayloadPkg.dsc)
++
+ EDK2_UEFIPAYLOAD_OUT ?= ../../../build/UEFIPAYLOAD.fd
+ EDK2_UNIVERSAL_PAYLOAD_OUT ?= ../../../build/UniversalPayload.fit
+ 
+ ifeq ($(CONFIG_EDK2_UEFIPAYLOAD),y)
+-BUILD_STR += -p UefiPayloadPkg/UefiPayloadPkg.dsc
++BUILD_STR += -p $(EDK2_PLATFORM_DSC)
+ endif
+ BUILD_STR += -t GCC
+ BUILD_STR += -D BOOTLOADER=COREBOOT
+-- 
+2.43.0
+

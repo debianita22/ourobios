@@ -2142,7 +2142,7 @@ step "fine riga delle patch di EDK2"
 # nell'ultimo commit aveva righe CRLF e ora non ne ha piu' (nella CI i
 # file sono quelli del commit, e le patch le applica check.yml)
 n=0
-for f in patches/edk2/*.patch; do
+for f in patches/edk2/*.patch edk2/OuroBiosPkg/*.patch edk2/OuroBiosPkg/*.dec; do
 	git cat-file -e "HEAD:${f}" 2>/dev/null || continue
 	before="$(git show "HEAD:${f}" | grep -c $'\r$' || true)"
 	now="$(grep -c $'\r$' "${f}" || true)"
@@ -2152,7 +2152,7 @@ for f in patches/edk2/*.patch; do
 		n=$((n + 1))
 	fi
 done
-ok "patches/edk2: ${n} patch con le loro righe CRLF come nell'ultimo commit"
+ok "patches/edk2 e edk2/OuroBiosPkg: ${n} file con le loro righe CRLF come nell'ultimo commit"
 
 step "commit pinnati dal mirror (pinned_commit di tools/build.sh)"
 # Un repository "upstream" che non ha piu' il commit pinnato (riscritto) e

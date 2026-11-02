@@ -209,3 +209,4 @@
 0213-sb-intel-lynxpoint-Route-all-ports-to-xHCI-only-befo.patch
 0214-acpi-Add-the-Windows-SMM-Security-Mitigations-Table-.patch
 0215-drivers-smmstore-Option-to-take-the-parameters-only-.patch
+0216-payloads-external-edk2-Build-a-platform-of-a-package.patch

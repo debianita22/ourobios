@@ -1,2 +1,5 @@
 # Le patch di EDK2 hanno righe CRLF (i file di EDK2): nessuna conversione
 patches/** -text
+# Il package per EDK II (edk2/OuroBiosPkg): CRLF come i file di EDK II, e le
+# patch del suo .dsc con le righe di quello di UefiPayloadPkg
+edk2/** -text

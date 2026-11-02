@@ -65,7 +65,8 @@
 #                  W541 non c'entrano. Seriale in WORK/update-test/out
 #   edk2-upstream  la prima fase del passaggio a EDK II di TianoCore: il
 #                  payload di EDK2_UPSTREAM_TAG senza patch in una ROM per
-#                  QEMU q35 (e in una seconda con SECURE_BOOT_ENABLE), e i
+#                  QEMU q35 (e in una seconda con SECURE_BOOT_ENABLE, in una
+#                  terza dal package del progetto, edk2/OuroBiosPkg), e i
 #                  passi della prova di fumo che non chiedono il setup del
 #                  progetto (tools/qemu-smoke.py --upstream); le lacune note
 #                  in EDK2_UPSTREAM_GAPS. Esito in WORK/edk2-upstream; mai
@@ -2058,6 +2059,28 @@ prepare_edk2_upstream() {
 # spostati come da boot.efi di macOS, le misure nel log del TPM. Dice cosa
 # manca prima del setup, di Secure Boot e delle capsule. Mai in una release:
 # build in build-q35-tianocore dell'albero, esito in WORK/edk2-upstream
+# Il package del progetto per EDK II di TianoCore (docs/edk2-migration.md,
+# "Step (b)") in WORK/edk2-packages, la cartella che va in PACKAGES_PATH
+# (CONFIG_EDK2_PACKAGES_PATH, patch 0216): edk2/OuroBiosPkg, dove ogni
+# OuroBiosPkg.<ext>.patch e' applicata a UefiPayloadPkg.<ext> dell'albero di
+# TianoCore e da' OuroBiosPkg.<ext> (il .dsc, l'.fdf quando servira'), una
+# patch che non applica piu' a un tag nuovo si ferma qui
+edk2_package() {
+	local tiano="${TREE}/${EDK2_UPSTREAM_SUBDIR}" dst="${WORK}/edk2-packages" p e
+	rm -rf "${dst:?}"
+	mkdir -p "${dst}"
+	cp -r "${O}/edk2/OuroBiosPkg" "${dst}/"
+	for p in "${dst}"/OuroBiosPkg/OuroBiosPkg.*.patch; do
+		[ -e "${p}" ] || continue
+		e="${p%.patch}"
+		e="${e##*.}"
+		cp "${tiano}/UefiPayloadPkg/UefiPayloadPkg.${e}" "${dst}/OuroBiosPkg/OuroBiosPkg.${e}"
+		(cd "${dst}/OuroBiosPkg" && git apply -p1 "${p}") \
+			|| die "edk2-upstream: ${p##*/} non applica a UefiPayloadPkg.${e} di ${EDK2_UPSTREAM_TAG}"
+		rm -f "${p}"
+	done
+}
+
 # Una ROM per QEMU q35 con il payload di EDK2_UPSTREAM_TAG in build-$1
 # dell'albero; le altre righe ($2...) vanno nel suo defconfig. Torna 1 se
 # la build non riesce (il resto di edk2-upstream va avanti)
@@ -2107,7 +2130,7 @@ edk2_upstream_rom() {
 
 cmd_edk2_upstream() {
 	need_prepared
-	local t q b sb reloc pcrs g
+	local t q b sb pkg reloc pcrs g
 	local gaps=() bad=()
 	for t in qemu-system-x86_64 mformat mmd mcopy clang ld.lld swtpm; do
 		command -v "${t}" > /dev/null \
@@ -2136,6 +2159,16 @@ cmd_edk2_upstream() {
 		bad+=("la build con SECURE_BOOT_ENABLE (build-${q}-sb/make.log nell'albero)")
 		sb=""
 	fi
+	# e una terza dal package del progetto fuori dall'albero (edk2/OuroBiosPkg,
+	# la fase (b)), con il .dsc di UefiPayloadPkg e le sue patch
+	pkg="${TREE}/build-${q}-pkg"
+	say "edk2-upstream: la stessa da edk2/OuroBiosPkg, fuori dall'albero di EDK II"
+	edk2_package
+	if ! edk2_upstream_rom "${q}-pkg" "CONFIG_EDK2_PLATFORM_DSC=\"OuroBiosPkg/OuroBiosPkg.dsc\"" \
+		"CONFIG_EDK2_PACKAGES_PATH=\"${WORK}/edk2-packages\""; then
+		bad+=("la build da edk2/OuroBiosPkg (build-${q}-pkg/make.log nell'albero)")
+		pkg=""
+	fi
 	reloc="${WORK}/rt-reloc-test.efi"
 	efi_app "${O}/tools/efi/rt-reloc-test.c" "${reloc}" || die "edk2-upstream: tools/efi/rt-reloc-test.c non compila"
 	pcrs="${WORK}/tpm-pcr-test.efi"
@@ -2149,6 +2182,18 @@ cmd_edk2_upstream() {
 	python3 "${O}/tools/qemu-smoke.py" --upstream --out "${WORK}/edk2-upstream" --reloc-test "${reloc}" \
 		--tpm "${pcrs}" ${sb:+--auth-rom "${sb}/coreboot.rom"} "${gaps[@]}" "${b}/coreboot.rom" \
 		|| bad+=("qualche passo non passa con ${EDK2_UPSTREAM_TAG} (${WORK}/edk2-upstream)")
+	if [ -n "${pkg}" ]; then
+		# gli stessi passi e le stesse lacune, senza la ROM con Secure Boot
+		gaps=()
+		for g in "${EDK2_UPSTREAM_GAPS[@]}"; do
+			[ "${g%%:*}" != "variabili autenticate" ] || continue
+			gaps+=(--gap "${g}")
+		done
+		say "edk2-upstream: QEMU con edk2/OuroBiosPkg"
+		python3 "${O}/tools/qemu-smoke.py" --upstream --out "${WORK}/edk2-upstream/pkg" --reloc-test "${reloc}" \
+			--tpm "${pcrs}" "${gaps[@]}" "${pkg}/coreboot.rom" \
+			|| bad+=("qualche passo non passa con edk2/OuroBiosPkg (${WORK}/edk2-upstream/pkg)")
+	fi
 	if [ ${#bad[@]} -ne 0 ]; then
 		for g in "${bad[@]}"; do echo "  NO  ${g}"; done
 		die "edk2-upstream: ${bad[0]}$([ ${#bad[@]} -eq 1 ] || echo " (e altro: sopra)")"

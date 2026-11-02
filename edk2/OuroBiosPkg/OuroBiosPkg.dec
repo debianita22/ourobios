@@ -1,0 +1,14 @@
+## @file
+# OuroBiosPkg: the modules and the platform of the payload of ouroBIOS,
+# built against EDK II of TianoCore (docs/edk2-migration.md in ouroBIOS,
+# "Step (b)").
+#
+# SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+##
+
+[Defines]
+  DEC_SPECIFICATION              = 0x00010005
+  PACKAGE_NAME                   = OuroBiosPkg
+  PACKAGE_GUID                   = 2201540D-F8BE-4411-A3BE-5549BE0F5B19
+  PACKAGE_VERSION                = 0.1

@@ -1,0 +1,33 @@
+--- a/OuroBiosPkg.dsc
++++ b/OuroBiosPkg.dsc
+@@ -1,4 +1,8 @@
+ ## @file
++# OuroBiosPkg: the platform of the payload of ouroBIOS. tools/build.sh of
++# ouroBIOS makes it from UefiPayloadPkg.dsc of the edk2 tree it builds
++# with and OuroBiosPkg.dsc.patch; what it changes is in the patch.
++#
+ # Bootloader Payload Package
+ #
+ # Provides drivers and definitions to create uefi payload for bootloaders.
+@@ -18,14 +22,19 @@
+ #
+ ################################################################################
+ [Defines]
+-  PLATFORM_NAME                       = UefiPayloadPkg
+-  PLATFORM_GUID                       = F71608AB-D63D-4491-B744-A99998C8CD96
++  PLATFORM_NAME                       = OuroBiosPkg
++  PLATFORM_GUID                       = AB7906A6-F812-40C8-ABF4-25E075FF67C3
+   PLATFORM_VERSION                    = 0.1
+   DSC_SPECIFICATION                   = 0x00010005
+   SUPPORTED_ARCHITECTURES             = IA32|X64|AARCH64
+   BUILD_TARGETS                       = DEBUG|RELEASE|NOOPT
+   SKUID_IDENTIFIER                    = DEFAULT
+   BUILD_ARCH                          = Legacy
++  #
++  # coreboot's payloads/external/edk2/Makefile takes the flash device from
++  # the output directory of UefiPayloadPkg; the flash device is the one of
++  # UefiPayloadPkg until the package needs one of its own
++  #
+   OUTPUT_DIRECTORY                    = Build/UefiPayloadPkg$(BUILD_ARCH)
+   FLASH_DEFINITION                    = UefiPayloadPkg/UefiPayloadPkg.fdf
+   PCD_DYNAMIC_AS_DYNAMICEX            = TRUE
