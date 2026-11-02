@@ -92,6 +92,9 @@ IFD_LABELS = {
 }
 
 # le licenze: SPDX dove e' certa, altrimenti il nome (CycloneDX: license.name)
+# La piattaforma del package del progetto su TianoCore (EDK2_PACKAGE_CONFIG
+# di tools/build.sh)
+PACKAGE_DSC = "OuroBiosPkg/OuroBiosPkg.dsc"
 LIC = {
     "coreboot": ("id", "GPL-2.0-only"),
     "vboot": ("id", "BSD-3-Clause"),
@@ -593,10 +596,15 @@ def parse_layout(text):
         if m:
             lay["coreboot_describe"], lay["coreboot_commit"], lay["coreboot_patches"] = \
                 m.group(1), m.group(2), int(m.group(3))
-        m = re.match(r"^EDK2 ([0-9a-f]{7,40}) \+ (\d+) patches.*?LvglPkg \+ (\d+) patches", line)
+        # l'EDK2 di MrChromebox con patches/edk2, o (dalla v1.6.0) TianoCore al
+        # tag con patches/tianocore e il package, da un commit di MrChromebox
+        m = re.match(r"^EDK2 ([0-9a-f]{7,40})(?: \(TianoCore (\S+)\))? \+ (\d+) patches"
+                     r"(?:.*?from MrChromebox ([0-9a-f]{40}))?.*?LvglPkg(?: ([0-9a-f]{40}))? \+ (\d+) patches", line)
         if m:
             lay["edk2_rev"], lay["edk2_patches"], lay["lvgl_patches"] = \
-                m.group(1), int(m.group(2)), int(m.group(3))
+                m.group(1), int(m.group(3)), int(m.group(6))
+            if m.group(2):
+                lay["edk2_tag"], lay["edk2_from"], lay["lvgl_commit"] = m.group(2), m.group(4), m.group(5)
         m = re.match(r"^iPXE ([0-9a-f]{40}), CSMWrap ([0-9a-f]{40}) \(SeaBIOS ([0-9a-f]{40}|\?)\)", line)
         if m:
             lay["ipxe_commit"], lay["csmwrap_commit"] = m.group(1), m.group(2)
@@ -639,11 +647,13 @@ def shell_value(text, name):
     return None
 
 
-def repo_info(repo, part_number):
+def repo_info(repo, part_number, package=False):
     """Dal clone di ouroBIOS: patch, pin di tools/build.sh e la board con
-    quel BOARD_NAME (boards/*/board.sh)."""
+    quel BOARD_NAME (boards/*/board.sh). Con package, le patch di EDK2 sono
+    quelle di patches/tianocore (il payload dal package su TianoCore)."""
     info = {"dir": repo}
-    for key, path in (("coreboot_patches", "patches/series"), ("edk2_patches", "patches/edk2/series"),
+    for key, path in (("coreboot_patches", "patches/series"),
+                      ("edk2_patches", "patches/tianocore/series" if package else "patches/edk2/series"),
                       ("lvgl_patches", "patches/lvglpkg/series")):
         n = series_count(os.path.join(repo, path))
         if n is not None:
@@ -865,7 +875,8 @@ def analyze(a):
     info["layout_source"] = os.path.basename(lay_path) if lay_path else None
     info["layout"] = lay
 
-    repo = repo_info(a.repo, info["part"]) if a.repo else None
+    repo = repo_info(a.repo, info["part"], package=cfg.get("CONFIG_EDK2_PLATFORM_DSC") == PACKAGE_DSC) \
+        if a.repo else None
     info["repo"] = repo
     if repo:
         for k in ("coreboot_commit", "coreboot_describe", "ipxe_commit", "csmwrap_commit",
@@ -1157,7 +1168,29 @@ def components(info):
             vcs="https://github.com/" + repo, commit=c, desc=desc, supplier="coreboot project",
             url=gh(repo, c) if c else ("https://github.com/coreboot/coreboot/tree/%s/3rdparty" % cbc if cbc else None),
             label=None if c else "`3rdparty/%s` of coreboot" % key)
-    if cfg.get("CONFIG_PAYLOAD_EDK2") == "y" or cfg.get("CONFIG_EDK2_TAG_OR_REV"):
+    if (cfg.get("CONFIG_PAYLOAD_EDK2") == "y" or cfg.get("CONFIG_EDK2_TAG_OR_REV")) \
+            and cfg.get("CONFIG_EDK2_PLATFORM_DSC") == PACKAGE_DSC:
+        # TianoCore al tag con patches/tianocore e il package del progetto,
+        # fatti da un commit di MrChromebox; LvglPkg accanto, al suo commit
+        rev = cfg.get("CONFIG_EDK2_TAG_OR_REV") or info["layout"].get("edk2_rev")
+        tag, mrc = info["layout"].get("edk2_tag"), info["layout"].get("edk2_from")
+        ep, lp, lc = pins["edk2_patches"], pins["lvgl_patches"], info["layout"].get("lvgl_commit")
+        add(ref="edk2", name="EDK II (TianoCore, with OuroBiosPkg)", type="firmware", open=True,
+            version=tag or rev, supplier="tianocore",
+            text="tianocore/edk2 `%s`%s, with `edk2/OuroBiosPkg`%s" % (
+                tag or short(rev), " + %d patches" % ep if ep is not None else "",
+                " (from MrChromebox `%s`)" % short(mrc) if mrc else ""),
+            license=LIC["edk2"], vcs="https://github.com/tianocore/edk2", commit=rev,
+            url=gh("tianocore/edk2", rev),
+            props=[("patches", ep), ("package", "edk2/OuroBiosPkg"), ("from", mrc)])
+        if cfg.get("CONFIG_EDK2_USE_LVGL_RENDERER") == "y" or lp is not None:
+            add(ref="lvglpkg", name="LvglPkg", type="library", open=True, version=short(lc) if lc else None,
+                text="MrChromebox/LvglPkg `%s`%s" % (short(lc) or "?", " + %d patches" % lp if lp is not None else ""),
+                license=LIC["lvglpkg"], vcs="https://github.com/MrChromebox/LvglPkg", commit=lc,
+                url=gh("MrChromebox/LvglPkg", lc), supplier="MrChromebox",
+                desc="LVGL graphics of the setup menu, with the Montserrat (OFL-1.1) and Font Awesome Free "
+                     "(CC-BY-4.0) fonts", props=[("patches", lp)])
+    elif cfg.get("CONFIG_PAYLOAD_EDK2") == "y" or cfg.get("CONFIG_EDK2_TAG_OR_REV"):
         rev = cfg.get("CONFIG_EDK2_TAG_OR_REV") or info["layout"].get("edk2_rev")
         repo = cfg.get("CONFIG_EDK2_REPOSITORY", "")
         m = re.match(r"https://github\.com/([^/]+/[^/.]+)", repo)

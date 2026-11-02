@@ -1,12 +1,14 @@
 # Il passaggio a EDK II di TianoCore (docs/edk2-migration.md):
-#   - patches/tianocore e edk2/OuroBiosPkg sono l'EDK2 di MrChromebox dei
-#     defconfig con patches/edk2, file per file (tools/edk2-import.py --check);
+#   - patches/tianocore e edk2/OuroBiosPkg sono l'EDK2 di MrChromebox di
+#     EDK2_MRCHROMEBOX_COMMIT con patches/edk2, file per file
+#     (tools/edk2-import.py --check);
 #   - il payload di EDK2_UPSTREAM_TAG di tools/build.sh senza patch, poi dal
 #     package, in ROM per QEMU q35 con il coreboot di questo albero, e i passi
 #     della prova di fumo che non chiedono il setup del progetto
 #     (tools/build.sh edk2-upstream, tools/qemu-smoke.py --upstream);
-#   - il payload della prima variante di ogni board dal package, uguale byte
-#     per byte a quello dell'EDK2 dei defconfig (tools/build.sh edk2-parity).
+#   - il payload della prima variante di ogni board dal package, quello delle
+#     ROM, uguale byte per byte a quello dell'EDK2 di MrChromebox da cui
+#     viene (tools/build.sh edk2-parity).
 # Non tocca le release: a mano (Run workflow) o con un push su un ramo
 # ci-edk2/** (non ci-test/**, che fa partire anche build.yml). Schermate,
 # seriale e log negli artifact (14 giorni).
@@ -56,8 +58,10 @@ jobs:
       - name: crossgcc
         run: ./tools/build.sh toolchain
 
+      # un clone dell'EDK2 di MrChromebox a parte (blob:none): le ROM non lo
+      # usano piu', il package viene da li'
       - name: patches/tianocore e il package rifatti dall'EDK2 di MrChromebox
-        run: python3 tools/edk2-import.py --check work/coreboot/payloads/external/edk2/workspace/mrchromebox
+        run: python3 tools/edk2-import.py --check work/edk2-mrchromebox
 
       # ognuno dei tre passi dice il suo esito anche se uno prima non passa
       - name: EDK2 di TianoCore in QEMU
@@ -82,6 +86,10 @@ jobs:
             work/coreboot/build-*-tianocore/errors.log
             work/coreboot/build-*-tianocore/.config
             work/coreboot/build-*-tianocore/UEFIPAYLOAD.fd
+            work/coreboot/build-*-mrchromebox/make.log
+            work/coreboot/build-*-mrchromebox/errors.log
+            work/coreboot/build-*-mrchromebox/.config
+            work/coreboot/build-*-mrchromebox/UEFIPAYLOAD.fd
           include-hidden-files: true
           retention-days: 14
           if-no-files-found: ignore

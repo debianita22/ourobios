@@ -2,8 +2,9 @@
 #   scripts   tools/ci-check.sh: shellcheck, actionlint, SHA256SUMS dei blob,
 #             patches/series, chiave Optimus solo in blobs/opvk.inc,
 #             defconfig coerenti
-#   patch     coreboot al commit pinnato + patches/series, EDK2 al commit dei
-#             defconfig + patches/edk2 e patches/lvglpkg, e i .config di ogni
+#   patch     coreboot al commit pinnato + patches/series, l'EDK2 dei
+#             defconfig (TianoCore al tag + patches/tianocore, il package
+#             edk2/OuroBiosPkg e LvglPkg + patches/lvglpkg), e i .config di ogni
 #             variante di ogni board (boards/*/board.sh): ogni riga dei
 #             defconfig deve restare (Kconfig la lascia cadere senza errori
 #             se mancano le dipendenze)
@@ -77,7 +78,7 @@ jobs:
             echo "### coreboot $(sed -n 's/^COREBOOT_DESCRIBE="\(.*\)"/\1/p' tools/build.sh)"
             echo
             echo "$(git -C work/coreboot log --oneline "$(sed -n 's/^COREBOOT_COMMIT="\(.*\)"/\1/p' tools/build.sh)..HEAD" | wc -l) patch applicate, .config di ogni variante completi: $(find work/coreboot -maxdepth 1 -name 'build-*' -type d -printf '%f\n' | sed 's/^build-//' | sort | paste -sd ' ')."
-            echo "EDK2: $(grep -cv '^#' patches/edk2/series) patch su EDK2, $(grep -cv '^#' patches/lvglpkg/series) su LvglPkg."
+            echo "EDK2: TianoCore $(sed -n 's/^EDK2_UPSTREAM_TAG="\(.*\)"/\1/p' tools/build.sh) con $(grep -cv '^#' patches/tianocore/series) patch (patches/tianocore) e il package edk2/OuroBiosPkg, da MrChromebox con $(grep -cv '^#' patches/edk2/series) patch (patches/edk2); $(grep -cv '^#' patches/lvglpkg/series) su LvglPkg."
           } >> "${GITHUB_STEP_SUMMARY}"
 
       # .config e' un file nascosto: upload-artifact lo salta se non glielo si dice

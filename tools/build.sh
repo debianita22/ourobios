@@ -13,9 +13,12 @@
 #                  i blob di ogni board controllati con i loro SHA256SUMS
 #                  nella cartella della board nell'albero (w541/, m920x/:
 #                  e' li' che li cercano i defconfig) e la chiave Optimus
-#                  dove la include il DSDT; EDK2 al
-#                  commit dei defconfig con le patch di patches/edk2/series
-#                  e di patches/lvglpkg/series (il submodule LvglPkg)
+#                  dove la include il DSDT; l'EDK2 dei defconfig: TianoCore
+#                  al tag con patches/tianocore/series, il package
+#                  edk2/OuroBiosPkg e LvglPkg con patches/lvglpkg/series
+#                  (EDK2_PACKAGE_CONFIG), o l'EDK2 di MrChromebox al loro
+#                  commit con patches/edk2/series e il submodule LvglPkg con
+#                  patches/lvglpkg/series
 #   toolchain      il crossgcc di coreboot: i386 con Ada (libgfxinit), iasl e
 #                  nasm. La prima volta 30-60 minuti, poi resta in
 #                  util/crossgcc/xgcc dell'albero (e nella cache della CI)
@@ -73,11 +76,12 @@
 #                  EDK2_UPSTREAM_GAPS e EDK2_PACKAGE_GAPS. Esito in
 #                  WORK/edk2-upstream; mai in una release
 #   edk2-parity    per la prima variante di ogni board di --board il payload
-#                  dall'EDK2 dei defconfig e lo stesso dal package su
-#                  TianoCore (EDK2_PACKAGE_CONFIG), con le stesse opzioni:
-#                  devono essere uguali byte per byte, se no
+#                  dall'EDK2 dei defconfig e lo stesso dall'altro (il package
+#                  su TianoCore, EDK2_PACKAGE_CONFIG, o l'EDK2 di MrChromebox
+#                  da cui viene, EDK2_MRCHROMEBOX_COMMIT), con le stesse
+#                  opzioni: devono essere uguali byte per byte, se no
 #                  tools/fv-diff.py dice i moduli diversi. Le ROM in
-#                  build-<variante> e build-<variante>-tianocore dell'albero
+#                  build-<variante> e build-<variante>-<l'altro> dell'albero
 #   keys           controlla le chiavi di firma dell'ambiente (CAPSULE_SIGNING_KEY,
 #                  VBOOT_SIGNING_KEY) senza build: con --release devono esserci
 #   toolchain-key  stampa la chiave della cache del crossgcc (build.yml)
@@ -161,12 +165,17 @@ SUBMODULES=(
 	"3rdparty/fsp 3rdparty/fsp https://github.com/coreboot/fsp.git"
 )
 
-# EDK2: il repository di MrChromebox (quello di CONFIG_EDK2_REPO_MRCHROMEBOX)
-# nella cartella dove lo cerca il Makefile del payload, e il commit dei
-# defconfig. Le patch vanno nell'albero come modifiche, non come commit: il
-# Makefile riporta al commit pinnato un albero pulito, ma uno con modifiche
-# lo lascia com'e' ("Working directory not clean; will not overwrite").
+# EDK2 di MrChromebox (CONFIG_EDK2_REPO_MRCHROMEBOX) nella cartella dove lo
+# cerca il Makefile del payload: il payload delle ROM fino alla v1.5.1, e da
+# li' l'origine del package su TianoCore (tools/edk2-import.py, sotto),
+# EDK2_MRCHROMEBOX_COMMIT con patches/edk2. Le patch vanno nell'albero come
+# modifiche, non come commit: il Makefile riporta al commit pinnato un
+# albero pulito, ma uno con modifiche lo lascia com'e' ("Working directory
+# not clean; will not overwrite"). I defconfig su questo EDK2 hanno solo
+# CONFIG_EDK2_TAG_OR_REV, il suo commit; quelli sul package
+# EDK2_PACKAGE_CONFIG (edk2_base)
 EDK2_REPO="https://github.com/mrchromebox/edk2"
+EDK2_MRCHROMEBOX_COMMIT="6c14abf865e093452edc775651df61775bf99c9f"
 # Le copie del progetto dei repository che MrChromebox riscrive (EDK2 e il
 # submodule LvglPkg): un fork con un tag pin-<12 cifre> per ogni commit che
 # una release ha pinnato. Un commit tolto dal suo ramo non arriva piu' con
@@ -517,6 +526,20 @@ series() { sed -e 's/#.*//' -e 's/[[:space:]]*$//' "${O}/patches/${1:+$1/}series
 # Il commit di EDK2, lo stesso in tutti i defconfig di tutte le board
 # (ci-check.sh lo controlla): quello del primo defconfig della board scelta
 edk2_rev() { sed -n 's/^CONFIG_EDK2_TAG_OR_REV="\([0-9a-f]\{40\}\)"$/\1/p' "$(defconfig "${BOARD_VARIANTS[0]}")"; }
+# Su quale EDK2 sono i defconfig: package (EDK2_PACKAGE_CONFIG, TianoCore al
+# tag con patches/tianocore, edk2/OuroBiosPkg e LvglPkg) o mrchromebox (il
+# commit di MrChromebox con patches/edk2 e patches/lvglpkg)
+edk2_base() {
+	if grep -qx 'CONFIG_EDK2_PLATFORM_DSC="OuroBiosPkg/OuroBiosPkg.dsc"' "$(defconfig "${BOARD_VARIANTS[0]}")"; then
+		echo package
+	else
+		echo mrchromebox
+	fi
+}
+# L'albero di EDK2 delle ROM: TianoCore per il package, se no quello di
+# MrChromebox (EDK2_DIR sopra): GenerateCapsule e AppendRmapManifest.py
+# delle capsule vengono da li'
+if [ "$(edk2_base)" = package ]; then EDK2_DIR="${TREE}/${EDK2_UPSTREAM_SUBDIR}"; fi
 
 # L'impronta di cio' che prepare mette nell'albero: commit, patch, blob. Le
 # altre fasi la confrontano con quella scritta da prepare.
@@ -529,8 +552,16 @@ state() {
 		while read -r p; do sha256sum "patches/${p}"; done < <(series)
 		for p in "${WITH[@]}"; do sha256sum "patches/optional/${p}.patch"; done
 		edk2_rev
-		printf '%s\n' "${EDK2_SUBMODULES[@]}"
-		while read -r p; do sha256sum "patches/edk2/${p}"; done < <(series edk2)
+		if [ "$(edk2_base)" = package ]; then
+			echo "${EDK2_UPSTREAM_COMMIT}"
+			printf '%s\n' "${EDK2_UPSTREAM_SUBMODULES[@]}"
+			while read -r p; do sha256sum "patches/tianocore/${p}"; done < <(series tianocore)
+			find edk2/OuroBiosPkg -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum
+			echo "${LVGLPKG_COMMIT}"
+		else
+			printf '%s\n' "${EDK2_SUBMODULES[@]}"
+			while read -r p; do sha256sum "patches/edk2/${p}"; done < <(series edk2)
+		fi
 		while read -r p; do sha256sum "patches/lvglpkg/${p}"; done < <(series lvglpkg)
 		sha256sum tools/ui-font.py
 		local src dst
@@ -899,11 +930,32 @@ edk2_dec_includes() {
 	EOF
 }
 
+# L'EDK2 dei defconfig: il package su TianoCore (la sua cartella, con
+# patches/tianocore sull'albero del tag), o l'EDK2 di MrChromebox al loro
+# commit
 prepare_edk2() {
-	local rev p n lvgl others
+	local rev
 	rev="$(edk2_rev)"
 	[ -n "${rev}" ] || die "$(board_defconfig "${BOARD_VARIANTS[0]}"): CONFIG_EDK2_TAG_OR_REV non e' un commit intero"
-	say "EDK2 ${rev:0:12}"
+	if [ "$(edk2_base)" = package ]; then
+		[ "${rev}" = "${EDK2_UPSTREAM_COMMIT}" ] \
+			|| die "$(board_defconfig "${BOARD_VARIANTS[0]}"): il package e' su ${EDK2_UPSTREAM_TAG} (${EDK2_UPSTREAM_COMMIT:0:12}), non su ${rev:0:12}"
+		prepare_edk2_upstream
+		edk2_upstream_carry
+		edk2_package
+	else
+		prepare_edk2_mrchromebox "${rev}"
+	fi
+}
+
+# L'EDK2 di MrChromebox al commit $1 con patches/edk2 e LvglPkg con
+# patches/lvglpkg (sotto)
+prepare_edk2_mrchromebox() {
+	local rev="$1" p n lvgl others
+	# la sua cartella, anche quando EDK2_DIR e' l'albero di TianoCore del
+	# package (edk2-parity)
+	local EDK2_DIR="${TREE}/${EDK2_SUBDIR}"
+	say "EDK2 di MrChromebox ${rev:0:12}"
 	if [ ! -d "${EDK2_DIR}/.git" ]; then
 		rm -rf "${EDK2_DIR}"
 		mkdir -p "$(dirname "${EDK2_DIR}")"
@@ -1174,8 +1226,14 @@ collect() {
 	{
 		echo "${n}"
 		echo "coreboot ${COREBOOT_DESCRIBE} (${COREBOOT_COMMIT}) + $(series | wc -l) patches (patches/series)"
-		echo "EDK2 $(edk2_rev) + $(series edk2 | wc -l) patches (patches/edk2/series)," \
-			"LvglPkg + $(series lvglpkg | wc -l) patches (patches/lvglpkg/series)"
+		if [ "$(edk2_base)" = package ]; then
+			echo "EDK2 $(edk2_rev) (TianoCore ${EDK2_UPSTREAM_TAG}) + $(series tianocore | wc -l) patches" \
+				"(patches/tianocore/series) and edk2/OuroBiosPkg (from MrChromebox ${EDK2_MRCHROMEBOX_COMMIT})," \
+				"LvglPkg ${LVGLPKG_COMMIT} + $(series lvglpkg | wc -l) patches (patches/lvglpkg/series)"
+		else
+			echo "EDK2 $(edk2_rev) + $(series edk2 | wc -l) patches (patches/edk2/series)," \
+				"LvglPkg + $(series lvglpkg | wc -l) patches (patches/lvglpkg/series)"
+		fi
 		echo "iPXE ${IPXE_COMMIT}, CSMWrap ${CSMWRAP_COMMIT}" \
 			"(SeaBIOS $(git -C "${WORK}/csmwrap/seabios" rev-parse HEAD 2>/dev/null || echo '?'))"
 		toolchain_line
@@ -2225,6 +2283,12 @@ cmd_edk2_upstream() {
 		xgcc_ok || die "crossgcc mancante in ${XGCC}: prima tools/build.sh toolchain"
 		export PATH="${XGCC}/bin:${PATH}"
 	fi
+	# Con i defconfig sul package l'albero di TianoCore e' anche quello delle
+	# ROM: qui torna al tag senza patch per le prime due immagini, poi ha di
+	# nuovo patches/tianocore e il package per la terza. Fino ad allora
+	# l'albero non e' quello di prepare: senza il suo stato un'altra fase si
+	# ferma (need_prepared), anche se questa si ferma prima
+	if [ "$(edk2_base)" = package ]; then rm -f "${STAMP}"; fi
 	prepare_edk2_upstream
 	q="q35-tianocore"
 	b="${TREE}/build-${q}"
@@ -2252,6 +2316,7 @@ cmd_edk2_upstream() {
 	say "edk2-upstream: la stessa da edk2/OuroBiosPkg, fuori dall'albero di EDK II"
 	edk2_upstream_carry
 	edk2_package
+	if [ "$(edk2_base)" = package ]; then state > "${STAMP}"; fi
 	# con SMMSTORE_PARAMS_IN_COM_BUFFER come le board (patch 0215, la WSMT):
 	# gli argomenti di SMMSTORE solo nella pagina del com buffer (edk2/0044);
 	# senza i driver che le board lasciano fuori, con il loro log del TPM
@@ -2292,35 +2357,44 @@ cmd_edk2_upstream() {
 	fi
 }
 
-# La fase (d) prima dei defconfig (docs/edk2-migration.md): la prima variante
-# della board con l'EDK2 dei defconfig, quello delle ROM, in build-<variante>
-# dell'albero, e la stessa dal package su TianoCore in
-# build-<variante>-tianocore, con il defconfig della prima e
-# EDK2_PACKAGE_CONFIG al posto del suo repository e del suo commit. Le
+# Il package e l'EDK2 di MrChromebox (docs/edk2-migration.md, fase (d)): la
+# prima variante della board con l'EDK2 dei defconfig, quello delle ROM, in
+# build-<variante> dell'albero, e la stessa con l'altro, in
+# build-<variante>-tianocore (EDK2_PACKAGE_CONFIG al posto del commit di
+# MrChromebox) o build-<variante>-mrchromebox (EDK2_MRCHROMEBOX_COMMIT al
+# posto di EDK2_PACKAGE_CONFIG), con il resto del defconfig uguale. Le
 # opzioni EDK2 dei due .config devono essere le stesse e i due
 # UEFIPAYLOAD.fd uguali byte per byte; se no tools/fv-diff.py dice i file
 # FFS diversi e, dei moduli, le sezioni (la variante va in EDK2_PARITY_BAD).
 # Con le chiavi di prova di vboot, che il payload non contiene
 EDK2_PARITY_BAD=()
-EDK2_PACKAGE_READY=no
+EDK2_PARITY_READY=no
 cmd_edk2_parity() {
 	need_prepared
 	if [ "${TOOLCHAIN}" = crossgcc ]; then
 		xgcc_ok || die "crossgcc mancante in ${XGCC}: prima tools/build.sh toolchain"
 		export PATH="${XGCC}/bin:${PATH}"
 	fi
-	if [ "${EDK2_PACKAGE_READY}" != yes ]; then
-		prepare_edk2_upstream
-		edk2_upstream_carry
-		edk2_package
-		EDK2_PACKAGE_READY=yes
+	local base other v k a b re
+	base="$(edk2_base)"
+	if [ "${base}" = package ]; then other=mrchromebox; else other=tianocore; fi
+	# l'altro EDK2, una volta per tutte le board
+	if [ "${EDK2_PARITY_READY}" != yes ]; then
+		if [ "${base}" = package ]; then
+			prepare_edk2_mrchromebox "${EDK2_MRCHROMEBOX_COMMIT}"
+		else
+			prepare_edk2_upstream
+			edk2_upstream_carry
+			edk2_package
+		fi
+		EDK2_PARITY_READY=yes
 	fi
-	local v="${VARIANTS[0]}" k a b re
+	v="${VARIANTS[0]}"
 	k="$(bkey "${v}")"
 	a="${TREE}/build-${k}"
-	b="${TREE}/build-${k}-tianocore"
+	b="${TREE}/build-${k}-${other}"
 	VBOOT_KEYS_REAL=no
-	say "edk2-parity ${v}: con l'EDK2 dei defconfig ($(edk2_rev | cut -c1-12) e patches/edk2)"
+	say "edk2-parity ${v}: con l'EDK2 dei defconfig (${base}, $(edk2_rev | cut -c1-12))"
 	variant_config "${v}"
 	clean_ipxe
 	if ! mk "${k}" -j"${JOBS}" > "${a}/make.log" 2>&1; then
@@ -2328,27 +2402,37 @@ cmd_edk2_parity() {
 		failure_report "edk2-parity ${v}" "${a}/errors.log" "${a}/make.log"
 		die "edk2-parity ${v}: build fallita (build-${k}/make.log nell'albero)"
 	fi
-	say "edk2-parity ${v}: dal package su TianoCore ${EDK2_UPSTREAM_TAG}"
 	rm -rf "${b:?}"
 	mkdir -p "${b}"
-	# solo le righe CONFIG_ (defconfig_kept le cerca tutte nel .config)
-	{
-		grep '^CONFIG_' "${a}/defconfig" | grep -v -e '^CONFIG_EDK2_TAG_OR_REV=' -e '^CONFIG_EDK2_REPO'
-		printf '%s\n' "${EDK2_PACKAGE_CONFIG[@]}"
-	} > "${b}/defconfig"
-	mk "${k}-tianocore" defconfig KBUILD_DEFCONFIG="build-${k}-tianocore/defconfig" > "${b}/defconfig.log" 2>&1 \
-		|| { cat "${b}/defconfig.log"; die "edk2-parity ${v}: make defconfig dal package fallito"; }
-	defconfig_kept "${b}" || die "edk2-parity ${v}: il .config dal package non ha tutto il defconfig"
+	# solo le righe CONFIG_ del defconfig di build-<variante> (defconfig_kept
+	# le cerca tutte nel .config), con l'altro EDK2 al posto di questo
+	if [ "${base}" = package ]; then
+		say "edk2-parity ${v}: con l'EDK2 di MrChromebox ${EDK2_MRCHROMEBOX_COMMIT:0:12} e patches/edk2"
+		{
+			grep '^CONFIG_' "${a}/defconfig" \
+				| grep -v -E '^CONFIG_EDK2_(REPO_|REPOSITORY=|TAG_OR_REV=|PLATFORM_DSC=|PACKAGES_PATH=)'
+			echo "CONFIG_EDK2_TAG_OR_REV=\"${EDK2_MRCHROMEBOX_COMMIT}\""
+		} > "${b}/defconfig"
+	else
+		say "edk2-parity ${v}: dal package su TianoCore ${EDK2_UPSTREAM_TAG}"
+		{
+			grep '^CONFIG_' "${a}/defconfig" | grep -v -e '^CONFIG_EDK2_TAG_OR_REV=' -e '^CONFIG_EDK2_REPO'
+			printf '%s\n' "${EDK2_PACKAGE_CONFIG[@]}"
+		} > "${b}/defconfig"
+	fi
+	mk "${k}-${other}" defconfig KBUILD_DEFCONFIG="build-${k}-${other}/defconfig" > "${b}/defconfig.log" 2>&1 \
+		|| { cat "${b}/defconfig.log"; die "edk2-parity ${v}: make defconfig con ${other} fallito"; }
+	defconfig_kept "${b}" || die "edk2-parity ${v}: il .config con ${other} non ha tutto il defconfig"
 	# le opzioni del payload: le stesse, fuori dal repository e dal commit
 	re='^(# )?CONFIG_EDK2_(REPO_|REPOSITORY|TAG_OR_REV|PLATFORM_DSC|PACKAGES_PATH)'
 	if ! diff <(grep -E '^(# )?CONFIG_EDK2_' "${a}/.config" | grep -Ev "${re}") \
 		<(grep -E '^(# )?CONFIG_EDK2_' "${b}/.config" | grep -Ev "${re}"); then
-		die "edk2-parity ${v}: le opzioni EDK2 dei due .config non sono le stesse (sopra: < defconfig, > package)"
+		die "edk2-parity ${v}: le opzioni EDK2 dei due .config non sono le stesse (sopra: < ${base}, > ${other})"
 	fi
-	if ! mk "${k}-tianocore" -j"${JOBS}" > "${b}/make.log" 2>&1; then
+	if ! mk "${k}-${other}" -j"${JOBS}" > "${b}/make.log" 2>&1; then
 		grep -n -i -B2 -A6 'error' "${b}/make.log" | tail -n 60 > "${b}/errors.log" || true
-		failure_report "edk2-parity ${v} dal package" "${b}/errors.log" "${b}/make.log"
-		die "edk2-parity ${v}: build dal package fallita (build-${k}-tianocore/make.log nell'albero)"
+		failure_report "edk2-parity ${v} con ${other}" "${b}/errors.log" "${b}/make.log"
+		die "edk2-parity ${v}: build con ${other} fallita (build-${k}-${other}/make.log nell'albero)"
 	fi
 	# le opzioni con cui il Makefile di coreboot ha costruito i due payload
 	diff <(sed -n '/##### edk2 Build Summary #####/,/Toolchain:/p' "${a}/make.log" | grep -Ev 'Repository|Branch|Packages path|Payload:') \
@@ -2387,7 +2471,7 @@ for c in "${CMDS[@]}"; do
 		edk2-parity)
 			each_board cmd_edk2_parity
 			[ ${#EDK2_PARITY_BAD[@]} -eq 0 ] \
-				|| die "edk2-parity: il payload dal package non e' quello dell'EDK2 dei defconfig: ${EDK2_PARITY_BAD[*]}" ;;
+				|| die "edk2-parity: il payload del package non e' quello dell'EDK2 di MrChromebox: ${EDK2_PARITY_BAD[*]}" ;;
 		keys)          cmd_keys ;;
 		toolchain-key) cmd_toolchain_key ;;
 	esac

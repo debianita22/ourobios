@@ -443,9 +443,7 @@ flashrom rewrites it, so copy it into the image first (\`tools/vpd.py copy\`,
 
 Inside: coreboot \`${cbdesc}\` ([${cb:0:12}](https://github.com/coreboot/coreboot/commit/${cb}))
 with [${npatch} patches](https://github.com/${repo}/tree/${sha}/patches), EDK2 payload
-(MrChromebox [\`${edk2:0:12}\`](https://github.com/mrchromebox/edk2/commit/${edk2})
-with [${nedk2} patches](https://github.com/${repo}/blob/${sha}/patches/README.md#edk2-and-lvglpkg)
-to EDK2 and LvglPkg: the setup menu laid out like System Preferences on a
+(${edk2_text}: the setup menu laid out like System Preferences on a
 wallpaper that follows the hour of the day, the TrackPoint and the touchpad
 moving the cursor by their speed),
 iPXE [\`${ipxe:0:12}\`](https://github.com/ipxe/ipxe/commit/${ipxe}) with its Intel
@@ -587,9 +585,7 @@ it, so copy it into the image first (\`tools/vpd.py copy\`, as above,
 
 Inside: coreboot \`${cbdesc}\` ([${cb:0:12}](https://github.com/coreboot/coreboot/commit/${cb}))
 with [${npatch} patches](https://github.com/${repo}/tree/${sha}/patches), EDK2 payload
-(MrChromebox [\`${edk2:0:12}\`](https://github.com/mrchromebox/edk2/commit/${edk2})
-with [${nedk2} patches](https://github.com/${repo}/blob/${sha}/patches/README.md#edk2-and-lvglpkg)
-to EDK2 and LvglPkg), iPXE [\`${ipxe:0:12}\`](https://github.com/ipxe/ipxe/commit/${ipxe})
+(${edk2_text}), iPXE [\`${ipxe:0:12}\`](https://github.com/ipxe/ipxe/commit/${ipxe})
 with its Intel driver for network boot, [CSMWrap](https://github.com/CSMWrap/CSMWrap)
 [\`${csm:0:12}\`](https://github.com/CSMWrap/CSMWrap/commit/${csm}) with the CSM of
 SeaBIOS for legacy boot, Intel's FSP 2.0 for Coffee Lake (FSP-M and FSP-S,
@@ -608,7 +604,7 @@ EOF
 # l'inizio comune, il corpo della board (notes_<board>), i cambi dall'ultima
 # release dello stesso flavour
 cmd_notes() {
-	local d="${1:?cartella con le ROM}" fl="${2:?flavour}" board v n f version rom cap cab cfg lay repo sha cb cbdesc ipxe csm edk2 npatch nedk2 pre=no machine=laptop
+	local d="${1:?cartella con le ROM}" fl="${2:?flavour}" board v n f version rom cap cab cfg lay repo sha cb cbdesc ipxe csm edk2 edk2_text npatch nedk2 pre=no machine=laptop
 	: "${VERSION:?}"
 	[ -n "${FL_BOARD[${fl}]:-}" ] || die "flavour '${fl}': uno di ${FLAVOURS[*]}"
 	flavours_for "${VERSION}"
@@ -639,6 +635,25 @@ cmd_notes() {
 	[ -n "${edk2}" ] || die "${fl}: CONFIG_EDK2_TAG_OR_REV non nel defconfig"
 	npatch="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${O}/patches/series" | wc -l)"
 	nedk2="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${O}/patches/edk2/series" "${O}/patches/lvglpkg/series" | wc -l)"
+	# il payload: il package su TianoCore (EDK2_PACKAGE_CONFIG di
+	# tools/build.sh) o l'EDK2 di MrChromebox con patches/edk2
+	if grep -qx 'CONFIG_EDK2_PLATFORM_DSC="OuroBiosPkg/OuroBiosPkg.dsc"' "${O}/$(board_get "${board}" defconfig "${v}")"; then
+		local up_tag mrc ntiano nlvgl
+		up_tag="$(pin EDK2_UPSTREAM_TAG)"
+		mrc="$(pin EDK2_MRCHROMEBOX_COMMIT)"
+		[ -n "${up_tag}" ] && [ -n "${mrc}" ] || die "tools/build.sh: EDK2_UPSTREAM_TAG o EDK2_MRCHROMEBOX_COMMIT non trovati"
+		ntiano="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${O}/patches/tianocore/series" | wc -l)"
+		nlvgl="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${O}/patches/lvglpkg/series" | wc -l)"
+		edk2_text="TianoCore EDK II [\`${up_tag}\`](https://github.com/tianocore/edk2/commit/${edk2})
+with [${ntiano} patches](https://github.com/${repo}/blob/${sha}/patches/README.md#tianocore-edk-ii-for-the-package)
+and the project's package [\`edk2/OuroBiosPkg\`](https://github.com/${repo}/blob/${sha}/edk2/README.md),
+MrChromebox's [\`${mrc:0:12}\`](https://github.com/mrchromebox/edk2/commit/${mrc}) with the
+project's patches on the upstream tag, and LvglPkg with ${nlvgl} patches"
+	else
+		edk2_text="MrChromebox [\`${edk2:0:12}\`](https://github.com/mrchromebox/edk2/commit/${edk2})
+with [${nedk2} patches](https://github.com/${repo}/blob/${sha}/patches/README.md#edk2-and-lvglpkg)
+to EDK2 and LvglPkg"
+	fi
 	case "${version}" in *-*) pre=yes ;; esac
 	if [ "${PRERELEASE:-false}" = true ]; then pre=yes; fi
 	# --latest salta le pre-release: per queste ci vuole anche --pre

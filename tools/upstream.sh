@@ -14,12 +14,13 @@
 #           entrata upstream (stesso Subject)? C'e' un tag di release dopo il
 #           pin? Se si', issue "coreboot: ...".
 # edk2      il ramo uefipayload_AAMM piu' recente di MrChromebox e' andato
-#           oltre il commit pinnato nei defconfig? Se si', issue "EDK2: ...".
+#           oltre il commit da cui viene il payload (EDK2_MRCHROMEBOX_COMMIT
+#           di tools/build.sh)? Se si', issue "EDK2: ...".
 # mirror    i commit di EDK2 e LvglPkg di configs/edk2-pins.txt hanno il loro
 #           tag pin-<12 cifre> nei fork del progetto (EDK2_MIRROR e
 #           LVGLPKG_MIRROR di tools/build.sh)? Se no, issue "Mirror: ...".
 # dbx       la dbx che il payload scrive al primo avvio (EnrollDefaultKeys,
-#           keys/ del commit di EDK2 dei defconfig) ha le liste di hash
+#           keys/ del package edk2/OuroBiosPkg) ha le liste di hash
 #           dell'ultima release firmata di microsoft/secureboot_objects? Se
 #           no, issue "DBX: ...".
 # tianocore c'e' un tag edk2-stableAAAAMM di TianoCore dopo EDK2_UPSTREAM_TAG
@@ -152,8 +153,10 @@ check_coreboot() {
 
 check_edk2() {
 	local rev branch head cmp status ahead behind last
-	rev="$(sed -n 's/^CONFIG_EDK2_TAG_OR_REV="\([0-9a-f]\{40\}\)"$/\1/p' "${O}/configs/w541-mrc.defconfig")"
-	[ -n "${rev}" ] || die "CONFIG_EDK2_TAG_OR_REV (un commit) non trovato in configs/w541-mrc.defconfig"
+	# il commit di MrChromebox da cui viene il payload: il package su
+	# TianoCore (tools/edk2-import.py) e patches/edk2
+	rev="$(pin EDK2_MRCHROMEBOX_COMMIT)"
+	[ -n "${rev}" ] || die "EDK2_MRCHROMEBOX_COMMIT (un commit) non trovato in tools/build.sh"
 	# i rami delle release di MrChromebox: uefipayload_AAMM (i vecchi AAAAMM,
 	# _redux, _rwl_* e gli altri no)
 	branch="$(git ls-remote --heads https://github.com/mrchromebox/edk2.git 'uefipayload_*' \
@@ -175,13 +178,13 @@ check_edk2() {
 		title="EDK2: ${branch} non contiene il pin (${status}, +${ahead}/-${behind})"
 	fi
 	body="$(cat <<EOF
-MrChromebox \`${branch}\` e' a \`${head:0:12}\`; i defconfig sono pinnati a \`${rev:0:12}\` (\`CONFIG_EDK2_TAG_OR_REV\`).
+MrChromebox \`${branch}\` e' a \`${head:0:12}\`; il payload viene da \`${rev:0:12}\` (\`EDK2_MRCHROMEBOX_COMMIT\` di \`tools/build.sh\`: il package \`edk2/OuroBiosPkg\` e \`patches/tianocore\` su TianoCore, fatti da \`tools/edk2-import.py\`).
 Confronto: ${status}, ${ahead} commit avanti, ${behind} indietro.
 
 Gli ultimi:
 ${last}
 
-Per spostare il pin (a mano): \`CONFIG_EDK2_TAG_OR_REV\` in tutti e due i defconfig, poi push su un ramo \`ci-test/...\` per la build di prova; prima di una release, prova sul portatile (boot, menu di setup, variabili UEFI in SMMSTORE, S3).
+Per prendere i commit nuovi (a mano): \`EDK2_MRCHROMEBOX_COMMIT\` (e, se il ramo e' su un altro tag stabile, \`EDK2_UPSTREAM_TAG\` e \`EDK2_UPSTREAM_COMMIT\`) in \`tools/build.sh\`, \`patches/edk2\` riallineata, \`tools/edk2-import.py\` di nuovo, una riga in \`configs/edk2-pins.txt\`; poi push su un ramo \`ci-edk2/...\` (\`edk2-parity\`) e \`ci-test/...\`; prima di una release, prova sulle macchine (boot, menu di setup, variabili UEFI in SMMSTORE, S3).
 
 Questo issue lo aggiorna e lo chiude \`upstream.yml\`.
 EOF
@@ -285,13 +288,15 @@ EOF
 # boot manager di Windows piu' vecchi, Windows le scrive da se' dopo aver
 # aggiornato il suo, e nei default rifiuterebbero i supporti di installazione
 # con un boot manager di prima.
+# Quelle del payload sono i file del package (edk2/OuroBiosPkg, che
+# tools/edk2-import.py fa dall'EDK2 di MrChromebox con patches/edk2).
 DBX_REPO="https://github.com/microsoft/secureboot_objects"
-DBX_KEYS="UefiPayloadPkg/EnrollDefaultKeys/keys"
+DBX_KEYS="edk2/OuroBiosPkg/EnrollDefaultKeys/keys"
 check_dbx() {
-	local rev em tag g ms_up ms_base pay_up pay_base from
-	rev="$(sed -n 's/^CONFIG_EDK2_TAG_OR_REV="\(.*\)"$/\1/p' "${O}/configs/w541-mrc.defconfig")"
-	em="$(pin EDK2_MIRROR)"
-	[ -n "${rev}" ] && [ -n "${em}" ] || die "CONFIG_EDK2_TAG_OR_REV o EDK2_MIRROR non trovati"
+	local tag g ms_up ms_base pay_up pay_base f
+	for f in dbx_microsoft_baseline.bin dbx_microsoft_update.bin; do
+		[ -f "${O}/${DBX_KEYS}/${f}" ] || die "${DBX_KEYS}/${f} non c'e'"
+	done
 	tag="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags "${DBX_REPO}" 'refs/tags/v*-signed' \
 		| sed -n 's#.*refs/tags/\(v[0-9.]*-signed\)$#\1#p' | sort -V | tail -n 1)"
 	[ -n "${tag}" ] || die "${DBX_REPO}: nessun tag vX.Y.Z-signed"
@@ -301,23 +306,15 @@ check_dbx() {
 		|| die "${DBX_REPO} ${tag}: fetch non riuscito"
 	ms_base="$(git -C "${g}" rev-parse "FETCH_HEAD:PostSignedObjects/DBX/amd64/DBXUpdate.bin")"
 	ms_up="$(git -C "${g}" rev-parse "FETCH_HEAD:PostSignedObjects/SignedByKEK2023/dbx_x64.efiauth2")"
-	# il commit pinnato dal mirror del progetto (tag pin-<12 cifre>), se no
-	# da MrChromebox per hash
-	from="${em}"
-	if ! GIT_TERMINAL_PROMPT=0 git -C "${g}" fetch -q --depth 1 --filter=blob:none "${em}" "refs/tags/pin-${rev:0:12}"; then
-		from="https://github.com/mrchromebox/edk2"
-		GIT_TERMINAL_PROMPT=0 git -C "${g}" fetch -q --depth 1 --filter=blob:none "${from}" "${rev}" \
-			|| die "EDK2 ${rev:0:12}: ne' il tag pin- del mirror ne' il commit da MrChromebox"
-	fi
-	pay_base="$(git -C "${g}" rev-parse "FETCH_HEAD:${DBX_KEYS}/dbx_microsoft_baseline.bin")"
-	pay_up="$(git -C "${g}" rev-parse "FETCH_HEAD:${DBX_KEYS}/dbx_microsoft_update.bin")"
+	pay_base="$(git hash-object "${O}/${DBX_KEYS}/dbx_microsoft_baseline.bin")"
+	pay_up="$(git hash-object "${O}/${DBX_KEYS}/dbx_microsoft_update.bin")"
 	if [ "${pay_base}" = "${ms_base}" ] && [ "${pay_up}" = "${ms_up}" ]; then
-		settle "DBX:" "DBX: il payload (EDK2 ${rev:0:12}) ha le liste di hash di Microsoft ${tag}"
+		settle "DBX:" "DBX: il payload (${DBX_KEYS}) ha le liste di hash di Microsoft ${tag}"
 		return 0
 	fi
 	local body
 	body="$(cat <<EOF
-La dbx che il payload scrive al primo avvio (\`EnrollDefaultKeys\`, \`${DBX_KEYS}\` di EDK2 \`${rev:0:12}\`, da ${from}) non e' quella dell'ultima release firmata di Microsoft, \`${tag}\`:
+La dbx che il payload scrive al primo avvio (\`EnrollDefaultKeys\`, \`${DBX_KEYS}\`) non e' quella dell'ultima release firmata di Microsoft, \`${tag}\`:
 
 | File del payload | Blob | Di Microsoft (${tag}) | Blob |
 |---|---|---|---|
@@ -326,7 +323,7 @@ La dbx che il payload scrive al primo avvio (\`EnrollDefaultKeys\`, \`${DBX_KEYS
 
 Vale per le macchine che iscrivono le chiavi di default (primo avvio, reset delle chiavi): le altre ricevono la dbx da Windows Update o da \`fwupdmgr update\` (firmata da Microsoft con la KEK, che il PK di default accetta).
 
-Per aggiornarla: una patch di \`patches/edk2\` con i file di \`keys/\` rifatti da \`UpdateMicrosoftDbx.py --release ${tag} --kek 2023 --arch x64\` (lo script e' in quella cartella, \`git format-patch --binary\`), o il pin di EDK2 spostato a un commit di MrChromebox che li ha. Le voci SVN (\`dbx_SVN.efiauth2\`) restano fuori di proposito: Windows le scrive da se' dopo aver aggiornato il suo boot manager.
+Per aggiornarla: una patch di \`patches/edk2\` con i file di \`keys/\` rifatti da \`UpdateMicrosoftDbx.py --release ${tag} --kek 2023 --arch x64\` (lo script e' in quella cartella, \`git format-patch --binary\`), o \`EDK2_MRCHROMEBOX_COMMIT\` spostato a un commit di MrChromebox che li ha; poi \`tools/edk2-import.py\`, che li porta nel package. Le voci SVN (\`dbx_SVN.efiauth2\`) restano fuori di proposito: Windows le scrive da se' dopo aver aggiornato il suo boot manager.
 
 Questo issue lo aggiorna e lo chiude \`upstream.yml\`.
 EOF

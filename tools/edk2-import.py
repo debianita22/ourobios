@@ -9,12 +9,13 @@
 #
 # MRCHROMEBOX_GIT e' un clone del repository di MrChromebox, anche parziale
 # (--filter=blob:none: i file arrivano dal suo remote), con nella storia il
-# tag di TianoCore (EDK2_UPSTREAM_COMMIT di tools/build.sh) e il commit dei
-# defconfig (--head, se no CONFIG_EDK2_TAG_OR_REV di configs/w541-mrc.defconfig):
-# quello di tools/build.sh prepare va bene
+# tag di TianoCore (EDK2_UPSTREAM_COMMIT di tools/build.sh) e il commit da
+# cui viene il payload (--head, se no EDK2_MRCHROMEBOX_COMMIT di
+# tools/build.sh): quello di tools/build.sh prepare o edk2-parity va bene
 # (work/coreboot/payloads/external/edk2/workspace/mrchromebox), le modifiche
-# nella sua cartella non contano. R e' l'albero di quel commit con
-# patches/edk2/series, fatto in un indice a parte:
+# nella sua cartella non contano. Se la cartella non c'e', il clone si fa
+# li' (EDK2_REPO, se no EDK2_MIRROR di tools/build.sh). R e' l'albero di
+# quel commit con patches/edk2/series, fatto in un indice a parte:
 #   - patches/tianocore/0001-...: i commit di MrChromebox dal tag al commit dei
 #     defconfig, poi le patch di patches/edk2/series, ognuno ristretto ai file
 #     che restano nell'albero di TianoCore (FUORI qui sotto), con una nota in
@@ -374,11 +375,28 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("mrc", help="clone del repository di MrChromebox")
     ap.add_argument("--check", action="store_true", help="confronta soltanto, non scrive")
-    ap.add_argument("--head", help="il commit di MrChromebox (CONFIG_EDK2_TAG_OR_REV)")
+    ap.add_argument("--head", help="il commit di MrChromebox (EDK2_MRCHROMEBOX_COMMIT)")
     args = ap.parse_args()
     mrc = os.path.abspath(args.mrc)
     base = setting("tools/build.sh", r'^EDK2_UPSTREAM_COMMIT="([0-9a-f]{40})"$')
-    head = args.head or setting("configs/w541-mrc.defconfig", r'^CONFIG_EDK2_TAG_OR_REV="([0-9a-f]{40})"$')
+    head = args.head or setting("tools/build.sh", r'^EDK2_MRCHROMEBOX_COMMIT="([0-9a-f]{40})"$')
+    if not os.path.isdir(mrc):
+        for url in (setting("tools/build.sh", r'^EDK2_REPO="(\S+)"$'), setting("tools/build.sh", r'^EDK2_MIRROR="(\S+)"$')):
+            print("clone di %s in %s" % (url, mrc))
+            r = subprocess.run(["git", "clone", "-q", "--filter=blob:none", "--no-checkout", url, mrc],
+                               env=dict(os.environ, GIT_TERMINAL_PROMPT="0"))
+            if r.returncode == 0:
+                break
+            shutil.rmtree(mrc, ignore_errors=True)
+        else:
+            raise Error("il clone dell'EDK2 di MrChromebox non riesce")
+    if subprocess.run(["git", "-C", mrc, "cat-file", "-e", head + "^{commit}"], stderr=subprocess.DEVNULL).returncode:
+        # un commit tolto dal ramo di MrChromebox: dal mirror del progetto,
+        # per il suo tag pin-<12 cifre> (come pinned_commit di tools/build.sh)
+        mirror = setting("tools/build.sh", r'^EDK2_MIRROR="(\S+)"$')
+        subprocess.run(["git", "-C", mrc, "fetch", "-q", "--filter=blob:none", mirror,
+                        "+refs/tags/pin-%s:refs/tags/pin-%s" % (head[:12], head[:12])],
+                       env=dict(os.environ, GIT_TERMINAL_PROMPT="0"))
     for c in (base, head):
         git(mrc, "cat-file", "-e", c + "^{commit}")
     if git(mrc, "merge-base", base, head).strip() != base:

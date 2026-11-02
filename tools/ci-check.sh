@@ -1884,6 +1884,23 @@ if [ -f configs/w541-mrc.defconfig ] && [ -f configs/w541-nri.defconfig ]; then
 	else
 		bad "CONFIG_EDK2_TAG_OR_REV: un commit intero, non un ramo"
 	fi
+	# il package su TianoCore (EDK2_PACKAGE_CONFIG di tools/build.sh, come lo
+	# espande bash): in un defconfig con la sua piattaforma ci sono tutte le
+	# sue righe, uguali; in uno senza nessuna, e il commit e' di MrChromebox
+	pkg_lines="$(bash -c "$(sed -n -e '/^EDK2_UPSTREAM_REPO=/p' -e '/^EDK2_UPSTREAM_COMMIT=/p' \
+		-e '/^EDK2_PACKAGES_SUBDIR=/p' -e '/^EDK2_PACKAGE_CONFIG=(/,/^)/p' tools/build.sh)"$'\n''printf "%s\n" "${EDK2_PACKAGE_CONFIG[@]}"')"
+	if [ "$(grep -c '^CONFIG_EDK2_' <<< "${pkg_lines}")" -lt 5 ]; then
+		bad "EDK2_PACKAGE_CONFIG di tools/build.sh: non si legge (${pkg_lines//$'\n'/ })"
+	fi
+	for f in configs/*.defconfig boards/*/*.defconfig; do
+		if grep -q '^CONFIG_EDK2_PLATFORM_DSC=' "${f}"; then
+			miss="$(grep -vxF -f "${f}" <<< "${pkg_lines}" || true)"
+			[ -z "${miss}" ] && ok "${f}: il payload dal package (EDK2_PACKAGE_CONFIG)" \
+				|| bad "${f}: con la piattaforma del package ma senza ${miss//$'\n'/ }"
+		elif grep -Eq '^CONFIG_EDK2_(REPO_|REPOSITORY=|PACKAGES_PATH=)' "${f}"; then
+			bad "${f}: righe del package (EDK2_PACKAGE_CONFIG) senza la sua piattaforma"
+		fi
+	done
 	# i file che i defconfig cercano in w541/ sono quelli che build.sh copia
 	# (BOARD_TREE_FILES di boards/w541/board.sh e COMMON_TREE_FILES in w541/,
 	# VBOOT_KEYS in w541/vboot/) o vi scrive (la chiave privata degli slot,
@@ -2247,25 +2264,36 @@ else
 		[[ "${e}" =~ ^[0-9a-f]{40}$ ]] && [[ "${l}" =~ ^[0-9a-f]{40}$ ]] && [ -n "${r}" ] \
 			|| bad "${pins}: riga '${e} ${l} ${r}': due commit interi e le release"
 	done < "${pins}"
+	up="$(sed -n 's/^EDK2_UPSTREAM_COMMIT="\([0-9a-f]\{40\}\)"$/\1/p' tools/build.sh)"
+	mrc="$(sed -n 's/^EDK2_MRCHROMEBOX_COMMIT="\([0-9a-f]\{40\}\)"$/\1/p' tools/build.sh)"
 	for f in configs/*.defconfig boards/*/*.defconfig; do
 		rev="$(sed -n 's/^CONFIG_EDK2_TAG_OR_REV="\(.*\)"$/\1/p' "${f}")"
 		[ -n "${rev}" ] || continue
-		if awk -v r="${rev}" '$1 == r { f = 1 } END { exit !f }' "${pins}"; then
+		if [ "${rev}" = "${up}" ]; then
+			# un tag stabile di TianoCore, che non riscrive la storia: nessun mirror
+			ok "${f}: EDK2 di TianoCore ${rev:0:12} (EDK2_UPSTREAM_COMMIT)"
+		elif awk -v r="${rev}" '$1 == r { f = 1 } END { exit !f }' "${pins}"; then
 			ok "${f}: EDK2 ${rev:0:12} in ${pins}"
 		else
 			bad "${f}: EDK2 ${rev} manca in ${pins} (e nei mirror: tools/upstream.sh mirror)"
 		fi
 	done
+	# l'EDK2 di MrChromebox da cui viene il package (tools/edk2-import.py),
+	# anche lui nel mirror
+	if [ -n "${mrc}" ] && awk -v r="${mrc}" '$1 == r { f = 1 } END { exit !f }' "${pins}"; then
+		ok "EDK2_MRCHROMEBOX_COMMIT ${mrc:0:12} in ${pins}"
+	else
+		bad "EDK2_MRCHROMEBOX_COMMIT di tools/build.sh '${mrc}' manca in ${pins}"
+	fi
 	ok "${pins}: ${n} commit pinnati"
 	# LvglPkg del package su TianoCore (LVGLPKG_COMMIT di tools/build.sh): il
-	# submodule del pin di EDK2 dei defconfig, come per le ROM
-	rev="$(sed -n 's/^CONFIG_EDK2_TAG_OR_REV="\(.*\)"$/\1/p' configs/w541-mrc.defconfig)"
-	l="$(awk -v r="${rev}" '$1 == r { print $2 }' "${pins}")"
+	# submodule dell'EDK2 di MrChromebox da cui viene il package
+	l="$(awk -v r="${mrc}" '$1 == r { print $2 }' "${pins}")"
 	m="$(sed -n 's/^LVGLPKG_COMMIT="\([0-9a-f]\{40\}\)"$/\1/p' tools/build.sh)"
 	if [ -n "${m}" ] && [ "${m}" = "${l}" ]; then
-		ok "LVGLPKG_COMMIT ${m:0:12}: LvglPkg del pin di EDK2 ${rev:0:12} in ${pins}"
+		ok "LVGLPKG_COMMIT ${m:0:12}: LvglPkg di EDK2 ${mrc:0:12} in ${pins}"
 	else
-		bad "LVGLPKG_COMMIT di tools/build.sh '${m}' non e' LvglPkg del pin di EDK2 in ${pins} ('${l}')"
+		bad "LVGLPKG_COMMIT di tools/build.sh '${m}' non e' LvglPkg di EDK2_MRCHROMEBOX_COMMIT in ${pins} ('${l}')"
 	fi
 fi
 
