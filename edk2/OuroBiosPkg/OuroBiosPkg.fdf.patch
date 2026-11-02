@@ -27,10 +27,72 @@
  !endif
  
  ################################################################################
-@@ -327,6 +337,16 @@
+@@ -237,6 +247,58 @@
+ !if $(UNIVERSAL_PAYLOAD) == FALSE
+   !if $(SECURE_BOOT_ENABLE) == TRUE
+     INF SecurityPkg/VariableAuthenticated/SecureBootConfigDxe/SecureBootConfigDxe.inf
++    INF OuroBiosPkg/EnrollDefaultKeys/EnrollDefaultKeys.inf
++
++    FILE FREEFORM = 3d844ea9-e7da-48c5-a031-fa22b10f8d7b {
++      SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/dbx_microsoft_baseline.bin
++      SECTION UI = "Microsoft Corporation DBX Baseline"
++    }
++
++    FILE FREEFORM = 4e52dd60-d79e-42c5-8337-089232ea5c87 {
++      SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/dbx_microsoft_update.bin
++      SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/dbx_microsoft_append.esl
++      SECTION UI = "Microsoft Corporation DBX Update"
++    }
++
++    FILE FREEFORM = 73282f84-7909-4e87-adf0-845d5da335ab {
++      SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/db_microsoft_uefi_2011.der
++      SECTION UI = "Microsoft Corporation DB UEFI 2011"
++    }
++
++    FILE FREEFORM = 9b29f606-5102-4de1-a88a-ff6210bd8b65 {
++      SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/db_microsoft_win_2011.der
++      SECTION UI = "Microsoft Corporation DB Windows 2011"
++    }
++
++    FILE FREEFORM = c7769261-fe8d-4e15-b334-cadf4364ad92 {
++      SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/db_microsoft_uefi_2023.der
++      SECTION UI = "Microsoft Corporation DB UEFI 2023"
++    }
++
++    FILE FREEFORM = 4ac66f32-6895-46fc-ad00-f1c81d06c668 {
++      SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/db_microsoft_win_uefi_2023.der
++      SECTION UI = "Microsoft Corporation DB Windows UEFI 2023"
++    }
++
++    FILE FREEFORM = f5a81b7b-419a-4a92-8212-1c369bcbe2cb {
++      SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/db_microsoft_oprom_uefi_2023.der
++      SECTION UI = "Microsoft Corporation DB Option ROM UEFI 2023"
++    }
++
++    FILE FREEFORM = 73f89874-b2ec-4c28-a7e3-7d8030134e0b {
++      SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/kek_microsoft_2011.der
++      SECTION UI = "Microsoft Corporation KEK CA 2011"
++    }
++
++    FILE FREEFORM = cce7d8e7-aae8-4697-b5c0-ef35a92a059f {
++      SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/kek_microsoft_2023.der
++      SECTION UI = "Microsoft Corporation KEK 2K CA 2023"
++    }
++
++    FILE FREEFORM = 701649dd-8739-40b9-bbdb-9ca434fdcd3b {
++      SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/pk_microsoft_oem_2023.der
++      SECTION UI = "Microsoft Corporation OEM PK 2023"
++    }
+   !endif
  !endif
  
- #
+@@ -324,6 +386,16 @@
+ INF MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.inf
+ INF MdeModulePkg/Bus/Sd/EmmcDxe/EmmcDxe.inf
+ INF MdeModulePkg/Bus/Sd/SdDxe/SdDxe.inf
++!endif
++
++#
 +# TPM support (MrChromebox's c111515)
 +#
 +!if $(TPM_ENABLE) == TRUE
@@ -38,9 +100,6 @@
 +INF  SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf
 +INF  SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf
 +INF  SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigDxe.inf
-+!endif
-+
-+#
- # Usb Support
+ !endif
+ 
  #
- INF MdeModulePkg/Bus/Pci/UhciDxe/UhciDxe.inf

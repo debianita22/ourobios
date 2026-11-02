@@ -124,7 +124,19 @@
  
  [PcdsDynamicExDefault.IA32, PcdsDynamicExDefault.X64]
    gPcAtChipsetPkgTokenSpaceGuid.PcdRtcIndexRegister|$(RTC_INDEX_REGISTER)
-@@ -1202,6 +1265,32 @@
+@@ -971,6 +1034,11 @@
+ 
+ !if $(SECURE_BOOT_ENABLE) == TRUE
+   SecurityPkg/VariableAuthenticated/SecureBootConfigDxe/SecureBootConfigDxe.inf
++  #
++  # The default keys at the first boot (MrChromebox's EnrollDefaultKeys, in
++  # the package)
++  #
++  OuroBiosPkg/EnrollDefaultKeys/EnrollDefaultKeys.inf
+ !endif
+ 
+   MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
+@@ -1202,6 +1270,32 @@
  !endif
  !endif
  

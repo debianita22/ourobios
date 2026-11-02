@@ -2144,7 +2144,8 @@ step "fine riga delle patch di EDK2"
 # nell'ultimo commit aveva righe CRLF e ora non ne ha piu' (nella CI i
 # file sono quelli del commit, e le patch le applica check.yml)
 n=0
-for f in patches/edk2/*.patch patches/tianocore/*.patch edk2/OuroBiosPkg/*.patch edk2/OuroBiosPkg/*.dec; do
+for f in patches/edk2/*.patch patches/tianocore/*.patch edk2/OuroBiosPkg/*.patch edk2/OuroBiosPkg/*.dec \
+	edk2/OuroBiosPkg/*/*.c edk2/OuroBiosPkg/*/*.h; do
 	git cat-file -e "HEAD:${f}" 2>/dev/null || continue
 	before="$(git show "HEAD:${f}" | grep -c $'\r$' || true)"
 	now="$(grep -c $'\r$' "${f}" || true)"
