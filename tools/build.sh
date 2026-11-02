@@ -63,6 +63,11 @@
 #                  le loro capsule, fatte come quelle delle release, e una
 #                  di B senza RW_MRC_CACHE, come quelle del M920x. Le ROM del
 #                  W541 non c'entrano. Seriale in WORK/update-test/out
+#   edk2-upstream  la prima fase del passaggio a EDK II di TianoCore: il
+#                  payload di EDK2_UPSTREAM_TAG senza patch in una ROM per
+#                  QEMU q35, e i passi della prova di fumo che non chiedono
+#                  il setup del progetto (tools/qemu-smoke.py --upstream).
+#                  Esito in WORK/edk2-upstream; mai in una release
 #   keys           controlla le chiavi di firma dell'ambiente (CAPSULE_SIGNING_KEY,
 #                  VBOOT_SIGNING_KEY) senza build: con --release devono esserci
 #   toolchain-key  stampa la chiave della cache del crossgcc (build.yml)
@@ -169,6 +174,17 @@ EDK2_SUBDIR="payloads/external/edk2/workspace/mrchromebox"
 # "git submodule update --init --recursive" del Makefile di coreboot, che
 # li clonerebbe tutti (2.8 GiB, tre volte il tempo di prepare)
 EDK2_SUBMODULES=(CryptoPkg/Library/OpensslLib/openssl BaseTools/Source/C/BrotliCompress/brotli LvglPkg)
+# EDK II di TianoCore, per tools/build.sh edk2-upstream (la prima fase del
+# passaggio a TianoCore, docs/roadmap.md): un tag stabile al suo commit, accanto
+# all'EDK2 di MrChromebox nel workspace del Makefile del payload (la cartella
+# e' il proprietario del repository). I submodule come sopra, senza LvglPkg e
+# con libfdt, che MdePkg/Library/BaseFdtLib compila per UefiPayloadPkg
+EDK2_UPSTREAM_REPO="https://github.com/tianocore/edk2"
+EDK2_UPSTREAM_TAG="edk2-stable202608"
+EDK2_UPSTREAM_COMMIT="2970e5699ba6267f3384ffab20f96647578aebc8"
+EDK2_UPSTREAM_SUBDIR="payloads/external/edk2/workspace/tianocore"
+EDK2_UPSTREAM_SUBMODULES=(CryptoPkg/Library/OpensslLib/openssl BaseTools/Source/C/BrotliCompress/brotli
+	MdePkg/Library/BaseFdtLib/libfdt)
 # I font della schermata di aggiornamento del firmware (patches/edk2/0026):
 # tools/ui-font.py li fa da quelli di LVGL nell'albero di EDK2, dopo le patch
 UI_FONT_LVGL="LvglPkg/Library/LvglLib/lvgl/src/font"
@@ -292,7 +308,7 @@ while [ $# -gt 0 ]; do
 		--dist)      DIST="$(realpath -m "${2:?--dist DIR}")"; shift 2 ;;
 		--jobs)      JOBS="${2:?--jobs N}"; shift 2 ;;
 		-h|--help)   sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
-		prepare|toolchain|config|roms|repro|menu|smoke|update-test|keys|toolchain-key) CMDS+=("$1"); shift ;;
+		prepare|toolchain|config|roms|repro|menu|smoke|update-test|edk2-upstream|keys|toolchain-key) CMDS+=("$1"); shift ;;
 		*) die "argomento sconosciuto: $1 (tools/build.sh --help)" ;;
 	esac
 done
@@ -799,6 +815,36 @@ pinned_commit() {
 # senza il contenuto dei file, che arriva solo per i commit pinnati. EDK2 e
 # LvglPkg, che MrChromebox riscrive, vengono dai mirror del progetto quando
 # il loro repository non ha piu' il commit pinnato (o non c'e' piu').
+# Le cartelle di include che i .dec dei pacchetti di EDK2 nell'albero $1
+# elencano nei submodule lasciati fuori (gli altri argomenti: i submodule
+# presi): vuote, nei percorsi dei submodule non inizializzati. BaseTools
+# si ferma su una cartella che non c'e' ("error 000E"), anche se nessun
+# modulo la usa
+edk2_dec_includes() {
+	python3 - "$@" <<-'EOF' || die "EDK2: cartelle di include dei .dec ($1)"
+		import os, subprocess, sys
+		root, active = sys.argv[1], sys.argv[2:]
+		paths = subprocess.run(["git", "-C", root, "config", "-f", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$"],
+		                       capture_output=True, text=True, check=True).stdout.split()[1::2]
+		off = [p for p in paths if p not in active]
+		made = 0
+		for dec in sorted(d for d in os.listdir(root) if os.path.isfile(os.path.join(root, d, d + ".dec"))):
+		    section = None
+		    for line in open(os.path.join(root, dec, dec + ".dec"), errors="replace"):
+		        line = line.split("#")[0].strip()
+		        if line.startswith("["):
+		            section = line.lower()
+		            continue
+		        if not line or section is None or not section.startswith("[includes"):
+		            continue
+		        rel = os.path.join(dec, line.split("|")[0].strip())
+		        if any(rel == s or rel.startswith(s + "/") for s in off) and not os.path.isdir(os.path.join(root, rel)):
+		            os.makedirs(os.path.join(root, rel))
+		            made += 1
+		print("  %d cartelle di include dei .dec nei submodule lasciati fuori" % made)
+	EOF
+}
+
 prepare_edk2() {
 	local rev p n lvgl others
 	rev="$(edk2_rev)"
@@ -868,28 +914,7 @@ prepare_edk2() {
 	# lasciati fuori (mipisyst, mbedtls, libspdm...): BaseTools si ferma su
 	# una cartella che non c'e' ("error 000E"), anche se nessun modulo la
 	# usa. Vuote, nei percorsi dei submodule non inizializzati
-	python3 - "${EDK2_DIR}" "${EDK2_SUBMODULES[@]}" <<-'EOF' || die "EDK2: cartelle di include dei .dec"
-		import os, subprocess, sys
-		root, active = sys.argv[1], sys.argv[2:]
-		paths = subprocess.run(["git", "-C", root, "config", "-f", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$"],
-		                       capture_output=True, text=True, check=True).stdout.split()[1::2]
-		off = [p for p in paths if p not in active]
-		made = 0
-		for dec in sorted(d for d in os.listdir(root) if os.path.isfile(os.path.join(root, d, d + ".dec"))):
-		    section = None
-		    for line in open(os.path.join(root, dec, dec + ".dec"), errors="replace"):
-		        line = line.split("#")[0].strip()
-		        if line.startswith("["):
-		            section = line.lower()
-		            continue
-		        if not line or section is None or not section.startswith("[includes"):
-		            continue
-		        rel = os.path.join(dec, line.split("|")[0].strip())
-		        if any(rel == s or rel.startswith(s + "/") for s in off) and not os.path.isdir(os.path.join(root, rel)):
-		            os.makedirs(os.path.join(root, rel))
-		            made += 1
-		print("  %d cartelle di include dei .dec nei submodule lasciati fuori" % made)
-	EOF
+	edk2_dec_includes "${EDK2_DIR}" "${EDK2_SUBMODULES[@]}"
 	echo "  submodule: ${EDK2_SUBMODULES[*]}, LvglPkg/Library/LvglLib/lvgl"
 
 	# --whitespace=nowarn: le righe CRLF dei file di EDK2 per git apply sono
@@ -1967,6 +1992,101 @@ update_test_build() {
 		|| die "update-test: capsula ${n}-cache non fatta"
 }
 
+# L'EDK2 di TianoCore al commit di EDK2_UPSTREAM_TAG, con i suoi soli
+# submodule della lista e nessuna patch (la prima fase: com'e')
+prepare_edk2_upstream() {
+	local d="${TREE}/${EDK2_UPSTREAM_SUBDIR}" p got
+	say "EDK2 di TianoCore ${EDK2_UPSTREAM_TAG} (${EDK2_UPSTREAM_COMMIT:0:12})"
+	if [ ! -d "${d}/.git" ]; then
+		rm -rf "${d}"
+		mkdir -p "$(dirname "${d}")"
+		git clone -q --filter=blob:none --no-checkout "${EDK2_UPSTREAM_REPO}" "${d}" \
+			|| die "EDK2 di TianoCore: clone da ${EDK2_UPSTREAM_REPO} fallito"
+	fi
+	git -C "${d}" fetch -q origin "refs/tags/${EDK2_UPSTREAM_TAG}:refs/tags/${EDK2_UPSTREAM_TAG}" \
+		|| die "EDK2 di TianoCore: il tag ${EDK2_UPSTREAM_TAG} non arriva"
+	got="$(git -C "${d}" rev-parse "${EDK2_UPSTREAM_TAG}^{commit}")"
+	[ "${got}" = "${EDK2_UPSTREAM_COMMIT}" ] \
+		|| die "EDK2 di TianoCore: ${EDK2_UPSTREAM_TAG} e' ${got:0:12}, non ${EDK2_UPSTREAM_COMMIT:0:12} (EDK2_UPSTREAM_COMMIT)"
+	git -C "${d}" checkout -q --force --detach "${EDK2_UPSTREAM_COMMIT}"
+	git -C "${d}" clean -q -fd
+	git -C "${d}" config --unset-all submodule.active 2>/dev/null || true
+	for p in $(git -C "${d}" config --name-only --get-regexp '^submodule\..*\.active$' 2>/dev/null); do
+		git -C "${d}" config --unset-all "${p}"
+	done
+	for p in "${EDK2_UPSTREAM_SUBMODULES[@]}"; do
+		git -C "${d}" config --add submodule.active "${p}"
+		[ -e "${d}/${p}/.git" ] || rm -rf "${d:?}/${p}"
+	done
+	git -C "${d}" submodule update -q --init --force --filter=blob:none "${EDK2_UPSTREAM_SUBMODULES[@]}" \
+		|| die "EDK2 di TianoCore: submodule"
+	git -C "${d}/CryptoPkg/Library/OpensslLib/openssl" config submodule.active "__none__"
+	git -C "${d}" submodule foreach -q --recursive 'git clean -q -fd'
+	edk2_dec_includes "${d}" "${EDK2_UPSTREAM_SUBMODULES[@]}"
+	echo "  submodule: ${EDK2_UPSTREAM_SUBMODULES[*]}"
+}
+
+# La prima fase del passaggio a EDK II di TianoCore (docs/roadmap.md): il
+# payload di EDK2_UPSTREAM_TAG com'e', costruito dal Makefile di coreboot
+# (EDK2_REPO_OFFICIAL) in una ROM per QEMU q35 con il coreboot di questo
+# albero, SMMSTORE e il TPM 1.2 come sul W541, poi tools/qemu-smoke.py
+# --upstream: la Shell con le variabili in SMMSTORE, i servizi runtime
+# spostati come da boot.efi di macOS, le misure nel log del TPM. Dice cosa
+# manca prima del setup, di Secure Boot e delle capsule. Mai in una release:
+# build in build-q35-tianocore dell'albero, esito in WORK/edk2-upstream
+cmd_edk2_upstream() {
+	need_prepared
+	local t q b reloc pcrs
+	for t in qemu-system-x86_64 mformat mmd mcopy clang ld.lld swtpm; do
+		command -v "${t}" > /dev/null \
+			|| die "edk2-upstream: serve ${t} (Debian/Ubuntu: apt install qemu-system-x86 mtools clang lld swtpm)"
+	done
+	if [ "${TOOLCHAIN}" = crossgcc ]; then
+		xgcc_ok || die "crossgcc mancante in ${XGCC}: prima tools/build.sh toolchain"
+		export PATH="${XGCC}/bin:${PATH}"
+	fi
+	prepare_edk2_upstream
+	q="q35-tianocore"
+	b="${TREE}/build-${q}"
+	say "edk2-upstream: coreboot per QEMU q35 con il payload di ${EDK2_UPSTREAM_TAG}"
+	rm -rf "${b:?}"
+	mkdir -p "${b}"
+	{
+		echo "CONFIG_VENDOR_EMULATION=y"
+		echo "CONFIG_BOARD_EMULATION_QEMU_X86_Q35=y"
+		echo "CONFIG_CPU_QEMU_X86_TSEG_SMM=y"
+		echo "CONFIG_SMMSTORE=y"
+		echo "CONFIG_PAYLOAD_EDK2=y"
+		echo "CONFIG_EDK2_REPO_OFFICIAL=y"
+		echo "CONFIG_EDK2_TAG_OR_REV=\"${EDK2_UPSTREAM_COMMIT}\""
+		echo "CONFIG_GENERIC_LINEAR_FRAMEBUFFER=y"
+		echo "CONFIG_DRIVERS_EMULATION_QEMU_XRES=1920"
+		echo "CONFIG_DRIVERS_EMULATION_QEMU_YRES=1080"
+		echo "CONFIG_TPM1=y"
+		echo "CONFIG_MEMORY_MAPPED_TPM=y"
+		echo "CONFIG_TPM_INIT_RAMSTAGE=y"
+		echo "CONFIG_TPM_MEASURED_BOOT=y"
+		echo "CONFIG_LOCALVERSION=\"ouroBIOS-${VERSION}-tianocore-q35\""
+		if [ "${TOOLCHAIN}" = host ]; then echo "CONFIG_ANY_TOOLCHAIN=y"; fi
+	} > "${b}/defconfig"
+	mk "${q}" defconfig KBUILD_DEFCONFIG="build-${q}/defconfig" > "${b}/defconfig.log" 2>&1 \
+		|| { cat "${b}/defconfig.log"; die "edk2-upstream: make defconfig fallito"; }
+	defconfig_kept "${b}" || die "edk2-upstream: il .config di q35 non ha tutto il defconfig"
+	if ! mk "${q}" -j"${JOBS}" > "${b}/make.log" 2>&1; then
+		grep -n -i -B2 -A6 'error' "${b}/make.log" | tail -n 60 > "${b}/errors.log" || true
+		failure_report "edk2-upstream: build" "${b}/errors.log" "${b}/make.log"
+		die "edk2-upstream: build per q35 fallita (build-${q}/make.log nell'albero)"
+	fi
+	reloc="${WORK}/rt-reloc-test.efi"
+	efi_app "${O}/tools/efi/rt-reloc-test.c" "${reloc}" || die "edk2-upstream: tools/efi/rt-reloc-test.c non compila"
+	pcrs="${WORK}/tpm-pcr-test.efi"
+	efi_app "${O}/tools/efi/tpm-pcr-test.c" "${pcrs}" || die "edk2-upstream: tools/efi/tpm-pcr-test.c non compila"
+	say "edk2-upstream: QEMU"
+	python3 "${O}/tools/qemu-smoke.py" --upstream --out "${WORK}/edk2-upstream" --reloc-test "${reloc}" \
+		--tpm "${pcrs}" "${b}/coreboot.rom" \
+		|| die "edk2-upstream: qualche passo non passa con ${EDK2_UPSTREAM_TAG} (${WORK}/edk2-upstream)"
+}
+
 # I comandi di una board (config, roms, repro, menu, smoke) per ogni board
 # di --board; gli altri una volta, per tutte
 each_board() {
@@ -1987,6 +2107,7 @@ for c in "${CMDS[@]}"; do
 		menu)          each_board cmd_menu ;;
 		smoke)         each_board cmd_smoke ;;
 		update-test)   cmd_update_test ;;
+		edk2-upstream) cmd_edk2_upstream ;;
 		keys)          cmd_keys ;;
 		toolchain-key) cmd_toolchain_key ;;
 	esac

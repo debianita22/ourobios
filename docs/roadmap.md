@@ -29,7 +29,7 @@ is here. None of it is a promise of a date.
 | [Card reader of the W541](#card-reader-of-the-w541) | W541 | the premise was wrong: the reader is most likely not a Realtek | `lspci -nn` on the laptop |
 | [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | the field is reserved on Haswell client processors | the TCC line of `hw-report.py` on a W541 |
 | [Upstream changes not taken](#upstream-changes-not-taken) | W541 | 96893 unreviewed and no gain here; 95880 and 95912 at Code-Review -2 | the next coreboot pin; `rfkill` on a W541 |
-| [EDK II from TianoCore](#edk-ii-from-tianocore) | both | the setup (CFR, LvglPkg), the splash, the password and the Secure Boot keys exist only in MrChromebox's branch | the upstream payload in the QEMU smoke test; the setup as a package outside the tree |
+| [EDK II from TianoCore](#edk-ii-from-tianocore) | both | the setup (CFR, LvglPkg), the splash, the password and the Secure Boot keys exist only in MrChromebox's branch | step (a) in CI (`tools/build.sh edk2-upstream`, `edk2-upstream.yml`); then the setup as a package outside the tree |
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
 | [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
 | [Openness score](#openness-score) | both | already in `tools/sbom.py` | a comparison with Dasharo's own tool |
@@ -517,7 +517,16 @@ The order, each step tested in the QEMU smoke and update tests before any
 ROM: (a) the upstream payload built against coreboot at `EDK2_REPO_OFFICIAL`
 on a tag `edk2-stableYYYYMM`, with variables, capsules, the ESRT and
 Secure Boot through `SecureBootDefaultKeysDxe` and the PCDs of the keys,
-without a setup; (b) the setup, splash and password as a package of their
+without a setup. The first part of it is `tools/build.sh edk2-upstream`
+(the workflow `edk2-upstream.yml`, by hand or on a push to a `ci-edk2/`
+branch): `edk2-stable202608` as it is, in a q35 image with this tree's
+coreboot, SMMSTORE and the TPM 1.2 of the W541, then the steps of the
+smoke test that need no setup of the project (`qemu-smoke.py
+--upstream`): the Shell writing variables to SMMSTORE across a reboot,
+the runtime services moved as macOS's boot.efi moves them, the TPM log
+replayed. Each step is reported on its own, so that the run says what is
+missing, not only the first thing; Secure Boot and the capsules come
+after; (b) the setup, splash and password as a package of their
 own outside the tree (`OuroBiosPkg`: CfrSetupMenuDxe, LvglPkg and its
 LVGL, the update screen), built with the upstream tree, so that the
 *System Preferences* setup stays as it is; (c) the six patches on core

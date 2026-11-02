@@ -43,6 +43,12 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   the binary units of recent dmidecode versions (GiB, MiB) too: a W541
   got *SMBIOS non elenca moduli* with every slot populated; when the
   entries are there and no size is read, it lists what dmidecode said.
+- The move to upstream TianoCore EDK II starts in CI:
+  `tools/build.sh edk2-upstream` builds `edk2-stable202608` as it is
+  into a q35 image with this tree's coreboot and runs the steps of the
+  smoke test that need no setup of the project, each reported on its own
+  (`qemu-smoke.py --upstream`; the workflow `edk2-upstream.yml`, by hand
+  or on a push to `ci-edk2/**`). No release image changes.
 - README and docs/m920x.md: the M920x releases are releases, as they
   have been since v1.4.0.
 

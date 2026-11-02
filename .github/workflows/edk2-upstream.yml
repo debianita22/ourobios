@@ -1,0 +1,69 @@
+# La prima fase del passaggio a EDK II di TianoCore (docs/roadmap.md, "EDK II
+# from TianoCore"): il payload di EDK2_UPSTREAM_TAG di tools/build.sh, senza
+# le patch del progetto, in una ROM per QEMU q35 con il coreboot di questo
+# albero, e i passi della prova di fumo che non chiedono il setup del
+# progetto (tools/build.sh edk2-upstream, tools/qemu-smoke.py --upstream).
+# Non tocca le release: a mano (Run workflow) o con un push su un ramo
+# ci-edk2/** (non ci-test/**, che fa partire anche build.yml). Schermate,
+# seriale e log negli artifact (14 giorni).
+name: EDK2 upstream
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['ci-edk2/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: edk2-upstream-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  q35:
+    name: Payload di TianoCore in QEMU q35
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+
+      # come il job update-test di build.yml, con swtpm per il TPM 1.2
+      - name: Pacchetti
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential bison flex gnat libncurses-dev \
+            zlib1g-dev m4 curl git python3 uuid-dev imagemagick \
+            libssl-dev pkg-config qemu-system-x86 mtools clang lld nasm xxd swtpm >/dev/null
+
+      - name: coreboot pinnato, submodule, patch e blob
+        run: ./tools/build.sh prepare
+
+      - name: Chiave del crossgcc
+        id: tc
+        run: echo "key=$(./tools/build.sh toolchain-key)" >> "${GITHUB_OUTPUT}"
+
+      - name: crossgcc dalla cache
+        uses: actions/cache/restore@v6
+        with:
+          path: work/coreboot/util/crossgcc/xgcc
+          key: ${{ steps.tc.outputs.key }}
+
+      - name: crossgcc
+        run: ./tools/build.sh toolchain
+
+      - name: EDK2 di TianoCore in QEMU
+        run: ./tools/build.sh edk2-upstream
+
+      - name: Schermate, seriale e log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: edk2-upstream-${{ github.sha }}
+          path: |
+            work/edk2-upstream/
+            work/coreboot/build-q35-tianocore/make.log
+            work/coreboot/build-q35-tianocore/errors.log
+            work/coreboot/build-q35-tianocore/.config
+          retention-days: 14
+          if-no-files-found: ignore

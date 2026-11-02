@@ -7,6 +7,8 @@
 #                               [--vga-mb N] [--size WxH] [--reloc-test EFI]
 #                               [--sb-test EFI --esrt GUID:VERSIONE:LSV [--sb-only]]
 #                               [--tpm EFI [--tpm2]] ROM
+#   python3 tools/qemu-smoke.py --upstream [--out DIR] [--reloc-test EFI]
+#                               [--tpm EFI] ROM
 #
 # Controlla, in ordine:
 #   1. coreboot arriva al payload ("Jumping to boot code" sulla seriale);
@@ -1027,6 +1029,67 @@ def tpm_test(rom, efi, out, timeout, tpm2=False):
                 swtpm.kill()
 
 
+def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None):
+    """--upstream: il payload di EDK II di TianoCore senza le patch del
+    progetto (tools/build.sh edk2-upstream, la prima fase del passaggio a
+    TianoCore, docs/roadmap.md). Solo i passi che non chiedono il setup del
+    progetto, iPXE, CSMWrap o EnrollDefaultKeys: coreboot arriva al payload,
+    senza dischi il payload arriva alla Shell e setvar scrive in SMMSTORE
+    (due avvii, come il passo 6), poi i servizi runtime spostati (passo 9) e
+    il TPM 1.2 con il log (passo 11). Ogni passo per conto suo: uno che non
+    passa non nasconde gli altri, che e' quel che la prova deve dire.
+    Torna (righe, passi falliti)."""
+    os.makedirs(out, exist_ok=True)
+    lines, failed = [], []
+    t0 = time.monotonic()
+
+    def at():
+        return "%3.0f s" % (time.monotonic() - t0)
+
+    def step(name, fn):
+        try:
+            lines.append("ok  %s  %s" % (at(), fn()))
+        except Fail as e:
+            failed.append(name)
+            lines.append("NO  %s  %s: %s" % (at(), name, e))
+
+    def shell_vars():
+        sm = Smoke(rom, out, timeout)
+        try:
+            for i, value in enumerate(VAR_DATA):
+                sm.boot("upstream-shell-%d" % (i + 1))
+                sm.wait("coreboot non e' arrivato al payload (\"Jumping to boot code\" nella seriale)",
+                        lambda: (sm.alive(), "Jumping to boot code" in sm.serial_text())[1], timeout)
+                shell = sm.stable("il payload non e' arrivato alla Shell UEFI", timeout)
+                sm.shot("upstream-shell-%d" % (i + 1))
+                if shell.colors() > 8:
+                    raise Fail("senza dischi il payload non si e' fermato nella Shell (%d colori)"
+                               % shell.colors())
+                sm.type("setvar %s -guid %s -bs -rt -nv =%s\n" % (VAR_NAME, VAR_GUID, value))
+                sm.wait("setvar non ha scritto %s nel flash (SMMSTORE)" % VAR_NAME,
+                        lambda: (sm.alive(), any(c[0] in VAR_VALID and c[2] == value
+                                                 for c in store_copies(sm.flash)))[1], timeout)
+                sm.halt()
+                valid = [c for c in store_copies(sm.flash) if c[0] in VAR_VALID]
+                if len(valid) != 1 or valid[0][2] != value:
+                    raise Fail("nello store %d copie valide di %s, attesa una con %s"
+                               % (len(valid), VAR_NAME, value))
+            boots = sm.serial_text().count("bootblock starting")
+            if boots > 1:
+                raise Fail("coreboot e' partito %d volte nell'ultimo avvio" % boots)
+            return ("coreboot -> payload -> Shell; setvar scrive %s in SMMSTORE, e dopo un riavvio la "
+                    "riscrive lasciandone una copia valida" % VAR_NAME)
+        finally:
+            sm.close()
+
+    step("SMMSTORE", shell_vars)
+    if reloc_efi:
+        step("servizi runtime", lambda: reloc_test(rom, reloc_efi, out, timeout))
+    if tpm:
+        step("TPM 1.2", lambda: tpm_test(rom, tpm, out, timeout))
+    return lines, failed
+
+
 def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=None, sb_efi=None,
         esrt=None, sb_only=False, tpm=None, tpm2=False):
     os.makedirs(out, exist_ok=True)
@@ -1216,6 +1279,9 @@ def main():
     ap.add_argument("--tpm", metavar="EFI",
                     help="tools/efi/tpm-pcr-test.c compilato: il passo 11, il TPM 1.2 di swtpm e il log "
                     "TCPA (ROM con CONFIG_TPM1 e CONFIG_TPM_MEASURED_BOOT)")
+    ap.add_argument("--upstream", action="store_true",
+                    help="il payload di EDK II di TianoCore (tools/build.sh edk2-upstream): solo la Shell "
+                    "con SMMSTORE, --reloc-test e --tpm, ogni passo per conto suo")
     ap.add_argument("--tpm2", action="store_true",
                     help="il passo 11 con il TPM 2.0 di swtpm, banchi SHA-1 e SHA-256, e il log di "
                     "EFI_TCG2_PROTOCOL (ROM con CONFIG_TPM2 e CONFIG_TPM_MEASURED_BOOT_SHA1_BANK)")
@@ -1252,6 +1318,18 @@ def main():
         for tool in ("mformat", "mmd", "mcopy"):
             if not shutil.which(tool):
                 sys.exit("serve %s per i passi 9, 10 e 11 (Debian/Ubuntu: apt install mtools)" % tool)
+    if args.upstream:
+        if args.sb_test or args.sb_only or args.setup_only or args.tpm2:
+            ap.error("--upstream: solo --reloc-test e --tpm")
+        lines, failed = run_upstream(args.rom, args.out, args.timeout, args.reloc_test, args.tpm)
+        for line in lines:
+            print("  %s" % line)
+        if failed:
+            print("smoke upstream: %d passi non passano (%s): %s (schermate e seriale in %s)"
+                  % (len(failed), ACCEL.upper(), ", ".join(failed), args.out))
+            return 1
+        print("smoke upstream: passato (%s; schermate in %s)" % (ACCEL.upper(), args.out))
+        return 0
     try:
         steps = run(args.rom, args.out, args.timeout, args.setup_only, args.vga_mb, size,
                     args.reloc_test, args.sb_test, esrt, args.sb_only, args.tpm, args.tpm2)
