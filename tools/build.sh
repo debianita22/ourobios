@@ -2092,7 +2092,10 @@ edk2_upstream_rom() {
 		|| { cat "${b}/defconfig.log"; die "edk2-upstream: make defconfig di ${q} fallito"; }
 	defconfig_kept "${b}" || die "edk2-upstream: il .config di ${q} non ha tutto il defconfig"
 	if ! mk "${q}" -j"${JOBS}" > "${b}/make.log" 2>&1; then
-		grep -n -i -B2 -A6 'error' "${b}/make.log" | tail -n 60 > "${b}/errors.log" || true
+		# gli errori di EDK II (build.py, GenFds, GenFv e gli altri tool, il
+		# compilatore) e di make, senza le righe che dicono solo -Werror
+		grep -n -E '(error|ERROR|Error) ?[0-9]{3,}|Gen(Fds|Fv|Ffs|Sec)|: error:|exceed|\] Error [0-9]' \
+			"${b}/make.log" | grep -v -e '-Werror' | tail -n 60 > "${b}/errors.log" || true
 		failure_report "edk2-upstream: build di ${q}" "${b}/errors.log" "${b}/make.log"
 		return 1
 	fi
@@ -2121,10 +2124,15 @@ cmd_edk2_upstream() {
 	edk2_upstream_rom "${q}" || die "edk2-upstream: build per q35 fallita (build-${q}/make.log nell'albero)"
 	# la stessa ROM con Secure Boot (AuthVariableLib, SecureBootConfigDxe):
 	# il Kconfig di coreboot non da' EDK2_SECURE_BOOT_SUPPORT con
-	# EDK2_REPO_OFFICIAL, il .dsc di UefiPayloadPkg ha SECURE_BOOT_ENABLE
+	# EDK2_REPO_OFFICIAL, il .dsc di UefiPayloadPkg ha SECURE_BOOT_ENABLE.
+	# Con l'FD di 7 MiB di UefiPayloadPkg.fdf GenFv non ha fatto PLDFV (run
+	# di c8609ee): 12 MiB, come il payload DEBUG del progetto (edk2/0024);
+	# un -D della riga di comando vince sul DEFINE dell'.fdf (FdfParser.py,
+	# _GetMacroValue), senza patch
 	sb="${TREE}/build-${q}-sb"
 	say "edk2-upstream: la stessa con SECURE_BOOT_ENABLE"
-	if ! edk2_upstream_rom "${q}-sb" "CONFIG_EDK2_CUSTOM_BUILD_PARAMS=\"-D SECURE_BOOT_ENABLE=TRUE\""; then
+	if ! edk2_upstream_rom "${q}-sb" \
+		"CONFIG_EDK2_CUSTOM_BUILD_PARAMS=\"-D SECURE_BOOT_ENABLE=TRUE -D FD_SIZE=0x00C00000 -D NUM_BLOCKS=0xC00\""; then
 		bad+=("la build con SECURE_BOOT_ENABLE (build-${q}-sb/make.log nell'albero)")
 		sb=""
 	fi
