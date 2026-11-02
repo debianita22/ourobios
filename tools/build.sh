@@ -2145,7 +2145,7 @@ EDK2_UNIT_TEST_SUBMODULES=(UnitTestFrameworkPkg/Library/CmockaLib/cmocka
 	MdePkg/Library/MipiSysTLib/mipisyst MdeModulePkg/Library/BrotliCustomDecompressLib/brotli)
 cmd_edk2_unit_test() {
 	need_prepared
-	local ws="${WORK}/edk2-unit-test" dsc pkgs="" t name n=0
+	local ws="${WORK}/edk2-unit-test" dsc pkgs="" p t name n=0
 	local -a bad=()
 	if [ "$(edk2_base)" = package ]; then
 		dsc="OuroBiosPkg/Test/UefiPayloadPkgHostTest.dsc"
@@ -2156,6 +2156,14 @@ cmd_edk2_unit_test() {
 	say "edk2-unit-test: ${dsc}"
 	rm -rf "${ws:?}"
 	mkdir -p "${ws}"
+	# prepare ha messo nei submodule lasciati fuori le cartelle di include
+	# dei .dec, vuote (edk2_dec_includes): via, perche' il clone le vuole vuote
+	for p in "${EDK2_UNIT_TEST_SUBMODULES[@]}"; do
+		[ ! -e "${EDK2_DIR}/${p}/.git" ] && [ -d "${EDK2_DIR}/${p}" ] || continue
+		[ -z "$(find "${EDK2_DIR}/${p}" -type f -print -quit)" ] \
+			|| die "edk2-unit-test: ${p} non e' un submodule inizializzato e ha dei file"
+		rm -rf "${EDK2_DIR:?}/${p}"
+	done
 	git -C "${EDK2_DIR}" submodule update -q --init --force --filter=blob:none -- "${EDK2_UNIT_TEST_SUBMODULES[@]}" \
 		|| die "edk2-unit-test: i submodule delle prove non arrivano (${EDK2_UNIT_TEST_SUBMODULES[*]})"
 	if ! make -C "${EDK2_DIR}/BaseTools/Source/C" -j"${JOBS}" > "${ws}/basetools.log" 2>&1; then
