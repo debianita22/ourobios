@@ -48,10 +48,20 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   entries are there and no size is read, it lists what dmidecode said.
 - The move to upstream TianoCore EDK II starts in CI:
   `tools/build.sh edk2-upstream` builds `edk2-stable202608` as it is
-  into a q35 image with this tree's coreboot and runs the steps of the
-  smoke test that need no setup of the project, each reported on its own
-  (`qemu-smoke.py --upstream`; the workflow `edk2-upstream.yml`, by hand
-  or on a push to `ci-edk2/**`). No release image changes.
+  into two q35 images with this tree's coreboot, one with
+  `SECURE_BOOT_ENABLE`, and runs the steps of the smoke test that need no
+  setup of the project, each reported on its own (`qemu-smoke.py
+  --upstream`; the workflow `edk2-upstream.yml`, by hand or on a push to
+  `ci-edk2/**`). The upstream payload keeps variables in SMMSTORE across
+  a reboot, and keeps a store in the authenticated format that the
+  current payload gives; the runtime services moved as boot.efi moves them,
+  the TPM 1.2 and an authenticated store on an erased SMMSTORE are known
+  gaps, each with what closes it. No release image changes.
+- Step (b) of the move starts: [`edk2/OuroBiosPkg`](edk2/README.md), the
+  package of the payload outside the EDK II tree, a `.dec` and the
+  platform as a patch on `UefiPayloadPkg.dsc`, built by coreboot with
+  patch 0216 (`EDK2_PLATFORM_DSC`, `EDK2_PACKAGES_PATH`; with the defaults
+  the boards build as before) into a third image of `edk2-upstream`.
 - [docs/edk2-migration.md](docs/edk2-migration.md): the 100 commits of
   MrChromebox's branch over `edk2-stable202608`, each with what it
   becomes in the move to TianoCore (the project's package, a patch to

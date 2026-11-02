@@ -29,7 +29,7 @@ is here. None of it is a promise of a date.
 | [Card reader of the W541](#card-reader-of-the-w541) | W541 | the premise was wrong: the reader is most likely not a Realtek | `lspci -nn` on the laptop |
 | [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | the field is reserved on Haswell client processors | the TCC line of `hw-report.py` on a W541 |
 | [Upstream changes not taken](#upstream-changes-not-taken) | W541 | 96893 unreviewed and no gain here; 95880 and 95912 at Code-Review -2 | the next coreboot pin; `rfkill` on a W541 |
-| [EDK II from TianoCore](#edk-ii-from-tianocore) | both | the setup (CFR, LvglPkg), the splash, the password and the Secure Boot keys exist only in MrChromebox's branch | step (a) in CI (`tools/build.sh edk2-upstream`, `edk2-upstream.yml`); then the setup as a package outside the tree |
+| [EDK II from TianoCore](#edk-ii-from-tianocore) | both | the setup (CFR, LvglPkg), the splash, the password and the Secure Boot keys exist only in MrChromebox's branch | step (a) in CI (`tools/build.sh edk2-upstream`, `edk2-upstream.yml`): SMMSTORE passes, three known gaps ([docs/edk2-migration.md](edk2-migration.md#step-a-edk2-stable202608-in-qemu)); step (b) started, the package [`edk2/OuroBiosPkg`](../edk2/README.md) built outside the tree |
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
 | [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
 | [Openness score](#openness-score) | both | already in `tools/sbom.py` | a comparison with Dasharo's own tool |
@@ -514,7 +514,7 @@ SioBusDxe), `0007` (Ps2MouseDxe), `0019` (TcgDxe), `0032` (DxeCore),
 `0039` (Variable, MOR), `0041` (already in mainline: it goes).
 MrChromebox's branch itself is `edk2-stable202608` and 100 commits of his:
 [docs/edk2-migration.md](edk2-migration.md) lists them, each with what it
-becomes (39 to the package, 23 carried, 17 to propose upstream, 19 left
+becomes (40 to the package, 23 carried, 17 to propose upstream, 18 left
 out, 2 already in TianoCore's `master`).
 
 The order, each step tested in the QEMU smoke and update tests before any
@@ -528,12 +528,19 @@ coreboot, SMMSTORE and the TPM 1.2 of the W541, then the steps of the
 smoke test that need no setup of the project (`qemu-smoke.py
 --upstream`): the Shell writing variables to SMMSTORE across a reboot,
 the runtime services moved as macOS's boot.efi moves them, the TPM log
-replayed. Each step is reported on its own, so that the run says what is
-missing, not only the first thing; Secure Boot and the capsules come
-after; (b) the setup, splash and password as a package of their
+replayed and, in a second image with `SECURE_BOOT_ENABLE`, the store that
+the payload formats on an erased SMMSTORE. Each step is reported on its
+own, so that the run says what is missing, not only the first thing; the
+ones that fail for a known gap do not fail the job, and are listed with
+what closes them ([docs/edk2-migration.md](edk2-migration.md#step-a-edk2-stable202608-in-qemu)).
+The Secure Boot keys and the capsules come after; (b) the setup, splash
+and password as a package of their
 own outside the tree (`OuroBiosPkg`: CfrSetupMenuDxe, LvglPkg and its
 LVGL, the update screen), built with the upstream tree, so that the
-*System Preferences* setup stays as it is; (c) the six patches on core
+*System Preferences* setup stays as it is (started: `edk2/OuroBiosPkg`,
+which coreboot builds with patch 0216, in the third image of
+`edk2-upstream`; [docs/edk2-migration.md](edk2-migration.md#step-b-the-package-a-plan));
+(c) the six patches on core
 packages proposed upstream or carried as they are, each with a reason;
 (d) `tools/build.sh`, `configs/edk2-pins.txt` and `upstream.yml` on the
 upstream tags, which are stable, instead of the mirror of a moving

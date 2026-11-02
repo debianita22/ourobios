@@ -33,13 +33,94 @@ to be confirmed as each one is ported.
 | | package | carry | upstream | drop | merged | total |
 |---|---|---|---|---|---|---|
 | Setup menu and the other screens of the firmware | 14 | 7 | 4 | 1 | 0 | 26 |
-| Boot manager and boot options | 3 | 3 | 0 | 2 | 0 | 8 |
+| Boot manager and boot options | 4 | 3 | 0 | 1 | 0 | 8 |
 | Capsule updates and the ESRT | 6 | 1 | 1 | 0 | 0 | 8 |
 | Secure Boot, TPM and crypto | 9 | 1 | 1 | 0 | 0 | 11 |
 | Memory protection | 1 | 6 | 0 | 2 | 0 | 9 |
 | Drivers for storage, USB, graphics and the console | 2 | 1 | 6 | 12 | 1 | 22 |
 | Platform plumbing for coreboot | 4 | 4 | 5 | 2 | 1 | 16 |
-| **all** | 39 | 23 | 17 | 19 | 2 | 100 |
+| **all** | 40 | 23 | 17 | 18 | 2 | 100 |
+
+## Step (a): `edk2-stable202608` in QEMU
+
+`tools/build.sh edk2-upstream` (the workflow
+[`edk2-upstream.yml`](../.github/workflows/edk2-upstream.yml)) builds the
+payload of `edk2-stable202608` as it is into two q35 images with this
+tree's coreboot, an SMMSTORE of 512 KiB as on the W541 and the W541's
+TPM 1.2: one as coreboot's Makefile builds it for `EDK2_REPO_OFFICIAL`,
+one with `-D SECURE_BOOT_ENABLE=TRUE`. `qemu-smoke.py --upstream` runs
+each step on its own. The steps that fail for a gap below are
+`EDK2_UPSTREAM_GAPS` in `tools/build.sh`, each with the text of its
+failure: they do not fail the job; one that passes, or that fails for
+another reason, does, and the list and this page are revised.
+
+| Step | With `edk2-stable202608` | Why | What closes it |
+|---|---|---|---|
+| SMMSTORE | passes (`0ea5ae5`) | coreboot reaches the payload, the Shell writes a variable to SMMSTORE and rewrites it after a reboot, leaving one valid copy; FTW sets up its work space on the erased region | |
+| runtime services | gap (`0ea5ae5`) | SmmStoreLib keeps the arguments of its SMM calls in runtime services data (`AllocatePages()` below 4 GiB) and gives SMM their physical address: macOS's boot.efi moves that memory after ExitBootServices(), SMM reads the old place and SetVariable() returns `EFI_DEVICE_ERROR`, as ouroBIOS did up to v1.3.10-rc15 | coreboot's patch 0134 (a page after the block of the com buffer), `edk2/0029` (the com buffer as runtime MMIO, the arguments in it after SetVirtualAddressMap()) and `edk2/0044` (there from the start, for the WSMT): carried, and proposed to coreboot and TianoCore together |
+| TPM 1.2 | gap (`0ea5ae5`) | UefiPayloadPkg has no TCG driver: no `EFI_TCG_PROTOCOL`, and nothing of the payload is measured | MrChromebox's `c111515` and `5dc4840`, with `edk2/0019` and `0042` |
+| authenticated variables | gap (`ced8b20`) | `SmmStoreFvbRuntimeDxe` formats an erased SMMSTORE with `gEfiVariableGuid`, also with `SECURE_BOOT_ENABLE`: the variable driver then works without authenticated variables, and Secure Boot has nowhere to keep PK, KEK, db and dbx | the line of `2686758` in `SmmStoreFvbRuntimeDxe.c`, to propose upstream: for example the authenticated GUID when the payload has `SECURE_BOOT_ENABLE` |
+| authenticated store kept | passes (`574cb3b`) | the test turns the store that the payload formatted into one with `gEfiAuthenticatedVariableGuid` and no variables (`auth_convert`), the format that MrChromebox's payload, and so ouroBIOS's, gives an erased store since `2686758`: the upstream payload keeps it, its variable driver says it works with that format and setvar writes in it. A board's store in that format (`update.py vars` on a dump of the flash says which) is not lost to it | |
+| Secure Boot on an authenticated store | passes (`574cb3b`) | with `SECURE_BOOT_ENABLE` and such a store, AuthVariableLib writes `CustomMode`, `certdb` and `VendorKeysNv`: of Secure Boot, upstream lacks the format of an erased store and the default keys | |
+
+Three more things the runs show:
+
+- the Shell of TianoCore waits 5 s for `startup.nsh`
+  (`PcdShellDefaultDelay`) and reads a key each second; MrChromebox's
+  `4373c47` takes the script out, and in the package the PCD at 0 takes
+  out the wait;
+- `AcpiPlatform.efi` does not start (`EFI_ABORTED`): it installs the ACPI
+  tables of a firmware volume of the payload, which has none, since the
+  tables are coreboot's. The same driver is in MrChromebox's branch;
+- with `SECURE_BOOT_ENABLE` the DEBUG payload does not fit the 7 MiB FD of
+  `UefiPayloadPkg.fdf`, which keeps the DXE volume unpacked: GenFv does
+  not make `PLDFV` (`c8609ee`). `-D FD_SIZE=0x00C00000 -D NUM_BLOCKS=0xC00`
+  on the build's command line wins over the `.fdf`'s `DEFINE`
+  (`_GetMacroValue` in `GenFds/FdfParser.py`) and builds it (`ced8b20`),
+  so MrChromebox's `214b236` and the project's `edk2/0024` become a
+  setting of the package.
+
+## Step (b): the package, a plan
+
+Its first part is in CI (`587cf7a`): `edk2/OuroBiosPkg`, a `.dec` and the
+platform as a patch on `UefiPayloadPkg.dsc`
+([edk2/README.md](../edk2/README.md)), which coreboot builds with patch
+0216 into a third q35 image of `edk2-upstream`: it passes the steps of
+the upstream payload, with the same gaps. No ROM of a board changes until
+step (d).
+
+- **Where**: `edk2/OuroBiosPkg` in this repository, with its `.dec`, its
+  `.dsc` (and its `.fdf`, when it needs one) as patches on those of
+  `UefiPayloadPkg` of the tree it is built with, the modules and settings
+  of the commits marked *package* below and the patches of `patches/edk2`
+  that touch only `UefiPayloadPkg`; `LvglPkg` next to it, a package of its
+  own as it is now.
+- **Build**: coreboot's `payloads/external/edk2/Makefile` built
+  `-p UefiPayloadPkg/UefiPayloadPkg.dsc` with `PACKAGES_PATH` set to the
+  EDK II tree. Patch 0216 gives it two Kconfig strings,
+  `EDK2_PLATFORM_DSC` and `EDK2_PACKAGES_PATH`, the `.dsc` and the
+  directories to put before the tree, whose defaults do what it did (a
+  candidate for coreboot itself). The package keeps the output directory
+  and the FD name of `UefiPayloadPkg` (`Build/UefiPayloadPkgX64`,
+  `UEFIPAYLOAD`), which the Makefile expects.
+- **Settings, not patches of TianoCore**: the package's `.dsc` and `.fdf`
+  carry what MrChromebox and the project change in `UefiPayloadPkg`'s:
+  Secure Boot, the FD size (`214b236`, `edk2/0024`; a `-D` of the build
+  would also set it over the `.fdf`), `PcdShellDefaultDelay` (`4373c47`).
+- **The variable store**: the package formats an erased SMMSTORE with
+  `gEfiAuthenticatedVariableGuid`, and reads a store of that format as it
+  is, so that the boot entries and macOS's NVRAM (`boot-args`,
+  `csr-active-config`) survive the move: step (a) shows it for the format,
+  the update test is to show it with a store that the current payload
+  wrote.
+- **Tests, in order**: the third q35 image of `edk2-upstream`, from the
+  package: the steps of `--upstream` now, the whole smoke test of the
+  project's payload (setup, iPXE, CSMWrap, capsules, Secure Boot keys,
+  TPM) as its modules come; then the update test across the two
+  payloads, one in each vboot slot; the boards last, in step (d).
+- **What stays**: the read-only part, the patches of coreboot outside
+  `payloads/external/edk2`, the ACPI tables, the setup's options (CFR)
+  and their names: nothing changes for OpenCore or the OSes.
 
 ## Setup menu and the other screens of the firmware
 
@@ -78,7 +159,7 @@ to be confirmed as each one is ported.
 |---|---|---|---|
 | `d8205d0` | MdeModulePkg/UefiPayloadPkg: Add PrioritizeInternal boot device support | carry | PRIORITIZE_INTERNAL |
 | `4a4c3a1` | MdeModulePkg: Improve boot descriptions and skip duplicate eMMC | carry |  |
-| `4373c47` | ShellPkg: disable startup script, mapping print; show welcome banner | drop | cosmetic |
+| `4373c47` | ShellPkg: disable startup script, mapping print; show welcome banner | package | the 5 s of the Shell for `startup.nsh`: `PcdShellDefaultDelay` 0 in the package's .dsc ([step (a)](#step-a-edk2-stable202608-in-qemu)); the mapping and the banner are cosmetic |
 | `6676ad7` | UefiPayloadPkg/MdeModulePkg: Platform setup and boot defaults | package | PCD defaults of the package's .dsc |
 | `0ec988f` | UefiPayloadPkg: Add network and PXE boot support | drop | the UEFI network stack: the boards boot from the network with iPXE's own driver |
 | `9c5e2da` | PlatformBootManagerLib: Refactor BdsGetShellFvDevicePath | package |  |
@@ -102,8 +183,8 @@ to be confirmed as each one is ported.
 
 | Commit | Subject | Becomes | Note |
 |---|---|---|---|
-| `2686758` | UefiPayloadPkg: Enroll Keys for SecureBoot | package | EnrollDefaultKeys; or SecureBootDefaultKeysDxe with a provisioning step of the package |
-| `c111515` | UefiPayloadPkg/SecurityPkg/OvmfPkg: Add TPM 1.2/2.0 support | carry | TPM 1.2 and 2.0 in UefiPayloadPkg; edk2/0019 and 0042 build on it |
+| `2686758` | UefiPayloadPkg: Enroll Keys for SecureBoot | package | EnrollDefaultKeys; or SecureBootDefaultKeysDxe with a provisioning step of the package. Its line in SmmStoreFvbRuntimeDxe.c, an authenticated store, goes upstream ([step (a)](#step-a-edk2-stable202608-in-qemu)) |
+| `c111515` | UefiPayloadPkg/SecurityPkg/OvmfPkg: Add TPM 1.2/2.0 support | carry | TPM 1.2 and 2.0 in UefiPayloadPkg; edk2/0019 and 0042 build on it; without it no TCG protocol ([step (a)](#step-a-edk2-stable202608-in-qemu)) |
 | `db6619a` | UefiPayloadPkg: Use OvmfPkg PlatformSecureLib when Secure Boot enabled | package | a library mapping of the .dsc |
 | `51d7f47` | SecureBoot: Update revocation DBX to version 20260402 | package | data |
 | `a8b5b11` | UefiPayloadPkg/EnrollDefaultKeys: Provision default key reference variables | package |  |
@@ -159,11 +240,11 @@ to be confirmed as each one is ported.
 
 | Commit | Subject | Becomes | Note |
 |---|---|---|---|
-| `214b236` | UefiPayloadPkg: Increase FD size | package | .fdf |
+| `214b236` | UefiPayloadPkg: Increase FD size | package | .fdf; or `-D FD_SIZE` and `NUM_BLOCKS` of the build, which win over the .fdf ([step (a)](#step-a-edk2-stable202608-in-qemu)) |
 | `6cf55e1` | UefiCpuPkg: Disable MTRR programming for UefiPayloadPkg | drop | if step (a) shows that upstream's MtrrLib leaves coreboot's MTRRs alone, as coreboot's Kconfig help says of c4fdec0a83d6 |
 | `96303b7` | MdeModulePkg: Don't remove rejected PCI devices | carry |  |
 | `7f7b9c7` | UefiPayloadPkg: drop Platform override config | package |  |
-| `9701a6f` | MdeModulePkg/FaultTolerantWrite: Don't check for block alignment | carry | SMMSTORE blocks |
+| `9701a6f` | MdeModulePkg/FaultTolerantWrite: Don't check for block alignment | carry | SMMSTORE blocks; in [step (a)](#step-a-edk2-stable202608-in-qemu) FTW sets up its work space on the 512 KiB SMMSTORE without it, a fault tolerant write (a reclaim of the store) is still to be seen |
 | `2deb904` | UefiPayloadPkg: Check more ACPI tables | carry |  |
 | `0a270f8` | UefiPayloadPkg/Library/PciHostBridgeLib: Add warning for coreboot/EDK2 incompability | drop | a warning only |
 | `4b57ca5` | UefiPayloadPkg: Set PcdCpuFeaturesInitOnS3Resume to FALSE for coreboot | package | a PCD of the .dsc |
