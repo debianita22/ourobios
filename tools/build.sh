@@ -1773,6 +1773,10 @@ cmd_smoke() {
 				echo "CONFIG_MEMORY_MAPPED_TPM=y"
 				echo "CONFIG_TPM_INIT_RAMSTAGE=y"
 				echo "CONFIG_TPM_MEASURED_BOOT=y"
+				# le regole dei parametri di SMMSTORE della board (patch
+				# 0215): il payload deve passarli dove l'SMI di q35, con lo
+				# stesso codice, li accetta
+				grep -x 'CONFIG_SMMSTORE_PARAMS_IN_COM_BUFFER=y' "$(defconfig "${v}")" || true
 				echo "CONFIG_LOCALVERSION=\"$(localversion "${v}")-q35\""
 				if [ "${TOOLCHAIN}" = host ]; then echo "CONFIG_ANY_TOOLCHAIN=y"; fi
 			} > "${TREE}/build-${q}/defconfig"
@@ -1818,6 +1822,9 @@ update_test_q35() {
 		"CONFIG_DRIVERS_EFI_MAIN_FW_GUID=\"${UPDATE_TEST_GUID}\"" \
 		"CONFIG_DRIVERS_EFI_MAIN_FW_LSV=${UPDATE_TEST_LSV}" \
 		"CONFIG_DRIVERS_EFI_UPDATE_CAPSULES=y" "CONFIG_DRIVERS_EFI_CAPSULE_ON_DISK_SUPPORT=y"
+	# i parametri di SMMSTORE solo nella pagina del com buffer, come sul W541
+	# (patch 0215): le capsule e il cambio di slot passano da li'
+	grep -x 'CONFIG_SMMSTORE_PARAMS_IN_COM_BUFFER=y' "${O}/configs/w541-mrc.defconfig" || true
 	if [ "${TOOLCHAIN}" = host ]; then echo "CONFIG_ANY_TOOLCHAIN=y"; fi
 }
 
