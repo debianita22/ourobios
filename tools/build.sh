@@ -2404,19 +2404,22 @@ cmd_edk2_parity() {
 	fi
 	rm -rf "${b:?}"
 	mkdir -p "${b}"
-	# solo le righe CONFIG_ del defconfig di build-<variante> (defconfig_kept
-	# le cerca tutte nel .config), con l'altro EDK2 al posto di questo
+	# le righe di Kconfig del defconfig di build-<variante>, i "# CONFIG_X is
+	# not set" compresi (il W541 tiene cosi' NO_POST spento, per CMOS_POST),
+	# senza i commenti che defconfig_kept cercherebbe nel .config; l'altro
+	# EDK2 al posto di questo
 	if [ "${base}" = package ]; then
 		say "edk2-parity ${v}: con l'EDK2 di MrChromebox ${EDK2_MRCHROMEBOX_COMMIT:0:12} e patches/edk2"
 		{
-			grep '^CONFIG_' "${a}/defconfig" \
+			grep -E '^(CONFIG_|# CONFIG_[A-Za-z0-9_]+ is not set$)' "${a}/defconfig" \
 				| grep -v -E '^CONFIG_EDK2_(REPO_|REPOSITORY=|TAG_OR_REV=|PLATFORM_DSC=|PACKAGES_PATH=)'
 			echo "CONFIG_EDK2_TAG_OR_REV=\"${EDK2_MRCHROMEBOX_COMMIT}\""
 		} > "${b}/defconfig"
 	else
 		say "edk2-parity ${v}: dal package su TianoCore ${EDK2_UPSTREAM_TAG}"
 		{
-			grep '^CONFIG_' "${a}/defconfig" | grep -v -e '^CONFIG_EDK2_TAG_OR_REV=' -e '^CONFIG_EDK2_REPO'
+			grep -E '^(CONFIG_|# CONFIG_[A-Za-z0-9_]+ is not set$)' "${a}/defconfig" \
+				| grep -v -e '^CONFIG_EDK2_TAG_OR_REV=' -e '^CONFIG_EDK2_REPO'
 			printf '%s\n' "${EDK2_PACKAGE_CONFIG[@]}"
 		} > "${b}/defconfig"
 	fi
@@ -2435,8 +2438,12 @@ cmd_edk2_parity() {
 		die "edk2-parity ${v}: build con ${other} fallita (build-${k}-${other}/make.log nell'albero)"
 	fi
 	# le opzioni con cui il Makefile di coreboot ha costruito i due payload
-	diff <(sed -n '/##### edk2 Build Summary #####/,/Toolchain:/p' "${a}/make.log" | grep -Ev 'Repository|Branch|Packages path|Payload:') \
-		<(sed -n '/##### edk2 Build Summary #####/,/Toolchain:/p' "${b}/make.log" | grep -Ev 'Repository|Branch|Packages path|Payload:') \
+	# (da "#####": make vi scrive davanti, sulla stessa riga, i controlli di
+	# checktools)
+	diff <(sed -n '/##### edk2 Build Summary #####/,/Toolchain:/p' "${a}/make.log" | sed 's/^.*#####\( edk2\)/#####\1/' \
+			| grep -Ev 'Repository|Branch|Packages path|Payload:') \
+		<(sed -n '/##### edk2 Build Summary #####/,/Toolchain:/p' "${b}/make.log" | sed 's/^.*#####\( edk2\)/#####\1/' \
+			| grep -Ev 'Repository|Branch|Packages path|Payload:') \
 		|| echo "  !!  ${v}: le opzioni della build di EDK2 sono diverse (sopra)"
 	if cmp -s "${a}/UEFIPAYLOAD.fd" "${b}/UEFIPAYLOAD.fd"; then
 		echo "  ok  ${v}: i due UEFIPAYLOAD.fd sono uguali byte per byte ($(stat -c %s "${a}/UEFIPAYLOAD.fd") byte, sha256 $(sha256sum < "${a}/UEFIPAYLOAD.fd" | cut -c1-16))"

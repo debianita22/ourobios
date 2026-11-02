@@ -9,13 +9,19 @@
 #   - il payload della prima variante di ogni board dal package, quello delle
 #     ROM, uguale byte per byte a quello dell'EDK2 di MrChromebox da cui
 #     viene (tools/build.sh edk2-parity).
-# Non tocca le release: a mano (Run workflow) o con un push su un ramo
-# ci-edk2/** (non ci-test/**, che fa partire anche build.yml). Schermate,
-# seriale e log negli artifact (14 giorni).
+# Non tocca le release: a mano (Run workflow, anche con solo_parity, senza le
+# immagini q35) o con un push su un ramo ci-edk2/** (non ci-test/**, che fa
+# partire anche build.yml). Schermate, seriale e log negli artifact (14
+# giorni).
 name: EDK2 upstream
 
 on:
   workflow_dispatch:
+    inputs:
+      solo_parity:
+        description: "Solo il controllo dell'import e edk2-parity, senza le immagini q35"
+        type: boolean
+        default: false
   push:
     branches: ['ci-edk2/**']
 
@@ -65,7 +71,7 @@ jobs:
 
       # ognuno dei tre passi dice il suo esito anche se uno prima non passa
       - name: EDK2 di TianoCore in QEMU
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !inputs.solo_parity }}
         run: ./tools/build.sh edk2-upstream
 
       - name: Il payload delle board dal package, contro quello di oggi
