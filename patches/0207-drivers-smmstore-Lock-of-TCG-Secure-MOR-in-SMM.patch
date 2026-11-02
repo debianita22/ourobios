@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
-Date: Mon, 2 Nov 2026 12:51:25 +0100
+Date: Mon, 2 Nov 2026 14:02:17 +0100
 Subject: [PATCH] drivers/smmstore: Lock of TCG Secure MOR in SMM
 
 Revision 2 of the TCG Platform Reset Attack Mitigation specification adds
@@ -25,18 +25,32 @@ decision to clear the memory at boot now reads too, would then find the
 request gone. Other variables are written as before. The data is copied
 into SMRAM before it is checked and written from there.
 
+The view is a region device of its own, with a readat that overlays the
+write on the flash. Two things about it, each learnt from a ThinkCentre
+M920x that hung in SMM with nothing in any log: the readat gets its
+context from a file-static pointer, not from container_of() on the rdev
+it is handed, because efi_fv_get_option() copies the rdev it is given by
+value; and what efi_fv_get_option() is given is a child chained to the
+overlay root, never the root itself, because the reader chains its copy
+to itself, and rdev_chain() on a root device makes the copy its own root
+with no ops, so the next read calls through NULL. Both bite on the first
+protected write, the Lock variable's own.
+
 The state is in a small SMRAM region kept across S3
 (SMM_MOR_LOCK_STATE_SMRAM, below the OPAL S3 state), zeroed on every
-other boot, as the lock lasts until the next boot.
+other boot, as the lock lasts until the next boot. The walk of the
+variable store from the SMI handler is the deepest call chain in SMM:
+SMM_MODULE_STACK_SIZE becomes 4 KiB with the lock, as the stack canary
+only reports an overflow with DEBUG_SMI.
 
 Only with SMM-only flash writes (enable_smm_bios_protection(), BIOS
 Lock): otherwise the OS writes the flash without SMM, and the command
 says the lock is unsupported. SMMSTORE_MOR_LOCK_ANY_BIOS_LOCK offers it
 anyway, for tests in QEMU.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 ---
- src/cpu/x86/Kconfig                  |  13 ++
+ src/cpu/x86/Kconfig                  |  19 ++-
  src/cpu/x86/smm/smm_module_handler.c |   8 +
  src/cpu/x86/smm/smm_module_loader.c  |  17 ++
  src/cpu/x86/smm/tseg_region.c        |  13 +-
@@ -44,20 +58,37 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  src/drivers/efi/efivars.h            |  13 ++
  src/drivers/smmstore/Kconfig         |  19 +++
  src/drivers/smmstore/Makefile.mk     |   1 +
- src/drivers/smmstore/mor_lock.c      | 234 +++++++++++++++++++++++++++
+ src/drivers/smmstore/mor_lock.c      | 245 +++++++++++++++++++++++++++
  src/drivers/smmstore/smi.c           |  13 ++
- src/drivers/smmstore/store.c         |  56 ++++++-
- src/include/cpu/x86/smm.h            |   9 ++
+ src/drivers/smmstore/store.c         |  56 +++++-
+ src/include/cpu/x86/smm.h            |   9 +
  src/include/smmstore.h               |  52 ++++++
  src/security/memory/memory.c         |   8 +-
- 14 files changed, 461 insertions(+), 8 deletions(-)
+ 14 files changed, 477 insertions(+), 9 deletions(-)
  create mode 100644 src/drivers/smmstore/mor_lock.c
 
 diff --git a/src/cpu/x86/Kconfig b/src/cpu/x86/Kconfig
-index 10764aee58..9c7dbe3bd9 100644
+index 10764aee58..23e27198ac 100644
 --- a/src/cpu/x86/Kconfig
 +++ b/src/cpu/x86/Kconfig
-@@ -211,6 +211,19 @@ config SMM_OPAL_S3_STATE_SMRAM_SIZE
+@@ -190,11 +190,15 @@ if HAVE_SMI_HANDLER
+ 
+ config SMM_MODULE_STACK_SIZE
+ 	hex
++	default 0x1000 if SMMSTORE_MOR_LOCK
+ 	default 0x800 if ARCH_RAMSTAGE_X86_64
+ 	default 0x400
+ 	help
+ 	  This option determines the size of the stack within the SMM handler
+-	  modules.
++	  modules. The MOR lock (SMMSTORE_MOR_LOCK) walks the UEFI variable
++	  store from the SMI handler, a call chain deeper than any other in
++	  SMM: 4 KiB leaves it a margin, which an overflow here would not
++	  report (the canary only dies with DEBUG_SMI).
+ 
+ config SMM_OPAL_S3_STATE_SMRAM
+ 	bool
+@@ -211,6 +215,19 @@ config SMM_OPAL_S3_STATE_SMRAM_SIZE
  	  secret/state. Must be large enough to store the OPAL S3 state
  	  structure and should be kept minimal to reduce SMRAM pressure.
  
@@ -258,10 +289,10 @@ index 33d3e6f757..403466d654 100644
 +smm-$(CONFIG_SMMSTORE_MOR_LOCK) += mor_lock.c
 diff --git a/src/drivers/smmstore/mor_lock.c b/src/drivers/smmstore/mor_lock.c
 new file mode 100644
-index 0000000000..99b1ae4069
+index 0000000000..770cffebaa
 --- /dev/null
 +++ b/src/drivers/smmstore/mor_lock.c
-@@ -0,0 +1,234 @@
+@@ -0,0 +1,245 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +/*
@@ -406,7 +437,7 @@ index 0000000000..99b1ae4069
 +
 +bool smmstore_mor_write_allowed(size_t offset, const void *data, size_t size)
 +{
-+	struct region_device store, overlay;
++	struct region_device store, overlay_root, overlay;
 +	struct after_write aw;
 +	bool requested;
 +
@@ -424,7 +455,18 @@ index 0000000000..99b1ae4069
 +		.size = size,
 +		.data = data,
 +	};
-+	region_device_init(&overlay, &after_write_ops, 0, region_device_sz(&store));
++	/*
++	 * The reader gets a child of the overlay, never the root itself:
++	 * efi_fv_get_option() copies the rdev it is given and chains that copy
++	 * to itself, and rdev_chain() on a root device makes the copy its own
++	 * root with no ops, so the next read calls through NULL. A child keeps
++	 * the real root. overlay_root outlives the call.
++	 */
++	region_device_init(&overlay_root, &after_write_ops, 0, region_device_sz(&store));
++	if (rdev_chain(&overlay, &overlay_root, 0, region_device_sz(&store))) {
++		printk(BIOS_ERR, "MOR lock: overlay of the variable store failed, write refused\n");
++		return false;
++	}
 +	after_write_ctx = &aw;
 +	requested = mor_requested(&overlay);
 +	after_write_ctx = NULL;
