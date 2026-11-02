@@ -2,3 +2,5 @@
 # per il package del progetto, edk2/OuroBiosPkg: la fase (c) del passaggio a
 # TianoCore (docs/edk2-migration.md); ognuna da proporre upstream
 0001-UefiPayloadPkg-SmmStoreFvb-Format-the-store-for-auth.patch
+0002-UefiPayloadPkg-SmmStoreLib-The-com-buffer-as-runtime.patch
+0003-UefiPayloadPkg-SmmStoreLib-The-arguments-in-the-com-.patch

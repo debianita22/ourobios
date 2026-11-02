@@ -217,6 +217,7 @@ images of the tag as it is are built before it is applied.
 | Patch | What it does |
 |---|---|
 | `tianocore/0001` | SmmStoreFvbRuntimeDxe formats an erased store with `gEfiAuthenticatedVariableGuid`, as the variable driver formats a store of its own: with `SECURE_BOOT_ENABLE`, the authenticated variables on a new SMMSTORE (MrChromebox's `2686758` changes the same line) |
+| `tianocore/0002-0003` | `edk2/0029` and `edk2/0044` on TianoCore's SmmStoreLib: the com buffer as runtime MMIO and the arguments of each command in the page after its block (coreboot's patch 0134), from the start: the runtime services moved as macOS's boot.efi moves them, and coreboot's `SMMSTORE_PARAMS_IN_COM_BUFFER` (0215, the WSMT) |
 
 ## Optional patches
 

@@ -207,7 +207,6 @@ EDK2_UPSTREAM_GAPS=(
 # quelle di EDK2_UPSTREAM_TAG che il package e le patch portate non chiudono
 # ancora
 EDK2_PACKAGE_GAPS=(
-	"servizi runtime:SetVariable OuroRelocA: FAIL 0x8000000000000007"
 	"TPM 1.2:no EFI_TCG2_PROTOCOL or EFI_TCG_PROTOCOL"
 )
 # I font della schermata di aggiornamento del firmware (patches/edk2/0026):
@@ -2189,8 +2188,11 @@ cmd_edk2_upstream() {
 	say "edk2-upstream: la stessa da edk2/OuroBiosPkg, fuori dall'albero di EDK II"
 	edk2_upstream_carry
 	edk2_package
+	# con SMMSTORE_PARAMS_IN_COM_BUFFER come le board (patch 0215, la WSMT):
+	# gli argomenti di SMMSTORE solo nella pagina del com buffer
+	# (patches/tianocore/0003)
 	if ! edk2_upstream_rom "${q}-pkg" "CONFIG_EDK2_PLATFORM_DSC=\"OuroBiosPkg/OuroBiosPkg.dsc\"" \
-		"CONFIG_EDK2_PACKAGES_PATH=\"${WORK}/edk2-packages\""; then
+		"CONFIG_EDK2_PACKAGES_PATH=\"${WORK}/edk2-packages\"" "CONFIG_SMMSTORE_PARAMS_IN_COM_BUFFER=y"; then
 		bad+=("la build da edk2/OuroBiosPkg (build-${q}-pkg/make.log nell'albero)")
 		pkg=""
 	fi
