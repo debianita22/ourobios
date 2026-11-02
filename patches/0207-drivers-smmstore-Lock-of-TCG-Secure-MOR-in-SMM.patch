@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
-Date: Sun, 1 Nov 2026 23:24:05 +0100
+Date: Mon, 2 Nov 2026 12:51:25 +0100
 Subject: [PATCH] drivers/smmstore: Lock of TCG Secure MOR in SMM
 
 Revision 2 of the TCG Platform Reset Attack Mitigation specification adds
@@ -44,13 +44,13 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  src/drivers/efi/efivars.h            |  13 ++
  src/drivers/smmstore/Kconfig         |  19 +++
  src/drivers/smmstore/Makefile.mk     |   1 +
- src/drivers/smmstore/mor_lock.c      | 224 +++++++++++++++++++++++++++
+ src/drivers/smmstore/mor_lock.c      | 234 +++++++++++++++++++++++++++
  src/drivers/smmstore/smi.c           |  13 ++
  src/drivers/smmstore/store.c         |  56 ++++++-
  src/include/cpu/x86/smm.h            |   9 ++
- src/include/smmstore.h               |  52 +++++++
+ src/include/smmstore.h               |  52 ++++++
  src/security/memory/memory.c         |   8 +-
- 14 files changed, 451 insertions(+), 8 deletions(-)
+ 14 files changed, 461 insertions(+), 8 deletions(-)
  create mode 100644 src/drivers/smmstore/mor_lock.c
 
 diff --git a/src/cpu/x86/Kconfig b/src/cpu/x86/Kconfig
@@ -258,10 +258,10 @@ index 33d3e6f757..403466d654 100644
 +smm-$(CONFIG_SMMSTORE_MOR_LOCK) += mor_lock.c
 diff --git a/src/drivers/smmstore/mor_lock.c b/src/drivers/smmstore/mor_lock.c
 new file mode 100644
-index 0000000000..2236aea401
+index 0000000000..99b1ae4069
 --- /dev/null
 +++ b/src/drivers/smmstore/mor_lock.c
-@@ -0,0 +1,224 @@
+@@ -0,0 +1,234 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +/*
@@ -342,9 +342,13 @@ index 0000000000..2236aea401
 + * The variable store as the flash would be after a write (@data, programmed
 + * over what is there: only bits that are set can be cleared) or an erase
 + * (@data NULL) of [@offset, @offset + @size).
++ *
++ * The context is a file-static pointer, not container_of() on the rdev:
++ * efi_fv_get_option() copies the rdev by value, so the rdev the readat
++ * callback is given is not the one embedded here. An SMI is handled by one
++ * CPU at a time with the others held, so one static context is enough.
 + */
 +struct after_write {
-+	struct region_device rdev;
 +	const struct region_device *store;
 +	size_t offset;
 +	size_t size;
@@ -352,20 +356,25 @@ index 0000000000..2236aea401
 +	bool read_error;
 +};
 +
++static struct after_write *after_write_ctx;
++
 +static ssize_t after_write_readat(const struct region_device *rd, void *b, size_t offset,
 +				  size_t size)
 +{
-+	struct after_write *aw = container_of((struct region_device *)rd, struct after_write,
-+					      rdev);
-+	const size_t start = MAX(offset, aw->offset);
-+	const size_t end = MIN(offset + size, aw->offset + aw->size);
++	struct after_write *aw = after_write_ctx;
++	size_t start, end;
 +	uint8_t *buf = b;
++
++	if (aw == NULL)
++		return -1;
 +
 +	if (rdev_readat(aw->store, b, offset, size) != size) {
 +		aw->read_error = true;
 +		return -1;
 +	}
 +
++	start = MAX(offset, aw->offset);
++	end = MIN(offset + size, aw->offset + aw->size);
 +	for (size_t i = start; i < end; i++)
 +		buf[i - offset] = aw->data ? buf[i - offset] & aw->data[i - aw->offset] : 0xff;
 +
@@ -397,7 +406,7 @@ index 0000000000..2236aea401
 +
 +bool smmstore_mor_write_allowed(size_t offset, const void *data, size_t size)
 +{
-+	struct region_device store;
++	struct region_device store, overlay;
 +	struct after_write aw;
 +	bool requested;
 +
@@ -415,9 +424,10 @@ index 0000000000..2236aea401
 +		.size = size,
 +		.data = data,
 +	};
-+	region_device_init(&aw.rdev, &after_write_ops, 0, region_device_sz(&store));
-+
-+	requested = mor_requested(&aw.rdev);
++	region_device_init(&overlay, &after_write_ops, 0, region_device_sz(&store));
++	after_write_ctx = &aw;
++	requested = mor_requested(&overlay);
++	after_write_ctx = NULL;
 +	if (aw.read_error) {
 +		/* Not the content: the flash could not be read, the check failed */
 +		printk(BIOS_ERR, "MOR lock: variable store unreadable, write refused\n");
