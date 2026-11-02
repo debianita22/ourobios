@@ -7,8 +7,8 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.5.1
 
-- *BIOS Lock* (*Security* → *Flash protection*) is on by default on the
-  W541 (`CONFIG_BOOTMEDIA_SMM_BWP`, the default of the option only): a
+- *BIOS Lock* (*Security* → *Flash protection*) is on by default, on both
+  boards (`CONFIG_BOOTMEDIA_SMM_BWP`, the default of the option only): a
   setting already saved in `SMMSTORE` is kept, a store without one and a
   settings reset get the lock on. With it the flash is written only by
   the firmware in SMM: the capsule updates, the settings, the event log
@@ -16,13 +16,16 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   reads. To write with flashrom (the read-only part, a fresh ROM) turn it
   off in the setup first ([docs/flashing.md](docs/flashing.md)).
   `tools/update.py protection` and `status` report the default of the
-  running version and board. On the M920x the default stays off: there
-  the lock is applied at `BS_DEV_RESOURCES`, before ramstage writes the
-  event log, and with it on every write fails (*SPI Transaction Error*,
-  *ELOG: NV Write failed*, BOOT-03 of `hw-report.py`), the boot count,
-  wake and reset events among them; the entries written from SMM (S3,
-  S5) still go in. Turn it on by hand knowing that, until the event log
-  of ramstage goes through SMM or the lock comes later.
+  running version.
+- On the M920x, with *BIOS Lock* on, the event log of ramstage was lost
+  at every boot, up to v1.5.0: the chipset lockdown set EISS and the BIOS
+  locks at `BS_DEV_RESOURCES`, before the boot count, the wake sources
+  and the resets are logged, and each write failed (*SPI Transaction
+  Error*, *ELOG: NV Write failed*, BOOT-03 of `hw-report.py`); the
+  entries written from SMM (S3, S5) still went in. Patch 0209
+  (`SOC_INTEL_COMMON_PCH_LOCKDOWN_SMM_BWP_LATE`) has the SMI handler set
+  them at the finalize instead, after ramstage is done with the flash
+  and before any boot option or OS runs, as Lynx Point does on the W541.
 - The graphics stolen memory of the `nri` variant (*Hardware* → *Intel
   graphics* → *DVMT pre-allocated memory*) defaults to 32 MB, what
   `mrc.bin` reserves (patch 0208): the two variants boot with the same

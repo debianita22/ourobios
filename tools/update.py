@@ -2038,27 +2038,19 @@ FREG_NAMES = ("descrittore", "BIOS", "ME", "GbE", "Platform Data")
 BIOS_WINDOW_MAX = 16 << 20
 # Il default delle opzioni che coreboot legge senza variabile
 # (security/lockdown/lockdown.h): Firmware protection sempre accesa; BIOS Lock
-# il CONFIG_BOOTMEDIA_SMM_BWP della build: spento fino alla v1.5.0, dalla
-# v1.5.1 acceso sul W541 (mrc, nri) e ancora spento sul M920x (fsp), dove il
-# lock da ramstage fa fallire le scritture del registro degli eventi
-# (lock_option_default)
+# il CONFIG_BOOTMEDIA_SMM_BWP della build, spento sulle due board fino alla
+# v1.5.0 e acceso dalla v1.5.1 (lock_option_default)
 LOCK_OPTIONS = {"bootmedia_lock": 1, "bios_lock": 0}
 BIOS_LOCK_DEFAULT_ON_SINCE = (1, 5, 1, 0)
-BIOS_LOCK_DEFAULT_ON_VARIANTS = ("mrc", "nri")
-VARIANT_RE = re.compile(r"-(mrc|nri|fsp)\b")
 
 
 def lock_option_default(name):
     """Il default di un'opzione di LOCK_OPTIONS per il firmware che gira: BIOS
-    Lock acceso dalla v1.5.1 (rc comprese) sulle varianti del W541, spento
-    prima, sul M920x, o quando la versione non si legge o non e' una release
-    (una build di prova della CI)."""
+    Lock acceso dalla v1.5.1 (rc comprese), spento prima, o quando la versione
+    non si legge o non e' una release (una build di prova della CI)."""
     if name == "bios_lock":
-        bios = read_text(BIOS_VERSION) or ""
-        key = build_release_key(bios)
-        variant = VARIANT_RE.search(bios)
-        return 1 if key and key[:3] >= BIOS_LOCK_DEFAULT_ON_SINCE[:3] and variant and \
-            variant.group(1) in BIOS_LOCK_DEFAULT_ON_VARIANTS else 0
+        key = build_release_key(read_text(BIOS_VERSION) or "")
+        return 1 if key and key[:3] >= BIOS_LOCK_DEFAULT_ON_SINCE[:3] else 0
     return LOCK_OPTIONS[name]
 # Le regioni che scrive una capsula: lo slot, il record di vboot, le variabili
 CAPSULE_WRITES = ("RW_SECTION_A", "RW_SECTION_B", "RW_NVRAM", "SMMSTORE")

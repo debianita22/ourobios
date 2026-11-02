@@ -129,7 +129,7 @@ Inside coreboot:
   |---|---|
   | *General* | *About this ThinkPad*: model, machine type, serial number and UUID (from the VPD), processor, memory, firmware and EC versions, the state of the Intel ME (from v1.4.0, also in SMBIOS); *Boot*: the iPXE and CSMWrap boot entries, and from v1.4.0 the USB drives in the boot order and the boot menu prompt; *Sound*: beeps (from v1.4.0 the keyboard beep too) and volume; links to the time and date, firmware update, boot splash and UI pages |
   | *Energy Saver* | battery charge thresholds (OS controlled, 100%, 80%, 60%), Intel SpeedStep, Turbo Boost, C-states, CPU PL1/PL2 limits, cooling policy (active or passive), USB always on (from v1.4.0 *AC and battery* charges on battery too), power-on with AC attached (from v1.4.0), power-on after power failure |
-  | *Security* | *Flash protection*: BIOS Lock (flash writable only by the firmware; on the W541 on by default from v1.5.1, off before and on the M920x) and Firmware protection (the read-only part locked at every boot, on by default); memory cleared at power-on, Intel VT-x, VT-d (from v1.4.0 with the ExpressCard and Thunderbolt ports untrusted for the OS, off by default), the Intel ME interface, Secure Boot, supervisor password (asked for before the setup menu opens) |
+  | *Security* | *Flash protection*: BIOS Lock (flash writable only by the firmware, on by default from v1.5.1, off before) and Firmware protection (the read-only part locked at every boot, on by default); memory cleared at power-on, Intel VT-x, VT-d (from v1.4.0 with the ExpressCard and Thunderbolt ports untrusted for the OS, off by default), the Intel ME interface, Secure Boot, supervisor password (asked for before the setup menu opens) |
   | *Keyboard* | Fn/Ctrl swap, F1-F12 or special keys, sticky Fn, keyboard backlight, TrackPoint, touchpad |
   | *Hardware* | *NVIDIA graphics*: the GPU and the tuning of its PCIe link; *Intel graphics*: graphics stolen memory (native RAM init only, 32 MiB by default from v1.5.1 as `mrc.bin`, which reserves a fixed 32 MiB; the GTT is 2 MiB on both), aperture and the firmware screen resolution; *Storage*: the SATA ports besides the drive bay; *Expansion ports*: ExpressCard and Thunderbolt; *Wireless*: Wi-Fi, Bluetooth, WWAN |
   | *Compatibility* | *macOS*: the options that take the place of parts of an OpenCore configuration (ACPI processor objects as *Processor*, the C-state configuration lock, the NVIDIA GPU off under macOS, the panel, the display audio, the device properties; [docs/macos.md](docs/macos.md)); *Advanced*: NMI |
@@ -242,11 +242,9 @@ Known limits, by hardware or by design, not open bugs:
 - **WSMT and HSTI**: no WSMT table is published, since the SMI handlers
   have not been audited against its three claims, and no HSTI. Windows
   boots without them; its *Device security* page reports accordingly.
-- **The lock of TCG MOR** needs *BIOS Lock* on, the default on the W541
-  from v1.5.1; with it off the OS can write the flash without SMM and the
-  lock is not offered. On the M920x the lock is applied before ramstage
-  writes the event log, so with *BIOS Lock* on those entries are lost
-  (`CHANGELOG.md`, v1.5.1): its default stays off until that is fixed.
+- **The lock of TCG MOR** needs *BIOS Lock* on, which from v1.5.1 is the
+  default; with it off the OS can write the flash without SMM and the lock
+  is not offered.
 - **XMP profiles**: the memory runs at its JEDEC timings.
 - **macOS**: supported through OpenCore, with the firmware options of
   [docs/macos.md](docs/macos.md), on the same ACPI tables as Linux and

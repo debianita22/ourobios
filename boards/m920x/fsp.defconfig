@@ -91,16 +91,18 @@ CONFIG_SMBIOS_UUID_FROM_VPD=y
 CONFIG_SMBIOS_SYSTEM_DATA_FROM_VPD=y
 
 # BIOS Lock e Firmware protection nel menu (Security -> Flash protection),
-# come sul W541, ma BIOS Lock resta spento di default (sul W541 e' acceso
-# dalla v1.5.1): su soc/intel/common EISS e WPD si impostano a
-# BS_DEV_RESOURCES (pch/lockdown/lockdown.c), prima di ogni scrittura del
-# registro degli eventi da ramstage (elog a BS_POST_DEVICE, gli eventi di
-# wake e reset a BS_DEV_INIT), che con il lock acceso falliscono tutte
-# ("SPI Transaction Error", "ELOG: NV Write failed", hw-report BOOT-03).
-# Sul W541 Lynx Point applica il lock alla finalize, dopo. Default acceso
-# qui quando le scritture di ramstage passano da SMM o il lock arriva dopo.
-# La protezione di WP_RO dai Protected Range Register resta accesa.
+# come sul W541: BIOS Lock acceso di default dalla v1.5.1 (spento fino alla
+# v1.5.0; BOOTMEDIA_SMM_BWP e' solo il default dell'opzione, un'impostazione
+# salvata resta). Su soc/intel/common EISS e WPD si impostavano a
+# BS_DEV_RESOURCES (pch/lockdown/lockdown.c), prima delle scritture del
+# registro degli eventi da ramstage (elog a BS_POST_DEVICE, eventi di wake
+# e reset a BS_DEV_INIT), che con il lock acceso fallivano tutte ("SPI
+# Transaction Error", "ELOG: NV Write failed", hw-report BOOT-03): con la
+# patch 0209 li imposta il gestore SMI alla finalize, dopo, come Lynx Point
+# sul W541. La protezione di WP_RO dai Protected Range Register accesa.
+CONFIG_BOOTMEDIA_SMM_BWP=y
 CONFIG_BOOTMEDIA_SMM_BWP_RUNTIME_OPTION=y
+CONFIG_SOC_INTEL_COMMON_PCH_LOCKDOWN_SMM_BWP_LATE=y
 CONFIG_BOOTMEDIA_LOCK_CONTROLLER=y
 CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO=y
 CONFIG_BOOTMEDIA_LOCK_RUNTIME_OPTION=y

@@ -1,0 +1,121 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 2 Nov 2026 16:40:19 +0100
+Subject: [PATCH] soc/intel/common: Option to set the SMM BIOS write protection
+ at finalize
+
+fast_spi_lockdown_cfg() sets EISS, clears WPD and sets the BIOS Lock
+Enable at BS_DEV_RESOURCES, with the rest of the chipset lockdown.
+With BOOTMEDIA_SMM_BWP on, every flash write ramstage makes after that
+fails: the event log starts at BS_POST_DEVICE and the Cannon Lake code
+logs the wake and reset events at BS_DEV_INIT, and on a ThinkCentre
+M920x each boot with the option on prints "SPI Transaction Error at
+Flash Offset c945f5 HSFSTS = 0x0a04f803" and "ELOG: NV Write failed"
+for each of them: the boot count, the wake sources and the resets are
+never logged, while the entries written from SMM (S3 and S5 entry) are.
+The Lynx Point code sets the same bits in the SMI handler at the
+finalize, after ramstage is done with the flash.
+
+Add SOC_INTEL_COMMON_PCH_LOCKDOWN_SMM_BWP_LATE: with it, and the SMM
+BIOS protection enabled, fast_spi_lockdown_cfg() leaves EISS and the
+two lock enables alone and the SMI handler sets them at the finalize,
+EISS first, then clears WPD as it already did. Ramstage asks for the
+finalize once the payload is loaded, and on S3 resume before the OS
+resumes, so the OS never sees the flash writable. The BAR lock, the
+VSCC lock and the BIOS interface lock stay where they were. Without
+the option nothing changes.
+
+TEST=Not built. On an M920x with the option and BIOS Lock on: no "SPI
+Transaction Error" nor "ELOG: NV Write failed" in cbmem -1, the boot
+count and the wake source of the boot in the event log, BIOS_SPI_BC
+with EISS, LE and WPD 0 read from the OS (tools/update.py protection),
+flashrom refusing to write, a capsule update still installing.
+---
+ src/soc/intel/common/block/smm/smihandler.c  | 10 ++++++++++
+ src/soc/intel/common/pch/lockdown/Kconfig    | 18 ++++++++++++++++++
+ src/soc/intel/common/pch/lockdown/lockdown.c | 15 ++++++++++++++-
+ 3 files changed, 42 insertions(+), 1 deletion(-)
+
+diff --git a/src/soc/intel/common/block/smm/smihandler.c b/src/soc/intel/common/block/smm/smihandler.c
+index 5ca77ee9..d282ad82 100644
+--- a/src/soc/intel/common/block/smm/smihandler.c
++++ b/src/soc/intel/common/block/smm/smihandler.c
+@@ -407,6 +407,16 @@ static void finalize(void)
+ 	boot_device_init();
+ 
+ 	if (enable_smm_bios_protection()) {
++		/*
++		 * With SMM_BWP_LATE the chipset lockdown of ramstage left EISS
++		 * and the BIOS locks to this point, so that ramstage could still
++		 * write the event log: EISS first, then the locks that cover it.
++		 */
++		if (CONFIG(SOC_INTEL_COMMON_PCH_LOCKDOWN_SMM_BWP_LATE)) {
++			fast_spi_set_eiss();
++			fast_spi_set_lock_enable();
++			fast_spi_set_ext_bios_lock_enable();
++		}
+ 		fast_spi_enable_wp();
+ 		set_insmm_sts(false);
+ 	}
+diff --git a/src/soc/intel/common/pch/lockdown/Kconfig b/src/soc/intel/common/pch/lockdown/Kconfig
+index 38f60d20..309100d6 100644
+--- a/src/soc/intel/common/pch/lockdown/Kconfig
++++ b/src/soc/intel/common/pch/lockdown/Kconfig
+@@ -7,3 +7,21 @@ config SOC_INTEL_COMMON_PCH_LOCKDOWN
+ 	  This option allows to have chipset lockdown for DMI, FAST_SPI and
+ 	  soc_lockdown_config() to implement any additional lockdown as PMC,
+ 	  LPC for supported PCH.
++
++config SOC_INTEL_COMMON_PCH_LOCKDOWN_SMM_BWP_LATE
++	bool "Apply the SMM BIOS write protection at the SMM finalize"
++	depends on SOC_INTEL_COMMON_PCH_LOCKDOWN && HAVE_SMI_HANDLER
++	depends on BOOTMEDIA_SMM_BWP || BOOTMEDIA_SMM_BWP_RUNTIME_OPTION
++	help
++	  Set EISS, the BIOS Lock Enable and the write protection of the
++	  flash (BIOS_SPI_BC) in the SMI handler at the finalize, which
++	  ramstage asks for after the payload is loaded, instead of at
++	  BS_DEV_RESOURCES with the rest of the chipset lockdown. Between the
++	  two, ramstage still writes the flash: the event log (ELOG), which
++	  starts at BS_POST_DEVICE and logs the wake and reset events at
++	  BS_DEV_INIT, fails every write with the lock already in place
++	  ("SPI Transaction Error", "ELOG: NV Write failed"). The write
++	  protection stays as the OS sees it: set before any boot option or
++	  OS runs, and on S3 resume before the OS resumes. This is the order
++	  of the Lynx Point PCH code. The rest of the SPI lockdown (the
++	  BAR, VSCC, the BIOS interface lock) is unchanged.
+diff --git a/src/soc/intel/common/pch/lockdown/lockdown.c b/src/soc/intel/common/pch/lockdown/lockdown.c
+index ff7ca959..e898e8cd 100644
+--- a/src/soc/intel/common/pch/lockdown/lockdown.c
++++ b/src/soc/intel/common/pch/lockdown/lockdown.c
+@@ -1,6 +1,7 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
+ #include <bootstate.h>
++#include <console/console.h>
+ #include <intelblocks/cfg.h>
+ #include <intelblocks/fast_spi.h>
+ #include <intelblocks/lpc_lib.h>
+@@ -82,7 +83,19 @@ static void fast_spi_lockdown_cfg(int chipset_lockdown)
+ 		/* BIOS Interface Lock */
+ 		fast_spi_set_bios_interface_lock_down();
+ 
+-		/* Only allow writes in SMM */
++		/*
++		 * Only allow writes in SMM. With SMM_BWP_LATE the SMI handler
++		 * sets EISS, the locks and the write protection at the finalize,
++		 * after ramstage has written the event log; until then nothing
++		 * but ramstage runs.
++		 */
++		if (CONFIG(SOC_INTEL_COMMON_PCH_LOCKDOWN_SMM_BWP_LATE) &&
++		    enable_smm_bios_protection()) {
++			printk(BIOS_INFO,
++			       "SPI: BIOS write protection deferred to the SMM finalize\n");
++			return;
++		}
++
+ 		if (enable_smm_bios_protection()) {
+ 			fast_spi_set_eiss();
+ 			fast_spi_enable_wp();
+-- 
+2.43.0
+
