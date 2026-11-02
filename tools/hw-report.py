@@ -1593,6 +1593,31 @@ def check_acpi(fw, rep):
     rep.add("ID-02", "Tabelle ACPI", status, summary, details, {"tables": names, "missing": missing})
 
 
+def check_wsmt(fw, rep):
+    """CONF-01: la tabella WSMT (Windows SMM Security Mitigations Table) e i suoi
+    flag: dalla release con le patch 0211-0215 tutti e tre (7); prima non c'e'."""
+    p = "/sys/firmware/acpi/tables/WSMT"
+    if not os.path.exists(p):
+        rep.add("CONF-01", "WSMT", "INFO", "nessuna tabella WSMT (le release fino alla v1.5.x non la pubblicano)")
+        return
+    try:
+        with open(p, "rb") as f:
+            raw = f.read()
+    except OSError as e:
+        rep.add("CONF-01", "WSMT", "WARN", "WSMT non letta: %s" % e)
+        return
+    if len(raw) < 40:
+        rep.add("CONF-01", "WSMT", "FAIL", "WSMT di %d byte, ne servono 40" % len(raw))
+        return
+    flags = struct.unpack_from("<I", raw, 36)[0]
+    names = [n for b, n in ((1, "FIXED_COMM_BUFFERS"), (2, "COMM_BUFFER_NESTED_PTR_PROTECTION"),
+                            (4, "SYSTEM_RESOURCE_PROTECTION")) if flags & b]
+    status = "PASS" if flags == 7 else "WARN"
+    rep.add("CONF-01", "WSMT", status, "WSMT revisione %d, flag 0x%x%s" % (
+        raw[8], flags, "" if flags == 7 else ": non tutti e tre"),
+        ["flag: " + (" ".join(names) or "nessuno")], {"revision": raw[8], "flags": flags})
+
+
 def check_s3(fw, rep):
     """S3-01: se il sistema offre S3 e come sono andate le sospensioni di questo avvio."""
     ms = rd("/sys/power/mem_sleep")
@@ -1836,6 +1861,7 @@ def main():
     guard(check_dump, "ELOG-01", "Registro degli eventi", fw, rep, args.dump)
     guard(check_smbios, "ID-01", "SMBIOS e VPD", fw, rep)
     guard(check_acpi, "ID-02", "Tabelle ACPI", fw, rep)
+    guard(check_wsmt, "CONF-01", "WSMT", fw, rep)
     head = header()
     if args.json:
         print(json.dumps({"tool": "hw-report", "format": 1, "board": fw.board, "firmware": fw.bios,

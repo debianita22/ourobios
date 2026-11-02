@@ -57,7 +57,12 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   lock: all of them write the flash and nothing else. Windows reads the
   table for Device Guard, Credential Guard with HVCI and VBS; `fwts
   wsmt` and `acpidump` show it.
-, as the pinned
+- `docs/testing.md`: a conformance suite (CONF): the WSMT and its flags
+  (`hw-report.py` CONF-01), the tables compiled again with `iasl -w3`,
+  FWTS, chipsec with what each module must say on these boards (the
+  descriptor left writable by design), the UEFI SCT and the HLK
+  families for the M920x.
+- README: the specifications the firmware is built against, as the pinned
   trees declare them, and the known limits of the two machines (Windows
   11 on the W541, DMA protection, WSMT and HSTI, the MOR lock, XMP).
 

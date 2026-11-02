@@ -455,6 +455,23 @@ The lock of MOR, which Credential Guard uses, is there with *BIOS Lock* on
 | WIN-07 | M920x | `slmgr /dli` with a key in the VPD | activated, with the key of the MSDM table (ID-04 on the machine) | manual |
 | WIN-08 | M920x | *BIOS Lock* on, *Clear memory at power-on* on *When the OS asks*; Credential Guard on; `msinfo32`, *Device Guard Security Services Running* | *Secure Memory Overwrite* listed among the running services (the OS took `MemoryOverwriteRequestControlLock`); after a restart `cbmem -1` (from Linux) says *request of the OS yes* | manual |
 
+### UEFI and ACPI conformance (CONF)
+
+What the firmware claims to the OS, checked with the tools that the OS
+vendors use. Both boards, from Linux unless said otherwise; the W541
+with CachyOS has `iasl` from `acpica`, the others come from AUR (`fwts`,
+`chipsec`) or from pip on the M920x (`pip install chipsec`, with the
+kernel headers for its module).
+
+| ID | Board | How to run | Pass criteria | Auto |
+|---|---|---|---|---|
+| CONF-01 | both | `ls /sys/firmware/acpi/tables/WSMT` | present from the release with patches 0211-0215, 40 bytes, revision 1, flags 7 (FIXED_COMM_BUFFERS, COMM_BUFFER_NESTED_PTR_PROTECTION, SYSTEM_RESOURCE_PROTECTION) | CONF-01 |
+| CONF-02 | both | `sudo acpidump -o acpidump.bin && acpixtract -a acpidump.bin && for f in *.dat; do iasl -d $f; done; for t in dsdt ssdt; do iasl -w3 -p /tmp/$t $t.dsl; done` | 0 errors; from v1.5.1 no warning 3115 (*Not all control paths return a value*); the remarks 2173 (named objects in a method: the BAR-at-the-moment methods of 0101-0103) and 2184 (the Apple and NVIDIA UUIDs) and the 4089 of the disassembler stay; `Processor()` in the SSDT only with *ACPI processor objects* on *Processor* | manual |
+| CONF-03 | both | `sudo fwts acpi uefi wsmt -r fwts.log; grep -E "FAILED|CRITICAL|HIGH" fwts.log` | no *CRITICAL* or *HIGH* failure; the *MEDIUM* and *LOW* ones listed here once seen on the machine, each with its reason or a patch | manual |
+| CONF-04 | both | `sudo chipsec_main -m common.bios_wp,common.spi_lock,common.smm,common.smrr,common.bios_ts,common.uefi.access_uefispec,common.spi_desc` | `bios_wp` PASSED with *BIOS Lock* on (BLE and SMM_BWP/EISS set, WPD 0), `spi_lock` PASSED (FLOCKDN), `smm` and `smrr` PASSED, `bios_ts` PASSED; `spi_desc` WARNING or FAILED by design (the descriptor is left writable, `CONFIG_UNLOCK_FLASH_REGIONS`: [README](../README.md#specifications-and-known-limits)) | manual |
+| CONF-05 | both | the UEFI SCT (`SctStartup.nsh` from a USB drive, the *RuntimeServices* and *BootServices* sections, several hours) | no FAIL in the variable, time and capsule services; the ones in the other sections listed here with their reason | manual |
+| CONF-06 | M920x | Windows HLK, with the WIN suite installed: *System.Fundamentals.Firmware* (UEFI, Secure Boot, ACPI, WSMT) and *System.Fundamentals.TPM20* | the tests of those two families pass; Kernel DMA Protection and HSTI are known not to be there | manual |
+
 ## Coverage of hw-report.py
 
 | Suite | Automated | Partial | Manual |
@@ -479,6 +496,7 @@ The lock of MOR, which Credential Guard uses, is there with *BIOS Lock* on
 | ELOG | 01 | 02 | |
 | ID | 01, 02 | | 03, 04 |
 | WIN | | | 01-08 |
+| CONF | 01 | | 02-06 |
 
 `hw-report.py` has run on the M920x, and on a W541 its TPM-01 and TPM-03
 (v1.5.0: the `TCPA` table, the TPM 1.2 log replayed to its PCRs). On the
