@@ -266,6 +266,10 @@ ls -l backup-*.rom                                        # must be 12582912 byt
 sudo flashrom -p internal --ifd -i bios -w w541-coreboot-v1.3.9-nri.rom
 ```
 
+On a laptop that runs ouroBIOS, *BIOS Lock* is on by default from v1.5.1:
+flashrom can only read until it is turned off in the setup (*Security* →
+*Flash protection*, save, reboot); the capsules below need no change.
+
 The UEFI settings and boot entries start from scratch after that. A laptop
 that already runs ouroBIOS v1.0.3 or later keeps them with the command of
 [docs/flashing.md](docs/flashing.md#from-v12x-to-v130), which writes every
