@@ -32,7 +32,9 @@ Everything else is the same in the two variants.
 From v1.4.0 each version also has a release for the **Lenovo ThinkCentre
 M920x Tiny** (Intel Coffee Lake, Q370), `vX.Y.Z-m920x-fsp`: RAM
 initialized by Intel's FSP-M, the same payload, setup menu, vboot slots and
-capsule updates, a pre-release until it is confirmed on the machine. Its
+capsule updates, published as a release with the W541 ones (the release
+candidates of v1.4.0 were pre-releases until it was confirmed on the
+machine). Its
 board, flash map and blobs are in [`boards/m920x`](boards/m920x), how to
 install, update and recover it in [docs/m920x.md](docs/m920x.md); the rest
 of this page is about the W541.

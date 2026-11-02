@@ -730,10 +730,12 @@ def dmi_blocks(dtype):
 
 
 def size_mb(s):
-    m = re.match(r"(\d+)\s*(MB|GB|TB|kB)", s or "")
+    """MB di una dimensione di dmidecode: "8 GB", "8192 MB", "512 kB", o con i
+    prefissi binari ("8 GiB", "512 KiB"), che non tutte le versioni usano."""
+    m = re.match(r"(\d+)\s*([kKMGT])i?B\b", s or "")
     if not m:
         return 0
-    return int(m.group(1)) * {"kB": 1 / 1024, "MB": 1, "GB": 1024, "TB": 1024 * 1024}[m.group(2)]
+    return int(m.group(1)) * {"k": 1 / 1024, "K": 1 / 1024, "M": 1, "G": 1024, "T": 1024 * 1024}[m.group(2)]
 
 
 def check_memory(fw, rep):
@@ -762,6 +764,10 @@ def check_memory(fw, rep):
     summary = "%d moduli, %.0f GB; Linux vede %.1f GB" % (populated, total / 1024, memtotal / 1024)
     if not populated:
         status, summary = "WARN", "SMBIOS non elenca moduli (tipo 17)"
+        if devs:
+            # le voci ci sono, ma nessuna dimensione letta: quelle di dmidecode
+            details.append("%d voci di tipo 17, Size: %s" % (
+                len(devs), ", ".join(sorted({d.get("Size", "(nessuna)") for d in devs}))))
     elif memtotal < 0.9 * total:
         status = "WARN"
         summary += ": meno del 90% di quella installata"
