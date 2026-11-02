@@ -207,9 +207,9 @@ EDK2_UPSTREAM_GAPS=(
 # quelle di EDK2_UPSTREAM_TAG che il package e le patch portate non chiudono
 # ancora
 EDK2_PACKAGE_GAPS=(
-	# con i driver TCG di c111515 (patches/tianocore/0004-0005) il passo non
-	# passa ancora: mancano il log del payload nella TCPA di coreboot
-	# (edk2/0019) e le misure delle chiavi in PCR 7 (le chiavi di default)
+	# i driver TCG di c111515 (patches/tianocore/0004-0005) e il log del
+	# payload nella TCPA di coreboot (0006, la edk2/0019): da vedere se le
+	# misure di PCR 7 ci sono senza le chiavi di default
 	"TPM 1.2"
 )
 # I font della schermata di aggiornamento del firmware (patches/edk2/0026):

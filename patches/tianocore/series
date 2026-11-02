@@ -6,3 +6,4 @@
 0003-UefiPayloadPkg-SmmStoreLib-The-arguments-in-the-com-.patch
 0004-UefiPayloadPkg-Check-more-ACPI-tables.patch
 0005-UefiPayloadPkg-SecurityPkg-OvmfPkg-Add-TPM-1.2-2.0-s.patch
+0006-SecurityPkg-TcgDxe-Log-into-the-bootloader-s-TCPA-ta.patch
