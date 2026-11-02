@@ -62,6 +62,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   FWTS, chipsec with what each module must say on these boards (the
   descriptor left writable by design), the UEFI SCT and the HLK
   families for the M920x.
+- `upstream.yml` compares every week the dbx that the payload enrolls at
+  the first boot with the hash lists of Microsoft's latest signed release
+  of `microsoft/secureboot_objects` (`tools/upstream.sh dbx`, by git blob
+  id, nothing downloaded) and opens an issue when they differ. On
+  2026-11-02 they are the same, v1.7.1-signed; its SVN entries (the
+  Windows boot manager at SVN 11) stay out of the defaults, as Windows
+  writes them itself after updating its boot manager.
 - README: the specifications the firmware is built against, as the pinned
   trees declare them, and the known limits of the two machines (Windows
   11 on the W541, DMA protection, WSMT and HSTI, the MOR lock, XMP).

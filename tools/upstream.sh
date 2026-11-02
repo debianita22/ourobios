@@ -7,6 +7,7 @@
 #   tools/upstream.sh coreboot [--dry-run]
 #   tools/upstream.sh edk2 [--dry-run]
 #   tools/upstream.sh mirror [--dry-run]
+#   tools/upstream.sh dbx [--dry-run]
 #
 # coreboot  la serie di patches/ applica ancora su main? Qualche patch e' gia'
 #           entrata upstream (stesso Subject)? C'e' un tag di release dopo il
@@ -16,6 +17,10 @@
 # mirror    i commit di EDK2 e LvglPkg di configs/edk2-pins.txt hanno il loro
 #           tag pin-<12 cifre> nei fork del progetto (EDK2_MIRROR e
 #           LVGLPKG_MIRROR di tools/build.sh)? Se no, issue "Mirror: ...".
+# dbx       la dbx che il payload scrive al primo avvio (EnrollDefaultKeys,
+#           keys/ del commit di EDK2 dei defconfig) ha le liste di hash
+#           dell'ultima release firmata di microsoft/secureboot_objects? Se
+#           no, issue "DBX: ...".
 #
 # Con --dry-run scrive soltanto cosa farebbe (niente issue).
 set -euo pipefail
@@ -264,9 +269,68 @@ EOF
 	report "Mirror:" "Mirror: tag mancanti per i commit pinnati di EDK2 o LvglPkg" "${body}"
 }
 
+# Le liste di hash della dbx di default, per id del blob git (stesso
+# contenuto, stesso id: nessun file scaricato, solo gli alberi):
+#   keys/dbx_microsoft_baseline.bin = PostSignedObjects/DBX/amd64/DBXUpdate.bin
+#   keys/dbx_microsoft_update.bin   = PostSignedObjects/SignedByKEK2023/dbx_x64.efiauth2
+# dell'ultimo tag vX.Y.Z-signed di Microsoft. Le voci SVN
+# (SignedByKEK2023/dbx_SVN.efiauth2) restano fuori di proposito: revocano i
+# boot manager di Windows piu' vecchi, Windows le scrive da se' dopo aver
+# aggiornato il suo, e nei default rifiuterebbero i supporti di installazione
+# con un boot manager di prima.
+DBX_REPO="https://github.com/microsoft/secureboot_objects"
+DBX_KEYS="UefiPayloadPkg/EnrollDefaultKeys/keys"
+check_dbx() {
+	local rev em tag g ms_up ms_base pay_up pay_base from
+	rev="$(sed -n 's/^CONFIG_EDK2_TAG_OR_REV="\(.*\)"$/\1/p' "${O}/configs/w541-mrc.defconfig")"
+	em="$(pin EDK2_MIRROR)"
+	[ -n "${rev}" ] && [ -n "${em}" ] || die "CONFIG_EDK2_TAG_OR_REV o EDK2_MIRROR non trovati"
+	tag="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags "${DBX_REPO}" 'refs/tags/v*-signed' \
+		| sed -n 's#.*refs/tags/\(v[0-9.]*-signed\)$#\1#p' | sort -V | tail -n 1)"
+	[ -n "${tag}" ] || die "${DBX_REPO}: nessun tag vX.Y.Z-signed"
+	g="${TMP}/dbx"
+	git init -q "${g}"
+	GIT_TERMINAL_PROMPT=0 git -C "${g}" fetch -q --depth 1 --filter=blob:none "${DBX_REPO}" "refs/tags/${tag}" \
+		|| die "${DBX_REPO} ${tag}: fetch non riuscito"
+	ms_base="$(git -C "${g}" rev-parse "FETCH_HEAD:PostSignedObjects/DBX/amd64/DBXUpdate.bin")"
+	ms_up="$(git -C "${g}" rev-parse "FETCH_HEAD:PostSignedObjects/SignedByKEK2023/dbx_x64.efiauth2")"
+	# il commit pinnato dal mirror del progetto (tag pin-<12 cifre>), se no
+	# da MrChromebox per hash
+	from="${em}"
+	if ! GIT_TERMINAL_PROMPT=0 git -C "${g}" fetch -q --depth 1 --filter=blob:none "${em}" "refs/tags/pin-${rev:0:12}"; then
+		from="https://github.com/mrchromebox/edk2"
+		GIT_TERMINAL_PROMPT=0 git -C "${g}" fetch -q --depth 1 --filter=blob:none "${from}" "${rev}" \
+			|| die "EDK2 ${rev:0:12}: ne' il tag pin- del mirror ne' il commit da MrChromebox"
+	fi
+	pay_base="$(git -C "${g}" rev-parse "FETCH_HEAD:${DBX_KEYS}/dbx_microsoft_baseline.bin")"
+	pay_up="$(git -C "${g}" rev-parse "FETCH_HEAD:${DBX_KEYS}/dbx_microsoft_update.bin")"
+	if [ "${pay_base}" = "${ms_base}" ] && [ "${pay_up}" = "${ms_up}" ]; then
+		settle "DBX:" "DBX: il payload (EDK2 ${rev:0:12}) ha le liste di hash di Microsoft ${tag}"
+		return 0
+	fi
+	local body
+	body="$(cat <<EOF
+La dbx che il payload scrive al primo avvio (\`EnrollDefaultKeys\`, \`${DBX_KEYS}\` di EDK2 \`${rev:0:12}\`, da ${from}) non e' quella dell'ultima release firmata di Microsoft, \`${tag}\`:
+
+| File del payload | Blob | Di Microsoft (${tag}) | Blob |
+|---|---|---|---|
+| \`dbx_microsoft_baseline.bin\` | \`${pay_base:0:12}\` | \`PostSignedObjects/DBX/amd64/DBXUpdate.bin\` | \`${ms_base:0:12}\` |
+| \`dbx_microsoft_update.bin\` | \`${pay_up:0:12}\` | \`PostSignedObjects/SignedByKEK2023/dbx_x64.efiauth2\` | \`${ms_up:0:12}\` |
+
+Vale per le macchine che iscrivono le chiavi di default (primo avvio, reset delle chiavi): le altre ricevono la dbx da Windows Update o da \`fwupdmgr update\` (firmata da Microsoft con la KEK, che il PK di default accetta).
+
+Per aggiornarla: una patch di \`patches/edk2\` con i file di \`keys/\` rifatti da \`UpdateMicrosoftDbx.py --release ${tag} --kek 2023 --arch x64\` (lo script e' in quella cartella, \`git format-patch --binary\`), o il pin di EDK2 spostato a un commit di MrChromebox che li ha. Le voci SVN (\`dbx_SVN.efiauth2\`) restano fuori di proposito: Windows le scrive da se' dopo aver aggiornato il suo boot manager.
+
+Questo issue lo aggiorna e lo chiude \`upstream.yml\`.
+EOF
+)"
+	report "DBX:" "DBX: le liste di hash di Microsoft ${tag} non sono quelle del payload" "${body}"
+}
+
 case "${WHAT}" in
 	coreboot) check_coreboot ;;
 	edk2)     check_edk2 ;;
 	mirror)   check_mirror ;;
-	*) die "uso: upstream.sh coreboot|edk2|mirror [--dry-run]" ;;
+	dbx)      check_dbx ;;
+	*) die "uso: upstream.sh coreboot|edk2|mirror|dbx [--dry-run]" ;;
 esac

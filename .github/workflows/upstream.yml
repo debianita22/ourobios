@@ -89,3 +89,14 @@ jobs:
           else
             ./tools/upstream.sh mirror
           fi
+
+      - name: La dbx di Microsoft
+        if: ${{ !cancelled() }}
+        env:
+          IN_DRY: ${{ inputs.dry_run }}
+        run: |
+          if [ "${IN_DRY:-false}" = true ]; then
+            ./tools/upstream.sh dbx --dry-run
+          else
+            ./tools/upstream.sh dbx
+          fi
