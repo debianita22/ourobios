@@ -1072,6 +1072,10 @@ UPSTREAM_DIAG = re.compile(r"smm ?store|SMMSTORE|Raw (read|write|clear)|Variable
                            r"ASSERT|ERROR|Error|TCG|Tcg|TPM|Tpm|SetVariable|Shell>|setvar|"
                            r"not recognized|start failed|auth", re.I)
 
+# Le righe della seriale che UPSTREAM_DIAG prende ma non dicono niente: il
+# lettore CD vuoto dell'AHCI di q35, senza disco a ogni avvio
+UPSTREAM_NOISE = re.compile(r"AHCI: Error interrupt reported|AtaError: ")
+
 # Le variabili non volatili che AuthVariableLib di SecurityPkg scrive al
 # primo avvio quando lo store e' autenticato (AuthVariableLib.c: CustomMode,
 # il database dei certificati, VendorKeysNv)
@@ -1127,8 +1131,8 @@ def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None, auth_rom=None, gap
                 # failed") anche la riga che dice quale fosse
                 failed_at = {m.group(1).lstrip("0").upper() for m in
                              (re.search(r"Image at 0*([0-9A-Fa-f]+) start failed", l) for l in text) if m}
-                hits = [l.rstrip() for l in text if UPSTREAM_DIAG.search(l) or any(
-                    re.search(r"Loading driver at 0x0*%s\b" % a, l, re.I) for a in failed_at)]
+                hits = [l.rstrip() for l in text if (UPSTREAM_DIAG.search(l) and not UPSTREAM_NOISE.search(l))
+                        or any(re.search(r"Loading driver at 0x0*%s\b" % a, l, re.I) for a in failed_at)]
                 # di una lacuna nota bastano le ultime righe
                 n = 12 if name in known else 40
                 lines.append("    %s: %d righe utili%s" % (serial, len(hits), ", le ultime %d:" % n if hits else ""))
