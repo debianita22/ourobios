@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
-Date: Mon, 2 Nov 2026 14:02:17 +0100
+Date: Mon, 2 Nov 2026 14:12:34 +0100
 Subject: [PATCH] drivers/smmstore: Lock of TCG Secure MOR in SMM
 
 Revision 2 of the TCG Platform Reset Attack Mitigation specification adds
@@ -41,7 +41,8 @@ The state is in a small SMRAM region kept across S3
 other boot, as the lock lasts until the next boot. The walk of the
 variable store from the SMI handler is the deepest call chain in SMM:
 SMM_MODULE_STACK_SIZE becomes 4 KiB with the lock, as the stack canary
-only reports an overflow with DEBUG_SMI.
+only reports an overflow with DEBUG_SMI; in both definitions of the
+symbol, since soc/intel/common's, sourced first, would otherwise win.
 
 Only with SMM-only flash writes (enable_smm_bios_protection(), BIOS
 Lock): otherwise the OS writes the flash without SMM, and the command
@@ -64,7 +65,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
  src/include/cpu/x86/smm.h            |   9 +
  src/include/smmstore.h               |  52 ++++++
  src/security/memory/memory.c         |   8 +-
- 14 files changed, 477 insertions(+), 9 deletions(-)
+ src/soc/intel/common/Kconfig.common  |   1 +
+ 15 files changed, 478 insertions(+), 9 deletions(-)
  create mode 100644 src/drivers/smmstore/mor_lock.c
 
 diff --git a/src/cpu/x86/Kconfig b/src/cpu/x86/Kconfig
@@ -805,6 +807,18 @@ index 2eef831cca..e7efd0e104 100644
  		printk(BIOS_WARNING, "MOR: MemoryOverwriteRequestControl unreadable (%d), "
  		       "counted as a request\n", ret);
  		return true;
+diff --git a/src/soc/intel/common/Kconfig.common b/src/soc/intel/common/Kconfig.common
+index 7d5782a02c..80a1722392 100644
+--- a/src/soc/intel/common/Kconfig.common
++++ b/src/soc/intel/common/Kconfig.common
+@@ -239,6 +239,7 @@ config SOC_INTEL_COMPLIANCE_TEST_MODE
+ 
+ config SMM_MODULE_STACK_SIZE
+ 	hex
++	default 0x1000 if SMMSTORE_MOR_LOCK
+ 	default 0x800
+ 
+ config SOC_INTEL_CRASHLOG
 -- 
 2.47.3
 
