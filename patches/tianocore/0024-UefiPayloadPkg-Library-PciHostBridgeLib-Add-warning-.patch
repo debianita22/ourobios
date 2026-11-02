@@ -1,0 +1,146 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patrick Rudolph <patrick.rudolph@9elements.com>
+Date: Tue, 19 May 2020 08:29:49 +0200
+Subject: [PATCH] UefiPayloadPkg/Library/PciHostBridgeLib: Add warning for
+ coreboot/EDK2 incompability
+
+[ouroBIOS: commit 0a270f888bbb of MrChromebox's edk2, as it is]
+
+EDK2 expects PCI bars to be continously be allocated without "gaps" of reserverd
+memory in between.
+coreboot places PCI bars anyware in the PCI MMIO space, interleaved with MMCONF
+and reserved I/O MMIO space.
+
+Warn about this behaviour and refuse to add the BAR to the PCI aperature as it would
+cause the PciHostBridgeDxe fo fail.
+
+Signed-off-by: Patrick Rudolph <patrick.rudolph@9elements.com>
+---
+ .../PciHostBridgeLib/PciHostBridgeLib.inf     |  1 +
+ .../PciHostBridgeLib/PciHostBridgeSupport.c   | 80 +++++++++++++++++++
+ 2 files changed, 81 insertions(+)
+
+diff --git a/UefiPayloadPkg/Library/PciHostBridgeLib/PciHostBridgeLib.inf b/UefiPayloadPkg/Library/PciHostBridgeLib/PciHostBridgeLib.inf
+index 6069dcc0efa3f67a729c3e27380d62f2f7ddd9f1..5b19a8a0e89edf8a72bb0ed8531d30b92d847866 100644
+--- a/UefiPayloadPkg/Library/PciHostBridgeLib/PciHostBridgeLib.inf
++++ b/UefiPayloadPkg/Library/PciHostBridgeLib/PciHostBridgeLib.inf
+@@ -39,6 +39,7 @@
+   DevicePathLib
+   MemoryAllocationLib
+   PciLib
++  DxeServicesTableLib
+ 
+ [Guids]
+   gUniversalPayloadPciRootBridgeInfoGuid
+diff --git a/UefiPayloadPkg/Library/PciHostBridgeLib/PciHostBridgeSupport.c b/UefiPayloadPkg/Library/PciHostBridgeLib/PciHostBridgeSupport.c
+index fb76853072ea9414b4e061e2aa6109e6144ad47c..ba04ba360bee9f494a8754e0f7dd9c8d383df158 100644
+--- a/UefiPayloadPkg/Library/PciHostBridgeLib/PciHostBridgeSupport.c
++++ b/UefiPayloadPkg/Library/PciHostBridgeLib/PciHostBridgeSupport.c
+@@ -16,6 +16,7 @@
+ #include <Library/MemoryAllocationLib.h>
+ #include <Library/PciHostBridgeLib.h>
+ #include <Library/PciLib.h>
++#include <Library/DxeServicesTableLib.h>
+ #include "PciHostBridge.h"
+ 
+ /**
+@@ -53,6 +54,55 @@ PcatPciRootBridgeBarExisted (
+   EnableInterrupts ();
+ }
+ 
++STATIC
++EFI_STATUS
++PcatPciRootBridgeWarnAboutBrokenFW (
++  IN  UINT64            Start,
++  IN  UINT64            Limit
++)
++{
++  EFI_STATUS                            Status;
++  UINTN                                 Index;
++  UINT64                                IntersectionBase;
++  UINT64                                IntersectionEnd;
++  UINTN                                 NumberOfDescriptors;
++  EFI_GCD_MEMORY_SPACE_DESCRIPTOR       *Map;
++
++  Status = gDS->GetMemorySpaceMap (&NumberOfDescriptors, &Map);
++  if (EFI_ERROR (Status)) {
++    DEBUG ((EFI_D_ERROR, "%a: %a: GetMemorySpaceMap(): %r\n",
++      gEfiCallerBaseName, __FUNCTION__, Status));
++    return Status;
++  }
++
++  for (Index = 0; Index < NumberOfDescriptors; Index++) {
++    if (Map[Index].GcdMemoryType == EfiGcdMemoryTypeNonExistent) {
++      //
++      // Ignore non existent entries
++      //
++      continue;
++    }
++
++    IntersectionBase = MAX (Start, Map[Index].BaseAddress);
++    IntersectionEnd = MIN (Limit, Map[Index].BaseAddress + Map[Index].Length);
++    if (IntersectionBase >= IntersectionEnd) {
++      //
++      // The descriptor and the aperture don't overlap.
++      //
++      continue;
++    }
++
++    if (Map[Index].GcdMemoryType == EfiGcdMemoryTypeReserved) {
++      DEBUG ((EFI_D_ERROR, "%a: PCI aperature overlaps reserved memory region\n",
++        __FUNCTION__));
++      DEBUG ((EFI_D_ERROR, "%a: Please consider fixing EDK2 or your firmware\n",
++        __FUNCTION__));
++      return EFI_ACCESS_DENIED;
++    }
++  }
++  return EFI_SUCCESS;
++}
++
+ /**
+   Parse PCI bar and collect the assigned PCI resource information.
+ 
+@@ -104,6 +154,9 @@ PcatPciRootBridgeParseBars (
+   UINT64                    Length;
+   UINT64                    Limit;
+   PCI_ROOT_BRIDGE_APERTURE  *MemAperture;
++  UINT64                    NewBase;
++  UINT64                    NewLength;
++  EFI_STATUS                Status;
+ 
+   for (Offset = BarOffsetBase; Offset < BarOffsetEnd; Offset += sizeof (UINT32)) {
+     PcatPciRootBridgeBarExisted (
+@@ -182,6 +235,33 @@ PcatPciRootBridgeParseBars (
+ 
+         Limit = Base + Length - 1;
+         if ((Base > 0) && (Base < Limit)) {
++          NewBase = MemAperture->Base;
++          if (MemAperture->Base > Base) {
++            NewBase = Base;
++          }
++          NewLength = MemAperture->Base;
++          if (MemAperture->Limit < Limit) {
++            NewLength = Base;
++          }
++
++          //
++          // In case the BAR is placed on "the other side" of the MMCONF window
++          // this would cause the aperature to cover the MMCONF window, which
++          // isn't supported by EDK2.
++          //
++          Status = PcatPciRootBridgeWarnAboutBrokenFW(NewBase, NewLength);
++          if (EFI_ERROR (Status)) {
++            DEBUG ((EFI_D_ERROR, "%a: Not adding PCI %x:%x.%x BAR@%d %x:%x to aperature\n",
++              __FUNCTION__,
++              Bus,
++              Device,
++              Function,
++              Offset,
++              Base,
++              Limit));
++            continue;
++          }
++
+           if (MemAperture->Base > Base) {
+             MemAperture->Base = Base;
+           }

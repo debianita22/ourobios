@@ -1,0 +1,95 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patrick Rudolph <patrick.rudolph@9elements.com>
+Date: Tue, 26 Jan 2021 13:53:56 +0100
+Subject: [PATCH] UefiPayloadPkg: Check more ACPI tables
+
+[ouroBIOS: commit 2deb904a7d1d of MrChromebox's edk2, as it is]
+
+Probe for ACPI tables
+* TPM2
+* TCPA
+and store the result in AcpiBoardInfo.
+
+Will be used to determine if a TPM1.2 or TPM2.0 is present.
+
+Signed-off-by: Patrick Rudolph <patrick.rudolph@9elements.com>
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+Change-Id: I67b80b24a3d8565f69199a5fd8adea102d35e276
+---
+ .../Include/Guid/AcpiBoardInfoGuid.h          |  2 ++
+ UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c   | 23 +++++++++++++++----
+ 2 files changed, 20 insertions(+), 5 deletions(-)
+
+diff --git a/UefiPayloadPkg/Include/Guid/AcpiBoardInfoGuid.h b/UefiPayloadPkg/Include/Guid/AcpiBoardInfoGuid.h
+index 04d2774356df01f0d4f984f20289930f147d7c8c..4d60e9d394b40102ae9e82869c74e70b60436c14 100644
+--- a/UefiPayloadPkg/Include/Guid/AcpiBoardInfoGuid.h
++++ b/UefiPayloadPkg/Include/Guid/AcpiBoardInfoGuid.h
+@@ -24,4 +24,6 @@ typedef struct {
+   UINT64    ResetRegAddress;
+   UINT64    PcieBaseAddress;
+   UINT64    PcieBaseSize;
++  UINT8     TPM20Present;
++  UINT8     TPM12Present;
+ } ACPI_BOARD_INFO;
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c b/UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c
+index b50f460bb3683783894635283c569050cb5149f7..6f4ae20053ae2e9fd77cc38d4945fc150342a101 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c
++++ b/UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c
+@@ -37,6 +37,8 @@ ParseAcpiInfo (
+   UINT32                                                                                 *Signature;
+   EFI_ACPI_MEMORY_MAPPED_CONFIGURATION_BASE_ADDRESS_TABLE_HEADER                         *MmCfgHdr;
+   EFI_ACPI_MEMORY_MAPPED_ENHANCED_CONFIGURATION_SPACE_BASE_ADDRESS_ALLOCATION_STRUCTURE  *MmCfgBase;
++  UINTN                                                                                  TPM2TablePresent;
++  UINTN                                                                                  TCPATablePresent;
+ 
+   Rsdp = (EFI_ACPI_3_0_ROOT_SYSTEM_DESCRIPTION_POINTER *)(UINTN)AcpiTableBase;
+   DEBUG ((DEBUG_INFO, "Rsdp at 0x%p\n", Rsdp));
+@@ -63,8 +65,12 @@ ParseAcpiInfo (
+         DEBUG ((DEBUG_INFO, "Found MM config address in Rsdt\n"));
+       }
+ 
+-      if ((Fadt != NULL) && (MmCfgHdr != NULL)) {
+-        goto Done;
++      if (*Signature == EFI_ACPI_5_0_TRUSTED_COMPUTING_PLATFORM_2_TABLE_SIGNATURE) {
++        TPM2TablePresent = 1;
++      }
++
++      if (*Signature == EFI_ACPI_5_0_TRUSTED_COMPUTING_PLATFORM_ALLIANCE_CAPABILITIES_TABLE_SIGNATURE) {
++        TCPATablePresent = 1;
+       }
+     }
+   }
+@@ -88,8 +94,12 @@ ParseAcpiInfo (
+         DEBUG ((DEBUG_INFO, "Found MM config address in Xsdt\n"));
+       }
+ 
+-      if ((Fadt != NULL) && (MmCfgHdr != NULL)) {
+-        goto Done;
++      if (*Signature == EFI_ACPI_5_0_TRUSTED_COMPUTING_PLATFORM_2_TABLE_SIGNATURE) {
++        TPM2TablePresent = 1;
++      }
++
++      if (*Signature == EFI_ACPI_5_0_TRUSTED_COMPUTING_PLATFORM_ALLIANCE_CAPABILITIES_TABLE_SIGNATURE) {
++        TCPATablePresent = 1;
+       }
+     }
+   }
+@@ -98,7 +108,8 @@ ParseAcpiInfo (
+     return RETURN_NOT_FOUND;
+   }
+ 
+-Done:
++  AcpiBoardInfo->TPM20Present = TPM2TablePresent;
++  AcpiBoardInfo->TPM12Present = TCPATablePresent;
+ 
+   AcpiBoardInfo->PmCtrlRegBase   = Fadt->Pm1aCntBlk;
+   AcpiBoardInfo->PmTimerRegBase  = Fadt->PmTmrBlk;
+@@ -124,6 +135,8 @@ Done:
+   DEBUG ((DEBUG_INFO, "PmGpeEn Reg 0x%lx\n", AcpiBoardInfo->PmGpeEnBase));
+   DEBUG ((DEBUG_INFO, "PcieBaseAddr 0x%lx\n", AcpiBoardInfo->PcieBaseAddress));
+   DEBUG ((DEBUG_INFO, "PcieBaseSize 0x%lx\n", AcpiBoardInfo->PcieBaseSize));
++  DEBUG ((DEBUG_INFO, "TPM 2.0 present %x\n", AcpiBoardInfo->TPM20Present));
++  DEBUG ((DEBUG_INFO, "TPM 1.2 present %x\n", AcpiBoardInfo->TPM12Present));
+ 
+   return RETURN_SUCCESS;
+ }

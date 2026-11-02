@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patrick Rudolph <patrick.rudolph@9elements.com>
+Date: Tue, 16 Jun 2020 08:50:52 +0200
+Subject: [PATCH] MdeModulePkg: Be more verbose about SecureBoot and the reason
+ why the boot failed
+
+[ouroBIOS: commit 4844b23af9c3 of MrChromebox's edk2, as it is]
+
+Signed-off-by: Patrick Rudolph <patrick.rudolph@9elements.com>
+---
+ MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c     | 10 ++++++++++
+ MdeModulePkg/Library/UefiBootManagerLib/InternalBm.h |  1 +
+ 2 files changed, 11 insertions(+)
+
+diff --git a/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c b/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c
+index 7930c79f44751abc6ef1d11233296c6c120dbbff..6be86882a00234a66fbeb580cb68644ee9c63864 100644
+--- a/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c
++++ b/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c
+@@ -1958,6 +1958,7 @@ EfiBootManagerBoot (
+   EFI_EVENT                  LegacyBootEvent;
+   EFI_INPUT_KEY              Key;
+   UINTN                      Index;
++  UINT8                     *SecureBoot;
+ 
+   if (BootOption == NULL) {
+     return;
+@@ -2111,6 +2112,15 @@ EfiBootManagerBoot (
+             "\nPress any key to continue\n",
+             BootOption->Description, Status);
+ 
++        //
++        // When UEFI Secure Boot is enabled, unsigned modules won't load.
++        //
++        SecureBoot = NULL;
++        GetEfiGlobalVariable2 (EFI_SECURE_BOOT_MODE_NAME, (VOID**)&SecureBoot, NULL);
++        if ((SecureBoot != NULL) && (*SecureBoot == SECURE_BOOT_MODE_ENABLE)) {
++          AsciiPrint ("SecureBoot is enabled; ensure selected boot entry is compatible.\n\n");
++          FreePool (SecureBoot);
++        }
+       }
+       if (gST->ConIn != NULL) {
+         Status = gBS->WaitForEvent (1, &gST->ConIn->WaitForKey, &Index);
+diff --git a/MdeModulePkg/Library/UefiBootManagerLib/InternalBm.h b/MdeModulePkg/Library/UefiBootManagerLib/InternalBm.h
+index eb9d7c8d8b45881f6c58e922231febda99946cf0..471eb6a8d9ebc9c7abd6a34bba7cb7f7bf3e5376 100644
+--- a/MdeModulePkg/Library/UefiBootManagerLib/InternalBm.h
++++ b/MdeModulePkg/Library/UefiBootManagerLib/InternalBm.h
+@@ -45,6 +45,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Protocol/PlatformBootManager.h>
+ #include <Protocol/VariablePolicy.h>
+ 
++#include <Guid/ImageAuthentication.h>
+ #include <Guid/MemoryTypeInformation.h>
+ #include <Guid/FileInfo.h>
+ #include <Guid/GlobalVariable.h>

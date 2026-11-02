@@ -1,0 +1,375 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Fri, 3 Jul 2026 09:28:17 -0500
+Subject: [PATCH] MdeModulePkg/FileExplorerLib: Add "Up one level" navigation
+
+[ouroBIOS: commit ad284e9f2cda of MrChromebox's edk2, as it is]
+
+The file explorer rebuilds a single form in place while descending into
+volumes and directories, so it keeps no parent/history and ESC exits the
+whole browser. The on-disk "." and ".." entries only appear on FAT
+sub-directories, never at a volume root nor on other file systems, leaving
+no reliable way to back up a level.
+
+Track the directory currently displayed and synthesize an "Up one level"
+entry at the top of every directory listing: at a volume root it returns
+to the volume list, otherwise it opens the parent directory. The raw
+"." and ".." entries are filtered so parent navigation is uniform across
+file systems. Also close the final directory handle on exit.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ .../Library/FileExplorerLib/FileExplorer.c    | 233 +++++++++++++++++-
+ .../Library/FileExplorerLib/FileExplorer.h    |   9 +
+ .../FileExplorerLib/FileExplorerString.uni    |   4 +
+ .../Library/FileExplorerLib/FormGuid.h        |   6 +
+ 4 files changed, 251 insertions(+), 1 deletion(-)
+
+diff --git a/MdeModulePkg/Library/FileExplorerLib/FileExplorer.c b/MdeModulePkg/Library/FileExplorerLib/FileExplorer.c
+index 1555972ee0b3acccfaf8ad7d01f59764d2c4c225..88529ce0f8df56f1319fb8016e24c5724bfac850 100644
+--- a/MdeModulePkg/Library/FileExplorerLib/FileExplorer.c
++++ b/MdeModulePkg/Library/FileExplorerLib/FileExplorer.c
+@@ -86,6 +86,18 @@ LibCreateNewFile (
+   IN BOOLEAN  CreateFile
+   );
+ 
++/**
++  Navigate to the parent of the directory currently displayed.
++
++  @retval  EFI_SUCCESS   The parent location was displayed successfully.
++  @retval  other errors  Error occurred when opening or parsing the parent.
++
++**/
++EFI_STATUS
++LibGoUpOneLevel (
++  VOID
++  );
++
+ /**
+   This function allows a caller to extract the current configuration for one
+   or more named elements from the target driver.
+@@ -273,7 +285,12 @@ LibCallback (
+       return EFI_INVALID_PARAMETER;
+     }
+ 
+-    if (QuestionId >= FILE_OPTION_OFFSET) {
++    if (QuestionId == KEY_VALUE_UP_ONE_LEVEL) {
++      Status = LibGoUpOneLevel ();
++      if (EFI_ERROR (Status)) {
++        return Status;
++      }
++    } else if (QuestionId >= FILE_OPTION_OFFSET) {
+       LibGetDevicePath (QuestionId);
+       Status = LibUpdateFileExplorer (QuestionId);
+       if (EFI_ERROR (Status)) {
+@@ -528,6 +545,55 @@ LibStrDuplicate (
+   return Dest;
+ }
+ 
++/**
++  Return the parent directory of an absolute file path.
++
++  The parent of a top level path (e.g. "\" or "\Name") is the volume root "\".
++
++  @param Path            The absolute path whose parent is requested.
++
++  @return A newly allocated string holding the parent path, or NULL on failure.
++          Caller is responsible to free the returned string.
++
++**/
++CHAR16 *
++LibGetParentPath (
++  IN CHAR16  *Path
++  )
++{
++  CHAR16  *Parent;
++  UINTN   Index;
++  UINTN   LastSlash;
++
++  if (Path == NULL) {
++    return NULL;
++  }
++
++  LastSlash = 0;
++  for (Index = 0; Path[Index] != L'\0'; Index++) {
++    if (Path[Index] == L'\\') {
++      LastSlash = Index;
++    }
++  }
++
++  //
++  // Only a leading backslash was found (root or a top level entry): parent is "\".
++  //
++  if (LastSlash == 0) {
++    return LibStrDuplicate (L"\\");
++  }
++
++  Parent = AllocateZeroPool ((LastSlash + 1) * sizeof (CHAR16));
++  if (Parent == NULL) {
++    return NULL;
++  }
++
++  CopyMem (Parent, Path, LastSlash * sizeof (CHAR16));
++  Parent[LastSlash] = L'\0';
++
++  return Parent;
++}
++
+ /**
+ 
+   Function gets the file information from an open file descriptor, and stores it
+@@ -782,6 +848,17 @@ LibFindFileSystem (
+   NoSimpleFsHandles = 0;
+   OptionNumber      = 0;
+ 
++  //
++  // Showing the volume list: no directory is active, so no "Up" entry is offered.
++  //
++  if (gFileExplorerPrivate.CurDirPath != NULL) {
++    FreePool (gFileExplorerPrivate.CurDirPath);
++    gFileExplorerPrivate.CurDirPath = NULL;
++  }
++
++  gFileExplorerPrivate.CurDirHandle    = NULL;
++  gFileExplorerPrivate.CurDeviceHandle = NULL;
++
+   //
+   // Locate Handles that support Simple File System protocol
+   //
+@@ -1155,6 +1232,18 @@ LibFindFiles (
+ 
+   OptionNumber = 0;
+ 
++  //
++  // Remember the directory being displayed so a synthetic "Up one level" entry
++  // can navigate back to its parent (or the volume list at a volume root).
++  //
++  if (gFileExplorerPrivate.CurDirPath != NULL) {
++    FreePool (gFileExplorerPrivate.CurDirPath);
++  }
++
++  gFileExplorerPrivate.CurDirPath      = LibStrDuplicate (FileName);
++  gFileExplorerPrivate.CurDirHandle    = FileHandle;
++  gFileExplorerPrivate.CurDeviceHandle = DeviceHandle;
++
+   DirBufferSize = sizeof (EFI_FILE_INFO) + 1024;
+   DirInfo       = AllocateZeroPool (DirBufferSize);
+   if (DirInfo == NULL) {
+@@ -1195,6 +1284,15 @@ LibFindFiles (
+         continue;
+       }
+ 
++      if ((StrCmp (DirInfo->FileName, L".") == 0) || (StrCmp (DirInfo->FileName, L"..") == 0)) {
++        //
++        // Skip the on-disk "." and ".." entries (present on FAT sub-directories but
++        // not on the volume root or on other file systems). Parent navigation is
++        // provided uniformly by the synthetic "Up one level" entry instead.
++        //
++        continue;
++      }
++
+       NewMenuEntry = LibCreateMenuEntry ();
+       if (NULL == NewMenuEntry) {
+         Status = EFI_OUT_OF_RESOURCES;
+@@ -1329,6 +1427,22 @@ LibUpdateFileExplorePage (
+ 
+   mQuestionIdUpdate += QUESTION_ID_UPDATE_STEP;
+ 
++  //
++  // When a directory is being displayed, offer a synthetic "Up one level" entry
++  // so the user can return to the parent directory (or the volume list at a
++  // volume root) without having to exit the file explorer entirely.
++  //
++  if (gFileExplorerPrivate.CurDirPath != NULL) {
++    HiiCreateGotoOpCode (
++      mLibStartOpCodeHandle,
++      FORM_FILE_EXPLORER_ID,
++      STRING_TOKEN (STR_UP_ONE_LEVEL),
++      STRING_TOKEN (STR_UP_ONE_LEVEL_HELP),
++      EFI_IFR_FLAG_CALLBACK,
++      KEY_VALUE_UP_ONE_LEVEL
++      );
++  }
++
+   for (Index = 0; Index < MenuOption->MenuNumber; Index++) {
+     NewMenuEntry   = LibGetMenuEntry (MenuOption, Index);
+     NewFileContext = (FILE_CONTEXT *)NewMenuEntry->VariableContext;
+@@ -1439,6 +1553,107 @@ LibUpdateFileExplorer (
+   return Status;
+ }
+ 
++/**
++  Navigate to the parent of the directory currently displayed.
++
++  When the volume root is displayed, the volume (file system) list is shown
++  instead. Does nothing when the volume list is already displayed.
++
++  @retval  EFI_SUCCESS   The parent location was displayed successfully.
++  @retval  other errors  Error occurred when opening or parsing the parent.
++
++**/
++EFI_STATUS
++LibGoUpOneLevel (
++  VOID
++  )
++{
++  EFI_STATUS       Status;
++  CHAR16           *ParentPath;
++  EFI_FILE_HANDLE  RootHandle;
++  EFI_FILE_HANDLE  ParentHandle;
++  EFI_HANDLE       DeviceHandle;
++
++  //
++  // Already at the volume list: nothing above it.
++  //
++  if (gFileExplorerPrivate.CurDirPath == NULL) {
++    return EFI_SUCCESS;
++  }
++
++  //
++  // At a volume root: go back to the volume (file system) list.
++  //
++  if (StrCmp (gFileExplorerPrivate.CurDirPath, L"\\") == 0) {
++    if (gFileExplorerPrivate.CurDirHandle != NULL) {
++      gFileExplorerPrivate.CurDirHandle->Close (gFileExplorerPrivate.CurDirHandle);
++      gFileExplorerPrivate.CurDirHandle = NULL;
++    }
++
++    LibFreeMenu (gFileExplorerPrivate.FsOptionMenu);
++    Status = LibFindFileSystem ();
++    if (!EFI_ERROR (Status)) {
++      LibUpdateFileExplorePage ();
++    }
++
++    return Status;
++  }
++
++  //
++  // In a sub-directory: open and display its parent.
++  //
++  DeviceHandle = gFileExplorerPrivate.CurDeviceHandle;
++  ParentPath   = LibGetParentPath (gFileExplorerPrivate.CurDirPath);
++  if (ParentPath == NULL) {
++    return EFI_OUT_OF_RESOURCES;
++  }
++
++  RootHandle = LibOpenRoot (DeviceHandle);
++  if (RootHandle == NULL) {
++    FreePool (ParentPath);
++    return EFI_DEVICE_ERROR;
++  }
++
++  if (StrCmp (ParentPath, L"\\") == 0) {
++    ParentHandle = RootHandle;
++  } else {
++    Status = RootHandle->Open (
++                           RootHandle,
++                           &ParentHandle,
++                           ParentPath,
++                           EFI_FILE_READ_ONLY,
++                           0
++                           );
++    RootHandle->Close (RootHandle);
++    if (EFI_ERROR (Status)) {
++      FreePool (ParentPath);
++      return Status;
++    }
++  }
++
++  //
++  // Release the directory being left before its handle reference is overwritten.
++  //
++  if (gFileExplorerPrivate.CurDirHandle != NULL) {
++    gFileExplorerPrivate.CurDirHandle->Close (gFileExplorerPrivate.CurDirHandle);
++    gFileExplorerPrivate.CurDirHandle = NULL;
++  }
++
++  LibFreeMenu (gFileExplorerPrivate.FsOptionMenu);
++
++  Status = LibFindFiles (ParentHandle, ParentPath, DeviceHandle);
++  if (!EFI_ERROR (Status)) {
++    LibUpdateFileExplorePage ();
++  } else {
++    LibFreeMenu (gFileExplorerPrivate.FsOptionMenu);
++    ParentHandle->Close (ParentHandle);
++  }
++
++  FreePool (ParentPath);
++
++  return Status;
++}
++
+ /**
+   Get the device path info saved in the menu structure.
+ 
+@@ -1557,6 +1772,22 @@ Done:
+ 
+   LibFreeMenu (gFileExplorerPrivate.FsOptionMenu);
+ 
++  //
++  // Release the directory currently displayed. Its handle is shared by the (now
++  // freed) child entries, which are non-root and therefore never close it.
++  //
++  if (gFileExplorerPrivate.CurDirHandle != NULL) {
++    gFileExplorerPrivate.CurDirHandle->Close (gFileExplorerPrivate.CurDirHandle);
++    gFileExplorerPrivate.CurDirHandle = NULL;
++  }
++
++  if (gFileExplorerPrivate.CurDirPath != NULL) {
++    FreePool (gFileExplorerPrivate.CurDirPath);
++    gFileExplorerPrivate.CurDirPath = NULL;
++  }
++
++  gFileExplorerPrivate.CurDeviceHandle = NULL;
++
+   if (FileName != NULL) {
+     FreePool (FileName);
+   }
+diff --git a/MdeModulePkg/Library/FileExplorerLib/FileExplorer.h b/MdeModulePkg/Library/FileExplorerLib/FileExplorer.h
+index f3a3a7ef050caac956e6bbe48b23c4f3e8d57b5b..3039fa6da4b3f6534882613df361f83e799eb96f 100644
+--- a/MdeModulePkg/Library/FileExplorerLib/FileExplorer.h
++++ b/MdeModulePkg/Library/FileExplorerLib/FileExplorer.h
+@@ -89,6 +89,15 @@ typedef struct {
+   CHAR16                            *FileType;
+   CHOOSE_HANDLER                    ChooseHandler;
+   EFI_DEVICE_PATH_PROTOCOL          *RetDevicePath;
++
++  //
++  // Location currently displayed, used to synthesize an "Up one level" entry.
++  // When CurDirPath is NULL the volume (file system) list is being shown and no
++  // "Up" entry is offered.
++  //
++  EFI_HANDLE                        CurDeviceHandle;
++  EFI_FILE_HANDLE                   CurDirHandle;
++  CHAR16                            *CurDirPath;
+ } FILE_EXPLORER_CALLBACK_DATA;
+ 
+ #define FILE_EXPLORER_PRIVATE_FROM_THIS(a)  CR (a, FILE_EXPLORER_CALLBACK_DATA, FeConfigAccess, FILE_EXPLORER_CALLBACK_DATA_SIGNATURE)
+diff --git a/MdeModulePkg/Library/FileExplorerLib/FileExplorerString.uni b/MdeModulePkg/Library/FileExplorerLib/FileExplorerString.uni
+index 070cdf38ea11a6052c97b04eae5726a8f217f6ac..4e04dfc20a05a0be5c19d7e0a88b5af02e50877d 100644
+--- a/MdeModulePkg/Library/FileExplorerLib/FileExplorerString.uni
++++ b/MdeModulePkg/Library/FileExplorerLib/FileExplorerString.uni
+@@ -53,3 +53,7 @@
+                                        #language fr-FR  "Create Folder and Exit"
+ #string STR_NO_CREATE_FOLDER_AND_EXIT  #language en-US  "Discard Create and Exit"
+                                        #language fr-FR  "Discard Create and Exit"
++#string STR_UP_ONE_LEVEL               #language en-US  "<.. Up one level>"
++                                       #language fr-FR  "<.. Up one level>"
++#string STR_UP_ONE_LEVEL_HELP          #language en-US  "Return to the parent directory, or to the volume list when at the root of a volume"
++                                       #language fr-FR  "Return to the parent directory, or to the volume list when at the root of a volume"
+diff --git a/MdeModulePkg/Library/FileExplorerLib/FormGuid.h b/MdeModulePkg/Library/FileExplorerLib/FormGuid.h
+index d1857ebdac57bf17f78669392098ff7d8658b384..6b53e716451bc4e68ac4485df097fdb89b18ed2c 100644
+--- a/MdeModulePkg/Library/FileExplorerLib/FormGuid.h
++++ b/MdeModulePkg/Library/FileExplorerLib/FormGuid.h
+@@ -22,5 +22,11 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #define NEW_FOLDER_NAME_ID                   0x3001
+ #define KEY_VALUE_CREATE_FOLDER_AND_EXIT     0x3002
+ #define KEY_VALUE_NO_CREATE_FOLDER_AND_EXIT  0x3003
++//
++// Reserved question id used by the synthetic "Up one level" entry. It must stay
++// below NEW_FILE_QUESTION_ID_BASE (0x5000) so the incrementing new-file/new-folder
++// and FILE_OPTION_OFFSET (0x8000) question ids can never collide with it.
++//
++#define KEY_VALUE_UP_ONE_LEVEL               0x4000
+ 
+ #define LABEL_END  0xffff

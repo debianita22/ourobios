@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Fri, 25 Apr 2025 13:15:47 -0500
+Subject: [PATCH] MdeModulePkg: Don't remove rejected PCI devices
+
+[ouroBIOS: commit 96303b7055a8 of MrChromebox's edk2, as it is]
+
+This is needed to fix framebuffer display when using
+`CONFIG_RESOURCE_ALLOCATION_TOP_DOWN=y` in coreboot. Without this
+patch, the display backlight will be on, but no boot logo or
+menus visible.
+
+The code detecting valid BARs is buggy AF, so just skip the whole
+mess for now.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ MdeModulePkg/Bus/Pci/PciBusDxe/PciEnumeratorSupport.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/MdeModulePkg/Bus/Pci/PciBusDxe/PciEnumeratorSupport.c b/MdeModulePkg/Bus/Pci/PciBusDxe/PciEnumeratorSupport.c
+index ae94462f6042dbf7e94b500368b5f24423e9f6e1..a6ff9e8ab311e8f89e87688d668a66bdc83fb364 100644
+--- a/MdeModulePkg/Bus/Pci/PciBusDxe/PciEnumeratorSupport.c
++++ b/MdeModulePkg/Bus/Pci/PciBusDxe/PciEnumeratorSupport.c
+@@ -2883,6 +2883,9 @@ IsPciDeviceRejected (
+     return FALSE;
+   }
+ 
++  // This code is buggy AF, so don't reject anything
++  return FALSE;
++
+   if (IS_CARDBUS_BRIDGE (&PciIoDevice->Pci)) {
+     //
+     // Only test base registers for P2C

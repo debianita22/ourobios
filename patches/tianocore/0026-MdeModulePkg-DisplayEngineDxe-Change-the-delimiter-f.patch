@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sean Rhodes <sean@starlabs.systems>
+Date: Fri, 26 May 2023 15:27:37 +0100
+Subject: [PATCH] MdeModulePkg/DisplayEngineDxe: Change the delimiter for
+ ONE_OF
+
+[ouroBIOS: commit b795f86961f3 of MrChromebox's edk2, as it is]
+
+The delimiters for ONE_OF are `<` and `>`, which doesn't match
+the other definitions. Change these to `[` and `]` so it's
+uniform.
+
+Signed-off-by: Sean Rhodes <sean@starlabs.systems>
+---
+ MdeModulePkg/Universal/DisplayEngineDxe/FormDisplay.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/MdeModulePkg/Universal/DisplayEngineDxe/FormDisplay.h b/MdeModulePkg/Universal/DisplayEngineDxe/FormDisplay.h
+index 34e6cc53c67fabeb5211f7e680056a49180d384c..5cddaffffa337c5f1b6d77a4c17fda5b72ed23f9 100644
+--- a/MdeModulePkg/Universal/DisplayEngineDxe/FormDisplay.h
++++ b/MdeModulePkg/Universal/DisplayEngineDxe/FormDisplay.h
+@@ -84,8 +84,8 @@ extern BOOLEAN  gMisMatch;
+ //
+ // Display definitions
+ //
+-#define LEFT_ONEOF_DELIMITER   L'<'
+-#define RIGHT_ONEOF_DELIMITER  L'>'
++#define LEFT_ONEOF_DELIMITER   L'['
++#define RIGHT_ONEOF_DELIMITER  L']'
+ 
+ #define LEFT_NUMERIC_DELIMITER   L'['
+ #define RIGHT_NUMERIC_DELIMITER  L']'

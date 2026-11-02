@@ -1,0 +1,147 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 2 Nov 2026 16:55:14 +0100
+Subject: [PATCH] UefiPayloadPkg/SmmStoreLib: The arguments in the com buffer
+ page from the start
+
+[ouroBIOS: patches/edk2/0044, as it is]
+
+The library passed the arguments of a command in a page of runtime
+services data until SetVirtualAddressMap(), and only then, when the com
+buffer has the page after its data block that coreboot gives it, in
+that page. The SMI handler read them at an address the caller chose for
+every command before the OS: SMMSTORE_PARAMS_IN_COM_BUFFER on the
+coreboot side refuses that, so that the handler never reads outside the
+com buffer (WSMT FIXED_COMM_BUFFERS).
+
+Use the page from the initialization when the com buffer has it, with
+no allocation and nothing to free; the pointer converts with the com
+buffer at the virtual address change, as before. Without the page the
+library allocates as it did.
+
+TEST=Not built. The smoke test of the payload in QEMU (variables
+written from the Shell, the capsule update test) with coreboot's
+SMMSTORE_PARAMS_IN_COM_BUFFER on: with DEBUG_SMI every command's
+parameters at the com buffer plus the block size.
+---
+ UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c | 76 ++++++++++---------
+ 1 file changed, 42 insertions(+), 34 deletions(-)
+
+diff --git a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+index 7b2e817..a0c546f 100644
+--- a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
++++ b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+@@ -23,6 +23,8 @@
+  */
+ STATIC SMM_STORE_COM_BUF     *mArgComBuf;
+ STATIC EFI_PHYSICAL_ADDRESS  mArgComBufPhys;
++// The arguments in the page after the data block of the com buffer: nothing to free
++STATIC BOOLEAN               mArgComBufInComBuffer;
+ 
+ /*
+  * Metadata provided by the first stage bootloader.
+@@ -538,17 +540,11 @@ SmmStoreLibVirtualAddressChange (
+   )
+ {
+   //
+-  // At runtime the arguments go after the data, where the com buffer has
+-  // room for them (coreboot gives a page more than a block): macOS's boot
+-  // loader moves the runtime services data, where they were, and SMM reads
+-  // them at their physical address
++  // The arguments are in the page after the data block of the com buffer
++  // since the initialization, when coreboot gives it: macOS's boot loader
++  // moves the runtime services data, not the com buffer, and SMM reads them
++  // at their physical address. The pointer converts with the com buffer.
+   //
+-  if ((mSmmStoreInfo != NULL) &&
+-      (mSmmStoreInfo->ComBufferSize >= mSmmStoreInfo->BlockSize + sizeof (SMM_STORE_COM_BUF)))
+-  {
+-    mArgComBufPhys = mSmmStoreInfo->ComBuffer + mSmmStoreInfo->BlockSize;
+-    mArgComBuf     = (SMM_STORE_COM_BUF *)(UINTN)mArgComBufPhys;
+-  }
+ 
+   ConvertPointer (0x0, (VOID **)&mArgComBuf);
+   if (mSmmStoreInfo != NULL) {
+@@ -695,35 +691,44 @@ SmmStoreLibInitialize (
+   }
+ 
+   //
+-  // Allocate Communication Buffer for arguments to pass to SMM.
+-  // The argument com buffer is only read by SMM, but never written.
+-  // The FVB data send/retrieved will be placed in a separate bootloader
+-  // pre-allocated memory region, the ComBuffer.
++  // The arguments to pass to SMM go in the page after the data block of the
++  // com buffer when coreboot gives it (patch 0134: the whole entry is reported
++  // as the com buffer), from the first command: an address fixed since boot,
++  // which an SMI handler that takes its parameters from the com buffer alone
++  // (SMMSTORE_PARAMS_IN_COM_BUFFER, WSMT FIXED_COMM_BUFFERS) accepts, and
++  // which the boot loader of macOS leaves in place. Otherwise, as before, a
++  // page of runtime services data, only read by SMM. The FVB data goes in
++  // the data block of the com buffer either way.
+   //
+-  if (mSmmStoreInfo->ComBuffer < BASE_4GB) {
+-    //
+-    // Assume that SMM handler is running in 32-bit mode when ComBuffer is
+-    // is placed below BASE_4GB.
+-    //
+-    mArgComBufPhys = BASE_4GB - 1;
++  if (mSmmStoreInfo->ComBufferSize >= mSmmStoreInfo->BlockSize + sizeof (SMM_STORE_COM_BUF)) {
++    mArgComBufPhys        = mSmmStoreInfo->ComBuffer + mSmmStoreInfo->BlockSize;
++    mArgComBufInComBuffer = TRUE;
+   } else {
+-    mArgComBufPhys = BASE_8EB - 1;
+-  }
++    if (mSmmStoreInfo->ComBuffer < BASE_4GB) {
++      //
++      // Assume that SMM handler is running in 32-bit mode when ComBuffer is
++      // is placed below BASE_4GB.
++      //
++      mArgComBufPhys = BASE_4GB - 1;
++    } else {
++      mArgComBufPhys = BASE_8EB - 1;
++    }
+ 
+-  Status = gBS->AllocatePages (
+-                  AllocateMaxAddress,
+-                  EfiRuntimeServicesData,
+-                  EFI_SIZE_TO_PAGES (sizeof (SMM_STORE_COM_BUF)),
+-                  &mArgComBufPhys
+-                  );
++    Status = gBS->AllocatePages (
++                    AllocateMaxAddress,
++                    EfiRuntimeServicesData,
++                    EFI_SIZE_TO_PAGES (sizeof (SMM_STORE_COM_BUF)),
++                    &mArgComBufPhys
++                    );
+ 
+-  if (EFI_ERROR (Status)) {
+-    FreePool (mSmmStoreInfo);
+-    mSmmStoreInfo = NULL;
+-    return EFI_OUT_OF_RESOURCES;
++    if (EFI_ERROR (Status)) {
++      FreePool (mSmmStoreInfo);
++      mSmmStoreInfo = NULL;
++      return EFI_OUT_OF_RESOURCES;
++    }
+   }
+ 
+-  mArgComBuf = (VOID *)mArgComBufPhys;
++  mArgComBuf = (VOID *)(UINTN)mArgComBufPhys;
+ 
+   //
+   // Finally mark the SMM communication buffer provided by CB or SBL as runtime memory:
+@@ -834,7 +839,10 @@ SmmStoreLibDeinitialize (
+   )
+ {
+   if (mArgComBuf != NULL) {
+-    gBS->FreePages (mArgComBufPhys, EFI_SIZE_TO_PAGES (sizeof (SMM_STORE_COM_BUF)));
++    if (!mArgComBufInComBuffer) {
++      gBS->FreePages (mArgComBufPhys, EFI_SIZE_TO_PAGES (sizeof (SMM_STORE_COM_BUF)));
++    }
++
+     mArgComBuf = NULL;
+   }
+ 
+-- 
+2.43.0
+

@@ -1,0 +1,87 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Wed, 12 Oct 2022 16:33:00 -0500
+Subject: [PATCH] UefiPayloadPkg/MdeModulePkg: Platform setup and boot defaults
+
+[ouroBIOS: commit 6676ad70c9fb of MrChromebox's edk2, without the files
+that TianoCore's tree does not have (tools/edk2-import.py): 1 in
+edk2/OuroBiosPkg]
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ .../Library/BootManagerUiLib/BootManager.c    |  9 -------
+ .../Library/UefiBootManagerLib/BmBoot.c       | 27 +++++++++++++++++++
+ 2 files changed, 27 insertions(+), 9 deletions(-)
+
+diff --git a/MdeModulePkg/Library/BootManagerUiLib/BootManager.c b/MdeModulePkg/Library/BootManagerUiLib/BootManager.c
+index a42f44e4a93ef768e8ae00e389a7ca4cdd4b53c0..ac28784b446bc71507873c0b1e8a894b933d8c40 100644
+--- a/MdeModulePkg/Library/BootManagerUiLib/BootManager.c
++++ b/MdeModulePkg/Library/BootManagerUiLib/BootManager.c
+@@ -840,7 +840,6 @@ BootManagerCallback (
+ {
+   EFI_BOOT_MANAGER_LOAD_OPTION  *BootOption;
+   UINTN                         BootOptionCount;
+-  EFI_INPUT_KEY                 Key;
+ 
+   if (Action == EFI_BROWSER_ACTION_FORM_OPEN) {
+     //
+@@ -888,14 +887,6 @@ BootManagerCallback (
+   EfiBootManagerBoot (&BootOption[QuestionId - 1]);
+   BmSetConsoleMode (TRUE);
+ 
+-  if (EFI_ERROR (BootOption[QuestionId - 1].Status)) {
+-    gST->ConOut->OutputString (
+-                   gST->ConOut,
+-                   HiiGetString (gBootManagerPrivate.HiiHandle, STRING_TOKEN (STR_ANY_KEY_CONTINUE), NULL)
+-                   );
+-    gST->ConIn->ReadKeyStroke (gST->ConIn, &Key);
+-  }
+-
+   EfiBootManagerFreeLoadOptions (BootOption, BootOptionCount);
+ 
+   return EFI_SUCCESS;
+diff --git a/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c b/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c
+index 1ac3db4b3b05d233fe6a21835b0a9128666d501a..7930c79f44751abc6ef1d11233296c6c120dbbff 100644
+--- a/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c
++++ b/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c
+@@ -1956,6 +1956,8 @@ EfiBootManagerBoot (
+   UINTN                      FileSize;
+   EFI_BOOT_LOGO_PROTOCOL     *BootLogo;
+   EFI_EVENT                  LegacyBootEvent;
++  EFI_INPUT_KEY              Key;
++  UINTN                      Index;
+ 
+   if (BootOption == NULL) {
+     return;
+@@ -2096,6 +2098,31 @@ EfiBootManagerBoot (
+       //
+       BmReportLoadFailure (EFI_SW_DXE_BS_EC_BOOT_OPTION_LOAD_ERROR, Status);
+       BootOption->Status = Status;
++
++      if (gST->ConOut != NULL) {
++        //
++        // Clear screen
++        //
++        gST->ConOut->ClearScreen (gST->ConOut);
++
++        AsciiPrint (
++            "Booting from '%s' failed: %r\n"
++            "\nVerify it contains/points to a valid 64-bit UEFI OS.\n"
++            "\nPress any key to continue\n",
++            BootOption->Description, Status);
++
++      }
++      if (gST->ConIn != NULL) {
++        Status = gBS->WaitForEvent (1, &gST->ConIn->WaitForKey, &Index);
++        ASSERT_EFI_ERROR (Status);
++        ASSERT (Index == 0);
++        while (!EFI_ERROR (gST->ConIn->ReadKeyStroke (gST->ConIn, &Key))) {}
++      }
++
++      if (gST->ConOut != NULL) {
++        gST->ConOut->ClearScreen (gST->ConOut);
++      }
++
+       return;
+     }
+   }

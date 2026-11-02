@@ -1,0 +1,471 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Oliver Smith-Denny <osde@microsoft.com>
+Date: Wed, 8 Jul 2026 10:10:18 -0700
+Subject: [PATCH] MdeModulePkg: Add Compatibility Mode Functionality
+
+[ouroBIOS: commit 8b0cd75a15be of MrChromebox's edk2, as it is]
+
+This commit adds the functions that will comprise
+compatibility mode, but they are not called yet.
+
+Compatibility mode enables running bootloaders
+and Option ROMs that violate memory protections and
+would otherwise crash the system.
+
+This is a living list, based on observed behaviors of
+modules, that is is expected to be updated to maintain
+compatibility with shipped applications.
+
+The current heuristic that is used to enter compatibility
+mode is when an EFI_APPLICATION is loaded that does not
+have the NX_COMPAT DLL_CHARACTERISTIC set. There is industry
+consensus on using this flag to indicate support for running
+with memory protections enabled. edk2 already sets this flag
+on all binaries with 4K section alignment.
+
+When compatibility mode is entered, the following occurs:
+- The memory attributes protocol is uninstalled. This has been
+  observed to be incorrectly used to set all of a bootloader's
+  memory as NX, then attempt to set a non-page aligned size to
+  executable which fails, and the bootloader jumps to an NX page.
+- Map page 0 as RWX. It has been observed that bootloader's can
+  attempt to directly access this page to try to find legacy boot
+  structures.
+- Map the legacy boot writeback region as RWX (if this is part of
+  system memory) as it has been observed that bootloaders attempt
+  to directly access this region to look for legacy structures.
+- Allocate all new memory as RWX. It has been observed that bootloaders
+  will attempt to chainload another application and not set the region
+  as executable.
+- Image memory protections will not be applied, for the same reason.
+- An event is fired for any platform code that would like to take
+  action.
+
+Signed-off-by: Oliver Smith-Denny <osde@microsoft.com>
+(cherry picked from commit 3d6368bc5edca41efbf06ab9d19a34b11770c45d)
+---
+ MdeModulePkg/Core/Dxe/DxeMain.h               |   9 ++
+ MdeModulePkg/Core/Dxe/DxeMain.inf             |  10 ++
+ .../Core/Dxe/Misc/LegacyBiosMemoryProt.c      |  21 +++
+ MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c | 108 +++++++++++++-
+ .../Core/Dxe/Misc/X64/LegacyBiosMemoryProt.c  | 139 ++++++++++++++++++
+ .../Guid/CompatibilityModeActivatedEvent.h    |  14 ++
+ MdeModulePkg/MdeModulePkg.dec                 |   4 +
+ 7 files changed, 299 insertions(+), 6 deletions(-)
+ create mode 100644 MdeModulePkg/Core/Dxe/Misc/LegacyBiosMemoryProt.c
+ create mode 100644 MdeModulePkg/Core/Dxe/Misc/X64/LegacyBiosMemoryProt.c
+ create mode 100644 MdeModulePkg/Include/Guid/CompatibilityModeActivatedEvent.h
+
+diff --git a/MdeModulePkg/Core/Dxe/DxeMain.h b/MdeModulePkg/Core/Dxe/DxeMain.h
+index e6b2776325e7c49e74fcf3ea7afb5b04c5f7bd3f..5238126e10913f81afb9827ea6e6980ae8f07cf7 100644
+--- a/MdeModulePkg/Core/Dxe/DxeMain.h
++++ b/MdeModulePkg/Core/Dxe/DxeMain.h
+@@ -2802,3 +2802,12 @@ EFI_STATUS
+ CoreInitializeHandleServices (
+   VOID
+   );
++
++/**
++  Activate compatibility mode to disable memory protections for non-NX_COMPAT EFI_APPLICATIONS.
++**/
++VOID
++EFIAPI
++ActivateCompatibilityMode (
++  VOID
++  );
+diff --git a/MdeModulePkg/Core/Dxe/DxeMain.inf b/MdeModulePkg/Core/Dxe/DxeMain.inf
+index 39f92c9bd2344949f8ad4b380b4d9a533db17b42..b49971b36f3b27a973e3697b6374403238d42ade 100644
+--- a/MdeModulePkg/Core/Dxe/DxeMain.inf
++++ b/MdeModulePkg/Core/Dxe/DxeMain.inf
+@@ -69,6 +69,12 @@
+   DxeMain/DxeProtocolNotify.c
+   DxeMain/DxeMain.c
+ 
++[Sources.X64]
++  Misc/X64/LegacyBiosMemoryProt.c
++
++[Sources.IA32, Sources.AARCH64, Sources.RISCV64, Sources.LOONGARCH64]
++  Misc/LegacyBiosMemoryProt.c
++
+ [Packages]
+   MdePkg/MdePkg.dec
+   MdeModulePkg/MdeModulePkg.dec
+@@ -98,6 +104,9 @@
+   ImagePropertiesRecordLib
+   OrderedCollectionLib
+ 
++[LibraryClasses.X64]
++  SafeIntLib
++
+ [Guids]
+   gEfiEventMemoryMapChangeGuid                  ## PRODUCES             ## Event
+   gEfiEventVirtualAddressChangeGuid             ## CONSUMES             ## Event
+@@ -126,6 +135,7 @@
+   gEfiMemoryAttributesTableGuid                 ## SOMETIMES_PRODUCES   ## SystemTable
+   gEfiEndOfDxeEventGroupGuid                    ## SOMETIMES_CONSUMES   ## Event
+   gEfiHobMemoryAllocStackGuid                   ## SOMETIMES_CONSUMES   ## SystemTable
++  gCompatibilityModeActivatedEventGuid          ## SOMETIMES_PRODUCES   ## Event
+ 
+ [Ppis]
+   gEfiVectorHandoffInfoPpiGuid                  ## UNDEFINED # HOB
+diff --git a/MdeModulePkg/Core/Dxe/Misc/LegacyBiosMemoryProt.c b/MdeModulePkg/Core/Dxe/Misc/LegacyBiosMemoryProt.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..61ad834d64cb59ddd6851f297ad939ae3d54cee4
+--- /dev/null
++++ b/MdeModulePkg/Core/Dxe/Misc/LegacyBiosMemoryProt.c
+@@ -0,0 +1,21 @@
++/** @file
++  Legacy BIOS memory protection does not apply for non-x64 archs, this just provides
++  a stub.
++
++  Copyright (c) Microsoft Corporation.
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#include "DxeMain.h"
++
++/**
++  Maps legacy BIOS memory as readable, writeable, and executable where applicable.
++**/
++VOID
++MapLegacyBiosMemoryRWX (
++  VOID
++  )
++{
++  return;
++}
+diff --git a/MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c b/MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c
+index 308bfaf24d98bf4120e8345906a9805407071523..36e385bff64817537d37d808c3b24a0d02efa19e 100644
+--- a/MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c
++++ b/MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c
+@@ -28,6 +28,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Library/BaseLib.h>
+ #include <Library/BaseMemoryLib.h>
+ #include <Library/MemoryAllocationLib.h>
++#include <Library/SafeIntLib.h>
+ #include <Library/UefiBootServicesTableLib.h>
+ #include <Library/DxeServicesTableLib.h>
+ #include <Library/DebugLib.h>
+@@ -62,7 +63,9 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #define PREVIOUS_MEMORY_DESCRIPTOR(MemoryDescriptor, Size) \
+   ((EFI_MEMORY_DESCRIPTOR *)((UINT8 *)(MemoryDescriptor) - (Size)))
+ 
+-UINT32  mImageProtectionPolicy;
++static UINT32   mImageProtectionPolicy;
++static BOOLEAN  mIsCompatibilityModeActive = FALSE;
++static BOOLEAN  mSettingAttributes         = FALSE;
+ 
+ extern LIST_ENTRY  mGcdMemorySpaceMap;
+ 
+@@ -70,6 +73,11 @@ STATIC LIST_ENTRY  mProtectedImageRecordList;
+ 
+ EFI_MEMORY_ATTRIBUTE_PROTOCOL  *gMemoryAttributeProtocol;
+ 
++VOID
++MapLegacyBiosMemoryRWX (
++  VOID
++  );
++
+ /**
+   Get the image type.
+ 
+@@ -137,6 +145,18 @@ GetProtectionPolicyFromImageType (
+   }
+ }
+ 
++/**
++  Returns TRUE if ActivateCompatibilityMode() has been called.
++**/
++static
++BOOLEAN
++IsCompatibilityModeActive (
++  VOID
++  )
++{
++  return mIsCompatibilityModeActive;
++}
++
+ /**
+   Get UEFI image protection policy based upon loaded image device path.
+ 
+@@ -588,11 +608,6 @@ DisableNullDetection (
+              );
+   ASSERT_EFI_ERROR (Status);
+ 
+-  //
+-  // Page 0 might have be allocated to avoid misuses. Free it here anyway.
+-  //
+-  CoreFreePages (0, 1);
+-
+   return;
+ }
+ 
+@@ -616,6 +631,87 @@ DisableNullDetectionAtTheEndOfDxe (
+   return;
+ }
+ 
++/**
++  Uninstalls the Memory Attribute Protocol from all handles.
++**/
++VOID
++EFIAPI
++UninstallMemoryAttributeProtocol (
++  VOID
++  )
++{
++  EFI_STATUS  Status;
++  UINTN       HandleCount;
++  UINTN       Index;
++  EFI_HANDLE  *HandleBuffer;
++
++  if (gMemoryAttributeProtocol == NULL) {
++    Status = gBS->LocateProtocol (&gEfiMemoryAttributeProtocolGuid, NULL, (VOID **)&gMemoryAttributeProtocol);
++    if (EFI_ERROR (Status)) {
++      return;
++    }
++  }
++
++  Status = EFI_SUCCESS;
++  while (Status == EFI_SUCCESS) {
++    Status = gBS->LocateHandleBuffer (
++                    ByProtocol,
++                    &gEfiMemoryAttributeProtocolGuid,
++                    NULL,
++                    &HandleCount,
++                    &HandleBuffer
++                    );
++
++    if (EFI_ERROR (Status)) {
++      ASSERT_EFI_ERROR (Status);
++      break;
++    }
++
++    for (Index = 0; Index < HandleCount; Index++) {
++      Status = gBS->UninstallProtocolInterface (
++                      HandleBuffer[Index],
++                      &gEfiMemoryAttributeProtocolGuid,
++                      gMemoryAttributeProtocol
++                      );
++      DEBUG ((DEBUG_INFO, "%a - Uninstalling Memory Attribute Protocol from handle %p - %r\n", __func__, HandleBuffer[Index], Status));
++      ASSERT_EFI_ERROR (Status);
++    }
++
++    if (HandleBuffer != NULL) {
++      FreePool (HandleBuffer);
++    }
++
++    Status = gBS->LocateProtocol (&gEfiMemoryAttributeProtocolGuid, NULL, (VOID **)&gMemoryAttributeProtocol);
++    if (Status == EFI_SUCCESS) {
++      // if we found multiple instances, we'll continue to uninstall, but assert because the platform is misconfigured
++      DEBUG ((DEBUG_WARN, "%a - Multiple Memory Attribute Protocol instances - unexpected\n", __func__));
++      ASSERT (FALSE);
++    }
++  }
++}
++
++/**
++  Activate compatibility mode to disable memory protections for non-NX_COMPAT EFI_APPLICATIONS.
++**/
++VOID
++EFIAPI
++ActivateCompatibilityMode (
++  VOID
++  )
++{
++  if (mIsCompatibilityModeActive) {
++    return;
++  }
++
++  DEBUG ((DEBUG_WARN, "%a - Activating Memory Protection Compatibility Mode!\n", __func__));
++
++  mIsCompatibilityModeActive = TRUE;
++  DisableNullDetection ();
++  UninstallMemoryAttributeProtocol ();
++  MapLegacyBiosMemoryRWX ();
++  CoreNotifySignalList (&gCompatibilityModeActivatedEventGuid);
++}
++
+ /**
+   Return the EFI memory permission attribute associated with memory
+   type 'MemoryType' under the configured DXE memory protection policy.
+diff --git a/MdeModulePkg/Core/Dxe/Misc/X64/LegacyBiosMemoryProt.c b/MdeModulePkg/Core/Dxe/Misc/X64/LegacyBiosMemoryProt.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..eb578ee03e481bda115285b78990985fcb8574ce
+--- /dev/null
++++ b/MdeModulePkg/Core/Dxe/Misc/X64/LegacyBiosMemoryProt.c
+@@ -0,0 +1,139 @@
++/** @file
++  Mapping the Legacy BIOS WB region is required for X64 when entering compatibility mode.
++
++  Copyright (c) Microsoft Corporation.
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#include "DxeMain.h"
++#include <Library/SafeIntLib.h>
++
++#define LEGACY_BIOS_WB_LENGTH  0xA0000
++
++/**
++  Maps memory below 640K (legacy BIOS write-back memory) as readable, writeable, and executable.
++**/
++VOID
++MapLegacyBiosMemoryRWX (
++  VOID
++  )
++{
++  EFI_STATUS                       Status;
++  EFI_GCD_MEMORY_SPACE_DESCRIPTOR  Desc;
++  EFI_PHYSICAL_ADDRESS             Start;
++  UINT64                           Length;
++  UINT64                           DescLengthFromStart;
++
++  Status = EFI_SUCCESS;
++  Start  = 0x0;
++
++  if (gCpu == NULL) {
++    DEBUG ((
++      DEBUG_ERROR,
++      "%a cannot remap Legacy BIOS memory as RWX because the CPU arch protocol is missing\n",
++      __func__
++      ));
++    return;
++  }
++
++  // Ensure that this memory is marked as system memory. If it is not system memory, do not change
++  // the memory attributes as we do not want to map something that shouldn't be mapped or map something
++  // incorrectly
++  while (Start < LEGACY_BIOS_WB_LENGTH) {
++    Status = CoreGetMemorySpaceDescriptor (Start, &Desc);
++    if (EFI_ERROR (Status)) {
++      DEBUG ((
++        DEBUG_ERROR,
++        "%a - Failed to get memory space descriptor for address 0x%llx! Status = %r\n",
++        __func__,
++        Start,
++        Status
++        ));
++      return;
++    }
++
++    // find the length from Start to the end of this descriptor, in the case Start != Desc.BaseAddress
++    // these should all be well formed descriptors, but use SafeIntLib functions just to be sure we don't
++    // over/underflow
++    Status = SafeUint64Add (Desc.BaseAddress, Desc.Length, &DescLengthFromStart);
++    if (EFI_ERROR (Status)) {
++      DEBUG ((
++        DEBUG_ERROR,
++        "%a - Memory space descriptor has UINT64 overflowing address 0x%llx + length 0x%llx! Status = %r\n",
++        __func__,
++        Desc.BaseAddress,
++        Desc.Length,
++        Status
++        ));
++
++      // if we fail here this is very bad and means the GCD is malformed
++      ASSERT (FALSE);
++      return;
++    }
++
++    Status = SafeUint64Sub (DescLengthFromStart, Start, &DescLengthFromStart);
++    if (EFI_ERROR (Status)) {
++      DEBUG ((
++        DEBUG_ERROR,
++        "%a - Memory space descriptor has UINT64 underflowing address 0x%llx + length 0x%llx Start: 0x%llx! Status = %r\n",
++        __func__,
++        Desc.BaseAddress,
++        Desc.Length,
++        Start,
++        Status
++        ));
++
++      // if we fail here this is very bad and means the GCD is malformed
++      ASSERT (FALSE);
++      return;
++    }
++
++    // Ensure we only go up to LEGACY_BIOS_WB_LENGTH here, we know Start is less than it due to while condition
++    // We also know Start + DescLengthFromStart won't overflow because above we did a safe subtraction of Start from
++    // DescLengthFromStart
++    if (Start + DescLengthFromStart > LEGACY_BIOS_WB_LENGTH) {
++      Length = LEGACY_BIOS_WB_LENGTH - Start;
++    } else {
++      Length = DescLengthFromStart;
++    }
++
++    // remove this chunk from being remapped if it is not system memory
++    if (Desc.GcdMemoryType != EfiGcdMemoryTypeSystemMemory) {
++      DEBUG ((
++        DEBUG_WARN,
++        "%a Not mapping 0x%llx for 0x%llx as RWX because it is not system memory\n",
++        __func__,
++        Desc.BaseAddress,
++        Length
++        ));
++
++      // we know this doesn't overflow because we did a safe subtraction of Start from DescLengthFromStart above
++      Start += DescLengthFromStart;
++      continue;
++    }
++
++    // Map the legacy BIOS write-back memory as RWX.
++    Status = gCpu->SetMemoryAttributes (
++                     gCpu,
++                     Start,
++                     Length,
++                     0
++                     );
++
++    if (EFI_ERROR (Status)) {
++      DEBUG ((
++        DEBUG_ERROR,
++        "%a failed to map 0x%llx for length 0x%llx as RWX\n",
++        __func__,
++        Start,
++        Length
++        ));
++
++      ASSERT_EFI_ERROR (Status);
++    }
++
++    // we know this doesn't overflow because we did a safe subtraction of Start from DescLengthFromStart above
++    Start += DescLengthFromStart;
++  }
++}
+diff --git a/MdeModulePkg/Include/Guid/CompatibilityModeActivatedEvent.h b/MdeModulePkg/Include/Guid/CompatibilityModeActivatedEvent.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..8dac12dd5f4499d986f61e19d6276d57b3c8f81b
+--- /dev/null
++++ b/MdeModulePkg/Include/Guid/CompatibilityModeActivatedEvent.h
+@@ -0,0 +1,14 @@
++/** @file
++  Event group triggered when Memory Protection Compatibility Mode is activated.
++  Platforms can hook into this event to perform follow up actions.
++
++  Copyright (c) Microsoft Corporation.
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++
++#pragma once
++
++#define COMPATIBILITY_MODE_ACTIVATED_EVENT_GUID \
++   { 0x209BA820, 0xCE32, 0x49E1, { 0x95, 0xAE, 0x39, 0x43, 0x3D, 0xEF, 0xD5, 0xEE } }
++
++extern EFI_GUID  gCompatibilityModeActivatedEventGuid;
+diff --git a/MdeModulePkg/MdeModulePkg.dec b/MdeModulePkg/MdeModulePkg.dec
+index b2f8c0bc5ab45618ed73cf045a102d3b80a3ee45..0bc18a4ac63ed862c4f72ef6d64736b6f75b7728 100644
+--- a/MdeModulePkg/MdeModulePkg.dec
++++ b/MdeModulePkg/MdeModulePkg.dec
+@@ -431,6 +431,10 @@
+   # {da383315-906b-486f-80db-847f268451e4}
+   gNVMeEnableCompleteEventGroupGuid = { 0xda383315, 0x906b, 0x486f, { 0x80, 0xdb, 0x84, 0x7f, 0x26, 0x84, 0x51, 0xe4 } }
+ 
++  ## Include/Guid/CompatibilityModeActivatedEvent.h
++  # This GUID is used to trigger the event group when the compatibility mode is activated.
++  gCompatibilityModeActivatedEventGuid = { 0x209BA820, 0xCE32, 0x49E1, { 0x95, 0xAE, 0x39, 0x43, 0x3D, 0xEF, 0xD5, 0xEE } }
++
+   ## Used (similar to Variable Services) to communicate policies to the enforcement engine.
+   # {DA1B0D11-D1A7-46C4-9DC9-F3714875C6EB}
+   gVarCheckPolicyLibMmiHandlerGuid = { 0xda1b0d11, 0xd1a7, 0x46c4, { 0x9d, 0xc9, 0xf3, 0x71, 0x48, 0x75, 0xc6, 0xeb }}

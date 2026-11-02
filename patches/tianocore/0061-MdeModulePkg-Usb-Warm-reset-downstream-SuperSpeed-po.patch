@@ -1,0 +1,57 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sean Rhodes <sean@starlabs.systems>
+Date: Fri, 11 Sep 2026 17:12:51 +0100
+Subject: [PATCH] MdeModulePkg/Usb: Warm reset downstream SuperSpeed ports
+
+[ouroBIOS: commit acf9505cee29 of MrChromebox's edk2, as it is]
+
+A normal port reset does not reinitialize the SuperSpeed link. Use
+a warm reset for downstream SuperSpeed hub ports while preserving
+the existing USB 2.0 and root hub reset paths.
+
+Translate warm reset completion to the existing EFI reset-change
+indication before acknowledging it. This lets the existing xHCI slot
+recreation and UsbBus completion handling process the event together.
+
+Signed-off-by: Sean Rhodes <sean@starlabs.systems>
+---
+ MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c     |  3 ++-
+ MdeModulePkg/Bus/Usb/UsbBusDxe/UsbHub.c | 11 ++++++++++-
+ 2 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c b/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c
+index a4c126c6d5b31288a6beda3540aade7dee6ed9cb..1ef3587e07cebd85f91a2fffa58e46047ecb33a3 100644
+--- a/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c
++++ b/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c
+@@ -45,7 +45,8 @@ USB_PORT_STATE_MAP  mUsbHubPortChangeMap[] = {
+   { XHC_HUB_PORTSC_CSC, USB_PORT_STAT_C_CONNECTION  },
+   { XHC_HUB_PORTSC_PEC, USB_PORT_STAT_C_ENABLE      },
+   { XHC_HUB_PORTSC_OCC, USB_PORT_STAT_C_OVERCURRENT },
+-  { XHC_HUB_PORTSC_PRC, USB_PORT_STAT_C_RESET       }
++  { XHC_HUB_PORTSC_PRC, USB_PORT_STAT_C_RESET       },
++  { XHC_HUB_PORTSC_BHRC, USB_PORT_STAT_C_RESET      }
+ };
+ 
+ USB_CLEAR_PORT_MAP  mUsbHubClearPortChangeMap[] = {
+diff --git a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbHub.c b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbHub.c
+index 550323059b775202a6e8f47f65221e23f6d566a6..a647ef2cf3bdbaff44bfc3aac7afd1f5cc643772 100644
+--- a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbHub.c
++++ b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbHub.c
+@@ -850,7 +850,16 @@ UsbHubResetPort (
+   UINTN                Index;
+   EFI_STATUS           Status;
+ 
+-  Status = UsbHubSetPortFeature (HubIf, Port, (EFI_USB_PORT_FEATURE)USB_HUB_PORT_RESET);
++  //
++  // Reset the SuperSpeed link as well as the downstream device. The xHCI
++  // driver reports both hot and warm reset completion as C_RESET.
++  //
++  Status = UsbHubSetPortFeature (
++             HubIf,
++             Port,
++             (EFI_USB_PORT_FEATURE)(HubIf->Device->Speed == EFI_USB_SPEED_SUPER ?
++                                    USB_HUB_BH_PORT_RESET : USB_HUB_PORT_RESET)
++             );
+ 
+   if (EFI_ERROR (Status)) {
+     return Status;

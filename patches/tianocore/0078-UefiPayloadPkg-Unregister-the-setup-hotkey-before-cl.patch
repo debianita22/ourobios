@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Fri, 23 Oct 2026 17:18:12 -0500
+Subject: [PATCH] UefiPayloadPkg: Unregister the setup hotkey before clearing
+ the prompt
+
+[ouroBIOS: commit 1817a2bc4ae8 of MrChromebox's edk2, as it is]
+
+The timeout path cleared the "Press ESC" line and then dropped the key
+notify. The clear's GOP Blt lowers TPL on the way out and flushes queued
+key notifications, so an ESC pressed as the prompt disappeared still ran
+the callback and painted "Entering Setup..." into the strip that had just
+been wiped. Unregister first so that flush cannot redraw the line.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ .../Library/PlatformBootManagerLib/PlatformBootManager.c        | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+index b235733a4715da316d3486362d686f837448e018..bb78bb9f44fd1c607eddef73bbc6937c7d88947b 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+@@ -589,8 +589,8 @@ PlatformBootManagerWaitCallback (
+   )
+ {
+   if (TimeoutRemain == 0) {
+-    BootLogoClearProgress ();
+     PlatformUnregisterBootManagerEntryNotifyCallback ();
++    BootLogoClearProgress ();
+   }
+ 
+   return;

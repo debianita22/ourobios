@@ -1,0 +1,95 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Sat, 22 Aug 2026 12:52:47 -0500
+Subject: [PATCH] UefiPayloadPkg/ResetSystemLib: Select S5 sleep type from
+ CPUID
+
+[ouroBIOS: commit e27ef540ab97 of MrChromebox's edk2, as it is]
+
+PM1_CNT.SLP_TYP for soft-off is chipset-defined. coreboot encodes Intel
+S5 as 7 and AMD S5 as 5 in \_S5. Replace the hardcoded Intel value with a
+CPUID vendor check so AMD payloads enter S5 correctly.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ .../Library/ResetSystemLib/ResetSystemLib.c   | 38 ++++++++++++++++++-
+ .../Library/ResetSystemLib/ResetSystemLib.inf |  2 +
+ 2 files changed, 38 insertions(+), 2 deletions(-)
+
+diff --git a/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.c b/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.c
+index f252855cfb2d3d4211b11df93fd1e1b66bc6d90c..54bafc934e8b8ae87fe77e174fbf5f95a285ce4a 100644
+--- a/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.c
++++ b/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.c
+@@ -8,14 +8,44 @@
+ 
+ #include <PiDxe.h>
+ #include <Library/BaseLib.h>
++#include <Library/CpuLib.h>
+ #include <Library/DebugLib.h>
+ #include <Library/IoLib.h>
+ #include <Library/HobLib.h>
+ #include <Library/BaseMemoryLib.h>
+ #include <Guid/AcpiBoardInfoGuid.h>
+ 
++#define ACPI_PM1_CNT_SLP_TYP_MASK   0x3c00
++#define ACPI_PM1_CNT_SLP_TYP_SHIFT  10
++#define ACPI_PM1_CNT_SLP_EN         BIT13
++
++//
++// PM1_CNT.SLP_TYP for S5 is chipset-defined (see ACPI \_S5). Coreboot uses 7
++// on Intel and 5 on AMD; CPUID vendor is a practical stand-in for parsing ASL.
++//
++#define ACPI_SLP_TYP_S5_INTEL  7
++#define ACPI_SLP_TYP_S5_AMD    5
++
+ ACPI_BOARD_INFO  mAcpiBoardInfo;
+ 
++/**
++  Return the PM1_CNT SLP_TYP value used to enter S5 / soft-off.
++
++  @return  Chipset S5 sleep type (Intel 7, AMD 5).
++**/
++STATIC
++UINT16
++GetPm1SleepTypeS5 (
++  VOID
++  )
++{
++  if (StandardSignatureIsAuthenticAMD ()) {
++    return ACPI_SLP_TYP_S5_AMD;
++  }
++
++  return ACPI_SLP_TYP_S5_INTEL;
++}
++
+ /**
+   The constructor function to initialize mAcpiBoardInfo.
+ 
+@@ -114,8 +144,12 @@ ResetShutdown (
+   // Transform system into S5 sleep state
+   //
+   PmCtrlReg = (UINTN)mAcpiBoardInfo.PmCtrlRegBase;
+-  IoAndThenOr16 (PmCtrlReg, (UINT16) ~0x3c00, (UINT16)(7 << 10));
+-  IoOr16 (PmCtrlReg, BIT13);
++  IoAndThenOr16 (
++    PmCtrlReg,
++    (UINT16)~ACPI_PM1_CNT_SLP_TYP_MASK,
++    (UINT16)(GetPm1SleepTypeS5 () << ACPI_PM1_CNT_SLP_TYP_SHIFT)
++    );
++  IoOr16 (PmCtrlReg, ACPI_PM1_CNT_SLP_EN);
+   CpuDeadLoop ();
+ 
+   ASSERT (FALSE);
+diff --git a/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.inf b/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.inf
+index e7341c341aa1b17c8553a0c7bc42b0de9db00192..63af6c4dd80a9b4f786762788cf1a69d7cf12323 100644
+--- a/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.inf
++++ b/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.inf
+@@ -30,6 +30,8 @@
+   UefiPayloadPkg/UefiPayloadPkg.dec
+ 
+ [LibraryClasses]
++  BaseLib
++  CpuLib
+   DebugLib
+   IoLib
+   HobLib

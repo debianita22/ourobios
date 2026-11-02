@@ -1,0 +1,164 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patrick Rudolph <patrick.rudolph@9elements.com>
+Date: Wed, 7 May 2025 17:30:33 +0200
+Subject: [PATCH] UefiPayloadPkg: Extend SmmStoreLib for 64-bit MMIO store
+
+[ouroBIOS: commit 252f6d20da1e of MrChromebox's edk2, as it is]
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ UefiPayloadPkg/Include/Coreboot.h             |  2 ++
+ .../Library/CbParseLib/CbParseLib.c           | 11 ++++--
+ UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c | 36 +++++++++++++------
+ .../SmmStoreFvb/SmmStoreFvbRuntime.c          | 22 +++++++-----
+ 4 files changed, 50 insertions(+), 21 deletions(-)
+
+diff --git a/UefiPayloadPkg/Include/Coreboot.h b/UefiPayloadPkg/Include/Coreboot.h
+index b6c49e4c55fe824975b98aca9b7e844cb6b1cdf5..3ba7d7e5701f6a094cc15331618b7ed4e7410afa 100644
+--- a/UefiPayloadPkg/Include/Coreboot.h
++++ b/UefiPayloadPkg/Include/Coreboot.h
+@@ -261,6 +261,8 @@ struct cb_smmstorev2 {
+   UINT8     apm_cmd;         /* The command byte to write to the APM I/O port to
+                                 communicate with the store */
+   UINT8     unused[3];       /* Set to zero */
++  UINT64    mmap_addr_ext;   /* 64-bit MMIO address of the store for read only access.
++                              * Only available when size field >= 40. */
+ } __attribute__ ((packed));
+ 
+ /*
+diff --git a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
+index 4bf3ca6af75fa5ef3306cde4474a51fa7a9f2f7f..51c0cd236b8c9c06dcd7011cd3e51ccf589f9d3a 100644
+--- a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
++++ b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
+@@ -734,13 +734,20 @@ ParseSmmStoreInfo (
+   DEBUG ((DEBUG_INFO, "number of blocks: 0x%x\n", CbSSRec->num_blocks));
+   DEBUG ((DEBUG_INFO, "communication buffer: 0x%x\n", CbSSRec->com_buffer));
+   DEBUG ((DEBUG_INFO, "communication buffer size: 0x%x\n", CbSSRec->com_buffer_size));
+-  DEBUG ((DEBUG_INFO, "MMIO address of store: 0x%x\n", CbSSRec->mmap_addr));
+ 
+   SmmStoreInfo->ComBuffer     = CbSSRec->com_buffer;
+   SmmStoreInfo->ComBufferSize = CbSSRec->com_buffer_size;
+   SmmStoreInfo->BlockSize     = CbSSRec->block_size;
+   SmmStoreInfo->NumBlocks     = CbSSRec->num_blocks;
+-  SmmStoreInfo->MmioAddress   = CbSSRec->mmap_addr;
++
++  if (CbSSRec->size >= 40 && CbSSRec->mmap_addr_ext) {
++    SmmStoreInfo->MmioAddress   = CbSSRec->mmap_addr_ext;
++  } else {
++    SmmStoreInfo->MmioAddress   = CbSSRec->mmap_addr;
++  }
++
++  DEBUG ((DEBUG_INFO, "MMIO address of store: 0x%llx\n", SmmStoreInfo->MmioAddress));
++
+   SmmStoreInfo->ApmCmd        = CbSSRec->apm_cmd;
+ 
+   return RETURN_SUCCESS;
+diff --git a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+index f232b12e8a3c2eba3cd7370aabf77888485b9b35..a5754a4d5ca1a141a6f2fb7164a81e141292ee4e 100644
+--- a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
++++ b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+@@ -525,7 +525,7 @@ SmmStoreLibInitialize (
+   // Mark the memory mapped store as MMIO memory
+   //
+   Status = gDS->GetMemorySpaceDescriptor (mSmmStoreInfo->MmioAddress, &GcdDescriptor);
+-  if (EFI_ERROR (Status) || (GcdDescriptor.GcdMemoryType != EfiGcdMemoryTypeMemoryMappedIo)) {
++  if (EFI_ERROR (Status)) {
+     DEBUG ((
+       DEBUG_INFO,
+       "%a: No memory space descriptor for com buffer found\n",
+@@ -542,18 +542,32 @@ SmmStoreLibInitialize (
+                     EFI_MEMORY_UC | EFI_MEMORY_RUNTIME
+                     );
+     ASSERT_EFI_ERROR (Status);
++  } else {
++    Status = gDS->SetMemorySpaceCapabilities (
++      mSmmStoreInfo->MmioAddress,
++      mSmmStoreInfo->NumBlocks * mSmmStoreInfo->BlockSize,
++      GcdDescriptor.Capabilities | EFI_MEMORY_RUNTIME
++      );
++    ASSERT_EFI_ERROR (Status);
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_INFO, "%a:%d SetMemorySpaceCapabilities failed\n", __func__, __LINE__));
++      return Status;
++    }
++    //
++    // Mark as runtime service
++    //
++    Status = gDS->SetMemorySpaceAttributes (
++      mSmmStoreInfo->MmioAddress,
++      mSmmStoreInfo->NumBlocks * mSmmStoreInfo->BlockSize,
++      GcdDescriptor.Attributes | EFI_MEMORY_RUNTIME
++      );
++    ASSERT_EFI_ERROR (Status);
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_INFO, "%a:%d SetMemorySpaceAttributes failed\n", __func__, __LINE__));
++      return Status;
++    }
+   }
+ 
+-  //
+-  // Mark as runtime service
+-  //
+-  Status = gDS->SetMemorySpaceAttributes (
+-                  mSmmStoreInfo->MmioAddress,
+-                  mSmmStoreInfo->NumBlocks * mSmmStoreInfo->BlockSize,
+-                  EFI_MEMORY_RUNTIME
+-                  );
+-  ASSERT_EFI_ERROR (Status);
+-
+   return EFI_SUCCESS;
+ }
+ 
+diff --git a/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c b/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c
+index d5406f0442b92c30cc7ec19c8ec793504fb4db18..53d2557b57e3e8fd17f9a7e1a542eade4f66a8b2 100644
+--- a/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c
++++ b/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c
+@@ -174,7 +174,7 @@ SmmStoreInitialize (
+   EFI_PHYSICAL_ADDRESS  MmioAddress;
+   UINTN                 BlockSize;
+   UINTN                 BlockCount;
+-  UINT32                NvStorageBase;
++  UINT64                NvStorageBase;
+   UINT32                NvStorageSize;
+   UINT32                NvVariableSize;
+   UINT32                FtwWorkingSize;
+@@ -225,26 +225,32 @@ SmmStoreInitialize (
+   FtwSpareSize   = (BlockCount / 2) * BlockSize;
+   FtwWorkingSize = 1 * BlockSize;
+   NvVariableSize = NvStorageSize - FtwSpareSize - FtwWorkingSize;
+-  DEBUG ((DEBUG_INFO, "NvStorageBase:0x%x, NvStorageSize:0x%x\n", NvStorageBase, NvStorageSize));
++  DEBUG ((DEBUG_INFO, "NvStorageBase:0x%llx, NvStorageSize:0x%x\n", NvStorageBase, NvStorageSize));
+ 
+   Status = PcdSet32S (PcdFlashNvStorageVariableSize, NvVariableSize);
+   ASSERT_EFI_ERROR (Status);
+-  Status = PcdSet32S (PcdFlashNvStorageVariableBase, NvStorageBase);
+-  ASSERT_EFI_ERROR (Status);
++  if (NvStorageBase < 0x100000000ULL) {
++    Status = PcdSet32S (PcdFlashNvStorageVariableBase, NvStorageBase);
++    ASSERT_EFI_ERROR (Status);
++  }
+   Status = PcdSet64S (PcdFlashNvStorageVariableBase64, NvStorageBase);
+   ASSERT_EFI_ERROR (Status);
+ 
+   Status = PcdSet32S (PcdFlashNvStorageFtwWorkingSize, FtwWorkingSize);
+   ASSERT_EFI_ERROR (Status);
+-  Status = PcdSet32S (PcdFlashNvStorageFtwWorkingBase, NvStorageBase + NvVariableSize);
+-  ASSERT_EFI_ERROR (Status);
++  if ((NvStorageBase + NvVariableSize) < 0x100000000ULL) {
++    Status = PcdSet32S (PcdFlashNvStorageFtwWorkingBase, NvStorageBase + NvVariableSize);
++    ASSERT_EFI_ERROR (Status);
++  }
+   Status = PcdSet64S (PcdFlashNvStorageFtwWorkingBase64, NvStorageBase + NvVariableSize);
+   ASSERT_EFI_ERROR (Status);
+ 
+   Status = PcdSet32S (PcdFlashNvStorageFtwSpareSize, FtwSpareSize);
+   ASSERT_EFI_ERROR (Status);
+-  Status = PcdSet32S (PcdFlashNvStorageFtwSpareBase, NvStorageBase + NvVariableSize + FtwWorkingSize);
+-  ASSERT_EFI_ERROR (Status);
++  if ((NvStorageBase + NvVariableSize + FtwWorkingSize) < 0x100000000ULL) {
++    Status = PcdSet32S (PcdFlashNvStorageFtwSpareBase, NvStorageBase + NvVariableSize + FtwWorkingSize);
++    ASSERT_EFI_ERROR (Status);
++  }
+   Status = PcdSet64S (PcdFlashNvStorageFtwSpareBase64, NvStorageBase + NvVariableSize + FtwWorkingSize);
+   ASSERT_EFI_ERROR (Status);
+ 

@@ -1,0 +1,66 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Taylor Beebe <taylor.d.beebe@gmail.com>
+Date: Fri, 28 Jun 2024 16:22:29 -0700
+Subject: [PATCH] MdePkg: Add PE/COFF NX_COMPAT Flag
+
+[ouroBIOS: commit abbfa179877c of MrChromebox's edk2, as it is]
+
+Add support for the PE/COFF NX_COMPAT flag that may be set in
+the optional header. This flag is used to indicate a given image
+supports NX memory protections being set on its data sections.
+
+Signed-off-by: Oliver Smith-Denny <osde@microsoft.com>
+(cherry picked from commit 16f59b5e287b661a55b54282c7820f9b4344a728)
+---
+ MdePkg/Include/Library/PeCoffLib.h        | 5 +++++
+ MdePkg/Library/BasePeCoffLib/BasePeCoff.c | 8 ++++++++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/MdePkg/Include/Library/PeCoffLib.h b/MdePkg/Include/Library/PeCoffLib.h
+index abee2499fd5da7fda140a05877ad2a84cc45c202..8f2b630a720abe0a0641d75150f90c2e7b0f275d 100644
+--- a/MdePkg/Include/Library/PeCoffLib.h
++++ b/MdePkg/Include/Library/PeCoffLib.h
+@@ -196,6 +196,11 @@ typedef struct {
+   /// Private storage for implementation specific data.
+   ///
+   UINT64                      Context;
++  ///
++  /// Set by PeCoffLoaderGetImageInfo() to TRUE if the image has the IMAGE_DLLCHARACTERISTICS_NX_COMPAT
++  /// flag set.
++  ///
++  BOOLEAN                     SupportsNx;
+ } PE_COFF_LOADER_IMAGE_CONTEXT;
+ 
+ /**
+diff --git a/MdePkg/Library/BasePeCoffLib/BasePeCoff.c b/MdePkg/Library/BasePeCoffLib/BasePeCoff.c
+index aafec9ecc5384de5ef693a13fbf6bf204f660a82..0f5728a491c84e71051e96c9d97602428e42c65d 100644
+--- a/MdePkg/Library/BasePeCoffLib/BasePeCoff.c
++++ b/MdePkg/Library/BasePeCoffLib/BasePeCoff.c
+@@ -604,6 +604,8 @@ PeCoffLoaderGetImageInfo (
+   //
+   ImageContext->ImageError = IMAGE_ERROR_SUCCESS;
+ 
++  ImageContext->SupportsNx = TRUE;
++
+   Hdr.Union = &HdrData;
+   Status    = PeCoffLoaderGetPeHeader (ImageContext, Hdr);
+   if (RETURN_ERROR (Status)) {
+@@ -670,12 +672,18 @@ PeCoffLoaderGetImageInfo (
+       //
+       NumberOfRvaAndSizes = Hdr.Pe32->OptionalHeader.NumberOfRvaAndSizes;
+       DebugDirectoryEntry = (EFI_IMAGE_DATA_DIRECTORY *)&(Hdr.Pe32->OptionalHeader.DataDirectory[EFI_IMAGE_DIRECTORY_ENTRY_DEBUG]);
++      if (!(Hdr.Pe32->OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_NX_COMPAT)) {
++        ImageContext->SupportsNx = FALSE;
++      }
+     } else {
+       //
+       // Use PE32+ offset
+       //
+       NumberOfRvaAndSizes = Hdr.Pe32Plus->OptionalHeader.NumberOfRvaAndSizes;
+       DebugDirectoryEntry = (EFI_IMAGE_DATA_DIRECTORY *)&(Hdr.Pe32Plus->OptionalHeader.DataDirectory[EFI_IMAGE_DIRECTORY_ENTRY_DEBUG]);
++      if (!(Hdr.Pe32Plus->OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_NX_COMPAT)) {
++        ImageContext->SupportsNx = FALSE;
++      }
+     }
+ 
+     if (NumberOfRvaAndSizes > EFI_IMAGE_DIRECTORY_ENTRY_DEBUG) {

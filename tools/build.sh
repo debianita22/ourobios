@@ -63,14 +63,21 @@
 #                  le loro capsule, fatte come quelle delle release, e una
 #                  di B senza RW_MRC_CACHE, come quelle del M920x. Le ROM del
 #                  W541 non c'entrano. Seriale in WORK/update-test/out
-#   edk2-upstream  la prima fase del passaggio a EDK II di TianoCore: il
-#                  payload di EDK2_UPSTREAM_TAG senza patch in una ROM per
-#                  QEMU q35 (e in una seconda con SECURE_BOOT_ENABLE, in una
-#                  terza dal package del progetto, edk2/OuroBiosPkg), e i
-#                  passi della prova di fumo che non chiedono il setup del
-#                  progetto (tools/qemu-smoke.py --upstream); le lacune note
-#                  in EDK2_UPSTREAM_GAPS. Esito in WORK/edk2-upstream; mai
-#                  in una release
+#   edk2-upstream  il passaggio a EDK II di TianoCore: il payload di
+#                  EDK2_UPSTREAM_TAG senza patch in una ROM per QEMU q35 (e
+#                  in una seconda con SECURE_BOOT_ENABLE), poi in una terza
+#                  dal package del progetto (edk2/OuroBiosPkg con
+#                  patches/tianocore e LvglPkg, come le board), e i passi
+#                  della prova di fumo che non chiedono il setup del progetto
+#                  (tools/qemu-smoke.py --upstream); le lacune note in
+#                  EDK2_UPSTREAM_GAPS e EDK2_PACKAGE_GAPS. Esito in
+#                  WORK/edk2-upstream; mai in una release
+#   edk2-parity    per la prima variante di ogni board di --board il payload
+#                  dall'EDK2 dei defconfig e lo stesso dal package su
+#                  TianoCore (EDK2_PACKAGE_CONFIG), con le stesse opzioni:
+#                  devono essere uguali byte per byte, se no
+#                  tools/fv-diff.py dice i moduli diversi. Le ROM in
+#                  build-<variante> e build-<variante>-tianocore dell'albero
 #   keys           controlla le chiavi di firma dell'ambiente (CAPSULE_SIGNING_KEY,
 #                  VBOOT_SIGNING_KEY) senza build: con --release devono esserci
 #   toolchain-key  stampa la chiave della cache del crossgcc (build.yml)
@@ -188,6 +195,30 @@ EDK2_UPSTREAM_COMMIT="2970e5699ba6267f3384ffab20f96647578aebc8"
 EDK2_UPSTREAM_SUBDIR="payloads/external/edk2/workspace/tianocore"
 EDK2_UPSTREAM_SUBMODULES=(CryptoPkg/Library/OpensslLib/openssl BaseTools/Source/C/BrotliCompress/brotli
 	MdePkg/Library/BaseFdtLib/libfdt)
+# Il package del progetto su EDK II di TianoCore (docs/edk2-migration.md,
+# fasi (b) e (c)): edk2/OuroBiosPkg, con patches/tianocore sull'albero del
+# tag (tools/edk2-import.py fa l'uno e l'altra dall'EDK2 di MrChromebox con
+# patches/edk2), e LvglPkg, nella cartella dell'albero che nomina
+# CONFIG_EDK2_PACKAGES_PATH, relativa alla cima dell'albero (patch 0216)
+EDK2_PACKAGES_SUBDIR="payloads/external/edk2/workspace/packages"
+# LvglPkg di MrChromebox, il setup grafico: un package a se' accanto a
+# OuroBiosPkg, al commit del submodule dell'EDK2 di MrChromebox dei
+# defconfig (tools/edk2-import.py --check lo controlla), con patches/lvglpkg
+LVGLPKG_REPO="https://github.com/MrChromebox/LvglPkg.git"
+LVGLPKG_COMMIT="659b502401d9439443dc636acb10ca711afe8bc5"
+# Le righe di un defconfig per il payload dal package: un repository
+# "custom", a cui il Makefile di coreboot passa le opzioni dei fork come a
+# quello di MrChromebox (patch 0217), il tag stabile e la piattaforma del
+# package (patch 0216); Secure Boot, che senza il repository di MrChromebox
+# non e' di default
+EDK2_PACKAGE_CONFIG=(
+	"CONFIG_EDK2_REPO_CUSTOM=y"
+	"CONFIG_EDK2_REPOSITORY=\"${EDK2_UPSTREAM_REPO}\""
+	"CONFIG_EDK2_TAG_OR_REV=\"${EDK2_UPSTREAM_COMMIT}\""
+	"CONFIG_EDK2_PLATFORM_DSC=\"OuroBiosPkg/OuroBiosPkg.dsc\""
+	"CONFIG_EDK2_PACKAGES_PATH=\"${EDK2_PACKAGES_SUBDIR}\""
+	"CONFIG_EDK2_SECURE_BOOT_SUPPORT=y"
+)
 # I passi di qemu-smoke.py --upstream che EDK2_UPSTREAM_TAG non passa per una
 # lacuna nota (docs/edk2-migration.md, "Step (a)"), "passo:testo" con il
 # testo del suo messaggio: non fermano edk2-upstream; uno di loro che passa,
@@ -203,15 +234,11 @@ EDK2_UPSTREAM_GAPS=(
 	"TPM 1.2:no EFI_TCG2_PROTOCOL or EFI_TCG_PROTOCOL"
 	"variabili autenticate:store normale (gEfiVariableGuid)"
 )
-# Le lacune della ROM del package (edk2/OuroBiosPkg con patches/tianocore):
-# quelle di EDK2_UPSTREAM_TAG che il package e le patch portate non chiudono
-# ancora
-EDK2_PACKAGE_GAPS=(
-	# i driver TCG di c111515 (patches/tianocore/0004-0005) e il log del
-	# payload nella TCPA di coreboot (0006, la edk2/0019): da vedere se le
-	# misure di PCR 7 ci sono senza le chiavi di default
-	"TPM 1.2"
-)
+# Le lacune della ROM del package (edk2/OuroBiosPkg con patches/tianocore),
+# "passo:testo" come sopra: quelle di EDK2_UPSTREAM_TAG che il package e le
+# patch portate non chiudono ancora. Nessuna: il package ha i moduli e la
+# piattaforma del payload delle ROM
+EDK2_PACKAGE_GAPS=()
 # I font della schermata di aggiornamento del firmware (patches/edk2/0026):
 # tools/ui-font.py li fa da quelli di LVGL nell'albero di EDK2, dopo le patch
 UI_FONT_LVGL="LvglPkg/Library/LvglLib/lvgl/src/font"
@@ -335,7 +362,7 @@ while [ $# -gt 0 ]; do
 		--dist)      DIST="$(realpath -m "${2:?--dist DIR}")"; shift 2 ;;
 		--jobs)      JOBS="${2:?--jobs N}"; shift 2 ;;
 		-h|--help)   sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
-		prepare|toolchain|config|roms|repro|menu|smoke|update-test|edk2-upstream|keys|toolchain-key) CMDS+=("$1"); shift ;;
+		prepare|toolchain|config|roms|repro|menu|smoke|update-test|edk2-upstream|edk2-parity|keys|toolchain-key) CMDS+=("$1"); shift ;;
 		*) die "argomento sconosciuto: $1 (tools/build.sh --help)" ;;
 	esac
 done
@@ -2069,15 +2096,19 @@ prepare_edk2_upstream() {
 # manca prima del setup, di Secure Boot e delle capsule. Mai in una release:
 # build in build-q35-tianocore dell'albero, esito in WORK/edk2-upstream
 # Il package del progetto per EDK II di TianoCore (docs/edk2-migration.md,
-# "Step (b)") in WORK/edk2-packages, la cartella che va in PACKAGES_PATH
-# (CONFIG_EDK2_PACKAGES_PATH, patch 0216): edk2/OuroBiosPkg, dove ogni
+# fasi (b) e (c)) in EDK2_PACKAGES_SUBDIR dell'albero, la cartella di
+# CONFIG_EDK2_PACKAGES_PATH (patch 0216): edk2/OuroBiosPkg, dove ogni
 # OuroBiosPkg.<ext>.patch e' applicata a UefiPayloadPkg.<ext> dell'albero di
-# TianoCore e da' OuroBiosPkg.<ext> (il .dsc, l'.fdf quando servira'), una
-# patch che non applica piu' a un tag nuovo si ferma qui
+# TianoCore e da' OuroBiosPkg.<ext> (il .dsc e l'.fdf: una patch che non
+# applica piu' a un tag nuovo si ferma qui); accanto LvglPkg al suo commit
+# con patches/lvglpkg, come il submodule dell'EDK2 di MrChromebox in
+# prepare_edk2, e i font della schermata di aggiornamento dai suoi
+# (tools/ui-font.py)
 edk2_package() {
-	local tiano="${TREE}/${EDK2_UPSTREAM_SUBDIR}" dst="${WORK}/edk2-packages" p e
-	rm -rf "${dst:?}"
+	local tiano="${TREE}/${EDK2_UPSTREAM_SUBDIR}" dst="${TREE}/${EDK2_PACKAGES_SUBDIR}" p e n=0
+	local lv="${TREE}/${EDK2_PACKAGES_SUBDIR}/LvglPkg"
 	mkdir -p "${dst}"
+	rm -rf "${dst:?}/OuroBiosPkg"
 	cp -r "${O}/edk2/OuroBiosPkg" "${dst}/"
 	for p in "${dst}"/OuroBiosPkg/OuroBiosPkg.*.patch; do
 		[ -e "${p}" ] || continue
@@ -2085,9 +2116,34 @@ edk2_package() {
 		e="${e##*.}"
 		cp "${tiano}/UefiPayloadPkg/UefiPayloadPkg.${e}" "${dst}/OuroBiosPkg/OuroBiosPkg.${e}"
 		(cd "${dst}/OuroBiosPkg" && git apply -p1 "${p}") \
-			|| die "edk2-upstream: ${p##*/} non applica a UefiPayloadPkg.${e} di ${EDK2_UPSTREAM_TAG}"
+			|| die "edk2: ${p##*/} non applica a UefiPayloadPkg.${e} di ${EDK2_UPSTREAM_TAG}"
 		rm -f "${p}"
 	done
+	# LvglPkg, un clone parziale come l'EDK2 di MrChromebox, dal mirror del
+	# progetto se il suo repository non ha piu' il commit (pinned_commit)
+	if [ ! -d "${lv}/.git" ]; then
+		rm -rf "${lv}"
+		git clone -q --filter=blob:none --no-checkout "${LVGLPKG_REPO}" "${lv}" || {
+			rm -rf "${lv}"
+			git clone -q --filter=blob:none --no-checkout "${LVGLPKG_MIRROR}" "${lv}"
+		} || die "LvglPkg: clone da ${LVGLPKG_REPO} e da ${LVGLPKG_MIRROR} fallito"
+	fi
+	pinned_commit "${lv}" "${LVGLPKG_COMMIT}" "${LVGLPKG_MIRROR}" \
+		|| die "LvglPkg: ${LVGLPKG_COMMIT:0:12} non c'e' ne' in ${LVGLPKG_REPO} ne' in ${LVGLPKG_MIRROR}"
+	git -C "${lv}" checkout -q --force --detach "${LVGLPKG_COMMIT}" || die "LvglPkg: ${LVGLPKG_COMMIT:0:12}"
+	git -C "${lv}" clean -q -fd
+	git -C "${lv}" submodule update -q --init --force --filter=blob:none || die "LvglPkg: il submodule di LVGL"
+	git -C "${lv}" submodule foreach -q --recursive 'git clean -q -fd'
+	while read -r p; do
+		[ -f "${O}/patches/lvglpkg/${p}" ] || die "patches/lvglpkg/series: ${p} non c'e'"
+		git -C "${lv}" apply --whitespace=nowarn "${O}/patches/lvglpkg/${p}" \
+			|| die "patches/lvglpkg/${p} non applica su LvglPkg ${LVGLPKG_COMMIT:0:12}"
+		n=$((n + 1))
+	done < <(series lvglpkg)
+	python3 "${O}/tools/ui-font.py" "${lv}/Library/LvglLib/lvgl/src/font" \
+		"${dst}/OuroBiosPkg/Library/UpdateScreenLib/UpdateScreenFont.c" \
+		|| die "tools/ui-font.py: i font della schermata di aggiornamento del package non si fanno"
+	echo "  edk2/OuroBiosPkg e LvglPkg ${LVGLPKG_COMMIT:0:12} con ${n} patch di patches/lvglpkg in ${EDK2_PACKAGES_SUBDIR}"
 }
 
 # Le patch portate (patches/tianocore/series, la fase (c)) sull'albero di
@@ -2120,8 +2176,12 @@ edk2_upstream_rom() {
 		echo "CONFIG_CPU_QEMU_X86_TSEG_SMM=y"
 		echo "CONFIG_SMMSTORE=y"
 		echo "CONFIG_PAYLOAD_EDK2=y"
-		echo "CONFIG_EDK2_REPO_OFFICIAL=y"
-		echo "CONFIG_EDK2_TAG_OR_REV=\"${EDK2_UPSTREAM_COMMIT}\""
+		# TianoCore com'e', se le righe in piu' non dicono un altro
+		# repository (il package, EDK2_PACKAGE_CONFIG)
+		if ! printf '%s\n' "$@" | grep -q '^CONFIG_EDK2_REPO_'; then
+			echo "CONFIG_EDK2_REPO_OFFICIAL=y"
+			echo "CONFIG_EDK2_TAG_OR_REV=\"${EDK2_UPSTREAM_COMMIT}\""
+		fi
 		# il payload DEBUG: i suoi messaggi (variabili, FTW, FVB, TPM) sulla
 		# seriale, che qemu-smoke.py --upstream riporta di un passo fallito
 		echo "CONFIG_EDK2_DEBUG=y"
@@ -2184,18 +2244,22 @@ cmd_edk2_upstream() {
 		bad+=("la build con SECURE_BOOT_ENABLE (build-${q}-sb/make.log nell'albero)")
 		sb=""
 	fi
-	# e una terza dal package del progetto fuori dall'albero (edk2/OuroBiosPkg,
-	# la fase (b)): il .dsc e l'.fdf di UefiPayloadPkg con le sue patch, Secure
-	# Boot e un FD di 12 MiB compresi, sull'albero con le patch portate (c)
+	# e una terza dal package del progetto fuori dall'albero (edk2/OuroBiosPkg
+	# e LvglPkg, le fasi (b) e (c)), sull'albero con patches/tianocore: i
+	# moduli e la piattaforma del payload delle ROM, con le loro opzioni
+	# (EDK2_PACKAGE_CONFIG, Secure Boot compreso)
 	pkg="${TREE}/build-${q}-pkg"
 	say "edk2-upstream: la stessa da edk2/OuroBiosPkg, fuori dall'albero di EDK II"
 	edk2_upstream_carry
 	edk2_package
 	# con SMMSTORE_PARAMS_IN_COM_BUFFER come le board (patch 0215, la WSMT):
-	# gli argomenti di SMMSTORE solo nella pagina del com buffer
-	# (patches/tianocore/0003)
-	if ! edk2_upstream_rom "${q}-pkg" "CONFIG_EDK2_PLATFORM_DSC=\"OuroBiosPkg/OuroBiosPkg.dsc\"" \
-		"CONFIG_EDK2_PACKAGES_PATH=\"${WORK}/edk2-packages\"" "CONFIG_SMMSTORE_PARAMS_IN_COM_BUFFER=y"; then
+	# gli argomenti di SMMSTORE solo nella pagina del com buffer (edk2/0044);
+	# senza i driver che le board lasciano fuori, con il loro log del TPM
+	# (edk2_params): l'FD DEBUG di 12 MiB (edk2/0024) basta come per il
+	# payload di update-test
+	if ! edk2_upstream_rom "${q}-pkg" "${EDK2_PACKAGE_CONFIG[@]}" "CONFIG_SMMSTORE_PARAMS_IN_COM_BUFFER=y" \
+		"CONFIG_EDK2_CUSTOM_BUILD_PARAMS=\"$(sed -n 's/^CONFIG_EDK2_CUSTOM_BUILD_PARAMS="\(.*\)"$/\1/p' \
+			"${O}/configs/w541-mrc.defconfig") --pcd gEfiSecurityPkgTokenSpaceGuid.PcdTcgLogAreaMinLen=0x40000\""; then
 		bad+=("la build da edk2/OuroBiosPkg (build-${q}-pkg/make.log nell'albero)")
 		pkg=""
 	fi
@@ -2228,6 +2292,76 @@ cmd_edk2_upstream() {
 	fi
 }
 
+# La fase (d) prima dei defconfig (docs/edk2-migration.md): la prima variante
+# della board con l'EDK2 dei defconfig, quello delle ROM, in build-<variante>
+# dell'albero, e la stessa dal package su TianoCore in
+# build-<variante>-tianocore, con il defconfig della prima e
+# EDK2_PACKAGE_CONFIG al posto del suo repository e del suo commit. Le
+# opzioni EDK2 dei due .config devono essere le stesse e i due
+# UEFIPAYLOAD.fd uguali byte per byte; se no tools/fv-diff.py dice i file
+# FFS diversi e, dei moduli, le sezioni (la variante va in EDK2_PARITY_BAD).
+# Con le chiavi di prova di vboot, che il payload non contiene
+EDK2_PARITY_BAD=()
+EDK2_PACKAGE_READY=no
+cmd_edk2_parity() {
+	need_prepared
+	if [ "${TOOLCHAIN}" = crossgcc ]; then
+		xgcc_ok || die "crossgcc mancante in ${XGCC}: prima tools/build.sh toolchain"
+		export PATH="${XGCC}/bin:${PATH}"
+	fi
+	if [ "${EDK2_PACKAGE_READY}" != yes ]; then
+		prepare_edk2_upstream
+		edk2_upstream_carry
+		edk2_package
+		EDK2_PACKAGE_READY=yes
+	fi
+	local v="${VARIANTS[0]}" k a b re
+	k="$(bkey "${v}")"
+	a="${TREE}/build-${k}"
+	b="${TREE}/build-${k}-tianocore"
+	VBOOT_KEYS_REAL=no
+	say "edk2-parity ${v}: con l'EDK2 dei defconfig ($(edk2_rev | cut -c1-12) e patches/edk2)"
+	variant_config "${v}"
+	clean_ipxe
+	if ! mk "${k}" -j"${JOBS}" > "${a}/make.log" 2>&1; then
+		grep -n -i -B2 -A6 'error' "${a}/make.log" | tail -n 60 > "${a}/errors.log" || true
+		failure_report "edk2-parity ${v}" "${a}/errors.log" "${a}/make.log"
+		die "edk2-parity ${v}: build fallita (build-${k}/make.log nell'albero)"
+	fi
+	say "edk2-parity ${v}: dal package su TianoCore ${EDK2_UPSTREAM_TAG}"
+	rm -rf "${b:?}"
+	mkdir -p "${b}"
+	{
+		grep -v -e '^CONFIG_EDK2_TAG_OR_REV=' -e '^CONFIG_EDK2_REPO' "${a}/defconfig"
+		printf '%s\n' "${EDK2_PACKAGE_CONFIG[@]}"
+	} > "${b}/defconfig"
+	mk "${k}-tianocore" defconfig KBUILD_DEFCONFIG="build-${k}-tianocore/defconfig" > "${b}/defconfig.log" 2>&1 \
+		|| { cat "${b}/defconfig.log"; die "edk2-parity ${v}: make defconfig dal package fallito"; }
+	defconfig_kept "${b}" || die "edk2-parity ${v}: il .config dal package non ha tutto il defconfig"
+	# le opzioni del payload: le stesse, fuori dal repository e dal commit
+	re='^(# )?CONFIG_EDK2_(REPO_|REPOSITORY|TAG_OR_REV|PLATFORM_DSC|PACKAGES_PATH)'
+	if ! diff <(grep -E '^(# )?CONFIG_EDK2_' "${a}/.config" | grep -Ev "${re}") \
+		<(grep -E '^(# )?CONFIG_EDK2_' "${b}/.config" | grep -Ev "${re}"); then
+		die "edk2-parity ${v}: le opzioni EDK2 dei due .config non sono le stesse (sopra: < defconfig, > package)"
+	fi
+	if ! mk "${k}-tianocore" -j"${JOBS}" > "${b}/make.log" 2>&1; then
+		grep -n -i -B2 -A6 'error' "${b}/make.log" | tail -n 60 > "${b}/errors.log" || true
+		failure_report "edk2-parity ${v} dal package" "${b}/errors.log" "${b}/make.log"
+		die "edk2-parity ${v}: build dal package fallita (build-${k}-tianocore/make.log nell'albero)"
+	fi
+	# le opzioni con cui il Makefile di coreboot ha costruito i due payload
+	diff <(sed -n '/##### edk2 Build Summary #####/,/Toolchain:/p' "${a}/make.log" | grep -Ev 'Repository|Branch|Packages path|Payload:') \
+		<(sed -n '/##### edk2 Build Summary #####/,/Toolchain:/p' "${b}/make.log" | grep -Ev 'Repository|Branch|Packages path|Payload:') \
+		|| echo "  !!  ${v}: le opzioni della build di EDK2 sono diverse (sopra)"
+	if cmp -s "${a}/UEFIPAYLOAD.fd" "${b}/UEFIPAYLOAD.fd"; then
+		echo "  ok  ${v}: i due UEFIPAYLOAD.fd sono uguali byte per byte ($(stat -c %s "${a}/UEFIPAYLOAD.fd") byte, sha256 $(sha256sum < "${a}/UEFIPAYLOAD.fd" | cut -c1-16))"
+	else
+		echo "  NO  ${v}: i due UEFIPAYLOAD.fd sono diversi"
+		python3 "${O}/tools/fv-diff.py" "${a}/UEFIPAYLOAD.fd" "${b}/UEFIPAYLOAD.fd" || true
+		EDK2_PARITY_BAD+=("${v}")
+	fi
+}
+
 # I comandi di una board (config, roms, repro, menu, smoke) per ogni board
 # di --board; gli altri una volta, per tutte
 each_board() {
@@ -2249,6 +2383,10 @@ for c in "${CMDS[@]}"; do
 		smoke)         each_board cmd_smoke ;;
 		update-test)   cmd_update_test ;;
 		edk2-upstream) cmd_edk2_upstream ;;
+		edk2-parity)
+			each_board cmd_edk2_parity
+			[ ${#EDK2_PARITY_BAD[@]} -eq 0 ] \
+				|| die "edk2-parity: il payload dal package non e' quello dell'EDK2 dei defconfig: ${EDK2_PARITY_BAD[*]}" ;;
 		keys)          cmd_keys ;;
 		toolchain-key) cmd_toolchain_key ;;
 	esac

@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Wed, 1 Jul 2026 21:04:05 -0500
+Subject: [PATCH] FatPkg: Fix FAT32 mount on small 4K-sector ESP partitions
+
+[ouroBIOS: commit dde07987cd3d of MrChromebox's edk2, as it is]
+
+Trust the FAT32 BPB instead of requiring MaxCluster >= 65525, which
+rejected valid UFS EFS volumes and blocked internal boot.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ FatPkg/EnhancedFatDxe/Init.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/FatPkg/EnhancedFatDxe/Init.c b/FatPkg/EnhancedFatDxe/Init.c
+index a9dc45e84d99584470bc57a9c1cefd9d7e21124a..ea4be1729d94a997b7bae37f7c74322d49953682 100644
+--- a/FatPkg/EnhancedFatDxe/Init.c
++++ b/FatPkg/EnhancedFatDxe/Init.c
+@@ -390,7 +390,12 @@ FatOpenDevice (
+     Volume->FatEntrySize = sizeof (UINT16);
+     DirtyMask            = FAT16_DIRTY_MASK;
+   } else {
+-    if (Volume->MaxCluster < FAT_MAX_FAT16_CLUSTER) {
++    //
++    // FAT32 layout comes from the BPB (32-bit FAT).  Small volumes such as a
++    // ~200 MiB ESP with 4 KB sectors can be valid FAT32 while MaxCluster is
++    // still below FAT_MAX_FAT16_CLUSTER; mkfs.fat and Linux use this layout.
++    //
++    if (Volume->MaxCluster < FAT_MAX_FAT12_CLUSTER) {
+       return EFI_VOLUME_CORRUPTED;
+     }
+ 

@@ -1,0 +1,141 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 16 Oct 2026 10:52:17 +0200
+Subject: [PATCH] UefiPayloadPkg: CSMWrap, a legacy BIOS, as a boot option
+
+[ouroBIOS: patches/edk2/0023, without the files that TianoCore's tree
+does not have (tools/edk2-import.py): 2 in edk2/OuroBiosPkg]
+
+CSMWrap (https://github.com/CSMWrap/CSMWrap) boots legacy BIOS software
+on a UEFI-only firmware with the CSM and the VGA BIOS of SeaBIOS: INT 10h,
+INT 13h and the other services, E820 from the UEFI memory map, ACPI and
+SMBIOS passed through. Built separately and put in the firmware volume
+with -D CSMWRAP=TRUE (UefiPayloadPkg/LegacyBoot/csmwrap.efi, as iPXE is
+with NETWORK_IPXE), PlatformBootManagerLib registers it as a boot
+option, PcdCsmWrapOptionName, from PcdCsmWrapFile.
+
+A legacy BIOS runs unsigned code, so the option exists only while Secure
+Boot is off: with the SecureBoot variable at 1 the boot manager deletes
+it, as it does when the "csmwrap_boot" switch of the coreboot setup menu
+is off.
+
+TEST=tools/qemu-smoke.py of ouroBIOS at every build: CSMWrap started
+from the boot manager, with two CPUs and a SATA disk, boots the master
+boot record of the disk, which writes on the serial port; the option
+deleted with Secure Boot on, or with the switch off, has no recorded
+test (edk2/0025 refuses the file with Secure Boot on).
+
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
+---
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+index 9fca1a747..3f068c44a 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+@@ -289,6 +289,29 @@ PlatformSetupSwitch (
+   return Value != 0;
+ }
+ 
++/**
++  Is Secure Boot on? The SecureBoot variable, as the image verification
++  sets it: 1 with the keys enrolled and user mode.
++
++  @retval TRUE   On.
++  @retval FALSE  Off, or no such variable.
++**/
++STATIC
++BOOLEAN
++PlatformSecureBootOn (
++  VOID
++  )
++{
++  EFI_STATUS  Status;
++  UINT8       SecureBoot;
++  UINTN       Size;
++
++  SecureBoot = 0;
++  Size       = sizeof (SecureBoot);
++  Status     = gRT->GetVariable (EFI_SECURE_BOOT_MODE_NAME, &gEfiGlobalVariableGuid, NULL, &Size, &SecureBoot);
++  return !EFI_ERROR (Status) && (SecureBoot == SECURE_BOOT_MODE_ENABLE);
++}
++
+ EFI_HANDLE BootManagerEntryNotifyHandle1;
+ EFI_HANDLE BootManagerEntryNotifyHandle2;
+ EFI_HANDLE BootManagerContinueNotifyHandle;
+@@ -573,6 +596,24 @@ PlatformBootManagerAfterConsole (
+     }
+   }
+ 
++  //
++  // Register CSMWrap, the legacy BIOS, if the binary is present in the
++  // firmware volume, Secure Boot is off (a legacy BIOS runs unsigned code)
++  // and the setup has not turned it off (csmwrap_boot); otherwise the
++  // option goes.
++  //
++  if ((PcdGetPtr (PcdCsmWrapFile) != NULL) && (PcdGetPtr (PcdCsmWrapOptionName) != NULL)) {
++    if (!PlatformSecureBootOn () && PlatformSetupSwitch (L"csmwrap_boot")) {
++      PlatformRegisterFvBootOption (
++        (EFI_GUID *)PcdGetPtr (PcdCsmWrapFile),
++        (CHAR16 *)PcdGetPtr (PcdCsmWrapOptionName),
++        LOAD_OPTION_ACTIVE
++        );
++    } else {
++      PlatformRemoveFvBootOption ((EFI_GUID *)PcdGetPtr (PcdCsmWrapFile));
++    }
++  }
++
+   if (FixedPcdGetBool (PcdBootManagerEscape)) {
+     if (FixedPcdGetBool (PcdSerialTerminalPrintEnabled)) {
+       Print (
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
+index 137a8831b..81d38e770 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
+@@ -30,6 +30,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Library/TcgPhysicalPresenceLib.h>
+ #include <Library/Tcg2PhysicalPresenceLib.h>
+ #include <Protocol/SmmAccess2.h>
++#include <Guid/GlobalVariable.h>
++#include <Guid/ImageAuthentication.h>
+ 
+ typedef struct {
+   EFI_DEVICE_PATH_PROTOCOL    *DevicePath;
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+index e322a95d4..d350c1aaf 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+@@ -66,7 +66,8 @@
+   gEfiCapsuleReportGuid           ## CONSUMES ## Variable:L"CapsuleLast"
+   gEfiFileInfoGuid                ## CONSUMES
+   gEfiPartTypeSystemPartGuid      ## CONSUMES
+-  gEficorebootNvDataGuid          ## CONSUMES ## Variable:L"ipxe_boot"
++  gEficorebootNvDataGuid          ## CONSUMES ## Variable:L"ipxe_boot" L"csmwrap_boot"
++  gEfiGlobalVariableGuid          ## CONSUMES ## Variable:L"SecureBoot"
+ 
+ [Protocols]
+   gEfiGenericMemTestProtocolGuid  ## CONSUMES
+@@ -96,3 +97,5 @@
+   gUefiPayloadPkgTokenSpaceGuid.PcdSerialTerminalPrintEnabled
+   gUefiPayloadPkgTokenSpaceGuid.PcdiPXEFile
+   gUefiPayloadPkgTokenSpaceGuid.PcdiPXEOptionName
++  gUefiPayloadPkgTokenSpaceGuid.PcdCsmWrapFile
++  gUefiPayloadPkgTokenSpaceGuid.PcdCsmWrapOptionName
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
+index 81391c345..88825c871 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dec
++++ b/UefiPayloadPkg/UefiPayloadPkg.dec
+@@ -118,6 +118,10 @@ gUefiPayloadPkgTokenSpaceGuid.PcdBootloaderParameter|0|UINT64|0x10000004
+ gUefiPayloadPkgTokenSpaceGuid.PcdiPXEFile|{ 0xC7, 0x53, 0x86, 0xB6, 0xA1, 0xEE, 0x35, 0x44, 0xA1, 0x99, 0xA4, 0x4F, 0x59, 0xE4, 0x47, 0x6C }|VOID*|0x10000032
+ gUefiPayloadPkgTokenSpaceGuid.PcdiPXEOptionName|L"iPXE Network Boot"|VOID*|0x10000033
+ 
++## FFS filename to find the CSMWrap application (legacy BIOS boot).
++gUefiPayloadPkgTokenSpaceGuid.PcdCsmWrapFile|{ 0x4A, 0xB2, 0x0E, 0x93, 0xA7, 0x08, 0x84, 0x4D, 0xA9, 0x86, 0x7E, 0x91, 0x3F, 0x40, 0x52, 0x70 }|VOID*|0x10000034
++gUefiPayloadPkgTokenSpaceGuid.PcdCsmWrapOptionName|L"CSMWrap Legacy Boot"|VOID*|0x10000035
++
+ ## Used to help reduce fragmentation in the EFI memory map
+ gUefiPayloadPkgTokenSpaceGuid.PcdMemoryTypeEfiACPIReclaimMemory|0x19|UINT32|0x10000012
+ gUefiPayloadPkgTokenSpaceGuid.PcdMemoryTypeEfiACPIMemoryNVS|0x04|UINT32|0x10000013
+-- 
+2.43.0
+

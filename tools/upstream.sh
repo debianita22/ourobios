@@ -24,9 +24,10 @@
 #           no, issue "DBX: ...".
 # tianocore c'e' un tag edk2-stableAAAAMM di TianoCore dopo EDK2_UPSTREAM_TAG
 #           di tools/build.sh (il passaggio a TianoCore, docs/edk2-migration.md)?
-#           Se si', issue "TianoCore: ...", che dice se le patch del package
-#           (edk2/OuroBiosPkg/*.patch) applicano ancora ai file di
-#           UefiPayloadPkg di quel tag.
+#           Se si', issue "TianoCore: ...", che dice se patches/tianocore e le
+#           patch della piattaforma del package (edk2/OuroBiosPkg/*.patch)
+#           applicano ancora a quel tag. TIANOCORE_TAG=edk2-stableAAAAMM
+#           prova il controllo su quel tag (con --dry-run).
 #
 # Con --dry-run scrive soltanto cosa farebbe (niente issue).
 set -euo pipefail
@@ -333,24 +334,48 @@ EOF
 	report "DBX:" "DBX: le liste di hash di Microsoft ${tag} non sono quelle del payload" "${body}"
 }
 
-# Il tag stabile di TianoCore dopo quello di edk2-upstream, e le patch del
-# package (edk2/OuroBiosPkg) sui file di UefiPayloadPkg di quel tag
+# Il tag stabile di TianoCore dopo quello di edk2-upstream, e su quel tag
+# patches/tianocore e le patch della piattaforma del package
+# (edk2/OuroBiosPkg) sui file di UefiPayloadPkg
 check_tianocore() {
-	local repo tag latest g p e no=() rows=""
+	local repo tag latest g p e no=() rows="" n=0 stop=""
 	repo="$(pin EDK2_UPSTREAM_REPO)"
 	tag="$(pin EDK2_UPSTREAM_TAG)"
 	[ -n "${repo}" ] && [ -n "${tag}" ] || die "EDK2_UPSTREAM_REPO o EDK2_UPSTREAM_TAG non trovati in tools/build.sh"
-	latest="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags "${repo}" 'refs/tags/edk2-stable*' \
-		| sed -n 's#.*refs/tags/\(edk2-stable[0-9]\{6\}\)$#\1#p' | sort | tail -n 1)"
+	latest="${TIANOCORE_TAG:-$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags "${repo}" 'refs/tags/edk2-stable*' \
+		| sed -n 's#.*refs/tags/\(edk2-stable[0-9]\{6\}\)$#\1#p' | sort | tail -n 1)}"
 	[ -n "${latest}" ] || die "${repo}: nessun tag edk2-stableAAAAMM"
-	if [ "${latest}" = "${tag}" ] || [ "$(printf '%s\n%s\n' "${tag}" "${latest}" | sort | tail -n 1)" = "${tag}" ]; then
+	if [ -z "${TIANOCORE_TAG:-}" ] && { [ "${latest}" = "${tag}" ] \
+		|| [ "$(printf '%s\n%s\n' "${tag}" "${latest}" | sort | tail -n 1)" = "${tag}" ]; }; then
 		settle "TianoCore:" "TianoCore: ${tag} e' l'ultimo tag stabile"
 		return 0
 	fi
+	# un clone parziale con il suo remote promisor: i file che le patch
+	# toccano arrivano quando servono
 	g="${TMP}/tianocore"
 	git init -q "${g}"
-	GIT_TERMINAL_PROMPT=0 git -C "${g}" fetch -q --depth 1 --filter=blob:none "${repo}" "refs/tags/${latest}" \
+	git -C "${g}" remote add origin "${repo}"
+	git -C "${g}" config remote.origin.promisor true
+	git -C "${g}" config remote.origin.partialclonefilter blob:none
+	GIT_TERMINAL_PROMPT=0 git -C "${g}" fetch -q --depth 1 --filter=blob:none origin "refs/tags/${latest}" \
 		|| die "${repo} ${latest}: fetch non riuscito"
+	# patches/tianocore in ordine, in un indice a parte: la prima che non
+	# applica ferma le altre, che vengono dopo di lei
+	GIT_INDEX_FILE="${TMP}/tianocore.index" git -C "${g}" read-tree FETCH_HEAD
+	while read -r p; do
+		if ! GIT_TERMINAL_PROMPT=0 GIT_INDEX_FILE="${TMP}/tianocore.index" git -C "${g}" apply --cached \
+			--whitespace=nowarn "${O}/patches/tianocore/${p}" 2> "${TMP}/carried.err"; then
+			stop="${p}"
+			break
+		fi
+		n=$((n + 1))
+	done < <(sed -e 's/#.*//' -e 's/[[:space:]]*$//' "${O}/patches/tianocore/series" | sed '/^$/d')
+	if [ -z "${stop}" ]; then
+		rows+="| \`patches/tianocore\` | le ${n} patch applicano |"$'\n'
+	else
+		no+=("patches/tianocore/${stop}")
+		rows+="| \`patches/tianocore\` | ${n} applicano, poi \`${stop}\` no: $(head -n 1 "${TMP}/carried.err" | tr '|' '/') |"$'\n'
+	fi
 	for p in "${O}"/edk2/OuroBiosPkg/OuroBiosPkg.*.patch; do
 		[ -e "${p}" ] || continue
 		e="${p%.patch}"
@@ -367,19 +392,19 @@ check_tianocore() {
 	done
 	local title body
 	if [ ${#no[@]} -eq 0 ]; then
-		title="TianoCore: ${latest} dopo ${tag}, le patch del package applicano"
+		title="TianoCore: ${latest} dopo ${tag}, patches/tianocore e il package applicano"
 	else
-		title="TianoCore: ${latest} dopo ${tag}, ${#no[@]} patch del package da rifare"
+		title="TianoCore: ${latest} dopo ${tag}, da rifare: ${no[*]}"
 	fi
 	body="$(cat <<EOF
 TianoCore ha \`${latest}\`; \`tools/build.sh edk2-upstream\` e il package \`edk2/OuroBiosPkg\` sono su \`${tag}\` (\`EDK2_UPSTREAM_TAG\`).
 
-Le patch del package sui file di \`UefiPayloadPkg\` di \`${latest}\`:
+\`patches/tianocore\` su \`${latest}\`, e le patch della piattaforma del package sui file di \`UefiPayloadPkg\`:
 
 | Patch | Esito |
 |---|---|
 ${rows}
-Per spostarsi (a mano): \`EDK2_UPSTREAM_TAG\` e \`EDK2_UPSTREAM_COMMIT\` in \`tools/build.sh\`, le patch rifatte se non applicano, le lacune di \`EDK2_UPSTREAM_GAPS\` riviste, poi push su un ramo \`ci-edk2/...\` (docs/edk2-migration.md).
+Per spostarsi (a mano): \`EDK2_UPSTREAM_TAG\` e \`EDK2_UPSTREAM_COMMIT\` in \`tools/build.sh\`, le patch rifatte se non applicano (quelle che il tag ha gia' fuori dalla serie), le lacune di \`EDK2_UPSTREAM_GAPS\` riviste, poi push su un ramo \`ci-edk2/...\` (docs/edk2-migration.md).
 
 Questo issue lo aggiorna e lo chiude \`upstream.yml\`.
 EOF

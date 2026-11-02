@@ -209,18 +209,24 @@ a clean tree to the pinned commit but leaves a modified one alone.
 ## TianoCore EDK II, for the package
 
 `patches/tianocore/series` applies to upstream TianoCore EDK II at
-`EDK2_UPSTREAM_TAG` (`tools/build.sh`), for the image of
-[`edk2/OuroBiosPkg`](../edk2/README.md) only: step (c) of the move to
-TianoCore ([docs/edk2-migration.md](../docs/edk2-migration.md)). Each one
-closes a gap of the upstream payload and is to be proposed upstream; the
-images of the tag as it is are built before it is applied.
+`EDK2_UPSTREAM_TAG` (`tools/build.sh`), for the payload of
+[`edk2/OuroBiosPkg`](../edk2/README.md): steps (b) and (c) of the move to
+TianoCore ([docs/edk2-migration.md](../docs/edk2-migration.md#steps-b-and-c-the-package-and-the-carried-patches)).
+`tools/edk2-import.py` makes it from MrChromebox's tree at the commit of
+the defconfigs, with the package, and checks that the tag with the series
+is that tree with `patches/edk2` in every file outside the package and
+its platform. Each patch says where it comes from in the first lines of
+its message:
 
-| Patch | What it does |
+| Patches | What they are |
 |---|---|
-| `tianocore/0001` | SmmStoreFvbRuntimeDxe formats an erased store with `gEfiAuthenticatedVariableGuid`, as the variable driver formats a store of its own: with `SECURE_BOOT_ENABLE`, the authenticated variables on a new SMMSTORE (MrChromebox's `2686758` changes the same line) |
-| `tianocore/0002-0003` | `edk2/0029` and `edk2/0044` on TianoCore's SmmStoreLib: the com buffer as runtime MMIO and the arguments of each command in the page after its block (coreboot's patch 0134), from the start: the runtime services moved as macOS's boot.efi moves them, and coreboot's `SMMSTORE_PARAMS_IN_COM_BUFFER` (0215, the WSMT) |
-| `tianocore/0004-0005` | MrChromebox's `2deb904` and `c111515` (Patrick Rudolph, 9elements), the TPM 1.2 and 2.0 for coreboot: the TPM and TCPA tables found in the ACPI of coreboot, TcgDxe and Tcg2Dxe with their physical presence libraries; their `.dsc` and `.fdf` parts are in `edk2/OuroBiosPkg` |
-| `tianocore/0006` | `edk2/0019` on TianoCore's TcgDxe: with a TPM 1.2 the payload logs into the TCPA table of coreboot, after its events, instead of a second table that an OS does not read |
+| `tianocore/0001-0079` | the commits of MrChromebox's branch after `edk2-stable202608`, in order, each without the files that TianoCore's tree does not have (its new modules, which are in the package, the `.dsc` and `.fdf` of `UefiPayloadPkg`, which are the package's platform, LvglPkg, a package of its own, and the binary network drivers, left out); the 21 commits with nothing else are not there. What each one becomes, carried, proposed upstream or left out, is the table of [docs/edk2-migration.md](../docs/edk2-migration.md) |
+| `tianocore/0080-0110` | the patches of `patches/edk2` in order, the same way: the 13 that change only the package or its platform are not there |
+
+The series is the payload of the ROMs today on the TianoCore tag; it gets
+shorter as its patches go upstream, move to the package or are left out,
+each step with the payload's tests. `tools/upstream.sh tianocore` says
+every week whether it still applies to a newer stable tag.
 
 ## Optional patches
 

@@ -1,0 +1,106 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Mon, 28 Sep 2026 15:00:43 -0500
+Subject: [PATCH] MdeModulePkg: Use warm reset for setup-initiated resets
+
+[ouroBIOS: commit b061f7a46bdb of MrChromebox's edk2, as it is]
+
+Setup changes that need a reboot to take effect, such as TPM 1.2/2.0
+physical presence requests, are handed across the reset in memory
+(coreboot's TPM PPI buffer in CBMEM). Since ResetSystemLib switched
+EfiResetCold to the full CF9 reset sequence, DRAM is reinitialized and
+those requests are lost, so the pending TPM operation is never
+confirmed or executed on the next boot.
+
+Use EfiResetWarm for the resets triggered from the setup UI: the
+front page reset reminder and Reset item, the Boot Manager and Boot
+Maintenance Manager reset reminders, and the BMM Reset form.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ MdeModulePkg/Application/UiApp/FrontPage.c                   | 5 ++++-
+ .../Application/UiApp/FrontPageCustomizedUiSupport.c         | 4 ++--
+ .../Library/BootMaintenanceManagerUiLib/BootMaintenance.c    | 5 ++++-
+ .../Library/BootMaintenanceManagerUiLib/BootOption.c         | 5 ++++-
+ MdeModulePkg/Library/BootManagerUiLib/BootManager.c          | 5 ++++-
+ 5 files changed, 18 insertions(+), 6 deletions(-)
+
+diff --git a/MdeModulePkg/Application/UiApp/FrontPage.c b/MdeModulePkg/Application/UiApp/FrontPage.c
+index 8765020180c088432c6e55dee178d1cc7ac41e2a..67a49621b3e233a347e1128e064db87e0f2f52b5 100644
+--- a/MdeModulePkg/Application/UiApp/FrontPage.c
++++ b/MdeModulePkg/Application/UiApp/FrontPage.c
+@@ -1477,6 +1477,9 @@ SetupResetReminder (
+                   );
+     }
+ 
+-    gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
++    //
++    // Warm reset keeps in-memory requests (e.g. TPM PPI) across the reboot.
++    //
++    gRT->ResetSystem (EfiResetWarm, EFI_SUCCESS, 0, NULL);
+   }
+ }
+diff --git a/MdeModulePkg/Application/UiApp/FrontPageCustomizedUiSupport.c b/MdeModulePkg/Application/UiApp/FrontPageCustomizedUiSupport.c
+index dff2d2128a447451fc07e7edbd3e3d9898583964..36cbc75ef6d081b54be8b1b908501ec331fbfa32 100644
+--- a/MdeModulePkg/Application/UiApp/FrontPageCustomizedUiSupport.c
++++ b/MdeModulePkg/Application/UiApp/FrontPageCustomizedUiSupport.c
+@@ -113,9 +113,9 @@ UiSupportLibCallbackHandler (
+ 
+       case FRONT_PAGE_KEY_RESET:
+         //
+-        // Reset
++        // Warm reset keeps in-memory requests (e.g. TPM PPI) across the reboot.
+         //
+-        gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
++        gRT->ResetSystem (EfiResetWarm, EFI_SUCCESS, 0, NULL);
+         *Status = EFI_UNSUPPORTED;
+ 
+       default:
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenance.c b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenance.c
+index 9d71b2454ab1a5757c667aa9b5aab41723fa585f..aff96c6c50feff010f59f22990ff7d0926713b50 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenance.c
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenance.c
+@@ -1329,7 +1329,10 @@ BootMaintCallback (
+           break;
+ 
+         case FORM_RESET:
+-          gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
++          //
++          // Warm reset keeps in-memory requests (e.g. TPM PPI) across the reboot.
++          //
++          gRT->ResetSystem (EfiResetWarm, EFI_SUCCESS, 0, NULL);
+           return EFI_UNSUPPORTED;
+ 
+         default:
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootOption.c b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootOption.c
+index 04168dc34f5a827421e7c71f3e816d588a939fa9..c3c0ce8dcd3ee66192cf8fc0f681ac9144124121 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootOption.c
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootOption.c
+@@ -59,7 +59,10 @@ BmmSetupResetReminder (
+                   );
+     }
+ 
+-    gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
++    //
++    // Warm reset keeps in-memory requests (e.g. TPM PPI) across the reboot.
++    //
++    gRT->ResetSystem (EfiResetWarm, EFI_SUCCESS, 0, NULL);
+   }
+ }
+ 
+diff --git a/MdeModulePkg/Library/BootManagerUiLib/BootManager.c b/MdeModulePkg/Library/BootManagerUiLib/BootManager.c
+index 4574a30b52399fa34f04842244afdbd6ccaf918b..39416b7d90b37073d80bd4160705e4f76db7c5ab 100644
+--- a/MdeModulePkg/Library/BootManagerUiLib/BootManager.c
++++ b/MdeModulePkg/Library/BootManagerUiLib/BootManager.c
+@@ -336,7 +336,10 @@ BmSetupResetReminder (
+                   );
+     }
+ 
+-    gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
++    //
++    // Warm reset keeps in-memory requests (e.g. TPM PPI) across the reboot.
++    //
++    gRT->ResetSystem (EfiResetWarm, EFI_SUCCESS, 0, NULL);
+   }
+ }
+ 

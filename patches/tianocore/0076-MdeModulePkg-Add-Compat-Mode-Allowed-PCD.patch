@@ -1,0 +1,68 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Oliver Smith-Denny <osde@microsoft.com>
+Date: Thu, 17 Sep 2026 09:36:28 -0700
+Subject: [PATCH] MdeModulePkg: Add Compat Mode Allowed PCD
+
+[ouroBIOS: commit 9c0cb3a58343 of MrChromebox's edk2, as it is]
+
+Add a PCD, defaulting to TRUE, on whether compat mode should
+be allowed to be entered or not. If this PCD is set to FALSE,
+memory protections will stay at whatever level they are set
+and EFI_APPLICATIONs w/o the NX_COMPAT flag will still be
+attempted to be executed.
+
+Signed-off-by: Oliver Smith-Denny <osde@microsoft.com>
+(cherry picked from commit cda8eae70d16b5d071624c48336229e2a563a8dc)
+---
+ MdeModulePkg/Core/Dxe/DxeMain.inf             | 1 +
+ MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c | 5 +++++
+ MdeModulePkg/MdeModulePkg.dec                 | 8 ++++++++
+ 3 files changed, 14 insertions(+)
+
+diff --git a/MdeModulePkg/Core/Dxe/DxeMain.inf b/MdeModulePkg/Core/Dxe/DxeMain.inf
+index b49971b36f3b27a973e3697b6374403238d42ade..a78bf4ac92bdcf597cce589e82a6a98f9c1d647e 100644
+--- a/MdeModulePkg/Core/Dxe/DxeMain.inf
++++ b/MdeModulePkg/Core/Dxe/DxeMain.inf
+@@ -202,6 +202,7 @@
+   gEfiMdeModulePkgTokenSpaceGuid.PcdCpuStackGuard                           ## CONSUMES
+   gEfiMdeModulePkgTokenSpaceGuid.PcdFwVolDxeMaxEncapsulationDepth           ## CONSUMES
+   gEfiMdeModulePkgTokenSpaceGuid.PcdImageLargeAddressLoad                   ## CONSUMES
++  gEfiMdeModulePkgTokenSpaceGuid.PcdAllowMemoryProtectionsCompatibilityMode ## SOMETIMES_CONSUMES
+ 
+ # [Hob]
+ # RESOURCE_DESCRIPTOR   ## CONSUMES
+diff --git a/MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c b/MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c
+index a877beb63226cbb74e7524ff28ccf08b3dc5635f..8f75a5ef3954f5a810aada2adc899e3830634e71 100644
+--- a/MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c
++++ b/MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c
+@@ -703,6 +703,11 @@ ActivateCompatibilityMode (
+   VOID
+   )
+ {
++  if (!FeaturePcdGet (PcdAllowMemoryProtectionsCompatibilityMode)) {
++    DEBUG ((DEBUG_WARN, "%a - Memory protections compatibility mode is not allowed by platform policy, leaving memory protections intact.\n", __func__));
++    return;
++  }
++
+   if (mIsCompatibilityModeActive) {
+     return;
+   }
+diff --git a/MdeModulePkg/MdeModulePkg.dec b/MdeModulePkg/MdeModulePkg.dec
+index 0bc18a4ac63ed862c4f72ef6d64736b6f75b7728..f3e6a22cc2fa24b7dff3f1e3d2b3073cd789e9f6 100644
+--- a/MdeModulePkg/MdeModulePkg.dec
++++ b/MdeModulePkg/MdeModulePkg.dec
+@@ -1028,6 +1028,14 @@
+   # See MdeModulePkg/Core/MemoryBins.md for more details.
+   gEfiMdeModulePkgTokenSpaceGuid.PcdPeiMemoryBinsEnable|FALSE|BOOLEAN|0x00010080
+ 
++  ## Indicates if the platform should allow memory protections compatibility mode to be entered or not. This
++  #  defaults to TRUE, allowing compatibility mode, which is required to enable strict memory protections but still
++  #  boot bootloaders that will crash with memory protections enabled.
++  #   TRUE  - Memory protections compatibility mode is allowed.
++  #   FALSE - Memory protections compatibility mode is not allowed. EFI_APPLICATIONs without the NX_COMPAT flag
++  #           will still be loaded, but memory protections will not be disabled.
++  gEfiMdeModulePkgTokenSpaceGuid.PcdAllowMemoryProtectionsCompatibilityMode|TRUE|BOOLEAN|0x00010081
++
+ [PcdsFeatureFlag.IA32, PcdsFeatureFlag.AARCH64, PcdsFeatureFlag.LOONGARCH64]
+   gEfiMdeModulePkgTokenSpaceGuid.PcdPciDegradeResourceForOptionRom|FALSE|BOOLEAN|0x0001003a
+ 

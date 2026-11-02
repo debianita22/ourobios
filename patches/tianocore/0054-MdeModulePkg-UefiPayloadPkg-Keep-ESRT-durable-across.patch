@@ -1,0 +1,193 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sean Rhodes <sean@starlabs.systems>
+Date: Sat, 22 Aug 2026 12:34:44 -0500
+Subject: [PATCH] MdeModulePkg/UefiPayloadPkg: Keep ESRT durable across
+ hibernate and FMP sync
+
+[ouroBIOS: commit cc698567d7a6 of MrChromebox's edk2, as it is]
+
+Allocate ESRT tables from EfiACPIMemoryNVS in EsrtDxe, EsrtFmpDxe, and
+BlSupportDxe so Linux's ESRT pointer remains valid across hibernate/S4
+instead of pointing at reclaimable boot-services memory.
+
+When SyncEsrtFmp rebuilds the repository from FMP descriptors, preserve
+the firmware type of an existing bootloader-published ESRT entry for the
+same firmware class instead of reclassifying it from the system-FMP PCD
+alone.
+
+Signed-off-by: Sean Rhodes <sean@starlabs.systems>
+---
+ MdeModulePkg/Universal/EsrtDxe/EsrtDxe.c    | 10 +++-
+ MdeModulePkg/Universal/EsrtDxe/EsrtImpl.c   | 64 +++++++++++++++++++--
+ MdeModulePkg/Universal/EsrtFmpDxe/EsrtFmp.c | 12 ++--
+ UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c  | 10 +++-
+ 4 files changed, 82 insertions(+), 14 deletions(-)
+
+diff --git a/MdeModulePkg/Universal/EsrtDxe/EsrtDxe.c b/MdeModulePkg/Universal/EsrtDxe/EsrtDxe.c
+index be3328eb4dba8e3805f786d650c88d5f228d16cc..559d1755f907d9e32a53fec955cdfa3e933a16c4 100644
+--- a/MdeModulePkg/Universal/EsrtDxe/EsrtDxe.c
++++ b/MdeModulePkg/Universal/EsrtDxe/EsrtDxe.c
+@@ -538,6 +538,7 @@ EsrtReadyToBootEventNotify (
+   EFI_SYSTEM_RESOURCE_ENTRY  *NonFmpEsrtRepository;
+   UINTN                      FmpRepositorySize;
+   UINTN                      NonFmpRepositorySize;
++  UINTN                      EsrtTableSize;
+ 
+   FmpEsrtRepository    = NULL;
+   NonFmpEsrtRepository = NULL;
+@@ -593,12 +594,15 @@ EsrtReadyToBootEventNotify (
+     goto EXIT;
+   }
+ 
+-  EsrtTable = AllocatePool (sizeof (EFI_SYSTEM_RESOURCE_TABLE) + NonFmpRepositorySize + FmpRepositorySize);
+-  if (EsrtTable == NULL) {
+-    DEBUG ((DEBUG_ERROR, "Esrt table memory allocation failure\n"));
++  EsrtTableSize = sizeof (EFI_SYSTEM_RESOURCE_TABLE) + NonFmpRepositorySize + FmpRepositorySize;
++  Status = gBS->AllocatePool (EfiACPIMemoryNVS, EsrtTableSize, (VOID **)&EsrtTable);
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_ERROR, "Esrt table memory allocation failure: %r\n", Status));
+     goto EXIT;
+   }
+ 
++  ZeroMem (EsrtTable, EsrtTableSize);
++
+   EsrtTable->FwResourceVersion  = EFI_SYSTEM_RESOURCE_TABLE_FIRMWARE_RESOURCE_VERSION;
+   EsrtTable->FwResourceCount    = (UINT32)((NonFmpRepositorySize + FmpRepositorySize) / sizeof (EFI_SYSTEM_RESOURCE_ENTRY));
+   EsrtTable->FwResourceCountMax = PcdGet32 (PcdMaxNonFmpEsrtCacheNum) + PcdGet32 (PcdMaxFmpEsrtCacheNum);
+diff --git a/MdeModulePkg/Universal/EsrtDxe/EsrtImpl.c b/MdeModulePkg/Universal/EsrtDxe/EsrtImpl.c
+index bc3a0ad98f1b1a84ef82d359ec477dbc33e0f221..5e9cc61f1c8ecf7a851e992fd57d422cda6f5d19 100644
+--- a/MdeModulePkg/Universal/EsrtDxe/EsrtImpl.c
++++ b/MdeModulePkg/Universal/EsrtDxe/EsrtImpl.c
+@@ -422,6 +422,56 @@ IsSystemFmp (
+   return FALSE;
+ }
+ 
++STATIC
++BOOLEAN
++IsValidEsrtFwType (
++  IN UINT32  FwType
++  )
++{
++  return (BOOLEAN)(
++                    (FwType == ESRT_FW_TYPE_SYSTEMFIRMWARE) ||
++                    (FwType == ESRT_FW_TYPE_DEVICEFIRMWARE) ||
++                    (FwType == ESRT_FW_TYPE_UEFIDRIVER)
++                    );
++}
++
++STATIC
++BOOLEAN
++GetPublishedEsrtFwType (
++  IN  CONST EFI_GUID  *FwClass,
++  OUT UINT32          *FwType
++  )
++{
++  EFI_STATUS                 Status;
++  EFI_SYSTEM_RESOURCE_TABLE  *EsrtTable;
++  EFI_SYSTEM_RESOURCE_ENTRY  *EsrtEntry;
++  UINTN                      Index;
++
++  if ((FwClass == NULL) || (FwType == NULL)) {
++    return FALSE;
++  }
++
++  Status = EfiGetSystemConfigurationTable (
++             &gEfiSystemResourceTableGuid,
++             (VOID **)&EsrtTable
++             );
++  if (EFI_ERROR (Status) || (EsrtTable == NULL)) {
++    return FALSE;
++  }
++
++  EsrtEntry = (EFI_SYSTEM_RESOURCE_ENTRY *)(EsrtTable + 1);
++  for (Index = 0; Index < EsrtTable->FwResourceCount; Index++, EsrtEntry++) {
++    if (  CompareGuid (FwClass, &EsrtEntry->FwClass)
++       && IsValidEsrtFwType (EsrtEntry->FwType))
++    {
++      *FwType = EsrtEntry->FwType;
++      return TRUE;
++    }
++  }
++
++  return FALSE;
++}
++
+ /**
+   Init one ESRT entry according to input FmpImageInfo (V1, V2, V3) .
+ 
+@@ -439,10 +489,16 @@ SetEsrtEntryFromFmpInfo (
+ {
+   EsrtEntry->FwVersion = FmpImageInfo->Version;
+   EsrtEntry->FwClass   = FmpImageInfo->ImageTypeId;
+-  if (IsSystemFmp (FmpImageInfo)) {
+-    EsrtEntry->FwType = ESRT_FW_TYPE_SYSTEMFIRMWARE;
+-  } else {
+-    EsrtEntry->FwType = ESRT_FW_TYPE_DEVICEFIRMWARE;
++
++  //
++  // Preserve firmware type from an ESRT already installed by the bootloader.
++  //
++  if (!GetPublishedEsrtFwType (&FmpImageInfo->ImageTypeId, &EsrtEntry->FwType)) {
++    if (IsSystemFmp (FmpImageInfo)) {
++      EsrtEntry->FwType = ESRT_FW_TYPE_SYSTEMFIRMWARE;
++    } else {
++      EsrtEntry->FwType = ESRT_FW_TYPE_DEVICEFIRMWARE;
++    }
+   }
+ 
+   EsrtEntry->LowestSupportedFwVersion = 0;
+diff --git a/MdeModulePkg/Universal/EsrtFmpDxe/EsrtFmp.c b/MdeModulePkg/Universal/EsrtFmpDxe/EsrtFmp.c
+index 5bc627461dfcd421269481eaec92802cc75a623e..69d982259ed6015af8fa403be232b2d4cf1e6c45 100644
+--- a/MdeModulePkg/Universal/EsrtFmpDxe/EsrtFmp.c
++++ b/MdeModulePkg/Universal/EsrtFmpDxe/EsrtFmp.c
+@@ -382,6 +382,7 @@ CreateFmpBasedEsrt (
+   EFI_FIRMWARE_IMAGE_DESCRIPTOR  *OrgFmpImageInfoBuf;
+   EFI_SYSTEM_RESOURCE_TABLE      *Table;
+   GUID_HARDWAREINSTANCE_PAIR     *HardwareInstances;
++  UINTN                          TableSize;
+ 
+   Status             = EFI_SUCCESS;
+   NoProtocols        = 0;
+@@ -419,15 +420,16 @@ CreateFmpBasedEsrt (
+   //
+   // Allocate ESRT Table and GUID/HardwareInstance table
+   //
+-  Table = AllocateZeroPool (
+-            (NumberOfDescriptors * sizeof (EFI_SYSTEM_RESOURCE_ENTRY)) + sizeof (EFI_SYSTEM_RESOURCE_TABLE)
+-            );
+-  if (Table == NULL) {
+-    DEBUG ((DEBUG_ERROR, "EsrtFmpDxe: Failed to allocate memory for ESRT.\n"));
++  TableSize = (NumberOfDescriptors * sizeof (EFI_SYSTEM_RESOURCE_ENTRY)) + sizeof (EFI_SYSTEM_RESOURCE_TABLE);
++  Status = gBS->AllocatePool (EfiACPIMemoryNVS, TableSize, (VOID **)&Table);
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_ERROR, "EsrtFmpDxe: Failed to allocate memory for ESRT: %r.\n", Status));
+     FreePool (Buffer);
+     return NULL;
+   }
+ 
++  ZeroMem (Table, TableSize);
++
+   HardwareInstances = AllocateZeroPool (NumberOfDescriptors * sizeof (GUID_HARDWAREINSTANCE_PAIR));
+   if (HardwareInstances == NULL) {
+     DEBUG ((DEBUG_ERROR, "EsrtFmpDxe: Failed to allocate memory for HW Instance Table.\n"));
+diff --git a/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c b/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c
+index 0696e86ef1b6df177fd444b3b5a41d5823ab0412..4d0d385e778a7474a1d38ce32c4df7eec02d5752 100644
+--- a/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c
++++ b/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c
+@@ -95,8 +95,14 @@ BlDxeEntryPoint (
+   if (GuidHob != NULL) {
+     FirmwareInfo = (FIRMWARE_INFO *)GET_GUID_HOB_DATA (GuidHob);
+ 
+-    Esrt = AllocateZeroPool (sizeof (EFI_SYSTEM_RESOURCE_TABLE) + sizeof (EFI_SYSTEM_RESOURCE_ENTRY));
+-    ASSERT (Esrt != NULL);
++    Size = sizeof (EFI_SYSTEM_RESOURCE_TABLE) + sizeof (EFI_SYSTEM_RESOURCE_ENTRY);
++    Status = gBS->AllocatePool (EfiACPIMemoryNVS, Size, (VOID **)&Esrt);
++    ASSERT_EFI_ERROR (Status);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++
++    ZeroMem (Esrt, Size);
+ 
+     Esrt->FwResourceVersion  = EFI_SYSTEM_RESOURCE_TABLE_FIRMWARE_RESOURCE_VERSION;
+     Esrt->FwResourceCount    = 1;

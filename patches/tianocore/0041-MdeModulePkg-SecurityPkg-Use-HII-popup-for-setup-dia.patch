@@ -1,0 +1,646 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Thu, 2 Jul 2026 16:52:08 -0500
+Subject: [PATCH] MdeModulePkg/SecurityPkg: Use HII popup for setup dialogs
+
+[ouroBIOS: commit f168fd062633 of MrChromebox's edk2, as it is]
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ MdeModulePkg/Application/UiApp/FrontPage.c    |  34 +++---
+ .../Application/UiApp/FrontPageStrings.uni    |   1 +
+ MdeModulePkg/Application/UiApp/UiApp.inf      |   1 +
+ .../BootMaintenanceManagerStrings.uni         |   2 +
+ .../BootMaintenanceManagerUiLib.inf           |   1 +
+ .../BootMaintenanceManagerUiLib/BootOption.c  |  33 +++---
+ .../Library/BootManagerUiLib/BootManager.c    |  33 +++---
+ .../BootManagerUiLib/BootManagerStrings.uni   |   1 +
+ .../BootManagerUiLib/BootManagerUiLib.inf     |   1 +
+ .../Universal/Disk/RamDiskDxe/RamDiskDxe.inf  |   1 +
+ .../Disk/RamDiskDxe/RamDiskHiiStrings.uni     |   6 +
+ .../Universal/Disk/RamDiskDxe/RamDiskImpl.c   | 107 ++++++++----------
+ .../Universal/Disk/RamDiskDxe/RamDiskImpl.h   |   1 +
+ SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigDxe.inf  |   1 +
+ SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigImpl.c   |  67 +++++++----
+ .../Tcg/Tcg2Config/Tcg2ConfigStrings.uni      |   4 +
+ 16 files changed, 163 insertions(+), 131 deletions(-)
+
+diff --git a/MdeModulePkg/Application/UiApp/FrontPage.c b/MdeModulePkg/Application/UiApp/FrontPage.c
+index c486ed9439c80de31569d78b90243b5e8c3e1f5b..8765020180c088432c6e55dee178d1cc7ac41e2a 100644
+--- a/MdeModulePkg/Application/UiApp/FrontPage.c
++++ b/MdeModulePkg/Application/UiApp/FrontPage.c
+@@ -10,6 +10,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include "FrontPage.h"
+ #include "FrontPageCustomizedUi.h"
+ #include <Protocol/BatteryStatus.h>
++#include <Protocol/HiiPopup.h>
+ 
+ #define MAX_STRING_LEN  200
+ 
+@@ -1451,29 +1452,30 @@ SetupResetReminder (
+   VOID
+   )
+ {
+-  EFI_INPUT_KEY  Key;
+-  CHAR16         *StringBuffer1;
+-  CHAR16         *StringBuffer2;
++  EFI_STATUS               Status;
++  EFI_HII_POPUP_PROTOCOL   *HiiPopup;
++  EFI_HII_POPUP_SELECTION  UserSelection;
+ 
+   //
+   // check any reset required change is applied? if yes, reset system
+   //
+   if (IsResetRequired ()) {
+-    StringBuffer1 = AllocateZeroPool (MAX_STRING_LEN * sizeof (CHAR16));
+-    ASSERT (StringBuffer1 != NULL);
+-    StringBuffer2 = AllocateZeroPool (MAX_STRING_LEN * sizeof (CHAR16));
+-    ASSERT (StringBuffer2 != NULL);
+-    StrCpyS (StringBuffer1, MAX_STRING_LEN, L"Configuration changed. Reset to apply it Now.");
+-    StrCpyS (StringBuffer2, MAX_STRING_LEN, L"Press ENTER to reset");
+     //
+-    // Popup a menu to notice user
++    // Notice the user via the active display engine's popup (a graphical dialog
++    // under a graphical display engine, the standard HII popup in text mode)
++    // instead of the legacy console CreatePopUp overlay, then reset.
+     //
+-    do {
+-      CreatePopUp (EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE, &Key, StringBuffer1, StringBuffer2, NULL);
+-    } while (Key.UnicodeChar != CHAR_CARRIAGE_RETURN);
+-
+-    FreePool (StringBuffer1);
+-    FreePool (StringBuffer2);
++    Status = gBS->LocateProtocol (&gEfiHiiPopupProtocolGuid, NULL, (VOID **)&HiiPopup);
++    if (!EFI_ERROR (Status)) {
++      HiiPopup->CreatePopup (
++                  HiiPopup,
++                  EfiHiiPopupStyleInfo,
++                  EfiHiiPopupTypeOk,
++                  gFrontPagePrivate.HiiHandle,
++                  STRING_TOKEN (STR_RESET_REMINDER_POPUP),
++                  &UserSelection
++                  );
++    }
+ 
+     gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
+   }
+diff --git a/MdeModulePkg/Application/UiApp/FrontPageStrings.uni b/MdeModulePkg/Application/UiApp/FrontPageStrings.uni
+index da119f43e43222bce7b07e09efaaeec2a17a6e9d..618a2da4d4aa050c946eed53cecbc253b29091f1 100644
+--- a/MdeModulePkg/Application/UiApp/FrontPageStrings.uni
++++ b/MdeModulePkg/Application/UiApp/FrontPageStrings.uni
+@@ -25,3 +25,4 @@
+ #string STR_RESET_STRING               #language en-US  "Reboot"
+ #string STR_RESET_STRING_HELP          #language en-US  "Reboot the device"
+ #string STR_NULL_STRING                #language en-US  " "
++#string STR_RESET_REMINDER_POPUP       #language en-US  "Configuration changed. Reset to apply it now."
+diff --git a/MdeModulePkg/Application/UiApp/UiApp.inf b/MdeModulePkg/Application/UiApp/UiApp.inf
+index a435a3b66e5c7f5634e2bf3a1d085c0bf1b84fce..03e142d47958e3d954000ef60bdb2ca4f43a4df1 100644
+--- a/MdeModulePkg/Application/UiApp/UiApp.inf
++++ b/MdeModulePkg/Application/UiApp/UiApp.inf
+@@ -64,6 +64,7 @@
+   gEfiSmbiosProtocolGuid                        ## CONSUMES
+   gEfiHiiConfigAccessProtocolGuid               ## CONSUMES
+   gEfiBatteryStatusProtocolGuid                 ## CONSUMES
++  gEfiHiiPopupProtocolGuid                      ## CONSUMES
+ 
+ [FeaturePcd]
+   gEfiMdeModulePkgTokenSpaceGuid.PcdUiAppFrontPageBatteryToConOut  ## CONSUMES
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerStrings.uni b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerStrings.uni
+index b1f5ab4961510ca9a276f3e8186ddaaa763a141a..f644a491793911efe4972b7d0babeb8894c53d0b 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerStrings.uni
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerStrings.uni
+@@ -287,6 +287,8 @@
+                                        #language en-US  "Hardware"
+ #string STR_NONE_FLOW_CONTROL          #language fr-FR  "None"
+                                        #language en-US  "None"
++#string STR_RESET_REMINDER_POPUP       #language fr-FR  "Configuration changed. Reset to apply it now."
++                                       #language en-US  "Configuration changed. Reset to apply it now."
+ //
+ // BugBug : need someone to translate these strings to french
+ //
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerUiLib.inf b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerUiLib.inf
+index 59db246b9bc307dd93099499444e0ce0c33a64a3..a5cca5d1f05c1b30e0ad5e730d8a731569b80d11 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerUiLib.inf
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerUiLib.inf
+@@ -84,6 +84,7 @@
+   gEfiSerialIoProtocolGuid                      ## CONSUMES
+   gEfiDevicePathToTextProtocolGuid              ## CONSUMES
+   gEdkiiFormBrowserEx2ProtocolGuid              ## CONSUMES
++  gEfiHiiPopupProtocolGuid                      ## CONSUMES
+ 
+ [FeaturePcd]
+ 
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootOption.c b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootOption.c
+index aea573b9793ed863de494b6b95c451f6bfc37f32..04168dc34f5a827421e7c71f3e816d588a939fa9 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootOption.c
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootOption.c
+@@ -11,6 +11,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ **/
+ 
+ #include "BootMaintenanceManager.h"
++#include <Protocol/HiiPopup.h>
+ 
+ ///
+ /// Define the maximum characters that will be accepted.
+@@ -27,11 +28,10 @@ BmmSetupResetReminder (
+   VOID
+   )
+ {
+-  EFI_INPUT_KEY                           Key;
+-  CHAR16                                  *StringBuffer1;
+-  CHAR16                                  *StringBuffer2;
+   EFI_STATUS                              Status;
+   EDKII_FORM_BROWSER_EXTENSION2_PROTOCOL  *FormBrowserEx2;
++  EFI_HII_POPUP_PROTOCOL                  *HiiPopup;
++  EFI_HII_POPUP_SELECTION                 UserSelection;
+ 
+   //
+   // Use BrowserEx2 protocol to check whether reset is required.
+@@ -42,21 +42,22 @@ BmmSetupResetReminder (
+   // check any reset required change is applied? if yes, reset system
+   //
+   if (!EFI_ERROR (Status) && FormBrowserEx2->IsResetRequired ()) {
+-    StringBuffer1 = AllocateZeroPool (MAX_CHAR * sizeof (CHAR16));
+-    ASSERT (StringBuffer1 != NULL);
+-    StringBuffer2 = AllocateZeroPool (MAX_CHAR * sizeof (CHAR16));
+-    ASSERT (StringBuffer2 != NULL);
+-    StrCpyS (StringBuffer1, MAX_CHAR, L"Configuration changed. Reset to apply it Now.");
+-    StrCpyS (StringBuffer2, MAX_CHAR, L"Press ENTER to reset");
+     //
+-    // Popup a menu to notice user
++    // Notice the user via the active display engine's popup (a graphical dialog
++    // under a graphical display engine, the standard HII popup in text mode)
++    // instead of the legacy console CreatePopUp overlay, then reset.
+     //
+-    do {
+-      CreatePopUp (EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE, &Key, StringBuffer1, StringBuffer2, NULL);
+-    } while (Key.UnicodeChar != CHAR_CARRIAGE_RETURN);
+-
+-    FreePool (StringBuffer1);
+-    FreePool (StringBuffer2);
++    Status = gBS->LocateProtocol (&gEfiHiiPopupProtocolGuid, NULL, (VOID **)&HiiPopup);
++    if (!EFI_ERROR (Status)) {
++      HiiPopup->CreatePopup (
++                  HiiPopup,
++                  EfiHiiPopupStyleInfo,
++                  EfiHiiPopupTypeOk,
++                  mBmmCallbackInfo->BmmHiiHandle,
++                  STRING_TOKEN (STR_RESET_REMINDER_POPUP),
++                  &UserSelection
++                  );
++    }
+ 
+     gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
+   }
+diff --git a/MdeModulePkg/Library/BootManagerUiLib/BootManager.c b/MdeModulePkg/Library/BootManagerUiLib/BootManager.c
+index ac28784b446bc71507873c0b1e8a894b933d8c40..4574a30b52399fa34f04842244afdbd6ccaf918b 100644
+--- a/MdeModulePkg/Library/BootManagerUiLib/BootManager.c
++++ b/MdeModulePkg/Library/BootManagerUiLib/BootManager.c
+@@ -8,6 +8,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ 
+ #include "BootManager.h"
+ #include <Protocol/LoadedImage.h>
++#include <Protocol/HiiPopup.h>
+ 
+ UINT16    mKeyInput;
+ EFI_GUID  mBootManagerGuid = BOOT_MANAGER_FORMSET_GUID;
+@@ -305,11 +306,10 @@ BmSetupResetReminder (
+   VOID
+   )
+ {
+-  EFI_INPUT_KEY                           Key;
+-  CHAR16                                  *StringBuffer1;
+-  CHAR16                                  *StringBuffer2;
+   EFI_STATUS                              Status;
+   EDKII_FORM_BROWSER_EXTENSION2_PROTOCOL  *FormBrowserEx2;
++  EFI_HII_POPUP_PROTOCOL                  *HiiPopup;
++  EFI_HII_POPUP_SELECTION                 UserSelection;
+ 
+   //
+   // Use BrowserEx2 protocol to check whether reset is required.
+@@ -319,21 +319,22 @@ BmSetupResetReminder (
+   // check any reset required change is applied? if yes, reset system
+   //
+   if (!EFI_ERROR (Status) && FormBrowserEx2->IsResetRequired ()) {
+-    StringBuffer1 = AllocateZeroPool (MAX_STRING_LEN * sizeof (CHAR16));
+-    ASSERT (StringBuffer1 != NULL);
+-    StringBuffer2 = AllocateZeroPool (MAX_STRING_LEN * sizeof (CHAR16));
+-    ASSERT (StringBuffer2 != NULL);
+-    StrCpyS (StringBuffer1, MAX_STRING_LEN, L"Configuration changed. Reset to apply it Now.");
+-    StrCpyS (StringBuffer2, MAX_STRING_LEN, L"Press ENTER to reset");
+     //
+-    // Popup a menu to notice user
++    // Notice the user via the active display engine's popup (a graphical dialog
++    // under a graphical display engine, the standard HII popup in text mode)
++    // instead of the legacy console CreatePopUp overlay, then reset.
+     //
+-    do {
+-      CreatePopUp (EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE, &Key, StringBuffer1, StringBuffer2, NULL);
+-    } while (Key.UnicodeChar != CHAR_CARRIAGE_RETURN);
+-
+-    FreePool (StringBuffer1);
+-    FreePool (StringBuffer2);
++    Status = gBS->LocateProtocol (&gEfiHiiPopupProtocolGuid, NULL, (VOID **)&HiiPopup);
++    if (!EFI_ERROR (Status)) {
++      HiiPopup->CreatePopup (
++                  HiiPopup,
++                  EfiHiiPopupStyleInfo,
++                  EfiHiiPopupTypeOk,
++                  gBootManagerPrivate.HiiHandle,
++                  STRING_TOKEN (STR_RESET_REMINDER_POPUP),
++                  &UserSelection
++                  );
++    }
+ 
+     gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
+   }
+diff --git a/MdeModulePkg/Library/BootManagerUiLib/BootManagerStrings.uni b/MdeModulePkg/Library/BootManagerUiLib/BootManagerStrings.uni
+index 5f181d8f9b0080693a3905619f4f85e49377101b..0eb9b3c19818bd575af8d22c12131416dd6bc2f7 100644
+--- a/MdeModulePkg/Library/BootManagerUiLib/BootManagerStrings.uni
++++ b/MdeModulePkg/Library/BootManagerUiLib/BootManagerStrings.uni
+@@ -23,4 +23,5 @@
+ #string STR_BOOT_MANAGER_HELP          #language en-US  "Show One-Time Boot Menu"
+ #string STR_BOOT_OPTION_BANNER         #language en-US  "Select a Boot Device"
+ #string STR_ANY_KEY_CONTINUE           #language en-US  "Press any key to continue...\n"
++#string STR_RESET_REMINDER_POPUP       #language en-US  "Configuration changed. Reset to apply it now."
+ #string STR_LAST_STRING                #language en-US  ""
+diff --git a/MdeModulePkg/Library/BootManagerUiLib/BootManagerUiLib.inf b/MdeModulePkg/Library/BootManagerUiLib/BootManagerUiLib.inf
+index 020cf750534bc51986d14aeaf03c3cd45c302c2e..a0b88eea5b0271160db99589042f773331553ff4 100644
+--- a/MdeModulePkg/Library/BootManagerUiLib/BootManagerUiLib.inf
++++ b/MdeModulePkg/Library/BootManagerUiLib/BootManagerUiLib.inf
+@@ -51,6 +51,7 @@
+   gEfiHiiConfigAccessProtocolGuid               ## CONSUMES
+   gEfiDevicePathToTextProtocolGuid              ## CONSUMES
+   gEdkiiFormBrowserEx2ProtocolGuid              ## CONSUMES
++  gEfiHiiPopupProtocolGuid                      ## CONSUMES
+ 
+ [FeaturePcd]
+ 
+diff --git a/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskDxe.inf b/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskDxe.inf
+index 83e3947f7fa4c988c0380b8d97a077ad775bf8c4..6ef143fa2e121a6f128ae0d4351df11ab654fee5 100644
+--- a/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskDxe.inf
++++ b/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskDxe.inf
+@@ -65,6 +65,7 @@
+   gEfiBlockIo2ProtocolGuid                       ## PRODUCES
+   gEfiAcpiTableProtocolGuid                      ## SOMETIMES_CONSUMES
+   gEfiAcpiSdtProtocolGuid                        ## SOMETIMES_CONSUMES
++  gEfiHiiPopupProtocolGuid                       ## CONSUMES
+ 
+ [Pcd]
+   gEfiMdeModulePkgTokenSpaceGuid.PcdAcpiDefaultOemId            ## SOMETIMES_CONSUMES
+diff --git a/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskHiiStrings.uni b/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskHiiStrings.uni
+index 5ee1172c4895f0005d4a41cd49e7f2e2d74335d6..b7cef0e76ce2f7153a0c8280d0fb76881998d013 100644
+--- a/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskHiiStrings.uni
++++ b/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskHiiStrings.uni
+@@ -39,3 +39,9 @@
+ #string STR_CREATE_AND_EXIT_PROMPT     #language en-US "Create & Exit"
+ #string STR_DISCARD_AND_EXIT_HELP      #language en-US "Discard and exit."
+ #string STR_DISCARD_AND_EXIT_PROMPT    #language en-US "Discard & Exit"
++
++#string STR_RAM_DISK_FILE_INFO_ERROR   #language en-US "Not enough memory to get the file information!"
++#string STR_RAM_DISK_SIZE_TOO_LARGE    #language en-US "The given RAM disk size is too large!"
++#string STR_RAM_DISK_OUT_OF_MEMORY     #language en-US "Not enough memory to create the RAM disk!"
++#string STR_RAM_DISK_FILE_READ_ERROR   #language en-US "File content read error!"
++#string STR_RAM_DISK_REGISTER_ERROR    #language en-US "Failed to register the newly created RAM disk!"
+diff --git a/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskImpl.c b/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskImpl.c
+index 2afa4ea32781d167f074dc3fcf8871c53e34515c..14124656d3f6eff4e7ea38e8115469b0acf58371 100644
+--- a/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskImpl.c
++++ b/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskImpl.c
+@@ -273,6 +273,42 @@ RamDiskRouteConfig (
+   return EFI_NOT_FOUND;
+ }
+ 
++/**
++  Display a modal message through the active display engine's HII popup
++  protocol. This renders as a graphical dialog under a graphical display
++  engine and as the standard HII popup in text mode, instead of the legacy
++  console CreatePopUp overlay.
++
++  @param[in] HiiHandle  The HII handle that owns the message string.
++  @param[in] StringId   The HII string token for the popup message.
++
++**/
++STATIC
++VOID
++RamDiskShowPopup (
++  IN EFI_HII_HANDLE  HiiHandle,
++  IN EFI_STRING_ID   StringId
++  )
++{
++  EFI_STATUS               Status;
++  EFI_HII_POPUP_PROTOCOL   *HiiPopup;
++  EFI_HII_POPUP_SELECTION  UserSelection;
++
++  Status = gBS->LocateProtocol (&gEfiHiiPopupProtocolGuid, NULL, (VOID **)&HiiPopup);
++  if (EFI_ERROR (Status)) {
++    return;
++  }
++
++  HiiPopup->CreatePopup (
++              HiiPopup,
++              EfiHiiPopupStyleError,
++              EfiHiiPopupTypeOk,
++              HiiHandle,
++              StringId,
++              &UserSelection
++              );
++}
++
+ /**
+   Allocate memory and register the RAM disk created within RamDiskDxe
+   driver HII.
+@@ -282,6 +318,7 @@ RamDiskRouteConfig (
+   @param[in] FileHandle      If creating raw, NULL. If creating from file, the
+                              file handle.
+   @param[in] MemoryType      Type of memory to be used to create RAM Disk.
++  @param[in] HiiHandle       The HII handle used to display error popups.
+ 
+   @retval EFI_SUCCESS             RAM disk is created and registered.
+   @retval EFI_OUT_OF_RESOURCES    Not enough storage is available to match the
+@@ -292,13 +329,13 @@ EFI_STATUS
+ HiiCreateRamDisk (
+   IN UINT64           Size,
+   IN EFI_FILE_HANDLE  FileHandle,
+-  IN UINT8            MemoryType
++  IN UINT8            MemoryType,
++  IN EFI_HII_HANDLE   HiiHandle
+   )
+ {
+   EFI_STATUS                Status;
+   UINTN                     BufferSize;
+   UINT64                    *StartingAddr;
+-  EFI_INPUT_KEY             Key;
+   EFI_DEVICE_PATH_PROTOCOL  *DevicePath;
+   RAM_DISK_PRIVATE_DATA     *PrivateData;
+   EFI_FILE_INFO             *FileInformation;
+@@ -312,17 +349,7 @@ HiiCreateRamDisk (
+     //
+     FileInformation = FileInfo (FileHandle);
+     if (NULL == FileInformation) {
+-      do {
+-        CreatePopUp (
+-          EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE,
+-          &Key,
+-          L"",
+-          L"Not enough memory to get the file information!",
+-          L"Press ENTER to continue ...",
+-          L"",
+-          NULL
+-          );
+-      } while (Key.UnicodeChar != CHAR_CARRIAGE_RETURN);
++      RamDiskShowPopup (HiiHandle, STRING_TOKEN (STR_RAM_DISK_FILE_INFO_ERROR));
+ 
+       return EFI_OUT_OF_RESOURCES;
+     }
+@@ -334,17 +361,7 @@ HiiCreateRamDisk (
+   }
+ 
+   if (Size > (UINTN)-1) {
+-    do {
+-      CreatePopUp (
+-        EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE,
+-        &Key,
+-        L"",
+-        L"The given RAM disk size is too large!",
+-        L"Press ENTER to continue ...",
+-        L"",
+-        NULL
+-        );
+-    } while (Key.UnicodeChar != CHAR_CARRIAGE_RETURN);
++    RamDiskShowPopup (HiiHandle, STRING_TOKEN (STR_RAM_DISK_SIZE_TOO_LARGE));
+ 
+     return EFI_OUT_OF_RESOURCES;
+   }
+@@ -366,17 +383,7 @@ HiiCreateRamDisk (
+   }
+ 
+   if ((StartingAddr == NULL) || EFI_ERROR (Status)) {
+-    do {
+-      CreatePopUp (
+-        EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE,
+-        &Key,
+-        L"",
+-        L"Not enough memory to create the RAM disk!",
+-        L"Press ENTER to continue ...",
+-        L"",
+-        NULL
+-        );
+-    } while (Key.UnicodeChar != CHAR_CARRIAGE_RETURN);
++    RamDiskShowPopup (HiiHandle, STRING_TOKEN (STR_RAM_DISK_OUT_OF_MEMORY));
+ 
+     return EFI_OUT_OF_RESOURCES;
+   }
+@@ -392,17 +399,7 @@ HiiCreateRamDisk (
+                   (VOID *)(UINTN)StartingAddr
+                   );
+     if (BufferSize != FileInformation->FileSize) {
+-      do {
+-        CreatePopUp (
+-          EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE,
+-          &Key,
+-          L"",
+-          L"File content read error!",
+-          L"Press ENTER to continue ...",
+-          L"",
+-          NULL
+-          );
+-      } while (Key.UnicodeChar != CHAR_CARRIAGE_RETURN);
++      RamDiskShowPopup (HiiHandle, STRING_TOKEN (STR_RAM_DISK_FILE_READ_ERROR));
+ 
+       Status = EFI_DEVICE_ERROR;
+       goto ErrorExit;
+@@ -420,17 +417,7 @@ HiiCreateRamDisk (
+              &DevicePath
+              );
+   if (EFI_ERROR (Status)) {
+-    do {
+-      CreatePopUp (
+-        EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE,
+-        &Key,
+-        L"",
+-        L"Fail to register the newly created RAM disk!",
+-        L"Press ENTER to continue ...",
+-        L"",
+-        NULL
+-        );
+-    } while (Key.UnicodeChar != CHAR_CARRIAGE_RETURN);
++    RamDiskShowPopup (HiiHandle, STRING_TOKEN (STR_RAM_DISK_REGISTER_ERROR));
+ 
+     goto ErrorExit;
+   }
+@@ -676,7 +663,8 @@ RamDiskCallback (
+           Status = HiiCreateRamDisk (
+                      0,
+                      FileHandle,
+-                     ConfigPrivate->ConfigStore.MemType
++                     ConfigPrivate->ConfigStore.MemType,
++                     ConfigPrivate->HiiHandle
+                      );
+           if (EFI_ERROR (Status)) {
+             break;
+@@ -728,7 +716,8 @@ RamDiskCallback (
+         Status = HiiCreateRamDisk (
+                    ConfigPrivate->ConfigStore.Size,
+                    NULL,
+-                   ConfigPrivate->ConfigStore.MemType
++                   ConfigPrivate->ConfigStore.MemType,
++                   ConfigPrivate->HiiHandle
+                    );
+         if (EFI_ERROR (Status)) {
+           break;
+diff --git a/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskImpl.h b/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskImpl.h
+index 7d324bbda838009657d86b79a889485661070565..be9a20090591e6ffdae832bb0095c00dcb945085 100644
+--- a/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskImpl.h
++++ b/MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskImpl.h
+@@ -31,6 +31,7 @@
+ #include <Protocol/SimpleFileSystem.h>
+ #include <Protocol/AcpiTable.h>
+ #include <Protocol/AcpiSystemDescriptionTable.h>
++#include <Protocol/HiiPopup.h>
+ #include <Guid/MdeModuleHii.h>
+ #include <Guid/RamDiskHii.h>
+ #include <Guid/FileInfo.h>
+diff --git a/SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigDxe.inf b/SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigDxe.inf
+index 6417ab82a1959b751dfb9b58869abef9ac6926f8..fdce9f27db2a8f758e52bac50fbc7baa2fa5ce0a 100644
+--- a/SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigDxe.inf
++++ b/SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigDxe.inf
+@@ -68,6 +68,7 @@
+   gEfiDevicePathProtocolGuid                    ## PRODUCES
+   gEdkiiVariableLockProtocolGuid                ## SOMETIMES_CONSUMES
+   gEfiTcg2ProtocolGuid                          ## CONSUMES
++  gEfiHiiPopupProtocolGuid                      ## CONSUMES
+ 
+ [Pcd]
+   gEfiSecurityPkgTokenSpaceGuid.PcdTpmInstanceGuid            ## CONSUMES
+diff --git a/SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigImpl.c b/SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigImpl.c
+index fc7cfc788b3e4a26e2cc36f39a598193636a7f87..4bde4858c40702bdd1b25a3c8700b48e23ef63e9 100644
+--- a/SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigImpl.c
++++ b/SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigImpl.c
+@@ -18,6 +18,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ 
+ #include <IndustryStandard/TpmPtp.h>
+ 
++#include <Protocol/HiiPopup.h>
++
+ #define EFI_TCG2_EVENT_LOG_FORMAT_ALL  (EFI_TCG2_EVENT_LOG_FORMAT_TCG_1_2 | EFI_TCG2_EVENT_LOG_FORMAT_TCG_2)
+ 
+ TPM_INSTANCE_ID  mTpmInstanceId[TPM_DEVICE_MAX + 1] = TPM_INSTANCE_ID_LIST;
+@@ -427,6 +429,42 @@ GetTpm2HID (
+   return EFI_SUCCESS;
+ }
+ 
++/**
++  Display a modal message through the active display engine's HII popup
++  protocol. This renders as a graphical dialog under a graphical display
++  engine and as the standard HII popup in text mode, instead of the legacy
++  console CreatePopUp overlay.
++
++  @param[in] Style     The popup style (info, warning, or error).
++  @param[in] StringId  The HII string token for the popup message.
++
++**/
++STATIC
++VOID
++Tcg2ShowPopup (
++  IN EFI_HII_POPUP_STYLE  Style,
++  IN EFI_STRING_ID        StringId
++  )
++{
++  EFI_STATUS               Status;
++  EFI_HII_POPUP_PROTOCOL   *HiiPopup;
++  EFI_HII_POPUP_SELECTION  UserSelection;
++
++  Status = gBS->LocateProtocol (&gEfiHiiPopupProtocolGuid, NULL, (VOID **)&HiiPopup);
++  if (EFI_ERROR (Status)) {
++    return;
++  }
++
++  HiiPopup->CreatePopup (
++              HiiPopup,
++              Style,
++              EfiHiiPopupTypeOk,
++              mTcg2ConfigPrivateData->HiiHandle,
++              StringId,
++              &UserSelection
++              );
++}
++
+ /**
+   This function processes the results of changes in configuration
+   for TCG2 version information.
+@@ -451,9 +489,8 @@ Tcg2VersionInfoCallback (
+   IN EFI_IFR_TYPE_VALUE  *Value
+   )
+ {
+-  EFI_INPUT_KEY  Key;
+-  UINT64         PcdTcg2PpiVersion;
+-  UINT8          PcdTpm2AcpiTableRev;
++  UINT64  PcdTcg2PpiVersion;
++  UINT8   PcdTpm2AcpiTableRev;
+ 
+   ASSERT (Action == EFI_BROWSER_ACTION_SUBMITTED);
+ 
+@@ -471,13 +508,7 @@ Tcg2VersionInfoCallback (
+       AsciiStrSize ((CHAR8 *)PcdGetPtr (PcdTcgPhysicalPresenceInterfaceVer))
+       );
+     if (PcdTcg2PpiVersion != Value->u64) {
+-      CreatePopUp (
+-        EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE,
+-        &Key,
+-        L"WARNING: PcdTcgPhysicalPresenceInterfaceVer is not DynamicHii type and does not map to this option!",
+-        L"The version configuring by this setup option will not work!",
+-        NULL
+-        );
++      Tcg2ShowPopup (EfiHiiPopupStyleWarning, STRING_TOKEN (STR_TCG2_PPI_VERSION_WARNING));
+     }
+   } else if (QuestionId == KEY_TPM2_ACPI_REVISION) {
+     //
+@@ -489,13 +520,7 @@ Tcg2VersionInfoCallback (
+     PcdTpm2AcpiTableRev = PcdGet8 (PcdTpm2AcpiTableRev);
+ 
+     if (PcdTpm2AcpiTableRev != Value->u8) {
+-      CreatePopUp (
+-        EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE,
+-        &Key,
+-        L"WARNING: PcdTpm2AcpiTableRev is not DynamicHii type and does not map to this option!",
+-        L"The Revision configuring by this setup option will not work!",
+-        NULL
+-        );
++      Tcg2ShowPopup (EfiHiiPopupStyleWarning, STRING_TOKEN (STR_TCG2_ACPI_REV_WARNING));
+     }
+   }
+ 
+@@ -536,7 +561,6 @@ Tcg2Callback (
+   )
+ {
+   EFI_STATUS                Status;
+-  EFI_INPUT_KEY             Key;
+   CHAR8                     HidStr[16];
+   CHAR16                    UnHidStr[16];
+   TCG2_CONFIG_PRIVATE_DATA  *Private;
+@@ -572,12 +596,7 @@ Tcg2Callback (
+     if (QuestionId == KEY_TPM_DEVICE_INTERFACE) {
+       Status = SetPtpInterface ((VOID *)(UINTN)PcdGet64 (PcdTpmBaseAddress), Value->u8);
+       if (EFI_ERROR (Status)) {
+-        CreatePopUp (
+-          EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE,
+-          &Key,
+-          L"Error: Fail to set PTP interface!",
+-          NULL
+-          );
++        Tcg2ShowPopup (EfiHiiPopupStyleError, STRING_TOKEN (STR_TCG2_PTP_INTERFACE_ERROR));
+         return EFI_DEVICE_ERROR;
+       }
+     }
+diff --git a/SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigStrings.uni b/SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigStrings.uni
+index a64067173e2e17a5877893f87ae9fe8fe70d2f01..6f69f1217e12366be8e77e6df093421e9437ad1b 100644
+--- a/SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigStrings.uni
++++ b/SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigStrings.uni
+@@ -130,3 +130,7 @@
+ #string STR_TCG2_PCR_BANK_SM3_256_HELP                    #language en-US "TCG2 Request PCR Bank: SM3_256"
+ 
+ #string STR_NULL                           #language en-US ""
++
++#string STR_TCG2_PPI_VERSION_WARNING       #language en-US "WARNING: PcdTcgPhysicalPresenceInterfaceVer is not DynamicHii type and does not map to this option!\nThe version configured by this setup option will not work!"
++#string STR_TCG2_ACPI_REV_WARNING          #language en-US "WARNING: PcdTpm2AcpiTableRev is not DynamicHii type and does not map to this option!\nThe revision configured by this setup option will not work!"
++#string STR_TCG2_PTP_INTERFACE_ERROR       #language en-US "Error: Failed to set PTP interface!"

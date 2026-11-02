@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Oliver Smith-Denny <osde@microsoft.com>
+Date: Wed, 8 Jul 2026 10:37:31 -0700
+Subject: [PATCH] MdeModulePkg: Enter Compat Mode When non-NX_COMPAT App Loaded
+
+[ouroBIOS: commit 3b1c619d93a0 of MrChromebox's edk2, as it is]
+
+Actually apply the compat mode behavior when an EFI_APPLICATION
+is loaded that is not marked NX_COMPAT.
+
+Signed-off-by: Oliver Smith-Denny <osde@microsoft.com>
+(cherry picked from commit 0b4350f5d511f2b4c8638557cc3ce081a91db09d)
+---
+ MdeModulePkg/Core/Dxe/Image/Image.c           |  6 ++++++
+ MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c | 12 ++++++++++--
+ 2 files changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/MdeModulePkg/Core/Dxe/Image/Image.c b/MdeModulePkg/Core/Dxe/Image/Image.c
+index bbf9921fbcf7e314696a66138deea9e63567d868..018223b47ea5c02fffc47f5210c81ff67263442a 100644
+--- a/MdeModulePkg/Core/Dxe/Image/Image.c
++++ b/MdeModulePkg/Core/Dxe/Image/Image.c
+@@ -640,6 +640,12 @@ CoreLoadPeImage (
+       return EFI_UNSUPPORTED;
+   }
+ 
++  // If the image doesn't have the NXCOMPAT flag and is an EFI_APPLICATION subsystem, it could be a boot
++  // loader or 3rd party binary which isn't NX aware and may be incompatible with all memory protections.
++  if (!(Image->ImageContext.SupportsNx) && (Image->ImageContext.ImageType == EFI_IMAGE_SUBSYSTEM_EFI_APPLICATION)) {
++    ActivateCompatibilityMode ();
++  }
++
+   //
+   // Allocate memory of the correct memory type aligned on the required image boundary
+   //
+diff --git a/MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c b/MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c
+index b6c64c36d7c4a5880fa5486fb4be8299d4eea488..a877beb63226cbb74e7524ff28ccf08b3dc5635f 100644
+--- a/MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c
++++ b/MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c
+@@ -187,6 +187,10 @@ GetUefiImageProtectionPolicy (
+     return FALSE;
+   }
+ 
++  if (IsCompatibilityModeActive ()) {
++    return DO_NOT_PROTECT;
++  }
++
+   //
+   // Check DevicePath
+   //
+@@ -726,6 +730,10 @@ GetPermissionAttributeForMemoryType (
+ {
+   UINT64  TestBit;
+ 
++  if (IsCompatibilityModeActive ()) {
++    return 0;
++  }
++
+   if ((UINT32)MemoryType >= MEMORY_TYPE_OS_RESERVED_MIN) {
+     TestBit = BIT63;
+   } else if ((UINT32)MemoryType >= MEMORY_TYPE_OEM_RESERVED_MIN) {
+@@ -736,9 +744,9 @@ GetPermissionAttributeForMemoryType (
+ 
+   if ((PcdGet64 (PcdDxeNxMemoryProtectionPolicy) & TestBit) != 0) {
+     return EFI_MEMORY_XP;
+-  } else {
+-    return 0;
+   }
++
++  return 0;
+ }
+ 
+ /**

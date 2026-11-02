@@ -1,0 +1,67 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sean Rhodes <sean@starlabs.systems>
+Date: Fri, 11 Feb 2022 17:51:38 +0000
+Subject: [PATCH] MdeModulePkg/FaultTolerantWrite: Don't check for block
+ alignment
+
+[ouroBIOS: commit 9701a6fe302b of MrChromebox's edk2, as it is]
+
+Don't check for block alignment as it will fail for devices that are memory mapped.
+
+Cc: Hao A Wu <hao.a.wu@intel.com>
+Cc: Liming Gao <gaoliming@byosoft.com.cn>
+Signed-off-by: Sean Rhodes <sean@starlabs.systems>
+Change-Id: Ic7cb1c8d44f9ebb1f799113b951269bfd9ea856a
+---
+ .../Universal/FaultTolerantWriteDxe/FtwMisc.c | 31 +------------------
+ 1 file changed, 1 insertion(+), 30 deletions(-)
+
+diff --git a/MdeModulePkg/Universal/FaultTolerantWriteDxe/FtwMisc.c b/MdeModulePkg/Universal/FaultTolerantWriteDxe/FtwMisc.c
+index 859d8ba5ee6bb11a091c216f0d41fdf6bf17a986..edb90e6083d75b13b281e7b32f53286d4da9abf7 100644
+--- a/MdeModulePkg/Universal/FaultTolerantWriteDxe/FtwMisc.c
++++ b/MdeModulePkg/Universal/FaultTolerantWriteDxe/FtwMisc.c
+@@ -1136,19 +1136,7 @@ FindFvbForFtw (
+           FtwDevice->WorkBlockSize          = BlockSize;
+           FtwDevice->FtwWorkSpaceBase       = (UINTN)(FtwDevice->WorkSpaceAddress - (FvbBaseAddress + FtwDevice->WorkBlockSize * (LbaIndex - 1)));
+           FtwDevice->NumberOfWorkSpaceBlock = FTW_BLOCKS (FtwDevice->FtwWorkSpaceBase + FtwDevice->FtwWorkSpaceSize, FtwDevice->WorkBlockSize);
+-          if (FtwDevice->FtwWorkSpaceSize >= FtwDevice->WorkBlockSize) {
+-            //
+-            // Check the alignment of work space address and length, they should be block size aligned when work space size is larger than one block size.
+-            //
+-            if (((FtwDevice->WorkSpaceAddress & (FtwDevice->WorkBlockSize - 1)) != 0) ||
+-                ((FtwDevice->WorkSpaceLength & (FtwDevice->WorkBlockSize - 1)) != 0))
+-            {
+-              DEBUG ((DEBUG_ERROR, "Ftw: Work space address or length is not block size aligned when work space size is larger than one block size\n"));
+-              FreePool (HandleBuffer);
+-              ASSERT (FALSE);
+-              return EFI_ABORTED;
+-            }
+-          } else if ((FtwDevice->FtwWorkSpaceBase + FtwDevice->FtwWorkSpaceSize) > FtwDevice->WorkBlockSize) {
++          if ((FtwDevice->FtwWorkSpaceBase + FtwDevice->FtwWorkSpaceSize) > FtwDevice->WorkBlockSize) {
+             DEBUG ((DEBUG_ERROR, "Ftw: The work space range should not span blocks when work space size is less than one block size\n"));
+             FreePool (HandleBuffer);
+             ASSERT (FALSE);
+@@ -1186,23 +1174,6 @@ FindFvbForFtw (
+             ASSERT (FALSE);
+             return EFI_ABORTED;
+           }
+-
+-          //
+-          // Check the alignment of spare area address and length, they should be block size aligned
+-          //
+-          if (((FtwDevice->SpareAreaAddress & (FtwDevice->SpareBlockSize - 1)) != 0) ||
+-              ((FtwDevice->SpareAreaLength & (FtwDevice->SpareBlockSize - 1)) != 0))
+-          {
+-            DEBUG ((DEBUG_ERROR, "Ftw: Spare area address or length is not block size aligned\n"));
+-            FreePool (HandleBuffer);
+-            //
+-            // Report Status Code EFI_SW_EC_ABORTED.
+-            //
+-            REPORT_STATUS_CODE ((EFI_ERROR_CODE | EFI_ERROR_UNRECOVERED), (EFI_SOFTWARE_DXE_BS_DRIVER | EFI_SW_EC_ABORTED));
+-            ASSERT (FALSE);
+-            CpuDeadLoop ();
+-          }
+-
+           break;
+         }
+       }

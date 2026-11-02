@@ -1,0 +1,73 @@
+## @file
+#  Firmware Update setup page
+#
+#  Shows the system firmware of the ESRT (the FMP instance of
+#  PcdSystemFmpCapsuleImageTypeIdGuid): version, lowest supported version
+#  and the result of its last update. Updates it from a USB drive: checks
+#  the capsule in \EFI\UpdateCapsule, then requests a capsule on disk and
+#  restarts, so that PlatformBootManagerLib applies it. With vboot and two
+#  RW slots, shows the release in each and starts the other one, through
+#  coreboot's SMMSTORE handler.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010019
+  BASE_NAME                      = FirmwareUpdateDxe
+  FILE_GUID                      = 2D6F6E3A-63B5-4A0F-8E0B-3D0E7C9B5A41
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = FirmwareUpdateDxeEntryPoint
+
+[Sources]
+  FirmwareUpdate.c
+  FirmwareUpdateVfr.vfr
+  FirmwareUpdate.uni
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  UefiPayloadPkg/UefiPayloadPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  DevicePathLib
+  HiiLib
+  HobLib
+  MemoryAllocationLib
+  PcdLib
+  PrintLib
+  SmmStoreLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+  UefiRuntimeServicesTableLib
+
+[Guids]
+  gEfiHiiPlatformSetupFormsetGuid               ## CONSUMES
+  gFirmwareUpdateFormSetGuid                    ## PRODUCES
+  gEfiGlobalVariableGuid                        ## CONSUMES ## Variable:L"OsIndications"
+  gEfiFmpCapsuleGuid                            ## CONSUMES
+  gEfiPartTypeSystemPartGuid                    ## CONSUMES
+  gEfiFileInfoGuid                              ## CONSUMES
+  gEfiBootMediaInfoHobGuid                      ## CONSUMES ## HOB
+
+[Protocols]
+  gEfiDevicePathProtocolGuid                    ## PRODUCES
+  gEfiHiiConfigAccessProtocolGuid               ## PRODUCES
+  gEfiFirmwareManagementProtocolGuid            ## CONSUMES
+  gEfiSimpleFileSystemProtocolGuid              ## CONSUMES
+  gEfiHiiPopupProtocolGuid                      ## SOMETIMES_CONSUMES
+  gEfiSmbiosProtocolGuid                        ## SOMETIMES_CONSUMES
+
+[Pcd]
+  gEfiMdeModulePkgTokenSpaceGuid.PcdSystemFmpCapsuleImageTypeIdGuid  ## CONSUMES
+
+[Depex]
+  gEfiHiiDatabaseProtocolGuid AND
+  gEfiVariableArchProtocolGuid AND
+  gEfiVariableWriteArchProtocolGuid

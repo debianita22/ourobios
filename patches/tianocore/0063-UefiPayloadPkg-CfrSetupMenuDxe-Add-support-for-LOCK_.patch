@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Wed, 16 Sep 2026 18:04:10 -0500
+Subject: [PATCH] UefiPayloadPkg/CfrSetupMenuDxe: Add support for LOCK_AT_BOOT
+ CFR flag
+
+[ouroBIOS: commit 240f748231d1 of MrChromebox's edk2, without the files
+that TianoCore's tree does not have (tools/edk2-import.py): 3 in
+edk2/OuroBiosPkg]
+
+coreboot now distinguishes setup-writable options that must not be
+modifiable from the OS (CFR_OPTFLAG_RUNTIME | CFR_OPTFLAG_LOCK_AT_BOOT)
+from true display-only values (READONLY, often with VOLATILE). READONLY
+locks immediately and greys out the UI, so it cannot express the former.
+
+Honor the new flag: RUNTIME still sets EFI_VARIABLE_RUNTIME_ACCESS,
+READONLY keeps an immediate Variable Policy LOCK_NOW, and LOCK_AT_BOOT
+queues a deferred LOCK_NOW applied at ReadyToBoot so setup can write
+during this boot.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ UefiPayloadPkg/Include/Guid/CfrSetupMenuGuid.h | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/UefiPayloadPkg/Include/Guid/CfrSetupMenuGuid.h b/UefiPayloadPkg/Include/Guid/CfrSetupMenuGuid.h
+index 570075681303aed47776eeb5e2c3cab95aff4bf2..e4ead82d6125476510ce62483cc19d8994b71977 100644
+--- a/UefiPayloadPkg/Include/Guid/CfrSetupMenuGuid.h
++++ b/UefiPayloadPkg/Include/Guid/CfrSetupMenuGuid.h
+@@ -35,11 +35,12 @@ extern EFI_GUID gEfiCfrSetupMenuFormGuid;
+  * TODO: "This should be documentation instead."
+  */
+ enum cfr_option_flags {
+-  CFR_OPTFLAG_READONLY  = 1 << 0,
+-  CFR_OPTFLAG_INACTIVE  = 1 << 1,
+-  CFR_OPTFLAG_SUPPRESS  = 1 << 2,
+-  CFR_OPTFLAG_VOLATILE  = 1 << 3,
+-  CFR_OPTFLAG_RUNTIME   = 1 << 4,
++  CFR_OPTFLAG_READONLY     = 1 << 0,
++  CFR_OPTFLAG_INACTIVE     = 1 << 1,
++  CFR_OPTFLAG_SUPPRESS     = 1 << 2,
++  CFR_OPTFLAG_VOLATILE     = 1 << 3,
++  CFR_OPTFLAG_RUNTIME      = 1 << 4,
++  CFR_OPTFLAG_LOCK_AT_BOOT = 1 << 5,
+ };
+ 
+ #define CB_TAG_CFR_VARCHAR_OPT_NAME     0x0007

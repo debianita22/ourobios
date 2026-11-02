@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Sun, 16 Nov 2025 16:03:28 -0600
+Subject: [PATCH] UefiPayloadPkg: Add iPXE network boot option support
+
+[ouroBIOS: commit b581d3b8f8c8 of MrChromebox's edk2, without the files
+that TianoCore's tree does not have (tools/edk2-import.py): 2 in
+edk2/OuroBiosPkg]
+
+Add support for registering iPXE as a boot option when present in
+the firmware volume. This allows iPXE to be included as an optional
+network boot solution alongside the standard UEFI network stack.
+
+The implementation:
+- Adds PcdiPXEFile and PcdiPXEOptionName PCDs to configure the iPXE
+  file GUID and boot option name
+- Registers the iPXE boot option in PlatformBootManagerAfterConsole
+  if the PCDs are set
+- Adds NETWORK_IPXE build flag to conditionally include the iPXE
+  binary in the firmware image
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ .../PlatformBootManagerLib/PlatformBootManager.c      | 11 +++++++++++
+ .../PlatformBootManagerLib/PlatformBootManagerLib.inf |  2 ++
+ UefiPayloadPkg/UefiPayloadPkg.dec                     |  4 ++++
+ 3 files changed, 17 insertions(+)
+
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+index 3bb7b8407daa67a14755f1bf3f064a71ea074c61..7de84d2ca8eb4a01167c16efda6dab97d1d795a4 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+@@ -483,6 +483,17 @@ PlatformBootManagerAfterConsole (
+   //
+   PlatformRegisterFvBootOption (&gUefiShellFileGuid, L"UEFI Shell", LOAD_OPTION_ACTIVE);
+ 
++  //
++  // Register iPXE if the binary is present in the firmware volume.
++  //
++  if ((PcdGetPtr (PcdiPXEFile) != NULL) && (PcdGetPtr (PcdiPXEOptionName) != NULL)) {
++    PlatformRegisterFvBootOption (
++      (EFI_GUID *)PcdGetPtr (PcdiPXEFile),
++      (CHAR16 *)PcdGetPtr (PcdiPXEOptionName),
++      LOAD_OPTION_ACTIVE
++      );
++  }
++
+   if (FixedPcdGetBool (PcdBootManagerEscape)) {
+     if (FixedPcdGetBool (PcdSerialTerminalPrintEnabled)) {
+       Print (
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+index daa70366c59a60b262189aef41ef35bd449180ce..785988bb10ce9a748f53f5ed979b41407f6a9bfe 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+@@ -77,3 +77,5 @@
+   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultStopBits
+   gUefiPayloadPkgTokenSpaceGuid.PcdBootManagerEscape
+   gUefiPayloadPkgTokenSpaceGuid.PcdSerialTerminalPrintEnabled
++  gUefiPayloadPkgTokenSpaceGuid.PcdiPXEFile
++  gUefiPayloadPkgTokenSpaceGuid.PcdiPXEOptionName
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
+index eb1cb590884c98b7b93eca87ee6953916bac2dba..48d77955f6a0ce6224d358abf3478fb20284fa26 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dec
++++ b/UefiPayloadPkg/UefiPayloadPkg.dec
+@@ -105,6 +105,10 @@ gUefiPayloadPkgTokenSpaceGuid.PcdPayloadFdMemSize|0|UINT32|0x10000002
+ ## Save bootloader parameter
+ gUefiPayloadPkgTokenSpaceGuid.PcdBootloaderParameter|0|UINT64|0x10000004
+ 
++## FFS filename to find the ipxe application.
++gUefiPayloadPkgTokenSpaceGuid.PcdiPXEFile|{ 0xC7, 0x53, 0x86, 0xB6, 0xA1, 0xEE, 0x35, 0x44, 0xA1, 0x99, 0xA4, 0x4F, 0x59, 0xE4, 0x47, 0x6C }|VOID*|0x10000032
++gUefiPayloadPkgTokenSpaceGuid.PcdiPXEOptionName|L"iPXE Network Boot"|VOID*|0x10000033
++
+ ## Used to help reduce fragmentation in the EFI memory map
+ gUefiPayloadPkgTokenSpaceGuid.PcdMemoryTypeEfiACPIReclaimMemory|0x19|UINT32|0x10000012
+ gUefiPayloadPkgTokenSpaceGuid.PcdMemoryTypeEfiACPIMemoryNVS|0x04|UINT32|0x10000013

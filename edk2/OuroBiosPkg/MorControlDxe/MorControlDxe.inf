@@ -1,0 +1,44 @@
+## @file
+#  TCG MOR (Memory Overwrite Request) of the coreboot payload: the variable
+#  MemoryOverwriteRequestControl exists only when the coreboot setup option
+#  clear_dram_on_boot is "When the OS asks", and coreboot clears the memory
+#  when the OS asked; bit 0 is cleared at ReadyToBoot.
+#
+#  Copyright (c) 2026, ouroBIOS contributors
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = MorControlDxe
+  FILE_GUID                      = A1125F10-B2E6-4124-8769-9A9A67AB81A8
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = MorControlDxeEntryPoint
+
+[Sources]
+  MorControlDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  UefiPayloadPkg/UefiPayloadPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib
+  UefiLib
+  DebugLib
+  VariablePolicyHelperLib
+  CfrHelpersLib
+
+[Guids]
+  gEficorebootNvDataGuid                  ## CONSUMES ## Variable:L"clear_dram_on_boot"
+  gEfiMemoryOverwriteControlDataGuid      ## SOMETIMES_PRODUCES ## Variable:L"MemoryOverwriteRequestControl"
+
+[Protocols]
+  gEdkiiVariablePolicyProtocolGuid        ## SOMETIMES_CONSUMES
+
+[Depex]
+  gEfiVariableArchProtocolGuid AND gEfiVariableWriteArchProtocolGuid AND gEdkiiVariablePolicyProtocolGuid

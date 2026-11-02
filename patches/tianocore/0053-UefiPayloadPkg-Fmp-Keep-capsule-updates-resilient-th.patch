@@ -1,0 +1,103 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sean Rhodes <sean@starlabs.systems>
+Date: Sat, 22 Aug 2026 12:31:57 -0500
+Subject: [PATCH] UefiPayloadPkg/Fmp: Keep capsule updates resilient through
+ progress and reset
+
+[ouroBIOS: commit 6c7b28d9f232 of MrChromebox's edk2, as it is]
+
+Flush CPU caches before cold and warm reset so pending flash writes are
+committed before CF9 is asserted (avoids intermittent post-capsule hangs
+seen on Meteor Lake).
+
+Keep the FMP progress callback installed even when the initial progress
+draw fails, and tolerate a missing progress callback in FmpDxe, so UI
+problems cannot abort an otherwise valid capsule update.
+
+Signed-off-by: Sean Rhodes <sean@starlabs.systems>
+---
+ FmpDevicePkg/FmpDxe/FmpDxe.c                  | 22 +++++++++++++++----
+ .../Library/DxeCapsuleLibFmp/DxeCapsuleLib.c  |  2 +-
+ .../Library/ResetSystemLib/ResetSystemLib.c   |  9 ++++++++
+ 3 files changed, 28 insertions(+), 5 deletions(-)
+
+diff --git a/FmpDevicePkg/FmpDxe/FmpDxe.c b/FmpDevicePkg/FmpDxe/FmpDxe.c
+index 3d83affeac377de4f3c89ece527b8670dc317eca..5e8e92d3725c842873b189f5e925f34ff73be961 100644
+--- a/FmpDevicePkg/FmpDxe/FmpDxe.c
++++ b/FmpDevicePkg/FmpDxe/FmpDxe.c
+@@ -100,6 +100,22 @@ EFI_FIRMWARE_MANAGEMENT_UPDATE_IMAGE_PROGRESS  mProgressFunc = NULL;
+ ///
+ CHAR16  *mImageIdName = NULL;
+ 
++/**
++  No-op progress callback used when the capsule caller cannot draw progress.
++
++  @param[in] Completion  Completion progress.
++
++  @retval EFI_SUCCESS    Progress reporting was intentionally ignored.
++**/
++EFI_STATUS
++EFIAPI
++FmpDxeNullProgress (
++  IN UINTN  Completion
++  )
++{
++  return EFI_SUCCESS;
++}
++
+ /**
+   Callback function to report the process of the firmware updating.
+ 
+@@ -1307,10 +1323,8 @@ SetTheImage (
+   }
+ 
+   if (Progress == NULL) {
+-    DEBUG ((DEBUG_ERROR, "FmpDxe(%s): SetTheImage() - Invalid progress callback\n", mImageIdName));
+-    LastAttemptStatus = LAST_ATTEMPT_STATUS_DRIVER_ERROR_PROGRESS_CALLBACK_ERROR;
+-    Status            = EFI_INVALID_PARAMETER;
+-    goto cleanup;
++    DEBUG ((DEBUG_WARN, "FmpDxe(%s): SetTheImage() - progress callback unavailable\n", mImageIdName));
++    Progress = FmpDxeNullProgress;
+   }
+ 
+   mProgressFunc = Progress;
+diff --git a/MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleLib.c b/MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleLib.c
+index e90747d80f94f17383b5de5fcbd16d4b34c99686..0f42f3661d2a30142a4491762ec46ebe57c2d826 100644
+--- a/MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleLib.c
++++ b/MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleLib.c
+@@ -1008,7 +1008,7 @@ SetFmpImageData (
+   ProgressCallback = UpdateImageProgress;
+   Status           = UpdateImageProgress (0);
+   if (EFI_ERROR (Status)) {
+-    ProgressCallback = NULL;
++    DEBUG ((DEBUG_WARN, "UpdateImageProgress(0) failed with %r; continuing capsule update\n", Status));
+   }
+ 
+   Status = Fmp->SetImage (
+diff --git a/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.c b/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.c
+index 54bafc934e8b8ae87fe77e174fbf5f95a285ce4a..c1ffee31d670a6e1ba85f53273beebf235d0f466 100644
+--- a/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.c
++++ b/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.c
+@@ -94,6 +94,11 @@ ResetCold (
+   VOID
+   )
+ {
++  //
++  // Capsule updates may leave flash writes pending in cache-backed paths.
++  // Flush before asserting reset so the platform does not hang mid-reboot.
++  //
++  AsmWbinvd ();
+   IoWrite8 ((UINTN)mAcpiBoardInfo.ResetRegAddress, mAcpiBoardInfo.ResetValue);
+   CpuDeadLoop ();
+ }
+@@ -111,6 +116,10 @@ ResetWarm (
+   VOID
+   )
+ {
++  //
++  // Keep the warm reset path consistent with cold reset for capsule updates.
++  //
++  AsmWbinvd ();
+   IoWrite8 ((UINTN)mAcpiBoardInfo.ResetRegAddress, mAcpiBoardInfo.ResetValue);
+   CpuDeadLoop ();
+ }

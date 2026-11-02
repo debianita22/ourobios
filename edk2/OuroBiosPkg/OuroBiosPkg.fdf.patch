@@ -1,15 +1,28 @@
 --- a/OuroBiosPkg.fdf
 +++ b/OuroBiosPkg.fdf
-@@ -13,13 +13,23 @@
- DEFINE FD_BASE       = 0x00800000
+@@ -1,4 +1,7 @@
+ ## @file
++# OuroBiosPkg: the flash device of the payload of ouroBIOS, made as its
++# .dsc (OuroBiosPkg.dsc).
++#
+ # Bootloader Payload Package
+ #
+ # Provides drivers and definitions to create uefi payload for bootloaders.
+@@ -10,16 +13,27 @@
+ ##
+ 
+ [Defines]
+-DEFINE FD_BASE       = 0x00800000
++#
++# The payload runs from 1 GiB, and its HOB memory follows it
++# (UefiPayloadEntry): the memory from 1 MiB to 1 GiB stays free for the OS
++# loaders, which want it low. The kernel of macOS goes at 1 MiB plus 2 MiB
++# times a slide of up to 255, about 100 MB long; with the payload at 8 MiB
++# and the HOB memory after it, from 19 MiB, the slides below 41 were taken.
++#
++DEFINE FD_BASE       = 0x40000000
  DEFINE FD_BLOCK_SIZE = 0x00001000
  
-+#
-+# OuroBiosPkg: the flash device of UefiPayloadPkg, 12 MiB for a DEBUG build
-+# and 11 for a RELEASE one, as the payload of ouroBIOS (its edk2/0024): with
-+# Secure Boot the DXE volume is past 7 MiB, and it is memory the payload
-+# takes while it runs, not flash
-+#
  !if $(TARGET) == "NOOPT"
  DEFINE FD_SIZE     = 0x00850000
  DEFINE NUM_BLOCKS  = 0x850
@@ -17,17 +30,66 @@
 -
 -DEFINE FD_SIZE     = 0x00700000
 -DEFINE NUM_BLOCKS  = 0x700
-+!if $(TARGET) == "DEBUG"
-+DEFINE FD_SIZE     = 0x00C00000
++!if $(TARGET) == DEBUG
++DEFINE FD_SIZE     = 0x0C00000
 +DEFINE NUM_BLOCKS  = 0xC00
 +!else
-+DEFINE FD_SIZE     = 0x00B00000
++DEFINE FD_SIZE     = 0x0B00000
 +DEFINE NUM_BLOCKS  = 0xB00
 +!endif
  !endif
  
  ################################################################################
-@@ -237,6 +247,58 @@
+@@ -144,6 +158,39 @@ APRIORI DXE {
+   INF  MdeModulePkg/Universal/ReportStatusCodeRouter/RuntimeDxe/ReportStatusCodeRouterRuntimeDxe.inf
+   INF  MdeModulePkg/Universal/StatusCodeHandler/RuntimeDxe/StatusCodeHandlerRuntimeDxe.inf
+   INF  UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf
++!if $(CRYPTO_PROTOCOL_SUPPORT) == TRUE
++  !if $(CRYPTO_DRIVER_EXTERNAL_SUPPORT) == FALSE
++  INF  CryptoPkg/Driver/CryptoDxe.inf
++  !endif
++!endif
++!if $(CAPSULE_SUPPORT) == TRUE
++
++    # This is a verbatim copy from below, make sure to keep it in sync
++    !if $(USE_PLATFORM_GOP) == TRUE
++        !if "X64" in $(ARCH)
++        INF OuroBiosPkg/PlatformGopPolicy/PlatformGopPolicy.inf
++        !endif
++        FILE DRIVER = FF0C8745-3270-4439-B74F-3E45F8C77064 {
++          SECTION DXE_DEPEX_EXP = {gPlatformGOPPolicyGuid}
++          SECTION PE32 = UefiPayloadPkg/IntelGopDriver.efi
++          SECTION UI = "IntelGopDriver"
++        }
++
++        FILE FREEFORM = 878AC2CC-5343-46F2-B563-51F89DAF56BA {
++          SECTION RAW = UefiPayloadPkg/vbt.bin
++          SECTION UI = "IntelGopVbt"
++        }
++    !else
++        INF UefiPayloadPkg/GraphicsOutputDxe/GraphicsOutputDxe.inf
++    !endif
++
++
++    !if $(BOOTSPLASH_IMAGE)
++      INF  MdeModulePkg/Universal/Acpi/BootGraphicsResourceTableDxe/BootGraphicsResourceTableDxe.inf
++      INF  MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
++      INF  MdeModulePkg/Logo/LogoDxe.inf
++    !endif
++  !endif
+ }
+ 
+ #
+@@ -227,6 +274,8 @@ INF MdeModulePkg/Universal/ResetSystemRuntimeDxe/ResetSystemRuntimeDxe.inf
+   INF UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntimeDxe.inf
+   INF MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteDxe.inf
+   INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
++  INF OuroBiosPkg/MorControlDxe/MorControlDxe.inf
++  INF OuroBiosPkg/MorLockSmmStoreDxe/MorLockSmmStoreDxe.inf
+ !elseif $(VARIABLE_SUPPORT) == "SPI"
+   INF UefiPayloadPkg/FvbRuntimeDxe/FvbSmm.inf
+   INF MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteSmm.inf
+@@ -237,6 +286,58 @@ INF MdeModulePkg/Universal/ResetSystemRuntimeDxe/ResetSystemRuntimeDxe.inf
  !if $(UNIVERSAL_PAYLOAD) == FALSE
    !if $(SECURE_BOOT_ENABLE) == TRUE
      INF SecurityPkg/VariableAuthenticated/SecureBootConfigDxe/SecureBootConfigDxe.inf
@@ -86,20 +148,265 @@
    !endif
  !endif
  
-@@ -324,6 +386,16 @@
+@@ -249,10 +350,24 @@ INF  MdeModulePkg/Universal/MemoryTest/NullMemoryTestDxe/NullMemoryTestDxe.inf
+ !endif
+ INF MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
+ INF MdeModulePkg/Universal/SetupBrowserDxe/SetupBrowserDxe.inf
++!if $(VARIABLE_SUPPORT) == "EMU" || $(VARIABLE_SUPPORT) == "SMMSTORE" || $(VARIABLE_SUPPORT) == "SPI"
++INF OuroBiosPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxe.inf
++!if $(BOOTSPLASH_IMAGE)
++INF OuroBiosPkg/BootSplashConfigDxe/BootSplashConfigDxe.inf
++!endif
++!endif
++!if $(LVGL_ENABLE) == TRUE
++INF LvglPkg/LvglDisplayEngineDxe/LvglDisplayEngineDxe.inf
++INF LvglPkg/LvglSetupDxe/LvglSetupDxe.inf
++!else
+ INF MdeModulePkg/Universal/DisplayEngineDxe/DisplayEngineDxe.inf
+-INF MdeModulePkg/Universal/PlatformDriOverrideDxe/PlatformDriOverrideDxe.inf
++!endif
++INF MdeModulePkg/Universal/TimeDateSettingsDxe/TimeDateSettingsDxe.inf
++!if $(EBC_ENABLE) == TRUE
+ INF MdeModulePkg/Universal/EbcDxe/EbcDxe.inf
++!endif
+ INF UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf
++INF OuroBiosPkg/EcAcpiBatteryStatusDxe/EcAcpiBatteryStatusDxe.inf
+ 
+ INF MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf
+ !if $(BOOTSPLASH_IMAGE)
+@@ -290,6 +405,12 @@ INF MdeModulePkg/Universal/Console/GraphicsConsoleDxe/GraphicsConsoleDxe.inf
+ !if $(DISABLE_SERIAL_TERMINAL) == FALSE
+ INF MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf
+ !endif
++
++!if $(USE_PLATFORM_GOP) == TRUE
++!if "X64" in $(ARCH)
++INF OuroBiosPkg/PlatformGopPolicy/PlatformGopPolicy.inf
++!endif
++!endif
+ INF UefiPayloadPkg/GraphicsOutputDxe/GraphicsOutputDxe.inf
+ 
+ !if $(LOAD_OPTION_ROMS) == TRUE
+@@ -309,6 +430,11 @@ INF MdeModulePkg/Bus/Ata/AtaBusDxe/AtaBusDxe.inf
+ INF MdeModulePkg/Bus/Ata/AtaAtapiPassThru/AtaAtapiPassThru.inf
+ INF MdeModulePkg/Bus/Scsi/ScsiBusDxe/ScsiBusDxe.inf
+ INF MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf
++!if $(UFS_ENABLE) == TRUE
++INF MdeModulePkg/Bus/Pci/UfsPciHcDxe/UfsPciHcDxe.inf
++INF MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruDxe.inf
++INF OuroBiosPkg/UfsPlatformDxe/UfsPlatformDxe.inf
++!endif
+ !if $(NVME_ENABLE) == TRUE
+ INF MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf
+ !endif
+@@ -317,25 +443,63 @@ INF MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskDxe.inf
+ !endif
+ INF FatPkg/EnhancedFatDxe/Fat.inf
+ 
++#
++# Filesystem drivers
++#
++!if $(ARCH) == IA32
++INF  RuleOverride=BINARY USE = IA32 OuroBiosPkg/FSDrivers/ext4.inf
++!if $(EXTRA_FS_DRIVERS) == TRUE
++INF  RuleOverride=BINARY USE = IA32 OuroBiosPkg/FSDrivers/exfat.inf
++INF  RuleOverride=BINARY USE = IA32 OuroBiosPkg/FSDrivers/ext2.inf
++INF  RuleOverride=BINARY USE = IA32 OuroBiosPkg/FSDrivers/ntfs.inf
++!endif
++!else
++INF  RuleOverride=BINARY USE = X64 OuroBiosPkg/FSDrivers/ext4.inf
++!if $(EXTRA_FS_DRIVERS) == TRUE
++INF  RuleOverride=BINARY USE = X64 OuroBiosPkg/FSDrivers/exfat.inf
++INF  RuleOverride=BINARY USE = X64 OuroBiosPkg/FSDrivers/ext2.inf
++INF  RuleOverride=BINARY USE = X64 OuroBiosPkg/FSDrivers/ntfs.inf
++!endif
++!endif
++
+ #
+ # SD/eMMC Support
+ #
+ !if $(SD_ENABLE) == TRUE
++INF MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf
++INF OuroBiosPkg/SdhciNonPciDxe/SdhciNonPciDxe.inf
++INF OuroBiosPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.inf
  INF MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.inf
  INF MdeModulePkg/Bus/Sd/EmmcDxe/EmmcDxe.inf
  INF MdeModulePkg/Bus/Sd/SdDxe/SdDxe.inf
-+!endif
-+
+ !endif
+ 
 +#
-+# TPM support (MrChromebox's c111515)
++# TPM support
 +#
 +!if $(TPM_ENABLE) == TRUE
 +INF  SecurityPkg/Tcg/TcgDxe/TcgDxe.inf
 +INF  SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf
 +INF  SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf
 +INF  SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigDxe.inf
- !endif
++!endif
++
+ #
+ # Usb Support
+ #
++!if $(UHCI_ENABLE) == TRUE
+ INF MdeModulePkg/Bus/Pci/UhciDxe/UhciDxe.inf
++!endif
+ INF MdeModulePkg/Bus/Pci/EhciDxe/EhciDxe.inf
+ INF MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf
+ INF MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf
+ INF MdeModulePkg/Bus/Usb/UsbKbDxe/UsbKbDxe.inf
+ INF MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassStorageDxe.inf
++!if $(LVGL_ENABLE) == TRUE
++INF MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointerDxe.inf
++!else
+ INF MdeModulePkg/Bus/Usb/UsbMouseDxe/UsbMouseDxe.inf
++!endif
  
  #
+ # ACPI Support
+@@ -348,6 +512,7 @@ INF  MdeModulePkg/Universal/Acpi/BootGraphicsResourceTableDxe/BootGraphicsResour
+ 
+ !if $(UNIVERSAL_PAYLOAD) == FALSE
+ INF MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
++INF OuroBiosPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf
+ INF RuleOverride = UI MdeModulePkg/Application/UiApp/UiApp.inf
+ INF MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
+ #
+@@ -355,6 +520,66 @@ INF MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
+ #
+ !if $(NETWORK_DRIVER_ENABLE) == TRUE
+   !include NetworkPkg/Network.fdf.inc
++  #
++  # Rng Protocol producer
++  #
++  INF  SecurityPkg/RandomNumberGenerator/RngDxe/RngDxe.inf
++
++  #
++  # Hash2 Protocol producer
++  #
++  INF  SecurityPkg/Hash2DxeCrypto/Hash2DxeCrypto.inf
++!endif
++!endif
++
++#
++# iPXE: an application with its own network drivers and stack, a boot
++# option of PlatformBootManagerLib (PcdiPXEFile)
++#
++!if $(NETWORK_IPXE) == TRUE
++  FILE FREEFORM = B68653C7-EEA1-4435-A199-A44F59E4476C {
++    SECTION PE32 = UefiPayloadPkg/NetworkDrivers/ipxe.efi
++  }
++!endif
++
++#
++# CSMWrap: a legacy BIOS as a boot option of PlatformBootManagerLib
++# (PcdCsmWrapFile), shown while Secure Boot is off
++#
++!if $(CSMWRAP) == TRUE
++  FILE FREEFORM = 930EB24A-08A7-4D84-A986-7E913F405270 {
++    SECTION PE32 = UefiPayloadPkg/LegacyBoot/csmwrap.efi
++  }
++!endif
++
++#
++# Network modules (only available on X64)
++# Available at https://www.realtek.com and https://asix.com.tw
++#
++!if $(NETWORK_ENABLE)
++!if $(ARCH) == IA32
++  # FIXME
++!else
++!if $(NETWORK_RTEK_PCI)
++  FILE DRIVER = D30D5496-6DF9-462D-9B97-0B93F659D1A0 {
++    SECTION PE32 = UefiPayloadPkg/NetworkDrivers/RtkUndiDxe.efi
++  }
++!endif
++!if $(NETWORK_RTEK_USB)
++  FILE DRIVER = 95BA3BCA-F086-4FDA-BBAC-44F5AEE5176B {
++    SECTION PE32 = UefiPayloadPkg/NetworkDrivers/RtkUsbUndiDxe.efi
++  }
++!endif
++!if $(NETWORK_ASIX_USB3)
++  FILE DRIVER = 27E5D3B6-7839-47C2-8618-5D2190729BC7 {
++    SECTION PE32 = UefiPayloadPkg/NetworkDrivers/AX88179X_178A_772D_UEFI_v3.2.0_X64_signed.efi
++  }
++!endif
++!if $(NETWORK_ASIX_USB2)
++  FILE DRIVER = B15239D6-6A01-4808-A0F7-B7F20F073555 {
++    SECTION PE32 = UefiPayloadPkg/NetworkDrivers/AX88772C_772B_772A_UEFI_V2.8.0_X64.efi
++  }
++!endif
+ !endif
+ !endif
+ 
+@@ -373,7 +598,11 @@ INF ShellPkg/Application/Shell/Shell.inf
+ # Capsules
+ #
+ !if $(CAPSULE_SUPPORT) == TRUE
+-INF MdeModulePkg/Universal/EsrtDxe/EsrtDxe.inf
++!if $(CAPSULE_EMBED_FMP_DXE) == FALSE
++INF  FILE_GUID = $(CAPSULE_MAIN_FW_GUID) FmpDevicePkg/FmpDxe/FmpDxe.inf
++!endif
++INF MdeModulePkg/Universal/EsrtFmpDxe/EsrtFmpDxe.inf
++INF OuroBiosPkg/FirmwareUpdateDxe/FirmwareUpdateDxe.inf
+ !endif
+ 
+ !if $(UNIVERSAL_PAYLOAD) == TRUE
+@@ -401,6 +630,58 @@ READ_LOCK_CAP      = TRUE
+ READ_LOCK_STATUS   = TRUE
+ 
+ INF SecurityPkg/VariableAuthenticated/SecureBootConfigDxe/SecureBootConfigDxe.inf
++INF OuroBiosPkg/EnrollDefaultKeys/EnrollDefaultKeys.inf
++
++FILE FREEFORM = 3d844ea9-e7da-48c5-a031-fa22b10f8d7b {
++  SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/dbx_microsoft_baseline.bin
++  SECTION UI = "Microsoft Corporation DBX Baseline"
++}
++
++FILE FREEFORM = 4e52dd60-d79e-42c5-8337-089232ea5c87 {
++  SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/dbx_microsoft_update.bin
++  SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/dbx_microsoft_append.esl
++  SECTION UI = "Microsoft Corporation DBX Update"
++}
++
++FILE FREEFORM = 73282f84-7909-4e87-adf0-845d5da335ab {
++  SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/db_microsoft_uefi_2011.der
++  SECTION UI = "Microsoft Corporation DB UEFI 2011"
++}
++
++FILE FREEFORM = 9b29f606-5102-4de1-a88a-ff6210bd8b65 {
++  SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/db_microsoft_win_2011.der
++  SECTION UI = "Microsoft Corporation DB Windows 2011"
++}
++
++FILE FREEFORM = c7769261-fe8d-4e15-b334-cadf4364ad92 {
++  SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/db_microsoft_uefi_2023.der
++  SECTION UI = "Microsoft Corporation DB UEFI 2023"
++}
++
++FILE FREEFORM = 4ac66f32-6895-46fc-ad00-f1c81d06c668 {
++  SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/db_microsoft_win_uefi_2023.der
++  SECTION UI = "Microsoft Corporation DB Windows UEFI 2023"
++}
++
++FILE FREEFORM = f5a81b7b-419a-4a92-8212-1c369bcbe2cb {
++  SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/db_microsoft_oprom_uefi_2023.der
++  SECTION UI = "Microsoft Corporation DB Option ROM UEFI 2023"
++}
++
++FILE FREEFORM = 73f89874-b2ec-4c28-a7e3-7d8030134e0b {
++  SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/kek_microsoft_2011.der
++  SECTION UI = "Microsoft Corporation KEK CA 2011"
++}
++
++FILE FREEFORM = cce7d8e7-aae8-4697-b5c0-ef35a92a059f {
++  SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/kek_microsoft_2023.der
++  SECTION UI = "Microsoft Corporation KEK 2K CA 2023"
++}
++
++FILE FREEFORM = 701649dd-8739-40b9-bbdb-9ca434fdcd3b {
++  SECTION RAW = OuroBiosPkg/EnrollDefaultKeys/keys/pk_microsoft_oem_2023.der
++  SECTION UI = "Microsoft Corporation OEM PK 2023"
++}
+ 
+ !endif
+ !endif

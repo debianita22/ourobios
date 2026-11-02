@@ -1,0 +1,421 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sean Rhodes <sean@starlabs.systems>
+Date: Sat, 22 Aug 2026 12:35:36 -0500
+Subject: [PATCH] MdeModulePkg/UefiPayloadPkg: Harden capsule progress UI and
+ update cleanup
+
+[ouroBIOS: commit a447cf5d1615 of MrChromebox's edk2, without the files
+that TianoCore's tree does not have (tools/edk2-import.py): 1 in
+edk2/OuroBiosPkg]
+
+Provide BmpSupportLib unconditionally so capsule/boot logo paths do not
+depend on CAPSULE_SUPPORT or BOOTSPLASH_IMAGE being enabled.
+
+Add a text-console fallback to DisplayUpdateProgressLibGraphics when GOP
+is unavailable, so missing graphics cannot abort an FMP capsule update.
+
+Harden CapsuleUpdateData* variable cleanup: enumerate all capsule vendor
+variables, log failures, and retry cleanup before ProcessCapsules() so
+stale scatter-gather requests do not force every subsequent boot into
+firmware-update mode.
+
+Signed-off-by: Sean Rhodes <sean@starlabs.systems>
+---
+ .../DisplayUpdateProgressLibGraphics.c        | 157 ++++++++++++++++--
+ .../DxeCapsuleLibFmp/DxeCapsuleProcessLib.c   |  10 ++
+ .../DxeCapsuleLibFmp/DxeCapsuleReportLib.c    | 108 ++++++++++--
+ 3 files changed, 240 insertions(+), 35 deletions(-)
+
+diff --git a/MdeModulePkg/Library/DisplayUpdateProgressLibGraphics/DisplayUpdateProgressLibGraphics.c b/MdeModulePkg/Library/DisplayUpdateProgressLibGraphics/DisplayUpdateProgressLibGraphics.c
+index 6b012fed35db3a4fb3d2bc4c37d5e9a5b9e64663..b4ae20e17f607d98bc659ff5f79852dbb8be48fc 100644
+--- a/MdeModulePkg/Library/DisplayUpdateProgressLibGraphics/DisplayUpdateProgressLibGraphics.c
++++ b/MdeModulePkg/Library/DisplayUpdateProgressLibGraphics/DisplayUpdateProgressLibGraphics.c
+@@ -34,7 +34,17 @@ EFI_GRAPHICS_OUTPUT_PROTOCOL  *mGop = NULL;
+ //
+ // Set to 100 percent so it is reset on first call.
+ //
+-UINTN  mPreviousProgress = 100;
++UINTN  mGraphicsPreviousProgress = 100;
++
++//
++// Set to 100 percent so it is reset on first call.
++//
++UINTN  mTextPreviousProgress = 100;
++
++//
++// Text foreground color of progress bar
++//
++UINTN  mTextProgressBarForegroundColor;
+ 
+ //
+ // Display coordinates for the progress bar.
+@@ -101,6 +111,119 @@ const EFI_GRAPHICS_OUTPUT_BLT_PIXEL_UNION  mProgressBarDefaultColor = {
+ //
+ BOOLEAN  mGraphicsGood = FALSE;
+ 
++STATIC
++EFI_STATUS
++EFIAPI
++DisplayUpdateProgressTextFallback (
++  IN UINTN                                Completion,
++  IN EFI_GRAPHICS_OUTPUT_BLT_PIXEL_UNION  *Color       OPTIONAL
++  )
++{
++  UINTN  Index;
++  UINTN  CurrentAttribute;
++
++  if (gST == NULL || gST->ConOut == NULL || gST->ConOut->Mode == NULL) {
++    mTextPreviousProgress = Completion;
++    return EFI_SUCCESS;
++  }
++
++  //
++  // Check to see if this Completion percentage has already been displayed
++  //
++  if (Completion == mTextPreviousProgress) {
++    return EFI_SUCCESS;
++  }
++
++  //
++  // Do special init on first call of each progress session
++  //
++  if (mTextPreviousProgress == 100) {
++    Print (L"\n");
++
++    //
++    // Convert pixel color to text foreground color
++    //
++    if (Color == NULL) {
++      mTextProgressBarForegroundColor = EFI_WHITE;
++    } else {
++      mTextProgressBarForegroundColor = EFI_BLACK;
++      if (Color->Pixel.Blue >= 0x40) {
++        mTextProgressBarForegroundColor |= EFI_BLUE;
++      }
++
++      if (Color->Pixel.Green >= 0x40) {
++        mTextProgressBarForegroundColor |= EFI_GREEN;
++      }
++
++      if (Color->Pixel.Red >= 0x40) {
++        mTextProgressBarForegroundColor |= EFI_RED;
++      }
++
++      if ((Color->Pixel.Blue >= 0xC0) || (Color->Pixel.Green >= 0xC0) || (Color->Pixel.Red >= 0xC0)) {
++        mTextProgressBarForegroundColor |= EFI_BRIGHT;
++      }
++
++      if (mTextProgressBarForegroundColor == EFI_BLACK) {
++        mTextProgressBarForegroundColor = EFI_WHITE;
++      }
++    }
++
++    //
++    // Clear previous
++    //
++    mTextPreviousProgress = 0;
++  }
++
++  //
++  // Can not update progress bar if Completion is less than previous
++  //
++  if (Completion < mTextPreviousProgress) {
++    DEBUG ((DEBUG_WARN, "WARNING: Completion (%d) should not be lesss than Previous (%d)!!!\n", Completion, mTextPreviousProgress));
++    return EFI_INVALID_PARAMETER;
++  }
++
++  //
++  // Save current text color
++  //
++  CurrentAttribute = (UINTN)gST->ConOut->Mode->Attribute;
++
++  //
++  // Print progress percentage
++  //
++  Print (L"\rUpdate Progress - %3d%% ", Completion);
++
++  //
++  // Set progress bar color
++  //
++  gST->ConOut->SetAttribute (
++                 gST->ConOut,
++                 EFI_TEXT_ATTR (mTextProgressBarForegroundColor, EFI_BLACK)
++                 );
++
++  //
++  // Print completed portion of progress bar
++  //
++  for (Index = 0; Index < Completion / 2; Index++) {
++    Print (L"%c", BLOCKELEMENT_FULL_BLOCK);
++  }
++
++  //
++  // Restore text color
++  //
++  gST->ConOut->SetAttribute (gST->ConOut, CurrentAttribute);
++
++  //
++  // Print remaining portion of progress bar
++  //
++  for ( ; Index < 50; Index++) {
++    Print (L"%c", BLOCKELEMENT_LIGHT_SHADE);
++  }
++
++  mTextPreviousProgress = Completion;
++
++  return EFI_SUCCESS;
++}
++
+ /**
+   Internal function used to find the bounds of the white logo (on black or
+   red background).
+@@ -350,13 +473,6 @@ DisplayUpdateProgress (
+     return EFI_INVALID_PARAMETER;
+   }
+ 
+-  //
+-  // Check to see if this Completion percentage has already been displayed
+-  //
+-  if (Completion == mPreviousProgress) {
+-    return EFI_SUCCESS;
+-  }
+-
+   //
+   // Find Graphics Output Protocol if not already set.  1 time.
+   //
+@@ -371,7 +487,7 @@ DisplayUpdateProgress (
+       if (EFI_ERROR (Status)) {
+         mGop = NULL;
+         DEBUG ((DEBUG_ERROR, "Show Progress Function could not locate GOP.  Status = %r\n", Status));
+-        return EFI_NOT_READY;
++        return DisplayUpdateProgressTextFallback (Completion, Color);
+       }
+     }
+ 
+@@ -386,13 +502,20 @@ DisplayUpdateProgress (
+   //
+   if (!mGraphicsGood) {
+     DEBUG ((DEBUG_INFO, "Graphics Not Good.  Not doing any onscreen visual display\n"));
+-    return EFI_NOT_READY;
++    return DisplayUpdateProgressTextFallback (Completion, Color);
++  }
++
++  //
++  // Check to see if this Completion percentage has already been displayed
++  //
++  if (Completion == mGraphicsPreviousProgress) {
++    return EFI_SUCCESS;
+   }
+ 
+   //
+   // Do special init on first call of each progress session
+   //
+-  if (mPreviousProgress == 100) {
++  if (mGraphicsPreviousProgress == 100) {
+     //
+     // Draw progress bar background
+     //
+@@ -427,19 +550,19 @@ DisplayUpdateProgress (
+     //
+     // Clear previous
+     //
+-    mPreviousProgress = 0;
++    mGraphicsPreviousProgress = 0;
+   }
+ 
+   //
+   // Can not update progress bar if Completion is less than previous
+   //
+-  if (Completion < mPreviousProgress) {
+-    DEBUG ((DEBUG_WARN, "WARNING: Completion (%d) should not be lesss than Previous (%d)!!!\n", Completion, mPreviousProgress));
++  if (Completion < mGraphicsPreviousProgress) {
++    DEBUG ((DEBUG_WARN, "WARNING: Completion (%d) should not be lesss than Previous (%d)!!!\n", Completion, mGraphicsPreviousProgress));
+     return EFI_INVALID_PARAMETER;
+   }
+ 
+-  PreX = ((mPreviousProgress * mBlockWidth) + mStartX);
+-  for (Index = 0; Index < (Completion - mPreviousProgress); Index++) {
++  PreX = ((mGraphicsPreviousProgress * mBlockWidth) + mStartX);
++  for (Index = 0; Index < (Completion - mGraphicsPreviousProgress); Index++) {
+     //
+     // Show progress by coloring new area
+     //
+@@ -458,7 +581,7 @@ DisplayUpdateProgress (
+     PreX += mBlockWidth;
+   }
+ 
+-  mPreviousProgress = Completion;
++  mGraphicsPreviousProgress = Completion;
+ 
+   return EFI_SUCCESS;
+ }
+diff --git a/MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleProcessLib.c b/MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleProcessLib.c
+index 88b28dbf38398f796c635717c7a36c9ba27f972f..84e90aae6bd3b6840a4444c84c3c4098361020dd 100644
+--- a/MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleProcessLib.c
++++ b/MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleProcessLib.c
+@@ -35,6 +35,14 @@
+ 
+ extern EDKII_FIRMWARE_MANAGEMENT_PROGRESS_PROTOCOL  *mFmpProgress;
+ 
++/**
++  Initialize capsule update variables.
++**/
++VOID
++InitCapsuleUpdateVariable (
++  VOID
++  );
++
+ /**
+   Return if this FMP is a system FMP or a device FMP, based upon CapsuleHeader.
+ 
+@@ -679,6 +687,8 @@ ProcessCapsules (
+ {
+   EFI_STATUS  Status;
+ 
++  InitCapsuleUpdateVariable ();
++
+   if (!mDxeCapsuleLibEndOfDxe) {
+     Status = ProcessTheseCapsules (TRUE);
+ 
+diff --git a/MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleReportLib.c b/MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleReportLib.c
+index 54a7b63dacd459191886f8b10a24f9e768fc999d..0b96e44b674f1c30e93f9d758043788c6ace5897 100644
+--- a/MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleReportLib.c
++++ b/MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleReportLib.c
+@@ -421,33 +421,105 @@ InitCapsuleLastVariable (
+ /**
+   Initialize capsule update variables.
+ **/
++STATIC
++BOOLEAN
++IsCapsuleUpdateVariableName (
++  IN CONST CHAR16  *VariableName
++  )
++{
++  UINTN  Index;
++  UINTN  PrefixLength;
++
++  PrefixLength = StrLen (EFI_CAPSULE_VARIABLE_NAME);
++  if (StrnCmp (VariableName, EFI_CAPSULE_VARIABLE_NAME, PrefixLength) != 0) {
++    return FALSE;
++  }
++
++  if (VariableName[PrefixLength] == L'\0') {
++    return TRUE;
++  }
++
++  for (Index = PrefixLength; VariableName[Index] != L'\0'; Index++) {
++    if ((VariableName[Index] < L'0') || (VariableName[Index] > L'9')) {
++      return FALSE;
++    }
++  }
++
++  return TRUE;
++}
++
++STATIC
++EFI_STATUS
++FindCapsuleUpdateVariable (
++  OUT CHAR16  **VariableName
++  )
++{
++  EFI_STATUS  Status;
++  EFI_GUID    VendorGuid;
++  CHAR16      *Name;
++  CHAR16      *NewName;
++  UINTN       AllocatedSize;
++  UINTN       NameSize;
++
++  *VariableName = NULL;
++  AllocatedSize = sizeof (CHAR16);
++  Name          = AllocateZeroPool (AllocatedSize);
++  if (Name == NULL) {
++    return EFI_OUT_OF_RESOURCES;
++  }
++
++  ZeroMem (&VendorGuid, sizeof (VendorGuid));
++  while (TRUE) {
++    NameSize = AllocatedSize;
++    Status   = gRT->GetNextVariableName (&NameSize, Name, &VendorGuid);
++    if (Status == EFI_BUFFER_TOO_SMALL) {
++      NewName = ReallocatePool (AllocatedSize, NameSize, Name);
++      if (NewName == NULL) {
++        FreePool (Name);
++        return EFI_OUT_OF_RESOURCES;
++      }
++
++      Name          = NewName;
++      AllocatedSize = NameSize;
++      continue;
++    }
++
++    if (EFI_ERROR (Status)) {
++      FreePool (Name);
++      return Status;
++    }
++
++    if (CompareGuid (&VendorGuid, &gEfiCapsuleVendorGuid) &&
++        IsCapsuleUpdateVariableName (Name))
++    {
++      *VariableName = Name;
++      return EFI_SUCCESS;
++    }
++  }
++}
++
+ VOID
+ InitCapsuleUpdateVariable (
+   VOID
+   )
+ {
+   EFI_STATUS  Status;
+-  UINTN       Index;
+-  CHAR16      CapsuleVarName[30];
+-  CHAR16      *TempVarName;
++  CHAR16      *CapsuleVarName;
+ 
+   //
+   // Clear all the capsule variables CapsuleUpdateData, CapsuleUpdateData1, CapsuleUpdateData2...
+   // as early as possible which will avoid the next time boot after the capsule update
+   // will still into the capsule loop
+   //
+-  StrCpyS (CapsuleVarName, sizeof (CapsuleVarName)/sizeof (CapsuleVarName[0]), EFI_CAPSULE_VARIABLE_NAME);
+-  TempVarName = CapsuleVarName + StrLen (CapsuleVarName);
+-  Index       = 0;
+   while (TRUE) {
+-    if (Index > 0) {
+-      UnicodeValueToStringS (
+-        TempVarName,
+-        sizeof (CapsuleVarName) - ((UINTN)TempVarName - (UINTN)CapsuleVarName),
+-        0,
+-        Index,
+-        0
+-        );
++    Status = FindCapsuleUpdateVariable (&CapsuleVarName);
++    if (Status == EFI_NOT_FOUND) {
++      break;
++    }
++
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_ERROR, "%a: Failed to enumerate capsule update variables: %r\n", __func__, Status));
++      break;
+     }
+ 
+     Status = gRT->SetVariable (
+@@ -458,13 +530,13 @@ InitCapsuleUpdateVariable (
+                     (VOID *)NULL
+                     );
+     if (EFI_ERROR (Status)) {
+-      //
+-      // There is no capsule variables, quit
+-      //
++      DEBUG ((DEBUG_ERROR, "%a: Failed to delete %s: %r\n", __func__, CapsuleVarName, Status));
++      FreePool (CapsuleVarName);
+       break;
+     }
+ 
+-    Index++;
++    DEBUG ((DEBUG_INFO, "%a: Deleted %s\n", __func__, CapsuleVarName));
++    FreePool (CapsuleVarName);
+   }
+ }
+ 

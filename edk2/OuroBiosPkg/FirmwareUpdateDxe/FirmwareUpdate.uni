@@ -1,0 +1,48 @@
+/** @file
+  Firmware Update setup page strings.
+
+  SPDX-License-Identifier: BSD-2-Clause-Patent
+**/
+
+#langdef en-US "English"
+
+#string STR_FORMSET_TITLE        #language en-US "Firmware Update"
+#string STR_FORMSET_HELP         #language en-US "The installed firmware, its last update, updates from a USB drive, and the firmware of before"
+#string STR_FORM_TITLE           #language en-US "Firmware Update"
+
+#string STR_INSTALLED_SUBTITLE   #language en-US "Installed firmware"
+
+#string STR_FIRMWARE_PROMPT      #language en-US "Firmware"
+#string STR_FIRMWARE_HELP        #language en-US "The BIOS version of the running firmware."
+#string STR_FIRMWARE_VALUE       #language en-US "Unknown"
+
+#string STR_VERSION_PROMPT       #language en-US "Version"
+#string STR_VERSION_HELP         #language en-US "The version of the system firmware in the EFI System Resource Table, as an operating system sees it."
+#string STR_VERSION_VALUE        #language en-US "Unknown"
+
+#string STR_LOWEST_PROMPT        #language en-US "Oldest accepted update"
+#string STR_LOWEST_HELP          #language en-US "Update capsules older than this version are refused: an older firmware has to be written with an external programmer or flashrom."
+#string STR_LOWEST_VALUE         #language en-US "Unknown"
+
+#string STR_LAST_PROMPT          #language en-US "Last update"
+#string STR_LAST_HELP            #language en-US "The version and the result of the last update capsule that the firmware processed."
+#string STR_LAST_VALUE           #language en-US "None"
+
+#string STR_RUNNING_PROMPT       #language en-US "Running slot"
+#string STR_RUNNING_HELP         #language en-US "The firmware after the read-only part is kept twice, in slots A and B. An update writes the slot that is not running and starts it; the other slot keeps the firmware of before."
+#string STR_RUNNING_VALUE        #language en-US "None"
+
+#string STR_OTHER_PROMPT         #language en-US "Other slot"
+#string STR_OTHER_HELP           #language en-US "The firmware in the slot that is not running: the release before the last update, until the next update writes over it."
+#string STR_OTHER_VALUE          #language en-US "None"
+
+#string STR_UPDATE_SUBTITLE      #language en-US "Update"
+
+#string STR_INSTALL_PROMPT       #language en-US "Update from a USB drive"
+#string STR_INSTALL_HELP         #language en-US "Copy the capsule of a release (the .cap file) into the folder EFI\\UpdateCapsule of a FAT USB drive, and connect the drive and the AC adapter. The firmware checks the capsule, restarts, and writes it before anything else starts, in about a minute. Settings, boot entries and Secure Boot keys are kept. Unsaved changes in the setup are lost.\n\nFrom Linux, tools/update.py and fwupd install the same capsules."
+
+#string STR_SLOT_PROMPT          #language en-US "Go back to the other slot"
+#string STR_SLOT_HELP            #language en-US "Restart into the firmware of the other slot, and keep it once it starts: if it does not start twice in a row, the firmware comes back to this one, so do not turn the computer off during its first start. That start may train the memory again, up to a minute with a dark screen: always on some models, on others only if that firmware cannot use the saved training. Settings, boot entries and Secure Boot keys are kept. Unsaved changes in the setup are lost.\n\nFrom Linux, tools/update.py rollback does the same with the capsule of that release."
+
+#string STR_POPUP_MESSAGE        #language en-US ""
+#string STR_NULL_STRING          #language en-US ""

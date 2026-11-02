@@ -1,0 +1,234 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Sat, 3 Oct 2026 18:33:58 -0500
+Subject: [PATCH] UefiPayloadPkg: Pass coreboot boot media params to DXE
+
+[ouroBIOS: commit 94a2365117ae of MrChromebox's edk2, as it is]
+
+coreboot reports the flash layout, including the offset and size of
+the active CBFS, in its LB_TAG_BOOT_MEDIA_PARAMS table record. Parse
+it in CbParseLib and hand it to DXE in a new gEfiBootMediaInfoHobGuid
+HOB so DXE drivers can locate files in CBFS.
+
+Slim Bootloader does not provide this information.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ UefiPayloadPkg/Include/Coreboot.h             | 11 ++++++
+ .../Include/Guid/BootMediaInfoGuid.h          | 21 ++++++++++
+ UefiPayloadPkg/Include/Library/BlParseLib.h   | 17 +++++++++
+ .../Library/CbParseLib/CbParseLib.c           | 38 +++++++++++++++++++
+ .../Library/SblParseLib/SblParseLib.c         | 16 ++++++++
+ .../UefiPayloadEntry/UefiPayloadEntry.c       | 13 +++++++
+ .../UefiPayloadEntry/UefiPayloadEntry.inf     |  1 +
+ UefiPayloadPkg/UefiPayloadPkg.dec             |  2 +
+ 8 files changed, 119 insertions(+)
+ create mode 100644 UefiPayloadPkg/Include/Guid/BootMediaInfoGuid.h
+
+diff --git a/UefiPayloadPkg/Include/Coreboot.h b/UefiPayloadPkg/Include/Coreboot.h
+index 89471f8da1daa60e8d80c83b8e1ab160f80dd970..2c2320d0ce8c872c2ed19cab9fd6c7a53dbdfaaa 100644
+--- a/UefiPayloadPkg/Include/Coreboot.h
++++ b/UefiPayloadPkg/Include/Coreboot.h
+@@ -266,6 +266,17 @@ struct cb_sdhci_nonpci {
+   struct cb_sdhci_nonpci_control    ctrl[8];
+ };
+ 
++#define CB_TAG_BOOT_MEDIA_PARAMS  0x0030
++struct cb_boot_media_params {
++  UINT32    tag;
++  UINT32    size;
++  /* offsets are relative to start of boot media */
++  UINT64    fmap_offset;
++  UINT64    cbfs_offset;
++  UINT64    cbfs_size;
++  UINT64    boot_media_size;
++} __attribute__ ((packed));
++
+ #define CB_TAG_SMMSTOREV2  0x0039
+ struct cb_smmstorev2 {
+   UINT32    tag;
+diff --git a/UefiPayloadPkg/Include/Guid/BootMediaInfoGuid.h b/UefiPayloadPkg/Include/Guid/BootMediaInfoGuid.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2f8e66f1a6cd5c7bc61f99e2150950e6443c6a1
+--- /dev/null
++++ b/UefiPayloadPkg/Include/Guid/BootMediaInfoGuid.h
+@@ -0,0 +1,21 @@
++/** @file
++  This file defines the hob structure for the bootloader's boot media (flash)
++  layout, used to locate coreboot's CBFS.
++
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#pragma once
++
++extern EFI_GUID  gEfiBootMediaInfoHobGuid;
++
++///
++/// All offsets are relative to the start of the boot media.
++///
++typedef struct {
++  UINT64    FmapOffset;
++  UINT64    CbfsOffset;
++  UINT64    CbfsSize;
++  UINT64    BootMediaSize;
++} BOOT_MEDIA_INFO;
+diff --git a/UefiPayloadPkg/Include/Library/BlParseLib.h b/UefiPayloadPkg/Include/Library/BlParseLib.h
+index 6e070869db5d2bb812cc243bf35b6ecfde0d233e..7313b55f0e9bde406fa05a2f091661cb71508d61 100644
+--- a/UefiPayloadPkg/Include/Library/BlParseLib.h
++++ b/UefiPayloadPkg/Include/Library/BlParseLib.h
+@@ -18,6 +18,7 @@
+ #include <UniversalPayload/AcpiTable.h>
+ #include <UniversalPayload/SmbiosTable.h>
+ #include <Guid/TcgPhysicalPresenceGuid.h>
++#include <Guid/BootMediaInfoGuid.h>
+ 
+ #define GET_BOOTLOADER_PARAMETER()  PcdGet64 (PcdBootloaderParameter)
+ 
+@@ -198,3 +199,19 @@ EFIAPI
+ ParseTPMPPIInfo (
+   OUT TCG_PHYSICAL_PRESENCE_INFO       *PPIInfo
+   );
++
++/**
++  Find the boot media (flash) layout passed in by bootloader
++
++  @param  BootMediaInfo      Pointer to the BOOT_MEDIA_INFO structure
++
++  @retval RETURN_SUCCESS            Successfully found the boot media information.
++  @retval RETURN_INVALID_PARAMETER  The parameter is NULL.
++  @retval RETURN_NOT_FOUND          Failed to find the boot media information.
++
++**/
++RETURN_STATUS
++EFIAPI
++ParseBootMediaInfo (
++  OUT BOOT_MEDIA_INFO  *BootMediaInfo
++  );
+diff --git a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
+index 9a0aa7f8b3ef5dde241e538a66fd6332c241af63..6bf284c607da3c01ea11d6bb731e6687605f0677 100644
+--- a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
++++ b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
+@@ -1038,3 +1038,41 @@ ParseTPMPPIInfo (
+ 
+   return RETURN_SUCCESS;
+ }
++
++/**
++  Find the boot media (flash) layout passed in by bootloader
++
++  @param  BootMediaInfo      Pointer to the BOOT_MEDIA_INFO structure
++
++  @retval RETURN_SUCCESS            Successfully found the boot media information.
++  @retval RETURN_INVALID_PARAMETER  The parameter is NULL.
++  @retval RETURN_NOT_FOUND          Failed to find the boot media information.
++**/
++RETURN_STATUS
++EFIAPI
++ParseBootMediaInfo (
++  OUT BOOT_MEDIA_INFO  *BootMediaInfo
++  )
++{
++  struct cb_boot_media_params  *CbBmpRec;
++
++  if (BootMediaInfo == NULL) {
++    return RETURN_INVALID_PARAMETER;
++  }
++
++  CbBmpRec = FindCbTag (CB_TAG_BOOT_MEDIA_PARAMS);
++  if (CbBmpRec == NULL) {
++    return RETURN_NOT_FOUND;
++  }
++
++  BootMediaInfo->FmapOffset    = CbBmpRec->fmap_offset;
++  BootMediaInfo->CbfsOffset    = CbBmpRec->cbfs_offset;
++  BootMediaInfo->CbfsSize      = CbBmpRec->cbfs_size;
++  BootMediaInfo->BootMediaSize = CbBmpRec->boot_media_size;
++
++  DEBUG ((DEBUG_INFO, "Found boot media information\n"));
++  DEBUG ((DEBUG_INFO, "boot media size: 0x%lx\n", BootMediaInfo->BootMediaSize));
++  DEBUG ((DEBUG_INFO, "CBFS offset: 0x%lx, size: 0x%lx\n", BootMediaInfo->CbfsOffset, BootMediaInfo->CbfsSize));
++
++  return RETURN_SUCCESS;
++}
+diff --git a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c b/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
+index c409d9d94a38927451d58177e5316e0eb80b4542..3d34b646efd88d40d3335010debdf4e59863d488 100644
+--- a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
++++ b/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
+@@ -363,3 +363,19 @@ ParseTPMPPIInfo (
+ {
+   return RETURN_NOT_FOUND;
+ }
++
++/**
++  Find the boot media (flash) layout passed in by bootloader
++
++  @param  BootMediaInfo      Pointer to the BOOT_MEDIA_INFO structure
++
++  @retval RETURN_NOT_FOUND   Not supported by Slim Bootloader.
++**/
++RETURN_STATUS
++EFIAPI
++ParseBootMediaInfo (
++  OUT BOOT_MEDIA_INFO  *BootMediaInfo
++  )
++{
++  return RETURN_NOT_FOUND;
++}
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+index 83b5502bab80c18c70edb3f09ae16679435820be..1a46d67c76ed60dd8bf53b7539b00b43cd416623 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+@@ -346,6 +346,8 @@ BuildHobFromBl (
+   FIRMWARE_INFO                     *NewFirmwareInfo;
+   TCG_PHYSICAL_PRESENCE_INFO        PhysicalPresenceInfo;
+   TCG_PHYSICAL_PRESENCE_INFO        *NewPhysicalPresenceInfo;
++  BOOT_MEDIA_INFO                   BootMediaInfo;
++  BOOT_MEDIA_INFO                   *NewBootMediaInfo;
+   EFI_PEI_GRAPHICS_INFO_HOB         GfxInfo;
+   EFI_PEI_GRAPHICS_INFO_HOB         *NewGfxInfo;
+   EFI_PEI_GRAPHICS_DEVICE_INFO_HOB  GfxDeviceInfo;
+@@ -426,6 +428,17 @@ BuildHobFromBl (
+     DEBUG ((DEBUG_INFO, "Created Tcg Physical Presence info hob\n"));
+   }
+ 
++  //
++  // Create guid hob for boot media (CBFS) information
++  //
++  Status = ParseBootMediaInfo (&BootMediaInfo);
++  if (!EFI_ERROR (Status)) {
++    NewBootMediaInfo = BuildGuidHob (&gEfiBootMediaInfoHobGuid, sizeof (BootMediaInfo));
++    ASSERT (NewBootMediaInfo != NULL);
++    CopyMem (NewBootMediaInfo, &BootMediaInfo, sizeof (BootMediaInfo));
++    DEBUG ((DEBUG_INFO, "Created boot media info hob\n"));
++  }
++
+   //
+   // Create SmBios table Hob
+   //
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
+index 11198c0b138efc3029deab8ed95f90e6dde4df5a..b4f5768f21cf532ce26ce65c31fd53f174d75a21 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
+@@ -73,6 +73,7 @@
+   gEfiFirmwareInfoHobGuid
+   gEfiSmmStoreInfoHobGuid
+   gEfiTcgPhysicalPresenceInfoHobGuid
++  gEfiBootMediaInfoHobGuid
+ 
+ [FeaturePcd.IA32]
+   gEfiMdeModulePkgTokenSpaceGuid.PcdDxeIplSwitchToLongMode      ## CONSUMES
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
+index 7f9b4391e5caafa9ea056372b879eb6b5c446885..3bc6814ed9b3e3cf6a5df17f68af858e4c5bd901 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dec
++++ b/UefiPayloadPkg/UefiPayloadPkg.dec
+@@ -66,6 +66,8 @@
+ 
+   gEfiSmmStoreInfoHobGuid  = { 0xf585ca19, 0x881b, 0x44fb, { 0x3f, 0x3d, 0x81, 0x89, 0x7c, 0x57, 0xbb, 0x01 } }
+   gEfiFirmwareInfoHobGuid  = { 0xe0653829, 0x274e, 0x4b1e, { 0x87, 0x2d, 0xa2, 0x20, 0xf5, 0xaf, 0x8f, 0x3d } }
++  ## Include/Guid/BootMediaInfoGuid.h
++  gEfiBootMediaInfoHobGuid = { 0xd0fad08b, 0xb129, 0x40ff, { 0xb8, 0x29, 0xf5, 0x9a, 0xbe, 0x75, 0x83, 0x8e } }
+   ## Include/Guid/SdhciNonPciInfoGuid.h
+   gUefiSdhciNonPciInfoGuid = { 0x374cb7ae, 0x5560, 0x4ed2, { 0xbd, 0x88, 0x1d, 0x80, 0x1f, 0x1b, 0xd4, 0x96 } }
+ 

@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sean Rhodes <sean@starlabs.systems>
+Date: Sat, 22 Aug 2026 11:08:06 -0500
+Subject: [PATCH] UefiPayloadPkg: Add graphical capsule update progress
+
+[ouroBIOS: commit 775376a1f763 of MrChromebox's edk2, without the files
+that TianoCore's tree does not have (tools/edk2-import.py): 2 in
+edk2/OuroBiosPkg]
+
+Initialize the graphics console and show the boot splash before
+processing capsules in BOOT_ON_FLASH_UPDATE mode. Always use the
+graphics DisplayUpdateProgressLib when capsule support is enabled,
+and dispatch GOP/logo drivers early via APRIORI DXE.
+
+Signed-off-by: Sean Rhodes <sean@starlabs.systems>
+---
+ .../PlatformBootManagerLib/PlatformBootManager.c | 16 +++++++++++++++-
+ 1 file changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+index 4aa0601ed5561c2773235bbd4dfdbb862fc33af9..ffea85ae1316e58757d5bb63e484afd3c63ca555 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+@@ -378,6 +378,8 @@ PlatformBootManagerBeforeConsole (
+   EFI_INPUT_KEY                 CustomKey;
+   EFI_INPUT_KEY                 Down;
+   EFI_BOOT_MANAGER_LOAD_OPTION  BootOption;
++  EDKII_PLATFORM_LOGO_PROTOCOL  *PlatformLogo;
++  BOOLEAN                       ConsoleInitialized;
+ 
+   //
+   // Register ENTER as CONTINUE key
+@@ -414,8 +416,18 @@ PlatformBootManagerBeforeConsole (
+   //
+   // Process update capsules that don't contain embedded drivers.
+   //
++  ConsoleInitialized = FALSE;
+   if (GetBootModeHob () == BOOT_ON_FLASH_UPDATE) {
+     // TODO: when enabling capsule support for laptops, add a battery check here
++    PlatformConsoleInit ();
++    ConsoleInitialized = TRUE;
++
++    Status = gBS->LocateProtocol (&gEdkiiPlatformLogoProtocolGuid, NULL, (VOID **)&PlatformLogo);
++    if (!EFI_ERROR (Status) && (gST != NULL) && (gST->ConOut != NULL)) {
++      gST->ConOut->ClearScreen (gST->ConOut);
++      BootLogoEnableLogo ();
++    }
++
+     Status = ProcessCapsules ();
+     if (EFI_ERROR (Status)) {
+       DEBUG ((DEBUG_ERROR, "%a(): ProcessCapsule() failed with: %r\n", __func__, Status));
+@@ -438,7 +450,9 @@ PlatformBootManagerBeforeConsole (
+   //
+   EfiBootManagerDispatchDeferredImages ();
+ 
+-  PlatformConsoleInit ();
++  if (!ConsoleInitialized) {
++    PlatformConsoleInit ();
++  }
+ }
+ 
+ /**

@@ -1,0 +1,69 @@
+/** @file
+  Firmware Update setup page: the installed system firmware, the result of
+  its last update, the vboot slots, an update from a USB drive, and the
+  release of the other slot.
+
+  SPDX-License-Identifier: BSD-2-Clause-Patent
+**/
+
+#include <Guid/HiiPlatformSetupFormset.h>
+#include <Guid/FirmwareUpdateConfig.h>
+
+formset
+  guid      = FIRMWARE_UPDATE_FORMSET_GUID,
+  title     = STRING_TOKEN(STR_FORMSET_TITLE),
+  help      = STRING_TOKEN(STR_FORMSET_HELP),
+  classguid = EFI_HII_PLATFORM_SETUP_FORMSET_GUID,
+
+  form formid = FIRMWARE_UPDATE_FORM_ID,
+    title = STRING_TOKEN(STR_FORM_TITLE);
+
+    subtitle text = STRING_TOKEN(STR_INSTALLED_SUBTITLE);
+
+    text
+      help = STRING_TOKEN(STR_FIRMWARE_HELP),
+      text = STRING_TOKEN(STR_FIRMWARE_PROMPT),
+      text = STRING_TOKEN(STR_FIRMWARE_VALUE);
+
+    text
+      help = STRING_TOKEN(STR_VERSION_HELP),
+      text = STRING_TOKEN(STR_VERSION_PROMPT),
+      text = STRING_TOKEN(STR_VERSION_VALUE);
+
+    text
+      help = STRING_TOKEN(STR_LOWEST_HELP),
+      text = STRING_TOKEN(STR_LOWEST_PROMPT),
+      text = STRING_TOKEN(STR_LOWEST_VALUE);
+
+    text
+      help = STRING_TOKEN(STR_LAST_HELP),
+      text = STRING_TOKEN(STR_LAST_PROMPT),
+      text = STRING_TOKEN(STR_LAST_VALUE);
+
+    text
+      help = STRING_TOKEN(STR_RUNNING_HELP),
+      text = STRING_TOKEN(STR_RUNNING_PROMPT),
+      text = STRING_TOKEN(STR_RUNNING_VALUE);
+
+    text
+      help = STRING_TOKEN(STR_OTHER_HELP),
+      text = STRING_TOKEN(STR_OTHER_PROMPT),
+      text = STRING_TOKEN(STR_OTHER_VALUE);
+
+    subtitle text = STRING_TOKEN(STR_NULL_STRING);
+    subtitle text = STRING_TOKEN(STR_UPDATE_SUBTITLE);
+
+    goto FIRMWARE_UPDATE_FORM_ID,
+      prompt = STRING_TOKEN(STR_INSTALL_PROMPT),
+      help   = STRING_TOKEN(STR_INSTALL_HELP),
+      flags  = INTERACTIVE,
+      key    = FIRMWARE_UPDATE_INSTALL_QUESTION_ID;
+
+    goto FIRMWARE_UPDATE_FORM_ID,
+      prompt = STRING_TOKEN(STR_SLOT_PROMPT),
+      help   = STRING_TOKEN(STR_SLOT_HELP),
+      flags  = INTERACTIVE,
+      key    = FIRMWARE_UPDATE_SLOT_QUESTION_ID;
+
+  endform;
+endformset;

@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sat, 10 Oct 2026 01:22:44 +0200
+Subject: [PATCH] UefiPayloadPkg/CfrSetupMenuDxe: Link the setup password from
+ a category
+
+[ouroBIOS: patches/edk2/0003, without the files that TianoCore's tree
+does not have (tools/edk2-import.py): 4 in edk2/OuroBiosPkg]
+
+The password asked for before the setup menu opens is set in its own
+formset, which UserAuthenticationDxe installs under System
+Configuration, away from the security settings of the setup menu.
+
+Add PcdCfrSetupMenuPasswordCategory: the title of the category of the
+setup menu that ends with a card linking to that formset, "Security" by
+default (an empty string leaves the link out). The link names the
+formset by GUID. When UserAuthenticationDxe is not in the build, the
+browser reports nothing: after the usual prompt about unsaved changes,
+if any, selecting the link silently leaves the setup menu for the
+previous formset, as for any goto to a missing formset.
+
+TEST=QEMU q35: from the Security category the link opens the password
+formset of UserAuthenticationDxe, and a 64-character password set there
+opens the setup after a reboot; the setup of the W541 in the releases.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
+---
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
+index cf0b3269b..08119dc78 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dec
++++ b/UefiPayloadPkg/UefiPayloadPkg.dec
+@@ -164,3 +164,8 @@ gUefiPayloadPkgTokenSpaceGuid.PcdPciAllocateMemoryAbove4GB|FALSE|BOOLEAN|0x00000
+ #  default PK/KEK/db/dbx. If FALSE (legacy MrChromebox behavior), keys are
+ #  enrolled but SecureBootEnable/SecureBoot remain disabled until toggled in setup.
+ gUefiPayloadPkgTokenSpaceGuid.PcdSecureBootDefaultEnable|FALSE|BOOLEAN|0x0000002F
++
++## Title of the category of the CFR setup menu that ends with a link to the
++#  password asked for before the setup menu opens (UserAuthenticationDxe).
++#  An empty string leaves the link out.
++gUefiPayloadPkgTokenSpaceGuid.PcdCfrSetupMenuPasswordCategory|L"Security"|VOID*|0x00000030
+-- 
+2.43.0
+

@@ -1,0 +1,1090 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Sat, 4 Apr 2020 15:01:01 -0500
+Subject: [PATCH] MdeModulePkg: Rework Boot Menu and Boot Manager UI
+
+[ouroBIOS: commit 8814b1506b79 of MrChromebox's edk2, as it is]
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ .../BootMaintenance.c                         |  93 ++++++-
+ .../BootMaintenanceManager.h                  |   2 +
+ .../BootMaintenanceManager.vfr                | 252 ------------------
+ .../BootMaintenanceManagerCustomizedUi.c      |  44 ++-
+ ...ootMaintenanceManagerCustomizedUiSupport.c | 226 +++++++---------
+ ...ootMaintenanceManagerCustomizedUiSupport.h |  36 +--
+ .../BootMaintenanceManagerStrings.uni         |  16 +-
+ .../BootMaintenanceManagerUiLib.inf           |   1 +
+ .../BootMaintenanceManagerUiLib/FormGuid.h    |   1 +
+ .../Library/BootManagerUiLib/BootManager.h    |   2 +-
+ .../BootManagerUiLib/BootManagerStrings.uni   |  18 +-
+ .../BootManagerUiLib/BootManagerVfr.Vfr       |   7 +-
+ 12 files changed, 250 insertions(+), 448 deletions(-)
+
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenance.c b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenance.c
+index 8c2bf870bae593f49b8297e1ba92407968169d79..9d71b2454ab1a5757c667aa9b5aab41723fa585f 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenance.c
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenance.c
+@@ -897,6 +897,32 @@ BootMaintRouteConfig (
+     Private->BmmOldFakeNVData.BootTimeOut = NewBmmData->BootTimeOut;
+   }
+ 
++  DEBUG ((DEBUG_VERBOSE, "BMM: BootDevicePriority - New: %d, Old: %d\n", NewBmmData->BootDevicePriority, OldBmmData->BootDevicePriority));
++  if (CompareMem (&NewBmmData->BootDevicePriority, &OldBmmData->BootDevicePriority, sizeof (NewBmmData->BootDevicePriority)) != 0) {
++    UINT8  PrioritizeInternalValue;
++
++    // Store as legacy format: 0 = External, 1 = Internal
++    // Use Boot Maintenance Manager GUID instead of global variable GUID
++    // since PrioritizeInternal is not a standard UEFI variable
++    PrioritizeInternalValue = NewBmmData->BootDevicePriority;
++    DEBUG ((DEBUG_INFO, "BMM: Setting PrioritizeInternal to %d\n", PrioritizeInternalValue));
++    Status = gRT->SetVariable (
++                    L"PrioritizeInternal",
++                    &mBootMaintGuid,
++                    EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS | EFI_VARIABLE_NON_VOLATILE,
++                    sizeof (UINT8),
++                    &PrioritizeInternalValue
++                    );
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_ERROR, "BMM: Failed to set PrioritizeInternal variable: %r\n", Status));
++      Offset = OFFSET_OF (BMM_FAKE_NV_DATA, BootDevicePriority);
++      goto Exit;
++    }
++
++    Private->BmmOldFakeNVData.BootDevicePriority = NewBmmData->BootDevicePriority;
++    DEBUG ((DEBUG_INFO, "BMM: Successfully set PrioritizeInternal to %d\n", PrioritizeInternalValue));
++  }
++
+   //
+   // Check data which located in Driver Options Menu and save the settings if need
+   //
+@@ -1528,26 +1554,69 @@ InitializeBmmConfig (
+     }
+   }
+ 
+-  CallbackData->BmmFakeNvData.BootTimeOut = PcdGet16 (PcdPlatformBootTimeOut);
+-
+   //
+-  // Initialize data which located in Boot Options Menu
++  // Initialize BootTimeOut from runtime variable, fallback to PCD
+   //
+-  GetBootOrder (CallbackData);
++  {
++    UINT16   *TimeoutVar;
++    UINTN    TimeoutVarSize;
++
++    CallbackData->BmmFakeNvData.BootTimeOut = PcdGet16 (PcdPlatformBootTimeOut);
++    TimeoutVarSize = sizeof (UINT16);
++    if (GetEfiGlobalVariable2 (L"Timeout", (VOID **)&TimeoutVar, &TimeoutVarSize) == EFI_SUCCESS) {
++      if (TimeoutVarSize == sizeof (UINT16)) {
++        CallbackData->BmmFakeNvData.BootTimeOut = *TimeoutVar;
++      }
++
++      FreePool (TimeoutVar);
++    }
++  }
+ 
+   //
+-  // Initialize data which located in Driver Options Menu
++  // Initialize BootDevicePriority from runtime variable, fallback to PCD
++  // 0 = External (default), 1 = Internal
+   //
+-  GetDriverOrder (CallbackData);
++  {
++    UINT8    *BootDevicePriorityVar;
++    UINTN    BootDevicePriorityVarSize;
++
++    // Default to External (0) unless PCD says otherwise
++    CallbackData->BmmFakeNvData.BootDevicePriority = PcdGetBool (PcdPrioritizeInternal) ? 1 : 0;
++    BootDevicePriorityVarSize = sizeof (UINT8);
++    // Read from Boot Maintenance Manager GUID namespace (not global variable GUID)
++    BootDevicePriorityVar = AllocatePool (BootDevicePriorityVarSize);
++    if (BootDevicePriorityVar != NULL) {
++      EFI_STATUS  Status;
++      UINTN       TempSize;
++
++      TempSize = BootDevicePriorityVarSize;
++      Status   = gRT->GetVariable (L"PrioritizeInternal", &mBootMaintGuid, NULL, &TempSize, BootDevicePriorityVar);
++      if (Status == EFI_BUFFER_TOO_SMALL) {
++        FreePool (BootDevicePriorityVar);
++        BootDevicePriorityVar = AllocatePool (TempSize);
++        if (BootDevicePriorityVar != NULL) {
++          Status = gRT->GetVariable (L"PrioritizeInternal", &mBootMaintGuid, NULL, &TempSize, BootDevicePriorityVar);
++        }
++      }
++
++      if (!EFI_ERROR (Status) && (TempSize == sizeof (UINT8))) {
++        // Legacy variable: 0 = External, non-zero = Internal
++        CallbackData->BmmFakeNvData.BootDevicePriority = (*BootDevicePriorityVar != 0) ? 1 : 0;
++      }
++
++      if (BootDevicePriorityVar != NULL) {
++        FreePool (BootDevicePriorityVar);
++      }
++    }
++
++    // Also initialize OldFakeNVData to match, so CompareMem works correctly
++    CallbackData->BmmOldFakeNVData.BootDevicePriority = CallbackData->BmmFakeNvData.BootDevicePriority;
++  }
+ 
+   //
+-  // Initialize data which located in Console Options Menu
++  // Initialize data which located in Boot Options Menu
+   //
+-  GetConsoleOutMode (CallbackData);
+-  GetConsoleInCheck (CallbackData);
+-  GetConsoleOutCheck (CallbackData);
+-  GetConsoleErrCheck (CallbackData);
+-  GetTerminalAttribute (CallbackData);
++  GetBootOrder (CallbackData);
+ 
+   CallbackData->BmmFakeNvData.ForceReconnect = TRUE;
+ 
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManager.h b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManager.h
+index 34c85daa1efa44b502077035fd9233656773f004..ae50b9fb412a762c5aec5112f9ed8b0759400568 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManager.h
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManager.h
+@@ -156,6 +156,7 @@ typedef enum _TYPE_OF_TERMINAL {
+ 
+ #define BOOT_TIME_OUT_VAR_OFFSET        VAR_OFFSET (BootTimeOut)
+ #define BOOT_NEXT_VAR_OFFSET            VAR_OFFSET (BootNext)
++#define BOOT_DEVICE_PRIORITY_VAR_OFFSET VAR_OFFSET (BootDevicePriority)
+ #define COM1_BAUD_RATE_VAR_OFFSET       VAR_OFFSET (COM1BaudRate)
+ #define COM1_DATA_RATE_VAR_OFFSET       VAR_OFFSET (COM1DataRate)
+ #define COM1_STOP_BITS_VAR_OFFSET       VAR_OFFSET (COM1StopBits)
+@@ -194,6 +195,7 @@ typedef enum _TYPE_OF_TERMINAL {
+ 
+ #define BOOT_TIME_OUT_QUESTION_ID        QUESTION_ID (BootTimeOut)
+ #define BOOT_NEXT_QUESTION_ID            QUESTION_ID (BootNext)
++#define BOOT_DEVICE_PRIORITY_QUESTION_ID QUESTION_ID (BootDevicePriority)
+ #define COM1_BAUD_RATE_QUESTION_ID       QUESTION_ID (COM1BaudRate)
+ #define COM1_DATA_RATE_QUESTION_ID       QUESTION_ID (COM1DataRate)
+ #define COM1_STOP_BITS_QUESTION_ID       QUESTION_ID (COM1StopBits)
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManager.vfr b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManager.vfr
+index 69fb60632464b1d006f6712300b3e87955d6de5a..38ab6f4cee95ba10be918d3c56159f1bbdfec37f 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManager.vfr
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManager.vfr
+@@ -42,63 +42,6 @@ formset
+ 
+   endform;
+ 
+-  form formid = FORM_BOOT_SETUP_ID,
+-       title = STRING_TOKEN(STR_FORM_BOOT_SETUP_TITLE);
+-
+-       goto FORM_MAIN_ID,
+-            prompt = STRING_TOKEN(STR_FORM_GOTO_MAIN),
+-            help = STRING_TOKEN(STR_FORM_GOTO_MAIN);
+-            //flags = INTERACTIVE,
+-            //key = FORM_MAIN_ID;
+-
+-       goto FORM_BOOT_SETUP_ID,
+-            prompt = STRING_TOKEN(STR_FORM_BOOT_ADD_TITLE),
+-            help = STRING_TOKEN(STR_FORM_BOOT_ADD_HELP),
+-            flags = INTERACTIVE,
+-            key = FORM_BOOT_ADD_ID;
+-
+-       goto FORM_BOOT_DEL_ID,
+-            prompt = STRING_TOKEN(STR_FORM_BOOT_DEL_TITLE),
+-            help = STRING_TOKEN(STR_FORM_BOOT_IMMEDIATE_HELP),
+-            flags = INTERACTIVE,
+-            key = FORM_BOOT_DEL_ID;
+-
+-       goto FORM_BOOT_CHG_ID,
+-            prompt = STRING_TOKEN(STR_FORM_BOOT_CHG_TITLE),
+-            help = STRING_TOKEN(STR_FORM_BOOT_IMMEDIATE_HELP),
+-            flags = INTERACTIVE,
+-            key = FORM_BOOT_CHG_ID;
+-  endform;
+-
+-  form formid = FORM_DRIVER_SETUP_ID,
+-       title = STRING_TOKEN(STR_FORM_DRIVER_SETUP_TITLE);
+-
+-       goto FORM_MAIN_ID,
+-            prompt = STRING_TOKEN(STR_FORM_GOTO_MAIN),
+-            help = STRING_TOKEN(STR_FORM_GOTO_MAIN);
+-            //help = STRING_TOKEN(STR_FORM_GOTO_MAIN),
+-            //flags = INTERACTIVE,
+-            //key = FORM_MAIN_ID;
+-
+-       goto FORM_DRV_ADD_ID,
+-            prompt = STRING_TOKEN(STR_FORM_DRV_ADD_TITLE),
+-            help = STRING_TOKEN(STR_FORM_DRV_ADD_HELP),
+-            flags = INTERACTIVE,
+-            key = FORM_DRV_ADD_ID;
+-
+-       goto FORM_DRV_DEL_ID,
+-            prompt = STRING_TOKEN(STR_FORM_DRV_DEL_TITLE),
+-            help = STRING_TOKEN(STR_FORM_NEXT_BOOT_HELP),
+-            flags = INTERACTIVE,
+-            key = FORM_DRV_DEL_ID;
+-
+-       goto FORM_DRV_CHG_ID,
+-            prompt = STRING_TOKEN(STR_FORM_DRV_CHG_TITLE),
+-            help = STRING_TOKEN(STR_FORM_NEXT_BOOT_HELP),
+-            flags = INTERACTIVE,
+-            key = FORM_DRV_CHG_ID;
+-  endform;
+-
+    form formid = FORM_BOOT_ADD_ID,
+        title = STRING_TOKEN(STR_FORM_BOOT_ADD_DESC_TITLE);
+ 
+@@ -156,199 +99,4 @@ formset
+ 
+   endform;
+ 
+-  form formid = FORM_DRV_ADD_ID,
+-       title = STRING_TOKEN(STR_FORM_DRV_ADD_TITLE);
+-
+-       goto FORM_MAIN_ID,
+-            prompt = STRING_TOKEN(STR_FORM_GOTO_MAIN),
+-            help = STRING_TOKEN(STR_FORM_GOTO_MAIN);
+-            //flags = INTERACTIVE,
+-            //key = FORM_MAIN_ID;
+-
+-       goto FORM_DRIVER_SETUP_ID,
+-            prompt = STRING_TOKEN(STR_FORM_DRV_ADD_FILE_TITLE),
+-            help = STRING_TOKEN(STR_FORM_DRV_ADD_FILE_TITLE),
+-            flags = INTERACTIVE,
+-            key = FORM_DRV_ADD_FILE_ID;
+-
+-  endform;
+-
+-  form formid = FORM_DRV_ADD_FILE_ID,
+-       title = STRING_TOKEN(STR_FORM_DRV_ADD_DESC_TITLE);
+-
+-       label FORM_DRV_ADD_FILE_ID;
+-       label LABEL_END;
+-
+-       subtitle text = STRING_TOKEN(STR_NULL_STRING);
+-
+-       string    varid    = BmmData.DriverDescriptionData,
+-                 questionid = KEY_VALUE_DRIVER_DESCRIPTION,
+-                 prompt   = STRING_TOKEN(STR_LOAD_OPTION_DESC),
+-                 help     = STRING_TOKEN(STR_NULL_STRING),
+-                 flags    = INTERACTIVE,
+-                 minsize  = 6,
+-                 maxsize  = 75,
+-       endstring;
+-
+-       string    varid    = BmmData.DriverOptionalData,
+-                 questionid = KEY_VALUE_DRIVER_OPTION,
+-                 prompt   = STRING_TOKEN(STR_OPTIONAL_DATA),
+-                 help     = STRING_TOKEN(STR_NULL_STRING),
+-                 flags    = INTERACTIVE,
+-                 minsize  = 0,
+-                 maxsize  = 120,
+-       endstring;
+-
+-       checkbox varid    = BmmData.ForceReconnect,
+-               prompt   = STRING_TOKEN(STR_LOAD_OPTION_FORCE_RECON),
+-               help     = STRING_TOKEN(STR_LOAD_OPTION_FORCE_RECON),
+-               flags    = CHECKBOX_DEFAULT,
+-               key      = 0,
+-       endcheckbox;
+-
+-       subtitle text = STRING_TOKEN(STR_NULL_STRING);
+-
+-       text
+-         help   = STRING_TOKEN(STR_SAVE_AND_EXIT),
+-         text   = STRING_TOKEN(STR_SAVE_AND_EXIT),
+-         flags  = INTERACTIVE,
+-         key    = KEY_VALUE_SAVE_AND_EXIT_DRIVER;  //BUGBUB: allow duplicate key in one formset???
+-
+-       text
+-         help   = STRING_TOKEN(STR_NO_SAVE_AND_EXIT),
+-         text   = STRING_TOKEN(STR_NO_SAVE_AND_EXIT),
+-         flags  = INTERACTIVE,
+-         key    = KEY_VALUE_NO_SAVE_AND_EXIT_DRIVER;
+-  endform;
+-
+-  form formid = FORM_DRV_DEL_ID,
+-       title = STRING_TOKEN(STR_FORM_DRV_DEL_TITLE);
+-
+-       label FORM_DRV_DEL_ID;
+-       label LABEL_END;
+-
+-  endform;
+-
+-  form formid = FORM_DRV_CHG_ID,
+-       title = STRING_TOKEN(STR_FORM_DRV_CHG_TITLE);
+-
+-       label FORM_DRV_CHG_ID;
+-       label LABEL_END;
+-
+-  endform;
+-
+-  form formid = FORM_CON_MAIN_ID,
+-       title = STRING_TOKEN(STR_FORM_CON_MAIN_TITLE);
+-
+-       goto FORM_MAIN_ID,
+-       prompt = STRING_TOKEN(STR_FORM_GOTO_MAIN),
+-       help = STRING_TOKEN(STR_FORM_GOTO_MAIN);
+-       //flags = INTERACTIVE,
+-       //key = FORM_MAIN_ID;
+-
+-       goto FORM_CON_IN_ID,
+-       prompt = STRING_TOKEN(STR_FORM_CON_IN_TITLE),
+-       help = STRING_TOKEN(STR_FORM_CON_IN_HELP),
+-       flags = INTERACTIVE,
+-       key = FORM_CON_IN_ID;
+-
+-       goto FORM_CON_OUT_ID,
+-       prompt = STRING_TOKEN(STR_FORM_CON_OUT_TITLE),
+-       help = STRING_TOKEN(STR_FORM_CON_OUT_HELP),
+-       flags = INTERACTIVE,
+-       key = FORM_CON_OUT_ID;
+-
+-       goto FORM_CON_ERR_ID,
+-       prompt = STRING_TOKEN(STR_FORM_STD_ERR_TITLE),
+-       help = STRING_TOKEN(STR_FORM_STD_ERR_HELP),
+-       flags = INTERACTIVE,
+-       key = FORM_CON_ERR_ID;
+-
+-       goto FORM_CON_MODE_ID,
+-       prompt = STRING_TOKEN(STR_FORM_MODE_TITLE),
+-       help = STRING_TOKEN(STR_FORM_MODE_HELP),
+-       flags = INTERACTIVE,
+-       key = FORM_CON_MODE_ID;
+-
+-       goto FORM_CON_COM_ID,
+-       prompt = STRING_TOKEN(STR_FORM_COM_TITLE),
+-       help = STRING_TOKEN(STR_FORM_COM_HELP),
+-       flags = INTERACTIVE,
+-       key = FORM_CON_COM_ID;
+-  endform;
+-
+-  form formid = FORM_CON_MODE_ID,
+-       title = STRING_TOKEN(STR_FORM_MODE_TITLE);
+-
+-       label FORM_CON_MODE_ID;
+-       label LABEL_END;
+-  endform;
+-
+-  form formid = FORM_CON_COM_ID,
+-       title = STRING_TOKEN(STR_FORM_COM_TITLE);
+-
+-       label FORM_CON_COM_ID;
+-       label LABEL_END;
+-  endform;
+-
+-  form formid = FORM_CON_COM_SETUP_ID,
+-       title = STRING_TOKEN(STR_CON_COM_SETUP);
+-
+-       label FORM_CON_COM_SETUP_ID;
+-       label LABEL_END;
+-  endform;
+-
+-  form formid = FORM_FILE_SEEK_ID,
+-       title = STRING_TOKEN(STR_FORM_BOOT_ADD_TITLE);
+-
+-       label FORM_FILE_SEEK_ID;
+-       label LABEL_END;
+-  endform;
+-
+-  form formid = FORM_FILE_NEW_SEEK_ID,
+-       title = STRING_TOKEN(STR_FORM_BOOT_ADD_TITLE);
+-
+-       label FORM_FILE_NEW_SEEK_ID;
+-       label LABEL_END;
+-  endform;
+-
+-  form formid = FORM_DRV_ADD_HANDLE_ID,
+-       title = STRING_TOKEN(STR_FORM_DRV_ADD_HANDLE_TITLE);
+-
+-       label FORM_DRV_ADD_HANDLE_ID;
+-       label LABEL_END;
+-  endform;
+-
+-  form formid = FORM_DRV_ADD_HANDLE_DESC_ID,
+-       title = STRING_TOKEN(STR_FORM_DRV_ADD_DESC_TITLE);
+-
+-       label FORM_DRV_ADD_HANDLE_DESC_ID;
+-       label LABEL_END;
+-
+-  endform;
+-
+-  form formid = FORM_CON_IN_ID,
+-       title = STRING_TOKEN(STR_FORM_CON_IN_TITLE);
+-
+-       label FORM_CON_IN_ID;
+-       label LABEL_END;
+-
+-  endform;
+-
+-  form formid = FORM_CON_OUT_ID,
+-       title = STRING_TOKEN(STR_FORM_CON_OUT_TITLE);
+-
+-       label FORM_CON_OUT_ID;
+-       label LABEL_END;
+-
+-  endform;
+-
+-  form formid = FORM_CON_ERR_ID,
+-       title = STRING_TOKEN(STR_FORM_STD_ERR_TITLE);
+-
+-       label FORM_CON_ERR_ID;
+-       label LABEL_END;
+-
+-  endform;
+-
+ endformset;
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUi.c b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUi.c
+index d79212e75ce95b610580363dd7bab1c693072b71..9bf84175403e750dc77956a223ad2e6e0912258a 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUi.c
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUi.c
+@@ -25,22 +25,50 @@ UiCustomizeBMMPage (
+   )
+ {
+   //
+-  // Create "Boot Option" menu.
++  // Create "Change Boot Order" menu.
+   //
+-  BmmCreateBootOptionMenu (HiiHandle, StartOpCodeHandle);
++  BmmCreateChangeBootOptionMenu(HiiHandle, StartOpCodeHandle);
++
++  //
++  // Create empty line.
++  //
++  BmmCreateEmptyLine (HiiHandle, StartOpCodeHandle);
++
++  //
++  // Create "Add Boot Option" menu.
++  //
++  BmmCreateAddBootOptionMenu(HiiHandle, StartOpCodeHandle);
++
++  //
++  // Create empty line.
++  //
++  BmmCreateEmptyLine (HiiHandle, StartOpCodeHandle);
++
+   //
+-  // Create "Driver Option" menu.
++  // Create "Delete Boot Option" menu.
+   //
+-  BmmCreateDriverOptionMenu (HiiHandle, StartOpCodeHandle);
++   BmmCreateDeleteBootOptionMenu(HiiHandle, StartOpCodeHandle);
++
+   //
+-  // Create "Com Option" menu.
++  // Create empty line.
+   //
+-  BmmCreateComOptionMenu (HiiHandle, StartOpCodeHandle);
++  BmmCreateEmptyLine (HiiHandle, StartOpCodeHandle);
++
+   //
+   // Create "Boot From File" menu.
+   //
+   BmmCreateBootFromFileMenu (HiiHandle, StartOpCodeHandle);
+ 
++  //
++  // Create empty line.
++  //
++  BmmCreateEmptyLine (HiiHandle, StartOpCodeHandle);
++
++  //
++  // Create "Prioritize Internal Devices" checkbox.
++  //
++  BmmCreatePrioritizeInternalMenu (HiiHandle, StartOpCodeHandle);
++
+   //
+   // Find third party drivers which need to be shown in the Bmm page.
+   //
+@@ -51,10 +79,6 @@ UiCustomizeBMMPage (
+   //
+   BmmCreateEmptyLine (HiiHandle, StartOpCodeHandle);
+ 
+-  //
+-  // Create "Boot Next" menu.
+-  //
+-  BmmCreateBootNextMenu (HiiHandle, StartOpCodeHandle);
+   //
+   // Create "Time Out" menu.
+   //
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.c b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.c
+index 7cfbf5aac0ccfd857be85eaf482566733bdac757..170fdc1b2bb222a73ad0fe5ee823771850a23d3b 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.c
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.c
+@@ -22,226 +22,196 @@ typedef struct {
+ STATIC UI_HII_DRIVER_INSTANCE  *gHiiDriverList;
+ 
+ /**
+-  Create the dynamic item to allow user to set the "BootNext" vaule.
++  Create Add Boot Option menu in the page.
+ 
+   @param[in]    HiiHandle           The hii handle for the Uiapp driver.
+   @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
+ 
+ **/
+ VOID
+-BmmCreateBootNextMenu (
+-  IN EFI_HII_HANDLE  HiiHandle,
+-  IN VOID            *StartOpCodeHandle
++BmmCreateAddBootOptionMenu (
++  IN EFI_HII_HANDLE              HiiHandle,
++  IN VOID                        *StartOpCodeHandle
+   )
+ {
+-  BM_MENU_ENTRY    *NewMenuEntry;
+-  BM_LOAD_CONTEXT  *NewLoadContext;
+-  UINTN            Index;
+-  VOID             *OptionsOpCodeHandle;
+-  UINT32           BootNextIndex;
+-
+-  if (BootOptionMenu.MenuNumber == 0) {
+-    return;
+-  }
+-
+-  BootNextIndex = NONE_BOOTNEXT_VALUE;
+-
+-  OptionsOpCodeHandle = HiiAllocateOpCodeHandle ();
+-  ASSERT (OptionsOpCodeHandle != NULL);
+-
+-  for (Index = 0; Index < BootOptionMenu.MenuNumber; Index++) {
+-    NewMenuEntry   = BOpt_GetMenuEntry (&BootOptionMenu, Index);
+-    NewLoadContext = (BM_LOAD_CONTEXT *)NewMenuEntry->VariableContext;
+-
+-    if (NewLoadContext->IsBootNext) {
+-      HiiCreateOneOfOptionOpCode (
+-        OptionsOpCodeHandle,
+-        NewMenuEntry->DisplayStringToken,
+-        EFI_IFR_OPTION_DEFAULT,
+-        EFI_IFR_TYPE_NUM_SIZE_32,
+-        Index
+-        );
+-      BootNextIndex = (UINT32)Index;
+-    } else {
+-      HiiCreateOneOfOptionOpCode (
+-        OptionsOpCodeHandle,
+-        NewMenuEntry->DisplayStringToken,
+-        0,
+-        EFI_IFR_TYPE_NUM_SIZE_32,
+-        Index
+-        );
+-    }
+-  }
+-
+-  if (BootNextIndex == NONE_BOOTNEXT_VALUE) {
+-    HiiCreateOneOfOptionOpCode (
+-      OptionsOpCodeHandle,
+-      STRING_TOKEN (STR_NONE),
+-      EFI_IFR_OPTION_DEFAULT,
+-      EFI_IFR_TYPE_NUM_SIZE_32,
+-      NONE_BOOTNEXT_VALUE
+-      );
+-  } else {
+-    HiiCreateOneOfOptionOpCode (
+-      OptionsOpCodeHandle,
+-      STRING_TOKEN (STR_NONE),
+-      0,
+-      EFI_IFR_TYPE_NUM_SIZE_32,
+-      NONE_BOOTNEXT_VALUE
+-      );
+-  }
+-
+-  HiiCreateOneOfOpCode (
++  HiiCreateGotoOpCode (
+     StartOpCodeHandle,
+-    (EFI_QUESTION_ID)BOOT_NEXT_QUESTION_ID,
+-    VARSTORE_ID_BOOT_MAINT,
+-    BOOT_NEXT_VAR_OFFSET,
+-    STRING_TOKEN (STR_BOOT_NEXT),
+-    STRING_TOKEN (STR_BOOT_NEXT_HELP),
+-    0,
+-    EFI_IFR_NUMERIC_SIZE_4,
+-    OptionsOpCodeHandle,
+-    NULL
++    FORM_MAIN_ID,
++    STRING_TOKEN (STR_FORM_BOOT_ADD_TITLE),
++    STRING_TOKEN (STR_FORM_BOOT_IMMEDIATE_HELP),
++    EFI_IFR_FLAG_CALLBACK,
++    FORM_BOOT_ADD_ID
+     );
+-
+-  HiiFreeOpCodeHandle (OptionsOpCodeHandle);
+ }
+ 
+ /**
+-  Create Time Out Menu in the page.
++  Create Delete Boot Option menu in the page.
+ 
+   @param[in]    HiiHandle           The hii handle for the Uiapp driver.
+   @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
+ 
+ **/
+ VOID
+-BmmCreateTimeOutMenu (
++BmmCreateDeleteBootOptionMenu (
+   IN EFI_HII_HANDLE  HiiHandle,
+   IN VOID            *StartOpCodeHandle
+   )
+ {
+-  HiiCreateNumericOpCode (
++  HiiCreateGotoOpCode (
+     StartOpCodeHandle,
+-    (EFI_QUESTION_ID)FORM_TIME_OUT_ID,
+-    VARSTORE_ID_BOOT_MAINT,
+-    BOOT_TIME_OUT_VAR_OFFSET,
+-    STRING_TOKEN (STR_NUM_AUTO_BOOT),
+-    STRING_TOKEN (STR_HLP_AUTO_BOOT),
++    FORM_BOOT_DEL_ID,
++    STRING_TOKEN (STR_FORM_BOOT_DEL_TITLE),
++    STRING_TOKEN (STR_FORM_BOOT_IMMEDIATE_HELP),
+     EFI_IFR_FLAG_CALLBACK,
+-    EFI_IFR_NUMERIC_SIZE_2 | EFI_IFR_DISPLAY_UINT_DEC,
+-    0,
+-    65535,
+-    0,
+-    NULL
++    FORM_BOOT_DEL_ID
+     );
+ }
+ 
+ /**
+-  Create Boot Option menu in the page.
++  Create Change Boot Option menu in the page.
+ 
+   @param[in]    HiiHandle           The hii handle for the Uiapp driver.
+   @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
+ 
+ **/
+ VOID
+-BmmCreateBootOptionMenu (
++BmmCreateChangeBootOptionMenu (
+   IN EFI_HII_HANDLE  HiiHandle,
+   IN VOID            *StartOpCodeHandle
+   )
+ {
+   HiiCreateGotoOpCode (
+     StartOpCodeHandle,
+-    FORM_BOOT_SETUP_ID,
+-    STRING_TOKEN (STR_FORM_BOOT_SETUP_TITLE),
+-    STRING_TOKEN (STR_FORM_BOOT_SETUP_HELP),
++    FORM_BOOT_CHG_ID,
++    STRING_TOKEN (STR_FORM_BOOT_CHG_TITLE),
++    STRING_TOKEN (STR_FORM_BOOT_IMMEDIATE_HELP),
+     EFI_IFR_FLAG_CALLBACK,
+-    FORM_BOOT_SETUP_ID
++    FORM_BOOT_CHG_ID
+     );
+ }
+ 
+ /**
+-  Create Driver Option menu in the page.
++  Create Boot From File Option menu in the page.
+ 
+   @param[in]    HiiHandle           The hii handle for the Uiapp driver.
+   @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
+ 
+ **/
+ VOID
+-BmmCreateDriverOptionMenu (
++BmmCreateBootFromFileMenu (
+   IN EFI_HII_HANDLE  HiiHandle,
+   IN VOID            *StartOpCodeHandle
+   )
+ {
+   HiiCreateGotoOpCode (
+     StartOpCodeHandle,
+-    FORM_DRIVER_SETUP_ID,
+-    STRING_TOKEN (STR_FORM_DRIVER_SETUP_TITLE),
+-    STRING_TOKEN (STR_FORM_DRIVER_SETUP_HELP),
++    FORM_MAIN_ID,
++    STRING_TOKEN (STR_BOOT_FROM_FILE),
++    STRING_TOKEN (STR_BOOT_FROM_FILE_HELP),
+     EFI_IFR_FLAG_CALLBACK,
+-    FORM_DRIVER_SETUP_ID
++    KEY_VALUE_BOOT_FROM_FILE
+     );
+ }
+ 
+ /**
+-  Create Com Option menu in the page.
++  Create empty line menu in the front page.
+ 
+-  @param[in]    HiiHandle           The hii handle for the Uiapp driver.
+-  @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
++  @param    HiiHandle           The hii handle for the Uiapp driver.
++  @param    StartOpCodeHandle   The opcode handle to save the new opcode.
+ 
+ **/
+ VOID
+-BmmCreateComOptionMenu (
++BmmCreateEmptyLine (
+   IN EFI_HII_HANDLE  HiiHandle,
+   IN VOID            *StartOpCodeHandle
+   )
+ {
+-  HiiCreateGotoOpCode (
+-    StartOpCodeHandle,
+-    FORM_CON_MAIN_ID,
+-    STRING_TOKEN (STR_FORM_CON_MAIN_TITLE),
+-    STRING_TOKEN (STR_FORM_CON_MAIN_HELP),
+-    EFI_IFR_FLAG_CALLBACK,
+-    FORM_CON_MAIN_ID
+-    );
++  HiiCreateSubTitleOpCode (StartOpCodeHandle, STRING_TOKEN (STR_NULL_STRING), 0, 0, 0);
+ }
+ 
+ /**
+-  Create Com Option menu in the page.
++  Create Boot Device Priority selection in the page.
+ 
+   @param[in]    HiiHandle           The hii handle for the Uiapp driver.
+   @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
+ 
+ **/
+ VOID
+-BmmCreateBootFromFileMenu (
++BmmCreatePrioritizeInternalMenu (
+   IN EFI_HII_HANDLE  HiiHandle,
+   IN VOID            *StartOpCodeHandle
+   )
+ {
+-  HiiCreateGotoOpCode (
++  VOID  *OptionsOpCodeHandle;
++
++  OptionsOpCodeHandle = HiiAllocateOpCodeHandle ();
++  ASSERT (OptionsOpCodeHandle != NULL);
++
++  //
++  // Create "External" option (value 0)
++  //
++  HiiCreateOneOfOptionOpCode (
++    OptionsOpCodeHandle,
++    STRING_TOKEN (STR_BOOT_DEVICE_PRIORITY_EXTERNAL),
++    0,
++    EFI_IFR_TYPE_NUM_SIZE_8,
++    0
++    );
++
++  //
++  // Create "Internal" option (value 1)
++  //
++  HiiCreateOneOfOptionOpCode (
++    OptionsOpCodeHandle,
++    STRING_TOKEN (STR_BOOT_DEVICE_PRIORITY_INTERNAL),
++    0,
++    EFI_IFR_TYPE_NUM_SIZE_8,
++    1
++    );
++
++  HiiCreateOneOfOpCode (
+     StartOpCodeHandle,
+-    FORM_MAIN_ID,
+-    STRING_TOKEN (STR_BOOT_FROM_FILE),
+-    STRING_TOKEN (STR_BOOT_FROM_FILE_HELP),
++    BOOT_DEVICE_PRIORITY_QUESTION_ID,
++    VARSTORE_ID_BOOT_MAINT,
++    BOOT_DEVICE_PRIORITY_VAR_OFFSET,
++    STRING_TOKEN (STR_BOOT_DEVICE_PRIORITY_PROMPT),
++    STRING_TOKEN (STR_BOOT_DEVICE_PRIORITY_HELP),
+     EFI_IFR_FLAG_CALLBACK,
+-    KEY_VALUE_BOOT_FROM_FILE
++    EFI_IFR_NUMERIC_SIZE_1,
++    OptionsOpCodeHandle,
++    NULL
+     );
++
++  HiiFreeOpCodeHandle (OptionsOpCodeHandle);
+ }
+ 
+ /**
+-  Create empty line menu in the front page.
++  Create Time Out Menu in the page.
+ 
+-  @param    HiiHandle           The hii handle for the Uiapp driver.
+-  @param    StartOpCodeHandle   The opcode handle to save the new opcode.
++  @param[in]    HiiHandle           The hii handle for the Uiapp driver.
++  @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
+ 
+ **/
+ VOID
+-BmmCreateEmptyLine (
++BmmCreateTimeOutMenu (
+   IN EFI_HII_HANDLE  HiiHandle,
+   IN VOID            *StartOpCodeHandle
+   )
+ {
+-  HiiCreateSubTitleOpCode (StartOpCodeHandle, STRING_TOKEN (STR_NULL_STRING), 0, 0, 0);
++  HiiCreateNumericOpCode (
++    StartOpCodeHandle,
++    (EFI_QUESTION_ID)BOOT_TIME_OUT_QUESTION_ID,
++    VARSTORE_ID_BOOT_MAINT,
++    BOOT_TIME_OUT_VAR_OFFSET,
++    STRING_TOKEN (STR_NUM_AUTO_BOOT),
++    STRING_TOKEN (STR_HLP_AUTO_BOOT),
++    EFI_IFR_FLAG_CALLBACK,
++    EFI_IFR_NUMERIC_SIZE_2 | EFI_IFR_DISPLAY_UINT_DEC,
++    0,
++    65535,
++    0,
++    NULL
++    );
+ }
+ 
+ /**
+@@ -378,18 +348,10 @@ BmmListThirdPartyDrivers (
+   }
+ 
+   HiiHandles = HiiGetHiiHandles (NULL);
+-  if (HiiHandles == NULL) {
+-    ASSERT (HiiHandles != NULL);
+-    return EFI_OUT_OF_RESOURCES;
+-  }
++  ASSERT (HiiHandles != NULL);
+ 
+   gHiiDriverList = AllocateZeroPool (UI_HII_DRIVER_LIST_SIZE * sizeof (UI_HII_DRIVER_INSTANCE));
+-  if (gHiiDriverList == NULL) {
+-    ASSERT (gHiiDriverList != NULL);
+-    FreePool (HiiHandles);
+-    return EFI_OUT_OF_RESOURCES;
+-  }
+-
++  ASSERT (gHiiDriverList != NULL);
+   DriverListPtr = gHiiDriverList;
+   CurrentSize   = UI_HII_DRIVER_LIST_SIZE;
+ 
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.h b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.h
+index d0e825b3bcceb760d232b6fe0e9aacad7c2d78da..888c84b0705d875d020fa577cc34317b625f935b 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.h
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.h
+@@ -9,92 +9,92 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #pragma once
+ 
+ /**
+-  Create Time Out Menu in the page.
++  Create Add Boot option in the page.
+ 
+   @param[in]    HiiHandle           The hii handle for the Uiapp driver.
+   @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
+ 
+ **/
+ VOID
+-BmmCreateTimeOutMenu (
++BmmCreateAddBootOptionMenu (
+   IN EFI_HII_HANDLE  HiiHandle,
+   IN VOID            *StartOpCodeHandle
+   );
+ 
+ /**
+-  Create the dynamic item to allow user to set the "BootNext" vaule.
++  Create Delete Boot option in the page
+ 
+   @param[in]    HiiHandle           The hii handle for the Uiapp driver.
+   @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
+ 
+ **/
+ VOID
+-BmmCreateBootNextMenu (
++BmmCreateDeleteBootOptionMenu (
+   IN EFI_HII_HANDLE  HiiHandle,
+   IN VOID            *StartOpCodeHandle
+   );
+ 
+ /**
+-  Create Boot Option menu in the page.
++  Create Change Boot option menu in the page.
+ 
+   @param[in]    HiiHandle           The hii handle for the Uiapp driver.
+   @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
+ 
+ **/
+ VOID
+-BmmCreateBootOptionMenu (
++BmmCreateChangeBootOptionMenu (
+   IN EFI_HII_HANDLE  HiiHandle,
+   IN VOID            *StartOpCodeHandle
+   );
+ 
+ /**
+-  Create Driver Option menu in the page.
++  Create Boot From File menu in the page.
+ 
+   @param[in]    HiiHandle           The hii handle for the Uiapp driver.
+   @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
+ 
+ **/
+ VOID
+-BmmCreateDriverOptionMenu (
++BmmCreateBootFromFileMenu (
+   IN EFI_HII_HANDLE  HiiHandle,
+   IN VOID            *StartOpCodeHandle
+   );
+ 
+ /**
+-  Create Com Option menu in the page.
++  Create empty line menu in the front page.
+ 
+-  @param[in]    HiiHandle           The hii handle for the Uiapp driver.
+-  @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
++  @param    HiiHandle           The hii handle for the Uiapp driver.
++  @param    StartOpCodeHandle   The opcode handle to save the new opcode.
+ 
+ **/
+ VOID
+-BmmCreateComOptionMenu (
++BmmCreateEmptyLine (
+   IN EFI_HII_HANDLE  HiiHandle,
+   IN VOID            *StartOpCodeHandle
+   );
+ 
+ /**
+-  Create Com Option menu in the page.
++  Create Prioritize Internal Devices checkbox in the page.
+ 
+   @param[in]    HiiHandle           The hii handle for the Uiapp driver.
+   @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
+ 
+ **/
+ VOID
+-BmmCreateBootFromFileMenu (
++BmmCreatePrioritizeInternalMenu (
+   IN EFI_HII_HANDLE  HiiHandle,
+   IN VOID            *StartOpCodeHandle
+   );
+ 
+ /**
+-  Create empty line menu in the front page.
++  Create Time Out Menu in the page.
+ 
+-  @param    HiiHandle           The hii handle for the Uiapp driver.
+-  @param    StartOpCodeHandle   The opcode handle to save the new opcode.
++  @param[in]    HiiHandle           The hii handle for the Uiapp driver.
++  @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
+ 
+ **/
+ VOID
+-BmmCreateEmptyLine (
++BmmCreateTimeOutMenu (
+   IN EFI_HII_HANDLE  HiiHandle,
+   IN VOID            *StartOpCodeHandle
+   );
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerStrings.uni b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerStrings.uni
+index 3d47473e6c1b76800ed95ec6cc1551247447a7f7..b1f5ab4961510ca9a276f3e8186ddaaa763a141a 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerStrings.uni
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerStrings.uni
+@@ -17,12 +17,12 @@
+                                        #language fr-FR  "NONE"
+ #string STR_MISSING_STRING             #language en-US  "Missing String"
+                                        #language fr-FR  "Missing String"
+-#string STR_FORM_MAIN_TITLE            #language en-US  "Boot Maintenance Manager"
+-                                       #language fr-FR  "Boot Maintenance Manager"
++#string STR_FORM_MAIN_TITLE            #language en-US  "Boot Manager"
++                                       #language fr-FR  "Boot Manager"
+ #string STR_FORM_BOOT_SETUP_TITLE      #language en-US  "Boot Options"
+                                        #language fr-FR  "Boot Options"
+-#string STR_BOOT_MAINT_MANAGER_HELP    #language en-US  "This selection will take you to the Boot Maintenance Manager"
+-                                       #language fr-FR  "This selection will take you to the Boot Maintenance Manager"
++#string STR_BOOT_MAINT_MANAGER_HELP    #language en-US  "Change/Add/Remove Boot Menu Entries"
++                                       #language fr-FR  "Change/Add/Remove Boot Menu Entries"
+ #string STR_FORM_BOOT_SETUP_HELP       #language en-US  "Modify system boot options"
+                                        #language fr-FR  "Modify system boot options"
+ #string STR_FORM_DRIVER_SETUP_TITLE    #language en-US  "Driver Options"
+@@ -249,6 +249,14 @@
+                                        #language fr-FR  "Boot From File"
+ #string STR_BOOT_FROM_FILE_HELP        #language en-US  "Boot system from a file or device"
+                                        #language fr-FR  "Boot system from a file or device"
++#string STR_BOOT_DEVICE_PRIORITY_PROMPT #language en-US  "Boot Device Priority"
++                                       #language fr-FR  "Boot Device Priority"
++#string STR_BOOT_DEVICE_PRIORITY_HELP   #language en-US  "Select which device type to prioritize in boot order: Internal (SATA, NVMe, eMMC) or External (USB/SD devices)"
++                                       #language fr-FR  "Select which device type to prioritize in boot order: Internal (SATA, NVMe, eMMC) or External (USB/SD devices)"
++#string STR_BOOT_DEVICE_PRIORITY_EXTERNAL #language en-US "External"
++                                         #language fr-FR "External"
++#string STR_BOOT_DEVICE_PRIORITY_INTERNAL #language en-US "Internal"
++                                           #language fr-FR "Internal"
+ #string STR_OPTIONAL_DATA              #language en-US  "Input Optional Data"
+                                        #language fr-FR  "Input Optional Data"
+ #string STR_CHANGE_ORDER               #language en-US  "Change the order"
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerUiLib.inf b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerUiLib.inf
+index a056dc3e8045aced8154e17eea4e10dd59ef1359..59db246b9bc307dd93099499444e0ce0c33a64a3 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerUiLib.inf
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerUiLib.inf
+@@ -97,3 +97,4 @@
+   gEfiMdeModulePkgTokenSpaceGuid.PcdSetupConOutRow             ## CONSUMES
+   gEfiMdeModulePkgTokenSpaceGuid.PcdSetupVideoHorizontalResolution    ## CONSUMES
+   gEfiMdeModulePkgTokenSpaceGuid.PcdSetupVideoVerticalResolution      ## CONSUMES
++  gEfiMdeModulePkgTokenSpaceGuid.PcdPrioritizeInternal         ## CONSUMES
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/FormGuid.h b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/FormGuid.h
+index 7a64d4cafe7f08fb2341ff5f0c1f825a8ffcb149..2992a3641132d003be211dbe4edb6172a276eba2 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/FormGuid.h
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/FormGuid.h
+@@ -99,6 +99,7 @@ typedef struct {
+   //
+   UINT16     BootTimeOut;
+   UINT32     BootNext;
++  UINT8      BootDevicePriority;  // 0 = External, 1 = Internal
+ 
+   //
+   // This is the COM1 Attributes value storage
+diff --git a/MdeModulePkg/Library/BootManagerUiLib/BootManager.h b/MdeModulePkg/Library/BootManagerUiLib/BootManager.h
+index 85b5b7fb51c760d56e7375427798d5b3b8dd28a0..7b26db51156de806790c01be78d21b8d837f5248 100644
+--- a/MdeModulePkg/Library/BootManagerUiLib/BootManager.h
++++ b/MdeModulePkg/Library/BootManagerUiLib/BootManager.h
+@@ -45,7 +45,7 @@ typedef struct {
+   0x847bc3fe, 0xb974, 0x446d, {0x94, 0x49, 0x5a, 0xd5, 0x41, 0x2e, 0x99, 0x3b} \
+   }
+ 
+-#define BOOT_MANAGER_FORM_ID  0x1000
++#define BOOT_MANAGER_FORM_ID  0x1030
+ 
+ #define LABEL_BOOT_OPTION      0x00
+ #define LABEL_BOOT_OPTION_END  0x01
+diff --git a/MdeModulePkg/Library/BootManagerUiLib/BootManagerStrings.uni b/MdeModulePkg/Library/BootManagerUiLib/BootManagerStrings.uni
+index 2fcb9a29c50baceb432f804f8ee9c5a697736b6a..5f181d8f9b0080693a3905619f4f85e49377101b 100644
+--- a/MdeModulePkg/Library/BootManagerUiLib/BootManagerStrings.uni
++++ b/MdeModulePkg/Library/BootManagerUiLib/BootManagerStrings.uni
+@@ -19,18 +19,8 @@
+ #langdef   en-US "English"
+ #langdef   fr-FR "Français"
+ 
+-#string STR_BM_BANNER                  #language en-US  "Boot Manager"
+-                                       #language fr-FR  "Boot Manager"
+-#string STR_BOOT_MANAGER_HELP          #language en-US  "This selection will take you to the Boot Manager"
+-                                       #language fr-FR  "This selection will take you to the Boot Manager"
+-#string STR_HELP_FOOTER                #language en-US  "Use the <↑> and <↓> keys to choose a boot option, the <Enter> key to select a boot option, and the <Esc> key to exit the Boot Manager Menu."
+-                                       #language fr-FR  "<↑> pour <↓> changer l'option, <ENTRER> choisir une option, <ESC> pour sortir"
+-#string STR_AND                        #language en-US  " and "
+-                                       #language fr-FR  " et "
+-#string STR_BOOT_OPTION_BANNER         #language en-US  "Boot Manager Menu"
+-                                       #language fr-FR  "le Menu d'Option de Botte"
+-#string STR_ANY_KEY_CONTINUE           #language en-US  "Press any key to continue..."
+-                                       #language fr-FR  "Appuie n'importe quelle pour continuer..."
++#string STR_BM_BANNER                  #language en-US  "Boot Menu"
++#string STR_BOOT_MANAGER_HELP          #language en-US  "Show One-Time Boot Menu"
++#string STR_BOOT_OPTION_BANNER         #language en-US  "Select a Boot Device"
++#string STR_ANY_KEY_CONTINUE           #language en-US  "Press any key to continue...\n"
+ #string STR_LAST_STRING                #language en-US  ""
+-                                       #language fr-FR  ""
+-
+diff --git a/MdeModulePkg/Library/BootManagerUiLib/BootManagerVfr.Vfr b/MdeModulePkg/Library/BootManagerUiLib/BootManagerVfr.Vfr
+index 4049fe677406e8181a0263cebb8040842c9e3e45..5eae056c48e7e55ab4505de2e3f6702647105112 100644
+--- a/MdeModulePkg/Library/BootManagerUiLib/BootManagerVfr.Vfr
++++ b/MdeModulePkg/Library/BootManagerUiLib/BootManagerVfr.Vfr
+@@ -8,7 +8,7 @@
+ //**/
+ #define FORMSET_GUID  { 0x847bc3fe, 0xb974, 0x446d, 0x94, 0x49, 0x5a, 0xd5, 0x41, 0x2e, 0x99, 0x3b }
+ 
+-#define BOOT_MANAGER_FORM_ID     0x1000
++#define BOOT_MANAGER_FORM_ID     0x1030
+ 
+ #define LABEL_BOOT_OPTION        0x00
+ #define LABEL_BOOT_OPTION_END    0x01
+@@ -27,7 +27,7 @@ formset
+     subtitle text = STRING_TOKEN(STR_LAST_STRING);
+ 
+     //
+-    //Add this invisable text in order to indicate enter Boot Manager form.
++    //Add this invisible text in order to indicate enter Boot Manager form.
+     //
+     suppressif TRUE;
+           text
+@@ -43,9 +43,6 @@ formset
+     label LABEL_BOOT_OPTION;
+     label LABEL_BOOT_OPTION_END;
+ 
+-    subtitle text = STRING_TOKEN(STR_LAST_STRING);
+-    subtitle text = STRING_TOKEN(STR_HELP_FOOTER);
+-
+   endform;
+ 
+ endformset;

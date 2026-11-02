@@ -1,0 +1,133 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patrick Rudolph <patrick.rudolph@9elements.com>
+Date: Tue, 8 Feb 2022 13:36:00 +0100
+Subject: [PATCH] MdeModulePkg: Improve USB error handling for faulting devices
+
+[ouroBIOS: commit 42865d92aebc of MrChromebox's edk2, as it is]
+
+Signed-off-by: Patrick Rudolph <patrick.rudolph@9elements.com>
+---
+ MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c           |  5 +-
+ MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.c      | 57 ++++++++++++++++++-
+ .../Bus/Usb/UsbMassStorageDxe/UsbMassBoot.c   |  2 +-
+ 3 files changed, 59 insertions(+), 5 deletions(-)
+
+diff --git a/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c b/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c
+index c337f15118d2fd9839cf929b93b948c9d1501c24..a4c126c6d5b31288a6beda3540aade7dee6ed9cb 100644
+--- a/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c
++++ b/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c
+@@ -817,8 +817,9 @@ XhcTransfer (
+       ASSERT (Urb->Result == EFI_USB_NOERROR);
+       Status = EFI_SUCCESS;
+       DEBUG ((DEBUG_ERROR, "XhcTransfer[Type=%d]: pending URB is finished, Length = %d.\n", Type, Urb->Completed));
+-    } else if (EFI_ERROR (RecoveryStatus)) {
+-      DEBUG ((DEBUG_ERROR, "XhcTransfer[Type=%d]: XhcDequeueTrbFromEndpoint failed!\n", Type));
++    } else if (EFI_ERROR(RecoveryStatus)) {
++      DEBUG((DEBUG_ERROR, "XhcTransfer[Type=%d]: XhcDequeueTrbFromEndpoint failed!\n", Type));
++      Status = RecoveryStatus;
+     }
+   }
+ 
+diff --git a/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.c b/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.c
+index e8cb7ede54e7ed2a41d6ac604f788dc68b89752e..b042947d7a35cb23b327b0dc6cef7794340b0e69 100644
+--- a/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.c
++++ b/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.c
+@@ -1311,6 +1311,36 @@ EXIT:
+   return Urb->Finished;
+ }
+ 
++STATIC
++BOOLEAN
++EFIAPI
++XhcEndpointRunning (
++  IN USB_XHCI_INSTANCE  *Xhc,
++  IN UINT8              SlotId,
++  IN UINT8              Dci
++  )
++{
++  DEVICE_CONTEXT              *OutputContext;
++
++  OutputContext = Xhc->UsbDevContext[SlotId].OutputContext;
++  return OutputContext && OutputContext->EP[Dci -1].EPState == 1;
++}
++
++STATIC
++BOOLEAN
++EFIAPI
++XhcEndpointHalted (
++  IN USB_XHCI_INSTANCE  *Xhc,
++  IN UINT8              SlotId,
++  IN UINT8              Dci
++  )
++{
++  DEVICE_CONTEXT              *OutputContext;
++
++  OutputContext = Xhc->UsbDevContext[SlotId].OutputContext;
++  return OutputContext && OutputContext->EP[Dci -1].EPState == 2;
++}
++
+ /**
+   Execute the transfer by polling the URB. This is a synchronous operation.
+ 
+@@ -1359,6 +1389,10 @@ XhcExecTransfer (
+     ASSERT (Dci < 32);
+   }
+ 
++  if (!CmdTransfer && XhcEndpointHalted(Xhc, SlotId, Dci)) {
++    goto DONE;
++  }
++
+   if (Timeout == 0) {
+     IndefiniteTimeout = TRUE;
+   }
+@@ -1389,9 +1423,15 @@ XhcExecTransfer (
+     ElapsedTicks += TicksDelta;
+   } while (IndefiniteTimeout || ElapsedTicks < TimeoutTicks);
+ 
++DONE:
+   if (!Finished) {
+-    Urb->Result = EFI_USB_ERR_TIMEOUT;
+-    Status      = EFI_TIMEOUT;
++    if (XhcEndpointHalted(Xhc, SlotId, Dci)) {
++      Urb->Result = EFI_USB_ERR_STALL;
++      Status = EFI_DEVICE_ERROR;
++    } else {
++      Urb->Result = EFI_USB_ERR_TIMEOUT;
++      Status      = EFI_TIMEOUT;
++    }
+   } else if (Urb->Result != EFI_USB_NOERROR) {
+     Status = EFI_DEVICE_ERROR;
+   }
+@@ -3518,6 +3558,19 @@ XhcStopEndpoint (
+ 
+   EvtTrb = NULL;
+ 
++  if (XhcEndpointHalted(Xhc, SlotId, Dci)) {
++    if (PendingUrb != NULL) {
++      PendingUrb->Result = EFI_USB_ERR_STALL;
++    }
++    return EFI_DEVICE_ERROR;
++  }
++  if (!XhcEndpointRunning(Xhc, SlotId, Dci)) {
++    if (PendingUrb != NULL) {
++      PendingUrb->Result = EFI_USB_ERR_SYSTEM;
++    }
++    return EFI_DEVICE_ERROR;
++  }
++
+   //
+   // When XhcCheckUrbResult waits for the Stop_Endpoint completion, it also checks
+   // the PendingUrb completion status, because it's possible that the PendingUrb is
+diff --git a/MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassBoot.c b/MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassBoot.c
+index 8c09831f56fafd508df227a28ddd545a301c454e..42d4f277abbaa2d03bfaf780f18daa2d60fe33c8 100644
+--- a/MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassBoot.c
++++ b/MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassBoot.c
+@@ -281,7 +281,7 @@ UsbBootExecCmdWithRetry (
+                DataLen,
+                Timeout
+                );
+-    if ((Status == EFI_SUCCESS) || (Status == EFI_NO_MEDIA)) {
++    if (Status == EFI_SUCCESS || Status == EFI_NO_MEDIA || Status == EFI_DEVICE_ERROR) {
+       break;
+     }
+ 

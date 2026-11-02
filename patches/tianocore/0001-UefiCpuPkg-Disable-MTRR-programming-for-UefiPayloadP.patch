@@ -1,0 +1,83 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patrick Rudolph <patrick.rudolph@9elements.com>
+Date: Tue, 8 Sep 2020 09:40:41 +0200
+Subject: [PATCH] UefiCpuPkg: Disable MTRR programming for UefiPayloadPkg
+
+[ouroBIOS: commit 6cf55e15c18c of MrChromebox's edk2, without the files
+that TianoCore's tree does not have (tools/edk2-import.py): 1 in
+edk2/OuroBiosPkg]
+
+The MTRRs have already been programmed by FSB.
+
+This is necessary on some older platforms, such as Intel Braswell.
+
+Change-Id: I8c6e7657b789edac8ee83a89318209a598712db8
+Signed-off-by: Patrick Rudolph <patrick.rudolph@9elements.com>
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ UefiCpuPkg/Library/MtrrLib/MtrrLib.c   | 4 ++++
+ UefiCpuPkg/Library/MtrrLib/MtrrLib.inf | 2 +-
+ UefiCpuPkg/UefiCpuPkg.dec              | 4 ++++
+ UefiCpuPkg/UefiCpuPkg.uni              | 8 ++++++--
+ 4 files changed, 15 insertions(+), 3 deletions(-)
+
+diff --git a/UefiCpuPkg/Library/MtrrLib/MtrrLib.c b/UefiCpuPkg/Library/MtrrLib/MtrrLib.c
+index df3ef3fe967e48ae354a91d430d9f994f214880e..a523ace8bffc6f1b26095d7f84440c463421e62c 100644
+--- a/UefiCpuPkg/Library/MtrrLib/MtrrLib.c
++++ b/UefiCpuPkg/Library/MtrrLib/MtrrLib.c
+@@ -161,6 +161,10 @@ MtrrLibIsMtrrSupported (
+   CPUID_VERSION_INFO_EDX     Edx;
+   MSR_IA32_MTRRCAP_REGISTER  MtrrCap;
+ 
++  if (PcdGetBool(PcdCpuDisableMtrrProgramming)) {
++    return FALSE;
++  }
++
+   //
+   // MTRR is not supported in TD-Guest or any SEV guest.
+   //
+diff --git a/UefiCpuPkg/Library/MtrrLib/MtrrLib.inf b/UefiCpuPkg/Library/MtrrLib/MtrrLib.inf
+index 4c9ea2def3bd0d201358d9c7e237cf01101bb908..611fdc704722e1636fe15cfa6d01ec8691e56d37 100644
+--- a/UefiCpuPkg/Library/MtrrLib/MtrrLib.inf
++++ b/UefiCpuPkg/Library/MtrrLib/MtrrLib.inf
+@@ -37,4 +37,4 @@
+ 
+ [Pcd]
+   gUefiCpuPkgTokenSpaceGuid.PcdCpuNumberOfReservedVariableMtrrs   ## SOMETIMES_CONSUMES
+-
++  gUefiCpuPkgTokenSpaceGuid.PcdCpuDisableMtrrProgramming ## CONSUMES
+diff --git a/UefiCpuPkg/UefiCpuPkg.dec b/UefiCpuPkg/UefiCpuPkg.dec
+index 05baae14455e24c50d4dbdb9418130b213db520b..0a4dbf8f19c5540b95dff1784038d96dd67572c3 100644
+--- a/UefiCpuPkg/UefiCpuPkg.dec
++++ b/UefiCpuPkg/UefiCpuPkg.dec
+@@ -328,6 +328,10 @@
+   # @Prompt SMM Code Access Check.
+   gUefiCpuPkgTokenSpaceGuid.PcdCpuSmmCodeAccessCheckEnable|TRUE|BOOLEAN|0x60000013
+ 
++  ## Disables MTRR programming in case it's already programmed by FSB.
++  # @Prompt Disable MTRR programming.
++  gUefiCpuPkgTokenSpaceGuid.PcdCpuDisableMtrrProgramming|FALSE|BOOLEAN|0x00000017
++
+   ## Specifies the number of variable MTRRs reserved for OS use. The default number of
+   #  MTRRs reserved for OS use is 2.
+   # @Prompt Number of reserved variable MTRRs.
+diff --git a/UefiCpuPkg/UefiCpuPkg.uni b/UefiCpuPkg/UefiCpuPkg.uni
+index 25a7176194f17a10f5389469509a66a538fe5ea4..81f9525860c1c03ae0363f3399d1de50075eb754 100644
+--- a/UefiCpuPkg/UefiCpuPkg.uni
++++ b/UefiCpuPkg/UefiCpuPkg.uni
+@@ -156,9 +156,13 @@
+ 
+ #string STR_gUefiCpuPkgTokenSpaceGuid_PcdCpuHotPlugDataAddress_HELP  #language en-US "Contains the pointer to a CPU Hot Plug Data structure if CPU hot-plug is supported."
+ 
+-#string STR_gUefiCpuPkgTokenSpaceGuid_PcdCpuNumberOfReservedVariableMtrrs_PROMPT  #language en-US "Number of reserved variable MTRRs"
++#string STR_gUefiCpuPkgTokenSpaceGuid_PcdCpuDisableMtrrProgramming_PROMPT  #language en-US "Number of reserved variable MTRRs"
+ 
+-#string STR_gUefiCpuPkgTokenSpaceGuid_PcdCpuNumberOfReservedVariableMtrrs_HELP  #language en-US "Specifies the number of variable MTRRs reserved for OS use."
++#string STR_gUefiCpuPkgTokenSpaceGuid_PcdCpuDisableMtrrProgramming_HELP  #language en-US "Specifies the number of variable MTRRs reserved for OS use."
++
++#string STR_gUefiCpuPkgTokenSpaceGuid_PcdCpuNumberOfReservedVariableMtrrs_PROMPT  #language en-US "Disable MTRR programming."
++
++#string STR_gUefiCpuPkgTokenSpaceGuid_PcdCpuNumberOfReservedVariableMtrrs_HELP  #language en-US "Disables MTRR programming in case it's already programmed by FSB."
+ 
+ #string STR_gUefiCpuPkgTokenSpaceGuid_PcdCpuApLoopMode_PROMPT  #language en-US "The AP wait loop state"
+ 

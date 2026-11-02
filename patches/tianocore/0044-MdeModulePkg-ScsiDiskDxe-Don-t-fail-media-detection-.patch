@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Fri, 3 Jul 2026 09:53:45 -0500
+Subject: [PATCH] MdeModulePkg/ScsiDiskDxe: Don't fail media detection on FUA
+ query error
+
+[ouroBIOS: commit 97a12e8ba446 of MrChromebox's edk2, as it is]
+
+Commit ee58614bbb ("MdeModulePkg/ScsiDiskDxe: Check Write Caching and
+FUA support") added a best-effort FUA-support query to
+ScsiDiskDetectMedia(). It issues a MODE SENSE(10) for the Caching mode
+page via ScsiDiskFuaMode() and assigns the result to the function's
+shared Status variable.
+
+When the device rejects that command, Status is left as
+EFI_DEVICE_ERROR and falls through to the function's return, even
+though the media was already detected successfully (capacity read,
+media present). Callers treat this as fatal:
+ScsiDiskDriverBindingStart() skips installing Block I/O, and
+ScsiDiskReadBlocks()/WriteBlocks() return EFI_DEVICE_ERROR. For
+non-fixed devices DetectMedia() re-runs on every access, so the disk
+is never usable.
+
+This is observed on UFS: the LUN answers the MODE SENSE with a Target
+Failure ("UfsExecScsiCmds() fails with Target Failure"), which
+previously worked (edk2-stable202602) now breaks UFS drive detection
+(edk2-stable202605).
+
+The FUA query is only used to refine ScsiDiskDevice->FuaMode, which
+already defaults to TRUE (the prior always-set-FUA behavior). Its
+failure must not affect media detection, so stop assigning its result
+to Status and hoist the device-type check out of the retry loop.
+
+Fixes: ee58614bbb ("MdeModulePkg/ScsiDiskDxe: Check Write Caching and
+FUA support")
+
+TEST=build/boot google/yaviks Chromebook with UFS, drive is detected
+and bootable.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDisk.c | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDisk.c b/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDisk.c
+index 78fc52056ae5ec419a26cb60b0ca29c24b664e5e..6275686219d1a6f6dc1e929d59706a17db33ed13 100644
+--- a/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDisk.c
++++ b/MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDisk.c
+@@ -2541,10 +2541,9 @@ ScsiDiskDetectMedia (
+   //
+   // Get FUA Mode
+   //
+-  for (Retry = 0; Retry < MaxRetry; Retry++) {
+-    if (ScsiDiskDevice->DeviceType == EFI_SCSI_TYPE_DISK) {
+-      Status = ScsiDiskFuaMode (ScsiDiskDevice);
+-      if (!EFI_ERROR (Status)) {
++  if (ScsiDiskDevice->DeviceType == EFI_SCSI_TYPE_DISK) {
++    for (Retry = 0; Retry < MaxRetry; Retry++) {
++      if (!EFI_ERROR (ScsiDiskFuaMode (ScsiDiskDevice))) {
+         break;
+       }
+     }

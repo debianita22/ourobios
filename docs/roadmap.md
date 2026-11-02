@@ -537,15 +537,19 @@ The Secure Boot keys and the capsules come after; (b) the setup, splash
 and password as a package of their
 own outside the tree (`OuroBiosPkg`: CfrSetupMenuDxe, LvglPkg and its
 LVGL, the update screen), built with the upstream tree, so that the
-*System Preferences* setup stays as it is (started: `edk2/OuroBiosPkg`,
-which coreboot builds with patch 0216, in the third image of
-`edk2-upstream`; [docs/edk2-migration.md](edk2-migration.md#step-b-the-package-a-plan));
-(c) the six patches on core
-packages proposed upstream or carried as they are, each with a reason;
-(d) `tools/build.sh`, `configs/edk2-pins.txt` and `upstream.yml` on the
-upstream tags, which are stable, instead of the mirror of a moving
-branch. Weeks of work, all in the payload: no change to the read-only
-part, and a slot that does not boot falls back.
+*System Preferences* setup stays as it is; (c) the changes to core
+packages carried as patches on the tag, each to be proposed upstream,
+moved to the package or left out. Steps (b) and (c) are in CI as an
+import of the payload of the ROMs: [`edk2/OuroBiosPkg`](../edk2/README.md)
+and `patches/tianocore`, which `tools/edk2-import.py` makes from
+MrChromebox's tree with `patches/edk2`, the same sources file for file,
+built by coreboot with patches 0216 and 0217 into the third image of
+`edk2-upstream` and, for each board, by `tools/build.sh edk2-parity`
+([docs/edk2-migration.md](edk2-migration.md#steps-b-and-c-the-package-and-the-carried-patches));
+(d) the defconfigs, `tools/build.sh`, `configs/edk2-pins.txt` and
+`upstream.yml` on the upstream tags, which are stable, instead of the
+mirror of a moving branch. All in the payload: no change to the
+read-only part, and a slot that does not boot falls back.
 
 ## HSTI
 

@@ -1,0 +1,1142 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Thu, 2 Jul 2026 11:25:19 -0500
+Subject: [PATCH] UefiPayloadPkg: Add LVGL display engine support
+
+[ouroBIOS: commit 17671bf7894d of MrChromebox's edk2, without the files
+that TianoCore's tree does not have (tools/edk2-import.py): 2 in
+edk2/OuroBiosPkg, LvglPkg on its own]
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ .../Usb/UsbMouseAbsolutePointerDxe/MouseHid.c | 624 ++++++++++++++++--
+ .../UsbMouseAbsolutePointer.c                 | 226 ++++++-
+ .../UsbMouseAbsolutePointer.h                 |  62 +-
+ .../UsbMouseAbsolutePointerDxe.inf            |   2 +
+ 4 files changed, 823 insertions(+), 91 deletions(-)
+
+diff --git a/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/MouseHid.c b/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/MouseHid.c
+index 96e3e5c1f795469838da790dadea440c613e9570..422e9a269ef5c913f999ed61f46311c0c45eb433 100644
+--- a/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/MouseHid.c
++++ b/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/MouseHid.c
+@@ -8,6 +8,144 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ 
+ #include "UsbMouseAbsolutePointer.h"
+ 
++#include <Library/BaseLib.h>
++#include <Library/DebugLib.h>
++
++#define HID_UP_GENERIC_DESKTOP  0x01
++#define HID_UP_BUTTON           0x09
++
++#define HID_GD_MOUSE  0x02
++#define HID_GD_X      0x30
++#define HID_GD_Y      0x31
++#define HID_GD_WHEEL  0x38
++
++#define HID_MOUSE_MAX_USAGES  16
++
++///
++/// Transient state while walking a HID report descriptor.
++///
++typedef struct {
++  UINT32    UsagePage;
++  UINT32    ReportSize;
++  UINT32    ReportCount;
++  INT32     LogicalMinimum;
++  INT32     LogicalMaximum;
++  BOOLEAN   HasReportId;
++  UINT8     ReportId;
++  UINT32    BitCursor;
++  UINT32    Usages[HID_MOUSE_MAX_USAGES];
++  UINTN     UsageCount;
++  UINT32    UsageMinimum;
++  UINT32    UsageMaximum;
++  BOOLEAN   UsageRangeValid;
++  UINTN     CollectionDepth;
++  UINTN     MouseAppDepth;       ///< Non-zero while inside Mouse Application collection.
++  BOOLEAN   HaveX;
++  BOOLEAN   HaveY;
++  BOOLEAN   HaveButtons;
++  BOOLEAN   HaveWheel;
++} HID_MOUSE_PARSER_STATE;
++
++/**
++  Initialize ReportLayout to the classic HID boot-protocol mouse format.
++
++  @param  Layout  Layout to initialize.
++
++**/
++VOID
++InitializeDefaultBootMouseLayout (
++  OUT USB_MOUSE_REPORT_LAYOUT  *Layout
++  )
++{
++  ZeroMem (Layout, sizeof (*Layout));
++  Layout->Valid           = TRUE;
++  Layout->HasReportId     = FALSE;
++  Layout->ReportId        = 0;
++  Layout->ButtonBitOffset = 0;
++  Layout->ButtonBitCount  = 3;
++  Layout->XBitOffset      = 8;
++  Layout->XBitSize        = 8;
++  Layout->XRelative       = TRUE;
++  Layout->YBitOffset      = 16;
++  Layout->YBitSize        = 8;
++  Layout->YRelative       = TRUE;
++  Layout->WheelBitOffset  = 24;
++  Layout->WheelBitSize    = 8;
++  Layout->MinPacketBytes  = 3;
++}
++
++/**
++  Return TRUE if Layout matches a boot-protocol mouse report.
++
++  @param  Layout  Parsed layout.
++
++  @retval TRUE   Boot protocol is appropriate.
++  @retval FALSE  Report protocol must be used.
++
++**/
++BOOLEAN
++MouseReportLayoutIsBootCompatible (
++  IN CONST USB_MOUSE_REPORT_LAYOUT  *Layout
++  )
++{
++  if (!Layout->Valid || Layout->HasReportId) {
++    return FALSE;
++  }
++
++  if ((Layout->XBitSize != 8) || (Layout->YBitSize != 8)) {
++    return FALSE;
++  }
++
++  if ((Layout->XBitOffset != 8) || (Layout->YBitOffset != 16)) {
++    return FALSE;
++  }
++
++  if (Layout->ButtonBitOffset != 0) {
++    return FALSE;
++  }
++
++  return TRUE;
++}
++
++/**
++  Update MinPacketBytes from the furthest mapped field.
++
++  @param  Layout  Layout to update.
++
++**/
++STATIC
++VOID
++UpdateMinPacketBytes (
++  IN OUT USB_MOUSE_REPORT_LAYOUT  *Layout
++  )
++{
++  UINT32  EndBit;
++  UINT32  PayloadBytes;
++
++  EndBit = 0;
++  if (Layout->ButtonBitCount > 0) {
++    EndBit = MAX (EndBit, (UINT32)Layout->ButtonBitOffset + Layout->ButtonBitCount);
++  }
++
++  if (Layout->XBitSize > 0) {
++    EndBit = MAX (EndBit, (UINT32)Layout->XBitOffset + Layout->XBitSize);
++  }
++
++  if (Layout->YBitSize > 0) {
++    EndBit = MAX (EndBit, (UINT32)Layout->YBitOffset + Layout->YBitSize);
++  }
++
++  if ((Layout->WheelBitOffset != USB_MOUSE_REPORT_FIELD_ABSENT) && (Layout->WheelBitSize > 0)) {
++    EndBit = MAX (EndBit, (UINT32)Layout->WheelBitOffset + Layout->WheelBitSize);
++  }
++
++  PayloadBytes = (EndBit + 7) / 8;
++  Layout->MinPacketBytes = (UINT16)(PayloadBytes + (Layout->HasReportId ? 1 : 0));
++  if (Layout->MinPacketBytes < 3) {
++    Layout->MinPacketBytes = 3;
++  }
++}
++
+ /**
+   Get next HID item from report descriptor.
+ 
+@@ -89,6 +227,8 @@ GetNextHidItem (
+           return StartPos;
+         }
+ 
++        break;
++
+       case 2:
+         //
+         // 2-byte data
+@@ -99,6 +239,8 @@ GetNextHidItem (
+           return StartPos;
+         }
+ 
++        break;
++
+       case 3:
+         //
+         // 4-byte data, adjust size
+@@ -109,6 +251,8 @@ GetNextHidItem (
+           StartPos += 4;
+           return StartPos;
+         }
++
++        break;
+     }
+   }
+ 
+@@ -116,11 +260,7 @@ GetNextHidItem (
+ }
+ 
+ /**
+-  Get data from HID item.
+-
+-  This function retrieves data from HID item.
+-  It only supports short items, which has 4 types of data:
+-  0, 1, 2, or 4 bytes.
++  Get unsigned data from HID item.
+ 
+   @param  HidItem       Pointer to the HID item.
+ 
+@@ -132,9 +272,6 @@ GetItemData (
+   IN  HID_ITEM  *HidItem
+   )
+ {
+-  //
+-  // Get data from HID item.
+-  //
+   switch (HidItem->Size) {
+     case 1:
+       return HidItem->Data.Uint8;
+@@ -148,73 +285,389 @@ GetItemData (
+ }
+ 
+ /**
+-  Parse HID item from report descriptor.
++  Get signed data from HID item.
+ 
+-  There are three item types: Main, Global, and Local.
+-  This function parses these types of HID items according
+-  to tag info.
++  @param  HidItem       Pointer to the HID item.
++
++  @return The signed data of HID item.
++
++**/
++STATIC
++INT32
++GetItemDataSigned (
++  IN  HID_ITEM  *HidItem
++  )
++{
++  switch (HidItem->Size) {
++    case 1:
++      return (INT32)(INT8)HidItem->Data.Uint8;
++    case 2:
++      return (INT32)(INT16)HidItem->Data.Uint16;
++    case 4:
++      return (INT32)HidItem->Data.Uint32;
++  }
++
++  return 0;
++}
++
++/**
++  Clear local items after a Main item consumes them.
++
++  @param  Parser  Parser state.
++
++**/
++STATIC
++VOID
++ClearLocalState (
++  IN OUT HID_MOUSE_PARSER_STATE  *Parser
++  )
++{
++  Parser->UsageCount      = 0;
++  Parser->UsageRangeValid = FALSE;
++  Parser->UsageMinimum    = 0;
++  Parser->UsageMaximum    = 0;
++}
++
++/**
++  Resolve the Usage ID for field Index of an Input item.
+ 
+-  @param  UsbMouse          The instance of USB_MOUSE_ABSOLUTE_POINTER_DEV
+-  @param  HidItem           The HID item to parse
++  @param  Parser  Parser state.
++  @param  Index   Field index within ReportCount.
++
++  @return Usage ID, or 0 if unknown.
++
++**/
++STATIC
++UINT32
++GetUsageForField (
++  IN HID_MOUSE_PARSER_STATE  *Parser,
++  IN UINTN                   Index
++  )
++{
++  if (Index < Parser->UsageCount) {
++    return Parser->Usages[Index];
++  }
++
++  if (Parser->UsageRangeValid) {
++    return Parser->UsageMinimum + (UINT32)Index;
++  }
++
++  if (Parser->UsageCount > 0) {
++    return Parser->Usages[Parser->UsageCount - 1];
++  }
++
++  return 0;
++}
++
++/**
++  Record a mapped field into the mouse report layout.
++
++  @param  UsbMouse  Device instance.
++  @param  Parser    Parser state.
++  @param  Usage     HID usage (Generic Desktop).
++  @param  BitSize   Field width in bits.
++  @param  Relative  TRUE if relative Input flag set.
++  @param  BitOffset Bit offset within the report payload.
+ 
+ **/
++STATIC
++VOID
++RecordPointerField (
++  IN OUT USB_MOUSE_ABSOLUTE_POINTER_DEV  *UsbMouse,
++  IN OUT HID_MOUSE_PARSER_STATE          *Parser,
++  IN     UINT32                          Usage,
++  IN     UINT8                           BitSize,
++  IN     BOOLEAN                         Relative,
++  IN     UINT32                          BitOffset
++  )
++{
++  USB_MOUSE_REPORT_LAYOUT  *Layout;
++
++  Layout = &UsbMouse->ReportLayout;
++
++  switch (Usage) {
++    case HID_GD_X:
++      if (!Parser->HaveX) {
++        Layout->XBitOffset = (UINT16)BitOffset;
++        Layout->XBitSize   = BitSize;
++        Layout->XRelative  = Relative;
++        Parser->HaveX      = TRUE;
++        UsbMouse->XLogicMin = Parser->LogicalMinimum;
++        UsbMouse->XLogicMax = Parser->LogicalMaximum;
++      }
++
++      break;
++
++    case HID_GD_Y:
++      if (!Parser->HaveY) {
++        Layout->YBitOffset = (UINT16)BitOffset;
++        Layout->YBitSize   = BitSize;
++        Layout->YRelative  = Relative;
++        Parser->HaveY      = TRUE;
++        UsbMouse->YLogicMin = Parser->LogicalMinimum;
++        UsbMouse->YLogicMax = Parser->LogicalMaximum;
++      }
++
++      break;
++
++    case HID_GD_WHEEL:
++      if (!Parser->HaveWheel) {
++        Layout->WheelBitOffset = (UINT16)BitOffset;
++        Layout->WheelBitSize   = BitSize;
++        Parser->HaveWheel      = TRUE;
++        if (Layout->Valid) {
++          UpdateMinPacketBytes (Layout);
++        }
++      }
++
++      break;
++
++    default:
++      break;
++  }
++
++  if (Parser->HaveX && Parser->HaveY) {
++    Layout->Valid       = TRUE;
++    Layout->HasReportId = Parser->HasReportId;
++    Layout->ReportId    = Parser->ReportId;
++    UpdateMinPacketBytes (Layout);
++  }
++}
++
++/**
++  Handle a Main Input item.
++
++  @param  UsbMouse  Device instance.
++  @param  Parser    Parser state.
++  @param  Flags     Input item flags.
++
++**/
++STATIC
++VOID
++ParseInputItem (
++  IN OUT USB_MOUSE_ABSOLUTE_POINTER_DEV  *UsbMouse,
++  IN OUT HID_MOUSE_PARSER_STATE          *Parser,
++  IN     UINT32                          Flags
++  )
++{
++  UINT32   Index;
++  UINT32   BitSize;
++  UINT32   Count;
++  BOOLEAN  Relative;
++  BOOLEAN  Constant;
++  UINT32   Usage;
++  UINT8    ButtonCount;
++
++  BitSize  = Parser->ReportSize;
++  Count    = Parser->ReportCount;
++  Relative = (Flags & HID_MAIN_ITEM_RELATIVE) != 0;
++  Constant = (Flags & HID_MAIN_ITEM_CONSTANT) != 0;
++
++  //
++  // Only map fields from the Mouse Application collection.  Always advance
++  // the bit cursor so subsequent fields stay aligned.
++  //
++  if ((Parser->MouseAppDepth == 0) || Constant || (BitSize == 0) || (Count == 0)) {
++    Parser->BitCursor += BitSize * Count;
++    ClearLocalState (Parser);
++    return;
++  }
++
++  if (Parser->UsagePage == HID_UP_BUTTON) {
++    if (!Parser->HaveButtons) {
++      if (Parser->UsageRangeValid) {
++        ButtonCount = (UINT8)(Parser->UsageMaximum - Parser->UsageMinimum + 1);
++      } else if (Parser->UsageCount > 0) {
++        ButtonCount = (UINT8)Parser->UsageCount;
++      } else {
++        ButtonCount = (UINT8)MIN (Count, 8);
++      }
++
++      if (ButtonCount > Count) {
++        ButtonCount = (UINT8)Count;
++      }
++
++      UsbMouse->ReportLayout.ButtonBitOffset = (UINT16)Parser->BitCursor;
++      UsbMouse->ReportLayout.ButtonBitCount  = ButtonCount;
++      UsbMouse->PrivateData.ButtonDetected   = TRUE;
++      if (Parser->UsageRangeValid) {
++        UsbMouse->PrivateData.ButtonMinIndex = (UINT8)Parser->UsageMinimum;
++        UsbMouse->PrivateData.ButtonMaxIndex = (UINT8)Parser->UsageMaximum;
++      } else {
++        UsbMouse->PrivateData.ButtonMinIndex = 1;
++        UsbMouse->PrivateData.ButtonMaxIndex = ButtonCount;
++      }
++
++      Parser->HaveButtons = TRUE;
++    }
++
++    Parser->BitCursor += BitSize * Count;
++    ClearLocalState (Parser);
++    return;
++  }
++
++  if (Parser->UsagePage == HID_UP_GENERIC_DESKTOP) {
++    for (Index = 0; Index < Count; Index++) {
++      Usage = GetUsageForField (Parser, Index);
++      RecordPointerField (
++        UsbMouse,
++        Parser,
++        Usage,
++        (UINT8)BitSize,
++        Relative,
++        Parser->BitCursor
++        );
++      Parser->BitCursor += BitSize;
++    }
++
++    ClearLocalState (Parser);
++    return;
++  }
++
++  //
++  // Consumer / vendor / other pages: skip.
++  //
++  Parser->BitCursor += BitSize * Count;
++  ClearLocalState (Parser);
++}
++
++/**
++  Parse HID item from report descriptor.
++
++  @param  UsbMouse  The instance of USB_MOUSE_ABSOLUTE_POINTER_DEV
++  @param  Parser    Parser state
++  @param  HidItem   The HID item to parse
++
++**/
++STATIC
+ VOID
+ ParseHidItem (
+-  IN  USB_MOUSE_ABSOLUTE_POINTER_DEV  *UsbMouse,
+-  IN  HID_ITEM                        *HidItem
++  IN OUT USB_MOUSE_ABSOLUTE_POINTER_DEV  *UsbMouse,
++  IN OUT HID_MOUSE_PARSER_STATE          *Parser,
++  IN     HID_ITEM                        *HidItem
+   )
+ {
+-  UINT8  Data;
++  UINT32  Data;
++  UINT32  CollectionType;
++  UINT32  Usage;
+ 
+   switch (HidItem->Type) {
+     case HID_ITEM_TYPE_MAIN:
+-      //
+-      // we don't care any main items, just skip
+-      //
+-      return;
++      switch (HidItem->Tag) {
++        case HID_MAIN_ITEM_TAG_INPUT:
++          ParseInputItem (UsbMouse, Parser, GetItemData (HidItem));
++          break;
+ 
+-    case HID_ITEM_TYPE_GLOBAL:
+-      //
+-      // For global items, we only care Usage Page tag for Button Page here
+-      //
+-      if (HidItem->Tag == HID_GLOBAL_ITEM_TAG_USAGE_PAGE) {
+-        Data = (UINT8)GetItemData (HidItem);
+-        if (Data == 0x09) {
++        case HID_MAIN_ITEM_TAG_OUTPUT:
++        case HID_MAIN_ITEM_TAG_FEATURE:
+           //
+-          // Button Page
++          // Still consume locals; do not touch BitCursor (Output/Feature are
++          // not part of the interrupt Input report).
+           //
+-          UsbMouse->PrivateData.ButtonDetected = TRUE;
+-        }
++          ClearLocalState (Parser);
++          break;
++
++        case HID_MAIN_ITEM_TAG_BEGIN_COLLECTION:
++          CollectionType = GetItemData (HidItem);
++          Parser->CollectionDepth++;
++          Usage = 0;
++          if (Parser->UsageCount > 0) {
++            Usage = Parser->Usages[0];
++          } else if (Parser->UsageRangeValid) {
++            Usage = Parser->UsageMinimum;
++          }
++
++          if ((Parser->MouseAppDepth == 0) &&
++              (CollectionType == HID_COLLECTION_APPLICATION) &&
++              (Parser->UsagePage == HID_UP_GENERIC_DESKTOP) &&
++              (Usage == HID_GD_MOUSE))
++          {
++            Parser->MouseAppDepth = Parser->CollectionDepth;
++          }
++
++          ClearLocalState (Parser);
++          break;
++
++        case HID_MAIN_ITEM_TAG_END_COLLECTION:
++          if ((Parser->MouseAppDepth != 0) &&
++              (Parser->CollectionDepth == Parser->MouseAppDepth))
++          {
++            Parser->MouseAppDepth = 0;
++          }
++
++          if (Parser->CollectionDepth > 0) {
++            Parser->CollectionDepth--;
++          }
++
++          ClearLocalState (Parser);
++          break;
++
++        default:
++          ClearLocalState (Parser);
++          break;
++      }
++
++      return;
++
++    case HID_ITEM_TYPE_GLOBAL:
++      switch (HidItem->Tag) {
++        case HID_GLOBAL_ITEM_TAG_USAGE_PAGE:
++          Parser->UsagePage = GetItemData (HidItem);
++          break;
++
++        case HID_GLOBAL_ITEM_TAG_LOGICAL_MINIMUM:
++          Parser->LogicalMinimum = GetItemDataSigned (HidItem);
++          break;
++
++        case HID_GLOBAL_ITEM_TAG_LOGICAL_MAXIMUM:
++          Parser->LogicalMaximum = GetItemDataSigned (HidItem);
++          break;
++
++        case HID_GLOBAL_ITEM_TAG_REPORT_SIZE:
++          Parser->ReportSize = GetItemData (HidItem);
++          break;
++
++        case HID_GLOBAL_ITEM_TAG_REPORT_COUNT:
++          Parser->ReportCount = GetItemData (HidItem);
++          break;
++
++        case HID_GLOBAL_ITEM_TAG_REPORT_ID:
++          Data = GetItemData (HidItem);
++          Parser->HasReportId = TRUE;
++          Parser->ReportId    = (UINT8)Data;
++          Parser->BitCursor   = 0;
++          break;
++
++        default:
++          break;
+       }
+ 
+       return;
+ 
+     case HID_ITEM_TYPE_LOCAL:
+       if (HidItem->Size == 0) {
+-        //
+-        // No expected data for local item
+-        //
+         return;
+       }
+ 
+-      Data = (UINT8)GetItemData (HidItem);
++      Data = GetItemData (HidItem);
+ 
+       switch (HidItem->Tag) {
+-        case HID_LOCAL_ITEM_TAG_USAGE_MINIMUM:
+-          if (UsbMouse->PrivateData.ButtonDetected) {
+-            UsbMouse->PrivateData.ButtonMinIndex = Data;
++        case HID_LOCAL_ITEM_TAG_USAGE:
++          if (Parser->UsageCount < HID_MOUSE_MAX_USAGES) {
++            Parser->Usages[Parser->UsageCount++] = Data;
+           }
+ 
+           return;
+ 
+-        case HID_LOCAL_ITEM_TAG_USAGE_MAXIMUM:
+-        {
+-          if (UsbMouse->PrivateData.ButtonDetected) {
+-            UsbMouse->PrivateData.ButtonMaxIndex = Data;
+-          }
++        case HID_LOCAL_ITEM_TAG_USAGE_MINIMUM:
++          Parser->UsageMinimum    = Data;
++          Parser->UsageRangeValid = TRUE;
++          return;
+ 
++        case HID_LOCAL_ITEM_TAG_USAGE_MAXIMUM:
++          Parser->UsageMaximum    = Data;
++          Parser->UsageRangeValid = TRUE;
+           return;
+-        }
+ 
+         default:
+           return;
+@@ -245,9 +698,21 @@ ParseMouseReportDescriptor (
+   IN  UINTN                           ReportSize
+   )
+ {
+-  UINT8     *DescriptorEnd;
+-  UINT8     *Ptr;
+-  HID_ITEM  HidItem;
++  UINT8                   *DescriptorEnd;
++  UINT8                   *Ptr;
++  HID_ITEM                HidItem;
++  HID_MOUSE_PARSER_STATE  Parser;
++
++  //
++  // Default to boot-protocol layout so devices with incomplete descriptors
++  // keep the historical behaviour.
++  //
++  InitializeDefaultBootMouseLayout (&UsbMouseAbsolutePointer->ReportLayout);
++  UsbMouseAbsolutePointer->ReportLayout.WheelBitOffset = USB_MOUSE_REPORT_FIELD_ABSENT;
++  UsbMouseAbsolutePointer->ReportLayout.WheelBitSize   = 0;
++  UsbMouseAbsolutePointer->ReportLayout.Valid          = FALSE;
++
++  ZeroMem (&Parser, sizeof (Parser));
+ 
+   DescriptorEnd = ReportDescriptor + ReportSize;
+ 
+@@ -260,16 +725,69 @@ ParseMouseReportDescriptor (
+       return EFI_UNSUPPORTED;
+     }
+ 
+-    ParseHidItem (UsbMouseAbsolutePointer, &HidItem);
++    ParseHidItem (UsbMouseAbsolutePointer, &Parser, &HidItem);
+ 
+     Ptr = GetNextHidItem (Ptr, DescriptorEnd, &HidItem);
+   }
+ 
+-  UsbMouseAbsolutePointer->NumberOfButtons = (UINT8)(UsbMouseAbsolutePointer->PrivateData.ButtonMaxIndex - UsbMouseAbsolutePointer->PrivateData.ButtonMinIndex + 1);
+-  UsbMouseAbsolutePointer->XLogicMax       = 1023;
+-  UsbMouseAbsolutePointer->YLogicMax       = 1023;
+-  UsbMouseAbsolutePointer->XLogicMin       = -1023;
+-  UsbMouseAbsolutePointer->YLogicMin       = -1023;
++  if (!UsbMouseAbsolutePointer->ReportLayout.Valid) {
++    //
++    // Could not locate X/Y — fall back to boot mouse layout.
++    //
++    InitializeDefaultBootMouseLayout (&UsbMouseAbsolutePointer->ReportLayout);
++    DEBUG ((
++      DEBUG_WARN,
++      "UsbMouseAbsolutePointer: HID descriptor lacked X/Y; using boot layout\n"
++      ));
++  } else {
++    if (!Parser.HaveWheel) {
++      UsbMouseAbsolutePointer->ReportLayout.WheelBitOffset = USB_MOUSE_REPORT_FIELD_ABSENT;
++      UsbMouseAbsolutePointer->ReportLayout.WheelBitSize   = 0;
++    }
++
++    if (!Parser.HaveButtons) {
++      UsbMouseAbsolutePointer->ReportLayout.ButtonBitOffset = 0;
++      UsbMouseAbsolutePointer->ReportLayout.ButtonBitCount  = 3;
++    }
++
++    UpdateMinPacketBytes (&UsbMouseAbsolutePointer->ReportLayout);
++
++    DEBUG ((
++      DEBUG_INFO,
++      "UsbMouseAbsolutePointer: layout HasId=%d Id=0x%02x X@%u/%u Y@%u/%u Btn@%u/%u Wheel@%u/%u MinLen=%u\n",
++      UsbMouseAbsolutePointer->ReportLayout.HasReportId,
++      UsbMouseAbsolutePointer->ReportLayout.ReportId,
++      UsbMouseAbsolutePointer->ReportLayout.XBitOffset,
++      UsbMouseAbsolutePointer->ReportLayout.XBitSize,
++      UsbMouseAbsolutePointer->ReportLayout.YBitOffset,
++      UsbMouseAbsolutePointer->ReportLayout.YBitSize,
++      UsbMouseAbsolutePointer->ReportLayout.ButtonBitOffset,
++      UsbMouseAbsolutePointer->ReportLayout.ButtonBitCount,
++      UsbMouseAbsolutePointer->ReportLayout.WheelBitOffset,
++      UsbMouseAbsolutePointer->ReportLayout.WheelBitSize,
++      UsbMouseAbsolutePointer->ReportLayout.MinPacketBytes
++      ));
++  }
++
++  if (UsbMouseAbsolutePointer->PrivateData.ButtonDetected) {
++    UsbMouseAbsolutePointer->NumberOfButtons = (UINT8)(
++      UsbMouseAbsolutePointer->PrivateData.ButtonMaxIndex -
++      UsbMouseAbsolutePointer->PrivateData.ButtonMinIndex + 1
++      );
++  } else {
++    UsbMouseAbsolutePointer->NumberOfButtons =
++      UsbMouseAbsolutePointer->ReportLayout.ButtonBitCount;
++  }
++
++  if ((UsbMouseAbsolutePointer->XLogicMax == 0) && (UsbMouseAbsolutePointer->XLogicMin == 0)) {
++    UsbMouseAbsolutePointer->XLogicMax = 1023;
++    UsbMouseAbsolutePointer->XLogicMin = -1023;
++  }
++
++  if ((UsbMouseAbsolutePointer->YLogicMax == 0) && (UsbMouseAbsolutePointer->YLogicMin == 0)) {
++    UsbMouseAbsolutePointer->YLogicMax = 1023;
++    UsbMouseAbsolutePointer->YLogicMin = -1023;
++  }
+ 
+   return EFI_SUCCESS;
+ }
+diff --git a/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointer.c b/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointer.c
+index 9d01860133869ed196caaedae3198588f804c112..f395bb7458784e6b448992cf8934b8ac3c922152 100644
+--- a/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointer.c
++++ b/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointer.c
+@@ -686,25 +686,49 @@ InitializeUsbMouseDevice (
+     DivU64x32 (UsbMouseAbsolutePointerDev->Mode.AbsoluteMaxY + UsbMouseAbsolutePointerDev->Mode.AbsoluteMinY, 2);
+ 
+   //
+-  // Set boot protocol for the USB mouse.
+-  // This driver only supports boot protocol.
++  // Select HID protocol from the parsed report layout.  Boot protocol is only
++  // used when the descriptor matches the classic 8-bit boot mouse format.
++  // Devices with Report IDs or 16-bit axes (e.g. many wireless dongles) must
++  // stay on report protocol so interrupt packets match ReportLayout.
+   //
+-  UsbGetProtocolRequest (
+-    UsbIo,
+-    UsbMouseAbsolutePointerDev->InterfaceDescriptor.InterfaceNumber,
+-    &Protocol
+-    );
+-  if (Protocol != BOOT_PROTOCOL) {
+-    Status = UsbSetProtocolRequest (
+-               UsbIo,
+-               UsbMouseAbsolutePointerDev->InterfaceDescriptor.InterfaceNumber,
+-               BOOT_PROTOCOL
+-               );
++  {
++    UINT8  DesiredProtocol;
++
++    DesiredProtocol = MouseReportLayoutIsBootCompatible (&UsbMouseAbsolutePointerDev->ReportLayout)
++                      ? BOOT_PROTOCOL
++                      : REPORT_PROTOCOL;
++
++    UsbGetProtocolRequest (
++      UsbIo,
++      UsbMouseAbsolutePointerDev->InterfaceDescriptor.InterfaceNumber,
++      &Protocol
++      );
++    if (Protocol != DesiredProtocol) {
++      Status = UsbSetProtocolRequest (
++                 UsbIo,
++                 UsbMouseAbsolutePointerDev->InterfaceDescriptor.InterfaceNumber,
++                 DesiredProtocol
++                 );
++      if (EFI_ERROR (Status) && (DesiredProtocol == REPORT_PROTOCOL)) {
++        //
++        // Fall back to boot protocol and the matching layout if the device
++        // rejects report protocol.
++        //
++        Status = UsbSetProtocolRequest (
++                   UsbIo,
++                   UsbMouseAbsolutePointerDev->InterfaceDescriptor.InterfaceNumber,
++                   BOOT_PROTOCOL
++                   );
++        if (!EFI_ERROR (Status)) {
++          InitializeDefaultBootMouseLayout (&UsbMouseAbsolutePointerDev->ReportLayout);
++        }
++      }
+ 
+-    if (EFI_ERROR (Status)) {
+-      FreePool (Buf);
+-      FreePool (ReportDesc);
+-      return Status;
++      if (EFI_ERROR (Status)) {
++        FreePool (Buf);
++        FreePool (ReportDesc);
++        return Status;
++      }
+     }
+   }
+ 
+@@ -730,6 +754,80 @@ InitializeUsbMouseDevice (
+   return EFI_SUCCESS;
+ }
+ 
++/**
++  Extract a little-endian bitfield from a HID report payload.
++
++  @param  Data        Report payload bytes.
++  @param  DataLength  Payload length in bytes.
++  @param  BitOffset   Field bit offset from start of payload.
++  @param  BitSize     Field width in bits (1..32).
++
++  @return Zero-extended field value.
++
++**/
++STATIC
++UINT32
++ExtractHidReportBits (
++  IN CONST UINT8  *Data,
++  IN UINTN        DataLength,
++  IN UINT16       BitOffset,
++  IN UINT8        BitSize
++  )
++{
++  UINTN   ByteOffset;
++  UINT8   Shift;
++  UINT64  Window;
++  UINT32  Mask;
++  UINTN   Index;
++
++  if ((BitSize == 0) || (BitSize > 32) || (Data == NULL) || (DataLength == 0)) {
++    return 0;
++  }
++
++  ByteOffset = BitOffset / 8;
++  Shift      = (UINT8)(BitOffset % 8);
++  Window     = 0;
++
++  for (Index = 0; Index < 5; Index++) {
++    if ((ByteOffset + Index) >= DataLength) {
++      break;
++    }
++
++    Window |= (UINT64)Data[ByteOffset + Index] << (Index * 8);
++  }
++
++  Window >>= Shift;
++  if (BitSize == 32) {
++    return (UINT32)Window;
++  }
++
++  Mask = (1u << BitSize) - 1;
++  return (UINT32)Window & Mask;
++}
++
++/**
++  Sign-extend a BitSize-wide unsigned value to INT32.
++
++  @param  Value    Zero-extended field value.
++  @param  BitSize  Original field width.
++
++  @return Signed value.
++
++**/
++STATIC
++INT32
++SignExtendHidValue (
++  IN UINT32  Value,
++  IN UINT8   BitSize
++  )
++{
++  if ((BitSize > 0) && (BitSize < 32) && ((Value & (1u << (BitSize - 1))) != 0)) {
++    Value |= ~((1u << BitSize) - 1);
++  }
++
++  return (INT32)Value;
++}
++
+ /**
+   Handler function for USB mouse's asynchronous interrupt transfer.
+ 
+@@ -760,9 +858,17 @@ OnMouseInterruptComplete (
+   EFI_USB_IO_PROTOCOL             *UsbIo;
+   UINT8                           EndpointAddr;
+   UINT32                          UsbResult;
++  USB_MOUSE_REPORT_LAYOUT         *Layout;
++  UINT8                           *Payload;
++  UINTN                           PayloadLength;
++  UINT32                          ButtonMask;
++  INT32                           DeltaX;
++  INT32                           DeltaY;
++  INT32                           DeltaZ;
+ 
+   UsbMouseAbsolutePointerDevice = (USB_MOUSE_ABSOLUTE_POINTER_DEV *)Context;
+   UsbIo                         = UsbMouseAbsolutePointerDevice->UsbIo;
++  Layout                        = &UsbMouseAbsolutePointerDevice->ReportLayout;
+ 
+   if (Result != EFI_USB_NOERROR) {
+     //
+@@ -815,30 +921,71 @@ OnMouseInterruptComplete (
+     return EFI_SUCCESS;
+   }
+ 
++  Payload       = (UINT8 *)Data;
++  PayloadLength = DataLength;
++
+   //
+-  // Check mouse Data
+-  // USB HID Specification specifies following data format:
+-  // Byte    Bits    Description
+-  // 0       0       Button 1
+-  //         1       Button 2
+-  //         2       Button 3
+-  //         4 to 7  Device-specific
+-  // 1       0 to 7  X displacement
+-  // 2       0 to 7  Y displacement
+-  // 3 to n  0 to 7  Device specific (optional)
++  // Reports with a Report ID prefix may share the interrupt endpoint with
++  // non-pointer reports (system control, consumer, vendor).  Ignore those.
+   //
+-  if (DataLength < 3) {
++  if (Layout->HasReportId) {
++    if (PayloadLength < 1) {
++      return EFI_SUCCESS;
++    }
++
++    if (Payload[0] != Layout->ReportId) {
++      return EFI_SUCCESS;
++    }
++
++    Payload++;
++    PayloadLength--;
++  }
++
++  if (DataLength < Layout->MinPacketBytes) {
++    return EFI_DEVICE_ERROR;
++  }
++
++  if (PayloadLength * 8 < (UINTN)Layout->YBitOffset + Layout->YBitSize) {
+     return EFI_DEVICE_ERROR;
+   }
+ 
+   UsbMouseAbsolutePointerDevice->StateChanged = TRUE;
+ 
+-  UsbMouseAbsolutePointerDevice->State.ActiveButtons = *(UINT8 *)Data & (BIT0 | BIT1 | BIT2);
++  ButtonMask = 0;
++  if (Layout->ButtonBitCount > 0) {
++    ButtonMask = ExtractHidReportBits (
++                   Payload,
++                   PayloadLength,
++                   Layout->ButtonBitOffset,
++                   Layout->ButtonBitCount
++                   );
++  }
++
++  UsbMouseAbsolutePointerDevice->State.ActiveButtons = (UINT8)(ButtonMask & (BIT0 | BIT1 | BIT2));
++
++  DeltaX = SignExtendHidValue (
++             ExtractHidReportBits (
++               Payload,
++               PayloadLength,
++               Layout->XBitOffset,
++               Layout->XBitSize
++               ),
++             Layout->XBitSize
++             );
++  DeltaY = SignExtendHidValue (
++             ExtractHidReportBits (
++               Payload,
++               PayloadLength,
++               Layout->YBitOffset,
++               Layout->YBitSize
++               ),
++             Layout->YBitSize
++             );
+ 
+   UsbMouseAbsolutePointerDevice->State.CurrentX =
+     MIN (
+       MAX (
+-        (INT64)UsbMouseAbsolutePointerDevice->State.CurrentX + *((INT8 *)Data + 1),
++        (INT64)UsbMouseAbsolutePointerDevice->State.CurrentX + DeltaX,
+         (INT64)UsbMouseAbsolutePointerDevice->Mode.AbsoluteMinX
+         ),
+       (INT64)UsbMouseAbsolutePointerDevice->Mode.AbsoluteMaxX
+@@ -846,16 +993,29 @@ OnMouseInterruptComplete (
+   UsbMouseAbsolutePointerDevice->State.CurrentY =
+     MIN (
+       MAX (
+-        (INT64)UsbMouseAbsolutePointerDevice->State.CurrentY + *((INT8 *)Data + 2),
++        (INT64)UsbMouseAbsolutePointerDevice->State.CurrentY + DeltaY,
+         (INT64)UsbMouseAbsolutePointerDevice->Mode.AbsoluteMinY
+         ),
+       (INT64)UsbMouseAbsolutePointerDevice->Mode.AbsoluteMaxY
+       );
+-  if (DataLength > 3) {
++
++  if ((Layout->WheelBitOffset != USB_MOUSE_REPORT_FIELD_ABSENT) &&
++      (Layout->WheelBitSize > 0) &&
++      (PayloadLength * 8 >= (UINTN)Layout->WheelBitOffset + Layout->WheelBitSize))
++  {
++    DeltaZ = SignExtendHidValue (
++               ExtractHidReportBits (
++                 Payload,
++                 PayloadLength,
++                 Layout->WheelBitOffset,
++                 Layout->WheelBitSize
++                 ),
++               Layout->WheelBitSize
++               );
+     UsbMouseAbsolutePointerDevice->State.CurrentZ =
+       MIN (
+         MAX (
+-          (INT64)UsbMouseAbsolutePointerDevice->State.CurrentZ + *((INT8 *)Data + 3),
++          (INT64)UsbMouseAbsolutePointerDevice->State.CurrentZ + DeltaZ,
+           (INT64)UsbMouseAbsolutePointerDevice->Mode.AbsoluteMinZ
+           ),
+         (INT64)UsbMouseAbsolutePointerDevice->Mode.AbsoluteMaxZ
+diff --git a/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointer.h b/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointer.h
+index bf7fa8d05468df8c0b6d32579561a682b4e7f75d..0cbe36f573e919335c3884cf4b162e8a59974b08 100644
+--- a/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointer.h
++++ b/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointer.h
+@@ -55,6 +55,32 @@ typedef struct {
+   UINT8      Reserved;
+ } USB_MOUSE_BUTTON_DATA;
+ 
++#define USB_MOUSE_REPORT_FIELD_ABSENT  0xFFFF
++
++///
++/// Decoded HID mouse input report layout.
++///
++/// Bit offsets are relative to the start of the report payload after any
++/// leading Report ID byte.  A classic boot-protocol mouse is:
++///   buttons @ bit 0 (3+ bits), X @ bit 8 (8-bit), Y @ bit 16 (8-bit).
++///
++typedef struct {
++  BOOLEAN    Valid;              ///< TRUE once X and Y fields were located.
++  BOOLEAN    HasReportId;        ///< Report begins with a Report ID byte.
++  UINT8      ReportId;           ///< Expected Report ID when HasReportId.
++  UINT16     ButtonBitOffset;
++  UINT8      ButtonBitCount;
++  UINT16     XBitOffset;
++  UINT8      XBitSize;
++  BOOLEAN    XRelative;
++  UINT16     YBitOffset;
++  UINT8      YBitSize;
++  BOOLEAN    YRelative;
++  UINT16     WheelBitOffset;     ///< USB_MOUSE_REPORT_FIELD_ABSENT if none.
++  UINT8      WheelBitSize;
++  UINT16     MinPacketBytes;     ///< Minimum interrupt packet length.
++} USB_MOUSE_REPORT_LAYOUT;
++
+ ///
+ /// Device instance of USB mouse.
+ ///
+@@ -75,6 +101,7 @@ typedef struct {
+   EFI_ABSOLUTE_POINTER_MODE        Mode;
+   BOOLEAN                          StateChanged;
+   USB_MOUSE_BUTTON_DATA            PrivateData;
++  USB_MOUSE_REPORT_LAYOUT          ReportLayout;
+   EFI_UNICODE_STRING_TABLE         *ControllerNameTable;
+ } USB_MOUSE_ABSOLUTE_POINTER_DEV;
+ 
+@@ -374,10 +401,9 @@ IsUsbMouse (
+ /**
+   Initialize the USB mouse device.
+ 
+-  This function retrieves and parses HID report descriptor, and
+-  initializes state of USB_MOUSE_ABSOLUTE_POINTER_DEV. Then it sets indefinite idle
+-  rate for the device. Finally it creates event for delayed recovery,
+-  which deals with device error.
++  This function retrieves and parses HID report descriptor, initializes
++  ReportLayout, and selects boot or report protocol accordingly. Then it
++  creates event for delayed recovery, which deals with device error.
+ 
+   @param  UsbMouseAbsolutePointerDev   Device instance to be initialized.
+ 
+@@ -443,7 +469,8 @@ USBMouseRecoveryHandler (
+   According to USB HID Specification, report descriptors are
+   composed of pieces of information. Each piece of information
+   is called an Item. This function retrieves each item from
+-  the report descriptor and updates USB_MOUSE_ABSOLUTE_POINTER_DEV.
++  the report descriptor and updates USB_MOUSE_ABSOLUTE_POINTER_DEV,
++  including ReportLayout used to decode interrupt packets.
+ 
+   @param  UsbMouseAbsolutePointer  The instance of USB_MOUSE_ABSOLUTE_POINTER_DEV
+   @param  ReportDescriptor         Report descriptor to parse
+@@ -459,3 +486,28 @@ ParseMouseReportDescriptor (
+   IN  UINT8                           *ReportDescriptor,
+   IN  UINTN                           ReportSize
+   );
++
++/**
++  Initialize ReportLayout to the classic HID boot-protocol mouse format.
++
++  @param  Layout  Layout to initialize.
++
++**/
++VOID
++InitializeDefaultBootMouseLayout (
++  OUT USB_MOUSE_REPORT_LAYOUT  *Layout
++  );
++
++/**
++  Return TRUE if Layout matches a boot-protocol mouse report.
++
++  @param  Layout  Parsed layout.
++
++  @retval TRUE   Boot protocol is appropriate.
++  @retval FALSE  Report protocol must be used.
++
++**/
++BOOLEAN
++MouseReportLayoutIsBootCompatible (
++  IN CONST USB_MOUSE_REPORT_LAYOUT  *Layout
++  );
+diff --git a/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointerDxe.inf b/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointerDxe.inf
+index 00e061f56a7dd087ac598b2eb8ba5e5fd6677536..0a162f179477963053337ed2d29cc3ef6b459a1e 100644
+--- a/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointerDxe.inf
++++ b/MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointerDxe.inf
+@@ -50,6 +50,8 @@
+   UefiBootServicesTableLib
+   UefiDriverEntryPoint
+   BaseMemoryLib
++  BaseLib
++  DebugLib
+   ReportStatusCodeLib
+   UefiUsbLib
+ 

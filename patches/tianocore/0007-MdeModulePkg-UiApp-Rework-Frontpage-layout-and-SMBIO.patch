@@ -1,0 +1,1855 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Sat, 4 Apr 2020 13:02:57 -0500
+Subject: [PATCH] MdeModulePkg/UiApp: Rework Frontpage layout and SMBIOS
+ display
+
+[ouroBIOS: commit 83eb1e651728 of MrChromebox's edk2, as it is]
+
+Add DeviceNameFromProduct lookup for ChromeOS board names on the
+front page.  Rework frontpage layout for cleaner SMBIOS data display.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ .../Application/UiApp/DeviceNameFromProduct.c | 798 ++++++++++++++++++
+ MdeModulePkg/Application/UiApp/FrontPage.c    | 268 ++++--
+ MdeModulePkg/Application/UiApp/FrontPage.h    |  14 +
+ .../Application/UiApp/FrontPageCustomizedUi.c |  52 +-
+ .../Application/UiApp/FrontPageCustomizedUi.h |  29 -
+ .../UiApp/FrontPageCustomizedUiSupport.c      | 306 +------
+ .../UiApp/FrontPageCustomizedUiSupport.h      |  13 -
+ .../Application/UiApp/FrontPageStrings.uni    |  56 +-
+ .../Application/UiApp/FrontPageVfr.Vfr        |  33 +-
+ MdeModulePkg/Application/UiApp/UiApp.inf      |   1 +
+ 10 files changed, 1015 insertions(+), 555 deletions(-)
+ create mode 100644 MdeModulePkg/Application/UiApp/DeviceNameFromProduct.c
+
+diff --git a/MdeModulePkg/Application/UiApp/DeviceNameFromProduct.c b/MdeModulePkg/Application/UiApp/DeviceNameFromProduct.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..978b680b5af15799acc29f1dcc5443da7abd9ead
+--- /dev/null
++++ b/MdeModulePkg/Application/UiApp/DeviceNameFromProduct.c
+@@ -0,0 +1,798 @@
++#include "FrontPage.h"
++#include <Library/BaseLib.h>
++
++/**
++  Case-insensitive string comparison function.
++
++  @param  Str1   First null-terminated string to compare.
++  @param  Str2   Second null-terminated string to compare.
++
++  @retval 0   The strings are equal (case-insensitive).
++  @retval !=0 The strings are not equal.
++**/
++STATIC
++INTN
++StriCmp (
++  IN CONST CHAR16  *Str1,
++  IN CONST CHAR16  *Str2
++  )
++{
++  CHAR16  Char1;
++  CHAR16  Char2;
++
++  while (*Str1 != L'\0') {
++    Char1 = CharToUpper (*Str1);
++    Char2 = CharToUpper (*Str2);
++
++    if (Char1 != Char2) {
++      return Char1 - Char2;
++    }
++
++    Str1++;
++    Str2++;
++  }
++
++  return CharToUpper (*Str1) - CharToUpper (*Str2);
++}
++
++VOID
++GetDeviceNameFromProduct (
++  IN      CHAR16                  *Product,
++  IN      UINTN                   BufferSize,
++  OUT     CHAR16                  **DeviceName
++  )
++{
++  // grouped by platform
++  //SNB/IVB
++  if (!StriCmp(Product, L"Butterfly")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Pavilion Chromebook 14");
++  } else if (!StriCmp(Product, L"Link")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Google Chromebook Pixel [2013]");
++  } else if (!StriCmp(Product, L"Lumpy")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Samsung Chromebook Series 5 550");
++  } else if (!StriCmp(Product, L"Parrot")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer C7/C710 Chromebook");
++  } else if (!StriCmp(Product, L"Stout")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo ThinkPad X131e Chromebook");
++  } else if (!StriCmp(Product, L"Stumpy")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Samsung Chromebox Series 3");
++  }
++  //HSW
++    else if (!StriCmp(Product, L"Falco")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 14");
++  } else if (!StriCmp(Product, L"Leon")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Toshiba Chromebook 13 [CB30/CB35]");
++  } else if (!StriCmp(Product, L"Mccloud")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebox CXI");
++  } else if (!StriCmp(Product, L"Monroe")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"LG Chromebase");
++  } else if (!StriCmp(Product, L"Panther")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebox [CN60]");
++  } else if (!StriCmp(Product, L"Peppy")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 11 [C720/C720P]");
++  } else if (!StriCmp(Product, L"Tricky")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebox 3010");
++  } else if (!StriCmp(Product, L"Wolf")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebook 11 [CB1C13]");
++  } else if (!StriCmp(Product, L"Zako")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebox G1");
++  }
++  //BDW
++    else if (!StriCmp(Product, L"Auron")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 11 [C740/C910]");
++  } else if (!StriCmp(Product, L"Auron_Paine")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 11 [C740]");
++  } else if (!StriCmp(Product, L"Auron_Yuna")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 15 [CB5-571/C910]");
++  } else if (!StriCmp(Product, L"Buddy")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebase 24");
++  } else if (!StriCmp(Product, L"Gandof")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Toshiba Chromebook 2 [2015]");
++  } else if (!StriCmp(Product, L"Guado")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebox 2 [CN62]");
++  } else if (!StriCmp(Product, L"Lulu")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebook 13 [7310]");
++  } else if (!StriCmp(Product, L"Rikku")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebox CXI2/CXV2");
++  } else if (!StriCmp(Product, L"Samus")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Google Chromebook Pixel [2015]");
++  } else if (!StriCmp(Product, L"Tidus")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo ThinkCentre Chromebox");
++  }
++  //BYT
++    else if (!StriCmp(Product, L"Banjo")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 15 [CB3-531]");
++  } else if (!StriCmp(Product, L"Candy")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebook 11 [3120]");
++  } else if (!StriCmp(Product, L"Clapper")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo N20/N20P Chromebook");
++  } else if (!StriCmp(Product, L"Enguarde")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL N6 Education Chromebook");
++  } else if (!StriCmp(Product, L"Expresso")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HEXA Chromebook Pi");
++  } else if (!StriCmp(Product, L"Glimmer")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo ThinkPad 11e/Yoga Chromebook");
++  } else if (!StriCmp(Product, L"Gnawty")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 11");
++  } else if (!StriCmp(Product, L"Heli")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Haier Chromebook 11 G2");
++  } else if (!StriCmp(Product, L"Kip")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 11 G3/G4");
++  } else if (!StriCmp(Product, L"Ninja")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"AOpen Chromebox Commercial");
++  } else if (!StriCmp(Product, L"Orco")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo IdeaPad 100S Chromebook");
++  } else if (!StriCmp(Product, L"Quawks")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook C300");
++  } else if (!StriCmp(Product, L"Squawks")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook C200");
++  } else if (!StriCmp(Product, L"Sumo")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"AOpen Chromebase Commercial");
++  } else if (!StriCmp(Product, L"Swanky")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Toshiba Chromebook 2 [2014]");
++  } else if (!StriCmp(Product, L"Winky")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Samsung Chromebook 2 11 [XE500C12]");
++  }
++  //BSW
++    else if (!StriCmp(Product, L"Banon")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 15 [CB3-532]");
++  } else if (!StriCmp(Product, L"Celes")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Samsung Chromebook 3");
++  } else if (!StriCmp(Product, L"Cyan")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook R11");
++  } else if (!StriCmp(Product, L"Edgar")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 14 [CB3-431]");
++  } else if (!StriCmp(Product, L"Kefka")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebook 11 [3180/3189]");
++  } else if (!StriCmp(Product, L"Reks")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo N22/N23/N42 Chromebook");
++  } else if (!StriCmp(Product, L"Relm")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL NL61 Chromebook");
++  } else if (!StriCmp(Product, L"Setzer")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 11 G5");
++  } else if (!StriCmp(Product, L"Terra")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook C202SA");
++  } else if (!StriCmp(Product, L"Ultima")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo ThinkPad 11e/Yoga Chromebook [G3]");
++  } else if (!StriCmp(Product, L"Wizpig")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Wizpig Braswell Chromebook");
++  }
++  //SKL
++    else if (!StriCmp(Product, L"Asuka")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebook 13 [3380]");
++  } else if (!StriCmp(Product, L"Caroline")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Samsung Chromebook Pro");
++  } else if (!StriCmp(Product, L"Cave")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook Flip C302");
++  } else if (!StriCmp(Product, L"Chell")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 13 G1");
++  } else if (!StriCmp(Product, L"Lars")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 14 for Work [CP5-471]");
++  } else if (!StriCmp(Product, L"Sentry")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo ThinkPad 13 Chromebook");
++  }
++  //APL
++    else if (!StriCmp(Product, L"Astronaut")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 11 [C732]");
++  } else if (!StriCmp(Product, L"Babymako")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Asus Chromebook C403");
++  } else if (!StriCmp(Product, L"Babymega")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook C223");
++  } else if (!StriCmp(Product, L"Babytiger")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook C523");
++  } else if (!StriCmp(Product, L"Blacktip")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook NL71/NL71T");
++  } else if (!StriCmp(Product, L"Blacktip360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook NL7T/NL7TW");
++  } else if (!StriCmp(Product, L"Blacktiplte")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook NL7 LTE");
++  } else if (!StriCmp(Product, L"Blue")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 15 [CB315-1H/1HT]");
++  } else if (!StriCmp(Product, L"Bruce")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 15 [CP315]");
++  } else if (!StriCmp(Product, L"Electro")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 11 [R751T]");
++  } else if (!StriCmp(Product, L"Epaulette")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 514 [CB514-1H/1HT]");
++  } else if (!StriCmp(Product, L"Lava")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 11 [CP311-1H/1HN]");
++  } else if (!StriCmp(Product, L"Nasher")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebook 11 [5190]");
++  } else if (!StriCmp(Product, L"Nasher360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebook 11 2-in-1 [5190]");
++  } else if (!StriCmp(Product, L"Pyro")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo ThinkPad 11e/Yoga Chromebook [G4]");
++  } else if (!StriCmp(Product, L"Rabbid")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook C423");
++  } else if (!StriCmp(Product, L"Reef")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 11 [R751T]");
++  } else if (!StriCmp(Product, L"Robo")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 100e Chromebook");
++  } else if (!StriCmp(Product, L"Robo360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 500e Chromebook");
++  } else if (!StriCmp(Product, L"Sand")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 15 [CB515-1H/1HT]");
++  } else if (!StriCmp(Product, L"Santa")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 11 [CB311-8H/8HT]");
++  } else if (!StriCmp(Product, L"Snappy")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x360 11 G1/11 G6/14 G5");
++  } else if (!StriCmp(Product, L"Whitetip")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook J41/J41T");
++  }
++  //KBL
++    else if (!StriCmp(Product, L"Akali")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 13 / Spin 13 [CB713-1W/1WN]");
++  } else if (!StriCmp(Product, L"Akali 360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 13");
++  } else if (!StriCmp(Product, L"Atlas")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Google Pixelbook Go");
++  } else if (!StriCmp(Product, L"Bard")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 715 [CB715-1W/1WT]");
++  } else if (!StriCmp(Product, L"Ekko")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 714 [CB714-1W/1WT]");
++  } else if (!StriCmp(Product, L"Endeavour")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Google Meet Series One [Lenovo]");
++  } else if (!StriCmp(Product, L"Eve")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Google Pixelbook");
++  } else if (!StriCmp(Product, L"Excelsior")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Google Meet kit [KBL]");
++  } else if (!StriCmp(Product, L"Jax")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"AOpen Chromebox Commercial 2");
++  } else if (!StriCmp(Product, L"Karma")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebase CA24I2");
++  } else if (!StriCmp(Product, L"Kench")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebox G2");
++  } else if (!StriCmp(Product, L"Leona")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook C425");
++  } else if (!StriCmp(Product, L"Nautilus")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Samsung Chromebook Plus V2");
++  } else if (!StriCmp(Product, L"Nocturne")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Google Pixel Slate");
++  } else if (!StriCmp(Product, L"Pantheon")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo Yoga Chromebook C630");
++  } else if (!StriCmp(Product, L"Rammus")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Asus Chromebook Flip C433/C434");
++  } else if (!StriCmp(Product, L"Shyvana")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Asus Chromebook Flip C433/C434");
++  } else if (!StriCmp(Product, L"Sion")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebox CXI3");
++  } else if (!StriCmp(Product, L"Sona")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x360 14");
++  } else if (!StriCmp(Product, L"Soraka")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x2");
++  } else if (!StriCmp(Product, L"Syndra")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 15 G1");
++  } else if (!StriCmp(Product, L"Teemo")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebox 3 [CN65]");
++  } else if (!StriCmp(Product, L"Vayne")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Inspiron Chromebook 14");
++  } else if (!StriCmp(Product, L"Wukong")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebox CBx1");
++  }
++  //GLK
++    else if (!StriCmp(Product, L"Ampton")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Asus Chromebook Flip C214/C234");
++  } else if (!StriCmp(Product, L"Apel")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook C204");
++  } else if (!StriCmp(Product, L"Apele")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook [CX1101CMA]");
++  } else if (!StriCmp(Product, L"Bloog")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x360 14a/14b");
++  } else if (!StriCmp(Product, L"Blooglet")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 14a-na0");
++  } else if (!StriCmp(Product, L"Blooguard")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x360 14a/14b");
++  } else if (!StriCmp(Product, L"Blorb")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 315 [CB315]");
++  } else if (!StriCmp(Product, L"Bluebird")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Samsung Chromebook 4");
++  } else if (!StriCmp(Product, L"Bobba")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 512 [R851/R852]");
++  } else if (!StriCmp(Product, L"Bobba360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 311/511");
++  } else if (!StriCmp(Product, L"Casta")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Samsung Chromebook 4+");
++  } else if (!StriCmp(Product, L"Dood")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"NEC Chromebook Y2");
++  } else if (!StriCmp(Product, L"Dorp")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 14 G6");
++  } else if (!StriCmp(Product, L"Droid")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 314");
++  } else if (!StriCmp(Product, L"Fleex")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebook 3100 2-in-1");
++  } else if (!StriCmp(Product, L"Foob")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook VX11/VT11T");
++  } else if (!StriCmp(Product, L"Foob360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Poin2 Chromebook 11P");
++  } else if (!StriCmp(Product, L"Garfour")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook NL81/NL81T");
++  } else if (!StriCmp(Product, L"Garg")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook NL81/NL81T");
++  } else if (!StriCmp(Product, L"Garg360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook NL71T/TW/TWB");
++  } else if (!StriCmp(Product, L"Glk")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 311");
++  } else if (!StriCmp(Product, L"Glk360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 311");
++  } else if (!StriCmp(Product, L"Grabbiter")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebook 3100 2-in-1");
++  } else if (!StriCmp(Product, L"Laser")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo Chromebook C340");
++  } else if (!StriCmp(Product, L"Laser14")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo Chromebook S340 / IdeaPad 3");
++  } else if (!StriCmp(Product, L"Lick")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo Ideapad 3 Chromebook");
++  } else if (!StriCmp(Product, L"Meep")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x360 11 G3 EE");
++  } else if (!StriCmp(Product, L"Mimrock")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 11 G7 EE");
++  } else if (!StriCmp(Product, L"Nospike")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook C424");
++  } else if (!StriCmp(Product, L"Orbatrix")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebook 3400");
++  } else if (!StriCmp(Product, L"Phaser")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 100e Chromebook 2nd Gen");
++  } else if (!StriCmp(Product, L"Phaser360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 300e/500e Chromebook 2nd Gen");
++  } else if (!StriCmp(Product, L"Phaser360s")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 500e Chromebook 2nd Gen");
++  } else if (!StriCmp(Product, L"Sparky")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 512 [C851/C851T]");
++  } else if (!StriCmp(Product, L"Sparky360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 512 [R851/R852]");
++  } else if (!StriCmp(Product, L"Vorticon")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 11 G8 EE");
++  } else if (!StriCmp(Product, L"Vortininja")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x360 11 G3 EE");
++  }
++  //WHL
++    else if (!StriCmp(Product, L"Arcada")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Latitude 5300 Chromebook");
++  } else if (!StriCmp(Product, L"Sarien")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Latitude 5300 Chromebook");
++  }
++  //CML
++    else if (!StriCmp(Product, L"Akemi")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo IdeaPad Flex 5i Chromebook");
++  } else if (!StriCmp(Product, L"Ambassador")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Meet Compute System GQE15C");
++  } else if (!StriCmp(Product, L"Dooly")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebase 21.5");
++  } else if (!StriCmp(Product, L"Dragonair")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x360 14c");
++  } else if (!StriCmp(Product, L"Drallion")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Latitude 7410 Chromebook Enterprise");
++  } else if (!StriCmp(Product, L"Drallion360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Latitude 7410 2-in-1 Chromebook Enterprise");
++  } else if (!StriCmp(Product, L"Dratini")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x360 14c");
++  } else if (!StriCmp(Product, L"Duffy")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebox 4");
++  } else if (!StriCmp(Product, L"Faffy")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Fanless Chromebox");
++  } else if (!StriCmp(Product, L"Genesis")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Google Meet Series One");
++  } else if (!StriCmp(Product, L"Helios")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook Flip C436FA");
++  } else if (!StriCmp(Product, L"Jinlon")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook Elite c1030 / x360 13c-ca0");
++  } else if (!StriCmp(Product, L"Kaisa")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebox CXI4");
++  } else if (!StriCmp(Product, L"Kindred")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 712 [C871]");
++  } else if (!StriCmp(Product, L"Kled")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 713 [CP713-2W]");
++  } else if (!StriCmp(Product, L"Kohaku")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Samsung Galaxy Chromebook");
++  } else if (!StriCmp(Product, L"Moonbuggy")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Avocor Series One Board 65");
++  } else if (!StriCmp(Product, L"Nightfury")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Samsung Galaxy Chromebook 2");
++  } else if (!StriCmp(Product, L"Noibat")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebox G3");
++  } else if (!StriCmp(Product, L"Scout")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Avocor Series One Desk 27");
++  } else if (!StriCmp(Product, L"Wyvern")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebox CBx2");
++  }
++  //Tigerlake
++    else if (!StriCmp(Product, L"Chronicler")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"FMV Chromebook 14F");
++  } else if (!StriCmp(Product, L"Collis")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook Flip CX3");
++  } else if (!StriCmp(Product, L"Copano")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook Flip CX5 [CX5400]");
++  } else if (!StriCmp(Product, L"Delbin")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook Vibe CX5/CX55 [C536]");
++  } else if (!StriCmp(Product, L"Drobit")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CX9 [CX9400]");
++  } else if (!StriCmp(Product, L"Eldrid")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x360 14c-cc0");
++  } else if (!StriCmp(Product, L"Elemi")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 14b-nb0 / HP Pro c640 G2 Chromebook");
++  } else if (!StriCmp(Product, L"Lillipup")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo IdeaPad Flex 5i Chromebook");
++  } else if (!StriCmp(Product, L"Lindar")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo IdeaPad Flex 5i Chromebook");
++  } else if (!StriCmp(Product, L"Voema")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 514 [CP514-2H]");
++  } else if (!StriCmp(Product, L"Volet")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 515 [CB515-1W/1WT]");
++  } else if (!StriCmp(Product, L"Volta")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 514 [CB514-1W/1WT]");
++  } else if (!StriCmp(Product, L"Voxel")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 713 [CP713-3W]");
++  }
++  //Jasperlake
++    else if (!StriCmp(Product, L"Awadoron")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CX1505CKA");
++  } else if (!StriCmp(Product, L"Awasuki")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CX1505CKA");
++  } else if (!StriCmp(Product, L"Beadrix")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Beadrix JSL Chromebook");
++  } else if (!StriCmp(Product, L"Beetley")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo Flex 3i Chromebook 15");
++  } else if (!StriCmp(Product, L"Blipper")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 3i-15 Chromebook");
++  } else if (!StriCmp(Product, L"Bookem")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 100e Chromebook Gen 3");
++  } else if (!StriCmp(Product, L"Boten")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 500e Chromebook Gen 3");
++  } else if (!StriCmp(Product, L"Botenflex")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo Flex 3i-11 Chromebook");
++  } else if (!StriCmp(Product, L"Boxy")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo Chromebox Micro");
++  } else if (!StriCmp(Product, L"Bugzzy")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Samsung Galaxy Chromebook 2 360");
++  } else if (!StriCmp(Product, L"Cret")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebook 3110");
++  } else if (!StriCmp(Product, L"Cret360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebook 3110 2-in-1");
++  } else if (!StriCmp(Product, L"Dexi")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"AOPEN Chromebox Mini 2");
++  } else if (!StriCmp(Product, L"Dita")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"AOPEN Chromebox P1");
++  } else if (!StriCmp(Product, L"Drawcia")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x360 11 G4 EE");
++  } else if (!StriCmp(Product, L"Drawlat")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 11 G9 EE");
++  } else if (!StriCmp(Product, L"Drawman")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 14 G7");
++  } else if (!StriCmp(Product, L"Drawper")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Fortis 14 G10 Chromebook");
++  } else if (!StriCmp(Product, L"Galith")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CX1500CKA");
++  } else if (!StriCmp(Product, L"Galith360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CX1500FKA");
++  } else if (!StriCmp(Product, L"Gallop")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CX1700CKA");
++  } else if (!StriCmp(Product, L"Galnat")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CX1 CX1102");
++  } else if (!StriCmp(Product, L"Galnat360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook Flip CX1 CX1102");
++  } else if (!StriCmp(Product, L"Galtic")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CX1400CKA");
++  } else if (!StriCmp(Product, L"Galtic360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CX1400FKA");
++  } else if (!StriCmp(Product, L"Kracko")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook NL72");
++  } else if (!StriCmp(Product, L"Kracko360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook NL72T");
++  } else if (!StriCmp(Product, L"Landia")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x360 14a-ca1");
++  } else if (!StriCmp(Product, L"Landrid")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 15a-na0");
++  } else if (!StriCmp(Product, L"Lantis")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 14a-na1");
++  } else if (!StriCmp(Product, L"Madoo")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x360 14b-cb0");
++  } else if (!StriCmp(Product, L"Magister")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 314 [CP314-1H/1HN]");
++  } else if (!StriCmp(Product, L"Maglet")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 512 [C852]");
++  } else if (!StriCmp(Product, L"Maglia")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 512 [R853TA/TNA]");
++  } else if (!StriCmp(Product, L"Maglith")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 511 [C733/C734]");
++  } else if (!StriCmp(Product, L"Magma")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 315 [CB315-4H/4HT]");
++  } else if (!StriCmp(Product, L"Magneto")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 314");
++  } else if (!StriCmp(Product, L"Magolor")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 511 [R753T]");
++  } else if (!StriCmp(Product, L"Magpie")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 317");
++  } else if (!StriCmp(Product, L"Metaknight")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"NEC Chromebook Y3");
++  } else if (!StriCmp(Product, L"Palutena")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 314");
++  } else if (!StriCmp(Product, L"Pasara")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Gateway Chromebook 15");
++  } else if (!StriCmp(Product, L"Peezer")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 311");
++  } else if (!StriCmp(Product, L"Pirette")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook PX11E");
++  } else if (!StriCmp(Product, L"Pirika")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Gateway Chromebook 14");
++  } else if (!StriCmp(Product, L"Sasuke")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Samsung Galaxy Chromebook Go");
++  } else if (!StriCmp(Product, L"Sasukette")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Samsung Galaxy Chromebook Go 11");
++  } else if (!StriCmp(Product, L"Storo")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CR1100CKA");
++  } else if (!StriCmp(Product, L"Storo360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook Flip CR1100FKA");
++  } else if (!StriCmp(Product, L"Taranza")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Fanless Chromebox CF40");
++  }
++  //Alderlake/Raptorlake-U/P
++    else if (!StriCmp(Product, L"Anahera")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Elite c640 14 inch G3 Chromebook");
++  } else if (!StriCmp(Product, L"Aurash")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"AOpen Chromebox Commercial 3");
++  } else if (!StriCmp(Product, L"Banshee")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Framework Laptop Chromebook Edition");
++  } else if (!StriCmp(Product, L"Bujia")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Satsuki Chromebox OPS");
++  } else if (!StriCmp(Product, L"Caboc")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Elite 6 G2i Chromebook Plus");
++  } else if (!StriCmp(Product, L"Constitution")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Google Meet Series Two");
++  } else if (!StriCmp(Product, L"Crota")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Latitude 5430 Chromebook");
++  } else if (!StriCmp(Product, L"Crota360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Latitude 5430 2-in-1 Chromebook");
++  } else if (!StriCmp(Product, L"Dochi")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Plus Spin 514 [CP514-4HN]");
++  } else if (!StriCmp(Product, L"Felwinter")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook Flip CX5 [CX5601]");
++  } else if (!StriCmp(Product, L"Gimble")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x360 14c-cd0");
++  } else if (!StriCmp(Product, L"Gladios")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebox Enterprise G4");
++  } else if (!StriCmp(Product, L"Intrepid")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Meet Compute System GQE20C");
++  } else if (!StriCmp(Product, L"Jubilant")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Plus 514");
++  } else if (!StriCmp(Product, L"Jubileum")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Plus 516");
++  } else if (!StriCmp(Product, L"Kano")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 714 [CP714-1WN]");
++  } else if (!StriCmp(Product, L"Kinox")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo ThinkCentre M60q Chromebox");
++  } else if (!StriCmp(Product, L"Kuldax")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebox 5/5a [CN67]");
++  } else if (!StriCmp(Product, L"Lisbon")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebox CBx3");
++  } else if (!StriCmp(Product, L"Lotso")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo Chromebook Plus 2-in-1");
++  } else if (!StriCmp(Product, L"Marasov")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook Plus CX34 CX3402");
++  } else if (!StriCmp(Product, L"Mithrax")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CX34 Flip [CX3401]");
++  } else if (!StriCmp(Product, L"Moli")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebox CXI5");
++  } else if (!StriCmp(Product, L"Moxie")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebox CXI6");
++  } else if (!StriCmp(Product, L"Omnigul")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Plus 515 [CB515-2H]");
++  } else if (!StriCmp(Product, L"Omniknight")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Plus Enterprise 515 [CBE595-2/2T]");
++  } else if (!StriCmp(Product, L"Onmiknight")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Plus Enterprise 515 (CBE595-2/CBE595-2T)");
++  } else if (!StriCmp(Product, L"Osiris")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 516 GE [CBG516-1H/2H]");
++  } else if (!StriCmp(Product, L"Primus")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo ThinkPad C14 Gen 1 Chromebook");
++  } else if (!StriCmp(Product, L"Redrix")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Elite Dragonfly Chromebook");
++  } else if (!StriCmp(Product, L"Taeko")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo Flex 5i Chromebook 14");
++  } else if (!StriCmp(Product, L"Taniks")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo IdeaPad Gaming Chromebook 16");
++  } else if (!StriCmp(Product, L"Tarlo")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo IdeaPad 5i Chromebook 16");
++  } else if (!StriCmp(Product, L"Vell")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Dragonfly Pro Chromebook");
++  } else if (!StriCmp(Product, L"Volmar")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Vero 514");
++  } else if (!StriCmp(Product, L"Xol")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Samsung Galaxy Chromebook Plus");
++  } else if (!StriCmp(Product, L"Zavala")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Vero 712 [CV872/CV872T]");
++  }
++  //Alderlake-N
++    else if (!StriCmp(Product, L"Anraggar")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CR11/CR12 ");
++  } else if (!StriCmp(Product, L"Anraggar360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CR11/CR12 Flip");
++  } else if (!StriCmp(Product, L"Craask")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 512");
++  } else if (!StriCmp(Product, L"Craaskana")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 311");
++  } else if (!StriCmp(Product, L"Craaskbowl")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 511");
++  } else if (!StriCmp(Product, L"Craaskino")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 315 [CB315-5H/5HT]");
++  } else if (!StriCmp(Product, L"Craaskov")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 312 [CP312-1H/1HN]");
++  } else if (!StriCmp(Product, L"Craaskvin")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 511 [C736]");
++  } else if (!StriCmp(Product, L"Craasneto")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 314/514");
++  } else if (!StriCmp(Product, L"Craaswell")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 314 [CP314-2HN/2H]");
++  } else if (!StriCmp(Product, L"Dirks")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebox Mini CXM2");
++  } else if (!StriCmp(Product, L"Domika")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Fortis G1i 11 Chromebook");
++  } else if (!StriCmp(Product, L"Domilly")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Fortis Flip G1i 11 Chromebook");
++  } else if (!StriCmp(Product, L"Domiso")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Fortis G1i 14 Chromebook");
++  } else if (!StriCmp(Product, L"Gallida360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 311");
++  } else if (!StriCmp(Product, L"Gana")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook PX111E");
++  } else if (!StriCmp(Product, L"Glassway")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook Enterprise PX141E");
++  } else if (!StriCmp(Product, L"Gothrax")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Centerm Chromebook M612B");
++  } else if (!StriCmp(Product, L"Guren")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 311 [COA732]");
++  } else if (!StriCmp(Product, L"Joxer")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x360 14b-cc0");
++  } else if (!StriCmp(Product, L"Joxero")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"TBD ADL-N Chromebook");
++  } else if (!StriCmp(Product, L"Kaladin")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook Plus x360 14c-ce0");
++  } else if (!StriCmp(Product, L"Meliks")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Samsung Galaxy Chromebook 3 360");
++  } else if (!StriCmp(Product, L"Nereid")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"TBD ADL-N Chromebook");
++  } else if (!StriCmp(Product, L"Nirwin")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"TBD ADL-N Chromebook");
++  } else if (!StriCmp(Product, L"Nivviks")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"TBD ADL-N Chromebook");
++  } else if (!StriCmp(Product, L"Pujjo")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 500e Yoga Chromebook Gen 4");
++  } else if (!StriCmp(Product, L"Pujjo1e")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 100e Chromebook Gen 4");
++  } else if (!StriCmp(Product, L"Pujjocento")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo Chromebook 100e Gen 5");
++  } else if (!StriCmp(Product, L"Pujjoflex")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo IdeaPad Flex 3i Chromebook");
++  } else if (!StriCmp(Product, L"Pujjoga")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 500e Chromebook Gen 4s");
++  } else if (!StriCmp(Product, L"Pujjogatwin")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 500e Chromebook Gen 4s");
++  } else if (!StriCmp(Product, L"Pujjolo")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo Chromebook 500e 2-in-1 Gen 5");
++  } else if (!StriCmp(Product, L"Pujjoniru")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo Chromebook 2-in-1 14ITN10");
++  } else if (!StriCmp(Product, L"Pujjoteen")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo IdeaPad Slim 3i Chromebook Plus 14");
++  } else if (!StriCmp(Product, L"Pujjoteen15w")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 14e Chromebook Gen 3");
++  } else if (!StriCmp(Product, L"Quandiso")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook NL73");
++  } else if (!StriCmp(Product, L"Quandiso2")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook NL73 Gen 2");
++  } else if (!StriCmp(Product, L"Quandiso360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook NL73T/NL73TW");
++  } else if (!StriCmp(Product, L"Quandiso3602")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"CTL Chromebook NL73T Gen 2");
++  } else if (!StriCmp(Product, L"Riven")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 511 [R753T]");
++  } else if (!StriCmp(Product, L"Roric")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Plus 514");
++  } else if (!StriCmp(Product, L"Rudriks")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 512");
++  } else if (!StriCmp(Product, L"Ruke")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 315");
++  } else if (!StriCmp(Product, L"Rull")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 514 [C937]");
++  } else if (!StriCmp(Product, L"Rynax")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 511");
++  } else if (!StriCmp(Product, L"Sundance")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"NEC Chromebook Y4");
++  } else if (!StriCmp(Product, L"Teliks")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CR11/CR12");
++  } else if (!StriCmp(Product, L"Teliks360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CR11/CR12 flip");
++  } else if (!StriCmp(Product, L"Telith")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CX15 [CX1505CTA]");
++  } else if (!StriCmp(Product, L"Teltic")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CX14 [CX1405CTA]");
++  } else if (!StriCmp(Product, L"Uldren")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebook 3120");
++  } else if (!StriCmp(Product, L"Uldren360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebook 3120 2-in-1");
++  } else if (!StriCmp(Product, L"Uldrenite")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Chromebook 11 CC11260");
++  } else if (!StriCmp(Product, L"Xivu")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Asus Chromebook CR11 [CR1102C]");
++  } else if (!StriCmp(Product, L"Xivu360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Asus Chromebook CR11 [CR1102F]");
++  } else if (!StriCmp(Product, L"Yahiko")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 14a-nf0xxx");
++  } else if (!StriCmp(Product, L"Yavijo")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Fortis 14\" G11 Chromebook");
++  } else if (!StriCmp(Product, L"Yaviks")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 15.6");
++  } else if (!StriCmp(Product, L"Yavikso")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"TBD ADL-N Chromebook");
++  } else if (!StriCmp(Product, L"Yavilla")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"P Fortis 11\" G10 Chromebook");
++  } else if (!StriCmp(Product, L"Yavilly")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Fortis x360 11\" G5 Chromebook");
++  }
++  //Meteorlake
++    else if (!StriCmp(Product, L"Kanix")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Plus 714");
++  } else if (!StriCmp(Product, L"Karis")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Plus Spin 714");
++  } else if (!StriCmp(Product, L"Screebo")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS ExpertBook CX54 Chromebook Plus [CX5403]");
++  }
++  //AMD StoneyRidge
++    else if (!StriCmp(Product, L"Aleena")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 315 [CB315-2H]");
++  } else if (!StriCmp(Product, L"Barla")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 11A G6 EE/G8 EE");
++  } else if (!StriCmp(Product, L"Careena")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 14-db0/14A G5");
++  } else if (!StriCmp(Product, L"Grunt")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"AMD StonyRidge Chromebook");
++  } else if (!StriCmp(Product, L"Kasumi")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook 311 [C721]");
++  } else if (!StriCmp(Product, L"Kasumi360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 311 [R721T]");
++  } else if (!StriCmp(Product, L"Liara")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 14e Chromebook");
++  } else if (!StriCmp(Product, L"Treeya")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 100e Chromebook 2nd Gen");
++  } else if (!StriCmp(Product, L"Treeya360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 300e Chromebook 2nd Gen");
++  }
++  // AMD Picasso
++    else if (!StriCmp(Product, L"Berknip")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Pro c645 Chromebook Enterprise");
++  } else if (!StriCmp(Product, L"Dirinboz")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook 14a-nd0");
++  } else if (!StriCmp(Product, L"Ezkinil")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 514");
++  } else if (!StriCmp(Product, L"Gumboz")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Chromebook x360 14a-cb0");
++  } else if (!StriCmp(Product, L"Jelboz360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook Flip CM1 [CM1400]");
++  } else if (!StriCmp(Product, L"Morphius")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo ThinkPad C13 Yoga Chromebook");
++  } else if (!StriCmp(Product, L"Shuboz")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook Flip CM1 [CM1400]");
++  } else if (!StriCmp(Product, L"Vilboz")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 100e Chromebook Gen 3");
++  } else if (!StriCmp(Product, L"Vilboz14")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 14e Chromebook Gen 2");
++  } else if (!StriCmp(Product, L"Vilboz360")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Lenovo 300e Chromebook Gen 3");
++  } else if (!StriCmp(Product, L"Woomax")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook Flip CM5");
++  }
++  // AMD Cezanne
++    else if (!StriCmp(Product, L"Dewatt")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Spin 514");
++  } else if (!StriCmp(Product, L"Nipperkin")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"HP Elite c645 G2 Chromebook");
++  }
++  // AMD Mendocino
++    else if (!StriCmp(Product, L"Crystaldrift")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"SPC Chromebook V1");
++  } else if (!StriCmp(Product, L"Frostflow")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"ASUS Chromebook CM34 Flip");
++  } else if (!StriCmp(Product, L"Markarth")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Acer Chromebook Plus 514 [CB514-3H/3HT]");
++  } else if (!StriCmp(Product, L"Whiterun")) {
++    StrCatS (*DeviceName, BufferSize / sizeof (CHAR16), L"Dell Latitude 3445 Chromebook");
++  }
++}
+diff --git a/MdeModulePkg/Application/UiApp/FrontPage.c b/MdeModulePkg/Application/UiApp/FrontPage.c
+index 84fba400a21fc3d2d89abf202a963a66b4a0ea21..48e0e44fd257e83b710d6d35c7424a99de532302 100644
+--- a/MdeModulePkg/Application/UiApp/FrontPage.c
++++ b/MdeModulePkg/Application/UiApp/FrontPage.c
+@@ -450,7 +450,7 @@ ConvertMemorySizeToString (
+   StringBuffer = AllocateZeroPool (0x24);
+   ASSERT (StringBuffer != NULL);
+   UnicodeValueToStringS (StringBuffer, 0x24, LEFT_JUSTIFY, MemorySize, 10);
+-  StrCatS (StringBuffer, 0x24 / sizeof (CHAR16), L" MB RAM");
++  StrCatS (StringBuffer, 0x24 / sizeof (CHAR16), L" MB");
+ 
+   *String = (CHAR16 *)StringBuffer;
+ 
+@@ -516,77 +516,33 @@ UpdateFrontPageBannerStrings (
+ {
+   UINT8                    StrIndex;
+   CHAR16                   *NewString;
+-  CHAR16                   *FirmwareVersionString;
+   EFI_STATUS               Status;
+   EFI_SMBIOS_HANDLE        SmbiosHandle;
+   EFI_SMBIOS_PROTOCOL      *Smbios;
+   SMBIOS_TABLE_TYPE0       *Type0Record;
+   SMBIOS_TABLE_TYPE1       *Type1Record;
+   SMBIOS_TABLE_TYPE4       *Type4Record;
++  SMBIOS_TABLE_TYPE17      *Type17Record;
+   SMBIOS_TABLE_TYPE19      *Type19Record;
+   EFI_SMBIOS_TABLE_HEADER  *Record;
++  UINT16                   MemorySize;
++  UINT32                   ExtendedMemorySize;
+   UINT64                   InstalledMemory;
++  UINT64                   Type17TotalMemory;
+   BOOLEAN                  FoundCpu;
+ 
+   InstalledMemory = 0;
++  Type17TotalMemory = 0;
+   FoundCpu        = 0;
+ 
+-  //
+-  // Update default banner string.
+-  //
+-  NewString = HiiGetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_CUSTOMIZE_BANNER_LINE4_LEFT), NULL);
+-  UiCustomizeFrontPageBanner (4, TRUE, &NewString);
+-  HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_CUSTOMIZE_BANNER_LINE4_LEFT), NewString, NULL);
+-  FreePool (NewString);
+-
+-  NewString = HiiGetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_CUSTOMIZE_BANNER_LINE4_RIGHT), NULL);
+-  UiCustomizeFrontPageBanner (4, FALSE, &NewString);
+-  HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_CUSTOMIZE_BANNER_LINE4_RIGHT), NewString, NULL);
+-  FreePool (NewString);
+-
+-  NewString = HiiGetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_CUSTOMIZE_BANNER_LINE5_LEFT), NULL);
+-  UiCustomizeFrontPageBanner (5, TRUE, &NewString);
+-  HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_CUSTOMIZE_BANNER_LINE5_LEFT), NewString, NULL);
+-  FreePool (NewString);
+-
+-  NewString = HiiGetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_CUSTOMIZE_BANNER_LINE5_RIGHT), NULL);
+-  UiCustomizeFrontPageBanner (5, FALSE, &NewString);
+-  HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_CUSTOMIZE_BANNER_LINE5_RIGHT), NewString, NULL);
+-  FreePool (NewString);
+-
+   //
+   // Update Front Page banner strings base on SmBios Table.
+   //
+   Status = gBS->LocateProtocol (&gEfiSmbiosProtocolGuid, NULL, (VOID **)&Smbios);
+   if (EFI_ERROR (Status)) {
+     //
+-    // Smbios protocol not found, get the default value.
++    // Smbios protocol not found
+     //
+-    NewString = HiiGetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_COMPUTER_MODEL), NULL);
+-    UiCustomizeFrontPageBanner (1, TRUE, &NewString);
+-    HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_COMPUTER_MODEL), NewString, NULL);
+-    FreePool (NewString);
+-
+-    NewString = HiiGetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_CPU_MODEL), NULL);
+-    UiCustomizeFrontPageBanner (2, TRUE, &NewString);
+-    HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_CPU_MODEL), NewString, NULL);
+-    FreePool (NewString);
+-
+-    NewString = HiiGetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_CPU_SPEED), NULL);
+-    UiCustomizeFrontPageBanner (2, FALSE, &NewString);
+-    HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_CPU_SPEED), NewString, NULL);
+-    FreePool (NewString);
+-
+-    NewString = HiiGetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_BIOS_VERSION), NULL);
+-    UiCustomizeFrontPageBanner (3, TRUE, &NewString);
+-    HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_BIOS_VERSION), NewString, NULL);
+-    FreePool (NewString);
+-
+-    NewString = HiiGetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_MEMORY_SIZE), NULL);
+-    UiCustomizeFrontPageBanner (3, FALSE, &NewString);
+-    HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_MEMORY_SIZE), NewString, NULL);
+-    FreePool (NewString);
+-
+     return;
+   }
+ 
+@@ -594,50 +550,175 @@ UpdateFrontPageBannerStrings (
+   Status       = Smbios->GetNext (Smbios, &SmbiosHandle, NULL, &Record, NULL);
+   while (!EFI_ERROR (Status)) {
+     if (Record->Type == SMBIOS_TYPE_BIOS_INFORMATION) {
++      CHAR16  *FwVersion;
++      CHAR16  *FwDate;
++      CHAR16  *TmpBuffer;
++      UINT8   VersionIdx;
++      UINT8   DateIdx;
++      UINTN   BufferSize;
++
+       Type0Record = (SMBIOS_TABLE_TYPE0 *)Record;
+-      StrIndex    = Type0Record->BiosVersion;
+-      GetOptionalStringByIndex ((CHAR8 *)((UINT8 *)Type0Record + Type0Record->Hdr.Length), StrIndex, &NewString);
+-
+-      FirmwareVersionString = (CHAR16 *)PcdGetPtr (PcdFirmwareVersionString);
+-      if (*FirmwareVersionString != 0x0000 ) {
+-        FreePool (NewString);
+-        NewString = (CHAR16 *)PcdGetPtr (PcdFirmwareVersionString);
+-        UiCustomizeFrontPageBanner (3, TRUE, &NewString);
+-        HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_BIOS_VERSION), NewString, NULL);
+-      } else {
+-        UiCustomizeFrontPageBanner (3, TRUE, &NewString);
+-        HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_BIOS_VERSION), NewString, NULL);
+-        FreePool (NewString);
+-      }
++      VersionIdx  = Type0Record->BiosVersion;
++      DateIdx     = Type0Record->BiosReleaseDate;
++
++      GetOptionalStringByIndex ((CHAR8 *)((UINT8 *)Type0Record + Type0Record->Hdr.Length), VersionIdx, &FwVersion);
++      GetOptionalStringByIndex ((CHAR8 *)((UINT8 *)Type0Record + Type0Record->Hdr.Length), DateIdx, &FwDate);
++
++      // Allocate buffer: " FW: " (5) + version + " " (1) + date + null
++      BufferSize = (5 + StrLen (FwVersion) + 1 + StrLen (FwDate) + 1) * sizeof (CHAR16);
++      TmpBuffer  = AllocateZeroPool (BufferSize);
++
++      StrCatS (TmpBuffer, BufferSize / sizeof (CHAR16), L" FW: ");
++      StrCatS (TmpBuffer, BufferSize / sizeof (CHAR16), FwVersion);
++      StrCatS (TmpBuffer, BufferSize / sizeof (CHAR16), L" ");
++      StrCatS (TmpBuffer, BufferSize / sizeof (CHAR16), FwDate);
++
++      HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_BIOS_VERSION), TmpBuffer, NULL);
++
++      FreePool (FwVersion);
++      FreePool (FwDate);
++      FreePool (TmpBuffer);
+     }
+ 
+     if (Record->Type == SMBIOS_TYPE_SYSTEM_INFORMATION) {
++      CHAR16  *ProductName;
++      CHAR16  *Manufacturer;
++      CHAR16  *DeviceName;
++      CHAR16  *TmpBuffer;
++      UINT8   ProductIdx;
++      UINT8   ManIdx;
++      UINTN   BufferSize;
++      UINTN   DeviceNameBufferSize;
++
+       Type1Record = (SMBIOS_TABLE_TYPE1 *)Record;
+-      StrIndex    = Type1Record->ProductName;
+-      GetOptionalStringByIndex ((CHAR8 *)((UINT8 *)Type1Record + Type1Record->Hdr.Length), StrIndex, &NewString);
+-      UiCustomizeFrontPageBanner (1, TRUE, &NewString);
+-      HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_COMPUTER_MODEL), NewString, NULL);
+-      FreePool (NewString);
++      ProductIdx  = Type1Record->ProductName;
++      ManIdx      = Type1Record->Manufacturer;
++
++      GetOptionalStringByIndex ((CHAR8 *)((UINT8 *)Type1Record + Type1Record->Hdr.Length), ProductIdx, &ProductName);
++      GetOptionalStringByIndex ((CHAR8 *)((UINT8 *)Type1Record + Type1Record->Hdr.Length), ManIdx, &Manufacturer);
++
++      // Check if we have a device name to show
++      // Allocate a buffer large enough for longest device name
++      DeviceNameBufferSize = 128 * sizeof (CHAR16);
++      DeviceName           = AllocateZeroPool (DeviceNameBufferSize);
++      GetDeviceNameFromProduct (ProductName, DeviceNameBufferSize, &DeviceName);
++
++      if (DeviceName[0] != 0) {
++        // Format: "DeviceName (ProductName)"
++        BufferSize = (StrLen (DeviceName) + StrLen (ProductName) + 4) * sizeof (CHAR16);
++        TmpBuffer  = AllocateZeroPool (BufferSize);
++        StrCatS (TmpBuffer, BufferSize / sizeof (CHAR16), DeviceName);
++        StrCatS (TmpBuffer, BufferSize / sizeof (CHAR16), L" (");
++        StrCatS (TmpBuffer, BufferSize / sizeof (CHAR16), ProductName);
++        StrCatS (TmpBuffer, BufferSize / sizeof (CHAR16), L")");
++      } else {
++        // Format: "Manufacturer ProductName"
++        BufferSize = (StrLen (Manufacturer) + StrLen (ProductName) + 2) * sizeof (CHAR16);
++        TmpBuffer  = AllocateZeroPool (BufferSize);
++        StrCatS (TmpBuffer, BufferSize / sizeof (CHAR16), Manufacturer);
++        StrCatS (TmpBuffer, BufferSize / sizeof (CHAR16), L" ");
++        StrCatS (TmpBuffer, BufferSize / sizeof (CHAR16), ProductName);
++      }
++
++      HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_COMPUTER_MODEL), TmpBuffer, NULL);
++
++      FreePool (ProductName);
++      FreePool (Manufacturer);
++      FreePool (DeviceName);
++      FreePool (TmpBuffer);
+     }
+ 
+     if ((Record->Type == SMBIOS_TYPE_PROCESSOR_INFORMATION) && !FoundCpu) {
++      CHAR16  *TmpBuffer;
++      CHAR16  *OriginalString;
++      CHAR16  *TrimmedString;
++      UINTN   BufferSize;
+       Type4Record = (SMBIOS_TABLE_TYPE4 *)Record;
+-      //
+-      // The information in the record should be only valid when the CPU Socket is populated.
+-      //
+-      if ((Type4Record->Status & SMBIOS_TYPE4_CPU_SOCKET_POPULATED) == SMBIOS_TYPE4_CPU_SOCKET_POPULATED) {
+-        StrIndex = Type4Record->ProcessorVersion;
+-        GetOptionalStringByIndex ((CHAR8 *)((UINT8 *)Type4Record + Type4Record->Hdr.Length), StrIndex, &NewString);
+-        UiCustomizeFrontPageBanner (2, TRUE, &NewString);
+-        HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_CPU_MODEL), NewString, NULL);
+-        FreePool (NewString);
+-
+-        ConvertProcessorToString (Type4Record->CurrentSpeed, 6, &NewString);
+-        UiCustomizeFrontPageBanner (2, FALSE, &NewString);
+-        HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_CPU_SPEED), NewString, NULL);
+-        FreePool (NewString);
+-
+-        FoundCpu = TRUE;
++      StrIndex = Type4Record->ProcessorVersion;
++      GetOptionalStringByIndex ((CHAR8 *)((UINT8 *)Type4Record + Type4Record->Hdr.Length), StrIndex, &OriginalString);
++
++      // Keep a pointer for trimming while preserving original for freeing
++      TrimmedString = OriginalString;
++
++      // Trim leading spaces
++      while (TrimmedString[0] == 0x20) {
++        TrimmedString = &TrimmedString[1];
++      }
++      // Drop speed information if present in the string, e.g. the
++      // " @ <speed>" suffix in "i3-8130U CPU @ 2.20GHz".
++      CHAR16  *Truncate = StrStr (TrimmedString, L" @ ");
++      if (Truncate != NULL) {
++        *Truncate = L'\0';
++      }
++      // Drop a comma and everything after it, e.g. the
++      // ", 8 cores" suffix in "AMD Ryzen 7 7840U, 8 cores".
++      CHAR16  *Comma = StrStr (TrimmedString, L",");
++      if (Comma != NULL) {
++        *Comma = L'\0';
++      }
++      // Trim any trailing spaces exposed by the truncation above.
++      UINTN  TrimLen = StrLen (TrimmedString);
++      while ((TrimLen > 0) && (TrimmedString[TrimLen - 1] == 0x20)) {
++        TrimmedString[--TrimLen] = L'\0';
++      }
++      // Drop any standalone "CPU" token wherever it occurs, e.g. turn
++      // "Intel(R) Celeron(R) CPU N3160" into "Intel(R) Celeron(R) N3160" and
++      // "Intel(R) Core(TM) i3-8130U CPU" into "Intel(R) Core(TM) i3-8130U".
++      CHAR16  *Cpu = StrStr (TrimmedString, L"CPU");
++      while (Cpu != NULL) {
++        BOOLEAN  AtStart = (Cpu == TrimmedString) || (Cpu[-1] == L' ');
++        BOOLEAN  AtEnd   = (Cpu[3] == L'\0') || (Cpu[3] == L' ');
++        if (AtStart && AtEnd) {
++          CHAR16  *Tail = &Cpu[3];
++          // Collapse the surrounding whitespace so no double or dangling
++          // space remains: prefer consuming the trailing space, otherwise
++          // the leading one.
++          if (*Tail == L' ') {
++            Tail++;
++          } else if ((Cpu > TrimmedString) && (Cpu[-1] == L' ')) {
++            Cpu--;
++          }
++          CopyMem (Cpu, Tail, (StrLen (Tail) + 1) * sizeof (CHAR16));
++          Cpu = StrStr (Cpu, L"CPU");
++        } else {
++          // "CPU" was part of a larger token; skip past it.
++          Cpu = StrStr (&Cpu[3], L"CPU");
++        }
++      }
++      // Trim any trailing spaces left behind by the removal above.
++      TrimLen = StrLen (TrimmedString);
++      while ((TrimLen > 0) && (TrimmedString[TrimLen - 1] == 0x20)) {
++        TrimmedString[--TrimLen] = L'\0';
++      }
++      // Allocate buffer: "CPU: " (5) + trimmed string + null
++      BufferSize = (5 + StrLen (TrimmedString) + 1) * sizeof (CHAR16);
++      TmpBuffer  = AllocateZeroPool (BufferSize);
++      UnicodeSPrint (TmpBuffer, BufferSize, L"%s%s", L"CPU: ", TrimmedString);
++      HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_CPU_MODEL), TmpBuffer, NULL);
++      FreePool (OriginalString);
++      FreePool (TmpBuffer);
++
++      FoundCpu = TRUE;
++    }
++
++    if ( Record->Type == SMBIOS_TYPE_MEMORY_DEVICE ) {
++      Type17Record = (SMBIOS_TABLE_TYPE17 *) Record;
++      MemorySize = Type17Record->Size;
++      ExtendedMemorySize = Type17Record->ExtendedSize;
++
++      // Calculate memory size for this Type 17 record and accumulate
++      // (sum all Type 17 records as fallback if Type 19 is not available)
++      if ( MemorySize != 0xFFFF ) {  // 0xFFFF means "unknown/not installed"
++        if ( MemorySize == 0x7FFF ) {
++          // There is more than (32GiB - 1MiB) of memory. The size is given in Mebibytes.
++          Type17TotalMemory += ExtendedMemorySize;
++        } else if ( MemorySize & 0x8000 ) {
++          // The size is given in Kibibytes.
++          Type17TotalMemory += RShiftU64 (MemorySize & ~0x8000U, 10);
++        } else {
++          // The size is given in Mebibytes.
++          Type17TotalMemory += MemorySize;
++        }
+       }
+     }
+ 
+@@ -661,13 +742,24 @@ UpdateFrontPageBannerStrings (
+     Status = Smbios->GetNext (Smbios, &SmbiosHandle, NULL, &Record, NULL);
+   }
+ 
++  //
++  // Use Type 17 as fallback if Type 19 didn't provide memory information
++  //
++  if (InstalledMemory == 0) {
++    InstalledMemory = Type17TotalMemory;
++  }
++
+   //
+   // Now update the total installed RAM size
+   //
+   ConvertMemorySizeToString ((UINT32)InstalledMemory, &NewString);
+-  UiCustomizeFrontPageBanner (3, FALSE, &NewString);
+-  HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_MEMORY_SIZE), NewString, NULL);
++  // Allocate buffer: "RAM: " (5) + memory size string + null
++  UINTN   BufferSize = (5 + StrLen (NewString) + 1) * sizeof (CHAR16);
++  CHAR16  *TmpBuffer = AllocateZeroPool (BufferSize);
++  UnicodeSPrint (TmpBuffer, BufferSize, L"%s%s", L"RAM: ", NewString);
++  HiiSetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_FRONT_PAGE_MEMORY_SIZE), TmpBuffer, NULL);
+   FreePool (NewString);
++  FreePool (TmpBuffer);
+ }
+ 
+ /**
+diff --git a/MdeModulePkg/Application/UiApp/FrontPage.h b/MdeModulePkg/Application/UiApp/FrontPage.h
+index dca9ceed7ba96c4cdf893da27125716cd954abed..f51093bb687923c9423a0a801aa3f29d2ee3fc06 100644
+--- a/MdeModulePkg/Application/UiApp/FrontPage.h
++++ b/MdeModulePkg/Application/UiApp/FrontPage.h
+@@ -205,3 +205,17 @@ CHAR16 *
+ ExtractDevicePathFromHiiHandle (
+   IN      EFI_HII_HANDLE  Handle
+   );
++
++/**
++  Get Device Name string from SMBIOS product name
++
++  @param Product          SMBIOS product name string
++  @param DeviceName       returned Device name string
++
++**/
++VOID
++GetDeviceNameFromProduct (
++  IN      CHAR16                  *Product,
++  IN      UINTN                   BufferSize,
++  OUT     CHAR16                  **DeviceName
++  );
+diff --git a/MdeModulePkg/Application/UiApp/FrontPageCustomizedUi.c b/MdeModulePkg/Application/UiApp/FrontPageCustomizedUi.c
+index f2458ec5a0c8ae99232b88182aac8a9a04567b07..cd5e3e0b98b332df8b4262a51f9f1b91f45b9b8c 100644
+--- a/MdeModulePkg/Application/UiApp/FrontPageCustomizedUi.c
++++ b/MdeModulePkg/Application/UiApp/FrontPageCustomizedUi.c
+@@ -30,9 +30,9 @@ UiCustomizeFrontPage (
+   )
+ {
+   //
+-  // Create "Select Language" menu with Oneof opcode.
++  // Create "Continue" menu.
+   //
+-  UiCreateLanguageMenu (HiiHandle, StartOpCodeHandle);
++  UiCreateContinueMenu(HiiHandle, StartOpCodeHandle);
+ 
+   //
+   // Create empty line.
+@@ -49,11 +49,6 @@ UiCustomizeFrontPage (
+   //
+   UiCreateEmptyLine (HiiHandle, StartOpCodeHandle);
+ 
+-  //
+-  // Create "Continue" menu.
+-  //
+-  UiCreateContinueMenu (HiiHandle, StartOpCodeHandle);
+-
+   //
+   // Create reset menu.
+   //
+@@ -96,46 +91,3 @@ UiFrontPageCallbackHandler (
+ 
+   return EFI_UNSUPPORTED;
+ }
+-
+-/**
+-  Update the banner string in the front page.
+-
+-  Current layout for the banner string like below:
+-  PS: Totally only 5 lines of banner supported.
+-
+-  Line 1: Left BannerStr                           RightBannerStr
+-  Line 2: Left BannerStr                           RightBannerStr
+-  Line 3: Left BannerStr                           RightBannerStr
+-  Line 4: Left BannerStr                           RightBannerStr
+-  Line 5: Left BannerStr                           RightBannerStr
+-  <EmptyLine>
+-  First menu in front page.
+-  ...
+-
+-  @param  LineIndex         The line index of the banner need to check.
+-  @param  LeftOrRight       The left or right banner need to check.
+-  @param  BannerStr         Banner string need to update.
+-                            Input the current string and user can update
+-                            it and return the new string.
+-
+-**/
+-VOID
+-UiCustomizeFrontPageBanner (
+-  IN     UINTN       LineIndex,
+-  IN     BOOLEAN     LeftOrRight,
+-  IN OUT EFI_STRING  *BannerStr
+-  )
+-{
+-  if ((LineIndex == 5) && LeftOrRight) {
+-    // Update STR_CUSTOMIZE_BANNER_LINE5_LEFT
+-    if (PcdGetBool (PcdTestKeyUsed)) {
+-      if (BannerStr != NULL) {
+-        FreePool (*BannerStr);
+-      }
+-
+-      *BannerStr = HiiGetString (gFrontPagePrivate.HiiHandle, STRING_TOKEN (STR_TEST_KEY_USED), NULL);
+-    }
+-  }
+-
+-  return;
+-}
+diff --git a/MdeModulePkg/Application/UiApp/FrontPageCustomizedUi.h b/MdeModulePkg/Application/UiApp/FrontPageCustomizedUi.h
+index 3c56361612875bfded269c41976f7c144547885e..c83cd6a3da3bf430e698025cd035e8a30d723835 100644
+--- a/MdeModulePkg/Application/UiApp/FrontPageCustomizedUi.h
++++ b/MdeModulePkg/Application/UiApp/FrontPageCustomizedUi.h
+@@ -8,35 +8,6 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ 
+ #pragma once
+ 
+-/**
+-  Update the banner string in the front page.
+-
+-  Current layout for the banner string like below:
+-  PS: Totally only 5 lines of banner supported.
+-
+-  Line 1: Left BannerStr                           RightBannerStr
+-  Line 2: Left BannerStr                           RightBannerStr
+-  Line 3: Left BannerStr                           RightBannerStr
+-  Line 4: Left BannerStr                           RightBannerStr
+-  Line 5: Left BannerStr                           RightBannerStr
+-  <EmptyLine>
+-  First menu in front page.
+-  ...
+-
+-  @param  LineIndex         The line index of the banner need to check.
+-  @param  LeftOrRight       The left or right banner need to check.
+-  @param  BannerStr         Banner string need to update.
+-                            Input the current string and user can update
+-                            it and return the new string.
+-
+-**/
+-VOID
+-UiCustomizeFrontPageBanner (
+-  IN     UINTN       LineIndex,
+-  IN     BOOLEAN     LeftOrRight,
+-  IN OUT EFI_STRING  *BannerStr
+-  );
+-
+ /**
+   Customize menus in the page.
+ 
+diff --git a/MdeModulePkg/Application/UiApp/FrontPageCustomizedUiSupport.c b/MdeModulePkg/Application/UiApp/FrontPageCustomizedUiSupport.c
+index ef6b527d1880579fb6d076e8f9af7efb0e5f57e5..dff2d2128a447451fc07e7edbd3e3d9898583964 100644
+--- a/MdeModulePkg/Application/UiApp/FrontPageCustomizedUiSupport.c
++++ b/MdeModulePkg/Application/UiApp/FrontPageCustomizedUiSupport.c
+@@ -30,13 +30,11 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ // This is the VFR compiler generated header file which defines the
+ // string identifiers.
+ //
+-#define PRINTABLE_LANGUAGE_NAME_STRING_ID  0x0001
+ 
+ #define UI_HII_DRIVER_LIST_SIZE  0x8
+ 
+ #define FRONT_PAGE_KEY_CONTINUE  0x1000
+ #define FRONT_PAGE_KEY_RESET     0x1001
+-#define FRONT_PAGE_KEY_LANGUAGE  0x1002
+ #define FRONT_PAGE_KEY_DRIVER    0x2000
+ 
+ typedef struct {
+@@ -47,112 +45,9 @@ typedef struct {
+   BOOLEAN          EmptyLineAfter;
+ } UI_HII_DRIVER_INSTANCE;
+ 
+-CHAR8                   *gLanguageString;
+-EFI_STRING_ID           *gLanguageToken;
+ UI_HII_DRIVER_INSTANCE  *gHiiDriverList;
+ extern EFI_HII_HANDLE   gStringPackHandle;
+-UINT8                   gCurrentLanguageIndex;
+ 
+-/**
+-  Get next language from language code list (with separator ';').
+-
+-  If LangCode is NULL, then ASSERT.
+-  If Lang is NULL, then ASSERT.
+-
+-  @param  LangCode    On input: point to first language in the list. On
+-                                 output: point to next language in the list, or
+-                                 NULL if no more language in the list.
+-  @param  Lang           The first language in the list.
+-
+-**/
+-VOID
+-GetNextLanguage (
+-  IN OUT CHAR8  **LangCode,
+-  OUT CHAR8     *Lang
+-  )
+-{
+-  UINTN  Index;
+-  CHAR8  *StringPtr;
+-
+-  ASSERT (LangCode != NULL);
+-  ASSERT (*LangCode != NULL);
+-  ASSERT (Lang != NULL);
+-
+-  Index     = 0;
+-  StringPtr = *LangCode;
+-  while (StringPtr[Index] != 0 && StringPtr[Index] != ';') {
+-    Index++;
+-  }
+-
+-  CopyMem (Lang, StringPtr, Index);
+-  Lang[Index] = 0;
+-
+-  if (StringPtr[Index] == ';') {
+-    Index++;
+-  }
+-
+-  *LangCode = StringPtr + Index;
+-}
+-
+-/**
+-  This function processes the language changes in configuration.
+-
+-  @param Value           A pointer to the data being sent to the original exporting driver.
+-
+-
+-  @retval  TRUE          The callback successfully handled the action.
+-  @retval  FALSE         The callback not supported in this handler.
+-
+-**/
+-EFI_STATUS
+-LanguageChangeHandler (
+-  IN  EFI_IFR_TYPE_VALUE  *Value
+-  )
+-{
+-  CHAR8       *LangCode;
+-  CHAR8       *Lang;
+-  UINTN       Index;
+-  EFI_STATUS  Status;
+-
+-  //
+-  // Allocate working buffer for RFC 4646 language in supported LanguageString.
+-  //
+-  Lang = AllocatePool (AsciiStrSize (gLanguageString));
+-  ASSERT (Lang != NULL);
+-
+-  Index    = 0;
+-  LangCode = gLanguageString;
+-  while (*LangCode != 0) {
+-    GetNextLanguage (&LangCode, Lang);
+-
+-    if (Index == Value->u8) {
+-      gCurrentLanguageIndex = Value->u8;
+-      break;
+-    }
+-
+-    Index++;
+-  }
+-
+-  if (Index == Value->u8) {
+-    Status = gRT->SetVariable (
+-                    L"PlatformLang",
+-                    &gEfiGlobalVariableGuid,
+-                    EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
+-                    AsciiStrSize (Lang),
+-                    Lang
+-                    );
+-    if (EFI_ERROR (Status)) {
+-      FreePool (Lang);
+-      return EFI_DEVICE_ERROR;
+-    }
+-  } else {
+-    ASSERT (FALSE);
+-  }
+-
+-  FreePool (Lang);
+-
+-  return EFI_SUCCESS;
+-}
+ 
+ /**
+   This function processes the results of changes in configuration.
+@@ -183,25 +78,13 @@ UiSupportLibCallbackHandler (
+   )
+ {
+   if ((QuestionId != FRONT_PAGE_KEY_CONTINUE) &&
+-      (QuestionId != FRONT_PAGE_KEY_RESET) &&
+-      (QuestionId != FRONT_PAGE_KEY_LANGUAGE))
++      (QuestionId != FRONT_PAGE_KEY_RESET))
+   {
+     return FALSE;
+   }
+ 
+   if (Action == EFI_BROWSER_ACTION_RETRIEVE) {
+-    if (QuestionId == FRONT_PAGE_KEY_LANGUAGE) {
+-      if (Value == NULL) {
+-        *Status = EFI_INVALID_PARAMETER;
+-        return FALSE;
+-      }
+-
+-      Value->u8 = gCurrentLanguageIndex;
+-      *Status   = EFI_SUCCESS;
+-    } else {
+-      *Status = EFI_UNSUPPORTED;
+-    }
+-
++    *Status = EFI_UNSUPPORTED;
+     return TRUE;
+   }
+ 
+@@ -228,10 +111,6 @@ UiSupportLibCallbackHandler (
+         *ActionRequest = EFI_BROWSER_ACTION_REQUEST_EXIT;
+         break;
+ 
+-      case FRONT_PAGE_KEY_LANGUAGE:
+-        *Status = LanguageChangeHandler (Value);
+-        break;
+-
+       case FRONT_PAGE_KEY_RESET:
+         //
+         // Reset
+@@ -247,164 +126,6 @@ UiSupportLibCallbackHandler (
+   return TRUE;
+ }
+ 
+-/**
+-  Create Select language menu in the front page with oneof opcode.
+-
+-  @param[in]    HiiHandle           The hii handle for the Uiapp driver.
+-  @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
+-
+-**/
+-VOID
+-UiCreateLanguageMenu (
+-  IN EFI_HII_HANDLE  HiiHandle,
+-  IN VOID            *StartOpCodeHandle
+-  )
+-{
+-  CHAR8                    *LangCode;
+-  CHAR8                    *Lang;
+-  UINTN                    LangSize;
+-  CHAR8                    *CurrentLang;
+-  UINTN                    OptionCount;
+-  CHAR16                   *StringBuffer;
+-  VOID                     *OptionsOpCodeHandle;
+-  UINTN                    StringSize;
+-  EFI_STATUS               Status;
+-  EFI_HII_STRING_PROTOCOL  *HiiString;
+-
+-  Lang         = NULL;
+-  StringBuffer = NULL;
+-
+-  //
+-  // Init OpCode Handle and Allocate space for creation of UpdateData Buffer
+-  //
+-  OptionsOpCodeHandle = HiiAllocateOpCodeHandle ();
+-  ASSERT (OptionsOpCodeHandle != NULL);
+-
+-  GetEfiGlobalVariable2 (L"PlatformLang", (VOID **)&CurrentLang, NULL);
+-
+-  //
+-  // Get Support language list from variable.
+-  //
+-  GetEfiGlobalVariable2 (L"PlatformLangCodes", (VOID **)&gLanguageString, NULL);
+-  if (gLanguageString == NULL) {
+-    gLanguageString = AllocateCopyPool (
+-                        AsciiStrSize ((CHAR8 *)PcdGetPtr (PcdUefiVariableDefaultPlatformLangCodes)),
+-                        (CHAR8 *)PcdGetPtr (PcdUefiVariableDefaultPlatformLangCodes)
+-                        );
+-    ASSERT (gLanguageString != NULL);
+-  }
+-
+-  if (gLanguageToken == NULL) {
+-    //
+-    // Count the language list number.
+-    //
+-    LangCode = gLanguageString;
+-    Lang     = AllocatePool (AsciiStrSize (gLanguageString));
+-    ASSERT (Lang != NULL);
+-
+-    OptionCount = 0;
+-    while (*LangCode != 0) {
+-      GetNextLanguage (&LangCode, Lang);
+-      OptionCount++;
+-    }
+-
+-    //
+-    // Allocate extra 1 as the end tag.
+-    //
+-    gLanguageToken = AllocateZeroPool ((OptionCount + 1) * sizeof (EFI_STRING_ID));
+-    ASSERT (gLanguageToken != NULL);
+-
+-    Status = gBS->LocateProtocol (&gEfiHiiStringProtocolGuid, NULL, (VOID **)&HiiString);
+-    ASSERT_EFI_ERROR (Status);
+-
+-    LangCode    = gLanguageString;
+-    OptionCount = 0;
+-    while (*LangCode != 0) {
+-      GetNextLanguage (&LangCode, Lang);
+-
+-      StringSize = 0;
+-      Status     = HiiString->GetString (HiiString, Lang, HiiHandle, PRINTABLE_LANGUAGE_NAME_STRING_ID, StringBuffer, &StringSize, NULL);
+-      if (Status == EFI_BUFFER_TOO_SMALL) {
+-        StringBuffer = AllocateZeroPool (StringSize);
+-        ASSERT (StringBuffer != NULL);
+-        Status = HiiString->GetString (HiiString, Lang, HiiHandle, PRINTABLE_LANGUAGE_NAME_STRING_ID, StringBuffer, &StringSize, NULL);
+-        ASSERT_EFI_ERROR (Status);
+-      }
+-
+-      if (EFI_ERROR (Status)) {
+-        LangSize     = AsciiStrSize (Lang);
+-        StringBuffer = AllocatePool (LangSize * sizeof (CHAR16));
+-        ASSERT (StringBuffer != NULL);
+-        AsciiStrToUnicodeStrS (Lang, StringBuffer, LangSize);
+-      }
+-
+-      ASSERT (StringBuffer != NULL);
+-      gLanguageToken[OptionCount] = HiiSetString (HiiHandle, 0, StringBuffer, NULL);
+-      FreePool (StringBuffer);
+-
+-      OptionCount++;
+-    }
+-  }
+-
+-  ASSERT (gLanguageToken != NULL);
+-  LangCode    = gLanguageString;
+-  OptionCount = 0;
+-  if (Lang == NULL) {
+-    Lang = AllocatePool (AsciiStrSize (gLanguageString));
+-    if (Lang == NULL) {
+-      ASSERT (Lang != NULL);
+-      goto Exit;
+-    }
+-  }
+-
+-  while (*LangCode != 0) {
+-    GetNextLanguage (&LangCode, Lang);
+-
+-    if ((CurrentLang != NULL) && (AsciiStrCmp (Lang, CurrentLang) == 0)) {
+-      HiiCreateOneOfOptionOpCode (
+-        OptionsOpCodeHandle,
+-        gLanguageToken[OptionCount],
+-        EFI_IFR_OPTION_DEFAULT,
+-        EFI_IFR_NUMERIC_SIZE_1,
+-        (UINT8)OptionCount
+-        );
+-      gCurrentLanguageIndex = (UINT8)OptionCount;
+-    } else {
+-      HiiCreateOneOfOptionOpCode (
+-        OptionsOpCodeHandle,
+-        gLanguageToken[OptionCount],
+-        0,
+-        EFI_IFR_NUMERIC_SIZE_1,
+-        (UINT8)OptionCount
+-        );
+-    }
+-
+-    OptionCount++;
+-  }
+-
+-  if (CurrentLang != NULL) {
+-    FreePool (CurrentLang);
+-  }
+-
+-  FreePool (Lang);
+-
+-  HiiCreateOneOfOpCode (
+-    StartOpCodeHandle,
+-    FRONT_PAGE_KEY_LANGUAGE,
+-    0,
+-    0,
+-    STRING_TOKEN (STR_LANGUAGE_SELECT),
+-    STRING_TOKEN (STR_LANGUAGE_SELECT_HELP),
+-    EFI_IFR_FLAG_CALLBACK,
+-    EFI_IFR_NUMERIC_SIZE_1,
+-    OptionsOpCodeHandle,
+-    NULL
+-    );
+-
+-Exit:
+-  HiiFreeOpCodeHandle (OptionsOpCodeHandle);
+-}
+-
+ /**
+   Create continue menu in the front page.
+ 
+@@ -421,8 +142,8 @@ UiCreateContinueMenu (
+   HiiCreateActionOpCode (
+     StartOpCodeHandle,
+     FRONT_PAGE_KEY_CONTINUE,
+-    STRING_TOKEN (STR_CONTINUE_PROMPT),
+-    STRING_TOKEN (STR_CONTINUE_PROMPT),
++    STRING_TOKEN (STR_BOOT_DEFAULT_PROMPT),
++    STRING_TOKEN (STR_BOOT_DEFAULT_HELP),
+     EFI_IFR_FLAG_CALLBACK,
+     0
+     );
+@@ -601,20 +322,10 @@ UiListThirdPartyDrivers (
+   }
+ 
+   HiiHandles = HiiGetHiiHandles (NULL);
+-  if ( HiiHandles == NULL) {
+-    ASSERT (HiiHandles != NULL);
+-    DEBUG ((DEBUG_ERROR, "%a No HII handles found in the HII database\n", __func__));
+-    return EFI_NOT_FOUND;
+-  }
++  ASSERT (HiiHandles != NULL);
+ 
+   gHiiDriverList = AllocateZeroPool (UI_HII_DRIVER_LIST_SIZE * sizeof (UI_HII_DRIVER_INSTANCE));
+-  if (gHiiDriverList == NULL) {
+-    ASSERT (gHiiDriverList != NULL);
+-    DEBUG ((DEBUG_VERBOSE, "%a No memory for gHiiDriverList\n", __func__));
+-    FreePool (HiiHandles);
+-    return EFI_OUT_OF_RESOURCES;
+-  }
+-
++  ASSERT (gHiiDriverList != NULL);
+   DriverListPtr = gHiiDriverList;
+   CurrentSize   = UI_HII_DRIVER_LIST_SIZE;
+ 
+@@ -689,9 +400,8 @@ UiListThirdPartyDrivers (
+       gHiiDriverList[Index].DevicePathId
+       );
+ 
+-    if (gHiiDriverList[Index].EmptyLineAfter) {
+-      UiCreateEmptyLine (HiiHandle, StartOpCodeHandle);
+-    }
++    // Always add an empty line after each entry
++    UiCreateEmptyLine (HiiHandle, StartOpCodeHandle);
+ 
+     Index++;
+   }
+diff --git a/MdeModulePkg/Application/UiApp/FrontPageCustomizedUiSupport.h b/MdeModulePkg/Application/UiApp/FrontPageCustomizedUiSupport.h
+index 972ab35e9d3687ddfbfe8a185c9a6f998c44ec30..73b3c856d4383b6df51dae82ee25f5be02edab0f 100644
+--- a/MdeModulePkg/Application/UiApp/FrontPageCustomizedUiSupport.h
++++ b/MdeModulePkg/Application/UiApp/FrontPageCustomizedUiSupport.h
+@@ -34,19 +34,6 @@ UiCreateEmptyLine (
+   IN VOID            *StartOpCodeHandle
+   );
+ 
+-/**
+-  Create Select language menu in the front page with oneof opcode.
+-
+-  @param[in]    HiiHandle           The hii handle for the Uiapp driver.
+-  @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
+-
+-**/
+-VOID
+-UiCreateLanguageMenu (
+-  IN EFI_HII_HANDLE  HiiHandle,
+-  IN VOID            *StartOpCodeHandle
+-  );
+-
+ /**
+   Create Reset menu.
+ 
+diff --git a/MdeModulePkg/Application/UiApp/FrontPageStrings.uni b/MdeModulePkg/Application/UiApp/FrontPageStrings.uni
+index bd6e377cc10685b5ef352e70b99e13b04cfc2215..09a46fb3067715d54b2d9c556e42cacb8683f8a6 100644
+--- a/MdeModulePkg/Application/UiApp/FrontPageStrings.uni
++++ b/MdeModulePkg/Application/UiApp/FrontPageStrings.uni
+@@ -10,59 +10,17 @@
+ /=#
+ 
+ #langdef   en-US "English"
+-#langdef   fr-FR "Français"
+ #langdef   en    "Standard English"
+-#langdef   fr    "Standard Français"
+ 
+ #string STR_FRONT_PAGE_TITLE           #language en-US  "Front Page"
+-                                       #language fr-FR  "Front Page"
+-#string STR_FRONT_PAGE_COMPUTER_MODEL  #language en-US  ""
+-                                       #language fr-FR  ""
+-#string STR_FRONT_PAGE_CPU_MODEL       #language en-US  ""
+-                                       #language fr-FR  ""
+-#string STR_FRONT_PAGE_CPU_SPEED       #language en-US  ""
+-                                       #language fr-FR  ""
++#string STR_FRONT_PAGE_COMPUTER_MODEL  #language en-US  "<model>"
++#string STR_FRONT_PAGE_BIOS_VERSION    #language en-US  "<bios>"
++#string STR_FRONT_PAGE_CPU_MODEL       #language en-US  "<cpu>"
+ #string STR_FRONT_PAGE_MEMORY_SIZE     #language en-US  ""
+-                                       #language fr-FR  ""
+-#string STR_FRONT_PAGE_BIOS_VERSION    #language en-US  ""
+-                                       #language fr-FR  ""
+-#string STR_FRONT_PAGE_BANNER_0_LEFT   #language en-US  "Wonder Computer Model 1000Z  Manufactured by Intel®"
+-                                       #language fr-FR  "Demander le Modèle d'Ordinateur 1000Z A Fabriqué par Intel®"
+-#string STR_FRONT_PAGE_BANNER_0_RIGHT  #language en-US  "OK"
+-                                       #language fr-FR  "Bon"
+-#string STR_FRONT_PAGE_BANNER_1_LEFT   #language en-US  "2 Pentium® X Xeon processors running at 800Thz"
+-                                       #language fr-FR  "2 processeurs Pentium® X Xeon tournants à 800Thz"
+-#string STR_FRONT_PAGE_BANNER_1_RIGHT  #language en-US  "24 TB System RAM"
+-                                       #language fr-FR  "24 TB RAM de Système"
+-#string STR_FRONT_PAGE_BANNER_2_LEFT   #language en-US  "ACME® EFI BIOS Version 13.5 Release 1039.92"
+-                                       #language fr-FR  "ACME® EFI BIOS Version 13.5 Release 1039.92"
+-#string STR_FRONT_PAGE_BANNER_3_LEFT   #language en-US  "Serial Number: 1Z123456789MARMAR (Need SMBIOS entries)"
+-                                       #language fr-FR  "Numéro de série: 1Z123456789MARMAR (Les entrées de SMBIOS de besoin)"
+-#string STR_CONTINUE_PROMPT            #language en-US  "Continue"
+-                                       #language fr-FR  "Continuer"
+-#string STR_CONTINUE_HELP              #language en-US  "This selection will direct the system to continue to booting process"
+-                                       #language fr-FR  "Cette sélection dirigera le système pour continuer au processus d'amorçage"
+-#string STR_LANGUAGE_SELECT            #language en-US  "Select Language"
+-                                       #language fr-FR  "Choisir la Langue"
+-#string STR_LANGUAGE_SELECT_HELP       #language en-US  "This is the option one adjusts to change the language for the current system"
+-                                       #language fr-FR  "Ceci est l'option qu'on ajuste pour changer la langue pour le système actuel"
++#string STR_BOOT_DEFAULT_PROMPT        #language en-US  "Default Boot"
++#string STR_BOOT_DEFAULT_HELP          #language en-US  "Boot the Default Selection"
+ #string STR_MISSING_STRING             #language en-US  "Missing String"
+-                                       #language fr-FR  "Missing String"
+ #string STR_EMPTY_STRING               #language en-US  ""
+-                                       #language fr-FR  ""
+-#string STR_RESET_STRING               #language en-US  "Reset"
+-                                       #language fr-FR  "Réinitialiser"
+-#string STR_RESET_STRING_HELP          #language en-US  "Cold reset (reboots the computer)."
+-                                       #language fr-FR  "Réinitialisation à froid (redémarre l'ordinateur)."
+-#string STR_CUSTOMIZE_BANNER_LINE4_LEFT  #language en-US  ""
+-                                         #language fr-FR  ""
+-#string STR_CUSTOMIZE_BANNER_LINE4_RIGHT #language en-US  ""
+-                                         #language fr-FR  ""
+-#string STR_CUSTOMIZE_BANNER_LINE5_LEFT  #language en-US  ""
+-                                         #language fr-FR  ""
+-#string STR_CUSTOMIZE_BANNER_LINE5_RIGHT #language en-US  ""
+-                                         #language fr-FR  ""
+-#string STR_TEST_KEY_USED                #language en-US  "WARNING: Test key detected."
+-                                         #language fr-FR  "WARNING: Test key detected."
++#string STR_RESET_STRING               #language en-US  "Reboot"
++#string STR_RESET_STRING_HELP          #language en-US  "Reboot the device"
+ #string STR_NULL_STRING                #language en-US  " "
+-                                       #language fr-FR  " "
+diff --git a/MdeModulePkg/Application/UiApp/FrontPageVfr.Vfr b/MdeModulePkg/Application/UiApp/FrontPageVfr.Vfr
+index ac40c4676e2e2166ca101f2949e8458024764831..d01543016f398d067db43cb42111eee27d0822c2 100644
+--- a/MdeModulePkg/Application/UiApp/FrontPageVfr.Vfr
++++ b/MdeModulePkg/Application/UiApp/FrontPageVfr.Vfr
+@@ -17,7 +17,7 @@
+ formset
+   guid     = FORMSET_GUID,
+   title    = STRING_TOKEN(STR_FRONT_PAGE_TITLE),
+-  help     = STRING_TOKEN(STR_EMPTY_STRING ),
++  help     = STRING_TOKEN(STR_EMPTY_STRING),
+   classguid = FORMSET_GUID,
+ 
+   form formid = FRONT_PAGE_FORM_ID,
+@@ -26,17 +26,7 @@ formset
+     banner
+       title = STRING_TOKEN(STR_FRONT_PAGE_COMPUTER_MODEL),
+       line  1,
+-      align left;
+-
+-    banner
+-      title = STRING_TOKEN(STR_FRONT_PAGE_CPU_MODEL),
+-      line  2,
+-      align left;
+-
+-    banner
+-      title = STRING_TOKEN(STR_FRONT_PAGE_CPU_SPEED),
+-      line  2,
+-      align right;
++      align center;
+ 
+     banner
+       title = STRING_TOKEN(STR_FRONT_PAGE_BIOS_VERSION),
+@@ -44,29 +34,16 @@ formset
+       align left;
+ 
+     banner
+-      title = STRING_TOKEN(STR_FRONT_PAGE_MEMORY_SIZE),
+-      line  3,
+-      align right;
+-
+-    banner
+-      title = STRING_TOKEN(STR_CUSTOMIZE_BANNER_LINE4_LEFT),
++      title = STRING_TOKEN(STR_FRONT_PAGE_CPU_MODEL),
+       line  4,
+       align left;
+ 
+     banner
+-      title = STRING_TOKEN(STR_CUSTOMIZE_BANNER_LINE4_RIGHT),
+-      line  4,
+-      align right;
+-
+-    banner
+-      title = STRING_TOKEN(STR_CUSTOMIZE_BANNER_LINE5_LEFT),
++      title = STRING_TOKEN(STR_FRONT_PAGE_MEMORY_SIZE),
+       line  5,
+       align left;
+ 
+-    banner
+-      title = STRING_TOKEN(STR_CUSTOMIZE_BANNER_LINE5_RIGHT),
+-      line  5,
+-      align right;
++    subtitle text = STRING_TOKEN(STR_NULL_STRING);
+ 
+     label LABEL_FRONTPAGE_INFORMATION;
+     //
+diff --git a/MdeModulePkg/Application/UiApp/UiApp.inf b/MdeModulePkg/Application/UiApp/UiApp.inf
+index 3b9e048851fefd05a15b15752041422eb2f0d876..2c95cf6c62df29b74ec9bd119fa5ed10a2ca8f59 100644
+--- a/MdeModulePkg/Application/UiApp/UiApp.inf
++++ b/MdeModulePkg/Application/UiApp/UiApp.inf
+@@ -33,6 +33,7 @@
+   FrontPageCustomizedUiSupport.c
+   FrontPageCustomizedUi.h
+   FrontPageCustomizedUiSupport.h
++  DeviceNameFromProduct.c
+ 
+ [Packages]
+   MdePkg/MdePkg.dec

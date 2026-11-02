@@ -1,0 +1,1265 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Mon, 6 Jan 2020 16:15:51 -0600
+Subject: [PATCH] MdeModulePkg/SdMmcPciHcDxe: add Bayhub support
+
+[ouroBIOS: commit a0915584eaf3 of MrChromebox's edk2, as it is]
+
+Add support for Bayhub eMMC controller found on AMD
+Stoneyridge Chromebooks.
+
+Test: build/boot various google/kahlee-based devices
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ .../Bus/Pci/SdMmcPciHcDxe/EmmcDevice.c        |  80 ++-
+ .../Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcBayhub.c  | 656 ++++++++++++++++++
+ .../Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcBayhub.h  | 237 +++++++
+ .../Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.c     |  28 +
+ .../Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.h     |  11 +
+ .../Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.inf   |   8 +-
+ .../Bus/Pci/SdMmcPciHcDxe/SdMmcPciHci.c       |  31 +-
+ 7 files changed, 1036 insertions(+), 15 deletions(-)
+ create mode 100644 MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcBayhub.c
+ create mode 100644 MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcBayhub.h
+
+diff --git a/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/EmmcDevice.c b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/EmmcDevice.c
+index a392a4e31aa70e851d38911b6f29a91ea39dab24..81503b6ad1d50c3ec408e3281383bf7ea96cfa8c 100644
+--- a/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/EmmcDevice.c
++++ b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/EmmcDevice.c
+@@ -522,15 +522,27 @@ EmmcTuningClkForHs200 (
+     return Status;
+   }
+ 
++  if (BhtHostPciSupport (PciIo)) {
++    Status = BayhubEmmcTuningStart (PciIo, PassThru, Slot);
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_ERROR, "EmmcTuningClkForHs200: Bayhub tuning start fails with %r\n", Status));
++      return Status;
++    }
++  }
++
+   //
+   // Ask the device to send a sequence of tuning blocks till the tuning procedure is done.
+   //
+   Retry = 0;
+   do {
+-    Status = EmmcSendTuningBlk (PassThru, Slot, BusWidth);
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "EmmcTuningClkForHs200: Send tuning block fails with %r\n", Status));
+-      return Status;
++    if (!BhtHostPciSupport (PciIo)) {
++      Status = EmmcSendTuningBlk (PassThru, Slot, BusWidth);
++      if (EFI_ERROR (Status)) {
++        DEBUG ((DEBUG_ERROR, "EmmcTuningClkForHs200: Send tuning block fails with %r\n", Status));
++        return Status;
++      }
++    } else {
++      gBS->Stall (5000);
+     }
+ 
+     Status = SdMmcHcRwMmio (PciIo, Slot, SD_MMC_HC_HOST_CTRL2, TRUE, sizeof (HostCtrl2), &HostCtrl2);
+@@ -543,6 +555,12 @@ EmmcTuningClkForHs200 (
+     }
+ 
+     if ((HostCtrl2 & (BIT6 | BIT7)) == BIT7) {
++      if (BhtHostPciSupport (PciIo)) {
++        Status = BayhubEmmcTuningRestoreBusWidth (PciIo, Slot, BusWidth);
++        if (EFI_ERROR (Status)) {
++          return Status;
++        }
++      }
+       return EFI_SUCCESS;
+     }
+   } while (++Retry < 40);
+@@ -879,9 +897,23 @@ EmmcSwitchToHS200 (
+     return Status;
+   }
+ 
+-  Status = EmmcSwitchBusTiming (PciIo, PassThru, Slot, Rca, BusMode->DriverStrength, BusMode->BusTiming, BusMode->ClockFreq);
+-  if (EFI_ERROR (Status)) {
+-    return Status;
++  if (BhtHostPciSupport (PciIo)) {
++    BusMode->BusTiming = SdMmcMmcHs200;
++    Status = EmmcSwitchBusTiming (PciIo, PassThru, Slot, Rca, BusMode->DriverStrength,
++                                  BusMode->BusTiming, BusMode->ClockFreq);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++
++    Status = BayhubEmmcSwitchToHS200Post (PciIo, Slot);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++  } else {
++    Status = EmmcSwitchBusTiming (PciIo, PassThru, Slot, Rca, BusMode->DriverStrength, BusMode->BusTiming, BusMode->ClockFreq);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
+   }
+ 
+   Status = EmmcTuningClkForHs200 (PciIo, PassThru, Slot, BusMode->BusWidth);
+@@ -1283,10 +1315,40 @@ EmmcSetBusMode (
+     BusMode.DriverStrength.Emmc
+     ));
+ 
++  if (BhtHostPciSupport (PciIo)) {
++    BayhubEmmcSetBusModeFromVariable (&BusMode);
++  }
++
+   if (BusMode.BusTiming == SdMmcMmcHs400) {
++    //
++    // Execute HS400 timing switch procedure
++    //
+     Status = EmmcSwitchToHS400 (PciIo, PassThru, Slot, Rca, &BusMode);
+   } else if (BusMode.BusTiming == SdMmcMmcHs200) {
++    //
++    // Execute HS200 timing switch procedure
++    //
+     Status = EmmcSwitchToHS200 (PciIo, PassThru, Slot, Rca, &BusMode);
++
++    if (EFI_ERROR (Status)) {
++      if (BhtHostPciSupport (PciIo)) {
++        Status = BayhubEmmcApplyHs100Phase (PciIo, Slot, &BusMode);
++        if (!EFI_ERROR (Status)) {
++          Status = EmmcSwitchToHS200 (PciIo, PassThru, Slot, Rca, &BusMode);
++          if (EFI_ERROR (Status)) {
++            if (((ExtCsd.DeviceType & BIT1) != 0) && (Private->Capability[Slot].HighSpeed != 0)) {
++              BusMode.BusTiming  = SdMmcMmcHsSdr;
++              BusMode.ClockFreq  = 52;
++              Status = EmmcSwitchToHighSpeed (PciIo, PassThru, Slot, Rca, &BusMode);
++            } else if (((ExtCsd.DeviceType & BIT0) != 0) && (Private->Capability[Slot].HighSpeed != 0)) {
++              BusMode.BusTiming  = SdMmcMmcHsSdr;
++              BusMode.ClockFreq  = 26;
++              Status = EmmcSwitchToHighSpeed (PciIo, PassThru, Slot, Rca, &BusMode);
++            }
++          }
++        }
++      }
++    }
+   } else {
+     //
+     // Note that EmmcSwitchToHighSpeed is also called for SdMmcMmcLegacy
+@@ -1330,6 +1392,10 @@ EmmcIdentification (
+   PciIo    = Private->PciIo;
+   PassThru = &Private->PassThru;
+ 
++  if (BhtHostPciSupport (PciIo)) {
++    BayhubEmmcIdentificationPre (PciIo);
++  }
++
+   Status = EmmcReset (PassThru, Slot);
+   if (EFI_ERROR (Status)) {
+     DEBUG ((DEBUG_VERBOSE, "EmmcIdentification: Executing Cmd0 fails with %r\n", Status));
+diff --git a/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcBayhub.c b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcBayhub.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..bd8e4159f75882cf0bfcfe1e588049fe5af7dff2
+--- /dev/null
++++ b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcBayhub.c
+@@ -0,0 +1,656 @@
++/** @file
++  Bayhub/O2 Micro eMMC controller quirk implementation.
++
++  Copyright (c) 2020, 2025. SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++
++#include <IndustryStandard/Pci.h>
++#include "SdMmcPciHcDxe.h"
++#include "SdMmcPciHcBayhub.h"
++
++extern EFI_STATUS
++EmmcSendTuningBlk (
++  IN EFI_SD_MMC_PASS_THRU_PROTOCOL  *PassThru,
++  IN UINT8                          Slot,
++  IN UINT8                          BusWidth
++  );
++
++//
++// Cached Bayhub device ID (set by BhtHostPciSupport when binding).
++//
++STATIC UINT32  mBhtDeviceId = 0;
++
++//
++// BAR1 MMIO helpers (direct read/write of BAR1, not PCIR mapping).
++//
++STATIC
++UINT32
++BhtReadl (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT32               Offset
++  )
++{
++  UINT32  Value;
++
++  PciIo->Mem.Read (PciIo, EfiPciIoWidthUint32, 1, Offset, 1, &Value);
++  return Value;
++}
++
++STATIC
++VOID
++BhtWritel (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT32               Offset,
++  IN UINT32               Value
++  )
++{
++  PciIo->Mem.Write (PciIo, EfiPciIoWidthUint32, 1, Offset, 1, &Value);
++}
++
++BOOLEAN
++BhtHostPciSupport (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo
++  )
++{
++  PCI_TYPE00  Pci;
++
++  if (PciIo->Pci.Read (PciIo, EfiPciIoWidthUint32, 0, sizeof (Pci) / sizeof (UINT32), &Pci) != EFI_SUCCESS) {
++    return FALSE;
++  }
++
++  DEBUG ((DEBUG_INFO, "SdMmcPciHc: check device %04x:%04x\n", Pci.Hdr.VendorId, Pci.Hdr.DeviceId));
++
++  if (Pci.Hdr.VendorId != 0x1217) {
++    return FALSE;
++  }
++
++  switch (Pci.Hdr.DeviceId) {
++    case BHT_PCI_DEV_ID_SDS0:
++    case BHT_PCI_DEV_ID_SDS1:
++    case BHT_PCI_DEV_ID_FJ2:
++    case BHT_PCI_DEV_ID_SB0:
++    case BHT_PCI_DEV_ID_SB1:
++      mBhtDeviceId = Pci.Hdr.DeviceId;
++      return TRUE;
++    default:
++      break;
++  }
++
++  return FALSE;
++}
++
++UINT32
++PciBhtRead32 (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT32               Offset
++  )
++{
++  UINT32  i;
++  UINT32  Tmp[3] = { 0 };
++
++  if ((mBhtDeviceId == BHT_PCI_DEV_ID_SDS0) ||
++      (mBhtDeviceId == BHT_PCI_DEV_ID_SDS1) ||
++      (mBhtDeviceId == BHT_PCI_DEV_ID_FJ2) ||
++      (mBhtDeviceId == BHT_PCI_DEV_ID_SB0) ||
++      (mBhtDeviceId == BHT_PCI_DEV_ID_SB1))
++  {
++    if ((mBhtDeviceId == BHT_PCI_DEV_ID_SDS0) ||
++        (mBhtDeviceId == BHT_PCI_DEV_ID_FJ2) ||
++        (mBhtDeviceId == BHT_PCI_DEV_ID_SB0) ||
++        (mBhtDeviceId == BHT_PCI_DEV_ID_SB1))
++    {
++      i = 0;
++      BhtWritel (PciIo, BHT_PCIRMappingEn, 0x40000000);
++      while ((BhtReadl (PciIo, BHT_PCIRMappingEn) & 0x40000000) == 0) {
++        if (i == 5) {
++          goto RdDisMapping;
++        }
++
++        gBS->Stall (1000);
++        i++;
++        BhtWritel (PciIo, BHT_PCIRMappingEn, 0x40000000);
++      }
++    } else if (mBhtDeviceId == BHT_PCI_DEV_ID_SDS1) {
++      i = 0;
++      BhtWritel (PciIo, BHT_PCIRMappingEn, 0x20000000);
++      while ((BhtReadl (PciIo, BHT_PCIRMappingEn) & 0x20000000) == 0) {
++        if (i == 5) {
++          goto RdDisMapping;
++        }
++
++        gBS->Stall (1000);
++        i++;
++        BhtWritel (PciIo, BHT_PCIRMappingEn, 0x20000000);
++      }
++    }
++
++    i = 0;
++    while (BhtReadl (PciIo, BHT_PCIRMappingCtl) & 0xc0000000) {
++      if (i == 5) {
++        goto RdDisMapping;
++      }
++
++      gBS->Stall (1000);
++      i++;
++    }
++
++    Tmp[0] |= 0x40000000;
++    Tmp[0] |= Offset;
++    BhtWritel (PciIo, BHT_PCIRMappingCtl, Tmp[0]);
++
++    i = 0;
++    while (BhtReadl (PciIo, BHT_PCIRMappingCtl) & 0x40000000) {
++      if (i == 5) {
++        goto RdDisMapping;
++      }
++
++      gBS->Stall (1000);
++      i++;
++    }
++
++    Tmp[1] = BhtReadl (PciIo, BHT_PCIRMappingVal);
++
++RdDisMapping:
++    BhtWritel (PciIo, BHT_PCIRMappingEn, 0x80000000);
++    return Tmp[1];
++  }
++
++  return Tmp[0];
++}
++
++VOID
++PciBhtWrite32 (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT32               Offset,
++  IN UINT32               Value
++  )
++{
++  UINT32  Tmp = 0;
++  UINT32  i;
++
++  if ((mBhtDeviceId == BHT_PCI_DEV_ID_SDS0) ||
++      (mBhtDeviceId == BHT_PCI_DEV_ID_SDS1) ||
++      (mBhtDeviceId == BHT_PCI_DEV_ID_FJ2) ||
++      (mBhtDeviceId == BHT_PCI_DEV_ID_SB0) ||
++      (mBhtDeviceId == BHT_PCI_DEV_ID_SB1))
++  {
++    if ((mBhtDeviceId == BHT_PCI_DEV_ID_SDS0) ||
++        (mBhtDeviceId == BHT_PCI_DEV_ID_FJ2) ||
++        (mBhtDeviceId == BHT_PCI_DEV_ID_SB0) ||
++        (mBhtDeviceId == BHT_PCI_DEV_ID_SB1))
++    {
++      i = 0;
++      BhtWritel (PciIo, BHT_PCIRMappingEn, 0x40000000);
++      while ((BhtReadl (PciIo, BHT_PCIRMappingEn) & 0x40000000) == 0) {
++        if (i == 5) {
++          goto WrDisMapping;
++        }
++
++        gBS->Stall (1000);
++        i++;
++        BhtWritel (PciIo, BHT_PCIRMappingEn, 0x40000000);
++      }
++    } else if (mBhtDeviceId == BHT_PCI_DEV_ID_SDS1) {
++      i = 0;
++      BhtWritel (PciIo, BHT_PCIRMappingEn, 0x20000000);
++      while ((BhtReadl (PciIo, BHT_PCIRMappingEn) & 0x20000000) == 0) {
++        if (i == 5) {
++          goto WrDisMapping;
++        }
++
++        gBS->Stall (1000);
++        i++;
++        BhtWritel (PciIo, BHT_PCIRMappingEn, 0x20000000);
++      }
++    }
++
++    BhtWritel (PciIo, BHT_PCIRMappingVal, 0x80000000);
++    BhtWritel (PciIo, BHT_PCIRMappingCtl, 0x800000D0);
++
++    i = 0;
++    while (BhtReadl (PciIo, BHT_PCIRMappingCtl) & 0xc0000000) {
++      if (i == 5) {
++        goto WrDisMapping;
++      }
++
++      gBS->Stall (1000);
++      i++;
++    }
++
++    BhtWritel (PciIo, BHT_PCIRMappingVal, Value);
++    Tmp |= 0x80000000;
++    Tmp |= Offset;
++    BhtWritel (PciIo, BHT_PCIRMappingCtl, Tmp);
++
++    i = 0;
++    while (BhtReadl (PciIo, BHT_PCIRMappingCtl) & 0x80000000) {
++      if (i == 5) {
++        goto WrDisMapping;
++      }
++
++      gBS->Stall (1000);
++      i++;
++    }
++
++WrDisMapping:
++    BhtWritel (PciIo, BHT_PCIRMappingVal, 0x80000001);
++    BhtWritel (PciIo, BHT_PCIRMappingCtl, 0x800000D0);
++
++    i = 0;
++    while (BhtReadl (PciIo, BHT_PCIRMappingCtl) & 0xc0000000) {
++      if (i == 5) {
++        break;
++      }
++
++      gBS->Stall (1000);
++      i++;
++    }
++
++    BhtWritel (PciIo, BHT_PCIRMappingEn, 0x80000000);
++  }
++}
++
++VOID
++PciBhtOr32 (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT32               Offset,
++  IN UINT32               Value
++  )
++{
++  UINT32  Arg;
++
++  Arg = PciBhtRead32 (PciIo, Offset);
++  PciBhtWrite32 (PciIo, Offset, Value | Arg);
++}
++
++VOID
++PciBhtAnd32 (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT32               Offset,
++  IN UINT32               Value
++  )
++{
++  UINT32  Arg;
++
++  Arg = PciBhtRead32 (PciIo, Offset);
++  PciBhtWrite32 (PciIo, Offset, Value & Arg);
++}
++
++EFI_STATUS
++BayhubInitHost (
++  IN SD_MMC_HC_PRIVATE_DATA  *Private,
++  IN UINT8                   Slot
++  )
++{
++  EFI_PCI_IO_PROTOCOL  *PciIo;
++  SD_MMC_HC_SLOT_CAP   Capability;
++  UINT64               Cap;
++  EFI_STATUS           Status;
++  UINT32               Value32;
++  UINT8                CardMode;
++  UINT16               EmmcVar;
++  UINTN                EmmcVarSize;
++
++  PciIo      = Private->PciIo;
++  Capability = Private->Capability[Slot];
++
++#ifdef DISABLE_L1_2
++  PciBhtAnd32 (PciIo, 0xd0, ~(BIT31));
++  PciBhtAnd32 (PciIo, 0x90, ~(BIT1 | BIT0));
++
++  Value32 = PciBhtRead32 (PciIo, 0xe0);
++  Value32 &= ~(BIT31 | BIT30 | BIT29 | BIT28);
++  Value32 |= (BIT29 | BIT28);
++  PciBhtWrite32 (PciIo, 0xe0, Value32);
++
++  Value32 = PciBhtRead32 (PciIo, 0xfc);
++  Value32 &= ~(BIT19 | BIT18 | BIT17 | BIT16);
++  Value32 |= BIT19;
++  PciBhtWrite32 (PciIo, 0xfc, Value32);
++
++  Value32 = PciBhtRead32 (PciIo, 0x3f4);
++  Value32 &= ~(BIT3 | BIT2 | BIT1 | BIT0);
++  Value32 |= (BIT3 | BIT1);
++  PciBhtWrite32 (PciIo, 0x3f4, Value32);
++
++  Value32 = PciBhtRead32 (PciIo, 0x248);
++  Value32 &= ~(BIT3 | BIT2 | BIT1 | BIT0);
++  Value32 |= (BIT3 | BIT1);
++  PciBhtWrite32 (PciIo, 0x248, Value32);
++
++  Value32 = PciBhtRead32 (PciIo, 0x90);
++  Value32 &= ~(BIT1 | BIT0);
++  Value32 |= BIT1;
++  PciBhtWrite32 (PciIo, 0x90, Value32);
++#endif
++
++  PciBhtOr32 (PciIo, 0xEC, 0x3);
++  PciBhtOr32 (PciIo, 0xD4, BIT6);
++  PciBhtOr32 (PciIo, 0x308, BIT4);
++
++  Value32 = PciBhtRead32 (PciIo, 0x304);
++  Value32 &= 0x0000FFFF;
++  Value32 |= 0x25100000;
++
++  EmmcVarSize = sizeof (EmmcVar);
++  Status      = gRT->GetVariable (
++                      L"EMMC_CLK_DRIVER_STRENGTH",
++                      &gEfiGenericVariableGuid,
++                      NULL,
++                      &EmmcVarSize,
++                      &EmmcVar
++                      );
++  if (EFI_ERROR (Status)) {
++    EmmcVar = HOST_CLK_DRIVE_STRENGTH;
++  }
++
++  Value32 &= 0xFFFFFF8F;
++  Value32 |= ((EmmcVar & 0x7) << 4);
++
++  EmmcVarSize = sizeof (EmmcVar);
++  Status      = gRT->GetVariable (
++                      L"EMMC_DATA_DRIVER_STRENGTH",
++                      &gEfiGenericVariableGuid,
++                      NULL,
++                      &EmmcVarSize,
++                      &EmmcVar
++                      );
++  if (EFI_ERROR (Status)) {
++    EmmcVar = HOST_DAT_DRIVE_STRENGTH;
++  }
++
++  Value32 &= 0xFFFFFFF1;
++  Value32 |= ((EmmcVar & 0x7) << 1);
++  PciBhtWrite32 (PciIo, 0x304, Value32);
++  PciBhtOr32 (PciIo, 0x3E4, BIT22);
++
++  EmmcVarSize = sizeof (CardMode);
++  Status      = gRT->GetVariable (
++                      L"EMMC_FORCE_CARD_MODE",
++                      &gEfiGenericVariableGuid,
++                      NULL,
++                      &EmmcVarSize,
++                      &CardMode
++                      );
++  if (EFI_ERROR (Status) || (CardMode > 2)) {
++    CardMode = 0;
++  }
++
++  if (CardMode == 1) {
++    EmmcVarSize = sizeof (EmmcVar);
++    Status      = gRT->GetVariable (
++                        L"EMMC_HS100_ALLPASS_PHASE",
++                        &gEfiGenericVariableGuid,
++                        NULL,
++                        &EmmcVarSize,
++                        &EmmcVar
++                        );
++    if (EFI_ERROR (Status) || (EmmcVar > 10)) {
++      EmmcVar = HS100_ALLPASS_PHASE;
++    }
++  } else if (CardMode == 2) {
++    EmmcVarSize = sizeof (EmmcVar);
++    Status      = gRT->GetVariable (
++                        L"EMMC_HS200_ALLPASS_PHASE",
++                        &gEfiGenericVariableGuid,
++                        NULL,
++                        &EmmcVarSize,
++                        &EmmcVar
++                        );
++    if (EFI_ERROR (Status) || (EmmcVar > 10)) {
++      EmmcVar = HS200_ALLPASS_PHASE;
++    }
++  } else {
++    EmmcVar = 0;
++  }
++
++  Value32 = 0x21000033 | (EmmcVar << 20);
++  PciBhtWrite32 (PciIo, 0x300, Value32);
++
++  Value32 = BIT0;
++  Status  = SdMmcHcOrMmio (PciIo, Slot, SD_MMC_HC_CLOCK_CTRL, sizeof (Value32), &Value32);
++
++  Status = SdMmcHcRwMmio (PciIo, Slot, 0x1CC, TRUE, sizeof (Value32), &Value32);
++  Value32 |= BIT12;
++  Status = SdMmcHcRwMmio (PciIo, Slot, 0x1CC, FALSE, sizeof (Value32), &Value32);
++  gBS->Stall (1);
++
++  Status = SdMmcHcRwMmio (PciIo, Slot, 0x1CC, TRUE, sizeof (Value32), &Value32);
++  Value32 &= ~BIT12;
++  Value32 |= BIT18;
++  Status = SdMmcHcRwMmio (PciIo, Slot, 0x1CC, FALSE, sizeof (Value32), &Value32);
++
++  Status = SdMmcHcRwMmio (PciIo, Slot, 0x1CC, TRUE, sizeof (Value32), &Value32);
++  while (!(Value32 & BIT14)) {
++    gBS->Stall (100);
++    Status = SdMmcHcRwMmio (PciIo, Slot, 0x1CC, TRUE, sizeof (Value32), &Value32);
++  }
++
++  if (Value32 & BIT18) {
++    while (1) {
++      Status = SdMmcHcRwMmio (PciIo, Slot, SD_MMC_HC_PRESENT_STATE, TRUE, sizeof (Value32), &Value32);
++      if (((Value32 >> 16) & 0x01) == ((Value32 >> 18) & 0x01)) {
++        break;
++      }
++    }
++
++    Status = SdMmcHcRwMmio (PciIo, Slot, 0x1CC, TRUE, sizeof (Value32), &Value32);
++    Value32 &= ~BIT18;
++    Status = SdMmcHcRwMmio (PciIo, Slot, 0x1CC, FALSE, sizeof (Value32), &Value32);
++  }
++
++  Status = SdMmcHcRwMmio (PciIo, Slot, SD_MMC_HC_CAP, TRUE, sizeof (Cap), &Cap);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  CopyMem (&Capability, &Cap, sizeof (Capability));
++  Status = SdMmcHcInitPowerVoltage (PciIo, Slot, Capability);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  return EFI_SUCCESS;
++}
++
++EFI_STATUS
++BayhubInitPowerVoltageExtra (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT8                Slot
++  )
++{
++  EFI_STATUS  Status;
++  UINT8       HostCtrl2;
++
++  HostCtrl2 = (UINT8)BIT3;
++  Status   = SdMmcHcOrMmio (PciIo, Slot, SD_MMC_HC_HOST_CTRL2, sizeof (HostCtrl2), &HostCtrl2);
++  gBS->Stall (5000);
++  return Status;
++}
++
++VOID
++BayhubEmmcIdentificationPre (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo
++  )
++{
++  UINT32  Val32;
++
++  Val32 = PciBhtRead32 (PciIo, BHT_CLK_SRC_SWITCH);
++  Val32 &= ~BHT_PCR_SD_SEL_DLL;
++  PciBhtWrite32 (PciIo, BHT_CLK_SRC_SWITCH, Val32);
++}
++
++EFI_STATUS
++BayhubEmmcTuningStart (
++  IN EFI_PCI_IO_PROTOCOL            *PciIo,
++  IN EFI_SD_MMC_PASS_THRU_PROTOCOL  *PassThru,
++  IN UINT8                          Slot
++  )
++{
++  EFI_STATUS  Status;
++  UINT8       HostCtrl2;
++
++  Status = SdMmcHcSetBusWidth (PciIo, Slot, 4);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  HostCtrl2 = (UINT8)(~0x10);
++  Status    = SdMmcHcAndMmio (PciIo, Slot, 0x110, sizeof (HostCtrl2), &HostCtrl2);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  return EmmcSendTuningBlk (PassThru, Slot, 4);
++}
++
++EFI_STATUS
++BayhubEmmcTuningRestoreBusWidth (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT8                Slot,
++  IN UINT8                BusWidth
++  )
++{
++  return SdMmcHcSetBusWidth (PciIo, Slot, BusWidth);
++}
++
++EFI_STATUS
++BayhubEmmcSwitchToHS200Post (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT8                Slot
++  )
++{
++  EFI_STATUS  Status;
++  UINT32      Value32;
++
++  Status = SdMmcHcWaitMmioSet (
++             PciIo,
++             Slot,
++             0x1cc,
++             sizeof (Value32),
++             BIT14,
++             BIT14,
++             SD_MMC_HC_GENERIC_TIMEOUT
++             );
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  while (1) {
++    Status = SdMmcHcRwMmio (PciIo, Slot, SD_MMC_HC_PRESENT_STATE, TRUE, sizeof (Value32), &Value32);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++
++    if (((Value32 >> 18) & 0x01) == ((Value32 >> 16) & 0x01)) {
++      break;
++    }
++  }
++
++  Status = SdMmcHcWaitMmioSet (
++             PciIo,
++             Slot,
++             0x1cc,
++             sizeof (Value32),
++             BIT11,
++             BIT11,
++             SD_MMC_CLOCK_STABLE_TIMEOUT
++             );
++  return Status;
++}
++
++VOID
++BayhubEmmcSetBusModeFromVariable (
++  IN OUT SD_MMC_BUS_SETTINGS  *BusMode
++  )
++{
++  EFI_STATUS  Status;
++  UINT8       EmmcVar;
++  UINTN       EmmcVarSize;
++
++  EmmcVarSize = sizeof (EmmcVar);
++  Status      = gRT->GetVariable (
++                      L"EMMC_FORCE_CARD_MODE",
++                      &gEfiGenericVariableGuid,
++                      NULL,
++                      &EmmcVarSize,
++                      &EmmcVar
++                      );
++  if (!EFI_ERROR (Status) && (EmmcVar <= 2)) {
++    if (EmmcVar == 2) {
++      BusMode->BusTiming  = SdMmcMmcHs200;
++      BusMode->ClockFreq  = 200;
++    } else if (EmmcVar == 1) {
++      BusMode->BusTiming  = SdMmcMmcHs200;
++      BusMode->ClockFreq  = 100;
++    } else {
++      BusMode->BusTiming  = SdMmcMmcHsSdr;
++      BusMode->ClockFreq  = 52;
++    }
++  } else {
++    BusMode->BusTiming  = SdMmcMmcHsSdr;
++    BusMode->ClockFreq  = 52;
++  }
++}
++
++EFI_STATUS
++BayhubEmmcApplyHs100Phase (
++  IN     EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN     UINT8                Slot,
++  IN OUT SD_MMC_BUS_SETTINGS  *BusMode
++  )
++{
++  EFI_STATUS  Status;
++  UINT32      Val32;
++  UINT16      EmmcVar;
++  UINTN       EmmcVarSize;
++
++  Val32 = PciBhtRead32 (PciIo, 0x300);
++  Val32 &= 0xFF0FFFFF;
++  EmmcVarSize = sizeof (EmmcVar);
++  Status      = gRT->GetVariable (
++                      L"EMMC_HS100_ALLPASS_PHASE",
++                      &gEfiGenericVariableGuid,
++                      NULL,
++                      &EmmcVarSize,
++                      &EmmcVar
++                      );
++  if (EFI_ERROR (Status) || (EmmcVar > 10)) {
++    EmmcVar = HS100_ALLPASS_PHASE;
++  }
++
++  Val32 |= (EmmcVar << 20);
++  PciBhtWrite32 (PciIo, 0x300, 0x21000033 | Val32);
++  BusMode->ClockFreq = 100;
++
++  SdMmcHcRwMmio (PciIo, Slot, 0x3C, TRUE, sizeof (Val32), &Val32);
++  Val32 &= ~BIT22;
++  SdMmcHcRwMmio (PciIo, Slot, 0x3C, FALSE, sizeof (Val32), &Val32);
++  Val32 = (BIT26 | BIT25);
++  SdMmcHcOrMmio (PciIo, Slot, 0x2C, sizeof (Val32), &Val32);
++
++  return EFI_SUCCESS;
++}
++
++VOID
++BayhubPostInitReads (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo
++  )
++{
++  UINT32  Value;
++  UINT16  IntStatus;
++
++  SdMmcHcRwMmio (PciIo, 0, 0x110, TRUE, sizeof (Value), &Value);
++  SdMmcHcRwMmio (PciIo, 0, 0x114, TRUE, sizeof (Value), &Value);
++  SdMmcHcRwMmio (PciIo, 0, 0x1a8, TRUE, sizeof (Value), &Value);
++  SdMmcHcRwMmio (PciIo, 0, 0x1ac, TRUE, sizeof (Value), &Value);
++  SdMmcHcRwMmio (PciIo, 0, 0x1B0, TRUE, sizeof (Value), &Value);
++  SdMmcHcRwMmio (PciIo, 0, 0x1CC, TRUE, sizeof (Value), &Value);
++  SdMmcHcRwMmio (PciIo, 0, 0x040, TRUE, sizeof (Value), &Value);
++  SdMmcHcRwMmio (PciIo, 0, SD_MMC_HC_PRESENT_STATE, TRUE, sizeof (Value), &Value);
++  SdMmcHcRwMmio (PciIo, 0, SD_MMC_HC_HOST_CTRL1, TRUE, sizeof (IntStatus), &IntStatus);
++  SdMmcHcRwMmio (PciIo, 0, SD_MMC_HC_CLOCK_CTRL, TRUE, sizeof (IntStatus), &IntStatus);
++  SdMmcHcRwMmio (PciIo, 0, SD_MMC_HC_TIMEOUT_CTRL, TRUE, sizeof (IntStatus), &IntStatus);
++  SdMmcHcRwMmio (PciIo, 0, SD_MMC_HC_NOR_INT_STS, TRUE, sizeof (Value), &Value);
++  SdMmcHcRwMmio (PciIo, 0, SD_MMC_HC_HOST_CTRL2, TRUE, sizeof (IntStatus), &IntStatus);
++}
+diff --git a/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcBayhub.h b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcBayhub.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..4125768b1b60b5e1d817692a6d02e4cc506e369f
+--- /dev/null
++++ b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcBayhub.h
+@@ -0,0 +1,237 @@
++/** @file
++  Bayhub/O2 Micro eMMC controller quirk support.
++
++  This module isolates all Bayhub (O2 Micro vendor 0x1217) eMMC controller
++  logic so the main SdMmcPciHcDxe driver stays generic. The driver calls
++  into these functions when BhtHostPciSupport() returns TRUE.
++
++  Copyright (c) 2020, 2025. SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++
++#ifndef _SD_MMC_PCI_HC_BAYHUB_H_
++#define _SD_MMC_PCI_HC_BAYHUB_H_
++
++#include <Protocol/PciIo.h>
++
++//
++// O2/Bayhub PCI device IDs (Vendor 0x1217)
++//
++#define BHT_PCI_DEV_ID_RJ    0x8320
++#define BHT_PCI_DEV_ID_SDS0  0x8420
++#define BHT_PCI_DEV_ID_SDS1  0x8421
++#define BHT_PCI_DEV_ID_FJ2  0x8520
++#define BHT_PCI_DEV_ID_SB0  0x8620
++#define BHT_PCI_DEV_ID_SB1  0x8621
++
++//
++// O2/Bayhub BAR1 PCIR mapping registers
++//
++#define BHT_PCIRMappingVal    (0x200)
++#define BHT_PCIRMappingCtl    (0x204)
++#define BHT_PCIRMappingEn     (0x208)
++#define BHT_GPIOCTL           (0x210)
++#define BHT_CLK_SRC_SWITCH    (0x354)
++#define BHT_PCR_SD_SEL_DLL    (1 << 16)
++
++/**
++  Check if the PCI device is a supported Bayhub/O2 Micro eMMC controller.
++
++  @param[in] PciIo  The PCI I/O protocol.
++
++  @retval TRUE   Controller is Bayhub (O2 Micro VID 0x1217, supported DIDs).
++  @retval FALSE  Otherwise.
++**/
++BOOLEAN
++BhtHostPciSupport (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo
++  );
++
++/**
++  Read a 32-bit Bayhub vendor register (via BAR1 PCIR mapping).
++
++  @param[in] PciIo   The PCI I/O protocol.
++  @param[in] Offset  Register offset in vendor space.
++
++  @return The 32-bit value read.
++**/
++UINT32
++PciBhtRead32 (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT32               Offset
++  );
++
++/**
++  Write a 32-bit Bayhub vendor register (via BAR1 PCIR mapping).
++
++  @param[in] PciIo   The PCI I/O protocol.
++  @param[in] Offset  Register offset in vendor space.
++  @param[in] Value   Value to write.
++**/
++VOID
++PciBhtWrite32 (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT32               Offset,
++  IN UINT32               Value
++  );
++
++/**
++  OR a 32-bit value into a Bayhub vendor register.
++
++  @param[in] PciIo   The PCI I/O protocol.
++  @param[in] Offset  Register offset in vendor space.
++  @param[in] Value   Value to OR.
++**/
++VOID
++PciBhtOr32 (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT32               Offset,
++  IN UINT32               Value
++  );
++
++/**
++  AND a 32-bit value into a Bayhub vendor register.
++
++  @param[in] PciIo   The PCI I/O protocol.
++  @param[in] Offset  Register offset in vendor space.
++  @param[in] Value   Value to AND.
++**/
++VOID
++PciBhtAnd32 (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT32               Offset,
++  IN UINT32               Value
++  );
++
++/**
++  Bayhub-specific host initialization (replaces standard path when BhtHostPciSupport).
++  Caller must ensure BhtHostPciSupport(Private->PciIo) is TRUE.
++
++  @param[in] Private  SD/MMC host controller private data.
++  @param[in] Slot     Slot index.
++
++  @retval EFI_SUCCESS  Init succeeded.
++  @retval other        Init failed.
++**/
++EFI_STATUS
++BayhubInitHost (
++  IN SD_MMC_HC_PRIVATE_DATA  *Private,
++  IN UINT8                   Slot
++  );
++
++/**
++  Bayhub 1.8V signaling enable (HostCtrl2 BIT3) and stall.
++  Called from SdMmcHcInitPowerVoltage when BhtHostPciSupport.
++
++  @param[in] PciIo  The PCI I/O protocol.
++  @param[in] Slot  Slot index.
++
++  @retval EFI_SUCCESS  Success.
++  @retval other        SdMmcHcOrMmio failed.
++**/
++EFI_STATUS
++BayhubInitPowerVoltageExtra (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT8                Slot
++  );
++
++/**
++  Bayhub pre-identification: clear clock source selection before reset.
++  Called from EmmcIdentification when BhtHostPciSupport.
++
++  @param[in] PciIo  The PCI I/O protocol.
++**/
++VOID
++BayhubEmmcIdentificationPre (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo
++  );
++
++/**
++  Bayhub HS200 tuning: initial setup (4-bit, hardware tuning, send tuning block with 4).
++  Caller then runs the tuning loop; for Bayhub, use Stall instead of SendTuningBlk each
++  iteration, and on success call BayhubEmmcTuningRestoreBusWidth.
++
++  @param[in] PciIo    The PCI I/O protocol.
++  @param[in] PassThru Pass-thru protocol.
++  @param[in] Slot     Slot index.
++
++  @retval EFI_SUCCESS  Setup succeeded.
++  @retval other        Failed.
++**/
++EFI_STATUS
++BayhubEmmcTuningStart (
++  IN EFI_PCI_IO_PROTOCOL            *PciIo,
++  IN EFI_SD_MMC_PASS_THRU_PROTOCOL  *PassThru,
++  IN UINT8                          Slot
++  );
++
++/**
++  Bayhub HS200 tuning: restore bus width after successful tuning.
++
++  @param[in] PciIo     The PCI I/O protocol.
++  @param[in] Slot      Slot index.
++  @param[in] BusWidth  Target bus width (e.g. 8).
++**/
++EFI_STATUS
++BayhubEmmcTuningRestoreBusWidth (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT8                Slot,
++  IN UINT8                BusWidth
++  );
++
++/**
++  Bayhub HS200 switch: extra waits after EmmcSwitchBusTiming (0x1cc BIT14, debounce, BIT11).
++  Caller does EmmcSwitchBusTiming then this, then EmmcTuningClkForHs200.
++
++  @param[in] PciIo   The PCI I/O protocol.
++  @param[in] Slot    Slot index.
++
++  @retval EFI_SUCCESS  Success.
++  @retval other        Timeout or error.
++**/
++EFI_STATUS
++BayhubEmmcSwitchToHS200Post (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN UINT8                Slot
++  );
++
++/**
++  Apply EMMC_FORCE_CARD_MODE and related variables to BusMode for Bayhub.
++  Called from EmmcSetBusMode when BhtHostPciSupport.
++
++  @param[in,out] BusMode  Bus settings to update.
++**/
++VOID
++BayhubEmmcSetBusModeFromVariable (
++  IN OUT SD_MMC_BUS_SETTINGS  *BusMode
++  );
++
++/**
++  Bayhub HS200 failure: apply HS100 phase (0x300, EMMC_HS100_ALLPASS_PHASE, 0x3C, 0x2C) and set
++  BusMode.ClockFreq to 100. Caller then retries EmmcSwitchToHS200 and on failure can try
++  EmmcSwitchToHighSpeed. Called from EmmcSetBusMode when HS200 switch failed and BhtHostPciSupport.
++
++  @param[in] PciIo     The PCI I/O protocol.
++  @param[in] Slot      Slot index.
++  @param[in,out] BusMode  Bus settings (ClockFreq set to 100).
++
++  @retval EFI_SUCCESS  Phase applied.
++**/
++EFI_STATUS
++BayhubEmmcApplyHs100Phase (
++  IN     EFI_PCI_IO_PROTOCOL  *PciIo,
++  IN     UINT8                Slot,
++  IN OUT SD_MMC_BUS_SETTINGS  *BusMode
++  );
++
++/**
++  Bayhub post-init: read various MMIO registers (workaround).
++  Called from SdMmcPciHcDriverBindingStart when BhtHostPciSupport.
++
++  @param[in] PciIo  The PCI I/O protocol.
++**/
++VOID
++BayhubPostInitReads (
++  IN EFI_PCI_IO_PROTOCOL  *PciIo
++  );
++
++#endif /* _SD_MMC_PCI_HC_BAYHUB_H_ */
+diff --git a/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.c b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.c
+index 8496ce4727688835e812849f13bd7cf4aea4bd01..17d04a4a009915a60735fd80519e19abf329288d 100644
+--- a/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.c
++++ b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.c
+@@ -313,6 +313,13 @@ SdMmcPciHcEnumerateDevice (
+           continue;
+         }
+ 
++        if (BhtHostPciSupport (Private->PciIo)) {
++          Status = SdMmcHcGetCapability (Private->PciIo, Slot, &Private->Capability[Slot]);
++          if (EFI_ERROR (Status)) {
++            continue;
++          }
++        }
++
+         Private->Slot[Slot].MediaPresent = TRUE;
+         Private->Slot[Slot].Initialized  = TRUE;
+         RoutineNum                       = sizeof (mCardTypeDetectRoutineTable) / sizeof (CARD_TYPE_DETECT_ROUTINE);
+@@ -330,6 +337,7 @@ SdMmcPciHcEnumerateDevice (
+         // This card doesn't get initialized correctly.
+         //
+         if (Index == RoutineNum) {
++          DEBUG ((DEBUG_INFO, "Load driver failure\n"));
+           Private->Slot[Slot].Initialized = FALSE;
+         }
+ 
+@@ -723,6 +731,15 @@ SdMmcPciHcDriverBindingStart (
+       continue;
+     }
+ 
++    //
++    // Bayhub/O2 Micro eMMC controllers may report a removable slot type in the
++    // SDHCI capability register even when the attached device is soldered-down
++    // eMMC. Treat Bayhub as EmbeddedSlot so we don't skip eMMC probing.
++    //
++    if (BhtHostPciSupport (PciIo)) {
++      Private->Capability[Slot].SlotType = EmbeddedSlot;
++    }
++
+     Private->Slot[Slot].SlotType = Private->Capability[Slot].SlotType;
+     if ((Private->Slot[Slot].SlotType != RemovableSlot) && (Private->Slot[Slot].SlotType != EmbeddedSlot)) {
+       DEBUG ((DEBUG_INFO, "SdMmcPciHcDxe doesn't support the slot type [%d]!!!\n", Private->Slot[Slot].SlotType));
+@@ -759,6 +776,13 @@ SdMmcPciHcDriverBindingStart (
+       continue;
+     }
+ 
++    if (BhtHostPciSupport (PciIo)) {
++      Status = SdMmcHcGetCapability (PciIo, Slot, &Private->Capability[Slot]);
++      if (EFI_ERROR (Status)) {
++        continue;
++      }
++    }
++
+     Private->Slot[Slot].MediaPresent = TRUE;
+     Private->Slot[Slot].Initialized  = TRUE;
+     RoutineNum                       = sizeof (mCardTypeDetectRoutineTable) / sizeof (CARD_TYPE_DETECT_ROUTINE);
+@@ -776,9 +800,13 @@ SdMmcPciHcDriverBindingStart (
+     // This card doesn't get initialized correctly.
+     //
+     if (Index == RoutineNum) {
++      DEBUG ((DEBUG_INFO, "Load driver failure\n"));
+       Private->Slot[Slot].Initialized = FALSE;
+     }
+   }
++  if (BhtHostPciSupport (Private->PciIo)) {
++    BayhubPostInitReads (Private->PciIo);
++  }
+ 
+   //
+   // Enable 64-bit DMA support in the PCI layer if this controller
+diff --git a/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.h b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.h
+index e2ff0a449357c07f3769ee640c6c5b4696e8f35d..ef2c69540cf5d5cdeb4f95c2822fdd37f0fdec22 100644
+--- a/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.h
++++ b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.h
+@@ -19,6 +19,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Library/UefiDriverEntryPoint.h>
+ #include <Library/DebugLib.h>
+ #include <Library/UefiBootServicesTableLib.h>
++#include <Library/UefiRuntimeServicesTableLib.h>
+ #include <Library/BaseMemoryLib.h>
+ #include <Library/MemoryAllocationLib.h>
+ #include <Library/UefiLib.h>
+@@ -33,6 +34,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Protocol/SdMmcOverride.h>
+ #include <Protocol/SdMmcPassThru.h>
+ 
++#include <Guid/DebugMask.h>
++
+ #include "SdMmcPciHci.h"
+ 
+ extern EFI_COMPONENT_NAME_PROTOCOL   gSdMmcPciHcComponentName;
+@@ -46,10 +49,16 @@ extern EDKII_SD_MMC_OVERRIDE  *mOverride;
+ #define SD_MMC_HC_PRIVATE_FROM_THIS(a) \
+     CR(a, SD_MMC_HC_PRIVATE_DATA, PassThru, SD_MMC_HC_PRIVATE_SIGNATURE)
+ 
++#define HOST_CLK_DRIVE_STRENGTH    2
++#define HOST_DAT_DRIVE_STRENGTH    2
++#define HS200_ALLPASS_PHASE        0
++#define HS100_ALLPASS_PHASE        6
++
+ //
+ // Generic time out value, 1 microsecond as unit.
+ //
+ #define SD_MMC_HC_GENERIC_TIMEOUT  (PcdGet32 (PcdSdMmcGenericTimeoutValue))
++#define SD_MMC_CLOCK_STABLE_TIMEOUT   3 * 1000
+ 
+ //
+ // SD/MMC async transfer timer interval, set by experience.
+@@ -863,3 +872,5 @@ SdMmcHcInitHost (
+   IN SD_MMC_HC_PRIVATE_DATA  *Private,
+   IN UINT8                   Slot
+   );
++
++#include "SdMmcPciHcBayhub.h"
+diff --git a/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.inf b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.inf
+index e502443ddd5bac929a3277cc04cf9a4d699df739..26731cdb1e25ba31c07d79a5a1ff2e742ea9cd87 100644
+--- a/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.inf
++++ b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.inf
+@@ -14,12 +14,12 @@
+ ##
+ 
+ [Defines]
+-  INF_VERSION                    = 0x00010005
++  INF_VERSION                    = 0x00010007
+   BASE_NAME                      = SdMmcPciHcDxe
+   MODULE_UNI_FILE                = SdMmcPciHcDxe.uni
+   FILE_GUID                      = 8E325979-3FE1-4927-AAE2-8F5C4BD2AF0D
+   MODULE_TYPE                    = UEFI_DRIVER
+-  VERSION_STRING                 = 1.0
++  VERSION_STRING                 = 1.5.4
+   ENTRY_POINT                    = InitializeSdMmcPciHcDxe
+ 
+ #
+@@ -36,6 +36,7 @@
+ [Sources]
+   SdMmcPciHcDxe.h
+   SdMmcPciHcDxe.c
++  SdMmcPciHcBayhub.c
+   EmmcDevice.c
+   SdDevice.c
+   SdMmcPciHci.h
+@@ -64,6 +65,9 @@
+   gEfiPciIoProtocolGuid                         ## TO_START
+   gEfiSdMmcPassThruProtocolGuid                 ## BY_START
+ 
++[Guids]
++  gEfiGenericVariableGuid
++
+ # [Event]
+ # EVENT_TYPE_PERIODIC_TIMER ## SOMETIMES_CONSUMES
+ 
+diff --git a/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHci.c b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHci.c
+index 4b95028e4afa501a19a8e65e1a8502fa644f8317..d84c81d0eaee542dab571630190bad140ec002de 100644
+--- a/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHci.c
++++ b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHci.c
+@@ -1171,6 +1171,16 @@ SdMmcHcInitPowerVoltage (
+   // Set SD Bus Voltage Select and SD Bus Power fields in Power Control Register
+   //
+   Status = SdMmcHcPowerControl (PciIo, Slot, MaxVoltage);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  if (BhtHostPciSupport (PciIo)) {
++    Status = BayhubInitPowerVoltageExtra (PciIo, Slot);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++  }
+ 
+   return Status;
+ }
+@@ -1248,9 +1258,16 @@ SdMmcHcInitHost (
+   PciIo      = Private->PciIo;
+   Capability = Private->Capability[Slot];
+ 
+-  Status = SdMmcHcInitV4Enhancements (PciIo, Slot, Capability, Private->ControllerVersion[Slot]);
+-  if (EFI_ERROR (Status)) {
+-    return Status;
++  if (BhtHostPciSupport (PciIo)) {
++    Status = BayhubInitHost (Private, Slot);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++  } else {
++    Status = SdMmcHcInitV4Enhancements (PciIo, Slot, Capability, Private->ControllerVersion[Slot]);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
+   }
+ 
+   //
+@@ -1265,9 +1282,11 @@ SdMmcHcInitHost (
+     return Status;
+   }
+ 
+-  Status = SdMmcHcInitPowerVoltage (PciIo, Slot, Capability);
+-  if (EFI_ERROR (Status)) {
+-    return Status;
++  if (!BhtHostPciSupport (PciIo)) {
++    Status = SdMmcHcInitPowerVoltage (PciIo, Slot, Capability);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
+   }
+ 
+   Status = SdMmcHcInitTimeoutCtrl (PciIo, Slot);

@@ -1,0 +1,84 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Mon, 12 Oct 2026 10:47:57 -0500
+Subject: [PATCH] CryptoPkg/BaseCryptLib: Ignore foreign buffers in runtime
+ free/realloc
+
+[ouroBIOS: commit 0d39245e6311 of MrChromebox's edk2, as it is]
+
+RuntimeFreeMem() and realloc() index the runtime page table by the
+buffer's offset into the data area without checking that the buffer
+came from it, so a foreign pointer causes an out-of-bounds access.
+
+On UefiPayloadPkg, VariableRuntimeDxe verifies authenticated variables
+outside SMM, and writing a Secure Boot key from Linux faulted in
+RuntimeFreeMem(), disabling EFI runtime services.
+
+All allocations are page-aligned within the data area, so ignore any
+other pointer in RuntimeFreeMem() and return NULL from realloc(), as
+its size is unknown.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ .../SysCall/RuntimeMemAllocation.c            | 34 +++++++++++++++++++
+ 1 file changed, 34 insertions(+)
+
+diff --git a/CryptoPkg/Library/BaseCryptLib/SysCall/RuntimeMemAllocation.c b/CryptoPkg/Library/BaseCryptLib/SysCall/RuntimeMemAllocation.c
+index 27b0b5e0083e07d48bb762eb92a0c9108f1b9cbf..091861cc2ae8f3f6f0252895a2d781d58cfcf474 100644
+--- a/CryptoPkg/Library/BaseCryptLib/SysCall/RuntimeMemAllocation.c
++++ b/CryptoPkg/Library/BaseCryptLib/SysCall/RuntimeMemAllocation.c
+@@ -273,6 +273,32 @@ RuntimeAllocateMem (
+   return AllocPtr;
+ }
+ 
++/**
++  Checks whether a buffer starts on a page of the runtime memory data area.
++
++  @param[in]  Buffer  Pointer to the buffer to check.
++
++  @retval TRUE   Buffer may have been returned by RuntimeAllocateMem().
++  @retval FALSE  Buffer was not allocated from the runtime memory data area.
++
++**/
++STATIC
++BOOLEAN
++IsRuntimeMemBuffer (
++  IN  CONST VOID  *Buffer
++  )
++{
++  UINTN  Offset;
++
++  if ((UINTN)Buffer < (UINTN)mRTPageTable->DataAreaBase) {
++    return FALSE;
++  }
++
++  Offset = (UINTN)Buffer - (UINTN)mRTPageTable->DataAreaBase;
++  return (BOOLEAN)(((Offset & RT_PAGE_MASK) == 0) &&
++                   (Offset < RT_PAGES_TO_SIZE (mRTPageTable->PageCount)));
++}
++
+ /**
+   Frees a buffer that was previously allocated at runtime phase.
+ 
+@@ -287,6 +313,10 @@ RuntimeFreeMem (
+   UINTN  StartOffset;
+   UINTN  StartPageIndex;
+ 
++  if (!IsRuntimeMemBuffer (Buffer)) {
++    return;
++  }
++
+   StartOffset    = (UINTN)Buffer - (UINTN)mRTPageTable->DataAreaBase;
+   StartPageIndex = RT_SIZE_TO_PAGES (mRTPageTable->Pages[RT_SIZE_TO_PAGES (StartOffset)].StartPageOffset);
+ 
+@@ -410,6 +440,10 @@ realloc (
+     return malloc (size);
+   }
+ 
++  if (!IsRuntimeMemBuffer (ptr)) {
++    return NULL;
++  }
++
+   //
+   // Get Original Size of ptr
+   //

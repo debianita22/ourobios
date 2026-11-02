@@ -80,47 +80,62 @@ Three more things the runs show:
   so MrChromebox's `214b236` and the project's `edk2/0024` become a
   setting of the package.
 
-## Step (b): the package, a plan
+## Steps (b) and (c): the package and the carried patches
 
-Its first part is in CI (`587cf7a`): `edk2/OuroBiosPkg`, a `.dec` and the
-platform as a patch on `UefiPayloadPkg.dsc`
-([edk2/README.md](../edk2/README.md)), which coreboot builds with patch
-0216 into a third q35 image of `edk2-upstream`: it passes the steps of
-the upstream payload, with the same gaps. No ROM of a board changes until
-step (d).
+The payload of the ROMs is in CI on the TianoCore tag, with the same
+sources: [`edk2/OuroBiosPkg`](../edk2/README.md), the package, and
+[`patches/tianocore`](../patches/README.md#tianocore-edk-ii-for-the-package),
+the patches carried on the tag, which `tools/edk2-import.py` makes from
+MrChromebox's tree at the commit of the defconfigs:
 
-- **Where**: `edk2/OuroBiosPkg` in this repository, with its `.dec`, its
-  `.dsc` (and its `.fdf`, when it needs one) as patches on those of
-  `UefiPayloadPkg` of the tree it is built with, the modules and settings
-  of the commits marked *package* below and the patches of `patches/edk2`
-  that touch only `UefiPayloadPkg`; `LvglPkg` next to it, a package of its
-  own as it is now.
-- **Build**: coreboot's `payloads/external/edk2/Makefile` built
-  `-p UefiPayloadPkg/UefiPayloadPkg.dsc` with `PACKAGES_PATH` set to the
-  EDK II tree. Patch 0216 gives it two Kconfig strings,
-  `EDK2_PLATFORM_DSC` and `EDK2_PACKAGES_PATH`, the `.dsc` and the
-  directories to put before the tree, whose defaults do what it did (a
-  candidate for coreboot itself). The package keeps the output directory
-  and the FD name of `UefiPayloadPkg` (`Build/UefiPayloadPkgX64`,
-  `UEFIPAYLOAD`), which the Makefile expects.
-- **Settings, not patches of TianoCore**: the package's `.dsc` and `.fdf`
-  carry what MrChromebox and the project change in `UefiPayloadPkg`'s:
-  Secure Boot, the FD size (`214b236`, `edk2/0024`; a `-D` of the build
-  would also set it over the `.fdf`), `PcdShellDefaultDelay` (`4373c47`).
-- **The variable store**: the package formats an erased SMMSTORE with
-  `gEfiAuthenticatedVariableGuid`, and reads a store of that format as it
-  is, so that the boot entries and macOS's NVRAM (`boot-args`,
-  `csr-active-config`) survive the move: step (a) shows it for the format,
-  the update test is to show it with a store that the current payload
-  wrote.
-- **Tests, in order**: the third q35 image of `edk2-upstream`, from the
-  package: the steps of `--upstream` now, the whole smoke test of the
-  project's payload (setup, iPXE, CSMWrap, capsules, Secure Boot keys,
-  TPM) as its modules come; then the update test across the two
-  payloads, one in each vboot slot; the boards last, in step (d).
+- **The carried series**: each of the commits below and each patch of
+  `patches/edk2`, in order, without the files that TianoCore's tree does
+  not have: 79 commits of MrChromebox (21 have nothing else) and 31 of
+  the project's 44 patches (13 change only the package or its platform).
+  The tag with the series is MrChromebox's tree with `patches/edk2` in
+  every file but those (`edk2-import.py` checks it before it writes, and
+  `--check` in `edk2-upstream.yml` checks the files of the repository).
+- **The package**: the directories of `UefiPayloadPkg` that TianoCore
+  does not have (the setup and its CFR, the splash, the password, the
+  default Secure Boot keys, the update screen, MOR, the TPM's physical
+  presence libraries, and MrChromebox's modules for hardware these boards
+  do not have), with `FSDrivers`; the platform, `UefiPayloadPkg.dsc` and
+  `.fdf` of MrChromebox's tree with the project's patches and the paths
+  of the package, as patches on TianoCore's. LvglPkg is a package of its
+  own next to it, at the commit of MrChromebox's submodule with
+  `patches/lvglpkg`; the binary network drivers of Realtek and ASIX
+  (`0ec988f`, only with `NETWORK_PXE_BOOT`) stay out.
+- **Build**: coreboot's `payloads/external/edk2/Makefile` with patch 0216
+  (`EDK2_PLATFORM_DSC`, and `EDK2_PACKAGES_PATH`, relative to the
+  coreboot tree) and 0217 (the options of MrChromebox's tree, the LVGL
+  renderer among them, for a custom repository): `EDK2_PACKAGE_CONFIG` of
+  `tools/build.sh`, a custom repository on TianoCore at the tag, the
+  package's platform, Secure Boot. The package keeps the output
+  directory and the FD name of `UefiPayloadPkg` (`Build/UefiPayloadPkgX64`,
+  `UEFIPAYLOAD`), which the Makefile expects, and iPXE and CSMWrap where
+  the Makefile copies them in the edk2 tree.
+- **Tests**: `edk2-upstream` builds the package into its third q35 image,
+  with the boards' options and the steps of `--upstream`, which the
+  upstream tag fails for the gaps above; `tools/build.sh edk2-parity`
+  builds the payload of the first variant of each board from the package
+  and from MrChromebox's tree, with the same options, and the two must
+  be the same byte for byte (if not, `tools/fv-diff.py` says which
+  modules differ and where).
+- **Until step (d)**: a change to the payload goes to `patches/edk2` and
+  the import is run again; the boards build from MrChromebox's tree.
 - **What stays**: the read-only part, the patches of coreboot outside
   `payloads/external/edk2`, the ACPI tables, the setup's options (CFR)
-  and their names: nothing changes for OpenCore or the OSes.
+  and their names, the variable store and its format: nothing changes for
+  OpenCore or the OSes.
+
+What comes next, each with the payload's tests: the boards on the package
+(step (d): the defconfigs on `EDK2_PACKAGE_CONFIG`, `patches/edk2` and
+MrChromebox's pin retired, `upstream.yml` on the stable tags); then the
+series shorter, commit by commit, as the tables below say: the *package*
+ones out of TianoCore's packages into `OuroBiosPkg` (a
+`PlatformBootManagerLib` of its own, for one), the *upstream* ones
+proposed to TianoCore, the *drop* ones left out (the drivers for hardware
+these boards do not have first).
 
 ## Setup menu and the other screens of the firmware
 

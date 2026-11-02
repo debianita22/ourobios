@@ -1,15 +1,17 @@
 --- a/OuroBiosPkg.dsc
 +++ b/OuroBiosPkg.dsc
-@@ -1,4 +1,8 @@
+@@ -1,4 +1,10 @@
  ## @file
 +# OuroBiosPkg: the platform of the payload of ouroBIOS. tools/build.sh of
 +# ouroBIOS makes it from UefiPayloadPkg.dsc of the edk2 tree it builds
-+# with and OuroBiosPkg.dsc.patch; what it changes is in the patch.
++# with and OuroBiosPkg.dsc.patch, which tools/edk2-import.py makes from
++# the .dsc of MrChromebox's tree with the patches of ouroBIOS: the same
++# settings, the modules of the package in OuroBiosPkg.
 +#
  # Bootloader Payload Package
  #
  # Provides drivers and definitions to create uefi payload for bootloaders.
-@@ -18,16 +22,20 @@
+@@ -18,8 +24,8 @@
  #
  ################################################################################
  [Defines]
@@ -20,126 +22,747 @@
    PLATFORM_VERSION                    = 0.1
    DSC_SPECIFICATION                   = 0x00010005
    SUPPORTED_ARCHITECTURES             = IA32|X64|AARCH64
-   BUILD_TARGETS                       = DEBUG|RELEASE|NOOPT
+@@ -27,7 +33,7 @@
    SKUID_IDENTIFIER                    = DEFAULT
    BUILD_ARCH                          = Legacy
-+  #
-+  # coreboot's payloads/external/edk2/Makefile takes the flash device from
-+  # the output directory of UefiPayloadPkg
-+  #
    OUTPUT_DIRECTORY                    = Build/UefiPayloadPkg$(BUILD_ARCH)
 -  FLASH_DEFINITION                    = UefiPayloadPkg/UefiPayloadPkg.fdf
 +  FLASH_DEFINITION                    = OuroBiosPkg/OuroBiosPkg.fdf
    PCD_DYNAMIC_AS_DYNAMICEX            = TRUE
  
    DEFINE SOURCE_DEBUG_ENABLE          = FALSE
-@@ -171,7 +179,19 @@
+@@ -41,12 +47,20 @@
+   DEFINE ATA_ENABLE                   = TRUE
+   DEFINE SD_ENABLE                    = TRUE
+   DEFINE PS2_MOUSE_ENABLE             = TRUE
++  DEFINE PRIORITIZE_INTERNAL          = FALSE
+   DEFINE SD_MMC_TIMEOUT               = 1000000
+   DEFINE USE_CBMEM_FOR_CONSOLE        = FALSE
+-  DEFINE BOOTSPLASH_IMAGE             = FALSE
++  DEFINE BOOTSPLASH_IMAGE             = TRUE
+   DEFINE NVME_ENABLE                  = TRUE
++  DEFINE UFS_ENABLE                   = TRUE
++  DEFINE UHCI_ENABLE                  = TRUE
++  DEFINE EBC_ENABLE                   = TRUE
++  DEFINE EXTRA_FS_DRIVERS             = TRUE
++  DEFINE CAPSULE_SUPPORT              = FALSE
+   DEFINE LOCKBOX_SUPPORT              = FALSE
+   DEFINE LOAD_OPTION_ROMS             = FALSE
++  DEFINE FOLLOW_BGRT_SPEC             = FALSE
++  DEFINE FMP_DEVICE_PKCS7_PCD_INC     = BaseTools/Source/Python/Pkcs7Sign/TestRoot.cer.gFmpDevicePkgTokenSpaceGuid.PcdFmpDevicePkcs7CertBufferXdr.inc
+ 
+   #
+   # Capsule updates
+@@ -56,6 +70,7 @@
+   #
+   DEFINE CAPSULE_SUPPORT              = FALSE
+   DEFINE CAPSULE_MAIN_FW_GUID         =
++  DEFINE CAPSULE_EMBED_FMP_DXE        = FALSE
+ 
+   #
+   # Crypto Support
+@@ -111,6 +126,9 @@
+   # Enabling the serial terminal will slow down the boot menu redering!
+   DEFINE DISABLE_SERIAL_TERMINAL      = FALSE
+ 
++  # Use the LVGL graphical renderer as the HII display engine
++  DEFINE LVGL_ENABLE                  = FALSE
++
+   #
+   #  typedef struct {
+   #    UINT16  VendorId;          ///< Vendor ID to match the PCI device.  The value 0xFFFF terminates the list of entries.
+@@ -171,7 +189,8 @@
    #
    # Security
    #
 -  DEFINE SECURE_BOOT_ENABLE       = FALSE
-+  #
-+  # Secure Boot, as in the payload of the W541 and the M920x: coreboot's
-+  # Kconfig has no EDK2_SECURE_BOOT_SUPPORT for this tree. The default
-+  # keys come with the provisioning of the package
-+  #
-+  DEFINE SECURE_BOOT_ENABLE       = TRUE
-+  #
-+  # TPM 1.2 and 2.0, as in the payload of the W541 (a TPM 1.2) and of the
-+  # M920x (a TPM 2.0): MrChromebox's c111515, patches/tianocore/0004-0005
-+  #
-+  DEFINE TPM_ENABLE               = TRUE
-+  DEFINE TPM2_ENABLE              = TRUE
-+  DEFINE TPM1_ENABLE              = TRUE
++  DEFINE SECURE_BOOT_ENABLE         = FALSE
++  DEFINE SECURE_BOOT_DEFAULT_ENABLE = FALSE
  
    #
    # Flat DeviceTree handoff option:
-@@ -377,12 +397,36 @@
- !if $(VARIABLE_SUPPORT) == "EMU"
-   TpmMeasurementLib|MdeModulePkg/Library/TpmMeasurementLibNull/TpmMeasurementLibNull.inf
- !elseif $(VARIABLE_SUPPORT) == "SMMSTORE"
-+!if $(TPM_ENABLE) == TRUE
-+  TpmMeasurementLib|SecurityPkg/Library/DxeTpmMeasurementLib/DxeTpmMeasurementLib.inf
-+!else
-   TpmMeasurementLib|MdeModulePkg/Library/TpmMeasurementLibNull/TpmMeasurementLibNull.inf
-+!endif
- !elseif $(VARIABLE_SUPPORT) == "SPI"
-   PlatformSecureLib|SecurityPkg/Library/PlatformSecureLibNull/PlatformSecureLibNull.inf
-   TpmMeasurementLib|SecurityPkg/Library/DxeTpmMeasurementLib/DxeTpmMeasurementLib.inf
-   S3BootScriptLib|MdePkg/Library/BaseS3BootScriptLibNull/BaseS3BootScriptLibNull.inf
-   MmUnblockMemoryLib|MdePkg/Library/MmUnblockMemoryLib/MmUnblockMemoryLibNull.inf
+@@ -181,6 +200,53 @@
+   #
+   HAND_OFF_FDT_ENABLE       = FALSE
+ 
++  # Network definition
++  #
++  DEFINE NETWORK_ISCSI_ENABLE           = FALSE
++  DEFINE NETWORK_TLS_ENABLE             = FALSE
++  DEFINE NETWORK_IP6_ENABLE             = FALSE
++  DEFINE NETWORK_HTTP_BOOT_ENABLE       = FALSE
++  DEFINE NETWORK_ALLOW_HTTP_CONNECTIONS = TRUE
++  DEFINE NETWORK_PXE_BOOT               = FALSE
++  DEFINE NETWORK_ENABLE                 = FALSE
++  DEFINE NETWORK_RTEK_PCI               = FALSE
++  DEFINE NETWORK_RTEK_USB               = FALSE
++  DEFINE NETWORK_ASIX_USB3              = FALSE
++  DEFINE NETWORK_ASIX_USB2              = FALSE
++  DEFINE NETWORK_SNP_ENABLE             = FALSE
++  DEFINE NETWORK_IPXE                   = FALSE
++
++  #
++  # CSMWrap, a legacy BIOS (the CSM and VGA BIOS of SeaBIOS) as a boot
++  # option, for the operating systems and tools that do not boot from UEFI.
++  # The application is built separately: UefiPayloadPkg/LegacyBoot/csmwrap.efi
++  #
++  DEFINE CSMWRAP                        = FALSE
++
++!if $(NETWORK_PXE_BOOT) == TRUE
++  DEFINE NETWORK_ENABLE                 = TRUE
++  DEFINE NETWORK_DRIVER_ENABLE          = TRUE
++  DEFINE NETWORK_IP4_ENABLE             = TRUE
++  DEFINE NETWORK_RTEK_PCI               = TRUE
++  DEFINE NETWORK_RTEK_USB               = TRUE
++  DEFINE NETWORK_ASIX_USB3              = TRUE
++  DEFINE NETWORK_ASIX_USB2              = TRUE
++  DEFINE NETWORK_SNP_ENABLE             = TRUE
 +!endif
 +
 +#
-+# The TPM (c111515, with the Tpm2HelpLib of 5dc4840); PlatformBootManagerLib
-+# processes the physical presence requests, also without a TPM
++# iPXE brings its own network drivers and stack: NETWORK_IPXE alone adds
++# nothing of NetworkPkg. NETWORK_PXE_BOOT or NETWORK_HTTP_BOOT_ENABLE for that.
 +#
++
++!include NetworkPkg/NetworkDefines.dsc.inc
++
++  # Security options:
++  #
++  DEFINE TPM_ENABLE                     = TRUE
++  DEFINE TPM2_ENABLE                    = TRUE
++  DEFINE TPM1_ENABLE                    = TRUE
++
+ [BuildOptions]
+   *_*_*_CC_FLAGS                 = -D DISABLE_NEW_DEPRECATED_INTERFACES
+ !if $(USE_CBMEM_FOR_CONSOLE) == FALSE
+@@ -190,6 +256,12 @@
+ !endif
+   *_*_*_CC_FLAGS                 = $(APPEND_CC_FLAGS)
+ 
++!if $(LVGL_ENABLE) == TRUE
++  # Upstream LVGL sources (LvglLib) trip GCC's -Wformat; suppress to build clean.
++  GCC:*_*_*_CC_FLAGS             = -Wno-format
++  MSFT:*_*_*_CC_FLAGS            = /wd4244 /wd4204 /wd4389 /wd4221 /wd4800 /wd4267 /wd4018 /wd4047 /wd4245 /wd4003 /wd4702 /wd4718 /wd4706 /wd4819 /wd4028 /wd5287 /GL-
++!endif
++
+ [BuildOptions.AARCH64]
+   GCC:*_*_*_CC_FLAGS         = -mstrict-align
+   GCC:*_GCC_*_CC_FLAGS         = -mcmodel=tiny
+@@ -202,6 +274,16 @@
+   CLANGPDB:*_*_*_DLINK_FLAGS = /ALIGN:4096
+   MSFT:*_*_*_DLINK_FLAGS     = /ALIGN:4096
+ 
++# Force PE/COFF sections to be aligned at 4KB boundaries so DXE Core can
++# apply page-level image protection, including NX, to IA32/X64 DXE images.
++[BuildOptions.IA32.EDKII.DXE_CORE, BuildOptions.X64.EDKII.DXE_CORE, BuildOptions.IA32.EDKII.DXE_DRIVER, BuildOptions.X64.EDKII.DXE_DRIVER, BuildOptions.IA32.EDKII.UEFI_DRIVER, BuildOptions.X64.EDKII.UEFI_DRIVER, BuildOptions.IA32.EDKII.UEFI_APPLICATION, BuildOptions.X64.EDKII.UEFI_APPLICATION]
++  GCC:*_*_*_DLINK_FLAGS      = -z common-page-size=0x1000
++
++# Force PE/COFF sections to be aligned at 64KB boundaries so DXE Core can
++# apply page-level image protection, including NX, to AARCH64 DXE images.
++[BuildOptions.AARCH64.EDKII.DXE_CORE, BuildOptions.AARCH64.EDKII.DXE_DRIVER, BuildOptions.AARCH64.EDKII.UEFI_DRIVER, BuildOptions.AARCH64.EDKII.UEFI_APPLICATION]
++  GCC:*_*_*_DLINK_FLAGS      = -z common-page-size=0x10000
++
+ [BuildOptions.IA32.EDKII.DXE_RUNTIME_DRIVER, BuildOptions.X64.EDKII.DXE_RUNTIME_DRIVER]
+   GCC:*_*_*_DLINK_FLAGS      = -z common-page-size=0x1000
+ 
+@@ -224,6 +306,14 @@
+ 
+ !include MdePkg/MdeLibs.dsc.inc
+ 
++[Packages]
++!if $(VARIABLE_SUPPORT) == "EMU" || $(VARIABLE_SUPPORT) == "SMMSTORE" || $(VARIABLE_SUPPORT) == "SPI"
++  OuroBiosPkg/UserAuthPkg/UserAuthPkg.dec
++!endif
++!if $(LVGL_ENABLE) == TRUE
++  LvglPkg/LvglPkg.dec
++!endif
++
+ [LibraryClasses]
+   GptLib|MdeModulePkg/Library/GptLib/GptLib.inf
+ 
+@@ -234,6 +324,16 @@
+   UefiDriverEntryPoint|MdePkg/Library/UefiDriverEntryPoint/UefiDriverEntryPoint.inf
+   UefiApplicationEntryPoint|MdePkg/Library/UefiApplicationEntryPoint/UefiApplicationEntryPoint.inf
+ 
++  #
++  # LVGL-based display engine (replaces MdeModulePkg DisplayEngineDxe when
++  # LVGL_ENABLE == TRUE)
++  #
++!if $(LVGL_ENABLE) == TRUE
++  LvglLib|LvglPkg/Library/LvglLib/LvglLib.inf
++  LvglThemeLib|LvglPkg/Library/LvglThemeLib/LvglThemeLib.inf
++  LvglUiConfigLib|LvglPkg/Library/LvglUiConfigLib/LvglUiConfigLib.inf
++!endif
++
+   #
+   # Basic
+   #
+@@ -241,6 +341,7 @@
+   BaseMemoryLib|MdePkg/Library/BaseMemoryLibRepStr/BaseMemoryLibRepStr.inf
+   SynchronizationLib|MdePkg/Library/BaseSynchronizationLib/BaseSynchronizationLib.inf
+   PrintLib|MdePkg/Library/BasePrintLib/BasePrintLib.inf
++  FileHandleLib|MdePkg/Library/UefiFileHandleLib/UefiFileHandleLib.inf
+   CpuLib|MdePkg/Library/BaseCpuLib/BaseCpuLib.inf
+   IoLib|MdePkg/Library/BaseIoLibIntrinsic/BaseIoLibIntrinsic.inf
+ !if $(PCIE_BASE_SUPPORT) == FALSE
+@@ -256,6 +357,9 @@
+   PeCoffGetEntryPointLib|MdePkg/Library/BasePeCoffGetEntryPointLib/BasePeCoffGetEntryPointLib.inf
+   CacheMaintenanceLib|MdePkg/Library/BaseCacheMaintenanceLib/BaseCacheMaintenanceLib.inf
+   SafeIntLib|MdePkg/Library/BaseSafeIntLib/BaseSafeIntLib.inf
++  BmpSupportLib|MdeModulePkg/Library/BaseBmpSupportLib/BaseBmpSupportLib.inf
++  BootSplashLib|OuroBiosPkg/Library/BootSplashLib/BootSplashLib.inf
++  CbfsLib|OuroBiosPkg/Library/CbfsLib/CbfsLib.inf
+   DxeHobListLib|UefiPayloadPkg/Library/DxeHobListLib/DxeHobListLib.inf
+ !if $(CRYPTO_PROTOCOL_SUPPORT) == TRUE
+   BaseCryptLib|CryptoPkg/Library/BaseCryptLibOnProtocolPpi/DxeCryptLib.inf
+@@ -293,16 +397,11 @@
+   UefiUsbLib|MdePkg/Library/UefiUsbLib/UefiUsbLib.inf
+   UefiScsiLib|MdePkg/Library/UefiScsiLib/UefiScsiLib.inf
+   OemHookStatusCodeLib|MdeModulePkg/Library/OemHookStatusCodeLibNull/OemHookStatusCodeLibNull.inf
+-  !if $(CAPSULE_SUPPORT) == TRUE
++!if $(CAPSULE_SUPPORT) == TRUE
+   CapsuleLib|MdeModulePkg/Library/DxeCapsuleLibFmp/DxeCapsuleLib.inf
+-  BmpSupportLib|MdeModulePkg/Library/BaseBmpSupportLib/BaseBmpSupportLib.inf
+-    !if $(BOOTSPLASH_IMAGE)
+-    # Note, however, that DisplayUpdateProgressLibGraphics aborts firmware
+-    # update if GOP is missing, so text progress works in more environments.
+-    DisplayUpdateProgressLib|MdeModulePkg/Library/DisplayUpdateProgressLibGraphics/DisplayUpdateProgressLibGraphics.inf
+-    !else
+-    DisplayUpdateProgressLib|MdeModulePkg/Library/DisplayUpdateProgressLibText/DisplayUpdateProgressLibText.inf
+-    !endif
++  # The update screen of ouroBIOS shows the progress: the boot manager
++  # initializes the graphics console before processing capsules.
++  DisplayUpdateProgressLib|OuroBiosPkg/Library/UpdateScreenLib/UpdateScreenLib.inf
+   # If there are no specific checks to do, null-library suffices
+   CapsuleUpdatePolicyLib|FmpDevicePkg/Library/CapsuleUpdatePolicyLibNull/CapsuleUpdatePolicyLibNull.inf
+   FmpAuthenticationLib|SecurityPkg/Library/FmpAuthenticationLibPkcs7/FmpAuthenticationLibPkcs7.inf
+@@ -315,6 +414,7 @@
+   CapsuleLib|MdeModulePkg/Library/DxeCapsuleLibNull/DxeCapsuleLibNull.inf
+   !endif
+   SecurityManagementLib|MdeModulePkg/Library/DxeSecurityManagementLib/DxeSecurityManagementLib.inf
++  UpdateScreenLib|OuroBiosPkg/Library/UpdateScreenLib/UpdateScreenLib.inf
+   UefiBootManagerLib|MdeModulePkg/Library/UefiBootManagerLib/UefiBootManagerLib.inf
+   BootLogoLib|MdeModulePkg/Library/BootLogoLib/BootLogoLib.inf
+   CustomizedDisplayLib|MdeModulePkg/Library/CustomizedDisplayLib/CustomizedDisplayLib.inf
+@@ -332,6 +432,9 @@
+   PlatformHookLib|UefiPayloadPkg/Library/PlatformHookLib/PlatformHookLib.inf
+ !endif
+   PlatformBootManagerLib|UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
++!if $(VARIABLE_SUPPORT) == "EMU" || $(VARIABLE_SUPPORT) == "SMMSTORE" || $(VARIABLE_SUPPORT) == "SPI"
++  PlatformPasswordLib|OuroBiosPkg/UserAuthPkg/Library/PlatformPasswordLibNull/PlatformPasswordLibNull.inf
++!endif
+   IoApicLib|PcAtChipsetPkg/Library/BaseIoApicLib/BaseIoApicLib.inf
+ 
+   #
+@@ -355,6 +458,7 @@
+     BlParseLib|UefiPayloadPkg/Library/SblParseLib/SblParseLib.inf
+   !endif
+ !endif
++  CfrHelpersLib|OuroBiosPkg/Library/CfrHelpersLib/CfrHelpersLib.inf
+ 
+   DebugLib|MdeModulePkg/Library/PeiDxeDebugLibReportStatusCode/PeiDxeDebugLibReportStatusCode.inf
+ !if $(LOCKBOX_SUPPORT) == TRUE
+@@ -365,7 +469,7 @@
+   FileExplorerLib|MdeModulePkg/Library/FileExplorerLib/FileExplorerLib.inf
+ 
+ !if $(SECURE_BOOT_ENABLE) == TRUE
+-  PlatformSecureLib|SecurityPkg/Library/PlatformSecureLibNull/PlatformSecureLibNull.inf
++  PlatformSecureLib|OvmfPkg/Library/PlatformSecureLib/PlatformSecureLib.inf
+   AuthVariableLib|SecurityPkg/Library/AuthVariableLib/AuthVariableLib.inf
+   SecureBootVariableLib|SecurityPkg/Library/SecureBootVariableLib/SecureBootVariableLib.inf
+   PlatformPKProtectionLib|SecurityPkg/Library/PlatformPKProtectionLibVarPolicy/PlatformPKProtectionLibVarPolicy.inf
+@@ -387,6 +491,14 @@
+ !if $(VARIABLE_SUPPORT) == "SMMSTORE" || ($(CAPSULE_SUPPORT) && $(BOOTLOADER) == "COREBOOT")
+   SmmStoreLib|UefiPayloadPkg/Library/SmmStoreLib/SmmStoreLib.inf
+ !endif
++
++  ShellCEntryLib|ShellPkg/Library/UefiShellCEntryLib/UefiShellCEntryLib.inf
++
++!include NetworkPkg/NetworkLibs.dsc.inc
++!if $(NETWORK_TLS_ENABLE) == TRUE
++  TlsLib|CryptoPkg/Library/TlsLib/TlsLib.inf
++!endif
++
+   VarCheckLib|MdeModulePkg/Library/VarCheckLib/VarCheckLib.inf
+   VariablePolicyLib|MdeModulePkg/Library/VariablePolicyLib/VariablePolicyLib.inf
+   VariablePolicyHelperLib|MdeModulePkg/Library/VariablePolicyHelperLib/VariablePolicyHelperLib.inf
+@@ -404,7 +516,6 @@
+ [LibraryClasses.common]
+ !if $(BOOTSPLASH_IMAGE)
+   SafeIntLib|MdePkg/Library/BaseSafeIntLib/BaseSafeIntLib.inf
+-  BmpSupportLib|MdeModulePkg/Library/BaseBmpSupportLib/BaseBmpSupportLib.inf
+ !endif
+   UefiCpuBaseArchSupportLib|UefiCpuPkg/Library/BaseArchSupportLib/BaseArchSupportLib.inf
+ 
+@@ -424,6 +535,29 @@
+   CpuExceptionHandlerLib|UefiCpuPkg/Library/CpuExceptionHandlerLib/DxeCpuExceptionHandlerLib.inf
+   CpuPageTableLib|UefiCpuPkg/Library/CpuPageTableLib/CpuPageTableLib.inf
+ 
++[LibraryClasses.common]
++!if $(CRYPTO_PROTOCOL_SUPPORT) == FALSE
++  BaseCryptLib|CryptoPkg/Library/BaseCryptLib/BaseCryptLib.inf
++!endif
++
 +!if $(TPM_ENABLE) == TRUE
 +  Tpm12CommandLib|SecurityPkg/Library/Tpm12CommandLib/Tpm12CommandLib.inf
-+  TcgPhysicalPresenceLib|UefiPayloadPkg/Library/TcgPhysicalPresenceLibUefiPayload/DxeTcgPhysicalPresenceLib.inf
++  TcgPhysicalPresenceLib|OuroBiosPkg/Library/TcgPhysicalPresenceLibUefiPayload/DxeTcgPhysicalPresenceLib.inf
 +  TcgPpVendorLib|SecurityPkg/Library/TcgPpVendorLibNull/TcgPpVendorLibNull.inf
 +  Tpm2CommandLib|SecurityPkg/Library/Tpm2CommandLib/Tpm2CommandLib.inf
 +  Tpm2HelpLib|SecurityPkg/Library/Tpm2HelpLib/Tpm2HelpLib.inf
-+  Tcg2PhysicalPresenceLib|UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresenceLib.inf
-+  Tcg2PhysicalPresencePlatformLib|UefiPayloadPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresencePlatformLib.inf
++  Tcg2PhysicalPresenceLib|OuroBiosPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresenceLib.inf
++  Tcg2PhysicalPresencePlatformLib|OuroBiosPkg/Library/Tcg2PhysicalPresencePlatformLibUefipayload/DxeTcg2PhysicalPresencePlatformLib.inf
 +  Tcg2PpVendorLib|SecurityPkg/Library/Tcg2PpVendorLibNull/Tcg2PpVendorLibNull.inf
++  TpmMeasurementLib|SecurityPkg/Library/DxeTpmMeasurementLib/DxeTpmMeasurementLib.inf
 +  Tpm12DeviceLib|SecurityPkg/Library/Tpm12DeviceLibTcg/Tpm12DeviceLibTcg.inf
 +  Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibTcg2/Tpm2DeviceLibTcg2.inf
 +!else
-+  TcgPhysicalPresenceLib|UefiPayloadPkg/Library/TcgPhysicalPresenceLibNull/DxeTcgPhysicalPresenceLib.inf
++  TpmMeasurementLib|MdeModulePkg/Library/TpmMeasurementLibNull/TpmMeasurementLibNull.inf
++  TcgPhysicalPresenceLib|OuroBiosPkg/Library/TcgPhysicalPresenceLibNull/DxeTcgPhysicalPresenceLib.inf
 +  Tcg2PhysicalPresenceLib|OvmfPkg/Library/Tcg2PhysicalPresenceLibNull/DxeTcg2PhysicalPresenceLib.inf
++!endif
++
+ [LibraryClasses.AARCH64]
+   ArmHvcLib|ArmPkg/Library/ArmHvcLib/ArmHvcLib.inf
+   ArmLib|MdePkg/Library/ArmLib/ArmBaseLib.inf
+@@ -500,6 +634,24 @@
+   PerformanceLib|MdeModulePkg/Library/DxeCorePerformanceLib/DxeCorePerformanceLib.inf
  !endif
- !if $(VARIABLE_SUPPORT) == "SMMSTORE" || ($(CAPSULE_SUPPORT) && $(BOOTLOADER) == "COREBOOT")
-   SmmStoreLib|UefiPayloadPkg/Library/SmmStoreLib/SmmStoreLib.inf
-@@ -598,6 +642,10 @@
-   gUefiCpuPkgTokenSpaceGuid.PcdCpuSmmEnableBspElection|FALSE
  
- [PcdsFixedAtBuild]
-+  #
-+  # The Shell starts at its prompt, without 5 s for a startup.nsh
-+  #
-+  gEfiShellPkgTokenSpaceGuid.PcdShellDefaultDelay|0
-   gEfiMdePkgTokenSpaceGuid.PcdHardwareErrorRecordLevel|1
-   gEfiMdeModulePkgTokenSpaceGuid.PcdMaxVariableSize|0x10000
-   gEfiMdeModulePkgTokenSpaceGuid.PcdMaxHardwareErrorVariableSize|0x8000
-@@ -839,6 +887,21 @@
-   gEfiMdeModulePkgTokenSpaceGuid.PcdTestKeyUsed|FALSE
-   gUefiCpuPkgTokenSpaceGuid.PcdSevEsIsEnabled|0
-   gEfiMdeModulePkgTokenSpaceGuid.PcdPciDisableBusEnumeration|TRUE
++!if $(SECURE_BOOT_ENABLE) == TRUE
++  AuthVariableLib|SecurityPkg/Library/AuthVariableLib/AuthVariableLib.inf
++  SecureBootVariableLib|SecurityPkg/Library/SecureBootVariableLib/SecureBootVariableLib.inf
++  SecureBootVariableProvisionLib|SecurityPkg/Library/SecureBootVariableProvisionLib/SecureBootVariableProvisionLib.inf
++  PlatformPKProtectionLib|SecurityPkg/Library/PlatformPKProtectionLibVarPolicy/PlatformPKProtectionLibVarPolicy.inf
++
++  # re-use the UserPhysicalPresent() dummy implementation from the ovmf tree
++  PlatformSecureLib|OvmfPkg/Library/PlatformSecureLib/PlatformSecureLib.inf
++!else
++  AuthVariableLib|MdeModulePkg/Library/AuthVariableLibNull/AuthVariableLibNull.inf
++!endif
++
++!if $(CRYPTO_PROTOCOL_SUPPORT) == FALSE
++  BaseCryptLib|CryptoPkg/Library/BaseCryptLib/BaseCryptLib.inf
++!endif
++  IntrinsicLib|CryptoPkg/Library/IntrinsicLib/IntrinsicLib.inf
++  OpensslLib|CryptoPkg/Library/OpensslLib/OpensslLib.inf
++
+ [LibraryClasses.common.DXE_DRIVER]
+   PcdLib|MdePkg/Library/DxePcdLib/DxePcdLib.inf
+   MemoryAllocationLib|MdePkg/Library/UefiMemoryAllocationLib/UefiMemoryAllocationLib.inf
+@@ -518,11 +670,48 @@
+   PerformanceLib|MdeModulePkg/Library/DxePerformanceLib/DxePerformanceLib.inf
+ !endif
+ 
++!if $(SECURE_BOOT_ENABLE) == TRUE
++  AuthVariableLib|SecurityPkg/Library/AuthVariableLib/AuthVariableLib.inf
++  SecureBootVariableLib|SecurityPkg/Library/SecureBootVariableLib/SecureBootVariableLib.inf
++  SecureBootVariableProvisionLib|SecurityPkg/Library/SecureBootVariableProvisionLib/SecureBootVariableProvisionLib.inf
++  PlatformPKProtectionLib|SecurityPkg/Library/PlatformPKProtectionLibVarPolicy/PlatformPKProtectionLibVarPolicy.inf
++
++  # re-use the UserPhysicalPresent() dummy implementation from the ovmf tree
++  PlatformSecureLib|OvmfPkg/Library/PlatformSecureLib/PlatformSecureLib.inf
++!else
++  AuthVariableLib|MdeModulePkg/Library/AuthVariableLibNull/AuthVariableLibNull.inf
++!endif
++
++!if $(CRYPTO_PROTOCOL_SUPPORT) == FALSE
++  BaseCryptLib|CryptoPkg/Library/BaseCryptLib/BaseCryptLib.inf
++!endif
++  IntrinsicLib|CryptoPkg/Library/IntrinsicLib/IntrinsicLib.inf
++  OpensslLib|CryptoPkg/Library/OpensslLib/OpensslLib.inf
++  RngLib|MdeModulePkg/Library/BaseRngLibTimerLib/BaseRngLibTimerLib.inf
++
 +
 +!if $(TPM_ENABLE) == TRUE
++  Tpm12DeviceLib|SecurityPkg/Library/Tpm12DeviceLibTcg/Tpm12DeviceLibTcg.inf
++  Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibTcg2/Tpm2DeviceLibTcg2.inf
++!endif
++
+ [LibraryClasses.common.DXE_RUNTIME_DRIVER]
+ !if $(SECURE_BOOT_ENABLE) == TRUE
+   BaseCryptLib|CryptoPkg/Library/BaseCryptLib/RuntimeCryptLib.inf
+ !endif
+   PcdLib|MdePkg/Library/DxePcdLib/DxePcdLib.inf
++  #
++  # Not DebugPrintErrorLevelLibHob where DEBUG() is built in: a runtime driver
++  # can print for the first time after ExitBootServices(), as ResetSystemRuntimeDxe
++  # does in ResetSystem(), and that library looks for the level in the HOB list
++  # then, boot services memory that macOS and Windows do not map for the runtime
++  # services. With coreboot no HOB has the level: it is PcdDebugPrintErrorLevel
++  # either way. A release build without CBMEM logging has no DEBUG() (MDEPKG_NDEBUG
++  # above) and stays as it is.
++  #
++!if $(TARGET) != RELEASE || $(USE_CBMEM_FOR_CONSOLE) == TRUE
++  DebugPrintErrorLevelLib|MdePkg/Library/BaseDebugPrintErrorLevelLib/BaseDebugPrintErrorLevelLib.inf
++!endif
+   MemoryAllocationLib|MdePkg/Library/UefiMemoryAllocationLib/UefiMemoryAllocationLib.inf
+   ReportStatusCodeLib|MdeModulePkg/Library/RuntimeDxeReportStatusCodeLib/RuntimeDxeReportStatusCodeLib.inf
+   VariablePolicyLib|MdeModulePkg/Library/VariablePolicyLib/VariablePolicyLibRuntimeDxe.inf
+@@ -533,6 +722,18 @@
+   CapsuleLib|MdeModulePkg/Library/DxeCapsuleLibFmp/DxeRuntimeCapsuleLib.inf
+ !endif
+ 
++!if $(SECURE_BOOT_ENABLE) == TRUE
++  AuthVariableLib|SecurityPkg/Library/AuthVariableLib/AuthVariableLib.inf
++  SecureBootVariableLib|SecurityPkg/Library/SecureBootVariableLib/SecureBootVariableLib.inf
++  SecureBootVariableProvisionLib|SecurityPkg/Library/SecureBootVariableProvisionLib/SecureBootVariableProvisionLib.inf
++  PlatformPKProtectionLib|SecurityPkg/Library/PlatformPKProtectionLibVarPolicy/PlatformPKProtectionLibVarPolicy.inf
++
++  # re-use the UserPhysicalPresent() dummy implementation from the ovmf tree
++  PlatformSecureLib|OvmfPkg/Library/PlatformSecureLib/PlatformSecureLib.inf
++!else
++  AuthVariableLib|MdeModulePkg/Library/AuthVariableLibNull/AuthVariableLibNull.inf
++!endif
++
+ [LibraryClasses.common.UEFI_DRIVER,LibraryClasses.common.UEFI_APPLICATION]
+   PcdLib|MdePkg/Library/DxePcdLib/DxePcdLib.inf
+   MemoryAllocationLib|MdePkg/Library/UefiMemoryAllocationLib/UefiMemoryAllocationLib.inf
+@@ -592,6 +793,19 @@
+   gEfiMdeModulePkgTokenSpaceGuid.PcdPciDegradeResourceForOptionRom|FALSE
+   ## Whether capsules are allowed to persist across reset.
+   gEfiMdeModulePkgTokenSpaceGuid.PcdSupportUpdateCapsuleReset|$(CAPSULE_SUPPORT)
++!if $(VARIABLE_SUPPORT) == "SMMSTORE"
++  ## coreboot honors TCG MOR itself (clear_dram_on_boot "When the OS asks"):
++  ## MorControlDxe, not the variable driver, decides whether the variable exists
++  gEfiMdeModulePkgTokenSpaceGuid.PcdTcgMorWithoutSmm|TRUE
++!endif
++
++
++  #
++  # Graphical (LVGL) builds repaint the front-page battery banner live, so the
++  # UiApp must not also draw it to ConOut (that would leave a stray text overlay
++  # on top of the graphical UI). Text-mode builds keep the default (TRUE).
++  #
++  gEfiMdeModulePkgTokenSpaceGuid.PcdUiAppFrontPageBatteryToConOut|!$(LVGL_ENABLE)
+ 
+ [PcdsFeatureFlag.X64]
+   gEfiMdeModulePkgTokenSpaceGuid.PcdDxeIplSwitchToLongMode|TRUE
+@@ -599,7 +813,8 @@
+ 
+ [PcdsFixedAtBuild]
+   gEfiMdePkgTokenSpaceGuid.PcdHardwareErrorRecordLevel|1
+-  gEfiMdeModulePkgTokenSpaceGuid.PcdMaxVariableSize|0x10000
++  gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareVendor|L"ouroBIOS"
++  gEfiMdeModulePkgTokenSpaceGuid.PcdMaxVariableSize|0x8000
+   gEfiMdeModulePkgTokenSpaceGuid.PcdMaxHardwareErrorVariableSize|0x8000
+   gEfiMdeModulePkgTokenSpaceGuid.PcdVariableStoreSize|0x10000
+ !if $(VARIABLE_SUPPORT) == "EMU"
+@@ -613,6 +828,20 @@
+   gEfiMdeModulePkgTokenSpaceGuid.PcdUse1GPageTable|TRUE
+   gUefiPayloadPkgTokenSpaceGuid.PcdHandOffFdtEnable|$(HAND_OFF_FDT_ENABLE)
+ 
++!if $(LVGL_ENABLE) == TRUE
++  #
++  # LvglDisplayEngineDxe chrome overrides.
++  #
++  gLvglPkgTokenSpaceGuid.PcdLvglHelpPaneWidthPct|25
++  gLvglPkgTokenSpaceGuid.PcdLvglAptioHeaderTitle|"System Preferences"
++  gLvglPkgTokenSpaceGuid.PcdLvglAptioHeaderVendor|"ouroBIOS"
++  gLvglPkgTokenSpaceGuid.PcdLvglCenteredFrameEnabled|TRUE
++  gLvglPkgTokenSpaceGuid.PcdLvglCenteredFrameHeightPct|90
++  gLvglPkgTokenSpaceGuid.PcdLvglCenteredFrameAspectNum|16
++  gLvglPkgTokenSpaceGuid.PcdLvglCenteredFrameAspectDen|9
++  gLvglPkgTokenSpaceGuid.PcdLvglAptioSubtitleShowsDeviceModel|TRUE
++!endif
++
+   gEfiMdeModulePkgTokenSpaceGuid.PcdBootManagerMenuFile|{ 0x21, 0xaa, 0x2c, 0x46, 0x14, 0x76, 0x03, 0x45, 0x83, 0x6e, 0x8a, 0xb6, 0xf4, 0x66, 0x23, 0x31 }
+   gUefiPayloadPkgTokenSpaceGuid.PcdPcdDriverFile|{ 0x57, 0x72, 0xcf, 0x80, 0xab, 0x87, 0xf9, 0x47, 0xa3, 0xfe, 0xD5, 0x0B, 0x76, 0xd8, 0x95, 0x41 }
+ 
+@@ -626,12 +855,25 @@
+ !endif
+   gEfiMdeModulePkgTokenSpaceGuid.PcdSdMmcGenericTimeoutValue|$(SD_MMC_TIMEOUT)
+ 
++  gEfiMdeModulePkgTokenSpaceGuid.PcdPrioritizeInternal|$(PRIORITIZE_INTERNAL)
++
+   gUefiPayloadPkgTokenSpaceGuid.PcdBootManagerEscape|$(BOOT_MANAGER_ESCAPE)
++  gUefiPayloadPkgTokenSpaceGuid.PcdSerialTerminalPrintEnabled|!$(DISABLE_SERIAL_TERMINAL)
++  gUefiPayloadPkgTokenSpaceGuid.PcdSecureBootDefaultEnable|$(SECURE_BOOT_DEFAULT_ENABLE)
++
++  gEfiMdeModulePkgTokenSpaceGuid.PcdFollowBGRTSpecification|$(FOLLOW_BGRT_SPEC)
+ 
+   gEfiMdePkgTokenSpaceGuid.PcdMaximumUnicodeStringLength|1800000
+ 
+   ## Whether FMP capsules are enabled.
+   gEfiMdeModulePkgTokenSpaceGuid.PcdCapsuleFmpSupport|$(CAPSULE_SUPPORT)
++  ## Whether embedded drivers in FMP capsules are supported (opt-in).
++  gEfiMdeModulePkgTokenSpaceGuid.PcdCapsuleEmbeddedDriverSupport|FALSE
++
++!if $(VARIABLE_SUPPORT) == "EMU" || $(VARIABLE_SUPPORT) == "SMMSTORE" || $(VARIABLE_SUPPORT) == "SPI"
++  ## User Authentication PCD
++  gUserAuthFeaturePkgTokenSpaceGuid.PcdPasswordCleared|FALSE
++!endif
+ 
+ !if $(CRYPTO_PROTOCOL_SUPPORT) == TRUE
+ !if $(CRYPTO_DRIVER_EXTERNAL_SUPPORT) == FALSE
+@@ -669,6 +911,14 @@
+   ## Whether allows PCI RB to allocate DMA memory above 4GB
+   gUefiPayloadPkgTokenSpaceGuid.PcdPciAllocateMemoryAbove4GB|FALSE
+ 
++  # Skip initializing CPU features during S3 resume for coreboot
++!if $(BOOTLOADER) == COREBOOT
++  gUefiCpuPkgTokenSpaceGuid.PcdCpuFeaturesInitOnS3Resume|FALSE
++!endif
++
++  # Disable MTRR programming
++  gUefiCpuPkgTokenSpaceGuid.PcdCpuDisableMtrrProgramming|TRUE
++
+ [PcdsFixedAtBuild.AARCH64]
+   # System Memory Base -- fixed at 0x4000_0000
+   gArmTokenSpaceGuid.PcdSystemMemoryBase|0x40000000
+@@ -714,9 +964,14 @@
+   gUefiPayloadPkgTokenSpaceGuid.PcdUseUniversalPayloadSerialPort|FALSE
+ 
+ [PcdsPatchableInModule.IA32, PcdsPatchableInModule.X64]
++
++  #
++  # Network Pcds
++  #
+ !if $(NETWORK_DRIVER_ENABLE) == TRUE
+-  gEfiNetworkPkgTokenSpaceGuid.PcdAllowHttpConnections|TRUE
++  !include NetworkPkg/NetworkFixedPcds.dsc.inc
+ !endif
++
+   gUefiPayloadPkgTokenSpaceGuid.SizeOfIoSpace|16
+   gUefiPayloadPkgTokenSpaceGuid.PcdFDTPageSize|8
+   #
+@@ -786,6 +1041,15 @@
+   gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut|L"Timeout"|gEfiGlobalVariableGuid|0x0|$(PLATFORM_BOOT_TIMEOUT)
+ 
+ [PcdsDynamicExDefault]
++!if $(CAPSULE_SUPPORT) == TRUE
++  ## The firmware of FmpDxe is the system firmware of the ESRT (FwType 1),
++  #  not a device: that is what fwupd expects of a platform firmware.  Its
++  #  GUID is the one FmpDxe publishes, which FmpDeviceSmmLib sets here when
++  #  FmpDxe loads: the one coreboot gives, or the FILE_GUID of FmpDxe
++  #  without it.  The payload does not depend on the firmware it is in;
++  #  until set, no FMP instance is the system firmware.
++  gEfiMdeModulePkgTokenSpaceGuid.PcdSystemFmpCapsuleImageTypeIdGuid|{0x0}|VOID*|0x10
++!endif
+   gEfiMdePkgTokenSpaceGuid.PcdDefaultTerminalType|$(DEFAULT_TERMINAL_TYPE)
+   gEfiMdeModulePkgTokenSpaceGuid.PcdAriSupport|TRUE
+   gEfiMdeModulePkgTokenSpaceGuid.PcdSrIovSupport|TRUE
+@@ -833,6 +1097,9 @@
+ 
+   gEfiMdeModulePkgTokenSpaceGuid.PcdConOutRow|31
+   gEfiMdeModulePkgTokenSpaceGuid.PcdConOutColumn|100
++  ## Larger console geometry for text setup (formerly patched into MdeModulePkg.dec)
++  gEfiMdeModulePkgTokenSpaceGuid.PcdSetupConOutColumn|128
++  gEfiMdeModulePkgTokenSpaceGuid.PcdSetupConOutRow|40
+   gEfiMdePkgTokenSpaceGuid.PcdPciExpressBaseAddress|0
+   gEfiMdePkgTokenSpaceGuid.PcdPciExpressBaseSize|0
+   gEfiMdeModulePkgTokenSpaceGuid.PcdGhcbBase|0
+@@ -840,6 +1107,21 @@
+   gUefiCpuPkgTokenSpaceGuid.PcdSevEsIsEnabled|0
+   gEfiMdeModulePkgTokenSpaceGuid.PcdPciDisableBusEnumeration|TRUE
+ 
 +  ## Patched by BlSupportDxe
 +  gEfiSecurityPkgTokenSpaceGuid.PcdTpmInstanceGuid|{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 +  gEfiSecurityPkgTokenSpaceGuid.PcdTpmInitializationPolicy|0
 +  ## Match the hash algorithms listed in Tcg2Dxe
 +  gEfiSecurityPkgTokenSpaceGuid.PcdTcg2HashAlgorithmBitmap|0x1F
 +  gEfiSecurityPkgTokenSpaceGuid.PcdTpmPhysicalPresence|TRUE
-+!endif
++
++!include NetworkPkg/NetworkDynamicPcds.dsc.inc
 +
 +[PcdsDynamicHii]
 +!if $(TPM2_ENABLE) == TRUE
 +  gEfiSecurityPkgTokenSpaceGuid.PcdTcgPhysicalPresenceInterfaceVer|L"TCG2_VERSION"|gTcg2ConfigFormSetGuid|0x0|"1.3"|NV,BS
 +  gEfiSecurityPkgTokenSpaceGuid.PcdTpm2AcpiTableRev|L"TCG2_VERSION"|gTcg2ConfigFormSetGuid|0x8|4|NV,BS
 +!endif
- 
++
  [PcdsDynamicExDefault.IA32, PcdsDynamicExDefault.X64]
    gPcAtChipsetPkgTokenSpaceGuid.PcdRtcIndexRegister|$(RTC_INDEX_REGISTER)
-@@ -971,6 +1034,11 @@
+   gPcAtChipsetPkgTokenSpaceGuid.PcdRtcTargetRegister|$(RTC_TARGET_REGISTER)
+@@ -965,27 +1247,49 @@
+       <LibraryClasses>
+ !if $(SECURE_BOOT_ENABLE) == TRUE
+       NULL|SecurityPkg/Library/DxeImageVerificationLib/DxeImageVerificationLib.inf
++!endif
++!if $(CSMWRAP) == TRUE
++      NULL|OuroBiosPkg/Library/CsmWrapSecureBootLib/CsmWrapSecureBootLib.inf
+ !endif
+   }
+ !endif
  
++!if $(NETWORK_DRIVER_ENABLE) == TRUE
++  #
++  # Rng Protocol producer
++  #
++  SecurityPkg/RandomNumberGenerator/RngDxe/RngDxe.inf
++
++  #
++  # Hash2 Protocol producer
++  #
++  SecurityPkg/Hash2DxeCrypto/Hash2DxeCrypto.inf
++!endif
++
++
  !if $(SECURE_BOOT_ENABLE) == TRUE
    SecurityPkg/VariableAuthenticated/SecureBootConfigDxe/SecureBootConfigDxe.inf
-+  #
-+  # The default keys at the first boot (MrChromebox's EnrollDefaultKeys, in
-+  # the package)
-+  #
 +  OuroBiosPkg/EnrollDefaultKeys/EnrollDefaultKeys.inf
  !endif
  
    MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
-@@ -1202,6 +1270,32 @@
+ !if $(BOOTSPLASH_IMAGE)
+   MdeModulePkg/Logo/LogoDxe.inf
  !endif
++  OuroBiosPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf
+   MdeModulePkg/Application/UiApp/UiApp.inf {
+     <LibraryClasses>
+-      NULL|MdeModulePkg/Library/DeviceManagerUiLib/DeviceManagerUiLib.inf
+       NULL|MdeModulePkg/Library/BootManagerUiLib/BootManagerUiLib.inf
+       NULL|MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerUiLib.inf
++      NULL|MdeModulePkg/Library/DeviceManagerUiLib/DeviceManagerUiLib.inf
+   }
+   MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
+ !if $(CAPSULE_SUPPORT) == TRUE
+-  # Build FmpDxe meant for the inclusion into an update capsule as an embedded driver.
++!if "$(CAPSULE_MAIN_FW_GUID)" == ""
++  !error "CAPSULE_MAIN_FW_GUID must be set when CAPSULE_SUPPORT is TRUE"
++!endif
++  # Build FmpDxe (either included in the payload FV or embedded into an update
++  # capsule, depending on CAPSULE_EMBED_FMP_DXE).
+   FmpDevicePkg/FmpDxe/FmpDxe.inf {
+     <Defines>
+       # FmpDxe interprets its FILE_GUID as firmware GUID.  This allows including
+@@ -998,7 +1302,7 @@
+       #
+       # See BaseTools/Source/Python/Pkcs7Sign/Readme.md for more details on such
+       # PCDs and include files.
+-      !include BaseTools/Source/Python/Pkcs7Sign/TestRoot.cer.gFmpDevicePkgTokenSpaceGuid.PcdFmpDevicePkcs7CertBufferXdr.inc
++      !include $(FMP_DEVICE_PKCS7_PCD_INC)
+     <LibraryClasses>
+ !if $(BOOTLOADER) == "COREBOOT"
+       FmpDeviceLib|UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.inf
+@@ -1007,7 +1311,12 @@
+       FmpDeviceLib|FmpDevicePkg/Library/FmpDeviceLibNull/FmpDeviceLibNull.inf
+ !endif
+   }
+-  MdeModulePkg/Universal/EsrtDxe/EsrtDxe.inf
++  # The ESRT built from FmpDxe at each boot, last attempt included.  EsrtDxe
++  # publishes a cache that only ProcessCapsules() updates, never the capsules
++  # on disk of PlatformBootManagerLib, and that outlives a flash rewritten
++  # with a programmer.
++  MdeModulePkg/Universal/EsrtFmpDxe/EsrtFmpDxe.inf
++  OuroBiosPkg/FirmwareUpdateDxe/FirmwareUpdateDxe.inf
  !endif
  
+ 
+@@ -1042,11 +1351,26 @@
+ !endif
+   MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
+   MdeModulePkg/Universal/SetupBrowserDxe/SetupBrowserDxe.inf
++!if $(LVGL_ENABLE) == TRUE
++  LvglPkg/LvglDisplayEngineDxe/LvglDisplayEngineDxe.inf
++  LvglPkg/LvglSetupDxe/LvglSetupDxe.inf
++!else
+   MdeModulePkg/Universal/DisplayEngineDxe/DisplayEngineDxe.inf
++!endif
++!if $(VARIABLE_SUPPORT) == "EMU" || $(VARIABLE_SUPPORT) == "SMMSTORE" || $(VARIABLE_SUPPORT) == "SPI"
++  OuroBiosPkg/UserAuthPkg/UserAuthenticationDxe/UserAuthenticationDxe.inf
++!if $(BOOTSPLASH_IMAGE)
++  OuroBiosPkg/BootSplashConfigDxe/BootSplashConfigDxe.inf
++!endif
++!endif
++  MdeModulePkg/Universal/TimeDateSettingsDxe/TimeDateSettingsDxe.inf
+   MdeModulePkg/Universal/PlatformDriOverrideDxe/PlatformDriOverrideDxe.inf
++!if $(EBC_ENABLE) == TRUE
+   MdeModulePkg/Universal/EbcDxe/EbcDxe.inf
++!endif
+ 
+   UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf
++  OuroBiosPkg/EcAcpiBatteryStatusDxe/EcAcpiBatteryStatusDxe.inf
+ 
+   #
+   # SMBIOS Support
+@@ -1085,6 +1409,11 @@
+   MdeModulePkg/Bus/Ata/AtaAtapiPassThru/AtaAtapiPassThru.inf
+   MdeModulePkg/Bus/Scsi/ScsiBusDxe/ScsiBusDxe.inf
+   MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf
++!if $(UFS_ENABLE) == TRUE
++  MdeModulePkg/Bus/Pci/UfsPciHcDxe/UfsPciHcDxe.inf
++  MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruDxe.inf
++  OuroBiosPkg/UfsPlatformDxe/UfsPlatformDxe.inf
++!endif
+ !if $(NVME_ENABLE) == TRUE
+   MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf
+ !endif
+@@ -1096,6 +1425,12 @@
+   # SD/eMMC Support
+   #
+ !if $(SD_ENABLE) == TRUE
++  MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf
++  OuroBiosPkg/SdhciNonPciDxe/SdhciNonPciDxe.inf {
++    <LibraryClasses>
++      NonDiscoverableDeviceRegistrationLib|MdeModulePkg/Library/NonDiscoverableDeviceRegistrationLib/NonDiscoverableDeviceRegistrationLib.inf
++  }
++  OuroBiosPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.inf
+   MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.inf
+   MdeModulePkg/Bus/Sd/EmmcDxe/EmmcDxe.inf
+   MdeModulePkg/Bus/Sd/SdDxe/SdDxe.inf
+@@ -1111,13 +1446,19 @@
+   #
+   # Usb Support
+   #
++!if $(UHCI_ENABLE) == TRUE
+   MdeModulePkg/Bus/Pci/UhciDxe/UhciDxe.inf
++!endif
+   MdeModulePkg/Bus/Pci/EhciDxe/EhciDxe.inf
+   MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf
+   MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf
+   MdeModulePkg/Bus/Usb/UsbKbDxe/UsbKbDxe.inf
+   MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassStorageDxe.inf
++!if $(LVGL_ENABLE) == TRUE
++  MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointerDxe.inf
++!else
+   MdeModulePkg/Bus/Usb/UsbMouseDxe/UsbMouseDxe.inf
++!endif
+ 
+   #
+   # ISA Support
+@@ -1144,7 +1485,15 @@
+ !if $(DISABLE_SERIAL_TERMINAL) == FALSE
+   MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf
+ !endif
++
++!if $(USE_PLATFORM_GOP) == TRUE
++  OuroBiosPkg/PlatformGopPolicy/PlatformGopPolicy.inf {
++    <LibraryClasses>
++      NULL|MdeModulePkg/Library/LzmaCustomDecompressLib/LzmaCustomDecompressLib.inf
++  }
++!endif
+   UefiPayloadPkg/GraphicsOutputDxe/GraphicsOutputDxe.inf
++
+ !if $(PERFORMANCE_MEASUREMENT_ENABLE)
+   MdeModulePkg/Universal/Acpi/FirmwarePerformanceDataTableDxe/FirmwarePerformanceDxe.inf
+ !endif
+@@ -1175,6 +1524,8 @@
+       NULL|MdeModulePkg/Library/VarCheckUefiLib/VarCheckUefiLib.inf
+       NULL|EmbeddedPkg/Library/NvVarStoreFormattedLib/NvVarStoreFormattedLib.inf
+   }
++  OuroBiosPkg/MorControlDxe/MorControlDxe.inf
++  OuroBiosPkg/MorLockSmmStoreDxe/MorLockSmmStoreDxe.inf
+ !elseif $(VARIABLE_SUPPORT) == "SPI"
+   MdeModulePkg/Universal/Variable/RuntimeDxe/VariableSmm.inf {
+     <LibraryClasses>
+@@ -1200,6 +1551,46 @@
+       TlsLib|CryptoPkg/Library/TlsLib/TlsLib.inf
+   }
+ !endif
++!endif
++
++  #
++  # Network Support
++  #
++!include NetworkPkg/NetworkComponents.dsc.inc
++
++!if $(NETWORK_TLS_ENABLE) == TRUE
++  NetworkPkg/TlsAuthConfigDxe/TlsAuthConfigDxe.inf {
++    <LibraryClasses>
++      NULL|OvmfPkg/Library/TlsAuthConfigLib/TlsAuthConfigLib.inf
++  }
++!endif
++
 +!if $(TPM_ENABLE) == TRUE
 +  SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf {
 +    <LibraryClasses>
@@ -154,18 +777,26 @@
 +  }
 +  SecurityPkg/Tcg/Tcg2Config/Tcg2ConfigDxe.inf {
 +    <LibraryClasses>
-+      Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibTcg2/Tpm2DeviceLibTcg2.inf
++#    Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibRouter/Tpm2DeviceLibRouterDxe.inf //Modif H.E Avoid Hang Tcg2config
++    Tpm2DeviceLib|SecurityPkg/Library/Tpm2DeviceLibTcg2/Tpm2DeviceLibTcg2.inf
 +  }
 +  SecurityPkg/Tcg/TcgDxe/TcgDxe.inf {
 +    <LibraryClasses>
 +      Tpm12DeviceLib|SecurityPkg/Library/Tpm12DeviceLibDTpm/Tpm12DeviceLibDTpm.inf
 +  }
-+  SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf {
++   SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf {
 +    <LibraryClasses>
-+      Tpm12DeviceLib|SecurityPkg/Library/Tpm12DeviceLibTcg/Tpm12DeviceLibTcg.inf
++    Tpm12DeviceLib|SecurityPkg/Library/Tpm12DeviceLibTcg/Tpm12DeviceLibTcg.inf
 +  }
-+!endif
 +
- [Components.X64]
-   UefiCpuPkg/CpuDxe/CpuDxe.inf
+ !endif
  
+ [Components.X64]
+@@ -1282,7 +1673,6 @@
+   DevicePathLib|MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib.inf
+   FileHandleLib|MdePkg/Library/UefiFileHandleLib/UefiFileHandleLib.inf
+   ShellLib|ShellPkg/Library/UefiShellLib/UefiShellLib.inf
+-  !include NetworkPkg/NetworkLibs.dsc.inc
+ 
+ [Components.X64, Components.AARCH64]
+   ShellPkg/DynamicCommand/TftpDynamicCommand/TftpDynamicCommand.inf {

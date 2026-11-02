@@ -1,0 +1,300 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 13 Oct 2026 16:49:58 +0200
+Subject: [PATCH] UefiPayloadPkg: Go back to the other vboot slot from the
+ setup
+
+[ouroBIOS: patches/edk2/0020, without the files that TianoCore's tree
+does not have (tools/edk2-import.py): 4 in edk2/OuroBiosPkg]
+
+With coreboot's vboot and two RW slots, an update capsule writes the slot
+that does not run and boots it; the other slot keeps the release before,
+until the next update. Going back to it needed an OS: tools/update.py
+rollback stages the capsule of that release, which the firmware finds
+already written, so that it only asks vboot to try that slot.
+
+coreboot's SMMSTORE handler now does that on request
+(SMMSTORE_CMD_VBOOT_TRY_OTHER), and refuses it until the next boot after
+SMMSTORE_CMD_VBOOT_LOCK. Add both to SmmStoreLib. PlatformBootManagerLib
+sends the lock when a boot option starts (ReadyToBoot, which booting the
+setup does not signal) and at ExitBootServices(), or at once if it cannot
+wait for those: an OS loader, the UEFI Shell or an OS cannot go back to an
+older release without the checks of a capsule.
+
+The Firmware Update page shows the slot that runs (the one of the CBFS
+that coreboot reports) and the release in each slot: COREBOOT_EXTRA_VERSION
+of the "revision" file in the CBFS of the slot, read through the flash
+window. "Go back to <release>" asks for a confirmation and restarts into
+the other slot, after the checks of a capsule that can be made here: a
+release that is not the one that runs, of the same variant (mrc or nri,
+whose cache-as-RAM layouts differ, or fsp on the M920x; both must be
+known), with a version not
+older than the lowest supported one. vboot checks the signature of the
+slot at the next boot, and comes back if it does not verify or does not
+boot twice.
+
+TEST=tools/qemu-update.py of ouroBIOS at every build: from the setup of
+ROM D, "Go back to" the release of B (keys sent by QEMU, the pages
+followed on the serial port) switches the slot without writing it;
+tools/efi/slot-lock-test.c started from the ESP is refused before and
+after ExitBootServices(); the page shows the slots and the release in
+each.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
+
+---
+diff --git a/UefiPayloadPkg/Include/Guid/FirmwareUpdateConfig.h b/UefiPayloadPkg/Include/Guid/FirmwareUpdateConfig.h
+index 68939a0c4..67857457a 100644
+--- a/UefiPayloadPkg/Include/Guid/FirmwareUpdateConfig.h
++++ b/UefiPayloadPkg/Include/Guid/FirmwareUpdateConfig.h
+@@ -14,5 +14,6 @@
+ 
+ #define FIRMWARE_UPDATE_FORM_ID              0x1000
+ #define FIRMWARE_UPDATE_INSTALL_QUESTION_ID  0x1001
++#define FIRMWARE_UPDATE_SLOT_QUESTION_ID     0x1002
+ 
+ #endif
+diff --git a/UefiPayloadPkg/Include/Library/SmmStoreLib.h b/UefiPayloadPkg/Include/Library/SmmStoreLib.h
+index fab6c3385..3b7d054ab 100644
+--- a/UefiPayloadPkg/Include/Library/SmmStoreLib.h
++++ b/UefiPayloadPkg/Include/Library/SmmStoreLib.h
+@@ -175,6 +175,42 @@ SmmStoreLibVbootSlotGood (
+   VOID
+   );
+ 
++/**
++  Ask coreboot to boot the RW slot that is not running from the next boot:
++  vboot tries it twice, as after an update, and comes back to the slot that
++  runs now if it does not boot.  coreboot also clears the memory training
++  cache, which that slot must not reuse.
++
++  @retval EFI_SUCCESS       vboot tries the other slot at the next boot.
++  @retval EFI_NO_MEDIA      SmmStore is not initialized.
++  @retval EFI_UNSUPPORTED   coreboot has no two RW slots with the vboot nvdata
++                            in flash.
++  @retval others            The handler refused: locked until the next boot,
++                            or no valid nvdata.
++
++**/
++EFI_STATUS
++SmmStoreLibVbootTryOtherSlot (
++  VOID
++  );
++
++/**
++  Make coreboot refuse SmmStoreLibVbootTryOtherSlot() until the next boot.
++  To be called before a boot option or an OS starts.  Allocates nothing: it
++  can be called from ExitBootServices().
++
++  @retval EFI_SUCCESS       Refused until the next boot.
++  @retval EFI_NO_MEDIA      SmmStore is not initialized.
++  @retval EFI_UNSUPPORTED   coreboot has no two RW slots with the vboot nvdata
++                            in flash: nothing to refuse.
++  @retval others            The handler failed.
++
++**/
++EFI_STATUS
++SmmStoreLibVbootLockSlots (
++  VOID
++  );
++
+ /**
+   Function to update a pointer on virtual address change.  Matches the signature
+   and operation of EfiConvertPointer.
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
+index 7e63564cd..137a8831b 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
+@@ -166,7 +166,8 @@ PlatformProcessCapsules (
+ 
+ /**
+   Tell coreboot that the firmware booted, so that vboot keeps a new RW slot
+-  that it is trying.
++  that it is trying; lock the switch to the other slot before a boot option
++  starts and at ExitBootServices().
+ **/
+ VOID
+ PlatformMarkFirmwareGood (
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+index 8ce723505..c4b5bdfe5 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+@@ -59,6 +59,8 @@
+ 
+ [Guids]
+   gEfiEndOfDxeEventGroupGuid
++  gEfiEventExitBootServicesGuid   ## CONSUMES ## Event
++  gEfiEventReadyToBootGuid        ## CONSUMES ## Event
+   gUefiShellFileGuid
+   gUefiPayloadBootSplashGuid
+   gEfiCapsuleReportGuid           ## CONSUMES ## Variable:L"CapsuleLast"
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
+index b7f389725..e7911b824 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
+@@ -478,10 +478,41 @@ CapsuleApply (
+   }
+ }
+ 
++STATIC BOOLEAN  mFirmwareSlotsLocked;
++
++/**
++  A boot option or an OS is about to start: from now on, only an update
++  capsule, with its checks, may change the RW slot that vboot boots.
++  Allocates nothing.
++**/
++STATIC
++VOID
++EFIAPI
++PlatformLockFirmwareSlots (
++  IN EFI_EVENT  Event,
++  IN VOID       *Context
++  )
++{
++  EFI_STATUS  Status;
++
++  if (mFirmwareSlotsLocked) {
++    return;
++  }
++
++  Status               = SmmStoreLibVbootLockSlots ();
++  mFirmwareSlotsLocked = !EFI_ERROR (Status);
++  DEBUG ((DEBUG_INFO, "Capsules: switch to the other firmware slot locked: %r\n", Status));
++}
++
+ /**
+   Tell coreboot that the firmware booted: with vboot, a new RW slot that it is
+   trying (after an update) is then kept, instead of being given up for the
+   other one when its tries run out.  Called once the console is up.
++
++  With two RW slots, the setup can also switch to the other slot (the
++  Firmware Update page); coreboot refuses that once a boot option starts
++  (ReadyToBoot, which booting the setup does not signal) or anything calls
++  ExitBootServices().
+ **/
+ VOID
+ PlatformMarkFirmwareGood (
+@@ -489,6 +520,7 @@ PlatformMarkFirmwareGood (
+   )
+ {
+   EFI_STATUS  Status;
++  EFI_EVENT   Event;
+ 
+   if (EFI_ERROR (SmmStoreLibInitialize ())) {
+     return;
+@@ -499,7 +531,31 @@ PlatformMarkFirmwareGood (
+     DEBUG ((DEBUG_INFO, "Capsules: firmware slot marked good: %r\n", Status));
+   }
+ 
+-  SmmStoreLibDeinitialize ();
++  if (Status == EFI_UNSUPPORTED) {
++    SmmStoreLibDeinitialize ();
++    return;
++  }
++
++  //
++  // The library stays initialized for the lock: at ExitBootServices() it
++  // cannot allocate.  Without both events, lock now: the setup then cannot
++  // switch slots in this boot.
++  //
++  if (EFI_ERROR (EfiCreateEventReadyToBootEx (TPL_CALLBACK, PlatformLockFirmwareSlots, NULL, &Event)) ||
++      EFI_ERROR (
++        gBS->CreateEventEx (
++               EVT_NOTIFY_SIGNAL,
++               TPL_CALLBACK,
++               PlatformLockFirmwareSlots,
++               NULL,
++               &gEfiEventExitBootServicesGuid,
++               &Event
++               )
++        ))
++  {
++    DEBUG ((DEBUG_ERROR, "Capsules: no event for the lock of the firmware slots\n"));
++    PlatformLockFirmwareSlots (NULL, NULL);
++  }
+ }
+ 
+ /**
+diff --git a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+index e7a6b73c7..98f282b82 100644
+--- a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
++++ b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+@@ -430,6 +430,56 @@ SmmStoreLibVbootSlotGood (
+   return CallSmm (mSmmStoreInfo->ApmCmd, SMMSTORE_CMD_VBOOT_SLOT_GOOD, mArgComBufPhys);
+ }
+ 
++/**
++  Ask coreboot to boot the RW slot that is not running from the next boot:
++  vboot tries it twice, as after an update, and comes back to the slot that
++  runs now if it does not boot.  coreboot also clears the memory training
++  cache, which that slot must not reuse.
++
++  @retval EFI_SUCCESS       vboot tries the other slot at the next boot.
++  @retval EFI_NO_MEDIA      SmmStore is not initialized.
++  @retval EFI_UNSUPPORTED   coreboot has no two RW slots with the vboot nvdata
++                            in flash.
++  @retval others            The handler refused: locked until the next boot,
++                            or no valid nvdata.
++
++**/
++EFI_STATUS
++SmmStoreLibVbootTryOtherSlot (
++  VOID
++  )
++{
++  if (mSmmStoreInfo == NULL) {
++    return EFI_NO_MEDIA;
++  }
++
++  return CallSmm (mSmmStoreInfo->ApmCmd, SMMSTORE_CMD_VBOOT_TRY_OTHER, mArgComBufPhys);
++}
++
++/**
++  Make coreboot refuse SmmStoreLibVbootTryOtherSlot() until the next boot.
++  To be called before a boot option or an OS starts.  Allocates nothing: it
++  can be called from ExitBootServices().
++
++  @retval EFI_SUCCESS       Refused until the next boot.
++  @retval EFI_NO_MEDIA      SmmStore is not initialized.
++  @retval EFI_UNSUPPORTED   coreboot has no two RW slots with the vboot nvdata
++                            in flash: nothing to refuse.
++  @retval others            The handler failed.
++
++**/
++EFI_STATUS
++SmmStoreLibVbootLockSlots (
++  VOID
++  )
++{
++  if (mSmmStoreInfo == NULL) {
++    return EFI_NO_MEDIA;
++  }
++
++  return CallSmm (mSmmStoreInfo->ApmCmd, SMMSTORE_CMD_VBOOT_LOCK, mArgComBufPhys);
++}
++
+ /**
+   Fixup internal data so that EFI can be called in virtual mode.
+   Converts any pointers in lib to virtual mode. This function is meant to
+diff --git a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h
+index 2e78cc89e..f899b5dca 100644
+--- a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h
++++ b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h
+@@ -24,6 +24,13 @@
+ //
+ #define SMMSTORE_CMD_VBOOT_SLOT_GOOD  8
+ 
++//
++// coreboot with vboot and two RW slots: try the slot that is not running at
++// the next boots, and refuse that until the next boot.
++//
++#define SMMSTORE_CMD_VBOOT_TRY_OTHER  9
++#define SMMSTORE_CMD_VBOOT_LOCK       10
++
+ /* Used by capsule updates as a standalone command or modifier to v2 commands */
+ #define SMMSTORE_CMD_USE_FULL_FLASH  0x80
+ 
+-- 
+2.43.0
+

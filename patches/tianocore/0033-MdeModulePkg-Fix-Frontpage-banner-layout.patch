@@ -1,0 +1,65 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Thu, 20 Nov 2025 14:48:20 -0600
+Subject: [PATCH] MdeModulePkg: Fix Frontpage banner layout
+
+[ouroBIOS: commit 0c79020e7a0b of MrChromebox's edk2, as it is]
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ .../CustomizedDisplayLibInternal.c             | 18 ++++++++++++------
+ .../CustomizedDisplayLibInternal.h             |  4 ++--
+ 2 files changed, 14 insertions(+), 8 deletions(-)
+
+diff --git a/MdeModulePkg/Library/CustomizedDisplayLib/CustomizedDisplayLibInternal.c b/MdeModulePkg/Library/CustomizedDisplayLib/CustomizedDisplayLibInternal.c
+index 21e7e87c948cf9da494d2af63420a6ffec5859be..2b1d6b66fec1bca964ea58cfb68f121e663e6314 100644
+--- a/MdeModulePkg/Library/CustomizedDisplayLib/CustomizedDisplayLibInternal.c
++++ b/MdeModulePkg/Library/CustomizedDisplayLib/CustomizedDisplayLibInternal.c
+@@ -99,13 +99,19 @@ PrintBannerInfo (
+ 
+         case 1:
+           //
+-          // Handle center column
++          // Handle center column - center based on string length
+           //
+-          PrintStringAt (
+-            gScreenDimensions.LeftColumn + (gScreenDimensions.RightColumn - gScreenDimensions.LeftColumn) / 3,
+-            Line,
+-            StrFrontPageBanner
+-            );
++          {
++            UINTN  StringWidth;
++
++            StringWidth = StrLen (StrFrontPageBanner);
++            // Center the string within the available width
++            PrintStringAt (
++              gScreenDimensions.LeftColumn + (gScreenDimensions.RightColumn - gScreenDimensions.LeftColumn - StringWidth) / 2,
++              Line,
++              StrFrontPageBanner
++              );
++          }
+           break;
+ 
+         case 2:
+diff --git a/MdeModulePkg/Library/CustomizedDisplayLib/CustomizedDisplayLibInternal.h b/MdeModulePkg/Library/CustomizedDisplayLib/CustomizedDisplayLibInternal.h
+index 2cb4eb33fbdcf0b44f7148fe60c3f72c4a285023..7d1ac125aeb9b31e99514cc98e28e40494929195 100644
+--- a/MdeModulePkg/Library/CustomizedDisplayLib/CustomizedDisplayLibInternal.h
++++ b/MdeModulePkg/Library/CustomizedDisplayLib/CustomizedDisplayLibInternal.h
+@@ -47,7 +47,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #define FORMSET_CLASS_PLATFORM_SETUP  0x0001
+ #define FORMSET_CLASS_FRONT_PAGE      0x0002
+ 
+-#define FRONT_PAGE_HEADER_HEIGHT       6
++#define FRONT_PAGE_HEADER_HEIGHT       7
+ #define NONE_FRONT_PAGE_HEADER_HEIGHT  3
+ #define FOOTER_HEIGHT                  4
+ #define STATUS_BAR_HEIGHT              1
+@@ -55,7 +55,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ //
+ // Screen definitions
+ //
+-#define BANNER_HEIGHT              6
++#define BANNER_HEIGHT              7
+ #define BANNER_COLUMNS             3
+ #define BANNER_LEFT_COLUMN_INDENT  1
+ 

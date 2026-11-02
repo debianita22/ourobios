@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Fri, 3 Jul 2026 12:47:16 -0500
+Subject: [PATCH] UefiPayloadPkg/PciPlatformDxe: Fix BAR restore leak and
+ uninit CodeType
+
+[ouroBIOS: commit 40a1b7a6880e of MrChromebox's edk2, as it is]
+
+When no Option ROM is present, PciGetPciRom returned immediately after
+clobbering the ROM BAR during sizing, leaving the BAR modified and the
+PciIo protocol open reference leaked. Route this case through the shared
+RestoreBar/CloseAndReturn cleanup instead.
+
+Also initialize CodeType, which was only assigned for PCAT images but
+read unconditionally in the legacy image length fixup.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.c b/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.c
+index a67d687b0e17625337937b10e4f42136d8f0c1ee..9bbb911eb29836bb5eca05a08db1a8b2cab0e41d 100644
+--- a/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.c
++++ b/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.c
+@@ -211,7 +211,9 @@ PciGetPciRom (
+   AllOnes &= 0xFFFFF800;
+   if ((AllOnes == 0) || (AllOnes == 0xFFFFF800)) {
+     DEBUG ((DEBUG_VERBOSE, "%a: No Option ROM found\n", __func__));
+-    return EFI_NOT_FOUND;
++    Status = EFI_NOT_FOUND;
++    RomBar = Buffer;
++    goto RestoreBar;
+   }
+ 
+   *RomSize = (~AllOnes) + 1;
+@@ -248,6 +250,7 @@ PciGetPciRom (
+   FirstCheck        = TRUE;
+   LegacyImageLength = 0;
+   RomImageSize      = 0;
++  CodeType          = 0;
+ 
+   //
+   // Expect to find a PCI ROM header at offset 0.

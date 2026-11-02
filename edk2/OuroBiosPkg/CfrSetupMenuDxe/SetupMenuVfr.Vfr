@@ -1,0 +1,98 @@
+/** @file
+  Setup Menu formset.
+
+  Copyright (c) 2023, 9elements GmbH.<BR>
+  SPDX-License-Identifier: BSD-2-Clause-Patent
+
+**/
+
+#include <Uefi/UefiMultiPhase.h>
+#include <Guid/HiiPlatformSetupFormset.h>
+#include "SetupMenuNVDataStruc.h"
+
+formset
+  guid      = SETUP_MENU_FORMSET_GUID,
+  title     = STRING_TOKEN(STR_CFR_MENU_TITLE),
+  help      = STRING_TOKEN(STR_CFR_MENU_HELP),
+  classguid = EFI_HII_PLATFORM_SETUP_FORMSET_GUID | EDKII_IFR_FRONT_PAGE_FORMS_GUID,
+
+  form formid = SETUP_MENU_FORM_ID,
+    title = STRING_TOKEN(STR_CFR_MENU_TITLE);
+
+    /**
+      Sections for runtime components
+
+    **/
+    label LABEL_RT_COMP_START;
+    label LABEL_RT_COMP_END;
+
+  endform;
+
+  //
+  // Categories: SETUP_MENU_CATEGORY_FORM_ID + n, titles set at runtime
+  //
+  form formid = 0x0100,
+    title = STRING_TOKEN(STR_CFR_CATEGORY_0);
+
+    label LABEL_RT_COMP_START;
+    label LABEL_RT_COMP_END;
+
+  endform;
+
+  form formid = 0x0101,
+    title = STRING_TOKEN(STR_CFR_CATEGORY_1);
+
+    label LABEL_RT_COMP_START;
+    label LABEL_RT_COMP_END;
+
+  endform;
+
+  form formid = 0x0102,
+    title = STRING_TOKEN(STR_CFR_CATEGORY_2);
+
+    label LABEL_RT_COMP_START;
+    label LABEL_RT_COMP_END;
+
+  endform;
+
+  form formid = 0x0103,
+    title = STRING_TOKEN(STR_CFR_CATEGORY_3);
+
+    label LABEL_RT_COMP_START;
+    label LABEL_RT_COMP_END;
+
+  endform;
+
+  form formid = 0x0104,
+    title = STRING_TOKEN(STR_CFR_CATEGORY_4);
+
+    label LABEL_RT_COMP_START;
+    label LABEL_RT_COMP_END;
+
+  endform;
+
+  form formid = 0x0105,
+    title = STRING_TOKEN(STR_CFR_CATEGORY_5);
+
+    label LABEL_RT_COMP_START;
+    label LABEL_RT_COMP_END;
+
+  endform;
+
+  form formid = 0x0106,
+    title = STRING_TOKEN(STR_CFR_CATEGORY_6);
+
+    label LABEL_RT_COMP_START;
+    label LABEL_RT_COMP_END;
+
+  endform;
+
+  form formid = 0x0107,
+    title = STRING_TOKEN(STR_CFR_CATEGORY_7);
+
+    label LABEL_RT_COMP_START;
+    label LABEL_RT_COMP_END;
+
+  endform;
+
+endformset;

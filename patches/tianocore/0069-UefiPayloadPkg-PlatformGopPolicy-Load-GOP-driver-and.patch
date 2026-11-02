@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Sat, 3 Oct 2026 19:07:49 -0500
+Subject: [PATCH] UefiPayloadPkg/PlatformGopPolicy: Load GOP driver and VBT
+ from CBFS
+
+[ouroBIOS: commit 1f9ab463057c of MrChromebox's edk2, without the files
+that TianoCore's tree does not have (tools/edk2-import.py): 6 in
+edk2/OuroBiosPkg]
+
+With USE_PLATFORM_GOP, load IntelGopDriver.efi and vbt.bin from
+coreboot's CBFS at runtime instead of embedding them in the payload,
+so the payload no longer depends on the board's GOP driver or VBT.
+
+After installing the GOP policy protocol, wrap the GOP driver in an
+in-memory firmware volume and hand it to the DXE dispatcher with
+ProcessFirmwareVolume(). The driver is then dispatched once its depex
+is met, and the image security policy treats it as coming from a
+firmware volume, like any other driver in the payload. GetVbtData()
+returns the VBT loaded from CBFS directly, and the now unused
+gBmpImageGuid is removed. A VBT without a $VBT signature is rejected.
+
+GraphicsOutputDxe is now always included. It only binds when coreboot
+provides a framebuffer, so it covers boards where coreboot initializes
+graphics and does not add a GOP driver to CBFS.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ UefiPayloadPkg/UefiPayloadPkg.dec | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
+index b44b33200042384a0d0d5b05ce691b525e9e9452..9bc0e39cd28088917c8ea82352a0f1f0785dae79 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dec
++++ b/UefiPayloadPkg/UefiPayloadPkg.dec
+@@ -47,11 +47,6 @@
+   ## Include/UniversalPayload/DeviceTree.h
+   gUniversalPayloadDeviceTreeGuid = { 0x6784b889, 0xb13c, 0x4c3b, {0xae, 0x4b, 0xf, 0xa, 0x2e, 0x32, 0xe, 0xa3 } }
+ 
+-  #
+-  # Gop Temp
+-  #
+-  gBmpImageGuid                           = { 0x878AC2CC, 0x5343, 0x46F2, { 0xB5, 0x63, 0x51, 0xF8, 0x9D, 0xAF, 0x56, 0xBA } }
+-
+   gEdkiiDebugPrintErrorLevelGuid = { 0xad82f436, 0x75c5, 0x4aa9, { 0x92, 0x93, 0xc5, 0x55, 0x0a, 0x7f, 0xf9, 0x71 }}
+   gUefiAcpiBoardInfoGuid   = {0xad3d31b, 0xb3d8, 0x4506, {0xae, 0x71, 0x2e, 0xf1, 0x10, 0x6, 0xd9, 0xf}}
+   gUefiSerialPortInfoGuid  = { 0x6c6872fe, 0x56a9, 0x4403, { 0xbb, 0x98, 0x95, 0x8d, 0x62, 0xde, 0x87, 0xf1 } }

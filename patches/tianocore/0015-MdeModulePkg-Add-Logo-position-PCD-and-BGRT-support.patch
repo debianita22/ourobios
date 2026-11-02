@@ -1,0 +1,136 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sean Rhodes <sean@starlabs.systems>
+Date: Sun, 10 Jul 2022 19:23:59 +0100
+Subject: [PATCH] MdeModulePkg: Add Logo position PCD and BGRT support
+
+[ouroBIOS: commit 565124ca9ea8 of MrChromebox's edk2, without the files
+that TianoCore's tree does not have (tools/edk2-import.py): 1 in
+edk2/OuroBiosPkg]
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ MdeModulePkg/Include/Protocol/PlatformLogo.h     | 3 ++-
+ MdeModulePkg/Library/BootLogoLib/BootLogoLib.c   | 5 +++++
+ MdeModulePkg/Library/BootLogoLib/BootLogoLib.inf | 3 +++
+ MdeModulePkg/Logo/Logo.c                         | 5 +++++
+ MdeModulePkg/Logo/LogoDxe.inf                    | 4 ++++
+ MdeModulePkg/MdeModulePkg.dec                    | 6 ++++++
+ MdeModulePkg/MdeModulePkg.uni                    | 5 +++++
+ 7 files changed, 30 insertions(+), 1 deletion(-)
+
+diff --git a/MdeModulePkg/Include/Protocol/PlatformLogo.h b/MdeModulePkg/Include/Protocol/PlatformLogo.h
+index ea3dcefe9b057bbd5dc2e147c1e650349298e21f..bd7809b7a0e4ba72337185385391f8897b5b94af 100644
+--- a/MdeModulePkg/Include/Protocol/PlatformLogo.h
++++ b/MdeModulePkg/Include/Protocol/PlatformLogo.h
+@@ -28,7 +28,8 @@ typedef enum {
+   EdkiiPlatformLogoDisplayAttributeCenterBottom,
+   EdkiiPlatformLogoDisplayAttributeLeftBottom,
+   EdkiiPlatformLogoDisplayAttributeCenterLeft,
+-  EdkiiPlatformLogoDisplayAttributeCenter
++  EdkiiPlatformLogoDisplayAttributeCenter,
++  EdkiiPlatformLogoDisplayAttributeBGRTSpecification
+ } EDKII_PLATFORM_LOGO_DISPLAY_ATTRIBUTE;
+ 
+ /**
+diff --git a/MdeModulePkg/Library/BootLogoLib/BootLogoLib.c b/MdeModulePkg/Library/BootLogoLib/BootLogoLib.c
+index cba6f1983f645d83ec8eed5a1c74d4debe10ba94..f7df978552d6dc2a287c8ce5d6aeed0bf0fda9a0 100644
+--- a/MdeModulePkg/Library/BootLogoLib/BootLogoLib.c
++++ b/MdeModulePkg/Library/BootLogoLib/BootLogoLib.c
+@@ -172,6 +172,11 @@ BootLogoEnableLogo (
+         DestY = SizeOfY - Image.Height;
+         break;
+ 
++      case EdkiiPlatformLogoDisplayAttributeBGRTSpecification:
++        DestX = (SizeOfX - Image.Width) / 2;
++        DestY = (SizeOfY * 382) / 1000 - Image.Height / 2;
++        break;
++
+       default:
+         ASSERT (FALSE);
+         continue;
+diff --git a/MdeModulePkg/Library/BootLogoLib/BootLogoLib.inf b/MdeModulePkg/Library/BootLogoLib/BootLogoLib.inf
+index 03fd70451bc6dd04513dd8b7abf82519f4ac7e0d..9020f753379ac7bee55e853dffc900170ab838b2 100644
+--- a/MdeModulePkg/Library/BootLogoLib/BootLogoLib.inf
++++ b/MdeModulePkg/Library/BootLogoLib/BootLogoLib.inf
+@@ -46,3 +46,6 @@
+   gEdkiiBootLogo2ProtocolGuid                   ## SOMETIMES_CONSUMES
+   gEfiUserManagerProtocolGuid                   ## CONSUMES
+   gEdkiiPlatformLogoProtocolGuid                ## CONSUMES
++
++[Pcd]
++  gEfiMdeModulePkgTokenSpaceGuid.PcdFollowBGRTSpecification ## CONSUMES
+diff --git a/MdeModulePkg/Logo/Logo.c b/MdeModulePkg/Logo/Logo.c
+index 8ab874d2dadb87afb908d93ae8fbd53c32c33427..73546b32f403179f97c654fa6ca56b44d4dd63cb 100644
+--- a/MdeModulePkg/Logo/Logo.c
++++ b/MdeModulePkg/Logo/Logo.c
+@@ -13,6 +13,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Protocol/HiiPackageList.h>
+ #include <Library/UefiBootServicesTableLib.h>
+ #include <Library/DebugLib.h>
++#include <Library/PcdLib.h>
+ 
+ typedef struct {
+   EFI_IMAGE_ID                             ImageId;
+@@ -69,6 +70,10 @@ GetImage (
+     return EFI_NOT_FOUND;
+   }
+ 
++  if (FixedPcdGetBool (PcdFollowBGRTSpecification)) {
++    mLogos[Current].Attribute = EdkiiPlatformLogoDisplayAttributeBGRTSpecification;
++  }
++
+   (*Instance)++;
+   *Attribute = mLogos[Current].Attribute;
+   *OffsetX   = mLogos[Current].OffsetX;
+diff --git a/MdeModulePkg/Logo/LogoDxe.inf b/MdeModulePkg/Logo/LogoDxe.inf
+index 41215d25d85309b738b005a1a84b433c69349b00..c5c8ad0bcf39bff9e6cdb937e97bf95203a4ea0e 100644
+--- a/MdeModulePkg/Logo/LogoDxe.inf
++++ b/MdeModulePkg/Logo/LogoDxe.inf
+@@ -41,6 +41,7 @@
+   UefiBootServicesTableLib
+   UefiDriverEntryPoint
+   DebugLib
++  PcdLib
+ 
+ [Protocols]
+   gEfiHiiDatabaseProtocolGuid        ## CONSUMES
+@@ -48,6 +49,9 @@
+   gEfiHiiPackageListProtocolGuid     ## PRODUCES CONSUMES
+   gEdkiiPlatformLogoProtocolGuid     ## PRODUCES
+ 
++[Pcd]
++  gEfiMdeModulePkgTokenSpaceGuid.PcdFollowBGRTSpecification ## CONSUMES
++
+ [Depex]
+   gEfiHiiDatabaseProtocolGuid AND
+   gEfiHiiImageExProtocolGuid
+diff --git a/MdeModulePkg/MdeModulePkg.dec b/MdeModulePkg/MdeModulePkg.dec
+index 0f52613088d6c9f107b1900f1b63f8369c7b3e82..039c065722d41ff76baa2bce8c7d44f800c7c6f4 100644
+--- a/MdeModulePkg/MdeModulePkg.dec
++++ b/MdeModulePkg/MdeModulePkg.dec
+@@ -2376,6 +2376,12 @@
+   # @Prompt PCI CRS timeout in seconds.
+   gEfiMdeModulePkgTokenSpaceGuid.PcdPciCrsTimeoutSeconds|0|UINT32|0x1000002B
+ 
++  ## This PCD sets the position of the Boot Logo.
++  #   TRUE  - The Logo is positioned according to the BGRT specification.
++  #   FALSE - The logo is positioned in the center of the screen.
++  # @ Prompt This position of the boot logo
++  gEfiMdeModulePkgTokenSpaceGuid.PcdFollowBGRTSpecification|FALSE|BOOLEAN|0x10000036
++
+ [PcdsPatchableInModule]
+   ## Specify memory size with page number for PEI code when
+   #  Loading Module at Fixed Address feature is enabled.
+diff --git a/MdeModulePkg/MdeModulePkg.uni b/MdeModulePkg/MdeModulePkg.uni
+index 2b6a1b67891de24561132cb91d6f04596475850b..ac850bdbd7d868c29ef77b43b743a952fffbe45e 100644
+--- a/MdeModulePkg/MdeModulePkg.uni
++++ b/MdeModulePkg/MdeModulePkg.uni
+@@ -1361,3 +1361,8 @@
+ #string STR_gEfiMdeModulePkgTokenSpaceGuid_PcdPcieResizableBarMaxSize_HELP   #language en-US "Set platform limit for max size to pick from Resizable BAR Capability register.<BR><BR>\n"
+                                                                                              "Decimal value 'n' is interpreted as 2^(n+20), which means 0=>1MB, 1=>2MB, 2=>4MB, 3=>8MB, etc.<BR>\n"
+                                                                                              "Maximum reasonable size to set is half of processor address with, i.e. address width - 1.<BR>\n"
++
++#string STR_gEfiMdeModulePkgTokenSpaceGuid_PcdFollowBGRTSpecification_PROMPT #language en-US "The position of the Boot Logo"
++
++#string STR_gEfiMdeModulePkgTokenSpaceGuid_PcdFollowBGRTSpecification_HELP   #language en-US "Sets the position of the Logo. When set to true, the Logo is positioned according to the"
++                                                                                             " BGRT specification, 38.2% from the top of the screen."

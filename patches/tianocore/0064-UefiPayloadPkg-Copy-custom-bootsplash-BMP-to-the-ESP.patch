@@ -1,0 +1,331 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Fri, 25 Sep 2026 11:02:52 -0500
+Subject: [PATCH] UefiPayloadPkg: Copy custom bootsplash BMP to the ESP
+
+[ouroBIOS: commit afe0e87d25d5 of MrChromebox's edk2, without the files
+that TianoCore's tree does not have (tools/edk2-import.py): 7 in
+edk2/OuroBiosPkg]
+
+Storing a USB device path made custom logos disappear after the media
+was removed. Validate the BMP at import with the same checks used at
+boot, copy it to \EFI\BootSplash\logo.bmp on the first ESP, and
+persist that path. Reject files over 4 MiB or that do not fit the
+display, and tell the user when import fails.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ .../Include/Guid/BootSplashConfig.h           |  13 ++
+ .../Include/Library/BootSplashLib.h           | 100 ++++++++++++++++
+ .../PlatformBootManagerLib/BootSplash.c       | 112 ++++--------------
+ .../PlatformBootManagerLib.inf                |   3 +-
+ UefiPayloadPkg/UefiPayloadPkg.dec             |   1 +
+ 5 files changed, 140 insertions(+), 89 deletions(-)
+ create mode 100644 UefiPayloadPkg/Include/Library/BootSplashLib.h
+
+diff --git a/UefiPayloadPkg/Include/Guid/BootSplashConfig.h b/UefiPayloadPkg/Include/Guid/BootSplashConfig.h
+index c2521dbd97f0fb4ae2edd089ae1c18f053850116..2dbe5ff307e262464c1bde8bb3c38245fd8d7a71 100644
+--- a/UefiPayloadPkg/Include/Guid/BootSplashConfig.h
++++ b/UefiPayloadPkg/Include/Guid/BootSplashConfig.h
+@@ -33,6 +33,19 @@
+ 
+ #define BOOT_SPLASH_PATH_MAX_SIZE  512
+ 
++#ifndef VFRCOMPILE
++//
++// Custom logos are copied to a fixed ESP path. 4 MiB covers typical centered
++// logos and WXGA full-frame 24-bit BMPs while rejecting accidental huge dumps.
++//
++#define BOOT_SPLASH_MAX_FILE_SIZE   0x400000
++#define BOOT_SPLASH_ESP_DIR_EFI     L"EFI"
++#define BOOT_SPLASH_ESP_DIR_NAME    L"BootSplash"
++#define BOOT_SPLASH_ESP_FILE_NAME   L"logo.bmp"
++#define BOOT_SPLASH_ESP_FILE_PATH   L"\\EFI\\BootSplash\\logo.bmp"
++#define BOOT_SPLASH_ESP_DISPLAY     L"EFI System Partition:\\EFI\\BootSplash\\logo.bmp"
++#endif
++
+ #pragma pack(1)
+ 
+ typedef struct {
+diff --git a/UefiPayloadPkg/Include/Library/BootSplashLib.h b/UefiPayloadPkg/Include/Library/BootSplashLib.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..19dedc7b02c3d557e1d7f6ba1f5d50e6d92ebbbe
+--- /dev/null
++++ b/UefiPayloadPkg/Include/Library/BootSplashLib.h
+@@ -0,0 +1,100 @@
++/** @file
++  Shared boot splash BMP validation and ESP import helpers.
++
++  Copyright (c) 2026
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++
++#ifndef BOOT_SPLASH_LIB_H_
++#define BOOT_SPLASH_LIB_H_
++
++#include <Uefi.h>
++#include <Protocol/GraphicsOutput.h>
++
++/**
++  Decode and validate a BMP buffer for use as a boot splash.
++
++  Rejects empty / oversized files, undecodable BMPs, zero dimensions, and
++  images that do not fit the current GOP mode (including BGRT Y placement).
++
++  @param[in]  BmpBuffer  BMP file contents.
++  @param[in]  BmpSize    Size of BmpBuffer in bytes.
++  @param[out] Blt        Optional. On success, caller owns the pixel buffer.
++                         If NULL, the decoded buffer is freed internally.
++  @param[out] Width      Optional. Image width in pixels.
++  @param[out] Height     Optional. Image height in pixels.
++  @param[out] DestX      Optional. Centered X offset for the current GOP mode.
++  @param[out] DestY      Optional. Y offset for the current GOP mode (BGRT-aware).
++
++  @retval EFI_SUCCESS      BMP is valid for boot splash use.
++  @retval EFI_UNSUPPORTED  BMP failed size, decode, or display-fit checks.
++  @retval other            Propagated error (e.g. no GOP when fit-checking).
++**/
++EFI_STATUS
++EFIAPI
++BootSplashDecodeBmp (
++  IN  VOID                           *BmpBuffer,
++  IN  UINTN                          BmpSize,
++  OUT EFI_GRAPHICS_OUTPUT_BLT_PIXEL  **Blt    OPTIONAL,
++  OUT UINTN                          *Width   OPTIONAL,
++  OUT UINTN                          *Height  OPTIONAL,
++  OUT INTN                           *DestX   OPTIONAL,
++  OUT INTN                           *DestY   OPTIONAL
++  );
++
++/**
++  Read a file into a newly allocated buffer.
++
++  @param[in]  FilePath    Device path to the file.
++  @param[out] FileBuffer  On success, caller must FreePool.
++  @param[out] FileSize    Size of FileBuffer in bytes.
++
++  @retval EFI_SUCCESS  File read successfully.
++  @retval other        Open/read failed or file empty/oversized.
++**/
++EFI_STATUS
++EFIAPI
++BootSplashReadFile (
++  IN  EFI_DEVICE_PATH_PROTOCOL  *FilePath,
++  OUT VOID                      **FileBuffer,
++  OUT UINTN                     *FileSize
++  );
++
++/**
++  Locate the first EFI System Partition handle.
++
++  @param[out] EspHandle  Handle with Simple File System on an ESP.
++
++  @retval EFI_SUCCESS    First ESP found.
++  @retval EFI_NOT_FOUND  No ESP available.
++**/
++EFI_STATUS
++EFIAPI
++BootSplashFindFirstEsp (
++  OUT EFI_HANDLE  *EspHandle
++  );
++
++/**
++  Validate a source BMP and copy it to a fixed path on the first ESP.
++
++  Always overwrites \\EFI\\BootSplash\\logo.bmp when the source is a different
++  file. If SourcePath already refers to that ESP file, validation still runs
++  and no write is performed.
++
++  @param[in]  SourcePath  Device path of the selected BMP.
++  @param[out] DestPath    On success, device path of the ESP logo file.
++                          Caller must FreePool.
++
++  @retval EFI_SUCCESS      Logo validated and present on the ESP.
++  @retval EFI_UNSUPPORTED  Source failed BMP / display validation.
++  @retval EFI_NOT_FOUND    No ESP found.
++  @retval other            Read or write failure.
++**/
++EFI_STATUS
++EFIAPI
++BootSplashImportBmpToEsp (
++  IN  EFI_DEVICE_PATH_PROTOCOL  *SourcePath,
++  OUT EFI_DEVICE_PATH_PROTOCOL  **DestPath
++  );
++
++#endif
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/BootSplash.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/BootSplash.c
+index 802430f054a84877df594dd5cc56207ef3d2cb65..775cf86e96a9ac2dae30a05d4e2bb8e79f07fc41 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/BootSplash.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/BootSplash.c
+@@ -11,8 +11,7 @@
+ #include <Protocol/BootLogo2.h>
+ #include <Protocol/GraphicsOutput.h>
+ #include <Protocol/PlatformLogo.h>
+-#include <Library/BmpSupportLib.h>
+-#include <Library/FileHandleLib.h>
++#include <Library/BootSplashLib.h>
+ 
+ /**
+   Read a UINT8 boot splash NVRAM variable or return DefaultValue.
+@@ -55,26 +54,19 @@ BootSplashDisplayCustom (
+   VOID
+   )
+ {
+-  EFI_STATUS                             Status;
+-  UINTN                                  DataSize;
+-  EFI_DEVICE_PATH_PROTOCOL               *StoredPath;
+-  EFI_DEVICE_PATH_PROTOCOL               *FilePath;
+-  EFI_DEVICE_PATH_PROTOCOL               *FilePathWalk;
+-  EFI_FILE_HANDLE                        FileHandle;
+-  UINT64                                 FileSize64;
+-  UINTN                                  FileSize;
+-  VOID                                   *BmpBuffer;
+-  EFI_GRAPHICS_OUTPUT_BLT_PIXEL          *Blt;
+-  UINTN                                  BltSize;
+-  UINTN                                  Height;
+-  UINTN                                  Width;
+-  EFI_GRAPHICS_OUTPUT_PROTOCOL           *GraphicsOutput;
+-  EFI_BOOT_LOGO_PROTOCOL                 *BootLogo;
+-  EDKII_BOOT_LOGO2_PROTOCOL              *BootLogo2;
+-  INTN                                   DestX;
+-  INTN                                   DestY;
+-  UINT32                                 SizeOfX;
+-  UINT32                                 SizeOfY;
++  EFI_STATUS                     Status;
++  UINTN                          DataSize;
++  EFI_DEVICE_PATH_PROTOCOL       *StoredPath;
++  VOID                           *BmpBuffer;
++  UINTN                          BmpSize;
++  EFI_GRAPHICS_OUTPUT_BLT_PIXEL  *Blt;
++  UINTN                          Height;
++  UINTN                          Width;
++  INTN                           DestX;
++  INTN                           DestY;
++  EFI_GRAPHICS_OUTPUT_PROTOCOL   *GraphicsOutput;
++  EFI_BOOT_LOGO_PROTOCOL         *BootLogo;
++  EDKII_BOOT_LOGO2_PROTOCOL      *BootLogo2;
+ 
+   StoredPath = AllocateZeroPool (BOOT_SPLASH_PATH_MAX_SIZE);
+   if (StoredPath == NULL) {
+@@ -96,58 +88,23 @@ BootSplashDisplayCustom (
+     return EFI_NOT_FOUND;
+   }
+ 
+-  FilePath = DuplicateDevicePath (StoredPath);
++  BmpBuffer = NULL;
++  BmpSize   = 0;
++  Status    = BootSplashReadFile (StoredPath, &BmpBuffer, &BmpSize);
+   FreePool (StoredPath);
+-  if (FilePath == NULL) {
+-    return EFI_OUT_OF_RESOURCES;
+-  }
+-
+-  FileHandle   = NULL;
+-  FilePathWalk = FilePath;
+-  Status       = EfiOpenFileByDevicePath (
+-                   &FilePathWalk,
+-                   &FileHandle,
+-                   EFI_FILE_MODE_READ,
+-                   0
+-                   );
+-  FreePool (FilePath);
+-
+-  if (EFI_ERROR (Status) || (FileHandle == NULL)) {
+-    return EFI_ERROR (Status) ? Status : EFI_NOT_FOUND;
+-  }
+-
+-  Status = FileHandleGetSize (FileHandle, &FileSize64);
+-  if (EFI_ERROR (Status) || (FileSize64 == 0) || (FileSize64 > MAX_UINTN)) {
+-    FileHandleClose (FileHandle);
+-    return EFI_UNSUPPORTED;
+-  }
+-
+-  FileSize  = (UINTN)FileSize64;
+-  BmpBuffer = AllocatePool (FileSize);
+-  if (BmpBuffer == NULL) {
+-    FileHandleClose (FileHandle);
+-    return EFI_OUT_OF_RESOURCES;
+-  }
+-
+-  Status = FileHandleRead (FileHandle, &FileSize, BmpBuffer);
+-  FileHandleClose (FileHandle);
+   if (EFI_ERROR (Status)) {
+-    FreePool (BmpBuffer);
+     return Status;
+   }
+ 
+-  Blt     = NULL;
+-  BltSize = 0;
+-  Height  = 0;
+-  Width   = 0;
+-  Status  = TranslateBmpToGopBlt (BmpBuffer, FileSize, &Blt, &BltSize, &Height, &Width);
++  Blt    = NULL;
++  Width  = 0;
++  Height = 0;
++  DestX  = 0;
++  DestY  = 0;
++  Status = BootSplashDecodeBmp (BmpBuffer, BmpSize, &Blt, &Width, &Height, &DestX, &DestY);
+   FreePool (BmpBuffer);
+-  if (EFI_ERROR (Status) || (Blt == NULL) || (Width == 0) || (Height == 0)) {
+-    if (Blt != NULL) {
+-      FreePool (Blt);
+-    }
+-
+-    return EFI_UNSUPPORTED;
++  if (EFI_ERROR (Status) || (Blt == NULL)) {
++    return EFI_ERROR (Status) ? Status : EFI_UNSUPPORTED;
+   }
+ 
+   Status = gBS->HandleProtocol (
+@@ -160,25 +117,6 @@ BootSplashDisplayCustom (
+     return Status;
+   }
+ 
+-  SizeOfX = GraphicsOutput->Mode->Info->HorizontalResolution;
+-  SizeOfY = GraphicsOutput->Mode->Info->VerticalResolution;
+-  if ((Width > SizeOfX) || (Height > SizeOfY)) {
+-    FreePool (Blt);
+-    return EFI_UNSUPPORTED;
+-  }
+-
+-  DestX = (INTN)(SizeOfX - Width) / 2;
+-  if (FixedPcdGetBool (PcdFollowBGRTSpecification)) {
+-    DestY = (INTN)(SizeOfY * 382) / 1000 - (INTN)Height / 2;
+-  } else {
+-    DestY = (INTN)(SizeOfY - Height) / 2;
+-  }
+-
+-  if ((DestX < 0) || (DestY < 0)) {
+-    FreePool (Blt);
+-    return EFI_UNSUPPORTED;
+-  }
+-
+   gST->ConOut->EnableCursor (gST->ConOut, FALSE);
+ 
+   Status = GraphicsOutput->Blt (
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+index 6b015fa452c42602efdc0deb1b811a5f70168543..d1a15df444a8b8a5dc6c7ecba78f73fdba0a235b 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+@@ -42,8 +42,7 @@
+   UefiLib
+   UefiBootManagerLib
+   BootLogoLib
+-  BmpSupportLib
+-  FileHandleLib
++  BootSplashLib
+   PcdLib
+   DxeServicesLib
+   MemoryAllocationLib
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
+index 619b5eebc88c5ab3ce2fe3774e09b2a88617fe81..7f9b4391e5caafa9ea056372b879eb6b5c446885 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dec
++++ b/UefiPayloadPkg/UefiPayloadPkg.dec
+@@ -19,6 +19,7 @@
+ 
+ [LibraryClasses]
+   PayloadEntryHelperLib|Include/Library/PayloadEntryHelperLib.h
++  BootSplashLib|Include/Library/BootSplashLib.h
+ 
+ [Guids]
+   # SMMSTORE for coreboot and EDK-2

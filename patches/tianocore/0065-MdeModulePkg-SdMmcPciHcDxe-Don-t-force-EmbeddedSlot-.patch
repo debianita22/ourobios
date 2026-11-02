@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Sun, 27 Sep 2026 13:24:02 -0500
+Subject: [PATCH] MdeModulePkg/SdMmcPciHcDxe: Don't force EmbeddedSlot for
+ Bayhub
+
+[ouroBIOS: commit c205cebb1a53 of MrChromebox's edk2, as it is]
+
+Forcing EmbeddedSlot for every supported Bayhub/O2 Micro device ID
+breaks removable SD card readers using the same parts: the initial
+card detect is skipped, so empty slots are probed and fail, and the
+hot-plug poll ignores the slot, so cards inserted later are never
+detected.
+
+Honor the slot type reported in the capability register, as before.
+Soldered-down eMMC on a slot reporting removable is still probed as
+long as card detect reports media present.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.c | 9 ---------
+ 1 file changed, 9 deletions(-)
+
+diff --git a/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.c b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.c
+index 17d04a4a009915a60735fd80519e19abf329288d..d3a178c2eddf55dfa5475be6c51ea64b14191a31 100644
+--- a/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.c
++++ b/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.c
+@@ -731,15 +731,6 @@ SdMmcPciHcDriverBindingStart (
+       continue;
+     }
+ 
+-    //
+-    // Bayhub/O2 Micro eMMC controllers may report a removable slot type in the
+-    // SDHCI capability register even when the attached device is soldered-down
+-    // eMMC. Treat Bayhub as EmbeddedSlot so we don't skip eMMC probing.
+-    //
+-    if (BhtHostPciSupport (PciIo)) {
+-      Private->Capability[Slot].SlotType = EmbeddedSlot;
+-    }
+-
+     Private->Slot[Slot].SlotType = Private->Capability[Slot].SlotType;
+     if ((Private->Slot[Slot].SlotType != RemovableSlot) && (Private->Slot[Slot].SlotType != EmbeddedSlot)) {
+       DEBUG ((DEBUG_INFO, "SdMmcPciHcDxe doesn't support the slot type [%d]!!!\n", Private->Slot[Slot].SlotType));

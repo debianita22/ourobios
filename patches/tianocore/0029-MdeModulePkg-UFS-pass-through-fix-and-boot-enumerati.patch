@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Sun, 2 Nov 2025 13:03:23 -0600
+Subject: [PATCH] MdeModulePkg: UFS pass-through fix and boot enumeration
+ filter
+
+[ouroBIOS: commit b8d024260bd7 of MrChromebox's edk2, as it is]
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ .../Bus/Ufs/UfsPassThruDxe/UfsPassThruHci.c   |  1 +
+ .../Library/UefiBootManagerLib/BmBoot.c       | 29 +++++++++++++++++++
+ 2 files changed, 30 insertions(+)
+
+diff --git a/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruHci.c b/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruHci.c
+index 6b433f18e985369204f3f2f4a0a87d4bab620263..0cf10bf4792565dba89573fcca571a4cce044f4b 100644
+--- a/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruHci.c
++++ b/MdeModulePkg/Bus/Ufs/UfsPassThruDxe/UfsPassThruHci.c
+@@ -1866,6 +1866,7 @@ UfsEnableHostController (
+   }
+ 
+   if ((mUfsHcPlatform == NULL) ||
++      (mUfsHcPlatform->Version < 3) ||
+       ((mUfsHcPlatform->Version >= 3) && !mUfsHcPlatform->SkipHceReenable))
+   {
+     //
+diff --git a/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c b/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c
+index 6be86882a00234a66fbeb580cb68644ee9c63864..d5b8433010887e5fb9325a0649f1c3542520194e 100644
+--- a/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c
++++ b/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c
+@@ -2341,6 +2341,7 @@ BmEnumerateBootOptions (
+   UINTN                         Removable;
+   UINTN                         Index;
+   UINTN                         EmmcCount;
++  EFI_DEVICE_PATH_PROTOCOL      *DevicePath;
+   CHAR16                        *Description;
+ 
+   ASSERT (BootOptionCount != NULL);
+@@ -2371,6 +2372,11 @@ BmEnumerateBootOptions (
+         continue;
+       }
+ 
++      DevicePath = DevicePathFromHandle (Handles[Index]);
++      if (DevicePath == NULL) {
++        continue;
++      }
++
+       //
+       // Skip the logical partitions
+       //
+@@ -2437,6 +2443,29 @@ BmEnumerateBootOptions (
+         continue;
+       }
+ 
++      //
++      // Skip non-bootable UFS logical units (only allow LUN 0)
++      //
++      EFI_DEVICE_PATH_PROTOCOL  *Node;
++      BOOLEAN                   SkipHandle;
++
++      SkipHandle = FALSE;
++      for (Node = DevicePath; !IsDevicePathEnd (Node); Node = NextDevicePathNode (Node)) {
++        if ((DevicePathType (Node) == MESSAGING_DEVICE_PATH) &&
++            (DevicePathSubType (Node) == MSG_UFS_DP))
++        {
++          if (((UFS_DEVICE_PATH *)Node)->Lun != 0) {
++            SkipHandle = TRUE;
++          }
++
++          break;
++        }
++      }
++
++      if (SkipHandle) {
++        continue;
++      }
++
+       Description = BmGetBootDescription (Handles[Index]);
+       if (Description == NULL) {
+         continue;

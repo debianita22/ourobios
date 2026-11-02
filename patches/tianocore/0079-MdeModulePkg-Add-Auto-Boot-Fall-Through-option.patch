@@ -1,0 +1,529 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Tue, 27 Oct 2026 18:40:28 -0500
+Subject: [PATCH] MdeModulePkg: Add Auto Boot Fall-Through option
+
+[ouroBIOS: commit 6c14abf865e0 of MrChromebox's edk2, as it is]
+
+A failed automatic BootOrder attempt always waited for a key, so a
+missing removable device blocked later entries. Add an NVRAM setting
+next to Auto Boot Time-out that, when enabled (the default), continues
+to the next BootOrder entry without prompting. Manual selections from
+the boot menu, a hotkey, or BootNext still show the failure prompt.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ .../Include/Library/UefiBootManagerLib.h      |  41 ++++++
+ .../BootMaintenance.c                         |  47 +++++-
+ .../BootMaintenanceManager.h                  |  14 +-
+ .../BootMaintenanceManagerCustomizedUi.c      |   5 +
+ ...ootMaintenanceManagerCustomizedUiSupport.c |  50 +++++++
+ ...ootMaintenanceManagerCustomizedUiSupport.h |  13 ++
+ .../BootMaintenanceManagerStrings.uni         |   8 +
+ .../BootMaintenanceManagerUiLib/FormGuid.h    |   3 +-
+ .../Library/UefiBootManagerLib/BmBoot.c       | 139 +++++++++++++-----
+ MdeModulePkg/Universal/BdsDxe/BdsEntry.c      |   9 +-
+ 10 files changed, 282 insertions(+), 47 deletions(-)
+
+diff --git a/MdeModulePkg/Include/Library/UefiBootManagerLib.h b/MdeModulePkg/Include/Library/UefiBootManagerLib.h
+index 11f7e3fc408081f941096af9c0548bff8b1b410f..632ccfc8d827172a62434ede7237f413cc7542f0 100644
+--- a/MdeModulePkg/Include/Library/UefiBootManagerLib.h
++++ b/MdeModulePkg/Include/Library/UefiBootManagerLib.h
+@@ -406,6 +406,30 @@ EfiBootManagerRefreshAllBootOption (
+   fails the removable media boot algorithm is attempted (\EFI\BOOTIA32.EFI,
+   \EFI\BOOTX64.EFI,... only one file type is tried per processor type)
+ 
++  @param  BootOption        Boot Option to try and boot.
++                            On return, BootOption->Status contains the boot status:
++                            EFI_SUCCESS     BootOption was booted
++                            EFI_UNSUPPORTED BootOption isn't supported.
++                            EFI_NOT_FOUND   The BootOption was not found on the system
++                            Others          BootOption failed with this error status
++  @param  PromptOnFailure   TRUE to display a load-failure message and wait for a
++                            key. FALSE to return immediately so the caller can try
++                            the next boot option. Status reporting is unchanged
++                            in either case.
++
++**/
++VOID
++EFIAPI
++EfiBootManagerBootEx (
++  IN  EFI_BOOT_MANAGER_LOAD_OPTION  *BootOption,
++  IN  BOOLEAN                       PromptOnFailure
++  );
++
++/**
++  Attempt to boot the EFI boot option and prompt if the load fails.
++
++  Equivalent to EfiBootManagerBootEx() with PromptOnFailure set to TRUE.
++
+   @param  BootOption    Boot Option to try and boot.
+                         On return, BootOption->Status contains the boot status:
+                         EFI_SUCCESS     BootOption was booted
+@@ -420,6 +444,23 @@ EfiBootManagerBoot (
+   IN  EFI_BOOT_MANAGER_LOAD_OPTION  *BootOption
+   );
+ 
++/**
++  Return whether automatic BootOrder processing should fall through on a load
++  failure without waiting for a key.
++
++  Reads the non-volatile AutoBootFallThrough variable from the Boot Maintenance
++  Manager namespace. Defaults to TRUE when the variable is unset.
++
++  @retval TRUE   Fall through to the next BootOrder entry on load failure.
++  @retval FALSE  Prompt and wait for a key on load failure.
++
++**/
++BOOLEAN
++EFIAPI
++EfiBootManagerGetAutoBootFallThrough (
++  VOID
++  );
++
+ /**
+   Return the boot option corresponding to the Boot Manager Menu.
+   It may automatically create one if the boot option hasn't been created yet.
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenance.c b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenance.c
+index aff96c6c50feff010f59f22990ff7d0926713b50..99709982e7c416ac4305eba17605d852cdda8196 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenance.c
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenance.c
+@@ -897,6 +897,25 @@ BootMaintRouteConfig (
+     Private->BmmOldFakeNVData.BootTimeOut = NewBmmData->BootTimeOut;
+   }
+ 
++  if (CompareMem (&NewBmmData->AutoBootFallThrough, &OldBmmData->AutoBootFallThrough, sizeof (NewBmmData->AutoBootFallThrough)) != 0) {
++    UINT8  FallThroughValue;
++
++    FallThroughValue = (NewBmmData->AutoBootFallThrough != 0) ? 1 : 0;
++    Status           = gRT->SetVariable (
++                              L"AutoBootFallThrough",
++                              &mBootMaintGuid,
++                              EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS | EFI_VARIABLE_NON_VOLATILE,
++                              sizeof (UINT8),
++                              &FallThroughValue
++                              );
++    if (EFI_ERROR (Status)) {
++      Offset = OFFSET_OF (BMM_FAKE_NV_DATA, AutoBootFallThrough);
++      goto Exit;
++    }
++
++    Private->BmmOldFakeNVData.AutoBootFallThrough = FallThroughValue;
++  }
++
+   DEBUG ((DEBUG_VERBOSE, "BMM: BootDevicePriority - New: %d, Old: %d\n", NewBmmData->BootDevicePriority, OldBmmData->BootDevicePriority));
+   if (CompareMem (&NewBmmData->BootDevicePriority, &OldBmmData->BootDevicePriority, sizeof (NewBmmData->BootDevicePriority)) != 0) {
+     UINT8  PrioritizeInternalValue;
+@@ -1414,7 +1433,8 @@ DiscardChangeHandler (
+       break;
+ 
+     case FORM_TIME_OUT_ID:
+-      CurrentFakeNVMap->BootTimeOut = Private->BmmOldFakeNVData.BootTimeOut;
++      CurrentFakeNVMap->BootTimeOut           = Private->BmmOldFakeNVData.BootTimeOut;
++      CurrentFakeNVMap->AutoBootFallThrough = Private->BmmOldFakeNVData.AutoBootFallThrough;
+       break;
+ 
+     case FORM_DRV_ADD_HANDLE_DESC_ID:
+@@ -1575,6 +1595,31 @@ InitializeBmmConfig (
+     }
+   }
+ 
++  //
++  // Initialize AutoBootFallThrough from runtime variable.
++  // 0 = Disabled (prompt), 1 = Enabled (fall through). Default enabled.
++  //
++  {
++    UINT8       FallThrough;
++    UINTN       FallThroughSize;
++    EFI_STATUS  Status;
++
++    CallbackData->BmmFakeNvData.AutoBootFallThrough = 1;
++    FallThroughSize = sizeof (FallThrough);
++    Status          = gRT->GetVariable (
++                             L"AutoBootFallThrough",
++                             &mBootMaintGuid,
++                             NULL,
++                             &FallThroughSize,
++                             &FallThrough
++                             );
++    if (!EFI_ERROR (Status) && (FallThroughSize == sizeof (FallThrough))) {
++      CallbackData->BmmFakeNvData.AutoBootFallThrough = (FallThrough != 0) ? 1 : 0;
++    }
++
++    CallbackData->BmmOldFakeNVData.AutoBootFallThrough = CallbackData->BmmFakeNvData.AutoBootFallThrough;
++  }
++
+   //
+   // Initialize BootDevicePriority from runtime variable, fallback to PCD
+   // 0 = External (default), 1 = Internal
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManager.h b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManager.h
+index ae50b9fb412a762c5aec5112f9ed8b0759400568..98c2e7ddeaf855f187180fbf8699ddcd8aae7f8d 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManager.h
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManager.h
+@@ -154,9 +154,10 @@ typedef enum _TYPE_OF_TERMINAL {
+ //
+ #define QUESTION_ID(Field)  (VAR_OFFSET (Field) + CONFIG_OPTION_OFFSET)
+ 
+-#define BOOT_TIME_OUT_VAR_OFFSET        VAR_OFFSET (BootTimeOut)
+-#define BOOT_NEXT_VAR_OFFSET            VAR_OFFSET (BootNext)
+-#define BOOT_DEVICE_PRIORITY_VAR_OFFSET VAR_OFFSET (BootDevicePriority)
++#define BOOT_TIME_OUT_VAR_OFFSET         VAR_OFFSET (BootTimeOut)
++#define BOOT_NEXT_VAR_OFFSET             VAR_OFFSET (BootNext)
++#define BOOT_DEVICE_PRIORITY_VAR_OFFSET  VAR_OFFSET (BootDevicePriority)
++#define AUTO_BOOT_FALL_THROUGH_VAR_OFFSET VAR_OFFSET (AutoBootFallThrough)
+ #define COM1_BAUD_RATE_VAR_OFFSET       VAR_OFFSET (COM1BaudRate)
+ #define COM1_DATA_RATE_VAR_OFFSET       VAR_OFFSET (COM1DataRate)
+ #define COM1_STOP_BITS_VAR_OFFSET       VAR_OFFSET (COM1StopBits)
+@@ -193,9 +194,10 @@ typedef enum _TYPE_OF_TERMINAL {
+ #define COM_TERMINAL_VAR_OFFSET         VAR_OFFSET (COMTerminalType)
+ #define COM_FLOWCONTROL_VAR_OFFSET      VAR_OFFSET (COMFlowControl)
+ 
+-#define BOOT_TIME_OUT_QUESTION_ID        QUESTION_ID (BootTimeOut)
+-#define BOOT_NEXT_QUESTION_ID            QUESTION_ID (BootNext)
+-#define BOOT_DEVICE_PRIORITY_QUESTION_ID QUESTION_ID (BootDevicePriority)
++#define BOOT_TIME_OUT_QUESTION_ID         QUESTION_ID (BootTimeOut)
++#define BOOT_NEXT_QUESTION_ID             QUESTION_ID (BootNext)
++#define BOOT_DEVICE_PRIORITY_QUESTION_ID  QUESTION_ID (BootDevicePriority)
++#define AUTO_BOOT_FALL_THROUGH_QUESTION_ID QUESTION_ID (AutoBootFallThrough)
+ #define COM1_BAUD_RATE_QUESTION_ID       QUESTION_ID (COM1BaudRate)
+ #define COM1_DATA_RATE_QUESTION_ID       QUESTION_ID (COM1DataRate)
+ #define COM1_STOP_BITS_QUESTION_ID       QUESTION_ID (COM1StopBits)
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUi.c b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUi.c
+index 9bf84175403e750dc77956a223ad2e6e0912258a..fe9a47f736875fcc9973ec61a42147a0855252ad 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUi.c
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUi.c
+@@ -83,6 +83,11 @@ UiCustomizeBMMPage (
+   // Create "Time Out" menu.
+   //
+   BmmCreateTimeOutMenu (HiiHandle, StartOpCodeHandle);
++
++  //
++  // Create "Auto Boot Fall-Through" menu next to the time-out.
++  //
++  BmmCreateAutoBootFallThroughMenu (HiiHandle, StartOpCodeHandle);
+ }
+ 
+ /**
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.c b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.c
+index 170fdc1b2bb222a73ad0fe5ee823771850a23d3b..40e18a428086c4a9e2529da81ee542349721d0f5 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.c
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.c
+@@ -214,6 +214,56 @@ BmmCreateTimeOutMenu (
+     );
+ }
+ 
++/**
++  Create Auto Boot Fall-Through menu in the page.
++
++  @param[in]    HiiHandle           The hii handle for the Uiapp driver.
++  @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
++
++**/
++VOID
++BmmCreateAutoBootFallThroughMenu (
++  IN EFI_HII_HANDLE  HiiHandle,
++  IN VOID            *StartOpCodeHandle
++  )
++{
++  VOID  *OptionsOpCodeHandle;
++
++  OptionsOpCodeHandle = HiiAllocateOpCodeHandle ();
++  ASSERT (OptionsOpCodeHandle != NULL);
++
++  HiiCreateOneOfOptionOpCode (
++    OptionsOpCodeHandle,
++    STRING_TOKEN (STR_AUTO_BOOT_FALL_THROUGH_DISABLED),
++    0,
++    EFI_IFR_TYPE_NUM_SIZE_8,
++    0
++    );
++
++  HiiCreateOneOfOptionOpCode (
++    OptionsOpCodeHandle,
++    STRING_TOKEN (STR_AUTO_BOOT_FALL_THROUGH_ENABLED),
++    0,
++    EFI_IFR_TYPE_NUM_SIZE_8,
++    1
++    );
++
++  HiiCreateOneOfOpCode (
++    StartOpCodeHandle,
++    AUTO_BOOT_FALL_THROUGH_QUESTION_ID,
++    VARSTORE_ID_BOOT_MAINT,
++    AUTO_BOOT_FALL_THROUGH_VAR_OFFSET,
++    STRING_TOKEN (STR_AUTO_BOOT_FALL_THROUGH_PROMPT),
++    STRING_TOKEN (STR_AUTO_BOOT_FALL_THROUGH_HELP),
++    EFI_IFR_FLAG_CALLBACK,
++    EFI_IFR_NUMERIC_SIZE_1,
++    OptionsOpCodeHandle,
++    NULL
++    );
++
++  HiiFreeOpCodeHandle (OptionsOpCodeHandle);
++}
++
+ /**
+   Extract device path for given HII handle and class guid.
+ 
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.h b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.h
+index 888c84b0705d875d020fa577cc34317b625f935b..3e0e49a2c77981475d1fe739eb0d39c6dc1383c0 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.h
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerCustomizedUiSupport.h
+@@ -99,6 +99,19 @@ BmmCreateTimeOutMenu (
+   IN VOID            *StartOpCodeHandle
+   );
+ 
++/**
++  Create Auto Boot Fall-Through menu in the page.
++
++  @param[in]    HiiHandle           The hii handle for the Uiapp driver.
++  @param[in]    StartOpCodeHandle   The opcode handle to save the new opcode.
++
++**/
++VOID
++BmmCreateAutoBootFallThroughMenu (
++  IN EFI_HII_HANDLE  HiiHandle,
++  IN VOID            *StartOpCodeHandle
++  );
++
+ /**
+   Rename the driver name if necessary.
+ 
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerStrings.uni b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerStrings.uni
+index f644a491793911efe4972b7d0babeb8894c53d0b..191a1c03ba7c1369b9ce921e6c904c85bce18fec 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerStrings.uni
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/BootMaintenanceManagerStrings.uni
+@@ -123,6 +123,14 @@
+                                        #language fr-FR  "Auto Boot Time-out"
+ #string STR_HLP_AUTO_BOOT              #language en-US  "Range: 0 to 65535 seconds, 0 means no wait, 65535 means waiting for key"
+                                        #language fr-FR  "Range: 0 to 65535 seconds, 0 means no wait, 65535 means waiting for key"
++#string STR_AUTO_BOOT_FALL_THROUGH_PROMPT #language en-US "Auto Boot Fall-Through"
++                                          #language fr-FR "Auto Boot Fall-Through"
++#string STR_AUTO_BOOT_FALL_THROUGH_HELP   #language en-US "When Enabled, a failed automatic BootOrder attempt continues to the next entry without waiting for a key. Manual selections from the boot menu always show the failure prompt."
++                                          #language fr-FR "When Enabled, a failed automatic BootOrder attempt continues to the next entry without waiting for a key. Manual selections from the boot menu always show the failure prompt."
++#string STR_AUTO_BOOT_FALL_THROUGH_DISABLED #language en-US "Disabled"
++                                            #language fr-FR "Disabled"
++#string STR_AUTO_BOOT_FALL_THROUGH_ENABLED  #language en-US "Enabled"
++                                            #language fr-FR "Enabled"
+ #string STR_BOOT_NEXT                  #language en-US  "Boot Next Value"
+                                        #language fr-FR  "Boot Next Value"
+ #string STR_BOOT_NEXT_HELP             #language en-US  "Next boot use this boot option"
+diff --git a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/FormGuid.h b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/FormGuid.h
+index 2992a3641132d003be211dbe4edb6172a276eba2..c8527c0467c9668dfeea763fe32d16abee204e29 100644
+--- a/MdeModulePkg/Library/BootMaintenanceManagerUiLib/FormGuid.h
++++ b/MdeModulePkg/Library/BootMaintenanceManagerUiLib/FormGuid.h
+@@ -94,12 +94,13 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ ///
+ typedef struct {
+   //
+-  // Three questions displayed at the main page
++  // Questions displayed at the main page
+   // for Timeout, BootNext, Variables respectively
+   //
+   UINT16     BootTimeOut;
+   UINT32     BootNext;
+   UINT8      BootDevicePriority;  // 0 = External, 1 = Internal
++  UINT8      AutoBootFallThrough; // 0 = Prompt on failure, 1 = Fall through
+ 
+   //
+   // This is the COM1 Attributes value storage
+diff --git a/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c b/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c
+index d5b8433010887e5fb9325a0649f1c3542520194e..381716eceb52adfcde05a1c4ec353788166aea41 100644
+--- a/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c
++++ b/MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c
+@@ -27,7 +27,7 @@ EFI_GUID  mBmAutoCreateBootOptionGuid = {
+ };
+ 
+ // Boot Maintenance Manager Formset GUID (from FormGuid.h)
+-// Used for PrioritizeInternal variable namespace
++// Used for PrioritizeInternal / AutoBootFallThrough variable namespace
+ STATIC EFI_GUID  mBootMaintGuid = {
+   0x642237c7, 0x35d4, 0x472d, { 0x83, 0x65, 0x12, 0xe0, 0xcc, 0xf2, 0x7a, 0x22 }
+ };
+@@ -1929,19 +1929,23 @@ BmReportLoadFailure (
+   is attempted (\EFI\BOOTIA32.EFI, \EFI\BOOTX64.EFI,... only one file type
+   is tried per processor type)
+ 
+-  @param  BootOption    Boot Option to try and boot.
+-                        On return, BootOption->Status contains the boot status.
+-                        EFI_SUCCESS     BootOption was booted
+-                        EFI_UNSUPPORTED A BBS device path was found with no valid callback
+-                                        registered via EfiBootManagerInitialize().
+-                        EFI_NOT_FOUND   The BootOption was not found on the system
+-                        !EFI_SUCCESS    BootOption failed with this error status
++  @param  BootOption        Boot Option to try and boot.
++                            On return, BootOption->Status contains the boot status.
++                            EFI_SUCCESS     BootOption was booted
++                            EFI_UNSUPPORTED A BBS device path was found with no valid callback
++                                            registered via EfiBootManagerInitialize().
++                            EFI_NOT_FOUND   The BootOption was not found on the system
++                            !EFI_SUCCESS    BootOption failed with this error status
++  @param  PromptOnFailure   TRUE to display a load-failure message and wait for a
++                            key. FALSE to return immediately so the caller can try
++                            the next boot option.
+ 
+ **/
+ VOID
+ EFIAPI
+-EfiBootManagerBoot (
+-  IN  EFI_BOOT_MANAGER_LOAD_OPTION  *BootOption
++EfiBootManagerBootEx (
++  IN  EFI_BOOT_MANAGER_LOAD_OPTION  *BootOption,
++  IN  BOOLEAN                       PromptOnFailure
+   )
+ {
+   EFI_STATUS                 Status;
+@@ -2100,37 +2104,44 @@ EfiBootManagerBoot (
+       BmReportLoadFailure (EFI_SW_DXE_BS_EC_BOOT_OPTION_LOAD_ERROR, Status);
+       BootOption->Status = Status;
+ 
+-      if (gST->ConOut != NULL) {
+-        //
+-        // Clear screen
+-        //
+-        gST->ConOut->ClearScreen (gST->ConOut);
++      //
++      // Automatic BootOrder processing may pass PromptOnFailure as FALSE so a
++      // missing device falls through to the next option. Menu, hotkey, and
++      // BootNext selections still prompt.
++      //
++      if (PromptOnFailure) {
++        if (gST->ConOut != NULL) {
++          //
++          // Clear screen
++          //
++          gST->ConOut->ClearScreen (gST->ConOut);
+ 
+-        AsciiPrint (
+-            "Booting from '%s' failed: %r\n"
+-            "\nVerify it contains/points to a valid 64-bit UEFI OS.\n"
+-            "\nPress any key to continue\n",
+-            BootOption->Description, Status);
++          AsciiPrint (
++              "Booting from '%s' failed: %r\n"
++              "\nVerify it contains/points to a valid 64-bit UEFI OS.\n"
++              "\nPress any key to continue\n",
++              BootOption->Description, Status);
+ 
+-        //
+-        // When UEFI Secure Boot is enabled, unsigned modules won't load.
+-        //
+-        SecureBoot = NULL;
+-        GetEfiGlobalVariable2 (EFI_SECURE_BOOT_MODE_NAME, (VOID**)&SecureBoot, NULL);
+-        if ((SecureBoot != NULL) && (*SecureBoot == SECURE_BOOT_MODE_ENABLE)) {
+-          AsciiPrint ("SecureBoot is enabled; ensure selected boot entry is compatible.\n\n");
+-          FreePool (SecureBoot);
++          //
++          // When UEFI Secure Boot is enabled, unsigned modules won't load.
++          //
++          SecureBoot = NULL;
++          GetEfiGlobalVariable2 (EFI_SECURE_BOOT_MODE_NAME, (VOID**)&SecureBoot, NULL);
++          if ((SecureBoot != NULL) && (*SecureBoot == SECURE_BOOT_MODE_ENABLE)) {
++            AsciiPrint ("SecureBoot is enabled; ensure selected boot entry is compatible.\n\n");
++            FreePool (SecureBoot);
++          }
++        }
++        if (gST->ConIn != NULL) {
++          Status = gBS->WaitForEvent (1, &gST->ConIn->WaitForKey, &Index);
++          ASSERT_EFI_ERROR (Status);
++          ASSERT (Index == 0);
++          while (!EFI_ERROR (gST->ConIn->ReadKeyStroke (gST->ConIn, &Key))) {}
+         }
+-      }
+-      if (gST->ConIn != NULL) {
+-        Status = gBS->WaitForEvent (1, &gST->ConIn->WaitForKey, &Index);
+-        ASSERT_EFI_ERROR (Status);
+-        ASSERT (Index == 0);
+-        while (!EFI_ERROR (gST->ConIn->ReadKeyStroke (gST->ConIn, &Key))) {}
+-      }
+ 
+-      if (gST->ConOut != NULL) {
+-        gST->ConOut->ClearScreen (gST->ConOut);
++        if (gST->ConOut != NULL) {
++          gST->ConOut->ClearScreen (gST->ConOut);
++        }
+       }
+ 
+       return;
+@@ -2255,6 +2266,60 @@ EfiBootManagerBoot (
+   ASSERT (Status == EFI_SUCCESS || Status == EFI_NOT_FOUND);
+ }
+ 
++/**
++  Attempt to boot the EFI boot option and prompt if the load fails.
++
++  Equivalent to EfiBootManagerBootEx() with PromptOnFailure set to TRUE.
++
++  @param  BootOption    Boot Option to try and boot.
++                        On return, BootOption->Status contains the boot status.
++
++**/
++VOID
++EFIAPI
++EfiBootManagerBoot (
++  IN  EFI_BOOT_MANAGER_LOAD_OPTION  *BootOption
++  )
++{
++  EfiBootManagerBootEx (BootOption, TRUE);
++}
++
++/**
++  Return whether automatic BootOrder processing should fall through on a load
++  failure without waiting for a key.
++
++  @retval TRUE   Fall through to the next BootOrder entry on load failure.
++  @retval FALSE  Prompt and wait for a key on load failure.
++
++**/
++BOOLEAN
++EFIAPI
++EfiBootManagerGetAutoBootFallThrough (
++  VOID
++  )
++{
++  EFI_STATUS  Status;
++  UINT8       FallThrough;
++  UINTN       Size;
++
++  Size   = sizeof (FallThrough);
++  Status = gRT->GetVariable (
++                  L"AutoBootFallThrough",
++                  &mBootMaintGuid,
++                  NULL,
++                  &Size,
++                  &FallThrough
++                  );
++  if (!EFI_ERROR (Status) && (Size == sizeof (FallThrough))) {
++    return (BOOLEAN)(FallThrough != 0);
++  }
++
++  //
++  // Default enabled so a missing removable device does not block BootOrder.
++  //
++  return TRUE;
++}
++
+ /**
+   Check whether there is a instance in BlockIoDevicePath, which contain multi device path
+   instances, has the same partition node with HardDriveDevicePath device path
+diff --git a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+index 8c4064c191f217ea7f4c05e759b7ca468f439fe8..e6925b9cd2d636bc499eb5b0280328cb7002dbee 100644
+--- a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
++++ b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+@@ -409,9 +409,14 @@ BootBootOptions (
+ 
+     //
+     // All the driver options should have been processed since
+-    // now boot will be performed.
++    // now boot will be performed. When AutoBootFallThrough is
++    // enabled, a failed automatic attempt continues to the next
++    // BootOrder entry without a key prompt.
+     //
+-    EfiBootManagerBoot (&BootOptions[Index]);
++    EfiBootManagerBootEx (
++      &BootOptions[Index],
++      (BOOLEAN)(!EfiBootManagerGetAutoBootFallThrough ())
++      );
+ 
+     //
+     // If infinite retries is enabled, do not break out of the loop.

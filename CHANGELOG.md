@@ -57,11 +57,25 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   current payload gives; the runtime services moved as boot.efi moves them,
   the TPM 1.2 and an authenticated store on an erased SMMSTORE are known
   gaps, each with what closes it. No release image changes.
-- Step (b) of the move starts: [`edk2/OuroBiosPkg`](edk2/README.md), the
-  package of the payload outside the EDK II tree, a `.dec` and the
-  platform as a patch on `UefiPayloadPkg.dsc`, built by coreboot with
-  patch 0216 (`EDK2_PLATFORM_DSC`, `EDK2_PACKAGES_PATH`; with the defaults
-  the boards build as before) into a third image of `edk2-upstream`.
+- Steps (b) and (c) of the move: the payload of the ROMs as a package
+  on TianoCore's tag, with the same sources. `tools/edk2-import.py` makes
+  [`edk2/OuroBiosPkg`](edk2/README.md) (the modules that TianoCore does
+  not have: the setup, the splash, the password, the default Secure Boot
+  keys, the update screen..., and the platform, `UefiPayloadPkg.dsc` and
+  `.fdf` as patches on TianoCore's) and `patches/tianocore` (79 commits of
+  MrChromebox and 31 patches of `patches/edk2`, each without the files of
+  the package) from MrChromebox's tree with `patches/edk2`, and checks
+  that the tag with the series is that tree in every other file; LvglPkg
+  is a package of its own next to it. coreboot builds it with patch 0216
+  (`EDK2_PLATFORM_DSC`, `EDK2_PACKAGES_PATH`, relative to the coreboot
+  tree) and 0217 (the LVGL renderer and the default Secure Boot for a
+  custom repository; for MrChromebox's nothing changes), into the third
+  image of `edk2-upstream`, and `tools/build.sh edk2-parity` builds the
+  payload of each board from it to compare it, byte for byte, with the
+  one of the ROMs (`tools/fv-diff.py` says which modules differ). The
+  boards still build from MrChromebox's tree; `tools/upstream.sh
+  tianocore` also checks every week that `patches/tianocore` applies to
+  a newer stable tag.
 - [docs/edk2-migration.md](docs/edk2-migration.md): the 100 commits of
   MrChromebox's branch over `edk2-stable202608`, each with what it
   becomes in the move to TianoCore (the project's package, a patch to

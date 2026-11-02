@@ -1,0 +1,39 @@
+## @file
+#  Refuse CSMWrap, the legacy BIOS in the firmware volume, while Secure Boot
+#  is on: a Security2 handler for SecurityStubDxe.
+#
+#  Copyright (c) 2026, ouroBIOS contributors
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = CsmWrapSecureBootLib
+  FILE_GUID                      = E4D0E1EE-D12F-4359-9903-A4189E87549F
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = NULL|DXE_DRIVER DXE_RUNTIME_DRIVER UEFI_APPLICATION UEFI_DRIVER
+  CONSTRUCTOR                    = CsmWrapSecureBootLibConstructor
+
+[Sources]
+  CsmWrapSecureBootLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  UefiPayloadPkg/UefiPayloadPkg.dec
+
+[LibraryClasses]
+  BaseMemoryLib
+  DebugLib
+  DevicePathLib
+  PcdLib
+  SecurityManagementLib
+  UefiLib
+  UefiRuntimeServicesTableLib
+
+[Guids]
+  gEfiGlobalVariableGuid          ## SOMETIMES_CONSUMES ## Variable:L"SecureBoot"
+
+[Pcd]
+  gUefiPayloadPkgTokenSpaceGuid.PcdCsmWrapFile    ## CONSUMES

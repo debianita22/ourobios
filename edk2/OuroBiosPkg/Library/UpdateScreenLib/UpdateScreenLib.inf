@@ -1,0 +1,46 @@
+## @file
+#  The firmware update screen of ouroBIOS: the ouroboros of the logo as the
+#  progress, the map of the flash blocks being written, the versions and the
+#  vboot slots.  Also the DisplayUpdateProgressLib of the payload.
+#
+#  UpdateScreenFont.c is made by tools/ui-font.py of ouroBIOS from the fonts
+#  of LvglPkg, when the tree is prepared.
+#
+#  Copyright (c) 2026, ouroBIOS contributors
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x00010005
+  BASE_NAME      = UpdateScreenLib
+  FILE_GUID      = 7D674A69-54EF-44DB-B04E-686198201CED
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS  = DisplayUpdateProgressLib|DXE_DRIVER UEFI_DRIVER UEFI_APPLICATION
+  LIBRARY_CLASS  = UpdateScreenLib|DXE_DRIVER UEFI_DRIVER UEFI_APPLICATION
+
+[Sources]
+  UpdateScreenLib.c
+  UpdateScreenDraw.c
+  UpdateScreenDraw.h
+  UpdateScreenFont.c
+  UpdateScreenFont.h
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  UefiPayloadPkg/UefiPayloadPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  MemoryAllocationLib
+  PrintLib
+  UefiBootServicesTableLib
+  UefiLib
+  UefiRuntimeServicesTableLib
+
+[Protocols]
+  gEfiGraphicsOutputProtocolGuid      ## SOMETIMES_CONSUMES
+  gFirmwareUpdateStatusProtocolGuid   ## SOMETIMES_CONSUMES

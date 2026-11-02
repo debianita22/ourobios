@@ -2257,6 +2257,16 @@ else
 		fi
 	done
 	ok "${pins}: ${n} commit pinnati"
+	# LvglPkg del package su TianoCore (LVGLPKG_COMMIT di tools/build.sh): il
+	# submodule del pin di EDK2 dei defconfig, come per le ROM
+	rev="$(sed -n 's/^CONFIG_EDK2_TAG_OR_REV="\(.*\)"$/\1/p' configs/w541-mrc.defconfig)"
+	l="$(awk -v r="${rev}" '$1 == r { print $2 }' "${pins}")"
+	m="$(sed -n 's/^LVGLPKG_COMMIT="\([0-9a-f]\{40\}\)"$/\1/p' tools/build.sh)"
+	if [ -n "${m}" ] && [ "${m}" = "${l}" ]; then
+		ok "LVGLPKG_COMMIT ${m:0:12}: LvglPkg del pin di EDK2 ${rev:0:12} in ${pins}"
+	else
+		bad "LVGLPKG_COMMIT di tools/build.sh '${m}' non e' LvglPkg del pin di EDK2 in ${pins} ('${l}')"
+	fi
 fi
 
 step "link nei documenti"

@@ -1,0 +1,192 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Fri, 29 Jul 2022 15:22:38 -0500
+Subject: [PATCH] UefiPayloadPkg/MdeModulePkg: Add boot progress text support
+
+[ouroBIOS: commit 0c433f7db1c6 of MrChromebox's edk2, without the files
+that TianoCore's tree does not have (tools/edk2-import.py): 1 in
+edk2/OuroBiosPkg]
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ MdeModulePkg/Include/Library/BootLogoLib.h    | 13 +++++
+ .../Library/BootLogoLib/BootLogoLib.c         | 53 +++++++++++++++++++
+ .../PlatformBootManager.c                     | 50 ++++++++++++-----
+ .../PlatformBootManagerLib.inf                |  1 +
+ UefiPayloadPkg/UefiPayloadPkg.dec             |  3 ++
+ 5 files changed, 108 insertions(+), 12 deletions(-)
+
+diff --git a/MdeModulePkg/Include/Library/BootLogoLib.h b/MdeModulePkg/Include/Library/BootLogoLib.h
+index 19894b27cbf848e3109fc32a6340cf12f0d79203..88094f4bf6dec505b7c4301c7224378b31bbdcd6 100644
+--- a/MdeModulePkg/Include/Library/BootLogoLib.h
++++ b/MdeModulePkg/Include/Library/BootLogoLib.h
+@@ -58,3 +58,16 @@ BootLogoUpdateProgress (
+   IN UINTN                          Progress,
+   IN UINTN                          PreviousValue
+   );
++
++/**
++
++  Clear progress bar and title above it. It only works in Graphics mode.
++
++  @retval  EFI_STATUS    Successly clear the progress bar
++
++**/
++EFI_STATUS
++EFIAPI
++BootLogoClearProgress (
++  VOID
++  );
+diff --git a/MdeModulePkg/Library/BootLogoLib/BootLogoLib.c b/MdeModulePkg/Library/BootLogoLib/BootLogoLib.c
+index 5beb0e0aa547a188a0269598c122c6adb7b10933..cba6f1983f645d83ec8eed5a1c74d4debe10ba94 100644
+--- a/MdeModulePkg/Library/BootLogoLib/BootLogoLib.c
++++ b/MdeModulePkg/Library/BootLogoLib/BootLogoLib.c
+@@ -435,3 +435,56 @@ BootLogoUpdateProgress (
+ 
+   return EFI_SUCCESS;
+ }
++
++/**
++
++  Clear progress bar and title above it. It only works in Graphics mode.
++
++  @retval  EFI_STATUS    Successly clear the progress bar
++
++**/
++EFI_STATUS
++EFIAPI
++BootLogoClearProgress (
++  VOID
++  )
++{
++  EFI_STATUS                     Status;
++  EFI_GRAPHICS_OUTPUT_PROTOCOL   *GraphicsOutput;
++  UINT32                         SizeOfX;
++  UINT32                         SizeOfY;
++  EFI_GRAPHICS_OUTPUT_BLT_PIXEL  Color;
++  UINTN                          PosY;
++
++  Status  = gBS->HandleProtocol (gST->ConsoleOutHandle, &gEfiGraphicsOutputProtocolGuid, (VOID **)&GraphicsOutput);
++
++  if (EFI_ERROR (Status)) {
++    return EFI_UNSUPPORTED;
++  }
++
++  SizeOfX = GraphicsOutput->Mode->Info->HorizontalResolution;
++  SizeOfY = GraphicsOutput->Mode->Info->VerticalResolution;
++
++  PosY = SizeOfY * 48 / 50;
++
++  //
++  // Clear progress area
++  //
++  SetMem (&Color, sizeof (EFI_GRAPHICS_OUTPUT_BLT_PIXEL), 0x0);
++
++  Status = GraphicsOutput->Blt (
++                              GraphicsOutput,
++                              &Color,
++                              EfiBltVideoFill,
++                              0,
++                              0,
++                              0,
++                              PosY - EFI_GLYPH_HEIGHT - 1,
++                              SizeOfX,
++                              SizeOfY - (PosY - EFI_GLYPH_HEIGHT - 1),
++                              SizeOfX * sizeof (EFI_GRAPHICS_OUTPUT_BLT_PIXEL)
++                              );
++
++
++  return EFI_SUCCESS;
++}
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+index 0788d850abf35065663553e8525c8da873d0b6be..328696860c2f56d8f9a68114a9eccb33e04c874a 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+@@ -356,19 +356,41 @@ PlatformBootManagerAfterConsole (
+   PlatformRegisterFvBootOption (&gUefiShellFileGuid, L"UEFI Shell", LOAD_OPTION_ACTIVE);
+ 
+   if (FixedPcdGetBool (PcdBootManagerEscape)) {
+-    Print (
+-      L"\n"
+-      L"    Esc or Down      to enter Boot Manager Menu.\n"
+-      L"    ENTER            to boot directly.\n"
+-      L"\n"
+-      );
++    if (FixedPcdGetBool (PcdSerialTerminalPrintEnabled)) {
++      Print (
++        L"\n"
++        L"    Esc              to enter Setup Option Menu.\n"
++        L"    ENTER            to boot directly.\n"
++        L"\n"
++        );
++    } else {
++      BootLogoUpdateProgress (
++        White,
++        Black,
++        L"Press ESC for Boot Options/Settings",
++        White,
++        0,
++        0
++        );
++    }
+   } else {
+-    Print (
+-      L"\n"
+-      L"    F2 or Down      to enter Boot Manager Menu.\n"
+-      L"    ENTER           to boot directly.\n"
+-      L"\n"
+-      );
++    if (FixedPcdGetBool (PcdSerialTerminalPrintEnabled)) {
++      Print (
++        L"\n"
++        L"    F2 or Down      to enter Setup Option Menu.\n"
++        L"    ENTER           to boot directly.\n"
++        L"\n"
++        );
++    } else {
++      BootLogoUpdateProgress (
++        White,
++        Black,
++        L"Press F2 or Down for Boot Options/Settings",
++        White,
++        0,
++        0
++        );
++    }
+   }
+ }
+ 
+@@ -383,6 +405,10 @@ PlatformBootManagerWaitCallback (
+   UINT16  TimeoutRemain
+   )
+ {
++  if (TimeoutRemain == 0) {
++    BootLogoClearProgress ();
++  }
++
+   return;
+ }
+ 
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+index e803cc80c5cd6b9157dc0b06ed6249dce210da94..372d26da49bd0c504183f5ba4decf89338710d6f 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+@@ -73,3 +73,4 @@
+   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultParity
+   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultStopBits
+   gUefiPayloadPkgTokenSpaceGuid.PcdBootManagerEscape
++  gUefiPayloadPkgTokenSpaceGuid.PcdSerialTerminalPrintEnabled
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
+index 2e135007299103099418cc42d8ace02eb74a9144..bba04554f801a7e87bbfc1b40abf2721e36552d6 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dec
++++ b/UefiPayloadPkg/UefiPayloadPkg.dec
+@@ -90,6 +90,9 @@ gUefiPayloadPkgTokenSpaceGuid.PcdPcdDriverFile|{ 0x57, 0x72, 0xcf, 0x80, 0xab, 0
+ # Boot Manager Key
+ gUefiPayloadPkgTokenSpaceGuid.PcdBootManagerEscape|FALSE|BOOLEAN|0x00000020
+ 
++# Enable serial terminal print for boot menu prompt
++gUefiPayloadPkgTokenSpaceGuid.PcdSerialTerminalPrintEnabled|FALSE|BOOLEAN|0x00000021
++
+ ## FFS filename to find the default variable initial data file.
+ # @Prompt FFS Name of variable initial data file
+  gUefiPayloadPkgTokenSpaceGuid.PcdNvsDataFile |{ 0x1a, 0xf1, 0xb1, 0xae, 0x42, 0xcc, 0xcf, 0x4e, 0xac, 0x60, 0xdb, 0xab, 0xf6, 0xca, 0x69, 0xe6 }|VOID*|0x00000025

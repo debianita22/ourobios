@@ -1,0 +1,73 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Tue, 17 Dec 2019 22:50:56 -0600
+Subject: [PATCH] MdeModulePkg/Usb/Keyboard.c: remove Get/SetConfig calls
+
+[ouroBIOS: commit 4c7652540373 of MrChromebox's edk2, as it is]
+
+SetConfig is already called during device enumeration,
+no need to do it again here.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+Change-Id: I5595c2ace40520a0c9438687f29c4d51cd5de741
+---
+ MdeModulePkg/Bus/Usb/UsbKbDxe/KeyBoard.c | 39 ------------------------
+ 1 file changed, 39 deletions(-)
+
+diff --git a/MdeModulePkg/Bus/Usb/UsbKbDxe/KeyBoard.c b/MdeModulePkg/Bus/Usb/UsbKbDxe/KeyBoard.c
+index aef1f8cb9bf43a7632ef4d04b243355b07f97f08..6424121a935abf3d357e3bf661ece77638728452 100644
+--- a/MdeModulePkg/Bus/Usb/UsbKbDxe/KeyBoard.c
++++ b/MdeModulePkg/Bus/Usb/UsbKbDxe/KeyBoard.c
+@@ -808,10 +808,6 @@ InitUSBKeyboard (
+   IN OUT USB_KB_DEV  *UsbKeyboardDevice
+   )
+ {
+-  UINT16      ConfigValue;
+-  EFI_STATUS  Status;
+-  UINT32      TransferResult;
+-
+   REPORT_STATUS_CODE_WITH_DEVICE_PATH (
+     EFI_PROGRESS_CODE,
+     (EFI_PERIPHERAL_KEYBOARD | EFI_P_KEYBOARD_PC_SELF_TEST),
+@@ -822,41 +818,6 @@ InitUSBKeyboard (
+   InitQueue (&UsbKeyboardDevice->EfiKeyQueue, sizeof (EFI_KEY_DATA));
+   InitQueue (&UsbKeyboardDevice->EfiKeyQueueForNotify, sizeof (EFI_KEY_DATA));
+ 
+-  //
+-  // Use the config out of the descriptor
+-  // Assumed the first config is the correct one and this is not always the case
+-  //
+-  Status = UsbGetConfiguration (
+-             UsbKeyboardDevice->UsbIo,
+-             &ConfigValue,
+-             &TransferResult
+-             );
+-  if (EFI_ERROR (Status)) {
+-    ConfigValue = 0x01;
+-    //
+-    // Uses default configuration to configure the USB Keyboard device.
+-    //
+-    Status = UsbSetConfiguration (
+-               UsbKeyboardDevice->UsbIo,
+-               ConfigValue,
+-               &TransferResult
+-               );
+-    if (EFI_ERROR (Status)) {
+-      //
+-      // If configuration could not be set here, it means
+-      // the keyboard interface has some errors and could
+-      // not be initialized
+-      //
+-      REPORT_STATUS_CODE_WITH_DEVICE_PATH (
+-        EFI_ERROR_CODE | EFI_ERROR_MINOR,
+-        (EFI_PERIPHERAL_KEYBOARD | EFI_P_EC_INTERFACE_ERROR),
+-        UsbKeyboardDevice->DevicePath
+-        );
+-
+-      return EFI_DEVICE_ERROR;
+-    }
+-  }
+-
+   //
+   // Set boot protocol for the USB Keyboard.
+   // This driver only supports boot protocol.

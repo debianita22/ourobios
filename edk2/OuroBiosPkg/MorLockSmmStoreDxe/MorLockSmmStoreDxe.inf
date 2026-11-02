@@ -1,0 +1,39 @@
+## @file
+#  The lock of TCG Secure MOR that coreboot keeps in SMM, as
+#  EDKII_PLATFORM_MOR_LOCK_PROTOCOL for the variable driver.
+#
+#  Copyright (c) 2026, Domenico D'Arrigo. All rights reserved.<BR>
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = MorLockSmmStoreDxe
+  FILE_GUID                      = 95CF01A8-BAB6-437B-9D9C-6BA66C75B947
+  MODULE_TYPE                    = DXE_RUNTIME_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = MorLockSmmStoreDxeEntryPoint
+
+[Sources]
+  MorLockSmmStoreDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  UefiPayloadPkg/UefiPayloadPkg.dec
+
+[LibraryClasses]
+  DebugLib
+  SmmStoreLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiRuntimeLib
+
+[Guids]
+  gEfiEventVirtualAddressChangeGuid  ## CONSUMES ## Event
+
+[Protocols]
+  gEdkiiPlatformMorLockProtocolGuid  ## SOMETIMES_PRODUCES
+
+[Depex]
+  TRUE

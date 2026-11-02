@@ -1,0 +1,932 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patrick Rudolph <patrick.rudolph@9elements.com>
+Date: Tue, 26 Jan 2021 14:17:40 +0100
+Subject: [PATCH] UefiPayloadPkg/SecurityPkg/OvmfPkg: Add TPM 1.2/2.0 support
+
+[ouroBIOS: commit c11151598eb8 of MrChromebox's edk2, without the files
+that TianoCore's tree does not have (tools/edk2-import.py): 13 in
+edk2/OuroBiosPkg]
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ OvmfPkg/Include/Dsc/OvmfTpmLibs.dsc.inc       |  1 +
+ .../Library/Tcg2PhysicalPresencePlatformLib.h | 29 +++++++
+ .../DxeTcg2PhysicalPresenceLib.c              | 76 ++++++++-----------
+ .../DxeTcg2PhysicalPresenceLib.inf            |  2 +-
+ .../DxeTcg2PhysicalPresencePlatformLib.c      | 56 ++++++++++++++
+ .../DxeTcg2PhysicalPresencePlatformLib.inf    | 36 +++++++++
+ .../Include/Library/TcgPhysicalPresenceLib.h  | 27 ++++++-
+ SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c             | 16 ++++
+ SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf           |  1 +
+ SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf |  1 +
+ SecurityPkg/Tcg/TcgConfigDxe/TcgConfigImpl.c  | 19 ++++-
+ UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c    | 23 ++++++
+ UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf  |  4 +
+ UefiPayloadPkg/Include/Coreboot.h             | 26 +++++++
+ .../Include/Guid/TcgPhysicalPresenceGuid.h    | 30 ++++++++
+ UefiPayloadPkg/Include/Library/BlParseLib.h   | 16 ++++
+ .../Library/CbParseLib/CbParseLib.c           | 46 +++++++++++
+ .../PlatformBootManager.c                     |  8 ++
+ .../PlatformBootManager.h                     |  2 +
+ .../PlatformBootManagerLib.inf                |  3 +
+ .../Library/SblParseLib/SblParseLib.c         | 15 ++++
+ UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c   | 13 ++++
+ .../UefiPayloadEntry/UefiPayloadEntry.c       | 13 ++++
+ .../UefiPayloadEntry/UefiPayloadEntry.h       |  1 +
+ .../UefiPayloadEntry/UefiPayloadEntry.inf     |  1 +
+ UefiPayloadPkg/UefiPayloadPkg.dec             |  2 +
+ 26 files changed, 421 insertions(+), 46 deletions(-)
+ create mode 100644 OvmfPkg/Include/Library/Tcg2PhysicalPresencePlatformLib.h
+ create mode 100644 OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.c
+ create mode 100644 OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.inf
+ create mode 100644 UefiPayloadPkg/Include/Guid/TcgPhysicalPresenceGuid.h
+
+diff --git a/OvmfPkg/Include/Dsc/OvmfTpmLibs.dsc.inc b/OvmfPkg/Include/Dsc/OvmfTpmLibs.dsc.inc
+index d664775718b328df3161e829a0fc36794ce860ed..04541f5d91ab81a1792212b041fafa10339500e1 100644
+--- a/OvmfPkg/Include/Dsc/OvmfTpmLibs.dsc.inc
++++ b/OvmfPkg/Include/Dsc/OvmfTpmLibs.dsc.inc
+@@ -10,6 +10,7 @@
+ !endif
+   Tpm2CommandLib|SecurityPkg/Library/Tpm2CommandLib/Tpm2CommandLib.inf
+   Tcg2PhysicalPresenceLib|OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.inf
++  Tcg2PhysicalPresencePlatformLib|OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.inf
+   Tcg2PpVendorLib|SecurityPkg/Library/Tcg2PpVendorLibNull/Tcg2PpVendorLibNull.inf
+ !else
+   Tcg2PhysicalPresenceLib|OvmfPkg/Library/Tcg2PhysicalPresenceLibNull/DxeTcg2PhysicalPresenceLib.inf
+diff --git a/OvmfPkg/Include/Library/Tcg2PhysicalPresencePlatformLib.h b/OvmfPkg/Include/Library/Tcg2PhysicalPresencePlatformLib.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..76bfd2a87fa0b57c7bb069119065644ddf1780d4
+--- /dev/null
++++ b/OvmfPkg/Include/Library/Tcg2PhysicalPresencePlatformLib.h
+@@ -0,0 +1,29 @@
++/** @file
++  Returns the platform specific Physical Presence configuration.
++
++  Copyright (C) 2020 9elements GmbH
++
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++
++#ifndef __TCG2_PHYSICAL_PRESENCE_PLATFORM_LIB_H__
++#define __TCG2_PHYSICAL_PRESENCE_PLATFORM_LIB_H__
++
++#include <IndustryStandard/QemuTpm.h>
++
++/**
++  Reads the platform specific Physical Presence configuration.
++
++  @param[out]  The Config structure to read to.
++  @param[out]  The PPIinMMIO is True when the PPI is in MMIO memory space
++
++  @retval EFI_SUCCESS           Operation completed successfully.
++  @retval EFI_PROTOCOL_ERROR    Invalid fw_cfg entry size.
++**/
++EFI_STATUS
++TpmPPIPlatformReadConfig (
++  OUT QEMU_FWCFG_TPM_CONFIG *Config,
++  OUT BOOLEAN               *PPIinMMIO
++  );
++
++#endif
+diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c b/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c
+index 403802025156f5d0f6a815f1aa353fb9166f1d82..cc9bd9f00d451b66b7ef6ffe6461ac7eaf0a2f70 100644
+--- a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c
++++ b/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c
+@@ -27,8 +27,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Library/HobLib.h>
+ #include <Library/MemoryAllocationLib.h>
+ #include <Library/PrintLib.h>
+-#include <Library/QemuFwCfgLib.h>
+ #include <Library/Tpm2CommandLib.h>
++#include <Library/Tcg2PhysicalPresencePlatformLib.h>
+ #include <Library/UefiBootServicesTableLib.h>
+ #include <Library/UefiLib.h>
+ #include <Library/UefiRuntimeServicesTableLib.h>
+@@ -40,42 +40,13 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ 
+ EFI_HII_HANDLE  mTcg2PpStringPackHandle;
+ 
++/* Wait 3 minutes for user input */
++#define TIMEOUT                     (1000 * 1000 * 60 * 3)
++
+ #define TPM_PPI_FLAGS  (QEMU_TPM_PPI_FUNC_ALLOWED_USR_REQ)
+ 
+ STATIC volatile QEMU_TPM_PPI  *mPpi;
+ 
+-/**
+-  Reads QEMU PPI config from fw_cfg.
+-
+-  @param[out]  The Config structure to read to.
+-
+-  @retval EFI_SUCCESS           Operation completed successfully.
+-  @retval EFI_PROTOCOL_ERROR    Invalid fw_cfg entry size.
+-**/
+-STATIC
+-EFI_STATUS
+-QemuTpmReadConfig (
+-  OUT QEMU_FWCFG_TPM_CONFIG  *Config
+-  )
+-{
+-  EFI_STATUS            Status;
+-  FIRMWARE_CONFIG_ITEM  FwCfgItem;
+-  UINTN                 FwCfgSize;
+-
+-  Status = QemuFwCfgFindFile ("etc/tpm/config", &FwCfgItem, &FwCfgSize);
+-  if (EFI_ERROR (Status)) {
+-    return Status;
+-  }
+-
+-  if (FwCfgSize != sizeof (*Config)) {
+-    return EFI_PROTOCOL_ERROR;
+-  }
+-
+-  QemuFwCfgSelectItem (FwCfgItem);
+-  QemuFwCfgReadBytes (sizeof (*Config), Config);
+-  return EFI_SUCCESS;
+-}
+-
+ /**
+   Initializes QEMU PPI memory region.
+ 
+@@ -90,6 +61,7 @@ QemuTpmInitPPI (
+ {
+   EFI_STATUS                       Status;
+   QEMU_FWCFG_TPM_CONFIG            Config;
++  BOOLEAN                          PPIinMMIO;
+   EFI_PHYSICAL_ADDRESS             PpiAddress64;
+   EFI_GCD_MEMORY_SPACE_DESCRIPTOR  Descriptor;
+   UINTN                            Idx;
+@@ -98,7 +70,7 @@ QemuTpmInitPPI (
+     return EFI_SUCCESS;
+   }
+ 
+-  Status = QemuTpmReadConfig (&Config);
++  Status = TpmPPIPlatformReadConfig (&Config, &PPIinMMIO);
+   if (EFI_ERROR (Status)) {
+     return Status;
+   }
+@@ -124,12 +96,20 @@ QemuTpmInitPPI (
+     goto InvalidPpiAddress;
+   }
+ 
+-  if (!EFI_ERROR (Status) &&
+-      ((Descriptor.GcdMemoryType != EfiGcdMemoryTypeMemoryMappedIo) &&
+-       (Descriptor.GcdMemoryType != EfiGcdMemoryTypeNonExistent)))
+-  {
+-    DEBUG ((DEBUG_ERROR, "[TPM2PP] mPpi has an invalid memory type\n"));
+-    goto InvalidPpiAddress;
++  if (PPIinMMIO) {
++    if (!EFI_ERROR (Status) &&
++        (Descriptor.GcdMemoryType != EfiGcdMemoryTypeMemoryMappedIo &&
++        Descriptor.GcdMemoryType != EfiGcdMemoryTypeNonExistent)) {
++      DEBUG ((DEBUG_ERROR, "[TPM2PP] mPpi has an invalid memory type\n"));
++      goto InvalidPpiAddress;
++    }
++  } else {
++    if (!EFI_ERROR (Status) &&
++      (Descriptor.GcdMemoryType != EfiGcdMemoryTypeReserved &&
++       Descriptor.GcdMemoryType != EfiGcdMemoryTypeSystemMemory)) {
++      DEBUG ((DEBUG_ERROR, "[TPM2PP] mPpi has an invalid memory type\n"));
++      goto InvalidPpiAddress;
++    }
+   }
+ 
+   for (Idx = 0; Idx < ARRAY_SIZE (mPpi->Func); Idx++) {
+@@ -359,12 +339,16 @@ Tcg2ExecutePhysicalPresence (
+ STATIC
+ BOOLEAN
+ Tcg2ReadUserKey (
+-  IN     BOOLEAN  CautionKey
++  IN     BOOLEAN  CautionKey,
++  IN     UINTN    Timeout
+   )
+ {
+   EFI_STATUS     Status;
+   EFI_INPUT_KEY  Key;
+   UINT16         InputKey;
++  UINTN          Delay;
++
++  Delay = Timeout / 50;
+ 
+   InputKey = 0;
+   do {
+@@ -383,7 +367,13 @@ Tcg2ReadUserKey (
+         InputKey = Key.ScanCode;
+       }
+     }
+-  } while (InputKey == 0);
++    gBS->Stall (50);
++    Delay--;
++  } while (InputKey == 0 && Delay > 0);
++
++  if (Delay == 0) {
++    return FALSE;
++  }
+ 
+   if (InputKey != SCAN_ESC) {
+     return TRUE;
+@@ -652,7 +642,7 @@ Tcg2UserConfirm (
+   FreePool (ConfirmText);
+   HiiRemovePackages (mTcg2PpStringPackHandle);
+ 
+-  if (Tcg2ReadUserKey (CautionKey)) {
++  if (Tcg2ReadUserKey (CautionKey, TIMEOUT)) {
+     return TRUE;
+   }
+ 
+diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.inf b/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.inf
+index 7cfc0804b2e2af232df08f02a66a54e4ed5ac48d..904eafe295a8f9fa56525a7403fc2319273eedfc 100644
+--- a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.inf
++++ b/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.inf
+@@ -57,12 +57,12 @@
+   HobLib
+   MemoryAllocationLib
+   PrintLib
+-  QemuFwCfgLib
+   Tpm2CommandLib
+   UefiBootManagerLib
+   UefiBootServicesTableLib
+   UefiLib
+   UefiRuntimeServicesTableLib
++  Tcg2PhysicalPresencePlatformLib
+ 
+ [Protocols]
+   gEfiTcg2ProtocolGuid                 ## SOMETIMES_CONSUMES
+diff --git a/OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.c b/OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..baef59d2efba7d6dcd5b3fdf829b06e1cc06e468
+--- /dev/null
++++ b/OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.c
+@@ -0,0 +1,56 @@
++/** @file
++  Returns the platform specific configuration for the QEMU PPI.
++
++  Caution: This module requires additional review when modified.
++  This driver will have external input - variable.
++  This external input must be validated carefully to avoid security issue.
++
++Copyright (C) 2018, Red Hat, Inc.
++Copyright (c) 2018, IBM Corporation. All rights reserved.<BR>
++Copyright (c) 2013 - 2016, Intel Corporation. All rights reserved.<BR>
++SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#include <PiDxe.h>
++
++#include <IndustryStandard/QemuTpm.h>
++
++#include <Library/QemuFwCfgLib.h>
++#include <Library/Tcg2PhysicalPresencePlatformLib.h>
++
++/**
++  Reads QEMU PPI config from fw_cfg.
++
++  @param[out]  The Config structure to read to.
++  @param[out]  The PPIinMMIO is True when the PPI is in MMIO memory space
++
++  @retval EFI_SUCCESS           Operation completed successfully.
++  @retval EFI_PROTOCOL_ERROR    Invalid fw_cfg entry size.
++**/
++EFI_STATUS
++TpmPPIPlatformReadConfig (
++  OUT QEMU_FWCFG_TPM_CONFIG *Config,
++  OUT BOOLEAN               *PPIinMMIO
++  )
++{
++  EFI_STATUS           Status;
++  FIRMWARE_CONFIG_ITEM FwCfgItem;
++  UINTN                FwCfgSize;
++
++  Status = QemuFwCfgFindFile ("etc/tpm/config", &FwCfgItem, &FwCfgSize);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  if (FwCfgSize != sizeof (*Config)) {
++    return EFI_PROTOCOL_ERROR;
++  }
++
++  QemuFwCfgSelectItem (FwCfgItem);
++  QemuFwCfgReadBytes (sizeof (*Config), Config);
++
++  *PPIinMMIO = TRUE;
++
++  return EFI_SUCCESS;
++}
+diff --git a/OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.inf b/OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.inf
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ea0c08d4c55a915b650ed48d41603cc2e38a3c3
+--- /dev/null
++++ b/OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.inf
+@@ -0,0 +1,36 @@
++## @file
++# Returns the platform specific configuration for the QEMU PPI.
++#
++#  Caution: This module requires additional review when modified.
++#  This driver will have external input - variable.
++#  This external input must be validated carefully to avoid security issue.
++#
++# Copyright (C) 2018, Red Hat, Inc.
++# Copyright (c) 2013 - 2018, Intel Corporation. All rights reserved.<BR>
++# SPDX-License-Identifier: BSD-2-Clause-Patent
++#
++##
++
++[Defines]
++  INF_VERSION                    = 0x00010005
++  BASE_NAME                      = Tcg2PhysicalPresencePlatformLibQemu
++  FILE_GUID                      = 9336E7F0-6CA1-4E6D-A0E9-DFE5F077AA02
++  MODULE_TYPE                    = DXE_DRIVER
++  VERSION_STRING                 = 1.0
++  LIBRARY_CLASS                  = Tcg2PhysicalPresencePlatformLib|DXE_DRIVER DXE_RUNTIME_DRIVER UEFI_APPLICATION UEFI_DRIVER
++
++#
++# The following information is for reference only and not required by the build tools.
++#
++#  VALID_ARCHITECTURES           = IA32 X64 EBC
++#
++
++[Sources]
++  DxeTcg2PhysicalPresencePlatformLib.c
++
++[Packages]
++  OvmfPkg/OvmfPkg.dec
++  MdePkg/MdePkg.dec
++
++[LibraryClasses]
++  QemuFwCfgLib
+diff --git a/SecurityPkg/Include/Library/TcgPhysicalPresenceLib.h b/SecurityPkg/Include/Library/TcgPhysicalPresenceLib.h
+index a23ed7cc7dbfbc4f9370202b380e27441ea962b2..7b5322a037ec80584d961be253d69fb6d7bc11ba 100644
+--- a/SecurityPkg/Include/Library/TcgPhysicalPresenceLib.h
++++ b/SecurityPkg/Include/Library/TcgPhysicalPresenceLib.h
+@@ -21,8 +21,11 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+   to display request information and get user input to confirm the request. This API should also
+   be invoked as early as possible as TPM is locked in this function.
+ 
++  @retval EFI_SUCCESS       Flags were returns successfully.
++  @retval other             Failed to process.
++
+ **/
+-VOID
++EFI_STATUS
+ EFIAPI
+ TcgPhysicalPresenceLibProcessRequest (
+   VOID
+@@ -43,3 +46,25 @@ EFIAPI
+ TcgPhysicalPresenceLibNeedUserConfirm (
+   VOID
+   );
++
++/**
++  The handler for TPM physical presence function:
++  Submit TPM Operation Request to Pre-OS Environment and
++  Submit TPM Operation Request to Pre-OS Environment 2.
++
++  This API should be invoked in OS runtime phase to interface with ACPI method.
++
++  Caution: This function may receive untrusted input.
++
++  @param[in]      OperationRequest TPM physical presence operation request.
++  @param[in]      RequestParameter TPM physical presence operation request parameter.
++
++  @return Return Code for Submit TPM Operation Request to Pre-OS Environment and
++          Submit TPM Operation Request to Pre-OS Environment 2.
++**/
++UINT32
++EFIAPI
++TcgPhysicalPresenceLibSubmitRequestToPreOSFunction (
++  IN UINT32  OperationRequest,
++  IN UINT32  RequestParameter
++  );
+diff --git a/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c b/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c
+index 096e3ef6ebe816c333c8a2d9e0f3e1546e58726b..ea89b29001d6175ad8eebb91dca33217cf0018b6 100644
+--- a/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c
++++ b/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c
+@@ -2776,6 +2776,7 @@ DriverEntry (
+   EFI_TCG2_EVENT_ALGORITHM_BITMAP  TpmHashAlgorithmBitmap;
+   UINT32                           ActivePCRBanks;
+   UINT32                           NumberOfPCRBanks;
++  UINT32                           Tpm2PcrMask;
+ 
+   mImageHandle = ImageHandle;
+ 
+@@ -2883,6 +2884,21 @@ DriverEntry (
+   DEBUG ((DEBUG_INFO, "Tcg2.NumberOfPCRBanks      - 0x%08x\n", mTcgDxeData.BsCap.NumberOfPCRBanks));
+   DEBUG ((DEBUG_INFO, "Tcg2.ActivePcrBanks        - 0x%08x\n", mTcgDxeData.BsCap.ActivePcrBanks));
+ 
++  //
++  // On platforms without a PEI phase (e.g. the UEFI payload), Tcg2Pei never
++  // runs, so its SyncPcrAllocationsAndPcrMask() never reconciles the desired
++  // PCR mask (PcdTpm2HashMask) against the banks the TPM actually supports.
++  // Constrain the mask to the supported bitmap here so later measurements do
++  // not target unsupported banks. On platforms where Tcg2Pei already ran the
++  // values match and this is a no-op.
++  //
++  Tpm2PcrMask = PcdGet32 (PcdTpm2HashMask);
++  if (Tpm2PcrMask != mTcgDxeData.BsCap.HashAlgorithmBitmap) {
++    Tpm2PcrMask &= mTcgDxeData.BsCap.HashAlgorithmBitmap;
++    Status       = PcdSet32S (PcdTpm2HashMask, Tpm2PcrMask);
++    ASSERT_EFI_ERROR (Status);
++  }
++
+   if (mTcgDxeData.BsCap.TPMPresentFlag) {
+     //
+     // Setup the log area and copy event log from hob list to it
+diff --git a/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf b/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf
+index d291c032543a46d3d20e39712bb329894f1fbd64..cd984dea2c803800a8d590ba0a0aec56d218c291 100644
+--- a/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf
++++ b/SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf
+@@ -110,6 +110,7 @@
+   gEfiSecurityPkgTokenSpaceGuid.PcdTpm2AcpiTableLasa                        ## PRODUCES
+   gEfiMdeModulePkgTokenSpaceGuid.PcdTcgPfpMeasurementRevision               ## CONSUMES
+   gEfiMdeModulePkgTokenSpaceGuid.PcdEnableSpdmDeviceAuthentication           ## CONSUMES
++  gEfiSecurityPkgTokenSpaceGuid.PcdTpm2HashMask                             ## PRODUCES
+ 
+ [Depex]
+   # According to PcdTpm2AcpiTableRev definition in SecurityPkg.dec
+diff --git a/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf b/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf
+index 24428e050c3f30c0698e5f88b74a7f17cb21c854..ee43dc429bf75e2a4c28902554e5478750e58796 100644
+--- a/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf
++++ b/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf
+@@ -48,6 +48,7 @@
+   PcdLib
+   PrintLib
+   Tpm12DeviceLib
++  TcgPhysicalPresenceLib
+ 
+ [Guids]
+   ## SOMETIMES_PRODUCES ## Variable:L"PhysicalPresence"
+diff --git a/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigImpl.c b/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigImpl.c
+index 52ea1ac3aeaf1ada0ed22664787078e9cee5c4d6..2570b9cac1973a757e08640121b2baa8b53ef16f 100644
+--- a/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigImpl.c
++++ b/SecurityPkg/Tcg/TcgConfigDxe/TcgConfigImpl.c
+@@ -7,6 +7,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ **/
+ 
+ #include "TcgConfigImpl.h"
++#include <IndustryStandard/TcgPhysicalPresence.h>
++#include <Library//TcgPhysicalPresenceLib.h>
+ 
+ CHAR16  mTcgStorageName[] = L"TCG_CONFIGURATION";
+ 
+@@ -41,6 +43,8 @@ HII_VENDOR_DEVICE_PATH  mTcgHiiVendorDevicePath = {
+   }
+ };
+ 
++UINT8  mCurrentPpRequest;
++
+ /**
+   Get current state of TPM device.
+ 
+@@ -302,6 +306,7 @@ SavePpRequest (
+   EFI_STATUS             Status;
+   UINTN                  DataSize;
+   EFI_PHYSICAL_PRESENCE  PpData;
++  UINT32      ReturnCode;
+ 
+   //
+   // Save TPM command to variable.
+@@ -330,7 +335,19 @@ SavePpRequest (
+     return Status;
+   }
+ 
+-  return EFI_SUCCESS;
++  ReturnCode = TcgPhysicalPresenceLibSubmitRequestToPreOSFunction (PpRequest, 0);
++  if (ReturnCode == TCG_PP_SUBMIT_REQUEST_TO_PREOS_SUCCESS) {
++    mCurrentPpRequest = PpRequest;
++    Status            = EFI_SUCCESS;
++  } else if (ReturnCode == TCG_PP_SUBMIT_REQUEST_TO_PREOS_GENERAL_FAILURE) {
++    Status = EFI_OUT_OF_RESOURCES;
++  } else if (ReturnCode == TCG_PP_SUBMIT_REQUEST_TO_PREOS_NOT_IMPLEMENTED) {
++    Status = EFI_UNSUPPORTED;
++  } else {
++    Status = EFI_DEVICE_ERROR;
++  }
++
++  return Status;
+ }
+ 
+ /**
+diff --git a/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c b/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c
+index 866ca70394ca43257cb0ac5e2e41009f1b0b02c0..0696e86ef1b6df177fd444b3b5a41d5823ab0412 100644
+--- a/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c
++++ b/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c
+@@ -7,6 +7,7 @@
+ 
+ **/
+ #include "BlSupportDxe.h"
++#include <Guid/TpmInstance.h>
+ 
+ /**
+   Main entry for the bootloader support DXE module.
+@@ -32,6 +33,7 @@ BlDxeEntryPoint (
+   FIRMWARE_INFO              *FirmwareInfo;
+   EFI_SYSTEM_RESOURCE_TABLE  *Esrt;
+   EFI_SYSTEM_RESOURCE_ENTRY  *Esre;
++  UINTN                      Size;
+ 
+   //
+   // Find the frame buffer information and update PCDs
+@@ -59,6 +61,27 @@ BlDxeEntryPoint (
+     ASSERT_EFI_ERROR (Status);
+     Status = PcdSet64S (PcdPciExpressBaseSize, AcpiBoardInfo->PcieBaseSize);
+     ASSERT_EFI_ERROR (Status);
++
++    if (AcpiBoardInfo->TPM12Present)
++    {
++      Size = sizeof (gEfiTpmDeviceInstanceTpm12Guid);
++      Status = PcdSetPtrS (
++               PcdTpmInstanceGuid,
++               &Size,
++               &gEfiTpmDeviceInstanceTpm12Guid
++               );
++      ASSERT_EFI_ERROR (Status);
++    }
++    else if (AcpiBoardInfo->TPM20Present)
++    {
++      Size = sizeof (gEfiTpmDeviceInstanceTpm20DtpmGuid);
++      Status = PcdSetPtrS (
++                 PcdTpmInstanceGuid,
++                 &Size,
++                 &gEfiTpmDeviceInstanceTpm20DtpmGuid
++                 );
++      ASSERT_EFI_ERROR (Status);
++    }
+   }
+ 
+   Status = BlArchAdditionalOps (ImageHandle, SystemTable);
+diff --git a/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf b/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf
+index c1fe073634d3645ce5db41de57515b718db1e423..731455f73fe9118dc10fac91badbbf95ef017f78 100644
+--- a/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf
++++ b/UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf
+@@ -38,6 +38,7 @@
+   MdeModulePkg/MdeModulePkg.dec
+   UefiPayloadPkg/UefiPayloadPkg.dec
+   UefiCpuPkg/UefiCpuPkg.dec
++  SecurityPkg/SecurityPkg.dec
+ 
+ [LibraryClasses]
+   UefiDriverEntryPoint
+@@ -55,6 +56,8 @@
+   gEfiFirmwareInfoHobGuid
+   gEfiGraphicsInfoHobGuid
+   gEfiSystemResourceTableGuid
++  gEfiTpmDeviceInstanceTpm20DtpmGuid  ## SOMETIMES_CONSUMES
++  gEfiTpmDeviceInstanceTpm12Guid      ## SOMETIMES_CONSUMES
+ 
+ [Protocols]
+   gEfiCpuArchProtocolGuid
+@@ -66,6 +69,7 @@
+   gEfiMdeModulePkgTokenSpaceGuid.PcdSetupVideoVerticalResolution
+   gEfiMdePkgTokenSpaceGuid.PcdPciExpressBaseAddress
+   gEfiMdePkgTokenSpaceGuid.PcdPciExpressBaseSize
++  gEfiSecurityPkgTokenSpaceGuid.PcdTpmInstanceGuid        ## SOMETIMES_PRODUCES
+ 
+ [Pcd.AARCH64]
+   gEfiMdeModulePkgTokenSpaceGuid.PcdSerialRegisterBase
+diff --git a/UefiPayloadPkg/Include/Coreboot.h b/UefiPayloadPkg/Include/Coreboot.h
+index 4d0d2cc1e4e1045bb023e200ad165c5316d44829..395cb6ea5abab467d006cd86da14f004e4ac2702 100644
+--- a/UefiPayloadPkg/Include/Coreboot.h
++++ b/UefiPayloadPkg/Include/Coreboot.h
+@@ -302,4 +302,30 @@ struct cb_range {
+ 
+ typedef struct cb_memory CB_MEMORY;
+ 
++#define CB_TAG_TPM_PPI_HANDOFF       0x003a
++
++enum lb_tmp_ppi_tpm_version {
++	LB_TPM_VERSION_UNSPEC = 0,
++	LB_TPM_VERSION_TPM_VERSION_1_2,
++	LB_TPM_VERSION_TPM_VERSION_2,
++};
++
++/*
++ * Handoff buffer for TPM Physical Presence Interface.
++ * * ppi_address   Pointer to PPI buffer shared with ACPI
++ *                 The layout of the buffer matches the QEMU virtual memory device
++ *                 that is generated by QEMU.
++ *                 See files 'hw/i386/acpi-build.c' and 'include/hw/acpi/tpm.h'
++ *                 for details.
++ * * tpm_version   TPM version: 1 for TPM1.2, 2 for TPM2.0
++ * * ppi_version   BCD encoded version of TPM PPI interface
++ */
++struct cb_tpm_physical_presence {
++	UINT32 tag;
++	UINT32 size;
++	UINT32 ppi_address;	/* Address of ACPI PPI communication buffer */
++	UINT8 tpm_version;	/* 1: TPM1.2, 2: TPM2.0 */
++	UINT8 ppi_version;	/* BCD encoded */
++} __attribute__((packed));
++
+ #endif // _COREBOOT_PEI_H_INCLUDED_
+diff --git a/UefiPayloadPkg/Include/Guid/TcgPhysicalPresenceGuid.h b/UefiPayloadPkg/Include/Guid/TcgPhysicalPresenceGuid.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..1f8ca6e3ab390a8c0deb37e2b05ac255f1513c49
+--- /dev/null
++++ b/UefiPayloadPkg/Include/Guid/TcgPhysicalPresenceGuid.h
+@@ -0,0 +1,30 @@
++/** @file
++  This file defines the hob structure for Tcg Physical Presence Interface.
++
++  Copyright (c) 2020, 9elements Agency GmbH<BR>
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++
++**/
++
++#ifndef __TCG_PHYSICAL_PRESENCE_GUID_H__
++#define __TCG_PHYSICAL_PRESENCE_GUID_H__
++
++///
++/// TCG Physical Presence Information GUID
++///
++extern EFI_GUID gEfiTcgPhysicalPresenceInfoHobGuid;
++
++typedef struct {
++  UINT32 PpiAddress;
++  UINT8  TpmVersion;
++  UINT8  PpiVersion;
++} TCG_PHYSICAL_PRESENCE_INFO;
++
++#define UEFIPAYLOAD_TPM_VERSION_UNSPEC    0
++#define UEFIPAYLOAD_TPM_VERSION_1_2       1
++#define UEFIPAYLOAD_TPM_VERSION_2         2
++
++#define UEFIPAYLOAD_TPM_PPI_VERSION_NONE  0
++#define UEFIPAYLOAD_TPM_PPI_VERSION_1_30  1
++
++#endif
+diff --git a/UefiPayloadPkg/Include/Library/BlParseLib.h b/UefiPayloadPkg/Include/Library/BlParseLib.h
+index 365a0f34d89f479b4a6399915477deb77d6ab8f6..19cdc60955a4ac345f2f422b313ebd9870dc2757 100644
+--- a/UefiPayloadPkg/Include/Library/BlParseLib.h
++++ b/UefiPayloadPkg/Include/Library/BlParseLib.h
+@@ -17,6 +17,7 @@
+ #include <Guid/FirmwareInfoGuid.h>
+ #include <UniversalPayload/AcpiTable.h>
+ #include <UniversalPayload/SmbiosTable.h>
++#include <Guid/TcgPhysicalPresenceGuid.h>
+ 
+ #define GET_BOOTLOADER_PARAMETER()  PcdGet64 (PcdBootloaderParameter)
+ 
+@@ -182,3 +183,18 @@ EFIAPI
+ ParseCapsules (
+   IN BL_CAPSULE_CALLBACK  CapsuleCallback
+   );
++
++/**
++  Find the Tcg Physical Presence store information
++
++  @param  PPIInfo       Pointer to the TCG_PHYSICAL_PRESENCE_INFO structure
++
++  @retval RETURN_SUCCESS     Successfully find the SMM store buffer information.
++  @retval RETURN_NOT_FOUND   Failed to find the SMM store buffer information .
++
++**/
++RETURN_STATUS
++EFIAPI
++ParseTPMPPIInfo (
++  OUT TCG_PHYSICAL_PRESENCE_INFO       *PPIInfo
++  );
+diff --git a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
+index 0f6d1d506fe65f0948c22ddf545bc74b4150deac..852dd1dde989fb54b1ab95aabecef756b104b4a1 100644
+--- a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
++++ b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
+@@ -750,3 +750,49 @@ ParseCapsules (
+ 
+   return RETURN_SUCCESS;
+ }
++
++/**
++  Find the Tcg Physical Presence store information
++  @param  PPIInfo       Pointer to the TCG_PHYSICAL_PRESENCE_INFO structure
++  @retval RETURN_SUCCESS     Successfully find the SMM store buffer information.
++  @retval RETURN_NOT_FOUND   Failed to find the SMM store buffer information .
++**/
++RETURN_STATUS
++EFIAPI
++ParseTPMPPIInfo (
++  OUT TCG_PHYSICAL_PRESENCE_INFO       *PPIInfo
++  )
++{
++  struct cb_tpm_physical_presence       *CbTPPRec;
++  UINT8 VersionMajor;
++  UINT8 VersionMinor;
++
++  if (PPIInfo == NULL) {
++    return RETURN_INVALID_PARAMETER;
++  }
++
++  CbTPPRec = FindCbTag (CB_TAG_TPM_PPI_HANDOFF);
++  if (CbTPPRec == NULL) {
++    return RETURN_NOT_FOUND;
++  }
++
++  VersionMajor = CbTPPRec->ppi_version >> 4;
++  VersionMinor = CbTPPRec->ppi_version & 0xF;
++
++  DEBUG ((DEBUG_INFO, "Found Tcg Physical Presence information\n"));
++  DEBUG ((DEBUG_INFO, "PpiAddress: 0x%x\n", CbTPPRec->ppi_address));
++  DEBUG ((DEBUG_INFO, "TpmVersion: 0x%x\n", CbTPPRec->tpm_version));
++  DEBUG ((DEBUG_INFO, "PpiVersion: %x.%x\n", VersionMajor, VersionMinor));
++
++  PPIInfo->PpiAddress = CbTPPRec->ppi_address;
++  if (CbTPPRec->tpm_version == LB_TPM_VERSION_TPM_VERSION_1_2) {
++    PPIInfo->TpmVersion = UEFIPAYLOAD_TPM_VERSION_1_2;
++  } else if (CbTPPRec->tpm_version == LB_TPM_VERSION_TPM_VERSION_2) {
++    PPIInfo->TpmVersion = UEFIPAYLOAD_TPM_VERSION_2;
++  }
++  if (VersionMajor == 1 && VersionMinor >= 3) {
++    PPIInfo->PpiVersion = UEFIPAYLOAD_TPM_PPI_VERSION_1_30;
++  }
++
++  return RETURN_SUCCESS;
++}
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+index 328696860c2f56d8f9a68114a9eccb33e04c874a..2cd33a5faaa32ee4e6cab202663d85139b39c5c1 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+@@ -350,6 +350,14 @@ PlatformBootManagerAfterConsole (
+     gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
+   }
+ 
++  //
++  // Process TPM PPI request
++  //
++  Status=TcgPhysicalPresenceLibProcessRequest (); // Check for TPM1.2 First
++  if (EFI_ERROR (Status)) {
++	  Tcg2PhysicalPresenceLibProcessRequest (NULL); //Check for TPM2.0
++  }
++
+   //
+   // Register UEFI Shell
+   //
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
+index 9f54b38d6d4ae854da4c43b5cc8148ea39e6d794..56e220773e694abd8ebce67f19076e2529837c62 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
+@@ -27,6 +27,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Library/BootLogoLib.h>
+ #include <Library/CapsuleLib.h>
+ #include <Library/HobLib.h>
++#include <Library/TcgPhysicalPresenceLib.h>
++#include <Library/Tcg2PhysicalPresenceLib.h>
+ #include <Protocol/SmmAccess2.h>
+ 
+ typedef struct {
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+index 372d26da49bd0c504183f5ba4decf89338710d6f..daa70366c59a60b262189aef41ef35bd449180ce 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+@@ -32,6 +32,7 @@
+   MdeModulePkg/MdeModulePkg.dec
+   UefiPayloadPkg/UefiPayloadPkg.dec
+   ShellPkg/ShellPkg.dec
++  SecurityPkg/SecurityPkg.dec
+ 
+ [LibraryClasses]
+   BaseLib
+@@ -49,6 +50,8 @@
+   PlatformHookLib
+   CapsuleLib
+   HobLib
++  TcgPhysicalPresenceLib
++  Tcg2PhysicalPresenceLib
+ 
+ [Guids]
+   gEfiEndOfDxeEventGroupGuid
+diff --git a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c b/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
+index 7cc615a35e8ad67f1b6bf5cfde064801e493ebe3..2721e048eae084b9c813df8833ec6947ad2cef9c 100644
+--- a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
++++ b/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
+@@ -345,3 +345,18 @@ ParseCapsules (
+   //
+   return RETURN_SUCCESS;
+ }
++
++/**
++  Find the Tcg Physical Presence store information
++  @param  PPIInfo       Pointer to the TCG_PHYSICAL_PRESENCE_INFO structure
++  @retval RETURN_SUCCESS     Successfully find the SMM store buffer information.
++  @retval RETURN_NOT_FOUND   Failed to find the SMM store buffer information .
++**/
++RETURN_STATUS
++EFIAPI
++ParseTPMPPIInfo (
++  OUT TCG_PHYSICAL_PRESENCE_INFO       *PPIInfo
++  )
++{
++  return RETURN_NOT_FOUND;
++}
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c b/UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c
+index 6f4ae20053ae2e9fd77cc38d4945fc150342a101..131bb958b290ccaf3e1cba247678dcc32257f94d 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c
++++ b/UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c
+@@ -44,6 +44,9 @@ ParseAcpiInfo (
+   DEBUG ((DEBUG_INFO, "Rsdp at 0x%p\n", Rsdp));
+   DEBUG ((DEBUG_INFO, "Rsdt at 0x%x, Xsdt at 0x%lx\n", Rsdp->RsdtAddress, Rsdp->XsdtAddress));
+ 
++  TPM2TablePresent = 0;
++  TCPATablePresent = 0;
++
+   //
+   // Search Rsdt First
+   //
+@@ -72,6 +75,10 @@ ParseAcpiInfo (
+       if (*Signature == EFI_ACPI_5_0_TRUSTED_COMPUTING_PLATFORM_ALLIANCE_CAPABILITIES_TABLE_SIGNATURE) {
+         TCPATablePresent = 1;
+       }
++
++     if ((Fadt != NULL) && (MmCfgHdr != NULL) && (TPM2TablePresent || TCPATablePresent ))   {
++        goto TpmDectectDone;
++      }
+     }
+   }
+ 
+@@ -101,6 +108,10 @@ ParseAcpiInfo (
+       if (*Signature == EFI_ACPI_5_0_TRUSTED_COMPUTING_PLATFORM_ALLIANCE_CAPABILITIES_TABLE_SIGNATURE) {
+         TCPATablePresent = 1;
+       }
++
++      if ((Fadt != NULL) && (MmCfgHdr != NULL) && (TPM2TablePresent || TCPATablePresent)) {
++        goto TpmDectectDone;
++      }
+     }
+   }
+ 
+@@ -108,6 +119,8 @@ ParseAcpiInfo (
+     return RETURN_NOT_FOUND;
+   }
+ 
++TpmDectectDone:
++
+   AcpiBoardInfo->TPM20Present = TPM2TablePresent;
+   AcpiBoardInfo->TPM12Present = TCPATablePresent;
+ 
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+index 921ce7d71641ed2535cc1ad782a30a71773d884a..bcfed6b65817c6a56d8e4cc6069b81e7e67d10b8 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+@@ -344,6 +344,8 @@ BuildHobFromBl (
+   SMMSTORE_INFO                     *NewSmmStoreInfo;
+   FIRMWARE_INFO                     FirmwareInfo;
+   FIRMWARE_INFO                     *NewFirmwareInfo;
++  TCG_PHYSICAL_PRESENCE_INFO        PhysicalPresenceInfo;
++  TCG_PHYSICAL_PRESENCE_INFO        *NewPhysicalPresenceInfo;
+   EFI_PEI_GRAPHICS_INFO_HOB         GfxInfo;
+   EFI_PEI_GRAPHICS_INFO_HOB         *NewGfxInfo;
+   EFI_PEI_GRAPHICS_DEVICE_INFO_HOB  GfxDeviceInfo;
+@@ -412,6 +414,17 @@ BuildHobFromBl (
+     DEBUG ((DEBUG_INFO, "Created firmware info hob\n"));
+   }
+ 
++  //
++  // Create guid hob for Tcg Physical Presence Interface
++  //
++  Status = ParseTPMPPIInfo (&PhysicalPresenceInfo);
++  if (!EFI_ERROR (Status)) {
++    NewPhysicalPresenceInfo = BuildGuidHob (&gEfiTcgPhysicalPresenceInfoHobGuid, sizeof (TCG_PHYSICAL_PRESENCE_INFO));
++    ASSERT (NewPhysicalPresenceInfo != NULL);
++    CopyMem (NewPhysicalPresenceInfo, &PhysicalPresenceInfo, sizeof (TCG_PHYSICAL_PRESENCE_INFO));
++    DEBUG ((DEBUG_INFO, "Created Tcg Physical Presence info hob\n"));
++  }
++
+   //
+   // Create SmBios table Hob
+   //
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.h b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.h
+index f314ffb490559938aa674874ad06158edbb227e6..0d609201426e9e943453c64400fb828d251d8cc0 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.h
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.h
+@@ -39,6 +39,7 @@
+ #include <Guid/PcdDataBaseSignatureGuid.h>
+ #include <Guid/FirmwareInfoGuid.h>
+ #include <Guid/SmmStoreInfoGuid.h>
++#include <Guid/TcgPhysicalPresenceGuid.h>
+ 
+ #define LEGACY_8259_MASK_REGISTER_MASTER  0x21
+ #define LEGACY_8259_MASK_REGISTER_SLAVE   0xA1
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
+index 56489cba88ada140cff5c430d18b844fe0ebc292..11198c0b138efc3029deab8ed95f90e6dde4df5a 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
+@@ -72,6 +72,7 @@
+   gUniversalPayloadSerialPortInfoGuid
+   gEfiFirmwareInfoHobGuid
+   gEfiSmmStoreInfoHobGuid
++  gEfiTcgPhysicalPresenceInfoHobGuid
+ 
+ [FeaturePcd.IA32]
+   gEfiMdeModulePkgTokenSpaceGuid.PcdDxeIplSwitchToLongMode      ## CONSUMES
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
+index 7b7a7cd3773f73220d9da0fc9d18d518d4b924dd..beca6d03b836a1919e029f4d237dd897cbd6c3bb 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dec
++++ b/UefiPayloadPkg/UefiPayloadPkg.dec
+@@ -56,6 +56,8 @@
+   gEfiSmmStoreInfoHobGuid  = { 0xf585ca19, 0x881b, 0x44fb, { 0x3f, 0x3d, 0x81, 0x89, 0x7c, 0x57, 0xbb, 0x01 } }
+   gEfiFirmwareInfoHobGuid  = { 0xe0653829, 0x274e, 0x4b1e, { 0x87, 0x2d, 0xa2, 0x20, 0xf5, 0xaf, 0x8f, 0x3d } }
+ 
++  gEfiTcgPhysicalPresenceInfoHobGuid = { 0xf367be59, 0x5891, 0x40eb, { 0x21, 0x44, 0xed, 0x2e, 0xac, 0x57, 0xfd, 0x14 }}
++
+   # Secure Boot keys and owners
+   gMicrosoftVendorGuid        = { 0x77fa9abd, 0x0359, 0x4d32, { 0xbd, 0x60, 0x28, 0xf4, 0xe7, 0x8f, 0x78, 0x4b } }
+   gMicrosoftDbxUpdateGuid     = { 0x4e52dd60, 0xd79e, 0x42c5, { 0x83, 0x37, 0x08, 0x92, 0x32, 0xea, 0x5c, 0x87 } }

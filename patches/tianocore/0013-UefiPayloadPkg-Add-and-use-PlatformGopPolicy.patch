@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Tue, 13 Aug 2024 09:05:32 -0500
+Subject: [PATCH] UefiPayloadPkg: Add and use PlatformGopPolicy
+
+[ouroBIOS: commit 076933b90058 of MrChromebox's edk2, without the files
+that TianoCore's tree does not have (tools/edk2-import.py): 5 in
+edk2/OuroBiosPkg]
+
+Add PlatformGopPolicy to use external GOP driver. Use it in place of
+GraphicsOutputDxe if command line param passed.
+
+Revert "UefiPayloadPkg/Gop: Clean up unused protocol and Guid"
+as it's needed for PlatformGopPolicy.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ UefiPayloadPkg/UefiPayloadPkg.dec | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
+index bba04554f801a7e87bbfc1b40abf2721e36552d6..ecf83eee5faf9c833c2fd7a1b2f725855089d1bd 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dec
++++ b/UefiPayloadPkg/UefiPayloadPkg.dec
+@@ -34,6 +34,12 @@
+ 
+   ## Include/UniversalPayload/DeviceTree.h
+   gUniversalPayloadDeviceTreeGuid = { 0x6784b889, 0xb13c, 0x4c3b, {0xae, 0x4b, 0xf, 0xa, 0x2e, 0x32, 0xe, 0xa3 } }
++
++  #
++  # Gop Temp
++  #
++  gBmpImageGuid                           = { 0x878AC2CC, 0x5343, 0x46F2, { 0xB5, 0x63, 0x51, 0xF8, 0x9D, 0xAF, 0x56, 0xBA } }
++
+   gEdkiiDebugPrintErrorLevelGuid = { 0xad82f436, 0x75c5, 0x4aa9, { 0x92, 0x93, 0xc5, 0x55, 0x0a, 0x7f, 0xf9, 0x71 }}
+   gUefiAcpiBoardInfoGuid   = {0xad3d31b, 0xb3d8, 0x4506, {0xae, 0x71, 0x2e, 0xf1, 0x10, 0x6, 0xd9, 0xf}}
+   gUefiSerialPortInfoGuid  = { 0x6c6872fe, 0x56a9, 0x4403, { 0xbb, 0x98, 0x95, 0x8d, 0x62, 0xde, 0x87, 0xf1 } }
+@@ -59,6 +65,10 @@
+   gUplReadyToPayloadPpiGuid = { 0x67c8dfb1, 0x61f4, 0x439c, { 0x84, 0x4e, 0x2b, 0xdf, 0xf1, 0x07, 0xad, 0x51 }}
+ 
+ [Protocols]
++  #
++  # Gop Temp
++  #
++  gPlatformGOPPolicyGuid                  = { 0xec2e931b, 0x3281, 0x48a5, { 0x81, 0x07, 0xdf, 0x8a, 0x8b, 0xed, 0x3c, 0x5d } }
+ 
+ ################################################################################
+ #

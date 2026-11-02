@@ -1,0 +1,83 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Thu, 14 Jul 2022 17:55:44 -0500
+Subject: [PATCH] MdeModulePkg/UefiPayloadPkg: Improve Device Manager
+ presentation
+
+[ouroBIOS: commit b6b0b668a8e4 of MrChromebox's edk2, without the files
+that TianoCore's tree does not have (tools/edk2-import.py): 1 in
+edk2/OuroBiosPkg]
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ .../Library/DeviceManagerUiLib/DeviceManager.c       | 12 ++++++++++++
+ .../DeviceManagerUiLib/DeviceManagerStrings.uni      | 12 ++++++------
+ 2 files changed, 18 insertions(+), 6 deletions(-)
+
+diff --git a/MdeModulePkg/Library/DeviceManagerUiLib/DeviceManager.c b/MdeModulePkg/Library/DeviceManagerUiLib/DeviceManager.c
+index c20ab86b2d40a8b209bab1f92c2cc542a4bfa1cf..5d6164a114d04c7aef30fa4dd188e30de4164164 100644
+--- a/MdeModulePkg/Library/DeviceManagerUiLib/DeviceManager.c
++++ b/MdeModulePkg/Library/DeviceManagerUiLib/DeviceManager.c
+@@ -653,6 +653,9 @@ CreateDeviceManagerForm (
+             //
+             if (!AddNetworkMenu) {
+               AddNetworkMenu = TRUE;
++              // Add an empty line before each entry
++              HiiCreateSubTitleOpCode (StartOpCodeHandle, STRING_TOKEN (STR_EMPTY_STRING), 0, 0, 0);
++
+               HiiCreateGotoOpCode (
+                 StartOpCodeHandle,
+                 NETWORK_DEVICE_LIST_FORM_ID,
+@@ -667,6 +670,9 @@ CreateDeviceManagerForm (
+             // In network device list form, same mac address device only show one menu.
+             //
+             while (AddItemCount > 0) {
++              // Add an empty line before each entry
++              HiiCreateSubTitleOpCode (StartOpCodeHandle, STRING_TOKEN (STR_EMPTY_STRING), 0, 0, 0);
++
+               HiiCreateGotoOpCode (
+                 StartOpCodeHandle,
+                 NETWORK_DEVICE_FORM_ID,
+@@ -688,6 +694,9 @@ CreateDeviceManagerForm (
+               FreePool (DevicePathStr);
+             }
+ 
++            // Add an empty line before each entry
++            HiiCreateSubTitleOpCode (StartOpCodeHandle, STRING_TOKEN (STR_EMPTY_STRING), 0, 0, 0);
++
+             HiiCreateGotoExOpCode (
+               StartOpCodeHandle,
+               0,
+@@ -712,6 +721,9 @@ CreateDeviceManagerForm (
+               FreePool (DevicePathStr);
+             }
+ 
++            // Add an empty line before each entry
++            HiiCreateSubTitleOpCode (StartOpCodeHandle, STRING_TOKEN (STR_EMPTY_STRING), 0, 0, 0);
++
+             HiiCreateGotoExOpCode (
+               StartOpCodeHandle,
+               0,
+diff --git a/MdeModulePkg/Library/DeviceManagerUiLib/DeviceManagerStrings.uni b/MdeModulePkg/Library/DeviceManagerUiLib/DeviceManagerStrings.uni
+index 041cf2534475da957c1e6b4f5436abf5064ae649..d22daeaf722001f3fc16a17b9e4ee0e5842e41d9 100644
+--- a/MdeModulePkg/Library/DeviceManagerUiLib/DeviceManagerStrings.uni
++++ b/MdeModulePkg/Library/DeviceManagerUiLib/DeviceManagerStrings.uni
+@@ -12,12 +12,12 @@
+ #langdef   en-US "English"
+ #langdef   fr-FR "Français"
+ 
+-#string STR_EDKII_MENU_TITLE           #language en-US  "Device Manager"
+-                                       #language fr-FR  "Device Manager"
+-#string STR_EDKII_MENU_HELP            #language en-US  "This selection will take you to the Device Manager"
+-                                       #language fr-FR  "This selection will take you to the Device Manager"
+-#string STR_DEVICES_LIST               #language en-US  "Devices List"
+-                                       #language fr-FR  "Devices List"
++#string STR_EDKII_MENU_TITLE           #language en-US  "System Configuration"
++                                       #language fr-FR  "System Configuration"
++#string STR_EDKII_MENU_HELP            #language en-US  "This selection will take you to the Advanced Configuration"
++                                       #language fr-FR  "This selection will take you to the Advanced Configuration"
++#string STR_DEVICES_LIST               #language en-US  "Menu List"
++                                       #language fr-FR  "Menu List"
+ #string STR_DISK_DEVICE                #language en-US  "Disk Devices"
+                                        #language fr-FR  "Disk Devices"
+ #string STR_VIDEO_DEVICE               #language en-US  "Video Devices"

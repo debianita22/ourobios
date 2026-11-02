@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matt DeVillier <matt.devillier@gmail.com>
+Date: Tue, 31 Mar 2026 09:13:17 -0500
+Subject: [PATCH] PcRtcEntry: Don't assert if RTC init fails
+
+[ouroBIOS: commit a79398a76d5e of MrChromebox's edk2, as it is]
+
+Failing to boot because of a dead CMOS battery is dumb.
+
+Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
+---
+ PcAtChipsetPkg/PcatRealTimeClockRuntimeDxe/PcRtcEntry.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/PcAtChipsetPkg/PcatRealTimeClockRuntimeDxe/PcRtcEntry.c b/PcAtChipsetPkg/PcatRealTimeClockRuntimeDxe/PcRtcEntry.c
+index f8a8817821750686d5360670c74a3a9bc8e33c4a..a2f1407eeae4f36076ed66499c59080a603a7364 100644
+--- a/PcAtChipsetPkg/PcatRealTimeClockRuntimeDxe/PcRtcEntry.c
++++ b/PcAtChipsetPkg/PcatRealTimeClockRuntimeDxe/PcRtcEntry.c
+@@ -256,7 +256,14 @@ InitializePcRtc (
+   mMaximalValidYear = PcdGet16 (PcdMaximalValidYear);
+ 
+   Status = PcRtcInit (&mModuleGlobal);
+-  ASSERT_EFI_ERROR (Status);
++  if (EFI_ERROR (Status)) {
++    //
++    // On some platforms (or with a dead/absent RTC battery), the legacy RTC may
++    // report invalid status or never complete an update cycle. Don't stop DXE
++    // with an ASSERT; continue boot without a functional hardware RTC.
++    //
++    DEBUG ((DEBUG_WARN, "PcRtc: RTC init failed: %r\n", Status));
++  }
+ 
+   Status = gBS->CreateEventEx (
+                   EVT_NOTIFY_SIGNAL,
