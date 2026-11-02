@@ -157,7 +157,11 @@ the MrChromebox commit they come from (`EDK2_MRCHROMEBOX_COMMIT`).
   `EDK2_MRCHROMEBOX_COMMIT` in place of the package's lines, from
   MrChromebox's tree with `patches/edk2`, and stops if the two
   `UEFIPAYLOAD.fd` are not the same byte for byte; `edk2-upstream.yml`
-  runs it with the import check.
+  runs it with the import check. With the defconfigs of v1.6.0 (`0fb378d`,
+  2026-11-02) both boards build the same 11 534 336 bytes either way: the
+  W541 (`mrc`, whose payload `nri` shares) SHA-256 `9eca1a4374ba7cbe...`,
+  the M920x `ab90569e4320baf7...`; the full build of `ci-test/next` with
+  the payload from the package passes the smoke and update tests as v1.5.1.
 - **What is watched**: `tools/upstream.sh edk2` says when MrChromebox's
   branch moves past `EDK2_MRCHROMEBOX_COMMIT` (to take his commits: the
   constant moved, `patches/edk2` rebased, the import again), `tianocore`
