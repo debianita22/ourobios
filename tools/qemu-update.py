@@ -56,8 +56,8 @@
 #  13. con --refused-store, la capsula di B con SMMSTORE nel manifest oltre ai
 #      due slot: il payload la rifiuta prima di scrivere, una regione che un
 #      aggiornamento non scrive (PcdFmpDeviceSmmAllowedRegions, patch
-#      edk2/0045). Con la traccia del pflash nessun byte scritto negli slot,
-#      in RW_MRC_CACHE o nella parte RO, nessuna richiesta a vboot, la
+#      edk2/0045). Con la traccia del pflash nessun byte scritto negli slot
+#      o nella parte RO, RW_MRC_CACHE com'era, nessuna richiesta a vboot, la
 #      variabile di prova ancora nello store, la capsula tolta; FmpState:
 #      l'ultimo tentativo 0x1800 (immagine non valida), versione 0 (lo dice
 #      il controllo dell'immagine, prima di SetImage). vboot prova ancora lo
@@ -624,8 +624,8 @@ class UpdateTest:
     def refused_boot(self, tag, kind, running, why, attempt):
         """Un avvio con la capsula self.refused[kind] mentre gira lo slot
         running: il payload la carica e la rifiuta prima di scrivere (why
-        nella seriale), poi riavvia. Nessun byte scritto negli slot, in
-        RW_MRC_CACHE o nella parte RO, nemmeno per la traccia del pflash;
+        nella seriale), poi riavvia. Nessun byte scritto negli slot o nella
+        parte RO, nemmeno per la traccia del pflash, e RW_MRC_CACHE com'era;
         nessuna richiesta a vboot; la capsula tolta e il bit spento; FmpState
         con l'ultimo tentativo (attempt, INVALID_IMAGE). Se vboot stava
         provando lo slot (tentativi rimasti), il payload lo ha confermato
@@ -650,7 +650,13 @@ class UpdateTest:
             raise Fail("%s: la capsula non e' stata rifiutata (%s)" % (tag, m.group(1) if m else "nessun esito"))
         if "updating slot" in text:
             raise Fail("%s: il payload ha cominciato a scrivere uno slot" % tag)
-        areas = ("WP_RO", "RW_SECTION_A", "RW_SECTION_B", "RW_MRC_CACHE")
+        # RW_MRC_CACHE lo dice il contenuto (pieno di 0x5A: la capsula lo
+        # riscriverebbe con quello dell'immagine), non la traccia: per sapere
+        # se il flash e' scrivibile, boot_device_init() di coreboot per QEMU
+        # (qemu-i440fx/rom_media.c), in ramstage e in SMM, riscrive con il
+        # suo valore il primo byte del flash che non e' 0xFF e non finisce
+        # con 0, ed e' il primo di RW_MRC_CACHE
+        areas = ("WP_RO", "RW_SECTION_A", "RW_SECTION_B")
         hits, total = traced_writes(trace, f.areas, areas)
         os.remove(trace)
         if total == 0:
@@ -658,7 +664,7 @@ class UpdateTest:
         if any(hits.values()):
             raise Fail("%s: scritti %s" % (tag, ", ".join("%d byte in %s" % (n, a) for a, n in hits.items() if n)))
         after = f.data()
-        for area in areas:
+        for area in areas + ("RW_MRC_CACHE",):
             if f.region(area, after) != f.region(area, before):
                 raise Fail("%s: %s cambiato" % (tag, area))
         st = f.nv()
@@ -1048,8 +1054,8 @@ class UpdateTest:
             total, tries = self.refused_boot("13-capsula-B-smmstore", "store", "A",
                                              "manifest region 'SMMSTORE' is not one an update may write", 0)
             self.ok("capsula di B con SMMSTORE nel manifest: rifiutata prima di scrivere (%d scritture del "
-                    "pflash, nessuna negli slot, in RW_MRC_CACHE o nella parte RO), nessuna richiesta a vboot, "
-                    "la variabile di prova c'e' ancora; ultimo tentativo 0x%x%s"
+                    "pflash, nessuna negli slot o nella parte RO, RW_MRC_CACHE com'era), nessuna richiesta a "
+                    "vboot, la variabile di prova c'e' ancora; ultimo tentativo 0x%x%s"
                     % (total, INVALID_IMAGE, "; lo slot A, in prova, confermato prima" if tries else ""))
 
         # 14. la capsula di B con il solo slot che gira: rifiutata da

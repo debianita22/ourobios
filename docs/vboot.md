@@ -381,11 +381,11 @@ at every reset:
 - capsule B made with `SMMSTORE` next to the two slots in its manifest
   (`B-smmstore.cap`, `--refused-store`): the payload refuses it before
   writing (`edk2/0045`): with QEMU's trace of the flash not one byte in the
-  slots, `RW_MRC_CACHE` or the read-only part, no request to vboot, the
-  UEFI variable of the test still in the store, the capsule gone, and as
-  last attempt *immagine non valida* (0x1800). vboot was still trying A,
-  with a try left: the payload confirms it before the capsules
-  (`edk2/0046`), and A stays;
+  slots or the read-only part, `RW_MRC_CACHE` as it was, no request to
+  vboot, the UEFI variable of the test still in the store, the capsule
+  gone, and as last attempt *immagine non valida* (0x1800). vboot was
+  still trying A, with a try left: the payload confirms it before the
+  capsules (`edk2/0046`), and A stays;
 - capsule B with `RW_SECTION_A` alone, the slot that runs (`B-slot.cap`,
   `--refused-slot`): refused the same way, and the ESRT of the next boot
   has the version of B and 0x1800 as last attempt, with A running;
