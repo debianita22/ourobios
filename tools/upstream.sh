@@ -8,6 +8,7 @@
 #   tools/upstream.sh edk2 [--dry-run]
 #   tools/upstream.sh mirror [--dry-run]
 #   tools/upstream.sh dbx [--dry-run]
+#   tools/upstream.sh tianocore [--dry-run]
 #
 # coreboot  la serie di patches/ applica ancora su main? Qualche patch e' gia'
 #           entrata upstream (stesso Subject)? C'e' un tag di release dopo il
@@ -21,6 +22,11 @@
 #           keys/ del commit di EDK2 dei defconfig) ha le liste di hash
 #           dell'ultima release firmata di microsoft/secureboot_objects? Se
 #           no, issue "DBX: ...".
+# tianocore c'e' un tag edk2-stableAAAAMM di TianoCore dopo EDK2_UPSTREAM_TAG
+#           di tools/build.sh (il passaggio a TianoCore, docs/edk2-migration.md)?
+#           Se si', issue "TianoCore: ...", che dice se le patch del package
+#           (edk2/OuroBiosPkg/*.patch) applicano ancora ai file di
+#           UefiPayloadPkg di quel tag.
 #
 # Con --dry-run scrive soltanto cosa farebbe (niente issue).
 set -euo pipefail
@@ -327,10 +333,65 @@ EOF
 	report "DBX:" "DBX: le liste di hash di Microsoft ${tag} non sono quelle del payload" "${body}"
 }
 
+# Il tag stabile di TianoCore dopo quello di edk2-upstream, e le patch del
+# package (edk2/OuroBiosPkg) sui file di UefiPayloadPkg di quel tag
+check_tianocore() {
+	local repo tag latest g p e no=() rows=""
+	repo="$(pin EDK2_UPSTREAM_REPO)"
+	tag="$(pin EDK2_UPSTREAM_TAG)"
+	[ -n "${repo}" ] && [ -n "${tag}" ] || die "EDK2_UPSTREAM_REPO o EDK2_UPSTREAM_TAG non trovati in tools/build.sh"
+	latest="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags "${repo}" 'refs/tags/edk2-stable*' \
+		| sed -n 's#.*refs/tags/\(edk2-stable[0-9]\{6\}\)$#\1#p' | sort | tail -n 1)"
+	[ -n "${latest}" ] || die "${repo}: nessun tag edk2-stableAAAAMM"
+	if [ "${latest}" = "${tag}" ] || [ "$(printf '%s\n%s\n' "${tag}" "${latest}" | sort | tail -n 1)" = "${tag}" ]; then
+		settle "TianoCore:" "TianoCore: ${tag} e' l'ultimo tag stabile"
+		return 0
+	fi
+	g="${TMP}/tianocore"
+	git init -q "${g}"
+	GIT_TERMINAL_PROMPT=0 git -C "${g}" fetch -q --depth 1 --filter=blob:none "${repo}" "refs/tags/${latest}" \
+		|| die "${repo} ${latest}: fetch non riuscito"
+	for p in "${O}"/edk2/OuroBiosPkg/OuroBiosPkg.*.patch; do
+		[ -e "${p}" ] || continue
+		e="${p%.patch}"
+		e="${e##*.}"
+		mkdir -p "${TMP}/pkg"
+		git -C "${g}" show "FETCH_HEAD:UefiPayloadPkg/UefiPayloadPkg.${e}" > "${TMP}/pkg/OuroBiosPkg.${e}" \
+			|| die "${latest}: niente UefiPayloadPkg/UefiPayloadPkg.${e}"
+		if (cd "${TMP}/pkg" && git apply --check -p1 "${p}" 2> "${TMP}/pkg/${e}.err"); then
+			rows+="| \`${p##*/}\` | applica |"$'\n'
+		else
+			no+=("${p##*/}")
+			rows+="| \`${p##*/}\` | non applica: $(head -n 1 "${TMP}/pkg/${e}.err" | tr '|' '/') |"$'\n'
+		fi
+	done
+	local title body
+	if [ ${#no[@]} -eq 0 ]; then
+		title="TianoCore: ${latest} dopo ${tag}, le patch del package applicano"
+	else
+		title="TianoCore: ${latest} dopo ${tag}, ${#no[@]} patch del package da rifare"
+	fi
+	body="$(cat <<EOF
+TianoCore ha \`${latest}\`; \`tools/build.sh edk2-upstream\` e il package \`edk2/OuroBiosPkg\` sono su \`${tag}\` (\`EDK2_UPSTREAM_TAG\`).
+
+Le patch del package sui file di \`UefiPayloadPkg\` di \`${latest}\`:
+
+| Patch | Esito |
+|---|---|
+${rows}
+Per spostarsi (a mano): \`EDK2_UPSTREAM_TAG\` e \`EDK2_UPSTREAM_COMMIT\` in \`tools/build.sh\`, le patch rifatte se non applicano, le lacune di \`EDK2_UPSTREAM_GAPS\` riviste, poi push su un ramo \`ci-edk2/...\` (docs/edk2-migration.md).
+
+Questo issue lo aggiorna e lo chiude \`upstream.yml\`.
+EOF
+)"
+	report "TianoCore:" "${title}" "${body}"
+}
+
 case "${WHAT}" in
-	coreboot) check_coreboot ;;
-	edk2)     check_edk2 ;;
-	mirror)   check_mirror ;;
-	dbx)      check_dbx ;;
-	*) die "uso: upstream.sh coreboot|edk2|mirror|dbx [--dry-run]" ;;
+	coreboot)  check_coreboot ;;
+	edk2)      check_edk2 ;;
+	mirror)    check_mirror ;;
+	dbx)       check_dbx ;;
+	tianocore) check_tianocore ;;
+	*) die "uso: upstream.sh coreboot|edk2|mirror|dbx|tianocore [--dry-run]" ;;
 esac

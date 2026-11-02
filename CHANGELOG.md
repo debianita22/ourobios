@@ -34,7 +34,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   id, nothing downloaded) and opens an issue when they differ. On
   2026-11-02 they are the same, v1.7.1-signed; its SVN entries (the
   Windows boot manager at SVN 11) stay out of the defaults, as Windows
-  writes them itself after updating its boot manager.
+  writes them itself after updating its boot manager. It also looks for a
+  stable tag of TianoCore after the one of `edk2-upstream`, and says
+  whether the patches of `edk2/OuroBiosPkg` still apply to its
+  `UefiPayloadPkg` (`tools/upstream.sh tianocore`).
 - `tools/build.sh roms` stops when the DSDT of a build, compiled again
   with `iasl -w3`, has a warning: v1.5.1 compiles without one on every
   board, the *object is not referenced* (4089) of the names and fields

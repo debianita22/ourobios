@@ -100,3 +100,14 @@ jobs:
           else
             ./tools/upstream.sh dbx
           fi
+
+      - name: Un tag stabile di TianoCore dopo il pin
+        if: ${{ !cancelled() }}
+        env:
+          IN_DRY: ${{ inputs.dry_run }}
+        run: |
+          if [ "${IN_DRY:-false}" = true ]; then
+            ./tools/upstream.sh tianocore --dry-run
+          else
+            ./tools/upstream.sh tianocore
+          fi
