@@ -229,6 +229,7 @@ or *manual*.
 | MEM-06 | W541 | `nri` of v1.4.0 (patches 0185, 0186) with `RW_MRC_CACHE` empty, as after its capsule: a cold boot, `sudo python3 tools/ddr-report.py --save nri-v1.4.0.txt` and `--compare` with a dump of `mrc` ([docs/raminit.md](raminit.md#measuring)); a reboot, an S3 resume, `stress-ng --vm 4 --vm-bytes 75% --verify -t 30m`; then the cache of an older `nri` slot left for a v1.4.0 slot (only the RW slot written), and the other way round | the first boot trains and logs *Memory test passed*; ranks 1-3 with centering values of their own, the round trips at 44/45 with IO latency 4 + 21 as before; the fast boot, the resume and stress-ng without errors; a v1.4.0 slot on an older cache logs *MRC: version mismatch: 2 vs 3* and trains, an older slot on a v1.4.0 cache *3 vs 2*, then *Using cached memory parameters* at the next boot; not yet tried | partial (MEM-01) |
 | MEM-07 | W541 | `nri`, only if a 16 GiB DDR3L SO-DIMM is at hand: in one slot, the 8 GiB ones in the others; `sudo cbmem -1 \| grep 'DIMM ignored'` on the first, training boot; `sudo dmidecode -t 17`; with the module in place, `stress-ng --vm 4 --verify -t 30m` (or a memtest86+ pass) and `ddr-report.py` (patch 0188) | the laptop boots on the others, *CHxSy: DIMM ignored, 11 column address bits, Haswell has 10* after the start of the CBMEM console; type 17 lists the other DIMMs in their own slots, not the 16 GiB one; no errors, margins close to those without the module; with the four 8 GiB DIMMs no *DIMM ignored* line and 32 GiB as before; not yet tried | manual |
 | MEM-08 | both | *Security* → *Memory protection* → *Clear memory at power-on* on each setting, two boots each; after each boot `sudo cbmem -1 \| grep -E 'MOR:\|DRAM clear:'` and `od -An -tx1 /sys/firmware/efi/efivars/MemoryOverwriteRequestControl-*`. With *When the OS asks*: Linux with `CONFIG_RESET_ATTACK_MITIGATION`; Windows with BitLocker, a clean restart then a reset ([docs/flashing.md](flashing.md#clearing-the-memory-at-power-on)) | *Always*: *option always: clearing* at every boot, no variable; *Never*: *option never: not clearing*, no variable; *When the OS asks*: the first boot *no MemoryOverwriteRequestControl variable* and *clearing*, then the variable under the OS; Linux: `07 00 00 00 01` while it runs and *request of the OS yes: clearing* at every boot; Windows: *request of the OS no: not clearing* after the clean restart (the boot that much shorter), *yes: clearing* after the reset. Done on the M920x with v1.4.1 (2026-10-31): the setting forced in a test build (patch 0195, `edk2/0042`), the bit cleared from Linux by hand for the Windows case; every boot as expected, the clearing 2007 ms against 22 ms | partial (BOOT-02) |
+| MEM-09 | both | *BIOS Lock* on, *Clear memory at power-on* on *When the OS asks*. From Linux, through efivarfs (`chattr -i` first): write `01` to `MemoryOverwriteRequestControlLock`; create, change and delete a variable of a GUID of your own; try to write `00` to `MemoryOverwriteRequestControl`; reboot | the lock variable reads `07 00 00 00 01`; the other writes go through; the write of the request is refused (*Invalid argument*) and it stays `01`; the machine stays up throughout; after the reboot `sudo cbmem -1 \| grep 'DRAM clear'` says *request of the OS yes: clearing* and the lock variable is `00` again. With *BIOS Lock* off the lock variable does not exist (reported unsupported). Passed on the M920x with ci-211 (patch 0207, `edk2/0043`); the two builds before it hung the machine in SMM at the first and the second step | manual |
 
 ### CPU and power limits (CPU)
 
@@ -438,10 +439,10 @@ write protection).
 Not yet run. The M920x meets Windows 11's requirements (an 8th-generation
 processor, TPM 2.0, UEFI with Secure Boot); the W541 does not (Haswell, a
 TPM 1.2), so these are for the M920x, installed on a disk of its own.
-What is known not to be there: the lock of MOR (`MemoryOverwriteRequestControlLock`,
-which Credential Guard uses: it needs a variable store behind SMM) and
-Kernel DMA Protection (no IOMMU before the OS, no DMAR opt-in flag;
-[docs/roadmap.md](roadmap.md#dma-protection)).
+What is known not to be there: Kernel DMA Protection (no IOMMU before
+the OS, no DMAR opt-in flag; [docs/roadmap.md](roadmap.md#dma-protection)).
+The lock of MOR, which Credential Guard uses, is there with *BIOS Lock* on
+(MEM-09).
 
 | ID | Board | How to run | Pass criteria | Auto |
 |---|---|---|---|---|
@@ -452,13 +453,14 @@ Kernel DMA Protection (no IOMMU before the OS, no DMAR opt-in flag;
 | WIN-05 | M920x | turn BitLocker on (`manage-bde -on C:`), two reboots; then a firmware update with Secure Boot on, without suspending BitLocker | no recovery key asked, also after the update (PCR 7 and 11 do not change) | manual |
 | WIN-06 | M920x | *Clear memory at power-on* on *When the OS asks*, BitLocker on; a restart, then a reset from the power button | after the restart `cbmem -1` (from Linux) says *request of the OS no*, after the reset *yes* | manual |
 | WIN-07 | M920x | `slmgr /dli` with a key in the VPD | activated, with the key of the MSDM table (ID-04 on the machine) | manual |
+| WIN-08 | M920x | *BIOS Lock* on, *Clear memory at power-on* on *When the OS asks*; Credential Guard on; `msinfo32`, *Device Guard Security Services Running* | *Secure Memory Overwrite* listed among the running services (the OS took `MemoryOverwriteRequestControlLock`); after a restart `cbmem -1` (from Linux) says *request of the OS yes* | manual |
 
 ## Coverage of hw-report.py
 
 | Suite | Automated | Partial | Manual |
 |---|---|---|---|
 | BOOT | 01-04 | 07 | 05, 06, 08 |
-| MEM | 01, 02 | 03, 05, 06 | 04, 07 |
+| MEM | 01, 02 | 03, 05, 06 | 04, 07, 08, 09 |
 | CPU | 01 | 03 | 02, 04, 05 |
 | IDLE | 01 | 02 | |
 | S3 | 01 | 02 | 03 |
@@ -476,7 +478,7 @@ Kernel DMA Protection (no IOMMU before the OS, no DMAR opt-in flag;
 | OPT | 01 | 02, 03, 05 | 04 |
 | ELOG | 01 | 02 | |
 | ID | 01, 02 | | 03, 04 |
-| WIN | | | 01-07 |
+| WIN | | | 01-08 |
 
 `hw-report.py` has run on the M920x, and on a W541 its TPM-01 and TPM-03
 (v1.5.0: the `TCPA` table, the TPM 1.2 log replayed to its PCRs). On the

@@ -672,8 +672,15 @@ with this setting and clears the bit before the next OS starts
 memory too: the OS before was not offered one, so it could not ask (the
 first boot with this setting, or after a slot of an older release). The
 lock of revision 2 of MOR (`MemoryOverwriteRequestControlLock`, which
-Windows Credential Guard uses) is not offered with any setting: it needs
-a variable store behind SMM, which the payload does not have. The TPer
+Windows Credential Guard uses) is offered with this setting and *BIOS
+Lock* on (patch 0207, `edk2/0043`): coreboot keeps it in SMM, and while
+the OS holds it refuses every write of the variable store that would
+clear the request, so code in the OS cannot drop the request and reset
+to read the memory. It lasts one boot. With *BIOS Lock* off the OS can
+write the flash without SMM, and the lock is reported unsupported, as
+before. Tried on the M920x: the lock taken from Linux, ordinary
+variables still written, the attempt to clear the request refused, the
+memory cleared at the next boot. The TPer
 reset of self-encrypting drives that EDK2's TcgMor does is not done
 either.
 
