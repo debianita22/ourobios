@@ -201,3 +201,4 @@
 0205-security-tpm-256-KiB-for-the-TPM-1.2-log-a-payload-a.patch
 0206-mb-lenovo-Do-not-promise-Kernel-DMA-Protection-in-th.patch
 0207-drivers-smmstore-Lock-of-TCG-Secure-MOR-in-SMM.patch
+0208-nb-intel-haswell-Default-the-graphics-stolen-memory-.patch

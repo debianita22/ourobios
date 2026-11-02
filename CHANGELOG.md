@@ -23,6 +23,11 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   wake and reset events among them; the entries written from SMM (S3,
   S5) still go in. Turn it on by hand knowing that, until the event log
   of ramstage goes through SMM or the lock comes later.
+- The graphics stolen memory of the `nri` variant (*Hardware* → *Intel
+  graphics* → *DVMT pre-allocated memory*) defaults to 32 MB, what
+  `mrc.bin` reserves (patch 0208): the two variants boot with the same
+  memory map and the same OpenCore configuration. A saved setting is
+  kept; 64 MB stays among the values.
 
 ## v1.5.0
 

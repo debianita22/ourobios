@@ -1,0 +1,68 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 2 Nov 2026 16:01:22 +0100
+Subject: [PATCH] nb/intel/haswell: Default the graphics stolen memory to 32
+ MiB
+
+The gfx_uma_size option of the native RAM init defaulted to 64 MiB, the
+size the code reserved before the option existed, while mrc.bin reserves
+a fixed 32 MiB: the two variants of the same board booted with different
+memory maps unless the option was set by hand. 32 MiB holds the firmware
+framebuffer at the panel's full resolution (18.7 MB at 2880x1620) and is
+the size the OpenCore configuration of the W541 was made for, so the
+same configuration now works on both variants. Linux and Windows take
+graphics memory from the system RAM through the GTT and are not limited
+by the stolen size. The values offered do not change; a saved setting is
+kept, only a store without one gets the new default.
+
+TEST=Applied on the series; not built. On a W541 with the native RAM
+init and no gfx_uma_size variable, the coreboot log must show GGC with
+GMS 1 (32 MiB) and the memory map a 32 MiB stolen area, and the setup
+must show 32 MB as the default.
+---
+ src/northbridge/intel/haswell/cfr.h        | 4 ++--
+ src/northbridge/intel/haswell/early_init.c | 6 +++---
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/cfr.h b/src/northbridge/intel/haswell/cfr.h
+index 4133f6ac..4a1bbad2 100644
+--- a/src/northbridge/intel/haswell/cfr.h
++++ b/src/northbridge/intel/haswell/cfr.h
+@@ -34,8 +34,8 @@ static const struct sm_object gfx_uma_size = SM_DECLARE_ENUM({
+ 	.ui_helptext	= "Memory reserved at boot for the integrated GPU (graphics\n"
+ 			  "stolen memory), taken from system RAM. Takes effect at the\n"
+ 			  "next boot.\n"
+-			  "Default: 64 MB.",
+-	.default_value	= IGD_UMA_SIZE_64MB,
++			  "Default: 32 MB, what mrc.bin reserves.",
++	.default_value	= IGD_UMA_SIZE_32MB,
+ 	.values		= (const struct sm_enum_value[]) {
+ 				{ "32 MB",	IGD_UMA_SIZE_32MB	},
+ 				{ "64 MB",	IGD_UMA_SIZE_64MB	},
+diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
+index 59d334fa..8dfda0ff 100644
+--- a/src/northbridge/intel/haswell/early_init.c
++++ b/src/northbridge/intel/haswell/early_init.c
+@@ -42,7 +42,7 @@ u8 haswell_igd_gms(void)
+ 	if (!CONFIG(USE_NATIVE_RAMINIT))
+ 		return IGD_UMA_SIZE_32MB;
+ 
+-	const unsigned int gms = get_uint_option("gfx_uma_size", IGD_UMA_SIZE_64MB);
++	const unsigned int gms = get_uint_option("gfx_uma_size", IGD_UMA_SIZE_32MB);
+ 	switch (gms) {
+ 	case IGD_UMA_SIZE_32MB:
+ 	case IGD_UMA_SIZE_64MB:
+@@ -52,8 +52,8 @@ u8 haswell_igd_gms(void)
+ 	case IGD_UMA_SIZE_512MB:
+ 		return gms;
+ 	default:
+-		printk(BIOS_WARNING, "IGD: invalid gfx_uma_size %u, using 64 MiB\n", gms);
+-		return IGD_UMA_SIZE_64MB;
++		printk(BIOS_WARNING, "IGD: invalid gfx_uma_size %u, using 32 MiB\n", gms);
++		return IGD_UMA_SIZE_32MB;
+ 	}
+ }
+ 
+-- 
+2.43.0
+
