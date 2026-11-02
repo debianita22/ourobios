@@ -188,15 +188,20 @@ EDK2_UPSTREAM_SUBDIR="payloads/external/edk2/workspace/tianocore"
 EDK2_UPSTREAM_SUBMODULES=(CryptoPkg/Library/OpensslLib/openssl BaseTools/Source/C/BrotliCompress/brotli
 	MdePkg/Library/BaseFdtLib/libfdt)
 # I passi di qemu-smoke.py --upstream che EDK2_UPSTREAM_TAG non passa per una
-# lacuna nota, con quello che la colma (docs/edk2-migration.md, "Step (a)"):
-# non fermano edk2-upstream, e uno di loro che passa la ferma, perche' va
-# tolto da qui e dalla pagina.
+# lacuna nota (docs/edk2-migration.md, "Step (a)"), "passo:testo" con il
+# testo del suo messaggio: non fermano edk2-upstream; uno di loro che passa,
+# o che non passa per altro, la ferma, e va rivisto qui e nella pagina.
 #   servizi runtime: SmmStoreLib passa a SMM gli argomenti in dati dei
-#     servizi runtime, che boot.efi sposta (la patch 0134 e edk2/0029, 0044)
+#     servizi runtime, che boot.efi sposta, e SetVariable() da'
+#     EFI_DEVICE_ERROR (la patch 0134 e edk2/0029, 0044)
 #   TPM 1.2: UefiPayloadPkg non ha i driver TCG (c111515 di MrChromebox)
 #   variabili autenticate: SmmStoreFvbRuntimeDxe formatta lo store con
 #     gEfiVariableGuid (la riga di SmmStoreFvbRuntimeDxe.c di 2686758)
-EDK2_UPSTREAM_GAPS=("servizi runtime" "TPM 1.2" "variabili autenticate")
+EDK2_UPSTREAM_GAPS=(
+	"servizi runtime:SetVariable OuroRelocA: FAIL 0x8000000000000007"
+	"TPM 1.2:no EFI_TCG2_PROTOCOL or EFI_TCG_PROTOCOL"
+	"variabili autenticate:store normale (gEfiVariableGuid)"
+)
 # I font della schermata di aggiornamento del firmware (patches/edk2/0026):
 # tools/ui-font.py li fa da quelli di LVGL nell'albero di EDK2, dopo le patch
 UI_FONT_LVGL="LvglPkg/Library/LvglLib/lvgl/src/font"
@@ -2129,7 +2134,7 @@ cmd_edk2_upstream() {
 	efi_app "${O}/tools/efi/tpm-pcr-test.c" "${pcrs}" || die "edk2-upstream: tools/efi/tpm-pcr-test.c non compila"
 	for g in "${EDK2_UPSTREAM_GAPS[@]}"; do
 		# senza la ROM con Secure Boot il suo passo non c'e'
-		[ -n "${sb}" ] || [ "${g}" != "variabili autenticate" ] || continue
+		[ -n "${sb}" ] || [ "${g%%:*}" != "variabili autenticate" ] || continue
 		gaps+=(--gap "${g}")
 	done
 	say "edk2-upstream: QEMU"

@@ -8,7 +8,7 @@
 #                               [--sb-test EFI --esrt GUID:VERSIONE:LSV [--sb-only]]
 #                               [--tpm EFI [--tpm2]] ROM
 #   python3 tools/qemu-smoke.py --upstream [--out DIR] [--reloc-test EFI]
-#                               [--tpm EFI] [--auth-rom ROM] [--gap PASSO ...] ROM
+#                               [--tpm EFI] [--auth-rom ROM] [--gap PASSO[:TESTO] ...] ROM
 #
 # Controlla, in ordine:
 #   1. coreboot arriva al payload ("Jumping to boot code" sulla seriale);
@@ -101,9 +101,10 @@
 # progetto (tools/build.sh edk2-upstream): solo i passi che non chiedono il
 # setup del progetto, ognuno per conto suo (run_upstream). --auth-rom e' la
 # stessa ROM con il payload costruito con SECURE_BOOT_ENABLE: lo store che
-# crea su un SMMSTORE vuoto deve essere autenticato. --gap PASSO dice un
-# passo che non passa per una lacuna nota (docs/edk2-migration.md): non
-# ferma la prova; se invece passa la ferma, perche' la lacuna va tolta.
+# crea su un SMMSTORE vuoto deve essere autenticato. --gap PASSO:TESTO dice
+# un passo che non passa per una lacuna nota (docs/edk2-migration.md), con
+# TESTO nel suo messaggio: non ferma la prova; se il passo non passa per
+# un'altra ragione, o se passa, la ferma (la lacuna va tolta).
 #
 # Il W541 non si emula: qui girano il payload (UEFIPayloadPkg, LvglPkg, le
 # patch di patches/edk2) e il codice comune di coreboot, non quello della
@@ -1064,10 +1065,11 @@ def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None, auth_rom=None, gap
     il TPM 1.2 con il log (passo 11) e, con auth_rom (il payload con
     SECURE_BOOT_ENABLE), lo store autenticato. Ogni passo per conto suo: uno
     che non passa non nasconde gli altri, che e' quel che la prova deve
-    dire. gaps: i passi che non passano per una lacuna nota del payload
-    (docs/edk2-migration.md); uno di loro che passa e' un errore, perche'
-    la lacuna va tolta dall'elenco. Torna (righe, passi falliti, lacune
-    confermate)."""
+    dire. gaps: {passo: testo} dei passi che non passano per una lacuna nota
+    del payload (docs/edk2-migration.md), con testo nel messaggio (vuoto:
+    qualunque); uno di loro che non passa per altro, o che passa, e' un
+    errore, perche' la lacuna va rivista. Torna (righe, passi falliti,
+    lacune confermate)."""
     os.makedirs(out, exist_ok=True)
     lines, failed, known = [], [], []
     t0 = time.monotonic()
@@ -1079,9 +1081,12 @@ def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None, auth_rom=None, gap
         try:
             result = fn()
         except Fail as e:
-            if name in gaps:
+            if name in gaps and gaps[name] in str(e):
                 known.append(name)
                 lines.append("--  %s  %s: %s (lacuna nota)" % (at(), name, e))
+            elif name in gaps:
+                failed.append(name)
+                lines.append("NO  %s  %s: %s (non per la lacuna nota, che dice \"%s\")" % (at(), name, e, gaps[name]))
             else:
                 failed.append(name)
                 lines.append("NO  %s  %s: %s" % (at(), name, e))
@@ -1100,7 +1105,7 @@ def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None, auth_rom=None, gap
                 hits = [l.rstrip() for l in text if UPSTREAM_DIAG.search(l) or any(
                     re.search(r"Loading driver at 0x0*%s\b" % a, l, re.I) for a in failed_at)]
                 # di una lacuna nota bastano le ultime righe
-                n = 12 if name in gaps else 40
+                n = 12 if name in known else 40
                 lines.append("    %s: %d righe utili%s" % (serial, len(hits), ", le ultime %d:" % n if hits else ""))
                 lines.extend("      " + l[:200] for l in hits[-n:])
             return
@@ -1382,9 +1387,10 @@ def main():
     ap.add_argument("--auth-rom", metavar="ROM",
                     help="con --upstream: la ROM con il payload costruito con SECURE_BOOT_ENABLE, il cui "
                     "store su un SMMSTORE vuoto deve essere autenticato")
-    ap.add_argument("--gap", metavar="PASSO", action="append", default=[],
+    ap.add_argument("--gap", metavar="PASSO[:TESTO]", action="append", default=[],
                     help="con --upstream: un passo che non passa per una lacuna nota del payload "
-                    "(docs/edk2-migration.md); se passa, la prova non passa")
+                    "(docs/edk2-migration.md), con TESTO nel messaggio; se passa, o non passa per "
+                    "altro, la prova non passa")
     ap.add_argument("--tpm2", action="store_true",
                     help="il passo 11 con il TPM 2.0 di swtpm, banchi SHA-1 e SHA-256, e il log di "
                     "EFI_TCG2_PROTOCOL (ROM con CONFIG_TPM2 e CONFIG_TPM_MEASURED_BOOT_SHA1_BANK)")
@@ -1428,8 +1434,9 @@ def main():
             ap.error("--upstream: solo --reloc-test, --tpm, --auth-rom e --gap")
         if args.auth_rom and not os.path.isfile(args.auth_rom):
             sys.exit("--auth-rom: %s non c'e'" % args.auth_rom)
+        gaps = dict((g.split(":", 1) + [""])[:2] for g in args.gap)
         lines, failed, known = run_upstream(args.rom, args.out, args.timeout, args.reloc_test, args.tpm,
-                                            args.auth_rom, args.gap)
+                                            args.auth_rom, gaps)
         for line in lines:
             print("  %s" % line)
         gaps = " (lacune note: %s)" % ", ".join(known) if known else ""
