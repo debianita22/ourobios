@@ -1,0 +1,56 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 2 Nov 2026 22:42:14 +0100
+Subject: [PATCH] UefiPayloadPkg/PlatformBootManagerLib: Keep a tried slot
+ before updates
+
+[ouroBIOS: patches/edk2/0046, as it is]
+
+The payload tells coreboot that the vboot slot it booted works once the
+console is up (PlatformMarkFirmwareGood ()), so that vboot keeps a slot
+that it tries after an update. A boot with update capsules resets after
+applying them, before that: if vboot was trying the slot that runs, the
+boot used one of its tries. An update that fails then, or that is
+refused before it writes anything, can use up the tries of a slot that
+works, and vboot goes back to the other one.
+
+Tell coreboot that the slot works before the updates as well, once the
+console is up and the power is enough: the slot booted as far as it does
+when a normal boot marks it. This comes before an update writes
+RW_NVRAM, so the request to try the other slot follows it.
+
+TEST=tools/qemu-update.py of ouroBIOS: a capsule refused while vboot
+tries the slot that runs, with a try left, keeps that slot ("firmware
+slot marked good before the updates: Success", the result "success" in
+RW_NVRAM, no try of the other slot); the capsules that write the other
+slot still have vboot try it.
+---
+ .../Library/PlatformBootManagerLib/PlatformCapsule.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
+index 21fb4f3..f82b146 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
+@@ -619,6 +619,18 @@ PlatformProcessCapsules (
+       CapsuleMessage (UpdateScreenToneWarning, L"Battery too low, firmware update postponed");
+       gBS->Stall (CAPSULE_MESSAGE_DELAY);
+     } else {
++      //
++      // This slot booted as far as the console: if vboot is trying it,
++      // keep it now, before an update asks vboot to try the other slot.
++      // The reset after the updates comes before PlatformMarkFirmwareGood ():
++      // without this, an update that fails, or that is refused before it
++      // writes anything, uses up a try of a slot that works.
++      //
++      Status = SmmStoreLibVbootSlotGood ();
++      if (Status != EFI_UNSUPPORTED) {
++        DEBUG ((DEBUG_INFO, "Capsules: firmware slot marked good before the updates: %r\n", Status));
++      }
++
+       if (InMemory) {
+         Applied = TRUE;
+         Status  = ProcessCapsules ();
+-- 
+2.43.0
+

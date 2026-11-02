@@ -112,3 +112,4 @@
 0109-UefiPayloadPkg-TCG-Secure-MOR-with-the-lock-that-cor.patch
 0110-UefiPayloadPkg-SmmStoreLib-The-arguments-in-the-com-.patch
 0111-UefiPayloadPkg-FmpDeviceSmmLib-Only-the-regions-the-.patch
+0112-UefiPayloadPkg-PlatformBootManagerLib-Keep-a-tried-s.patch
