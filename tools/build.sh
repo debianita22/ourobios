@@ -2331,8 +2331,9 @@ cmd_edk2_parity() {
 	say "edk2-parity ${v}: dal package su TianoCore ${EDK2_UPSTREAM_TAG}"
 	rm -rf "${b:?}"
 	mkdir -p "${b}"
+	# solo le righe CONFIG_ (defconfig_kept le cerca tutte nel .config)
 	{
-		grep -v -e '^CONFIG_EDK2_TAG_OR_REV=' -e '^CONFIG_EDK2_REPO' "${a}/defconfig"
+		grep '^CONFIG_' "${a}/defconfig" | grep -v -e '^CONFIG_EDK2_TAG_OR_REV=' -e '^CONFIG_EDK2_REPO'
 		printf '%s\n' "${EDK2_PACKAGE_CONFIG[@]}"
 	} > "${b}/defconfig"
 	mk "${k}-tianocore" defconfig KBUILD_DEFCONFIG="build-${k}-tianocore/defconfig" > "${b}/defconfig.log" 2>&1 \
