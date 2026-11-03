@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 3 Nov 2026 11:55:00 +0100
+Subject: [PATCH] LvglLib: Leave the UEFI header bindings out of lvgl.h
+
+LVGL v9.6 moved its public headers into include/lvgl, and lvgl.h now
+includes all of them, with the two header bindings of the UEFI driver:
+lv_uefi_edk2.h, which includes EDK2's Uefi.h and protocols, and
+lv_uefi_gnu_efi.h, which includes gnu-efi's efi.h. A build has one of
+the two frameworks, not both, so with LV_USE_UEFI every file that
+includes lvgl.h stops on the other one. With EDK2:
+
+  lvgl/include/lvgl/drivers/uefi/lv_uefi_gnu_efi.h:13:14: fatal error:
+  efi.h: No such file or directory
+
+The binding is the one that LV_USE_UEFI_INCLUDE names ("lv_uefi_edk2.h"
+in lv_conf.h), and lv_uefi.h includes it already. Leave the two out of
+lvgl.h, which up to v9.5 had no UEFI header at all. The master branch
+of LVGL has the same two lines.
+
+TEST=LvglPkg.dsc builds with LVGL v9.6 (release/v9.6 at bb1ff0af416c).
+---
+ Library/LvglLib/lvgl/include/lvgl/lvgl.h | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/Library/LvglLib/lvgl/include/lvgl/lvgl.h b/Library/LvglLib/lvgl/include/lvgl/lvgl.h
+index 7c7e8a6..e674e3f 100644
+--- a/Library/LvglLib/lvgl/include/lvgl/lvgl.h
++++ b/Library/LvglLib/lvgl/include/lvgl/lvgl.h
+@@ -107,8 +107,6 @@
+ #include "drivers/uefi/lv_uefi.h"
+ #include "drivers/uefi/lv_uefi_context.h"
+ #include "drivers/uefi/lv_uefi_display.h"
+-#include "drivers/uefi/lv_uefi_edk2.h"
+-#include "drivers/uefi/lv_uefi_gnu_efi.h"
+ #include "drivers/uefi/lv_uefi_indev.h"
+ #include "drivers/wayland/lv_wayland.h"
+ #include "drivers/wayland/lv_wayland_keyboard.h"
+-- 
+2.43.0
+
