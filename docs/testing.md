@@ -472,6 +472,7 @@ kernel headers for its module).
 | CONF-04 | both | `sudo chipsec_main -m common.bios_wp,common.spi_lock,common.smm,common.smrr,common.bios_ts,common.uefi.access_uefispec,common.spi_desc` | `bios_wp` PASSED with *BIOS Lock* on (BLE and SMM_BWP/EISS set, WPD 0), `spi_lock` PASSED (FLOCKDN), `smm` and `smrr` PASSED, `bios_ts` PASSED; `spi_desc` WARNING or FAILED by design (the descriptor is left writable, `CONFIG_UNLOCK_FLASH_REGIONS`: [README](../README.md#specifications-and-known-limits)) | manual |
 | CONF-05 | both | the UEFI SCT (`SctStartup.nsh` from a USB drive, the *RuntimeServices* and *BootServices* sections, several hours) | no FAIL in the variable, time and capsule services; the ones in the other sections listed here with their reason | manual |
 | CONF-06 | M920x | Windows HLK, with the WIN suite installed: *System.Fundamentals.Firmware* (UEFI, Secure Boot, ACPI, WSMT) and *System.Fundamentals.TPM20* | the tests of those two families pass; Kernel DMA Protection and HSTI are known not to be there | manual |
+| CONF-07 | both | `sudo python3 -I tools/hw-report.py` (CONF-07); by hand `sudo fwts mcfg`, and `sudo cat /proc/iomem \| grep -i -A2 ecam` | from v1.6.0 (patches 0218 and 0219, `edk2/0052`): every window of MCFG *Reserved* in `/sys/firmware/memmap` over its whole length and under a `pnp` device in `/proc/iomem`; `fwts mcfg` without *MCFGMMIONotReserved*. Up to v1.5.x neither, a WARN | CONF-07 |
 
 ## Coverage of hw-report.py
 
@@ -497,7 +498,7 @@ kernel headers for its module).
 | ELOG | 01 | 02 | |
 | ID | 01, 02 | | 03, 04 |
 | WIN | | | 01-08 |
-| CONF | 01 | | 02-06 |
+| CONF | 01, 07 | | 02-06 |
 
 `hw-report.py` has run on the M920x, and on a W541 its TPM-01 and TPM-03
 (v1.5.0: the `TCPA` table, the TPM 1.2 log replayed to its PCRs). On the

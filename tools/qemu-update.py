@@ -45,8 +45,9 @@
 #      ExitBootServices() e lo chiede come un sistema operativo: coreboot
 #      rifiuta le due volte, l'altro slot resta quello di prima; nella mappa
 #      della memoria che vede il sistema operativo nessuna area riservata con
-#      EFI_MEMORY_RUNTIME, libera tutta la memoria da 1 MiB a 1 GiB e il com
-#      buffer di SMMSTORE, con la pagina degli argomenti, MMIO runtime
+#      EFI_MEMORY_RUNTIME, libera tutta la memoria da 1 MiB a 1 GiB, il com
+#      buffer di SMMSTORE, con la pagina degli argomenti, MMIO runtime e la
+#      finestra ECAM della tabella MCFG memoria riservata (edk2/0052)
 #  10. RW_NVRAM pieno prima di una capsula: cancellato e riscritto
 #      dall'inizio, la richiesta di provare il nuovo slot c'e'
 #  11. corrente tolta a meta' della scrittura di uno slot (riempito prima
@@ -816,7 +817,8 @@ class UpdateTest:
         area riservata con EFI_MEMORY_RUNTIME, tutta libera la memoria da 1 MiB
         a 1 GiB (edk2/0030) e il com buffer di SMMSTORE, con la pagina degli
         argomenti dopo il blocco, MMIO con EFI_MEMORY_RUNTIME (0134,
-        edk2/0029)."""
+        edk2/0029); la finestra ECAM della tabella MCFG memoria riservata in
+        tutta la sua estensione (edk2/0052), come la vuole "fwts mcfg"."""
         m = self.m
         mark = re.compile(r"ouroBIOS slot lock test: (TRY_OTHER (before|after) ExitBootServices: (\d+)|.*failed)\r?\n")
         def done():
@@ -865,6 +867,16 @@ class UpdateTest:
         if mmio != size:
             raise Fail("%s: del com buffer di SMMSTORE solo %d KiB su %d MMIO con EFI_MEMORY_RUNTIME%s "
                        "(edk2/0029)" % (tag, mmio, size, cb.group(4)))
+        ec = re.search(r"ouroBIOS slot lock test: MCFG ECAM: (no MCFG|base (\d+) MiB, (\d+) MiB, "
+                       r"reserved (\d+) MiB([^\r\n]*))\r?\n", text)
+        if not ec:
+            raise Fail("%s: slot-lock-test.efi non ha scritto la finestra ECAM" % tag)
+        if ec.group(1) == "no MCFG":
+            raise Fail("%s: nessuna tabella MCFG tra le tabelle ACPI della tabella di sistema" % tag)
+        if int(ec.group(4)) != int(ec.group(3)):
+            raise Fail("%s: della finestra ECAM di MCFG (a %s MiB) solo %s MiB su %s memoria riservata "
+                       "nella mappa della memoria%s (edk2/0052)"
+                       % (tag, ec.group(2), ec.group(4), ec.group(3), ec.group(5)))
         st = self.flash.nv()
         if not st["valid"] or SLOTS[st["try_next"]] != running or SLOTS[st["tried"]] != running:
             raise Fail("%s: RW_NVRAM %s, atteso lo slot %s, quello che gira" % (tag, nv_str(st), running))
@@ -977,7 +989,8 @@ class UpdateTest:
         self.os_boot("9-sistema", "B")
         self.ok("una voce di boot, prima e dopo ExitBootServices(): il payload ha bloccato il cambio "
                 "di slot, coreboot lo rifiuta, RW_NVRAM resta su B; nella mappa della memoria nessuna "
-                "area riservata runtime, libera da 1 MiB a 1 GiB, il com buffer di SMMSTORE MMIO runtime")
+                "area riservata runtime, libera da 1 MiB a 1 GiB, il com buffer di SMMSTORE MMIO runtime, "
+                "la finestra ECAM di MCFG riservata")
 
         # 10. RW_NVRAM pieno: chi scrive dopo (verstage o il payload con la
         # richiesta) lo cancella e riparte dall'inizio

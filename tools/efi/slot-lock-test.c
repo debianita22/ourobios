@@ -13,7 +13,9 @@
  * stanno sopra, edk2/0030, e ogni slide del kernel di macOS ci entra), e
  * guarda il com buffer di SMMSTORE, dall'HOB del payload: MMIO con
  * EFI_MEMORY_RUNTIME, con la pagina degli argomenti dopo il blocco (patch
- * 0134, edk2/0029), che boot.efi di macOS non sposta.
+ * 0134, edk2/0029), che boot.efi di macOS non sposta. E la finestra ECAM
+ * della tabella ACPI MCFG: memoria riservata in tutta la sua estensione
+ * (edk2/0052), come la vogliono "fwts mcfg" e il controllo di Linux su e820.
  * Scrive le risposte sulla seriale (COM1) e si ferma; la prova legge seriale
  * e flash.
  *
@@ -109,6 +111,41 @@ static const struct guid hob_list_guid = {
 static const struct guid smmstore_info_guid = {
 	0xf585ca19, 0x881b, 0x44fb, { 0x3f, 0x3d, 0x81, 0x89, 0x7c, 0x57, 0xbb, 0x01 }
 };
+/* EFI_ACPI_20_TABLE_GUID (UEFI 2.10, 4.6.1.1) */
+static const struct guid acpi_20_guid = {
+	0x8868e871, 0xe4f1, 0x11d3, { 0xbc, 0x22, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81 }
+};
+
+/* RSDP e intestazione delle tabelle (ACPI 6.5, 5.2.5.3 e 5.2.6) */
+struct rsdp {
+	char signature[8];
+	uint8_t checksum;
+	char oem_id[6];
+	uint8_t revision;
+	uint32_t rsdt_address, length;
+	uint64_t xsdt_address;
+} __attribute__((packed));
+
+struct sdt_header {
+	char signature[4];
+	uint32_t length;
+	uint8_t revision, checksum;
+	char oem_id[6], oem_table_id[8];
+	uint32_t oem_revision, creator_id, creator_revision;
+} __attribute__((packed));
+
+/* Una voce di MCFG (PCI Firmware 3.3, 4.1.2), dopo 8 byte riservati */
+struct mcfg_entry {
+	uint64_t base_address;
+	uint16_t segment;
+	uint8_t start_bus, end_bus;
+	uint32_t reserved;
+} __attribute__((packed));
+
+/* La prima finestra ECAM di MCFG; size 0 se non c'e' */
+struct ecam {
+	uint64_t base, size;
+};
 
 _Static_assert(__builtin_offsetof(struct boot_services, get_memory_map) == 0x38, "GetMemoryMap");
 _Static_assert(__builtin_offsetof(struct boot_services, exit_boot_services) == 0xe8, "ExitBootServices");
@@ -116,6 +153,9 @@ _Static_assert(__builtin_offsetof(struct system_table, boot_services) == 0x60, "
 _Static_assert(__builtin_offsetof(struct system_table, configuration_table) == 0x70,
 	       "ConfigurationTable");
 _Static_assert(__builtin_offsetof(struct smmstore_info, block_size) == 0x10, "BlockSize");
+_Static_assert(__builtin_offsetof(struct rsdp, xsdt_address) == 24, "XsdtAddress");
+_Static_assert(sizeof(struct sdt_header) == 36, "DESCRIPTION_HEADER");
+_Static_assert(sizeof(struct mcfg_entry) == 16, "MCFG entry");
 
 static uint8_t memory_map[64 * 1024] __attribute__((aligned(8)));
 static uint8_t smm_param[64];		/* un parametro qualsiasi, fuori dalla SMRAM */
@@ -213,13 +253,77 @@ static const struct smmstore_info *find_smmstore(const struct system_table *st)
 	return 0;
 }
 
+static int same_sig(const char *a, const char *b, unsigned int n)
+{
+	unsigned int i;
+
+	for (i = 0; i < n; i++)
+		if (a[i] != b[i])
+			return 0;
+	return 1;
+}
+
+/* La prima finestra di MCFG, dall'XSDT dell'RSDP 2.0 della tabella di
+   sistema (l'RSDT con un RSDP 1.0) */
+static struct ecam find_ecam(const struct system_table *st)
+{
+	struct ecam ecam = { 0, 0 };
+	const struct rsdp *rsdp = 0;
+	const struct sdt_header *sdt;
+	uint64_t i, n, entry_size;
+
+	for (i = 0; i < st->number_of_table_entries; i++)
+		if (same_guid(&st->configuration_table[i].vendor_guid, &acpi_20_guid))
+			rsdp = st->configuration_table[i].vendor_table;
+	if (!rsdp || !same_sig(rsdp->signature, "RSD PTR ", 8))
+		return ecam;
+	if (rsdp->revision >= 2 && rsdp->xsdt_address) {
+		sdt = (const void *)(uintptr_t)rsdp->xsdt_address;
+		entry_size = 8;
+	} else {
+		sdt = (const void *)(uintptr_t)rsdp->rsdt_address;
+		entry_size = 4;
+	}
+	if (!sdt || sdt->length < sizeof(*sdt))
+		return ecam;
+	n = (sdt->length - sizeof(*sdt)) / entry_size;
+	for (i = 0; i < n; i++) {
+		const uint8_t *p = (const uint8_t *)(sdt + 1) + i * entry_size;
+		uint64_t address = 0;
+		const struct sdt_header *t;
+		const struct mcfg_entry *e;
+		unsigned int b;
+
+		/* le voci dell'XSDT non sono allineate a 8 byte */
+		for (b = 0; b < entry_size; b++)
+			address |= (uint64_t)p[b] << (8 * b);
+		t = (const void *)(uintptr_t)address;
+
+		if (!t || !same_sig(t->signature, "MCFG", 4))
+			continue;
+		if (t->length < sizeof(*t) + 8 + sizeof(*e))
+			return ecam;
+		e = (const void *)((const uint8_t *)(t + 1) + 8);
+		if (e->end_bus < e->start_bus)
+			return ecam;
+		ecam.base = e->base_address + ((uint64_t)e->start_bus << 20);
+		ecam.size = ((uint64_t)e->end_bus - e->start_bus + 1) << 20;
+		return ecam;
+	}
+	return ecam;
+}
+
 /* La mappa di ExitBootServices(): le aree riservate con EFI_MEMORY_RUNTIME,
    la memoria libera tra 1 MiB e 1 GiB e la prima area non libera li', il com
    buffer di SMMSTORE (base, dimensione e blocco di info): MMIO con
-   EFI_MEMORY_RUNTIME in tutta la sua estensione, o il primo tipo diverso */
+   EFI_MEMORY_RUNTIME in tutta la sua estensione, o il primo tipo diverso;
+   quanta della finestra ECAM e' memoria riservata, o il primo tipo diverso */
 static void check_memory_map(uint64_t size, uint64_t descriptor_size,
-			     const struct smmstore_info *info)
+			     const struct smmstore_info *info, const struct ecam *ecam)
 {
+	uint64_t ecam_end = ecam->base + ecam->size, ecam_reserved = 0;
+	uint32_t ecam_other_type = 0;
+	int ecam_other = 0;
 	uint64_t offset, free_bytes = 0, first_start = 0, cb_mmio = 0;
 	uint64_t cb_start = info ? info->com_buffer : 0;
 	uint64_t cb_end = info ? cb_start + info->com_buffer_size : 0;
@@ -235,6 +339,17 @@ static void check_memory_map(uint64_t size, uint64_t descriptor_size,
 
 		if (d->type == EFI_RESERVED_MEMORY_TYPE && (d->attribute & EFI_MEMORY_RUNTIME))
 			reserved_runtime++;
+		if (start < ecam_end && end > ecam->base) {
+			uint64_t a = start > ecam->base ? start : ecam->base;
+			uint64_t b = end < ecam_end ? end : ecam_end;
+
+			if (d->type == EFI_RESERVED_MEMORY_TYPE) {
+				ecam_reserved += b - a;
+			} else if (!ecam_other) {
+				ecam_other = 1;
+				ecam_other_type = d->type;
+			}
+		}
 		if (start < cb_end && end > cb_start) {
 			uint64_t a = start > cb_start ? start : cb_start;
 			uint64_t b = end < cb_end ? end : cb_end;
@@ -269,6 +384,23 @@ static void check_memory_map(uint64_t size, uint64_t descriptor_size,
 		serial_puts(" KiB");
 	}
 	serial_puts("\n");
+	serial_puts("ouroBIOS slot lock test: MCFG ECAM: ");
+	if (!ecam->size) {
+		serial_puts("no MCFG\n");
+	} else {
+		serial_puts("base ");
+		serial_putu((uint32_t)(ecam->base >> 20));
+		serial_puts(" MiB, ");
+		serial_putu((uint32_t)(ecam->size >> 20));
+		serial_puts(" MiB, reserved ");
+		serial_putu((uint32_t)(ecam_reserved >> 20));
+		serial_puts(" MiB");
+		if (ecam_other) {
+			serial_puts(", type ");
+			serial_putu(ecam_other_type);
+		}
+		serial_puts("\n");
+	}
 	serial_puts("ouroBIOS slot lock test: SMMSTORE com buffer: ");
 	if (!info) {
 		serial_puts("no HOB\n");
@@ -310,6 +442,7 @@ efi_status efi_main(void *image, struct system_table *st)
 {
 	struct boot_services *bs = st->boot_services;
 	const struct smmstore_info *info = find_smmstore(st);
+	const struct ecam ecam = find_ecam(st);
 	struct smmstore_info copy;
 	uint64_t size, key, descriptor_size;
 	uint32_t descriptor_version;
@@ -334,7 +467,7 @@ efi_status efi_main(void *image, struct system_table *st)
 		stop();
 	}
 
-	check_memory_map(size, descriptor_size, info);
+	check_memory_map(size, descriptor_size, info, &ecam);
 	try_other("after");
 	stop();
 }

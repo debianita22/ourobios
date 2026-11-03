@@ -440,9 +440,26 @@ assert st == "WARN" and "nessuna misura di coreboot" in summary, summary
 tpm12 = b"".join(struct.pack("<II20sI", pcr, typ, hashlib.sha1(d).digest(), len(d)) + d for pcr, typ, d in mb)
 st, summary, _, data = hw.measured_boot(tpm12, pcrs_of(mb, ("sha1",)))
 assert st == "PASS" and data["banks"] == ["sha1"], (st, summary)
+# CONF-07: la finestra ECAM di MCFG (64 MiB a 0xf0000000, bus 0-63, come sul
+# W541) riservata nella mappa della memoria e tra le risorse della scheda madre
+mcfg = b"MCFG" + struct.pack("<I", 60) + bytes(28 + 8) + struct.pack("<QHBBI", 0xf0000000, 0, 0, 63, 0)
+mm = [(0, 0x9ffff, "System RAM"), (0xf0000000, 0xf3ffffff, "Reserved")]
+io = ("f0000000-f3ffffff : PCI ECAM 0000 [bus 00-3f]\n  f0000000-f3ffffff : Reserved\n"
+      "    f0000000-f3ffffff : pnp 00:01\n")
+st, summary, _, data = hw.ecam_status(mcfg, mm, io)
+assert st == "PASS" and data["windows"][0]["reserved"] == 64 << 20, (st, summary, data)
+st, summary, _, _ = hw.ecam_status(mcfg, mm[:1], io)
+assert st == "WARN" and "MCFGMMIONotReserved" in summary and "PNP0C02" not in summary, summary
+st, summary, _, _ = hw.ecam_status(mcfg, [(0xf0000000, 0xf1ffffff, "Reserved")], io)
+assert st == "WARN" and "MCFGMMIONotReserved" in summary, summary
+st, summary, _, _ = hw.ecam_status(mcfg, mm, "f0000000-f3ffffff : PCI ECAM 0000 [bus 00-3f]\n")
+assert st == "WARN" and "PNP0C02" in summary and "MCFGMMIONotReserved" not in summary, summary
+st, summary, _, _ = hw.ecam_status(mcfg, mm, None)
+assert st == "WARN" and "senza root" in summary, summary
+assert hw.ecam_status(mcfg[:44], mm, io)[0] == "FAIL"
 EOF
 	then
-		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, messaggi noti ed eventi del log, microcode con PRMRR, il registro del measured boot rifatto contro i PCR (TPM 2.0 e 1.2)"
+		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, messaggi noti ed eventi del log, microcode con PRMRR, il registro del measured boot rifatto contro i PCR (TPM 2.0 e 1.2), la finestra ECAM di MCFG (CONF-07)"
 	else
 		bad "tools/hw-report.py: i controlli non danno gli esiti attesi"
 	fi

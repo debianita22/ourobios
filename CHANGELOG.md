@@ -65,6 +65,17 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   option ROM of a card in the M920x could, not the boards' own graphics)
   and one of `OptionOrder` when memory runs out. Nothing changes with
   well-formed devices.
+- **The ECAM window reserved** (patches 0218 and 0219, `edk2/0052`):
+  the window that the MCFG table gives (64 MiB at 0xf0000000 on the
+  W541, 256 MiB at 0xe0000000 on the M920x) is a motherboard resource in
+  the `_CRS` of `\_SB.PCI0.PDRC` (PNP0C02), as the PCI Firmware
+  Specification asks, and reserved memory in the memory map that the OS
+  reads. Up to v1.5.x it was neither, and `fwts mcfg` failed
+  (*MCFGMMIONotReserved*, HIGH); Linux used the window anyway, as its
+  early check takes MCFG as it is. ACPI: one `Memory32Fixed` more in
+  `PDRC`, no device or path changes, so OpenCore's patches stay as they
+  are. `tools/hw-report.py` checks both (CONF-07); the update test checks
+  the memory map in QEMU q35.
 - `docs/testing.md`: a conformance suite (CONF): the WSMT and its flags
   (`hw-report.py` CONF-01), the tables compiled again with `iasl -w3`,
   FWTS, chipsec with what each module must say on these boards (the
@@ -118,7 +129,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   not have: the setup, the splash, the password, the default Secure Boot
   keys, the update screen..., and the platform, `UefiPayloadPkg.dsc` and
   `.fdf` as patches on TianoCore's) and `patches/tianocore` (79 commits of
-  MrChromebox and 38 patches of `patches/edk2`, each without the files of
+  MrChromebox and 39 patches of `patches/edk2`, each without the files of
   the package) from MrChromebox's tree with `patches/edk2`, and checks
   that the tag with the series is that tree in every other file; LvglPkg
   is a package of its own next to it. coreboot builds it with patch 0216

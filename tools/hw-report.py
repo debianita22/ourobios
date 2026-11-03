@@ -19,11 +19,12 @@
 # package e il consumo (come tools/idle-report.py), ASPM e LTR del PCIe, la
 # porta PEG del riser (M920x), ventola e temperature, ME, firmware dell'EC
 # (W541), TPM, protezione del flash (con la sonda di tools/update.py
-# protection, sulle due board), SMBIOS e tabelle ACPI, S3. Con --dump, una
-# copia del flash presa con flashrom -r (lo script il flash non lo legge
-# mai): il registro degli eventi (tools/elog.py), lo stato di vboot in
-# RW_NVRAM, cosa c'e' negli slot e le opzioni del setup salvate in SMMSTORE
-# (tools/update.py).
+# protection, sulle due board), SMBIOS e tabelle ACPI, WSMT e finestra ECAM
+# (riservata nella mappa della memoria e tra le risorse della scheda madre),
+# S3. Con --dump, una copia del flash presa con flashrom -r (lo script il
+# flash non lo legge mai): il registro degli eventi (tools/elog.py), lo stato
+# di vboot in RW_NVRAM, cosa c'e' negli slot e le opzioni del setup salvate in
+# SMMSTORE (tools/update.py).
 #
 # Solo lettura: niente scritture su flash, MSR, /sys o /dev, nessun modulo
 # caricato (il modulo msr serve per gli stati C: sudo modprobe msr, a mano).
@@ -1624,6 +1625,98 @@ def check_wsmt(fw, rep):
         ["flag: " + (" ".join(names) or "nessuno")], {"revision": raw[8], "flags": flags})
 
 
+def ecam_status(mcfg, memmap, iomem):
+    """CONF-07 dai dati: mcfg i byte della tabella MCFG, memmap le voci
+    (inizio, fine compresa, tipo) di /sys/firmware/memmap, iomem il testo di
+    /proc/iomem (None se senza indirizzi: non root). Ogni finestra ECAM deve
+    essere memoria riservata nella mappa della memoria, che "fwts mcfg"
+    controlla (MCFGMMIONotReserved, HIGH; edk2/0052), e una risorsa della
+    scheda madre (PNP0C02, PCI Firmware 3.3, 4.1.2; patch 0218 e 0219), che
+    Linux mette in /proc/iomem come "pnp". Torna (esito, sommario, dettagli,
+    dati)."""
+    if len(mcfg) < 44 + 16:
+        return "FAIL", "tabella MCFG di %d byte, senza voci" % len(mcfg), [], {}
+    windows = []
+    for off in range(44, len(mcfg) - 15, 16):
+        base, seg, start, end = struct.unpack_from("<QHBB", mcfg, off)
+        windows.append((seg, base + (start << 20), base + ((end + 1) << 20) - 1, start, end))
+
+    def covered(lo, hi, ranges):
+        # quanta parte di [lo, hi] coprono gli intervalli (inizio, fine compresa)
+        n, at = 0, lo
+        for a, b in sorted(ranges):
+            if b < at or a > hi:
+                continue
+            if a > at:
+                break
+            n += min(b, hi) - at + 1
+            at = min(b, hi) + 1
+            if at > hi:
+                break
+        return n
+
+    reserved = [(a, b) for a, b, t in memmap if t == "Reserved"]
+    pnp = None
+    if iomem is not None:
+        pnp = []
+        for line in iomem.splitlines():
+            m = re.match(r"\s*([0-9a-f]+)-([0-9a-f]+) : pnp ", line)
+            if m:
+                pnp.append((int(m.group(1), 16), int(m.group(2), 16)))
+    details, missing, data = [], set(), {"windows": []}
+    for seg, lo, hi, start, end in windows:
+        size = hi - lo + 1
+        in_map = covered(lo, hi, reserved)
+        in_pnp = covered(lo, hi, pnp) if pnp is not None else None
+        if in_map != size:
+            missing.add("map")
+        if in_pnp is not None and in_pnp != size:
+            missing.add("pnp")
+        details.append("segmento %d, bus %02x-%02x: 0x%x-0x%x, %d MiB; riservati nella mappa della memoria "
+                       "%d MiB; tra le risorse della scheda madre (pnp) %s" % (
+                           seg, start, end, lo, hi, size >> 20, in_map >> 20,
+                           "non visto (senza root)" if in_pnp is None else "%d MiB" % (in_pnp >> 20)))
+        data["windows"].append({"segment": seg, "start": lo, "end": hi, "reserved": in_map, "pnp": in_pnp})
+    if not missing:
+        if pnp is None:
+            return "WARN", "ECAM riservata nella mappa della memoria; le risorse della scheda madre non " \
+                   "si vedono senza root", details, data
+        return "PASS", "ECAM riservata nella mappa della memoria e tra le risorse della scheda madre", \
+            details, data
+    what = []
+    if "map" in missing:
+        what.append("non riservata nella mappa della memoria (fwts mcfg: MCFGMMIONotReserved)")
+    if "pnp" in missing:
+        what.append("non tra le risorse della scheda madre (PNP0C02)")
+    return "WARN", "ECAM " + " e ".join(what) + " (fino alla v1.5.x e' cosi')", details, data
+
+
+def check_ecam(fw, rep):
+    """CONF-07: la finestra ECAM della tabella MCFG riservata nella mappa della
+    memoria e tra le risorse della scheda madre (ecam_status)."""
+    p = "/sys/firmware/acpi/tables/MCFG"
+    if not os.path.exists(p):
+        rep.add("CONF-07", "ECAM", "INFO", "nessuna tabella MCFG")
+        return
+    try:
+        with open(p, "rb") as f:
+            mcfg = f.read()
+    except OSError as e:
+        rep.add("CONF-07", "ECAM", "WARN", "MCFG non letta: %s" % e)
+        return
+    memmap = []
+    d = "/sys/firmware/memmap"
+    for n in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+        start, end, typ = (rd(os.path.join(d, n, f)) for f in ("start", "end", "type"))
+        if start and end and typ:
+            memmap.append((int(start, 16), int(end, 16), typ))
+    iomem = rd("/proc/iomem")
+    if iomem is not None and not re.search(r"^\s*0*[1-9a-f][0-9a-f]*-", iomem, re.M):
+        iomem = None        # senza root gli indirizzi sono tutti 0
+    status, summary, details, data = ecam_status(mcfg, memmap, iomem)
+    rep.add("CONF-07", "ECAM", status, summary, details, data)
+
+
 def check_s3(fw, rep):
     """S3-01: se il sistema offre S3 e come sono andate le sospensioni di questo avvio."""
     ms = rd("/sys/power/mem_sleep")
@@ -1868,6 +1961,7 @@ def main():
     guard(check_smbios, "ID-01", "SMBIOS e VPD", fw, rep)
     guard(check_acpi, "ID-02", "Tabelle ACPI", fw, rep)
     guard(check_wsmt, "CONF-01", "WSMT", fw, rep)
+    guard(check_ecam, "CONF-07", "ECAM", fw, rep)
     head = header()
     if args.json:
         print(json.dumps({"tool": "hw-report", "format": 1, "board": fw.board, "firmware": fw.bios,
