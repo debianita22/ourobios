@@ -84,11 +84,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   both EDK II trees, so that `edk2-parity` compares the same LVGL).
   LvglLib lists the sources where v9.6 moved them, `lv_conf.h` takes the
   names v9.6 gave its options (the same color format, asserts and
-  calendar names as before), and `lvgl.h` no longer includes the gnu-efi
-  binding of LVGL's UEFI driver, which stopped every EDK II module that
-  includes it (0019, a fix for LVGL upstream too). The flag functions
-  that v9.6 deprecates and v10 removes are still in use, with their
-  warning off ([docs/roadmap.md](docs/roadmap.md#lvgl-v10)).
+  calendar names as before; new in v9.6, its functions check their
+  pointer arguments, `LV_USE_CHECK_ARG`), and `lvgl.h` no longer
+  includes the gnu-efi binding of LVGL's UEFI driver, which stopped
+  every EDK II module that includes it (0019, a fix for LVGL upstream
+  too). The flag functions that v9.6 deprecates and v10 removes are
+  still in use, with their warning off
+  ([docs/roadmap.md](docs/roadmap.md#lvgl-v10)).
   `lvglpkg/0016`, the fix of the circle mask that the W541 needs at
   2880×1620, is gone, as v9.6.0 has it. The display engine is 20 KiB
   larger (8 KiB in the compressed volume); the update screen draws the
