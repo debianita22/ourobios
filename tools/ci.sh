@@ -430,8 +430,8 @@ away.
 that already runs coreboot with an unlocked flash: only the BIOS region is
 written (details, VPD and recovery in
 [docs/flashing.md](https://github.com/${repo}/blob/main/docs/flashing.md)).
-From v1.3.0 on the laptop, turn off *Firmware protection* (setup menu,
-*Security*) first.
+On an ouroBIOS release, turn off *BIOS Lock* and, from v1.3.0, *Firmware
+protection* (setup menu, *Security*) first.
 
 \`\`\`sh
 sha256sum -c SHA256SUMS --ignore-missing
@@ -594,9 +594,9 @@ flash, as the machine these blobs come from did: only the BIOS region is
 written.
 From the Lenovo firmware the flash is locked: the first time, an external
 programmer ([docs/m920x.md](https://github.com/${repo}/blob/main/docs/m920x.md#first-install)).
-From an ouroBIOS release, turn off *Firmware protection* (setup menu,
-*Security*) first. That region is written whole, with what the firmware
-fills at runtime empty, as in the image: the settings, boot entries and
+From an ouroBIOS release, turn off *BIOS Lock* and *Firmware protection*
+(setup menu, *Security*) first. That region is written whole, with what
+the firmware fills at runtime empty, as in the image: the settings, boot entries and
 Secure Boot keys (\`SMMSTORE\`), the event log (\`RW_ELOG\`), the memory
 training (\`RW_MRC_CACHE\`, done again on the first boot), vboot's state
 (\`RW_NVRAM\`) and the VPD (\`RO_VPD\`: serial number, machine type, UUID
