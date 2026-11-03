@@ -168,6 +168,11 @@ here, then the import. `tools/build.sh prepare` fetches the EDK2 of the
 defconfigs into the coreboot tree, where the payload build expects it, and
 applies the series as changes, not commits: coreboot's EDK2 Makefile resets
 a clean tree to the pinned commit but leaves a modified one alone.
+`tools/edk2-patchcheck.sh`, in `check.yml`, runs EDK II's `PatchCheck.py`
+on every patch of `edk2/series` of the project's author and stops when the
+code does not pass it (line endings, tabs, trailing spaces...); the
+message never passes it, as the author adds the Signed-off-by when a patch
+goes upstream. `lvglpkg/` stays out: LvglPkg keeps LF line endings.
 
 | Patches | What |
 |---|---|

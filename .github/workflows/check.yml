@@ -10,7 +10,8 @@
 #             se mancano le dipendenze); le prove unitarie del payload
 #             sull'host (tools/build.sh edk2-unit-test); lo stile di
 #             coreboot sulla serie (tools/coreboot-lint.sh: lint-stable e
-#             checkpatch.pl)
+#             checkpatch.pl) e quello del codice di EDK II su patches/edk2
+#             (tools/edk2-patchcheck.sh: PatchCheck.py)
 name: Check
 
 on:
@@ -70,6 +71,11 @@ jobs:
       # checkpatch.pl sulle patch del progetto
       - name: Lint di coreboot sulla serie
         run: ./tools/coreboot-lint.sh work/coreboot
+
+      # il codice delle patch del progetto in patches/edk2, come la CI di
+      # TianoCore (PatchCheck.py del tag)
+      - name: PatchCheck di EDK II su patches/edk2
+        run: ./tools/edk2-patchcheck.sh
 
       # la bozza per una nuova parte RO (patches/ro-next) non e' in nessuna
       # serie: un avviso, non un errore, se non applica piu' sopra la serie
