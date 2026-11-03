@@ -950,9 +950,10 @@ def check_idle(fw, rep, msr, seconds):
         return res
     panels = panels_on()
     if panels:
-        details.append("pannello acceso durante la misura: %s (a schermo spento, per esempio con "
-                       "Hyprland: hyprctl dispatch dpms off; sleep 2; sudo python3 -I tools/hw-report.py "
-                       "--seconds 60; hyprctl dispatch dpms on)" % ", ".join(panels))
+        details.append("pannello acceso durante la misura: %s (a schermo spento: docs/testing.md, IDLE-01; "
+                       "con Hyprland hyprctl dispatch dpms off, con la sua configurazione in Lua "
+                       "hyprctl dispatch 'hl.dsp.dpms({ action = \"off\" })', con KDE Plasma "
+                       "kscreen-doctor --dpms off)" % ", ".join(panels))
     status, summary = idle_verdict(deep, avg_busy, res.get("procs"), panels)
     if summary is None:
         top = max(pkg.items(), key=lambda x: x[1])
