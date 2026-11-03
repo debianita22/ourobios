@@ -1,0 +1,149 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 3 Nov 2026 13:17:16 +0100
+Subject: [PATCH] cpu/intel/haswell: Add an option for the TCC activation
+ offset
+
+configure_thermal_target() writes the TCC activation offset, bits 27:24
+of MSR_TEMPERATURE_TARGET, from the devicetree (tcc_offset), when bit 30
+of PLATFORM_INFO says that the processor takes one, and only when the
+value is not 0. No Haswell board sets it.
+
+Read a "tcc_offset" option, 0-15, with the other CPU options, once on
+the BSP, and write it, 0 included, when the processor takes an offset;
+a board without the option keeps the devicetree value as before. The
+CFR object of the option lists it only on such a processor, which
+haswell_tcc_offset_programmable() tells, a function rather than the
+inline MSR read, so that a host build of the menu can replace it.
+
+Intel marks the field reserved on the Haswell client processors, but an
+i7-4810MQ (ThinkPad W541) sets bit 30 of PLATFORM_INFO, and an offset
+of 5 written from Linux reads back on every core, then 0 again.
+
+TEST=Host syntax check of haswell_init.c with the configuration of the
+ThinkPad W541.
+---
+ src/cpu/intel/haswell/cfr.h          | 22 ++++++++++++++++++++++
+ src/cpu/intel/haswell/haswell.h      |  3 +++
+ src/cpu/intel/haswell/haswell_init.c | 25 ++++++++++++++++++++++---
+ 3 files changed, 47 insertions(+), 3 deletions(-)
+
+diff --git a/src/cpu/intel/haswell/cfr.h b/src/cpu/intel/haswell/cfr.h
+index 0473221a0b..63c016df5d 100644
+--- a/src/cpu/intel/haswell/cfr.h
++++ b/src/cpu/intel/haswell/cfr.h
+@@ -76,6 +76,28 @@ static const struct sm_object acpi_cpu_objects = SM_DECLARE_ENUM({
+ 				SM_ENUM_VALUE_END					},
+ });
+ 
++/* Listed only when the processor has a programmable TCC activation offset */
++static void update_tcc_offset(struct sm_object *new)
++{
++	if (!haswell_tcc_offset_programmable())
++		new->sm_number.flags |= CFR_OPTFLAG_SUPPRESS;
++}
++
++static const struct sm_object tcc_offset = SM_DECLARE_NUMBER({
++	.opt_name	= "tcc_offset",
++	.ui_name	= "TCC activation offset",
++	.ui_helptext	= "The processor throttles this many degrees C below its\n"
++			  "maximum temperature (TjMax), 0-15: cooler and quieter,\n"
++			  "slower under a long load. The OS can still change it.\n"
++			  "Default: 0. Not listed on the processors without a\n"
++			  "programmable offset.",
++	.default_value	= 0,
++	.min		= 0,
++	.max		= 15,
++	.step		= 1,
++	.display_flags	= 0,
++}, WITH_CALLBACK(update_tcc_offset));
++
+ static const struct sm_object vmx = SM_DECLARE_BOOL({
+ 	.opt_name	= "vmx",
+ 	.ui_name	= "Intel VT-x",
+diff --git a/src/cpu/intel/haswell/haswell.h b/src/cpu/intel/haswell/haswell.h
+index 374494a62c..885def47e2 100644
+--- a/src/cpu/intel/haswell/haswell.h
++++ b/src/cpu/intel/haswell/haswell.h
+@@ -229,6 +229,9 @@ int cpu_config_tdp_levels(void);
+ bool haswell_eist_enabled(void);
+ bool haswell_c_states_enabled(void);
+ 
++/* A programmable TCC activation offset (PLATFORM_INFO bit 30), for the menu */
++bool haswell_tcc_offset_programmable(void);
++
+ /* The acpi_cpu_objects option: how the ACPI tables declare the CPU threads */
+ #define ACPI_CPU_OBJECTS_DEVICE		0	/* Device, with _HID ACPI0007 */
+ #define ACPI_CPU_OBJECTS_PROCESSOR	1	/* Processor, deprecated since ACPI 6.3 */
+diff --git a/src/cpu/intel/haswell/haswell_init.c b/src/cpu/intel/haswell/haswell_init.c
+index e0e400dc7d..1c33eddb15 100644
+--- a/src/cpu/intel/haswell/haswell_init.c
++++ b/src/cpu/intel/haswell/haswell_init.c
+@@ -332,8 +332,11 @@ static struct {
+ 	bool c_states;
+ 	bool cfg_lock;
+ 	bool vmx;
++	unsigned int tcc_offset;	/* TCC_OFFSET_DEVICETREE: no option */
+ } cpu_options;
+ 
++#define TCC_OFFSET_DEVICETREE	UINT_MAX
++
+ static void read_cpu_options(void)
+ {
+ 	if (cpu_options.valid)
+@@ -345,6 +348,7 @@ static void read_cpu_options(void)
+ 	cpu_options.c_states = get_uint_option("c_states", 1);
+ 	cpu_options.cfg_lock = get_uint_option("cfg_lock", 1);
+ 	cpu_options.vmx = get_uint_option("vmx", CONFIG(ENABLE_VMX));
++	cpu_options.tcc_offset = get_uint_option("tcc_offset", TCC_OFFSET_DEVICETREE);
+ 	cpu_options.valid = true;
+ 
+ 	printk(BIOS_DEBUG,
+@@ -352,6 +356,11 @@ static void read_cpu_options(void)
+ 	       cpu_options.eist ? "on" : "off", cpu_options.turbo ? "on" : "off",
+ 	       cpu_options.c_states ? "on" : "off", cpu_options.cfg_lock ? "on" : "off",
+ 	       cpu_options.vmx ? "on" : "off");
++	if (cpu_options.tcc_offset != TCC_OFFSET_DEVICETREE)
++		printk(BIOS_DEBUG, "CPU: TCC activation offset %u (option)%s\n",
++		       MIN(cpu_options.tcc_offset, 15),
++		       rdmsr_platform_info().prog_tcc_activation_offset ? "" :
++		       ", not programmable on this processor");
+ }
+ 
+ bool haswell_eist_enabled(void)
+@@ -366,6 +375,11 @@ bool haswell_c_states_enabled(void)
+ 	return cpu_options.c_states;
+ }
+ 
++bool haswell_tcc_offset_programmable(void)
++{
++	return rdmsr_platform_info().prog_tcc_activation_offset;
++}
++
+ static unsigned int max_non_turbo_ratio(void)
+ {
+ 	msr_t msr;
+@@ -459,12 +473,17 @@ static void configure_thermal_target(struct device *dev)
+ {
+ 	/* Make sure your devicetree has the cpu_cluster below chip cpu/intel/haswell! */
+ 	struct cpu_intel_haswell_config *conf = dev->upstream->dev->chip_info;
++	const bool option = cpu_options.tcc_offset != TCC_OFFSET_DEVICETREE;
++	const unsigned int offset = option ? cpu_options.tcc_offset : conf->tcc_offset;
+ 
+-	/* Set TCC activation offset if supported */
+-	if (rdmsr_platform_info().prog_tcc_activation_offset && conf->tcc_offset) {
++	/*
++	 * Set TCC activation offset if supported. With the setup option, 0 is
++	 * written too: the field holds the setting, whatever was in it.
++	 */
++	if (rdmsr_platform_info().prog_tcc_activation_offset && (option || offset)) {
+ 		msr_t msr = rdmsr(MSR_TEMPERATURE_TARGET);
+ 		msr.lo &= ~(0xf << 24); /* Bits 27:24 */
+-		msr.lo |= (conf->tcc_offset & 0xf) << 24;
++		msr.lo |= MIN(offset, 15) << 24;
+ 		wrmsr(MSR_TEMPERATURE_TARGET, msr);
+ 	}
+ }
+-- 
+2.43.0
+

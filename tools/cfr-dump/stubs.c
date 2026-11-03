@@ -297,6 +297,15 @@ bool mainboard_cpu_has_tcc_offset(void)
 	return true;
 }
 
+/*
+ * W541 e T440p (cpu/intel/haswell): lo stesso per il codice CPU di Haswell,
+ * che sul ramstage legge PLATFORM_INFO (un i7-4810MQ ha il bit 30)
+ */
+bool haswell_tcc_offset_programmable(void)
+{
+	return true;
+}
+
 #if CONFIG(BOARD_LENOVO_THINKPAD_W541)
 /*
  * W541 (me_status.h della mainboard): l'ME come lo legge me_status.c con lo

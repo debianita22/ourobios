@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 3 Nov 2026 13:17:16 +0100
+Subject: [PATCH] mb/lenovo/haswell: List the TCC activation offset under
+ Thermal
+
+Energy Saver > Thermal gets the TCC activation offset of the CPU code,
+next to the cooling policy: the processor throttles that many degrees C
+below TjMax. Default 0, as up to now. Listed only on the processors
+with a programmable offset; the W541 and the T440p share the menu.
+
+TEST=Host syntax check of cfr.c with the configuration of the ThinkPad
+W541.
+---
+ src/mainboard/lenovo/haswell/cfr.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index c4e4bb2076..7b96c01b73 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -419,6 +419,7 @@ static const struct sm_object energy_thermal = SM_DECLARE_FORM({
+ 	.ui_name	= "Thermal",
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&cooling_policy,
++		&tcc_offset,
+ 		NULL
+ 	},
+ });
+-- 
+2.43.0
+

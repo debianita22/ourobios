@@ -213,3 +213,5 @@
 0217-payloads-external-edk2-Two-options-of-MrChromebox-s-.patch
 0218-nb-intel-haswell-Reserve-the-ECAM-window-as-a-mother.patch
 0219-soc-intel-common-block-acpi-Reserve-ECAM-as-a-mother.patch
+0220-cpu-intel-haswell-Add-an-option-for-the-TCC-activati.patch
+0221-mb-lenovo-haswell-List-the-TCC-activation-offset-und.patch

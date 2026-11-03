@@ -27,7 +27,7 @@ is here. None of it is a promise of a date.
 | [NVIDIA power steering and the EC's CPU limits](#nvidia-power-steering-and-the-ecs-cpu-limits) | W541 | little use under Linux; a `_PPC` policy and adapter tests | count the EC's CPU limit events |
 | [EC events left out](#ec-events-left-out) | W541 | no radio switch to report (checked on a W541 on 2026-11-03); one HKEY slot | an HKEY queue |
 | [Card reader of the W541](#card-reader-of-the-w541) | W541 | the premise was wrong: the reader is an O2 Micro OZ777, which the payload drives already | none planned |
-| [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | the field is reserved on Haswell client processors, though this W541 says it is programmable | a write from Linux that sticks |
+| [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | done in v1.6.0 (patches 0220-0221): the write sticks on a W541 | the throttle point under load (CPU-05) |
 | [Upstream changes not taken](#upstream-changes-not-taken) | W541 | 96893 unreviewed and no gain here; 95880 not for the W541; 95912 at Code-Review -2 | the next coreboot pin |
 | [EDK II from TianoCore](#edk-ii-from-tianocore) | both | moved in v1.6.0: the payload of the ROMs is TianoCore's tag with the package [`edk2/OuroBiosPkg`](../edk2/README.md) and `patches/tianocore`, the same payload as MrChromebox's tree with `patches/edk2`; what is left is the carried series, 100 patches | the series shorter: the *drop* commits first, then the *package* ones into `OuroBiosPkg`, the *upstream* ones proposed ([docs/edk2-migration.md](edk2-migration.md)) |
 | [LVGL v10](#lvgl-v10) | both | not out yet (v9.6, in the setup from v1.6.0, is the last of v9); it removes the flag functions that LvglPkg calls | the setters of v9.6 in LvglPkg, then the pin |
@@ -469,9 +469,14 @@ The M920x has *TCC activation offset* from v1.4.0 (patch 0177).
   and the PL1/PL2 limits cover the same ground.
 - **Checked on a W541** (2026-11-03, i7-4810MQ): CPU-01 reads bit 30 of
   `PLATFORM_INFO` set and an offset of 0 in bits 27:24 of MSR 0x1A2.
-- **Next step**: a write from Linux that sticks (CPU-05 of
-  [docs/testing.md](testing.md)); then the option, which must also be
-  able to write 0 back (`configure_thermal_target()` never writes 0).
+- **Checked on a W541** (2026-11-03): an offset of 5 written from Linux
+  (`wrmsr -a 0x1a2`) reads back on every core, and 0 again after it.
+- **Done in v1.6.0** (patches 0220-0221): *Energy Saver* → *Thermal* →
+  *TCC activation offset*, 0-15, listed only on a processor with bit 30
+  set; the CPU code writes it, 0 included.
+- **Next step**: the throttle point under load with an offset (CPU-05 of
+  [docs/testing.md](testing.md)): that the field sticks does not yet show
+  that the processor follows it.
 
 ## Upstream changes not taken
 
