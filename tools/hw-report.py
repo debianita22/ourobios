@@ -1042,6 +1042,7 @@ def pci_devices():
                     cfg = f.read(256)
             except OSError:
                 pass
+        d["cfg"] = cfg
         d["pcie"] = idle.pcie_info(cfg)
         d["children"] = [x["name"] for x in devs if x["parent"] == d["name"]]
     return devs, state
@@ -1109,6 +1110,167 @@ def check_peg(fw, rep, state):
     if not lines:
         details.append("nessuna riga PEG: nel log (Enabled nel setup, o una build prima della 0169)")
     rep.add("PCI-02", "Porta PEG del riser", status, summary, details)
+
+
+# Le classi PCI (classe e sottoclasse) dei dispositivi che i driver del payload
+# raggiungono con EFI_PCI_IO_PROTOCOL: una loro BAR fuori dall'apertura del
+# root bridge e' un dispositivo che l'UEFI non usa (PCI-09). La rete no: iPXE
+# ha i suoi driver
+PCI_UEFI_CLASSES = {0x0c03: "USB", 0x0106: "SATA", 0x0108: "NVMe", 0x0101: "IDE", 0x0805: "lettore SD"}
+# I flag di /sys/bus/pci/devices/*/resource (include/linux/ioport.h)
+IORESOURCE_MEM, IORESOURCE_PREFETCH = 0x200, 0x2000
+
+
+def payload_aperture(funcs, reserved):
+    """PCI-09 dai dati: rifa' ScanForRootBridges() di PciHostBridgeLib del
+    payload (UefiPayloadPkg, con patches/tianocore/0024) sul bus 0. funcs: le
+    funzioni del bus 0 in ordine di dispositivo e funzione, ognuna {"bdf",
+    "mem_on", "windows": [(base, limite, prefetch)], "bars": [(indice, base,
+    limite)]}; reserved: gli intervalli (inizio, fine compresa) riservati
+    nella mappa della memoria. Le finestre dei bridge allargano l'apertura
+    senza controlli; una BAR di memoria solo se il tratto che aggiunge, fino
+    all'apertura di prima, non tocca memoria riservata
+    (PcatPciRootBridgeWarnAboutBrokenFW): dalla v1.6.0 (edk2/0052) l'ECAM lo
+    e'. Torna (mem, mem4g, fuori): le due aperture [base, limite] (base
+    2**64 - 1 se vuota) e le BAR lasciate fuori, (bdf, indice, base, limite,
+    l'intervallo riservato)."""
+    ap = {"mem": [(1 << 64) - 1, 0], "mem4g": [(1 << 64) - 1, 0]}
+    out = []
+
+    def blocked(start, limit):
+        for a, b in reserved:
+            if max(start, a) < min(limit, b + 1):
+                return a, b
+        return None
+
+    for f in funcs:
+        for base, limit, pref in f.get("windows", ()):
+            if 0 < base < limit:
+                a = ap["mem4g" if pref and base >= 1 << 32 else "mem"]
+                a[0], a[1] = min(a[0], base), max(a[1], limit)
+        if not f.get("mem_on", True):
+            continue
+        for idx, base, limit in f.get("bars", ()):
+            if not 0 < base < limit:
+                continue
+            a = ap["mem" if base < 1 << 32 else "mem4g"]
+            # NewBase e NewLength del payload: il tratto fino all'apertura
+            r = blocked(base if a[0] > base else a[0], base if a[1] < limit else a[0])
+            if r:
+                out.append((f["bdf"], idx, base, limit, r))
+                continue
+            a[0], a[1] = min(a[0], base), max(a[1], limit)
+    return tuple(ap["mem"]), tuple(ap["mem4g"]), out
+
+
+def bus0_functions(devs):
+    """Le funzioni del bus 0 per payload_aperture(), da pci_devices(): le BAR
+    da resource; le finestre dei bridge e il bit Memory Space del comando
+    dalla configurazione letta (bastano i 64 byte che si leggono anche senza
+    root), se non letta le finestre da resource e il bit acceso."""
+    funcs = []
+    for d in devs:
+        if not re.fullmatch(r"0000:00:[0-9a-f]{2}\.[0-7]", d["name"]):
+            continue
+        cfg = d.get("cfg") or b""
+        res = []
+        for line in (rd(d["dev"] + "/resource", "") or "").splitlines():
+            try:
+                res.append(tuple(int(x, 16) for x in line.split()[:3]))
+            except ValueError:
+                res.append((0, 0, 0))
+        hdr = cfg[0x0e] & 0x7f if len(cfg) >= 64 else (1 if len(res) > 14 and res[14][2] else 0)
+        f = {"bdf": d["name"][5:], "ids": d["ids"], "drv": d["drv"],
+             "cls": int(rd(d["dev"] + "/class", "0x000000"), 16) >> 8,
+             "mem_on": bool(struct.unpack_from("<H", cfg, 4)[0] & 2) if len(cfg) >= 64 else True,
+             "windows": [], "bars": []}
+        nbars = 2 if hdr == 1 else 6 if hdr == 0 else 0
+        for i in range(min(nbars, len(res))):
+            start, end, flags = res[i]
+            if flags & IORESOURCE_MEM and end > start:
+                f["bars"].append((i, start, end))
+        if hdr == 1 and len(cfg) >= 64:
+            mb, ml, pb, pl = struct.unpack_from("<HHHH", cfg, 0x20)
+            f["windows"].append(((mb & 0xfff0) << 16, ((ml & 0xfff0) << 16) | 0xfffff, False))
+            pbase, plim = (pb & 0xfff0) << 16, ((pl & 0xfff0) << 16) | 0xfffff
+            if pb & 0xf == 1:
+                hi_b, hi_l = struct.unpack_from("<II", cfg, 0x28)
+                pbase, plim = pbase | hi_b << 32, plim | hi_l << 32
+            f["windows"].append((pbase, plim, True))
+        elif hdr == 1:
+            for i in (14, 15):
+                if len(res) > i and res[i][2] & IORESOURCE_MEM and res[i][1] > res[i][0]:
+                    f["windows"].append((res[i][0], res[i][1], bool(res[i][2] & IORESOURCE_PREFETCH)))
+        funcs.append(f)
+    return funcs
+
+
+def read_memmap():
+    """Le voci (inizio, fine compresa, tipo) di /sys/firmware/memmap."""
+    out, d = [], "/sys/firmware/memmap"
+    for n in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+        start, end, typ = (rd(os.path.join(d, n, f)) for f in ("start", "end", "type"))
+        if start and end and typ:
+            out.append((int(start, 16), int(end, 16), typ))
+    return out
+
+
+def aperture_status(funcs, memmap, ecam=()):
+    """PCI-09: (esito, sommario, dettagli, dati) da payload_aperture(). FAIL
+    se resta fuori una BAR di un dispositivo che il payload usa (USB, dischi,
+    lettore SD): prima del sistema operativo non funziona; WARN per le
+    altre; ecam, le finestre (inizio, fine) di MCFG, per i nomi."""
+    reserved = [(a, b) for a, b, t in memmap if t == "Reserved"]
+    mem, mem4g, out = payload_aperture(funcs, reserved)
+    byname = {f["bdf"]: f for f in funcs}
+
+    def what(r):
+        return "%s 0x%x-0x%x" % ("ECAM" if any(r[0] <= lo and hi <= r[1] for lo, hi in ecam) else
+                                 "riservata", r[0], r[1])
+
+    def ap(a):
+        return "vuota" if a[0] > a[1] else "0x%x-0x%x" % a
+    nbars = sum(len(f["bars"]) for f in funcs if f.get("mem_on", True))
+    details = ["apertura del root bridge sotto i 4 GiB %s, sopra %s (%d BAR di memoria sul bus 0)" % (
+        ap(mem), ap(mem4g), nbars)]
+    for a, b in reserved:
+        if mem[0] <= mem[1] and max(a, mem[0]) <= min(b, mem[1]):
+            details.append("l'apertura copre %s: PciHostBridgeDxe non la registra tutta nel GCD "
+                           "(in una build DEBUG si ferma su un ASSERT)" % what((a, b)))
+    status, hard = "PASS", []
+    for bdf, idx, base, limit, r in out:
+        f = byname[bdf]
+        kind = PCI_UEFI_CLASSES.get(f["cls"])
+        details.append("%s %s %-12s BAR%d 0x%x-0x%x fuori: tra la BAR e l'apertura c'e' %s%s" % (
+            bdf, f["ids"], f["drv"][:12], idx, base, limit, what(r),
+            "; %s, che il payload usa: prima del sistema operativo non funziona" % kind if kind else ""))
+        if kind:
+            hard.append("%s (%s)" % (bdf, kind))
+    data = {"mem": list(mem), "mem_above_4g": list(mem4g),
+            "excluded": [{"bdf": b, "bar": i, "base": x, "limit": y, "reserved": list(r)}
+                         for b, i, x, y, r in out]}
+    if hard:
+        return "FAIL", "BAR fuori dall'apertura del payload: %s" % ", ".join(hard), details, data
+    if out:
+        return "WARN", "%d BAR fuori dall'apertura del payload, di dispositivi che il payload non usa" % len(
+            out), details, data
+    return "PASS", "ogni BAR di memoria del bus 0 nell'apertura del root bridge del payload", details, data
+
+
+def check_aperture(fw, rep, devs):
+    """PCI-09: le BAR del bus 0 che l'apertura del root bridge del payload
+    lascia fuori (aperture_status), con le finestre ECAM di MCFG per i nomi."""
+    ecam = []
+    try:
+        with open("/sys/firmware/acpi/tables/MCFG", "rb") as f:
+            mcfg = f.read()
+        for off in range(44, len(mcfg) - 15, 16):
+            base, _seg, start, end = struct.unpack_from("<QHBB", mcfg, off)
+            ecam.append((base + (start << 20), base + ((end + 1) << 20) - 1))
+    except OSError:
+        pass
+    status, summary, details, data = aperture_status(bus0_functions(devs), read_memmap(), ecam)
+    rep.add("PCI-09", "Aperture PCI del payload", status, summary, details, data)
 
 
 def me_value(text, names=None):
@@ -1750,12 +1912,7 @@ def check_ecam(fw, rep):
     except OSError as e:
         rep.add("CONF-07", "ECAM", "WARN", "MCFG non letta: %s" % e)
         return
-    memmap = []
-    d = "/sys/firmware/memmap"
-    for n in sorted(os.listdir(d)) if os.path.isdir(d) else []:
-        start, end, typ = (rd(os.path.join(d, n, f)) for f in ("start", "end", "type"))
-        if start and end and typ:
-            memmap.append((int(start, 16), int(end, 16), typ))
+    memmap = read_memmap()
     iomem = rd("/proc/iomem")
     if iomem is not None and not re.search(r"^\s*0*[1-9a-f][0-9a-f]*-", iomem, re.M):
         iomem = None        # senza root gli indirizzi sono tutti 0
@@ -1995,6 +2152,7 @@ def main():
     if r:
         pcie_state = r[1]
         guard(check_peg, "PCI-02", "Porta PEG del riser", fw, rep, pcie_state)
+        guard(check_aperture, "PCI-09", "Aperture PCI del payload", fw, rep, r[0])
     guard(check_fan, "FAN-01", "Ventola e temperature", fw, rep)
     guard(check_tpm, "TPM-01", "TPM", fw, rep)
     guard(check_measured_boot, "TPM-03", "Measured boot", fw, rep)

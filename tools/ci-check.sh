@@ -485,9 +485,33 @@ assert st == "WARN" and "PNP0C02" in summary and "MCFGMMIONotReserved" not in su
 st, summary, _, _ = hw.ecam_status(mcfg, mm, None)
 assert st == "WARN" and "senza root" in summary, summary
 assert hw.ecam_status(mcfg[:44], mm, io)[0] == "FAIL"
+# PCI-09: l'apertura del root bridge del payload rifatta sul bus 0, con
+# l'ECAM del W541 riservata (edk2/0052)
+E = (0xf0000000, 0xf3ffffff)
+fn = lambda bdf, cls, bars, windows=(): {"bdf": bdf, "ids": "8086:0000", "drv": "-", "cls": cls,
+                                          "mem_on": True, "windows": list(windows), "bars": bars}
+igd = fn("00:02.0", 0x0300, [(0, 0xf7400000, 0xf77fffff), (2, 0xe0000000, 0xefffffff)])
+xhci_hi, xhci_lo = (fn("00:14.0", 0x0c03, [(0, b, b + 0xffff)]) for b in (0xf7f20000, 0xefe00000))
+sata = fn("00:1f.2", 0x0106, [(5, 0xf7f3c000, 0xf7f3c7ff)])
+# la BAR della grafica dall'altra parte dell'ECAM resta fuori: WARN
+st, summary, _, data = hw.aperture_status([igd, xhci_hi, sata], mm, [E])
+assert st == "WARN" and data["excluded"] == [{"bdf": "00:02.0", "bar": 2, "base": 0xe0000000,
+                                              "limit": 0xefffffff, "reserved": list(E)}], (st, data)
+assert data["mem"] == [0xf7400000, 0xf7f3c7ff], data
+# l'xHCI dall'altra parte: FAIL
+st, summary, _, _ = hw.aperture_status([igd, xhci_lo, sata], mm, [E])
+assert st == "FAIL" and summary.endswith("00:14.0 (USB)"), summary
+# fino alla v1.5.x l'ECAM non e' riservata nella mappa: tutte dentro
+assert hw.aperture_status([igd, xhci_lo, sata], mm[:1], [E])[0] == "PASS"
+# la finestra di un root port allarga l'apertura senza controlli oltre l'ECAM:
+# poi ogni BAR che la allarga ancora resta fuori
+rp = fn("00:1c.0", 0x0604, [], [(0xe0000000, 0xe00fffff, False), (0xfff00000, 0xfffff, True)])
+st, summary, det, data = hw.aperture_status([igd, rp, xhci_hi, sata], mm, [E])
+assert st == "FAIL" and [x["bdf"] for x in data["excluded"]] == ["00:02.0", "00:14.0", "00:1f.2"], data
+assert any(l.startswith("l'apertura copre ECAM") for l in det), det
 EOF
 	then
-		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, messaggi noti ed eventi del log, microcode con PRMRR, il registro del measured boot rifatto contro i PCR (TPM 2.0 e 1.2), la finestra ECAM di MCFG (CONF-07), la versione del W541 in SMBIOS (BOOT-01), una misura degli stati C non a riposo (IDLE-01)"
+		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, messaggi noti ed eventi del log, microcode con PRMRR, il registro del measured boot rifatto contro i PCR (TPM 2.0 e 1.2), la finestra ECAM di MCFG (CONF-07), l'apertura PCI del payload (PCI-09), la versione del W541 in SMBIOS (BOOT-01), una misura degli stati C non a riposo (IDLE-01)"
 	else
 		bad "tools/hw-report.py: i controlli non danno gli esiti attesi"
 	fi

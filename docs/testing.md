@@ -74,10 +74,11 @@ What it reads, and the thresholds:
 | MEM-01 | `FspMemoryInit` (M920x) or the RAM init (W541; on `nri` from v1.4.0, patch 0189, before it the whole romstage) in `cbmem -T`, the cache state in `cbmem -1` | ≤ 2 s with a valid cache or on S3 resume | ≤ 5 s | above |
 | MEM-02 | `dmidecode -t 17`, `/proc/meminfo`, *N DIMMs found* | Linux sees ≥ 90% of the modules | less, or a DIMM count that differs from the log | |
 | CPU-01 | `/proc/cpuinfo`, MSRs 0x606, 0x610, 0xCE, 0x1A2, 0x1AD, the EC line of the log; the microcode of the firmware from the log, plus one after *Skip microcode update* (Cannon Lake with PRMRR, [docs/m920x.md](m920x.md#status)); as a detail, whether the TCC offset can be set (bit 30 of 0xCE) and its value in 0x1A2 | one microcode on every core, PL1 on | cores with different microcode, PL1 off | |
-| IDLE-01 | MSRs 0x60D, 0x3F8-0x3FA, 0x630-0x632 and RAPL over `--seconds`, as `tools/idle-report.py`; INFO, to be run again, when the cores are more than 10% busy, a process uses more than 5% of a core, or an internal panel stays on below the pass limit | PC6 and deeper ≥ 50% | ≥ 10% | below |
+| IDLE-01 | MSRs 0x60D, 0x3F8-0x3FA, 0x630-0x632 and RAPL over `--seconds`, as `tools/idle-report.py`; INFO, to be run again, when the cores are more than 10% busy, a process uses more than 5% of a core, or an internal panel stays on below the pass limit (known, not to be run again, for the 3K panel of the W541, which keeps the package in PC2) | PC6 and deeper ≥ 50% | ≥ 10% | below |
 | S3-01 | `/sys/power/mem_sleep`, `/sys/power/suspend_stats` | `deep` offered, no failed suspend | no `deep`, a failed suspend | |
 | PCI-01 | PCIe capability of every function, not waking sleeping ones | ASPM L1 and LTR on wherever both ends support them | one off | |
 | PCI-02 | M920x: `PEG:` lines of `cbmem -1`, `00:01.0` | port off without a card, or a card behind it | the port on with nothing behind it | |
+| PCI-09 | the functions of bus 0 in `/sys/bus/pci` (BARs, bridge windows, the Memory Space bit), the *Reserved* ranges of `/sys/firmware/memmap`, MCFG for the names | every memory BAR of bus 0 inside the root bridge aperture of the payload, replayed as its `ScanForRootBridges()` builds it | a BAR left out, of a device the payload does not drive | a BAR of a USB, SATA, NVMe or SD controller left out |
 | FAN-01 | hwmon (`coretemp`, `nct6683`, `thinkpad`), `EC: CPU fan at N rpm` in the log | CPU < 80 °C, the fan turns | < 95 °C | ≥ 95 °C, or 0 rpm on the M920x |
 | EC-01 | W541: `H8: EC Firmware ID` in the log, the EC string of SMBIOS type 11 | EC 1.15 (`GMHT30WW`) or later | older, without the fix of CVE-2019-6171 ([docs/flashing.md](flashing.md#before-you-start)) | |
 | TPM-01 | `/sys/class/tpm`, the ACPI table, the event log, PCR0 | TPM 2.0 and `TPM2` (M920x), TPM 1.2 and `TCPA` (W541; enabled, active and owned in the details), a measurement log | missing or empty | |
@@ -292,6 +293,7 @@ the W541 resumes since v1.0.9.
 | PCI-06 | both | Wi-Fi card: `journalctl -k -b \| grep -i dsm` | M920x: no `_DSM` warning (the ACPI node of patch 0168) | BOOT-04 |
 | PCI-07 | M920x | a graphics card, then a network or storage card, on the riser; *General* → *Boot* → *Option ROMs of the cards* on *All*, then *Graphics cards only* | the graphics card shows the logo and the setup with both; the ROM of the other card runs only with *All* (its boot entry); an NVMe drive on the riser boots with both; without a card both boot the same; not yet tried | manual |
 | PCI-08 | W541 | *Security* → *Virtualization* → *Untrusted ExpressCard and Thunderbolt* on, *Intel VT-d* on, `intel_iommu=on` (patch 0184): `sudo acpidump -b`, `iasl -d ssdt*.dat`, the `_DSD` of RP03 and RP05; an ExpressCard (USB 3.0 or eSATA): `cat /sys/bus/pci/devices/<card>/removable`, `cat /sys/kernel/iommu_groups/*/type`; `sudo cbmem -1 \| grep 'coreboot table'`; then with VT-d off, and with the ExpressCard port off | `ExternalFacingPort` in the `_DSD` of RP03 and RP05 only, and none with VT-d or the port off; the card `removable`, its IOMMU group of type `DMA`, and it works; *coreboot table: N bytes.* and no *didn't fit*; not yet tried | manual |
+| PCI-09 | both | `sudo python3 -I tools/hw-report.py` (PCI-09); by hand `sudo lspci -vv -s 00: \| grep -E '^[0-9a-f]\|Memory at\|Memory behind'` and the *Reserved* ranges of `/sys/firmware/memmap` | from v1.6.0 the ECAM window is reserved memory (`edk2/0052`), and the PciHostBridgeLib of the payload (`tianocore/0024`, commit `0a270f8` of MrChromebox) leaves out of its root bridge aperture every memory BAR of bus 0 whose addition would cover reserved memory: a BAR on the other side of the ECAM window from the first one it scans. No BAR of a USB, SATA, NVMe or SD controller left out: the payload's drivers reach those only through the aperture | PCI-09 |
 
 ### Display (DISP)
 
@@ -485,7 +487,7 @@ kernel headers for its module).
 | IDLE | 01 | 02 | |
 | S3 | 01 | 02 | 03 |
 | USB | | | 01-06 |
-| PCI | 01, 02, 06 | | 03-05, 07, 08 |
+| PCI | 01, 02, 06, 09 | | 03-05, 07, 08 |
 | DISP | 04 | | 01-03, 05 |
 | AUD | | | 01-03 |
 | NET | | | 01-05 |

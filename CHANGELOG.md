@@ -143,6 +143,14 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   off), and points to `docs/testing.md` for the screen off; with its 3K
   panel on, the W541 stays in PC2, which IDLE-01 now calls known rather
   than asking for the measurement again. CPU-01 names the TCC option.
+- `tools/hw-report.py` PCI-09 replays on the machine how the payload
+  builds the aperture of its PCI root bridge (`ScanForRootBridges()` of
+  PciHostBridgeLib with `tianocore/0024`): a memory BAR of bus 0 whose
+  addition would make the aperture cover reserved memory stays out of it,
+  and from v1.6.0 the ECAM window is reserved (`edk2/0052`), so that a BAR
+  on its other side from the first one scanned stays out. FAIL when that
+  is a USB, SATA, NVMe or SD controller, which the payload's drivers reach
+  only through the aperture; WARN for the other devices.
 - The move to upstream TianoCore EDK II starts in CI:
   `tools/build.sh edk2-upstream` builds `edk2-stable202608` as it is
   into two q35 images with this tree's coreboot, one with
