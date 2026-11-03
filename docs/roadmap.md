@@ -583,7 +583,8 @@ meanwhile. `lvglpkg/0019`, the UEFI header bindings out of `lvgl.h`, is a
 fix for LVGL itself: its master has the same lines. Next step: LVGL's
 `scripts/migration/migrate_obj_flags.py` on LvglPkg, offered to
 MrChromebox's repository so that `patches/lvglpkg` does not carry it, and
-0019 to LVGL; then the pin, when v10 is out.
+0019 to LVGL; then the pin, when v10 is out (`tools/upstream.sh lvgl`
+opens an issue).
 
 ## HSTI
 

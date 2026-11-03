@@ -9,7 +9,10 @@
 #             (tools/upstream.sh edk2); poi i tag pin-<12 cifre> dei commit
 #             pinnati (configs/edk2-pins.txt) nei fork del progetto: un
 #             issue "Mirror: ..." finche' ne manca uno (tools/upstream.sh
-#             mirror).
+#             mirror); la dbx di Microsoft, un tag stabile di TianoCore
+#             dopo il pin, e LVGL: commit sul ramo della release dopo il
+#             pin, o una release nuova, un issue "LVGL: ..."
+#             (tools/upstream.sh lvgl).
 # I pin si spostano a mano: le patch vanno riviste e le ROM provate sul
 # portatile prima di una release.
 #
@@ -110,4 +113,15 @@ jobs:
             ./tools/upstream.sh tianocore --dry-run
           else
             ./tools/upstream.sh tianocore
+          fi
+
+      - name: LVGL dopo il pin
+        if: ${{ !cancelled() }}
+        env:
+          IN_DRY: ${{ inputs.dry_run }}
+        run: |
+          if [ "${IN_DRY:-false}" = true ]; then
+            ./tools/upstream.sh lvgl --dry-run
+          else
+            ./tools/upstream.sh lvgl
           fi
