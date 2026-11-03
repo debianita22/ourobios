@@ -127,7 +127,8 @@ The list of `lvglpkg/0021`, within DISP-05:
 
 | ID | Test | Expected |
 |---|---|---|
-| S3-02, S3-03 | `systemctl suspend` five times; on the W541 also the lid and Fn | back each time; `sudo cbmem -1` with *S3 Resume*; network, USB, video, audio and Wi-Fi work |
+| S3-02, S3-03 | `systemctl suspend` five times; on the W541 also the lid and Fn | back each time; `sudo cbmem -1` with *S3 Resume* and *TPM: resuming from S3, nothing is measured*; network, USB, video, audio and Wi-Fi work |
+| TPM-03 (after S3) | hw-report after the five suspends, without a reboot | PASS: the PCRs still replay from the log (patch 0223; up to v1.5.0 and on `ci-244` PCR 2 was extended again on every resume) |
 | — | W541: *NVIDIA discrete GPU* on and then off, a boot and a suspend with each | `lspci -nn \| grep -i nvidia` as the option says; S3 as above |
 | — | W541: macOS from OpenCore | boot, sleep and wake, dark wake (the panel stays off on a dark wake), also with the dGPU off |
 | — | Secure Boot on, with a system signed for Microsoft's keys (shim: a live USB of Fedora or Ubuntu, if the installed one is not); `mokutil --sb-state`, `sudo mokutil --pk \| grep Subject` | `SecureBoot enabled`; `CN=Windows OEM Devices PK`; it boots |

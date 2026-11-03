@@ -264,7 +264,7 @@ or *manual*.
 | ID | Board | How to run | Pass criteria | Auto |
 |---|---|---|---|---|
 | S3-01 | both | `cat /sys/power/mem_sleep` | `deep` offered | S3-01 |
-| S3-02 | both | `systemctl suspend`, wake with the power button; W541 also the lid and Fn; `sudo rtcwake -m mem -s 30` | back to the desktop five times; `sudo cbmem -1` shows *S3 Resume*; `suspend_stats/fail` stays 0 | partial (S3-01 after) |
+| S3-02 | both | `systemctl suspend`, wake with the power button; W541 also the lid and Fn; `sudo rtcwake -m mem -s 30` | back to the desktop five times; `sudo cbmem -1` shows *S3 Resume* and, from v1.6.0, *TPM: resuming from S3, nothing is measured*; `suspend_stats/fail` stays 0; TPM-03 still PASS after the suspends | partial (S3-01 after) |
 | S3-03 | both | after S3-02: network, USB, display, audio, Wi-Fi | all work as before the suspend | manual |
 
 On the M920x S3 has not been tried yet ([docs/m920x.md](m920x.md#status));

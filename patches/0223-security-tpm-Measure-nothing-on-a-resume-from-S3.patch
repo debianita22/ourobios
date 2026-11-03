@@ -25,8 +25,6 @@ HAVE_ACPI_RESUME.
 
 Seen on a Lenovo ThinkCentre M920x with a TPM 2.0 (SHA-1 and SHA-256
 banks): five suspends, PCR 2 past the log after the first.
-
-Signed-off-by: Domenico D'Arrigo <d.darrigo@outlook.it>
 ---
  src/lib/cbfs.c               |  4 +++-
  src/security/tpm/tspi/tspi.c | 17 +++++++++++++++++

@@ -122,9 +122,18 @@ LOG_LEVEL = re.compile(r"^\[(EMERG|ALERT|CRIT |ERROR|WARN |NOTE |INFO |DEBUG|SPE
 LOG_BAD = {"EMERG": "FAIL", "ALERT": "FAIL", "CRIT": "FAIL", "ERROR": "FAIL", "WARN": "WARN"}
 
 # Messaggi gia' noti del log di coreboot: (regex, board o None per tutte, perche')
+# (espressione, board o None, motivo[, ultima release in cui e' noto]): con il
+# quarto elemento il messaggio e' noto solo su quella release e le precedenti,
+# mai su una build della CI (una regressione va vista)
 KNOWN_FW_LOG = (
     (r"CBFS: 'fallback/slic' not found", None,
      "la tabella SLIC e' facoltativa: acpi.c la cerca sempre in CBFS"),
+    (r"SPI Transaction Error at Flash Offset [0-9a-f]+ HSFSTS = 0x0[c8]04f803", "m920x",
+     "fino a v1.5.1 la protezione in scrittura del BIOS (FLOCKDN, FCERR) precede i due eventi di "
+     "fine ramstage; da v1.6.0 la applica il finalize in SMM (patch 0209)", (1, 5, 1)),
+    (r"ELOG: NV Write failed at 0x[0-9a-f]+, size 0x[0-9a-f]+", "m920x",
+     "fino a v1.5.1 il registro perde il 'boot' e il 'System reset' di ogni avvio: vedi l'errore SPI; "
+     "corretto da v1.6.0 (patch 0209)", (1, 5, 1)),
     (r"HECI: CSE device 16\.0 is disabled", "m920x",
      "alla ripresa da S3 con il ME spento (me_state): la ramstage lo cerca e lo trova nascosto"),
     (r"PMC: Duplicate GPE DW register values detected", "m920x",
@@ -292,6 +301,12 @@ class Firmware:
                         self.ts.append((int(parts[0]), int(parts[1]), int(parts[2]), parts[3].strip()))
         self.board = self.detect_board()
 
+    @property
+    def release(self):
+        """(major, minor, patch) di una release, None per una build della CI."""
+        m = re.search(r"-v(\d+)\.(\d+)\.(\d+)(?:-rc\d+)?-", getattr(self, "bios", "") or "")
+        return tuple(int(x) for x in m.groups()) if m else None
+
     def detect_board(self):
         b = self.bios or ""
         if "-m920x-" in b:
@@ -339,9 +354,14 @@ class Firmware:
         return None if b is None else b - a
 
 
-def known(text, table, board):
-    for rx, b, why in table:
-        if (b is None or b == board) and re.search(rx, text):
+def known(text, table, board, release=None):
+    for entry in table:
+        rx, b, why = entry[:3]
+        if b is not None and b != board:
+            continue
+        if len(entry) > 3 and (release is None or release > entry[3]):
+            continue
+        if re.search(rx, text):
             return why
     return None
 
@@ -645,7 +665,7 @@ def check_fw_log(fw, rep):
             seen[key] = seen.get(key, 0) + 1
     status, details, new, events = "PASS", [], 0, []
     for (lvl, text), n in seen.items():
-        why = known(text, KNOWN_FW_LOG, fw.board)
+        why = known(text, KNOWN_FW_LOG, fw.board, fw.release)
         event = known(text, EVENT_FW_LOG, fw.board)
         times = " (x%d)" % n if n > 1 else ""
         if event:
