@@ -290,7 +290,7 @@ test.
 | `6128cce` | UefiPayloadPkg/GraphicsOutputDxe: Allow for framebuffer at an offset from BAR | upstream |  | `tianocore/0003` |
 | `564cb49` | BaseSerialPortLib16550: Avoid reinitializing serial port or setting attributes | carry |  | `tianocore/0004` |
 | `e32b60d` | UefiPayloadPkg: Add and use EXT2/EXT4, exFAT, NTFS filesystem drivers | package | ext4 only (the boards build with EXTRA_FS_DRIVERS=FALSE) | package |
-| `a091558` | MdeModulePkg/SdMmcPciHcDxe: add Bayhub support | carry | the SD reader of the W541 is most likely a Bayhub (O2 Micro) one ([roadmap](roadmap.md#card-reader-of-the-w541)): `lspci -nn` on the laptop decides | `tianocore/0010` |
+| `a091558` | MdeModulePkg/SdMmcPciHcDxe: add Bayhub support | carry | the SD reader of the W541 is an O2 Micro OZ777, 1217:8520, its `BHT_PCI_DEV_ID_FJ2` (`lspci -nn` on a W541, [roadmap](roadmap.md#card-reader-of-the-w541)) | `tianocore/0010` |
 | `4c76525` | MdeModulePkg/Usb/Keyboard.c: remove Get/SetConfig calls | upstream | USB keyboards that fail the requests | `tianocore/0011` |
 | `076933b` | UefiPayloadPkg: Add and use PlatformGopPolicy | drop | no GOP driver: libgfxinit sets the mode | `tianocore/0013`, package |
 | `88b95ba` | UefiPayloadPkg: Add AmdPcoSdhciDxe driver for AMD Picasso eMMC | drop | reverted by 6aa87d0 | left out with its revert (0022 unused) |

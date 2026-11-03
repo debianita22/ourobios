@@ -25,10 +25,10 @@ is here. None of it is a promise of a date.
 | [Wake on LAN after a shutdown on the W541](#wake-on-lan-after-a-shutdown-on-the-w541) | W541 | nothing for it in coreboot's Lynx Point code; the EC side unknown | what the Lenovo firmware programs |
 | [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot | none planned |
 | [NVIDIA power steering and the EC's CPU limits](#nvidia-power-steering-and-the-ecs-cpu-limits) | W541 | little use under Linux; a `_PPC` policy and adapter tests | count the EC's CPU limit events |
-| [EC events left out](#ec-events-left-out) | W541 | the radio switch is unchecked; one HKEY slot | `rfkill` and EC 0x48 on a W541; an HKEY queue |
-| [Card reader of the W541](#card-reader-of-the-w541) | W541 | the premise was wrong: the reader is most likely not a Realtek | `lspci -nn` on the laptop |
-| [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | the field is reserved on Haswell client processors | the TCC line of `hw-report.py` on a W541 |
-| [Upstream changes not taken](#upstream-changes-not-taken) | W541 | 96893 unreviewed and no gain here; 95880 and 95912 at Code-Review -2 | the next coreboot pin; `rfkill` on a W541 |
+| [EC events left out](#ec-events-left-out) | W541 | no radio switch to report (checked on a W541 on 2026-11-03); one HKEY slot | an HKEY queue |
+| [Card reader of the W541](#card-reader-of-the-w541) | W541 | the premise was wrong: the reader is an O2 Micro OZ777, which the payload drives already | none planned |
+| [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | the field is reserved on Haswell client processors, though this W541 says it is programmable | a write from Linux that sticks |
+| [Upstream changes not taken](#upstream-changes-not-taken) | W541 | 96893 unreviewed and no gain here; 95880 not for the W541; 95912 at Code-Review -2 | the next coreboot pin |
 | [EDK II from TianoCore](#edk-ii-from-tianocore) | both | moved in v1.6.0: the payload of the ROMs is TianoCore's tag with the package [`edk2/OuroBiosPkg`](../edk2/README.md) and `patches/tianocore`, the same payload as MrChromebox's tree with `patches/edk2`; what is left is the carried series, 100 patches | the series shorter: the *drop* commits first, then the *package* ones into `OuroBiosPkg`, the *upstream* ones proposed ([docs/edk2-migration.md](edk2-migration.md)) |
 | [LVGL v10](#lvgl-v10) | both | not out yet (v9.6, in the setup from v1.6.0, is the last of v9); it removes the flag functions that LvglPkg calls | the setters of v9.6 in LvglPkg, then the pin |
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
@@ -411,8 +411,8 @@ OS. Left out, with the reason in `ec.asl`:
   ([above](#nvidia-power-steering-and-the-ecs-cpu-limits));
 - 0x41, the radio switch (HKEY 0x7000): the Lenovo `WLSW` returns a
   constant, ours EC 0x48 bit 1 (`GSTS`), and on 0x7000 `thinkpad_acpi`
-  reads it and would hard-block the radios if it read 0, which nobody has
-  checked on a W541 (upstream change 95880 is about the same bit);
+  reads it and would hard-block the radios if it read 0; on a W541 it
+  reads 1 (below; upstream change 95880 is about the same bit);
 - 0x2C, 0x2D, 0x38, 0x44, the Ultrabay, which has no device in our DSDT;
 - 0x70 and 0x72-0x74, sticky Fn and Fn+Esc: `thinkpad_acpi` ignores
   their codes, 0x74 needs a `GMKS` method, and they would follow hotkeys
@@ -426,9 +426,13 @@ the same comparison: the beep mask of the EC (0x86 here, 0x87 with the
 Lenovo firmware; FAN-08) and the Lenovo writes of EC 0x02 bit 7 and 0x03
 bits 5-6.
 
-- **Next step**: `rfkill list` and EC 0x48 on a W541, which decide 0x41
-  (and 95880); a queue in the shared `thinkpad.asl`, gated for the other
-  ThinkPads, before the sticky Fn events.
+- **Checked on a W541** (2026-11-03, v1.5.0): EC 0x48 reads 0x52, so
+  `GSTS` (bit 1) is 1, and `rfkill list` shows no radio hard-blocked.
+  `thinkpad_acpi` would read 1 on 0x7000 and block nothing, so 0x41 could
+  be handled safely, but Lenovo's PSREF of the W541 lists no radio switch
+  for it to report: it stays out. 95880 is not for the W541 (below).
+- **Next step**: a queue in the shared `thinkpad.asl`, gated for the
+  other ThinkPads, before the sticky Fn events.
 
 ## Card reader of the W541
 
@@ -444,9 +448,14 @@ gap.
   boot on the W541 is for a Bayhub (O2 Micro) reader. That fix (MrChromebox
   EDK2 `c205cebb`) is already in the payload, and coreboot's Realtek driver
   binds only Realtek IDs.
-- **Next step**: `lspci -nn` on the laptop. With an O2 Micro reader, at
-  most the subsystem IDs that the Lenovo `DxeO2MicroInit` writes, which
-  are cosmetic.
+- **Checked on a W541** (2026-11-03): `lspci -nn` gives `01:00.0 SD Host
+  controller [0805]: O2 Micro, Inc. OZ777 SD/MMC Card Reader Controller
+  [1217:8520]`, an SDHCI that the payload drives with SdMmcPciHcDxe: 8520
+  is `BHT_PCI_DEV_ID_FJ2` of MrChromebox's Bayhub support (`a091558`), and
+  `c205ceb` keeps its slot removable. Nothing of coreboot's Realtek code
+  applies.
+- **Next step**: none planned; the subsystem IDs that the Lenovo
+  `DxeO2MicroInit` writes are cosmetic.
 
 ## TCC offset on the W541
 
@@ -458,10 +467,11 @@ The M920x has *TCC activation offset* from v1.4.0 (patch 0177).
   of 0, and no Haswell board of coreboot sets it: the option would most
   likely be hidden on every W541. The EC's fan curve, the cooling policy
   and the PL1/PL2 limits cover the same ground.
-- **Next step**: the TCC line of CPU-01 (`tools/hw-report.py`) on a W541
-  (CPU-05 of [docs/testing.md](testing.md)). With bit 30 set and a write
-  from Linux that sticks, the option, which must also be able to write 0
-  back (`configure_thermal_target()` never writes 0).
+- **Checked on a W541** (2026-11-03, i7-4810MQ): CPU-01 reads bit 30 of
+  `PLATFORM_INFO` set and an offset of 0 in bits 27:24 of MSR 0x1A2.
+- **Next step**: a write from Linux that sticks (CPU-05 of
+  [docs/testing.md](testing.md)); then the option, which must also be
+  able to write 0 back (`configure_thermal_target()` never writes 0).
 
 ## Upstream changes not taken
 
@@ -478,9 +488,9 @@ The M920x has *TCC activation offset* from v1.4.0 (patch 0177).
   switch method only for tablets: both at Code-Review -2 for an invalid
   sign-off, so they would stay here for good, and nothing shows that the
   EC of the W541 reads `GSTS` as 0 (the Lenovo DSDT declares it at the
-  same place, though its `WLSW` returns a constant). Next step: `rfkill
-  list` and EC 0x48 on a W541; with Bluetooth or WWAN hard-blocked, 95880
-  set for the W541.
+  same place, though its `WLSW` returns a constant). On a W541 (checked
+  on 2026-11-03) `GSTS` reads 1 and `rfkill list` shows nothing
+  hard-blocked: 95880 is not for the W541.
 - 0185 goes once 96694 is merged; `upstream.yml` reports it by its
   subject. 96645-96647 (NRI cleanups, no-ops on the W541) and 96630
   (acpigen) are in the pin of v1.6.0, 26.09-517.
