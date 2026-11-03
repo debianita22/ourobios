@@ -255,6 +255,19 @@ test.
 
 ## Secure Boot, TPM and crypto
 
+The OpenSSL of CryptoPkg is 3.5.7 at `edk2-stable202608`, and still on
+TianoCore's `master` on 2026-11-03 (`011eca2e8f`). Most of the CVEs that
+3.5.8 and 3.5.9 fix are in parts that CryptoPkg configures out of its
+OpenSSL (`no-quic`, `no-dtls`, `no-cms`, `no-cmp`, `no-sm2`, `no-siv`), or
+in TLS, which CryptoDxe links for its crypto protocol and no module of
+the payload uses (TlsDxe comes with NetworkPkg, which the payload leaves
+out); the payload verifies signatures and computes hashes, and holds no
+key of its own. The one it can reach is CVE-2026-35189, the memory that
+OpenSSL allocates for the relative names of CRL distribution points as it
+looks at every certificate it verifies, those of a signed image or of a
+capsule too: at worst a boot that stops on a crafted signature. It comes
+with the stable tag that takes the new OpenSSL.
+
 | Commit | Subject | Becomes | Note | Now |
 |---|---|---|---|---|
 | `2686758` | UefiPayloadPkg: Enroll Keys for SecureBoot | package | EnrollDefaultKeys; or SecureBootDefaultKeysDxe with a provisioning step of the package. Its line in SmmStoreFvbRuntimeDxe.c, an authenticated store, goes upstream ([step (a)](#step-a-edk2-stable202608-in-qemu)) | `tianocore/0019`, package |
