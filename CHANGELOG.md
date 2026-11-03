@@ -130,6 +130,17 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   with `iasl -w3`, has a warning: v1.5.1 compiles without one on every
   board, the *object is not referenced* (4089) of the names and fields
   that only the OS reads aside, which the check leaves out.
+- `check.yml` holds the series to the style that coreboot's Gerrit and
+  TianoCore's CI ask for: `util/lint/lint lint-stable` on the coreboot
+  tree with the series, and `checkpatch.pl` with the tree's
+  `.checkpatch.conf` on the patches of the project
+  (`tools/coreboot-lint.sh`; the four errors of the native RAM init's
+  0087-0088, to be fixed with the next change of those patches, listed
+  in `patches/checkpatch-known.txt`), and `PatchCheck.py` of TianoCore on
+  the code of the project's patches in `patches/edk2`
+  (`tools/edk2-patchcheck.sh`). The WSMT options of patch 0214 moved into
+  a menu of their own, as `lint-stable` wants every prompt in a menu:
+  the `.config` of every board keeps the same values.
 - `tools/hw-report.py` MEM-02 reads the sizes of the memory devices in
   the binary units of recent dmidecode versions (GiB, MiB) too: a W541
   got *SMBIOS non elenca moduli* with every slot populated; when the
