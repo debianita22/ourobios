@@ -98,10 +98,11 @@ MrChromebox's tree at the commit of the defconfigs:
   `patches/edk2`, in order, without the files that TianoCore's tree does
   not have: 70 commits of MrChromebox (21 have nothing else; two commits
   and their reverts cancel out, `CANCELLED` of `edk2-import.py`; five
-  change only `PlatformBootManagerLib`, which the package carries whole,
-  `PACKAGE_MOVED`) and 34 of the project's 52 patches (13 change only the
-  package or its platform, five only `PlatformBootManagerLib`). The
-  numbers of the patches left out stay unused, so the others keep theirs.
+  change only `PlatformBootManagerLib`, which the package carries whole
+  with `FmpDeviceSmmLib`, `PACKAGE_MOVED`) and 30 of the project's 52
+  patches (13 change only the package or its platform, nine only one of
+  those two libraries). The numbers of the patches left out stay unused,
+  so the others keep theirs.
   The tag with the series is MrChromebox's tree with `patches/edk2` in
   every file but those (`edk2-import.py` checks it before it writes, and
   `--check` in `edk2-upstream.yml` checks the files of the repository).
@@ -109,9 +110,10 @@ MrChromebox's tree at the commit of the defconfigs:
   does not have (the setup and its CFR, the splash, the password, the
   default Secure Boot keys, the update screen, MOR, the TPM's physical
   presence libraries, and MrChromebox's modules for hardware these boards
-  do not have), with `FSDrivers`, and `PlatformBootManagerLib`, which
-  TianoCore has but which is mostly MrChromebox's and the project's work,
-  carried whole; the platform, `UefiPayloadPkg.dsc` and
+  do not have), with `FSDrivers`, and `PlatformBootManagerLib` and
+  `FmpDeviceSmmLib`, which TianoCore has but which are mostly
+  MrChromebox's and the project's work, carried whole; the platform,
+  `UefiPayloadPkg.dsc` and
   `.fdf` of MrChromebox's tree with the project's patches and the paths
   of the package, as patches on TianoCore's. LvglPkg is a package of its
   own next to it, at the commit of MrChromebox's submodule with
@@ -186,11 +188,12 @@ lives only in the package or the series, `patches/edk2` and the import
 retire. Done so far, with no change to the payload: the first *drop*
 ones, the two commits that MrChromebox reverted (`88b95ba` with
 `6aa87d0`, `bf10b5c` with `4258973`), which `edk2-import.py` leaves out
-in pairs after checking that they cancel out; the first *package* one,
-`PlatformBootManagerLib`, which the package now carries whole, as
-MrChromebox's tree with `patches/edk2` has it, and which takes ten
-patches out of the series and part of nine others. The other *drop* ones
-change the payload, and each needs its own test.
+in pairs after checking that they cancel out; the first *package* ones,
+`PlatformBootManagerLib` and `FmpDeviceSmmLib`, which the package now
+carries whole, as MrChromebox's tree with `patches/edk2` has them, and
+which take fourteen patches out of the series and part of twelve
+others. The other *drop* ones change the payload, and each needs its own
+test.
 
 ## Setup menu and the other screens of the firmware
 
@@ -241,7 +244,7 @@ change the payload, and each needs its own test.
 | Commit | Subject | Becomes | Note | Now |
 |---|---|---|---|---|
 | `d6fbc7b` | UefiPayloadPkg: Add FMP_DEVICE_PKCS7_PCD_INC define | package |  | package |
-| `5a0c064` | UefiPayloadPkg/FmpDeviceSmmLib: Add FMAP-based scoped capsule flashing | package | FmpDeviceSmmLib; edk2/0008-0011 build on it | `tianocore/0050` |
+| `5a0c064` | UefiPayloadPkg/FmpDeviceSmmLib: Add FMAP-based scoped capsule flashing | package | FmpDeviceSmmLib of the package, which edk2/0008-0011 build on; `AppendRmapManifest.py` in the series | `tianocore/0050`, package |
 | `04272be` | UefiPayloadPkg: Configure capsule update build options | package |  | package |
 | `775376a` | UefiPayloadPkg: Add graphical capsule update progress | package | with edk2/0026, the update screen | package |
 | `6e839af` | UefiPayloadPkg/FmpDeviceSmmLib: Harden scoped capsule flashing | package |  | `tianocore/0052`, package |

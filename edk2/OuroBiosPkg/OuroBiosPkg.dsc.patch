@@ -631,7 +631,7 @@
    FmpDevicePkg/FmpDxe/FmpDxe.inf {
      <Defines>
        # FmpDxe interprets its FILE_GUID as firmware GUID.  This allows including
-@@ -998,7 +1306,7 @@
+@@ -998,16 +1306,21 @@
        #
        # See BaseTools/Source/Python/Pkcs7Sign/Readme.md for more details on such
        # PCDs and include files.
@@ -639,8 +639,10 @@
 +      !include $(FMP_DEVICE_PKCS7_PCD_INC)
      <LibraryClasses>
  !if $(BOOTLOADER) == "COREBOOT"
-       FmpDeviceLib|UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.inf
-@@ -1007,7 +1315,12 @@
+-      FmpDeviceLib|UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.inf
++      FmpDeviceLib|OuroBiosPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLib.inf
+ !else
+       # TODO: provide platform-specific implementation of firmware flashing
        FmpDeviceLib|FmpDevicePkg/Library/FmpDeviceLibNull/FmpDeviceLibNull.inf
  !endif
    }

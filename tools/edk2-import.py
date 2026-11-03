@@ -59,12 +59,16 @@ PLATFORM = ("UefiPayloadPkg/UefiPayloadPkg.dsc", "UefiPayloadPkg/UefiPayloadPkg.
 DROPPED = ("UefiPayloadPkg/NetworkDrivers",)
 # Cartelle che il tag di TianoCore ha, ma che il package porta intere, come le
 # ha R (docs/edk2-migration.md, "package"): PlatformBootManagerLib, la
-# politica di boot della piattaforma, fatta in gran parte di commit di
-# MrChromebox e di patch del progetto. Escono da patches/tianocore, che per
-# loro non cambia piu' il tag, e la piattaforma del package le prende da li'.
+# politica di boot della piattaforma, e FmpDeviceSmmLib, la scrittura delle
+# capsule, fatte in gran parte di commit di MrChromebox e di patch del
+# progetto. Escono da patches/tianocore, che per loro non cambia piu' il tag,
+# e la piattaforma del package le prende da li'.
 # Le patch della serie tengono i numeri di prima (make_series): una rimasta
 # senza file lascia il suo vuoto
-PACKAGE_MOVED = ("UefiPayloadPkg/Library/PlatformBootManagerLib",)
+PACKAGE_MOVED = ("UefiPayloadPkg/Library/PlatformBootManagerLib",
+                 # le capsule nel flash di SMMSTORE: le regioni ammesse, gli
+                 # slot di vboot, le prove unitarie host (Test/ del package)
+                 "UefiPayloadPkg/Library/FmpDeviceSmmLib")
 # Commit di MrChromebox che patches/tianocore lascia fuori a coppie: un commit
 # e il suo revert, che nei file di TianoCore si annullano (docs/edk2-migration.md,
 # "drop"): i loro numeri restano vuoti, perche' le altre patch tengano i loro.

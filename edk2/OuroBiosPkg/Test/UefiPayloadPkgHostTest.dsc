@@ -18,4 +18,4 @@
 !include UnitTestFrameworkPkg/UnitTestFrameworkPkgHost.dsc.inc
 
 [Components]
-  UefiPayloadPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLibUnitTestHost.inf
+  OuroBiosPkg/Library/FmpDeviceSmmLib/FmpDeviceSmmLibUnitTestHost.inf

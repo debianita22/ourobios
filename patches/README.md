@@ -232,7 +232,7 @@ its message:
 | Patches | What they are |
 |---|---|
 | `tianocore/0001-0079` | the commits of MrChromebox's branch after `edk2-stable202608`, in order, each without the files that TianoCore's tree does not have (its new modules, which are in the package, the `.dsc` and `.fdf` of `UefiPayloadPkg`, which are the package's platform, LvglPkg, a package of its own, and the binary network drivers, left out); the 21 commits with nothing else are not there, nor two commits and their reverts, which cancel out (`CANCELLED` of `tools/edk2-import.py`: 0022, 0048, 0057 and 0059 stay unused), nor five whose files are all in `PlatformBootManagerLib`, which the package carries whole (`PACKAGE_MOVED`: 0027, 0030, 0039, 0051 and 0078 unused). What each one becomes, carried, proposed upstream or left out, is the table of [docs/edk2-migration.md](../docs/edk2-migration.md) |
-| `tianocore/0080-0118` | the patches of `patches/edk2` in order, the same way: the 13 that change only the package or its platform are not there, and the numbers of the five that change only `PlatformBootManagerLib` (`edk2/0010`, `0012`, `0022`, `0037`, `0046`: 0086, 0087, 0095, 0104, 0112) stay unused |
+| `tianocore/0080-0118` | the patches of `patches/edk2` in order, the same way: the 13 that change only the package or its platform are not there, and the numbers of the nine that change only `PlatformBootManagerLib` (`edk2/0010`, `0012`, `0022`, `0037`, `0046`: 0086, 0087, 0095, 0104, 0112) or `FmpDeviceSmmLib` (`edk2/0008`, `0015`, `0016`, `0033`: 0084, 0090, 0091, 0102), which the package carries whole, stay unused |
 
 The series, with the package, is the payload of the ROMs from v1.6.0; it
 gets shorter as its patches go upstream, move to the package or are left

@@ -75,12 +75,9 @@
 0081-UefiPayloadPkg-CfrSetupMenuDxe-Link-the-setup-passwo.patch
 0082-OvmfPkg-SioBusDxe-Add-the-PS-2-mouse.patch
 0083-MdeModulePkg-Ps2MouseDxe-Report-at-100-Hz-and-8-coun.patch
-0084-UefiPayloadPkg-FmpDeviceSmmLib-Only-the-regions-of-a.patch
 0085-UefiPayloadPkg-SmmStoreLib-Let-the-caller-end-the-wh.patch
 0088-UefiPayloadPkg-Add-a-Firmware-Update-setup-page.patch
 0089-UefiPayloadPkg-Tell-coreboot-that-the-firmware-boote.patch
-0090-UefiPayloadPkg-FmpDeviceSmmLib-Update-one-vboot-slot.patch
-0091-UefiPayloadPkg-FmpDeviceSmmLib-Print-the-manifest-en.patch
 0092-SecurityPkg-TcgDxe-Log-into-the-bootloader-s-TCPA-ta.patch
 0093-UefiPayloadPkg-Go-back-to-the-other-vboot-slot-from-.patch
 0094-BaseTools-No-debug-directory-in-the-PE-images-of-a-r.patch
@@ -90,7 +87,6 @@
 0099-UefiPayloadPkg-SmmStoreLib-The-com-buffer-as-runtime.patch
 0100-UefiPayloadPkg-Run-the-payload-from-1-GiB-with-its-H.patch
 0101-MdeModulePkg-Core-Dxe-The-MAT-for-runtime-images-loa.patch
-0102-UefiPayloadPkg-Take-the-system-firmware-GUID-of-the-.patch
 0103-UefiPayloadPkg-PciPlatformDxe-A-setup-policy-for-the.patch
 0105-UefiPayloadPkg-Say-what-a-slot-switch-keeps-and-trai.patch
 0106-MdeModulePkg-Variable-Let-a-platform-keep-MOR-withou.patch
