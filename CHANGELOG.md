@@ -150,7 +150,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   and from v1.6.0 the ECAM window is reserved (`edk2/0052`), so that a BAR
   on its other side from the first one scanned stays out. FAIL when that
   is a USB, SATA, NVMe or SD controller, which the payload's drivers reach
-  only through the aperture; WARN for the other devices.
+  only through the aperture; INFO for the other devices, the graphics
+  among them, as the payload's GOP draws into coreboot's framebuffer
+  without the aperture.
 - The move to upstream TianoCore EDK II starts in CI:
   `tools/build.sh edk2-upstream` builds `edk2-stable202608` as it is
   into two q35 images with this tree's coreboot, one with

@@ -1218,8 +1218,10 @@ def read_memmap():
 def aperture_status(funcs, memmap, ecam=()):
     """PCI-09: (esito, sommario, dettagli, dati) da payload_aperture(). FAIL
     se resta fuori una BAR di un dispositivo che il payload usa (USB, dischi,
-    lettore SD): prima del sistema operativo non funziona; WARN per le
-    altre; ecam, le finestre (inizio, fine) di MCFG, per i nomi."""
+    lettore SD): prima del sistema operativo non funziona. Le altre sono INFO:
+    nessun driver del payload le usa, e la grafica nemmeno (il GOP scrive nel
+    framebuffer di coreboot da solo, iPXE fa le sue mappature); ecam, le
+    finestre (inizio, fine) di MCFG, per i nomi."""
     reserved = [(a, b) for a, b, t in memmap if t == "Reserved"]
     mem, mem4g, out = payload_aperture(funcs, reserved)
     byname = {f["bdf"]: f for f in funcs}
@@ -1243,7 +1245,9 @@ def aperture_status(funcs, memmap, ecam=()):
         kind = PCI_UEFI_CLASSES.get(f["cls"])
         details.append("%s %s %-12s BAR%d 0x%x-0x%x fuori: tra la BAR e l'apertura c'e' %s%s" % (
             bdf, f["ids"], f["drv"][:12], idx, base, limit, what(r),
-            "; %s, che il payload usa: prima del sistema operativo non funziona" % kind if kind else ""))
+            "; %s, che il payload usa: prima del sistema operativo non funziona" % kind if kind else
+            "; la grafica, che il GOP del payload usa dal framebuffer senza l'apertura" if f["cls"] >> 8 == 0x03
+            else ""))
         if kind:
             hard.append("%s (%s)" % (bdf, kind))
     data = {"mem": list(mem), "mem_above_4g": list(mem4g),
@@ -1252,7 +1256,7 @@ def aperture_status(funcs, memmap, ecam=()):
     if hard:
         return "FAIL", "BAR fuori dall'apertura del payload: %s" % ", ".join(hard), details, data
     if out:
-        return "WARN", "%d BAR fuori dall'apertura del payload, di dispositivi che il payload non usa" % len(
+        return "INFO", "%d BAR fuori dall'apertura del payload, di dispositivi che i suoi driver non usano" % len(
             out), details, data
     return "PASS", "ogni BAR di memoria del bus 0 nell'apertura del root bridge del payload", details, data
 

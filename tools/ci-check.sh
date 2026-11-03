@@ -493,9 +493,10 @@ fn = lambda bdf, cls, bars, windows=(): {"bdf": bdf, "ids": "8086:0000", "drv": 
 igd = fn("00:02.0", 0x0300, [(0, 0xf7400000, 0xf77fffff), (2, 0xe0000000, 0xefffffff)])
 xhci_hi, xhci_lo = (fn("00:14.0", 0x0c03, [(0, b, b + 0xffff)]) for b in (0xf7f20000, 0xefe00000))
 sata = fn("00:1f.2", 0x0106, [(5, 0xf7f3c000, 0xf7f3c7ff)])
-# la BAR della grafica dall'altra parte dell'ECAM resta fuori: WARN
-st, summary, _, data = hw.aperture_status([igd, xhci_hi, sata], mm, [E])
-assert st == "WARN" and data["excluded"] == [{"bdf": "00:02.0", "bar": 2, "base": 0xe0000000,
+# la BAR della grafica dall'altra parte dell'ECAM resta fuori: INFO
+st, summary, det, data = hw.aperture_status([igd, xhci_hi, sata], mm, [E])
+assert any("il GOP del payload" in l for l in det), det
+assert st == "INFO" and data["excluded"] == [{"bdf": "00:02.0", "bar": 2, "base": 0xe0000000,
                                               "limit": 0xefffffff, "reserved": list(E)}], (st, data)
 assert data["mem"] == [0xf7400000, 0xf7f3c7ff], data
 # l'xHCI dall'altra parte: FAIL
