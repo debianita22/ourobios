@@ -110,6 +110,18 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   passed there: the offset on every core, also after S3, and the package
   throttling at TjMax less the offset under load. The T440p shares the
   menu.
+- [docs/hlk.md](docs/hlk.md): the checklist of a Windows HLK run on the
+  M920x (CONF-06): the test server and the client, the three passes of
+  Microsoft's *System testing with Secure Boot* (Secure Boot off, on with
+  the default keys, Setup Mode) with the tests of each, and what is known
+  not to pass (HSTI, DMA protection, System Guard Secure Launch). Two
+  checks from Windows itself in `docs/testing.md`: WIN-09, the security
+  properties that Windows takes from the firmware (`Win32_DeviceGuard`: the
+  WSMT is 6, the MOR lock 4), and WIN-10, a capsule handed over by Windows
+  with `UpdateCapsule()`, which no one has tried yet, with the driver
+  package that `tools/win-firmware-inf.py` writes for a capsule (the INF of
+  Microsoft's firmware update platform, the GUID of the ESRT and the
+  version of the capsule).
 - `docs/testing.md`: a conformance suite (CONF): the WSMT and its flags
   (`hw-report.py` CONF-01), the tables compiled again with `iasl -w3`,
   FWTS, chipsec with what each module must say on these boards (the

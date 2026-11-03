@@ -487,7 +487,7 @@ gh release edit v1.4.0-m920x-fsp --repo debianita22/ourobios --prerelease=false 
 | `edk2/` | `OuroBiosPkg`, the package of the payload on upstream TianoCore EDK II, in the ROMs from v1.6.0 ([edk2/README.md](edk2/README.md)) |
 | `keys/` | the certificate of the key that signs the capsules, and vboot's public keys ([keys/README.md](keys/README.md)) |
 | `legacy/coreboot-4.22/` | the coreboot 4.22 image and configuration this project started from, built from the same blobs |
-| `docs/` | [flashing and recovery](docs/flashing.md), [updates with capsules](docs/update.md), [verified boot and A/B](docs/vboot.md), [the native RAM init](docs/raminit.md), [macOS with OpenCore](docs/macos.md), [the ThinkCentre M920x](docs/m920x.md), [release testing](docs/testing.md), [what was evaluated and left for later](docs/roadmap.md), [moving the payload to TianoCore](docs/edk2-migration.md) |
+| `docs/` | [flashing and recovery](docs/flashing.md), [updates with capsules](docs/update.md), [verified boot and A/B](docs/vboot.md), [the native RAM init](docs/raminit.md), [macOS with OpenCore](docs/macos.md), [the ThinkCentre M920x](docs/m920x.md), [release testing](docs/testing.md), [Windows HLK](docs/hlk.md), [what was evaluated and left for later](docs/roadmap.md), [moving the payload to TianoCore](docs/edk2-migration.md) |
 | `.github/` | the workflows ([Continuous integration and releases](#continuous-integration-and-releases)) and the issue forms in `ISSUE_TEMPLATE/`: bug report, feature request and hardware report, which ask for the firmware version, how it was written, the `tools/hw-report.py` report and the coreboot log |
 
 ## Binary blobs

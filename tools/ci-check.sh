@@ -866,6 +866,58 @@ EOF
 	else
 		bad "tools/update.py: la capsula di prova non si legge come atteso, o tools/fwupd-cab.py metadata sbaglia"
 	fi
+	# Il pacchetto di Windows di una capsula (docs/hlk.md): l'INF con il GUID
+	# dell'ESRT e la versione della capsula, CRLF, e la capsula com'e'
+	if python3 - <<'EOF'
+import os
+import struct
+import subprocess
+import sys
+import tempfile
+sys.dont_write_bytecode = True
+sys.path.insert(0, "tools")
+import update
+
+rmap = b"".join(r.encode().ljust(16, b"\0") for r in update.REGIONS)
+rmap += struct.pack("<IHH", update.RMAP_SIGNATURE, 1, len(update.REGIONS))
+payload = struct.pack("<4sIII", b"MSS1", 16, 0x01060000, 0x01030900) + bytes(4096) + rmap
+auth = struct.pack("<QIHH", 7, 24 + 100, 0x200, 0x0EF1) + update.PKCS7_CERT_GUID.bytes_le + b"\x30" * 100
+item = auth + payload
+ihdr = struct.pack("<I16sB3sIIQQ", 3, update.VARIANTS["mrc"].bytes_le, 1, b"", len(item), 0, 0, 1)
+fmp = struct.pack("<IHHQ", 1, 0, 1, 16) + ihdr + item
+data = update.FMP_CAPSULE_GUID.bytes_le + struct.pack("<III", 32, 0x10000, 32 + len(fmp)) + bytes(4) + fmp
+d = tempfile.mkdtemp()
+cap = os.path.join(d, "w541-coreboot-v1.6.0-mrc.cap")
+with open(cap, "wb") as f:
+    f.write(data)
+out = os.path.join(d, "pkg")
+r = subprocess.run([sys.executable, "-I", "tools/win-firmware-inf.py", "--date", "2026-11-03", cap, out],
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+assert r.returncode == 0, r.stderr
+with open(os.path.join(out, "firmware.bin"), "rb") as f:
+    assert f.read() == data
+with open(os.path.join(out, "ourobios.inf"), "rb") as f:
+    inf = f.read()
+assert b"\r\n" in inf and b"\n" not in inf.replace(b"\r\n", b""), "INF senza CRLF"
+text = inf.decode("ascii")
+g = str(update.VARIANTS["mrc"])
+for want in ("DriverVer   = 11/03/2026,1.6.0.0", "UEFI\\RES_{%s}" % g, "HKR,,FirmwareId,,{%s}" % g,
+             "HKR,,FirmwareVersion,%REG_DWORD%,0x01060000", "HKR,,FirmwareFilename,,%13%\\firmware.bin",
+             'FirmwareDesc = "ouroBIOS v1.6.0 (w541 mrc) system firmware"'):
+    assert want in text, want
+# una capsula di un'altra generazione (prima del measured boot): rifiutata
+data2 = data.replace(update.VARIANTS["mrc"].bytes_le, update.PRE_MB_VARIANTS["mrc"].bytes_le)
+with open(cap, "wb") as f:
+    f.write(data2)
+r = subprocess.run([sys.executable, "-I", "tools/win-firmware-inf.py", cap, os.path.join(d, "pkg2")],
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+assert r.returncode == 1 and "non di una variante di oggi" in r.stderr, r.stderr
+EOF
+	then
+		ok "tools/win-firmware-inf.py: INF di Windows con GUID dell'ESRT e versione della capsula, capsule di un'altra generazione rifiutate"
+	else
+		bad "tools/win-firmware-inf.py: il pacchetto di Windows della capsula di prova non e' quello atteso"
+	fi
 	# I tag di GitHub si ordinano (stage --latest), e rollback trova nello
 	# slot che non gira la release a cui tornare, solo se e' piu' vecchia,
 	# anche con i nomi del M920x; una copia del solo primo chip (flashrom
