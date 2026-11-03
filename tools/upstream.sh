@@ -44,6 +44,28 @@ trap 'rm -rf "${TMP}"' EXIT
 
 pin() { sed -n "s/^$1=\"\([^\"]*\)\".*/\1/p" "${O}/tools/build.sh"; }
 
+# I file cambiati tra il commit $2 e HEAD del repository $1 nei percorsi
+# che seguono, uno per riga
+changed() {
+	local repo="$1" from="$2"
+	shift 2
+	git -C "${repo}" diff --name-only "${from}" HEAD -- "$@"
+}
+
+# Una voce dell'issue: $1 cosa vuol dire, $2 i file (uno per riga); i primi
+# 20, poi quanti altri
+list_changed() {
+	local n
+	n="$(grep -c . <<< "$2" || true)"
+	if [ "${n}" -eq 0 ]; then
+		echo "- $1: nessun file cambiato."
+		return 0
+	fi
+	echo "- $1: ${n} file."
+	head -n 20 <<< "$2" | sed 's/^/  - `/; s/$/`/'
+	if [ "${n}" -gt 20 ]; then echo "  - e altri $((n - 20))"; fi
+}
+
 # L'issue aperto con il titolo che comincia per $1, se c'e'
 open_issue() {
 	W541_PREFIX="$1" gh issue list --state open --search "\"$1\" in:title" --json number,title \
@@ -121,6 +143,20 @@ check_coreboot() {
 		settle "coreboot:" "coreboot main (${head:0:12}, ~${ahead} commit dopo il pin): la serie applica, nessuna patch upstream, nessun tag nuovo"
 		return 0
 	fi
+	# Cosa guardare per spostare il pin: i file cambiati tra il pin e main
+	# dove sta quello che la parte RO lascia agli slot (vboot, il registro
+	# del TPM, la console, i timestamp, le cache di FMAP e CBFS, la
+	# cache-as-RAM: le righe rw-ok), la RAM init nativa (i registri che la
+	# fast path rimette come salvati: reg_frame_rev()) e le UPD di FSP-M che
+	# mette coreboot sul M920x (fsp_memory_soc_version())
+	local ro nri fspm
+	git -C "${work}/cb" fetch -q --depth 1 "${repo}" "${commit}" \
+		|| die "coreboot ${commit:0:12}: fetch del pin fallito"
+	ro="$(changed "${work}/cb" "${commit}" 3rdparty/vboot src/security/vboot src/security/tpm src/commonlib \
+		src/arch/x86 src/cpu/x86 src/cpu/intel/car src/soc/intel/common/block/cpu src/lib src/console src/include)"
+	nri="$(changed "${work}/cb" "${commit}" src/northbridge/intel/haswell/native_raminit)"
+	fspm="$(changed "${work}/cb" "${commit}" src/soc/intel/cannonlake/romstage src/drivers/intel/fsp2_0 \
+		src/mainboard/lenovo/m720q_m920q)"
 	local title="coreboot:" body
 	[ -z "${newtag}" ] || title+=" release ${newtag},"
 	[ -z "${stop}" ] || title+=" la serie si ferma a ${stop%%-*},"
@@ -140,9 +176,15 @@ check_coreboot() {
 			printf '  - `%s`\n' "${merged[@]}"
 		fi
 		echo
+		echo "Cosa e' cambiato tra il pin e main, da guardare prima di spostarlo:"
+		echo
+		list_changed "**Interfaccia RO** (vboot, TPM, commonlib, x86 e cache-as-RAM, lib, console, include): gli slot devono leggere ancora quello che lascia la parte RO, una riga \`rw-ok\` in \`configs/ro-interface.txt\` e \`boards/m920x/ro-interface.txt\` se si' (\`docs/vboot.md\`, *Limits*)" "${ro}"
+		list_changed "**RAM init nativa di Haswell**: la fast path rimette i registri salvati senza rifare il training, quindi un cambio a quello che programma vuole \`reg_frame_rev()\` piu' alta (\`save_restore.c\`)" "${nri}"
+		list_changed "**UPD di FSP-M del M920x** scelte da coreboot: un cambio vuole \`fsp_memory_soc_version()\` piu' alta, o \`RW_MRC_CACHE\` in \`BOARD_CAPSULE_REGIONS\` (\`boards/m920x/board.sh\`)" "${fspm}"
+		echo
 		echo "Per spostare il pin (a mano):"
 		echo "1. \`COREBOOT_COMMIT\` e \`COREBOOT_DESCRIBE\` (\`git describe --abbrev=12\`) in \`tools/build.sh\`;"
-		echo "2. le patch ribasate e riesportate con \`git format-patch --zero-commit\`, \`patches/series\` aggiornato;"
+		echo "2. le patch ribasate e riesportate con \`git format-patch --zero-commit\`, \`patches/series\` aggiornato; i file qui sopra controllati;"
 		echo "3. \`tools/build.sh prepare config\`, poi push su un ramo \`ci-test/...\` per la build di prova;"
 		echo "4. se e' verde, merge e una release (pre-release finche' non e' provata sul portatile)."
 		echo
