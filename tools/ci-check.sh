@@ -370,6 +370,30 @@ hw.check_boot_time(firmware("m920x", valid + [
     "[INFO ]  DRAM clear: option when the OS asks, request of the OS no: not clearing"], ts(230000)), rep)
 assert any(d.startswith("Clear memory at power-on: When the OS asks, richiesta del sistema operativo (MOR) no: "
                         "memoria non cancellata") for d in rep.checks[0]["details"]), rep.checks[0]["details"]
+# BOOT-01: il W541 mette davanti alla versione di SMBIOS l'identificativo nel
+# formato Lenovo ("CBET4000 ", patch 0001); la parte RO puo' essere di un'altra
+# build (qui la ci-205), gli stage dello slot no
+banner = "[NOTE ]  coreboot-26.09-438-g206078d6d990-ouroBIOS-%s Mon Nov 02 2026 x86_64 %s starting (log level: %d)..."
+w541 = [banner % ("ci-205-d123865-nri", "bootblock", 7), banner % ("v1.5.0-nri", "romstage", 6),
+        banner % ("v1.5.0-nri", "ramstage", 6)]
+for bios, log, want in (("CBET4000 ouroBIOS-v1.5.0-nri", w541, "PASS"),
+                        ("CBET4000 ouroBIOS-v1.5.0-nri", w541[:2] + [banner % ("v1.4.1-nri", "ramstage", 6)], "WARN"),
+                        ("ouroBIOS-v1.5.0-fsp", [banner % ("v1.5.0-fsp", "romstage", 6)], "PASS")):
+    fw = firmware("w541", log, [])
+    fw.bios = bios
+    rep = hw.Report()
+    hw.check_firmware(fw, rep)
+    assert rep.checks[0]["status"] == want, (bios, rep.checks[0])
+# IDLE-01: una misura fuori dalle condizioni del test non e' un FAIL
+assert hw.idle_verdict(84.1, 1.0, [(0.6, "kworker")], []) == ("PASS", None)
+assert hw.idle_verdict(0.0, 1.0, [], [])[0] == "FAIL"
+assert hw.idle_verdict(0.0, 8.3, [(22.8, "Isolated Web Co"), (15.3, "firefox"), (4.0, "Hyprland")], ["eDP-1"]) \
+    == ("INFO", "macchina non a riposo (Isolated Web Co 23% di un core, firefox 15% di un core): PC6+ 0.0%, "
+                "ripetere a riposo")
+assert hw.idle_verdict(0.0, 12.0, [], [])[1].startswith("macchina non a riposo (core occupati 12%)")
+assert hw.idle_verdict(5.0, 2.0, [(4.0, "Hyprland")], ["eDP-1"]) \
+    == ("INFO", "pannello acceso (eDP-1): PC6+ 5.0%, ripetere a schermo spento")
+assert hw.idle_verdict(60.0, 2.0, [], ["eDP-1"]) == ("PASS", None)
 rep = hw.Report()
 hw.check_boot_time(firmware("m920x", valid + ["[INFO ]  DRAM clear: option always: clearing"], ts(230000)), rep)
 assert "Clear memory at power-on: Always: memoria cancellata (~0.5 s ogni 10 GB)" in rep.checks[0]["details"], \
@@ -459,7 +483,7 @@ assert st == "WARN" and "senza root" in summary, summary
 assert hw.ecam_status(mcfg[:44], mm, io)[0] == "FAIL"
 EOF
 	then
-		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, messaggi noti ed eventi del log, microcode con PRMRR, il registro del measured boot rifatto contro i PCR (TPM 2.0 e 1.2), la finestra ECAM di MCFG (CONF-07)"
+		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, messaggi noti ed eventi del log, microcode con PRMRR, il registro del measured boot rifatto contro i PCR (TPM 2.0 e 1.2), la finestra ECAM di MCFG (CONF-07), la versione del W541 in SMBIOS (BOOT-01), una misura degli stati C non a riposo (IDLE-01)"
 	else
 		bad "tools/hw-report.py: i controlli non danno gli esiti attesi"
 	fi

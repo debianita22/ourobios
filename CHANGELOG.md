@@ -123,6 +123,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   the binary units of recent dmidecode versions (GiB, MiB) too: a W541
   got *SMBIOS non elenca moduli* with every slot populated; when the
   entries are there and no size is read, it lists what dmidecode said.
+- `tools/hw-report.py` BOOT-01 compares the stages of the slot with the
+  version of SMBIOS without the Lenovo-format ID that the W541 puts
+  before it (`CBET4000 `): every W541 got a WARN with the same version
+  everywhere. IDLE-01 is INFO, to be run again, not a FAIL, when a
+  process uses more than 5% of a core or an internal panel stays on below
+  the pass limit (the PC6 of about 90% of the W541 is with the screen
+  off), and says how to measure with the screen off under Hyprland.
 - The move to upstream TianoCore EDK II starts in CI:
   `tools/build.sh edk2-upstream` builds `edk2-stable202608` as it is
   into two q35 images with this tree's coreboot, one with

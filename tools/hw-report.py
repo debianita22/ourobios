@@ -88,6 +88,9 @@ RAMINIT_LIMITS = (2.0, 5.0)
 IDLE_DEEP_LIMITS = (50.0, 10.0)
 # Occupazione media dei core oltre la quale la misura non vale come riposo
 IDLE_BUSY_MAX = 10.0
+# Un processo che da solo usa piu' di questa parte di un core (in %): la
+# macchina non e' a riposo (un browser con una pagina animata, un video)
+IDLE_PROC_MAX = 5.0
 # Temperatura del package: oltre WARN, oltre FAIL (TjMax 100 gradi su entrambe)
 TEMP_LIMITS = (80.0, 95.0)
 
@@ -362,7 +365,10 @@ def check_firmware(fw, rep):
         if stage in banners:
             details.append("%-9s %s, log level %d" % (stage, banners[stage][0], banners[stage][1]))
     rw = [v for s, (v, _) in banners.items() if s in ("romstage", "postcar", "ramstage")]
-    if bios and rw and any(not v.endswith(bios) for v in rw):
+    # la versione senza l'identificativo nel formato Lenovo che il W541 e il
+    # T440p le mettono davanti in SMBIOS ("CBET4000 ", patch 0001)
+    ver = bios.split()[-1] if bios else bios
+    if ver and rw and any(not v.endswith(ver) for v in rw):
         status = "WARN"
         details.append("le versioni degli stage dello slot non sono quella di SMBIOS")
     if "bootblock" not in banners:
@@ -889,6 +895,34 @@ def package_temp(hw):
     return None
 
 
+def panels_on():
+    """I pannelli interni (eDP, LVDS) che il driver grafico tiene accesi."""
+    on = []
+    for d in sorted(glob.glob("/sys/class/drm/card*-eDP-*") + glob.glob("/sys/class/drm/card*-LVDS-*")):
+        if rd(os.path.join(d, "enabled"), "") == "enabled" and rd(os.path.join(d, "dpms"), "") == "On":
+            on.append(os.path.basename(d).split("-", 1)[1])
+    return on
+
+
+def idle_verdict(deep, avg_busy, procs, panels):
+    """Esito di IDLE-01: (stato, testo). Una misura fuori dalle condizioni del
+    test (core occupati, un processo attivo, il pannello acceso sotto la
+    soglia: docs/testing.md la da' a schermo spento) e' INFO, da ripetere."""
+    loud = [(c, n) for c, n in procs or () if c >= IDLE_PROC_MAX]
+    if avg_busy > IDLE_BUSY_MAX:
+        why = "core occupati %.0f%%" % avg_busy
+    elif loud:
+        why = ", ".join("%s %.0f%% di un core" % (n[:20], c) for c, n in loud[:3])
+    else:
+        why = None
+    if why:
+        return "INFO", "macchina non a riposo (%s): PC6+ %.1f%%, ripetere a riposo" % (why, deep)
+    status = "PASS" if deep >= IDLE_DEEP_LIMITS[0] else "WARN" if deep >= IDLE_DEEP_LIMITS[1] else "FAIL"
+    if status != "PASS" and panels:
+        return "INFO", "pannello acceso (%s): PC6+ %.1f%%, ripetere a schermo spento" % (", ".join(panels), deep)
+    return status, None
+
+
 def check_idle(fw, rep, msr, seconds):
     """IDLE-01: gli stati C del package e il consumo, misurati come idle-report.py."""
     cpus = idle.cpu_list()
@@ -914,11 +948,13 @@ def check_idle(fw, rep, msr, seconds):
     if not pkg:
         rep.add("IDLE-01", "Stati C del package", "SKIP", "contatori del package non leggibili", details)
         return res
-    if avg_busy > IDLE_BUSY_MAX:
-        status = "INFO"
-        summary = "macchina non a riposo (core occupati %.0f%%): PC6+ %.1f%%, ripetere a riposo" % (avg_busy, deep)
-    else:
-        status = "PASS" if deep >= IDLE_DEEP_LIMITS[0] else "WARN" if deep >= IDLE_DEEP_LIMITS[1] else "FAIL"
+    panels = panels_on()
+    if panels:
+        details.append("pannello acceso durante la misura: %s (a schermo spento, per esempio con "
+                       "Hyprland: hyprctl dispatch dpms off; sleep 2; sudo python3 -I tools/hw-report.py "
+                       "--seconds 60; hyprctl dispatch dpms on)" % ", ".join(panels))
+    status, summary = idle_verdict(deep, avg_busy, res.get("procs"), panels)
+    if summary is None:
         top = max(pkg.items(), key=lambda x: x[1])
         summary = "PC6 e oltre %.1f%% (soglie %.0f/%.0f%%), il piu' frequente %s %.1f%%" % (
             deep, IDLE_DEEP_LIMITS[0], IDLE_DEEP_LIMITS[1], top[0], top[1])
@@ -927,7 +963,7 @@ def check_idle(fw, rep, msr, seconds):
     rep.add("IDLE-01", "Stati C del package", status, summary, details,
             {"seconds": round(res["seconds"], 1), "pkg": {k: round(v, 2) for k, v in pkg.items()},
              "rapl_w": {k: round(v, 3) for k, v in rapl.items()}, "deep_pct": round(deep, 2),
-             "busy_pct": round(avg_busy, 2)})
+             "busy_pct": round(avg_busy, 2), "panels_on": panels})
     return res
 
 
