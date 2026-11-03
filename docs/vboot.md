@@ -248,6 +248,13 @@ it changes:
   caches, the stack. On the M920x each entry carries a SHA-1 and a SHA-256
   digest (patch 0201), so the entry format is part of what the read-only
   part leaves too.
+- **Nothing is measured on a resume from S3** (patch 0223): the TPM keeps
+  its PCRs through S3, and the event log of the OS is the one of the
+  boot, so the stages loaded again on the resume path (romstage, postcar,
+  ramstage, the payload, FSP-M and FSP-S on the M920x) are not extended a
+  second time, and the log in cbmem is left as it was. Up to v1.5.0 they
+  were, and after a suspend PCR 2 no longer replayed from the log
+  (TPM-03 of `hw-report.py`).
 - **A TPM that does not start costs the measurements, not the boot**
   (patch 0199): with mocked secdata vboot would ask for recovery mode,
   which these machines do not have. The log says *TPM setup failed ...

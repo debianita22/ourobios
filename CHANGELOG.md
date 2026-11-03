@@ -262,6 +262,16 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   off in the setup first ([docs/flashing.md](docs/flashing.md)).
   `tools/update.py protection` and `status` report the default of the
   running version.
+- Measured boot leaves the PCRs alone on a resume from S3 (patch 0223):
+  up to v1.5.0 the stages loaded again on the resume path were measured
+  again into PCR 2 (on the M920x the microcode, FSP-M, FSP-S and the VBT
+  too), while the TPM keeps its PCRs through S3 and the event log of the
+  OS is the one of the boot, so after a suspend PCR 2 no longer replayed
+  from the log (TPM-03 of `hw-report.py` failed; a remote attestation
+  after a suspend would have): seen on the M920x of the port with five
+  suspends. Nothing is extended nor logged on that path now, the log in
+  cbmem keeps the entries of the boot, and the resume path no longer
+  hashes what it loads for the measurement, the payload included.
 - On the M920x, with *BIOS Lock* on, the event log of ramstage was lost
   at every boot, up to v1.5.0: the chipset lockdown set EISS and the BIOS
   locks at `BS_DEV_RESOURCES`, before the boot count, the wake sources

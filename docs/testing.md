@@ -361,7 +361,7 @@ power fail).
 |---|---|---|---|---|
 | TPM-01 | both | `ls /dev/tpm0 /dev/tpmrm0`; `/sys/firmware/acpi/tables` | M920x: TPM 2.0 and `TPM2`; W541: TPM 1.2 and `TCPA`; the firmware's event log | TPM-01 |
 | TPM-02 | M920x | `sudo tpm2_getcap properties-fixed`; `sudo tpm2_pcrread sha256` | answers; PCRs 0-7 extended | manual |
-| TPM-03 | both | the firmware's event log (`binary_bios_measurements`) replayed event by event against PCR 0-7 of every bank Linux shows | from v1.5.0, measured boot: coreboot's measurements in PCR 2 (FMAP, bootblock, each stage, the payload) and vboot's in PCR 1, and the replay gives every PCR (on the M920x SHA-1 and SHA-256); a PCR that differs means an event extended and not logged, or the other way round (v1.5.0 fixed a full log, a log of coreboot's alone and vboot's events before the log started) | TPM-03 |
+| TPM-03 | both | the firmware's event log (`binary_bios_measurements`) replayed event by event against PCR 0-7 of every bank Linux shows | from v1.5.0, measured boot: coreboot's measurements in PCR 2 (FMAP, bootblock, each stage, the payload) and vboot's in PCR 1, and the replay gives every PCR (on the M920x SHA-1 and SHA-256); a PCR that differs means an event extended and not logged, or the other way round (v1.5.0 fixed a full log, a log of coreboot's alone and vboot's events before the log started); also after a suspend: up to v1.5.0 the resume path measured the stages again into PCR 2, which then differed from the log (fixed in v1.6.0, patch 0223) | TPM-03 |
 
 ### Intel ME (ME)
 

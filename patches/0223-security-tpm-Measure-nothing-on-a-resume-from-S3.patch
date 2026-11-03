@@ -1,0 +1,92 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 3 Nov 2026 22:10:00 +0100
+Subject: [PATCH] security/tpm: Measure nothing on a resume from S3
+
+On a resume from S3 the TPM keeps its PCRs (TPM2_Startup(STATE), as
+tpm_setup() asks), and the event log the OS holds is the one of the
+boot it resumes. The stages the resume path loads again (romstage,
+postcar, ramstage, the payload, the microcode and the FSP binaries on
+FSP platforms) were measured again into PCR 2 all the same, since
+cbfs_file_hash_mismatch() hashes and tspi_cbfs_measurement() extends
+every CBFS file loaded with TPM_MEASURED_BOOT, whichever the boot
+path. After a suspend PCR 2 no longer replayed from the log, and a
+remote attestation of that log failed, while vboot already skips its
+own extends on the resume path (VB2_CONTEXT_S3_RESUME).
+
+Return from tpm_extend_pcr_banks() on a resume from S3, after the CRTM
+init (which clears the pre-RAM log, so romstage copies no stale entry
+into cbmem): nothing is extended and nothing is logged, and the log in
+cbmem keeps the entries of the boot. cbfs_file_hash_mismatch() skips
+the hash for the measurement on that path too, the whole payload on a
+resume. acpi_is_wakeup_s3() answers in every stage from the PM
+registers, then from the romstage handoff, and is false without
+HAVE_ACPI_RESUME.
+
+Seen on a Lenovo ThinkCentre M920x with a TPM 2.0 (SHA-1 and SHA-256
+banks): five suspends, PCR 2 past the log after the first.
+
+Signed-off-by: Domenico D'Arrigo <d.darrigo@outlook.it>
+---
+ src/lib/cbfs.c               |  4 +++-
+ src/security/tpm/tspi/tspi.c | 17 +++++++++++++++++
+ 2 files changed, 20 insertions(+), 1 deletion(-)
+
+diff --git a/src/lib/cbfs.c b/src/lib/cbfs.c
+index 79cc2d95141..d6ecc48a50f 100644
+--- a/src/lib/cbfs.c
++++ b/src/lib/cbfs.c
+@@ -1,5 +1,6 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <acpi/acpi.h>
+ #include <assert.h>
+ #include <boot_device.h>
+ #include <cbfs.h>
+@@ -196,7 +197,8 @@ static bool cbfs_file_hash_mismatch(const void *buffer, size_t size,
+ 		}
+ 	}
+ 
+-	if (CONFIG(TPM_MEASURED_BOOT) && !ENV_SMM) {
++	/* Nothing is measured on a resume from S3 (tpm_extend_pcr_banks()): no hash either */
++	if (CONFIG(TPM_MEASURED_BOOT) && !ENV_SMM && !acpi_is_wakeup_s3()) {
+ 		struct vb2_hash calculated_hash;
+ 
+ 		/* No need to re-hash file if we already have it from verification. */
+diff --git a/src/security/tpm/tspi/tspi.c b/src/security/tpm/tspi/tspi.c
+index fa4227b85e1..8f6d2e37589 100644
+--- a/src/security/tpm/tspi/tspi.c
++++ b/src/security/tpm/tspi/tspi.c
+@@ -1,5 +1,6 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <acpi/acpi.h>
+ #include <console/console.h>
+ #include <security/tpm/tspi/crtm.h>
+ #include <security/tpm/tspi/logs.h>
+@@ -245,6 +246,22 @@ tpm_result_t tpm_extend_pcr_banks(int pcr, enum vb2_hash_algorithm digest_algo,
+ 			return rc;
+ 	}
+ 
++	/*
++	 * A resume from S3: the TPM kept its PCRs (TPM2_Startup(STATE)) and the
++	 * event log the OS holds is the one of the boot, so extending what the
++	 * resume path loads again would put the PCRs past that log. Nothing is
++	 * extended nor logged on this path, as vboot already skips its own
++	 * extends; the CRTM init above still clears the pre-RAM log.
++	 */
++	if (CONFIG(TPM_MEASURED_BOOT) && acpi_is_wakeup_s3()) {
++		static bool reported;
++
++		if (!reported)
++			printk(BIOS_INFO, "TPM: resuming from S3, nothing is measured\n");
++		reported = true;
++		return TPM_SUCCESS;
++	}
++
+ 	if (tspi_tpm_is_setup()) {
+ 		rc = tlcl_lib_init();
+ 		if (rc != TPM_SUCCESS) {
+-- 
+2.47.3
+

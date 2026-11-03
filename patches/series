@@ -216,3 +216,4 @@
 0220-cpu-intel-haswell-Add-an-option-for-the-TCC-activati.patch
 0221-mb-lenovo-haswell-List-the-TCC-activation-offset-und.patch
 0222-drivers-intel-fsp2_0-Take-the-SoC-memory-settings-ve.patch
+0223-security-tpm-Measure-nothing-on-a-resume-from-S3.patch
