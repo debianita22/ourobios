@@ -22,7 +22,6 @@
 0019-UefiPayloadPkg-Enroll-Keys-for-SecureBoot.patch
 0020-UefiPayloadPkg-Check-more-ACPI-tables.patch
 0021-UefiPayloadPkg-SecurityPkg-OvmfPkg-Add-TPM-1.2-2.0-s.patch
-0022-UefiPayloadPkg-Add-AmdPcoSdhciDxe-driver-for-AMD-Pic.patch
 0023-MdeModulePkg-Improve-USB-error-handling-for-faulting.patch
 0024-UefiPayloadPkg-Library-PciHostBridgeLib-Add-warning-.patch
 0025-UefiPayloadPkg-Implement-CFR-support.patch
@@ -48,7 +47,6 @@
 0045-UefiPayloadPkg-PciPlatformDxe-Fix-BAR-restore-leak-a.patch
 0046-UefiPayloadPkg-Add-LVGL-display-engine-support.patch
 0047-UefiPayloadPkg-Add-option-to-enable-Secure-Boot-defa.patch
-0048-UefiCpuPkg-Gate-AP-exception-stacks-on-PcdCpuStackGu.patch
 0049-UefiPayloadPkg-ResetSystemLib-Select-S5-sleep-type-f.patch
 0050-UefiPayloadPkg-FmpDeviceSmmLib-Add-FMAP-based-scoped.patch
 0051-UefiPayloadPkg-Add-graphical-capsule-update-progress.patch
@@ -57,9 +55,7 @@
 0054-MdeModulePkg-UefiPayloadPkg-Keep-ESRT-durable-across.patch
 0055-MdeModulePkg-UefiPayloadPkg-Harden-capsule-progress-.patch
 0056-UefiPayloadPkg-ResetSystemLib-Use-full-CF9-sequence-.patch
-0057-Revert-UefiCpuPkg-Gate-AP-exception-stacks-on-PcdCpu.patch
 0058-UefiPayloadPkg-Add-NVRAM-controlled-bootsplash-with-.patch
-0059-Revert-UefiPayloadPkg-Add-AmdPcoSdhciDxe-driver-for-.patch
 0060-UefiPayloadPkg-Add-SdhciNonPciDxe-for-non-PCI-SDHCI.patch
 0061-MdeModulePkg-Usb-Warm-reset-downstream-SuperSpeed-po.patch
 0062-MdeModulePkg-SdMmcPciHcDxe-add-HS400-Enhanced-Strobe.patch

@@ -96,8 +96,10 @@ MrChromebox's tree at the commit of the defconfigs:
 
 - **The carried series**: each of the commits below and each patch of
   `patches/edk2`, in order, without the files that TianoCore's tree does
-  not have: 79 commits of MrChromebox (21 have nothing else) and 39 of
-  the project's 52 patches (13 change only the package or its platform).
+  not have: 75 commits of MrChromebox (21 have nothing else, and two
+  commits and their reverts cancel out: `CANCELLED` of `edk2-import.py`,
+  their numbers 0022, 0048, 0057 and 0059 left unused) and 39 of the
+  project's 52 patches (13 change only the package or its platform).
   The tag with the series is MrChromebox's tree with `patches/edk2` in
   every file but those (`edk2-import.py` checks it before it writes, and
   `--check` in `edk2-upstream.yml` checks the files of the repository).
@@ -177,7 +179,11 @@ packages into `OuroBiosPkg` (a `PlatformBootManagerLib` of its own, for
 one), the *upstream* ones proposed to TianoCore, the *drop* ones left out
 (the drivers for hardware these boards do not have first); when a change
 lives only in the package or the series, `patches/edk2` and the import
-retire.
+retire. The first *drop* ones are out, with no change to the payload: the
+two commits that MrChromebox reverted (`88b95ba` with `6aa87d0`, `bf10b5c`
+with `4258973`), which `edk2-import.py` leaves out in pairs after checking
+that they cancel out. The others change the payload, and each needs its
+own test.
 
 ## Setup menu and the other screens of the firmware
 
@@ -257,8 +263,8 @@ retire.
 | Commit | Subject | Becomes | Note | Now |
 |---|---|---|---|---|
 | `45aec95` | UefiPayloadPkg: align DXE images for page protections | package | .dsc | package |
-| `bf10b5c` | UefiCpuPkg: Gate AP exception stacks on PcdCpuStackGuard | drop | reverted by 4258973 | `tianocore/0048` |
-| `4258973` | Revert "UefiCpuPkg: Gate AP exception stacks on PcdCpuStackGuard" | drop | reverts bf10b5c | `tianocore/0057` |
+| `bf10b5c` | UefiCpuPkg: Gate AP exception stacks on PcdCpuStackGuard | drop | reverted by 4258973 | left out with its revert (0048 unused) |
+| `4258973` | Revert "UefiCpuPkg: Gate AP exception stacks on PcdCpuStackGuard" | drop | reverts bf10b5c | left out with bf10b5c (0057 unused) |
 | `abbfa17` | MdePkg: Add PE/COFF NX_COMPAT Flag | carry | the six together, or none | `tianocore/0071` |
 | `3321e5a` | MdeModulePkg: Split DisableNullDetectionAtTheEndOfDxe Into Two | carry |  | `tianocore/0072` |
 | `8b0cd75` | MdeModulePkg: Add Compatibility Mode Functionality | carry |  | `tianocore/0073` |
@@ -276,7 +282,7 @@ retire.
 | `a091558` | MdeModulePkg/SdMmcPciHcDxe: add Bayhub support | drop | no such controller | `tianocore/0010` |
 | `4c76525` | MdeModulePkg/Usb/Keyboard.c: remove Get/SetConfig calls | upstream | USB keyboards that fail the requests | `tianocore/0011` |
 | `076933b` | UefiPayloadPkg: Add and use PlatformGopPolicy | drop | no GOP driver: libgfxinit sets the mode | `tianocore/0013`, package |
-| `88b95ba` | UefiPayloadPkg: Add AmdPcoSdhciDxe driver for AMD Picasso eMMC | drop | reverted by 6aa87d0 | `tianocore/0022`, package |
+| `88b95ba` | UefiPayloadPkg: Add AmdPcoSdhciDxe driver for AMD Picasso eMMC | drop | reverted by 6aa87d0 | left out with its revert (0022 unused) |
 | `42865d9` | MdeModulePkg: Improve USB error handling for faulting devices | upstream |  | `tianocore/0023` |
 | `9174049` | UefiPayload: Add new SdMmcPciGli driver | drop | no such controller | package |
 | `b26a387` | UefiPayloadPkg/UfsPlatformDxe: Add new UFS platform driver | drop | UFS_ENABLE=FALSE | package |
@@ -284,7 +290,7 @@ retire.
 | `a79398a` | PcRtcEntry: Don't assert if RTC init fails | upstream |  | `tianocore/0037` |
 | `dde0798` | FatPkg: Fix FAT32 mount on small 4K-sector ESP partitions | upstream |  | `tianocore/0040` |
 | `97a12e8` | MdeModulePkg/ScsiDiskDxe: Don't fail media detection on FUA query error | merged | in master after the tag | `tianocore/0044` |
-| `6aa87d0` | Revert "UefiPayloadPkg: Add AmdPcoSdhciDxe driver for AMD Picasso eMMC" | drop | reverts 88b95ba | `tianocore/0059`, package |
+| `6aa87d0` | Revert "UefiPayloadPkg: Add AmdPcoSdhciDxe driver for AMD Picasso eMMC" | drop | reverts 88b95ba | left out with 88b95ba (0059 unused) |
 | `5342f42` | UefiPayloadPkg: Add SdhciNonPciDxe for non-PCI SDHCI | drop | no such controller | `tianocore/0060`, package |
 | `acf9505` | MdeModulePkg/Usb: Warm reset downstream SuperSpeed ports | upstream |  | `tianocore/0061` |
 | `d7597bb` | MdeModulePkg/SdMmcPciHcDxe: add HS400 Enhanced Strobe for Intel eMMC | drop | no eMMC | `tianocore/0062` |

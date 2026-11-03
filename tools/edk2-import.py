@@ -19,7 +19,9 @@
 #   - patches/tianocore/0001-...: i commit di MrChromebox dal tag al commit dei
 #     defconfig, poi le patch di patches/edk2/series, ognuno ristretto ai file
 #     che restano nell'albero di TianoCore (FUORI qui sotto), con una nota in
-#     cima che dice da dove viene; quelli rimasti senza file saltati;
+#     cima che dice da dove viene; quelli rimasti senza file saltati, e le
+#     coppie di CANCELLED (un commit e il suo revert) fuori, con i loro
+#     numeri vuoti;
 #   - edk2/OuroBiosPkg/<cartella>: le cartelle di UefiPayloadPkg che TianoCore
 #     non ha (i moduli di MrChromebox e del progetto: il setup CFR, lo splash,
 #     la password, le chiavi di Secure Boot, la schermata di aggiornamento...)
@@ -55,6 +57,17 @@ O = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PKG = "OuroBiosPkg"
 PLATFORM = ("UefiPayloadPkg/UefiPayloadPkg.dsc", "UefiPayloadPkg/UefiPayloadPkg.fdf")
 DROPPED = ("UefiPayloadPkg/NetworkDrivers",)
+# Commit di MrChromebox che patches/tianocore lascia fuori a coppie: un commit
+# e il suo revert, che nei file di TianoCore si annullano (docs/edk2-migration.md,
+# "drop"): i loro numeri restano vuoti, perche' le altre patch tengano i loro.
+# make_series controlla che si annullino davvero e che nessun commit tra i due
+# tocchi i loro file
+CANCELLED = (
+    ("88b95baf0762129be91e90538f28d6dd2cef75ce",    # AmdPcoSdhciDxe, tianocore/0022
+     "6aa87d02100f3d2bf037ffe1bf32728d271d74e2"),   # il suo revert, 0059
+    ("bf10b5cd4c31611e0cdb6d352bf9c2d98c3571b8",    # PcdCpuStackGuard, 0048
+     "4258973881acd73464343e6a085c463e5360145a"),   # il suo revert, 0057
+)
 SEPARATE = ("LvglPkg", ".gitmodules")
 TOP_DIRS = ("FSDrivers",)
 # Il package: il .dec (senza GUID ne' PCD: i moduli usano quelli di
@@ -276,13 +289,42 @@ def restrict_mail(data, out):
     return head + b"".join(keep) + sig, dropped
 
 
+def check_cancelled(mrc, commits, pathspec):
+    """Le coppie di CANCELLED: tutte e due tra i commit della serie, nei file
+    di TianoCore gli stessi file, che dopo il revert sono come prima del
+    commit, e nessun commit in mezzo li tocca. Torna l'insieme dei commit."""
+    out = set()
+    for a, b in CANCELLED:
+        if a not in commits or b not in commits or commits.index(a) > commits.index(b):
+            raise Error("CANCELLED: %s e %s non sono, in quest'ordine, tra i commit di MrChromebox" % (
+                a[:12], b[:12]))
+        files = git(mrc, "diff-tree", "--no-commit-id", "--name-only", "-r", a, *pathspec).split()
+        if sorted(files) != sorted(git(mrc, "diff-tree", "--no-commit-id", "--name-only", "-r", b,
+                                       *pathspec).split()):
+            raise Error("CANCELLED: %s e %s non toccano gli stessi file" % (a[:12], b[:12]))
+        if files and git(mrc, "diff", "--name-only", a + "^", b, "--", *files).strip():
+            raise Error("CANCELLED: %s non annulla %s" % (b[:12], a[:12]))
+        between = commits[commits.index(a) + 1:commits.index(b)]
+        for c in between:
+            if files and git(mrc, "diff-tree", "--no-commit-id", "--name-only", "-r", c, "--", *files).split():
+                raise Error("CANCELLED: %s tocca i file di %s prima del suo revert" % (c[:12], a[:12]))
+        out |= {a, b}
+    return out
+
+
 def make_series(mrc, tmp, base, head, excl, out):
     """patches/tianocore in out: torna [(nome, origine)]."""
     pathspec = ["--", "."] + [":(exclude)%s" % p for p in excl]
     made = []
     n = 0
-    for c in git(mrc, "rev-list", "--reverse", "--topo-order", "%s..%s" % (base, head)).split():
+    commits = git(mrc, "rev-list", "--reverse", "--topo-order", "%s..%s" % (base, head)).split()
+    cancelled = check_cancelled(mrc, commits, pathspec)
+    for c in commits:
         if not git(mrc, "diff-tree", "--no-commit-id", "--name-only", "-r", c, *pathspec).split():
+            continue
+        if c in cancelled:
+            # il numero resta vuoto
+            n += 1
             continue
         all_files = git(mrc, "diff-tree", "--no-commit-id", "--name-only", "-r", c).split()
         n += 1

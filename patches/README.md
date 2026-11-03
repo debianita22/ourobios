@@ -231,7 +231,7 @@ its message:
 
 | Patches | What they are |
 |---|---|
-| `tianocore/0001-0079` | the commits of MrChromebox's branch after `edk2-stable202608`, in order, each without the files that TianoCore's tree does not have (its new modules, which are in the package, the `.dsc` and `.fdf` of `UefiPayloadPkg`, which are the package's platform, LvglPkg, a package of its own, and the binary network drivers, left out); the 21 commits with nothing else are not there. What each one becomes, carried, proposed upstream or left out, is the table of [docs/edk2-migration.md](../docs/edk2-migration.md) |
+| `tianocore/0001-0079` | the commits of MrChromebox's branch after `edk2-stable202608`, in order, each without the files that TianoCore's tree does not have (its new modules, which are in the package, the `.dsc` and `.fdf` of `UefiPayloadPkg`, which are the package's platform, LvglPkg, a package of its own, and the binary network drivers, left out); the 21 commits with nothing else are not there, nor two commits and their reverts, which cancel out (`CANCELLED` of `tools/edk2-import.py`: 0022, 0048, 0057 and 0059 stay unused). What each one becomes, carried, proposed upstream or left out, is the table of [docs/edk2-migration.md](../docs/edk2-migration.md) |
 | `tianocore/0080-0118` | the patches of `patches/edk2` in order, the same way: the 13 that change only the package or its platform are not there |
 
 The series, with the package, is the payload of the ROMs from v1.6.0; it
