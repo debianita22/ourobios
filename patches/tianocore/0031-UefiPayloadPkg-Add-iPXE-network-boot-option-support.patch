@@ -4,8 +4,9 @@ Date: Sun, 16 Nov 2025 16:03:28 -0600
 Subject: [PATCH] UefiPayloadPkg: Add iPXE network boot option support
 
 [ouroBIOS: commit b581d3b8f8c8 of MrChromebox's edk2, without the files
-that TianoCore's tree does not have (tools/edk2-import.py): 2 in
-edk2/OuroBiosPkg]
+that TianoCore's tree does not have (tools/edk2-import.py): 4 in
+edk2/OuroBiosPkg (2 in a directory of TianoCore's that the package
+carries whole)]
 
 Add support for registering iPXE as a boot option when present in
 the firmware volume. This allows iPXE to be included as an optional
@@ -21,43 +22,9 @@ The implementation:
 
 Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
 ---
- .../PlatformBootManagerLib/PlatformBootManager.c      | 11 +++++++++++
- .../PlatformBootManagerLib/PlatformBootManagerLib.inf |  2 ++
- UefiPayloadPkg/UefiPayloadPkg.dec                     |  4 ++++
- 3 files changed, 17 insertions(+)
+ UefiPayloadPkg/UefiPayloadPkg.dec | 4 ++++
+ 1 file changed, 4 insertions(+)
 
-diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
-index 3bb7b8407daa67a14755f1bf3f064a71ea074c61..7de84d2ca8eb4a01167c16efda6dab97d1d795a4 100644
---- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
-+++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
-@@ -483,6 +483,17 @@ PlatformBootManagerAfterConsole (
-   //
-   PlatformRegisterFvBootOption (&gUefiShellFileGuid, L"UEFI Shell", LOAD_OPTION_ACTIVE);
- 
-+  //
-+  // Register iPXE if the binary is present in the firmware volume.
-+  //
-+  if ((PcdGetPtr (PcdiPXEFile) != NULL) && (PcdGetPtr (PcdiPXEOptionName) != NULL)) {
-+    PlatformRegisterFvBootOption (
-+      (EFI_GUID *)PcdGetPtr (PcdiPXEFile),
-+      (CHAR16 *)PcdGetPtr (PcdiPXEOptionName),
-+      LOAD_OPTION_ACTIVE
-+      );
-+  }
-+
-   if (FixedPcdGetBool (PcdBootManagerEscape)) {
-     if (FixedPcdGetBool (PcdSerialTerminalPrintEnabled)) {
-       Print (
-diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-index daa70366c59a60b262189aef41ef35bd449180ce..785988bb10ce9a748f53f5ed979b41407f6a9bfe 100644
---- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-+++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-@@ -77,3 +77,5 @@
-   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultStopBits
-   gUefiPayloadPkgTokenSpaceGuid.PcdBootManagerEscape
-   gUefiPayloadPkgTokenSpaceGuid.PcdSerialTerminalPrintEnabled
-+  gUefiPayloadPkgTokenSpaceGuid.PcdiPXEFile
-+  gUefiPayloadPkgTokenSpaceGuid.PcdiPXEOptionName
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
 index eb1cb590884c98b7b93eca87ee6953916bac2dba..48d77955f6a0ce6224d358abf3478fb20284fa26 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dec

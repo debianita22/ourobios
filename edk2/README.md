@@ -22,6 +22,7 @@ it, it has the same sources, file for file, as MrChromebox's EDK II at
 | `Library/Tcg*PhysicalPresence*/` | the physical presence libraries of the TPM 1.2 and 2.0 (MrChromebox's `c111515`) |
 | `Library/CsmWrapSecureBootLib/` | CSMWrap refused while Secure Boot is on (`edk2/0025`) |
 | `EcAcpiBatteryStatusDxe/`, `Library/CbfsLib/` | the battery on the front page, files read from coreboot's CBFS |
+| `Library/PlatformBootManagerLib/` | the boot policy of the platform: consoles, boot options, the hotkeys, the splash, capsules on disk, iPXE and CSMWrap entries, the vboot slot calls. TianoCore's tag has the library, but nearly all of it is MrChromebox's commits and the project's patches, so the package carries it whole, as MrChromebox's tree with `patches/edk2` has it (`PACKAGE_MOVED` of `tools/edk2-import.py`), and the platform maps `PlatformBootManagerLib` to it |
 | `Test/` | `UefiPayloadPkgHostTest.dsc`, the platform of the host unit tests of `FmpDeviceSmmLib` (in `patches/tianocore`, with the library): `tools/build.sh edk2-unit-test` builds and runs them, in `check.yml` and before the update test of `build.yml` |
 | `PlatformGopPolicy/`, `SdMmcPciGliDxe/`, `SdhciNonPciDxe/`, `UfsPlatformDxe/` | MrChromebox's modules for hardware these boards do not have (built only with their switches, or not at all), to leave out later ([docs/edk2-migration.md](../docs/edk2-migration.md)) |
 | `FSDrivers/` | file system drivers, binaries of MrChromebox's tree with their license files: ext4 of rEFInd 0.12.0 (GPL-2.0), exFAT and ext2 of EfiFs 1.10 (GPL-3.0, from GRUB), NTFS of ntfs-3g (GPL-2.0); the boards build with ext4 only (`EXTRA_FS_DRIVERS=FALSE`) |
@@ -32,8 +33,8 @@ the commit of the defconfigs and the patches of `patches/edk2`, each
 restricted to the files that TianoCore's tree has, go to
 `patches/tianocore`; the directories of `UefiPayloadPkg` that TianoCore
 does not have (but `Include/`, whose headers the modules take from
-`UefiPayloadPkg.dec`) and `FSDrivers` go to the package, with their paths
-rewritten; MrChromebox's binary network drivers of Realtek and ASIX (only
+`UefiPayloadPkg.dec`), those of `PACKAGE_MOVED` and `FSDrivers` go to the
+package, with their paths rewritten; MrChromebox's binary network drivers of Realtek and ASIX (only
 with `NETWORK_PXE_BOOT`) stay out, iPXE and CSMWrap are where coreboot's
 Makefile puts them (`UefiPayloadPkg/NetworkDrivers`, `UefiPayloadPkg/LegacyBoot`
 of the edk2 tree). Before it writes, it checks that the tag with the new

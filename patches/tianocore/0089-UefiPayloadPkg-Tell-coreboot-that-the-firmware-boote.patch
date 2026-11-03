@@ -3,7 +3,9 @@ From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sun, 11 Oct 2026 14:30:25 +0200
 Subject: [PATCH] UefiPayloadPkg: Tell coreboot that the firmware booted
 
-[ouroBIOS: patches/edk2/0014, as it is]
+[ouroBIOS: patches/edk2/0014, without the files that TianoCore's tree
+does not have (tools/edk2-import.py): 3 in edk2/OuroBiosPkg (3 in a
+directory of TianoCore's that the package carries whole)]
 
 coreboot with vboot and two RW slots tries a new slot for a few boots
 after an update, and falls back to the other slot when the tries run
@@ -25,14 +27,6 @@ Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 
 ---
- UefiPayloadPkg/Include/Library/SmmStoreLib.h  | 15 ++++++++++++
- .../PlatformBootManager.c                     |  5 ++++
- .../PlatformBootManager.h                     |  9 +++++++
- .../PlatformBootManagerLib/PlatformCapsule.c  | 24 +++++++++++++++++++
- UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c | 22 +++++++++++++++++
- UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h |  5 ++++
- 6 files changed, 80 insertions(+)
-
 diff --git a/UefiPayloadPkg/Include/Library/SmmStoreLib.h b/UefiPayloadPkg/Include/Library/SmmStoreLib.h
 index 950ecf826..fab6c3385 100644
 --- a/UefiPayloadPkg/Include/Library/SmmStoreLib.h
@@ -59,74 +53,6 @@ index 950ecf826..fab6c3385 100644
  /**
    Function to update a pointer on virtual address change.  Matches the signature
    and operation of EfiConvertPointer.
-diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
-index 0b2997d17..cee1deeae 100644
---- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
-+++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
-@@ -475,6 +475,11 @@ PlatformBootManagerAfterConsole (
-     EfiBootManagerRefreshAllBootOption ();
-   }
- 
-+  //
-+  // The firmware boots: a new vboot slot is kept.
-+  //
-+  PlatformMarkFirmwareGood ();
-+
-   //
-   // Process TPM PPI request
-   //
-diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
-index 9085f8977..7e63564cd 100644
---- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
-+++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
-@@ -163,3 +163,12 @@ BOOLEAN
- PlatformProcessCapsules (
-   VOID
-   );
-+
-+/**
-+  Tell coreboot that the firmware booted, so that vboot keeps a new RW slot
-+  that it is trying.
-+**/
-+VOID
-+PlatformMarkFirmwareGood (
-+  VOID
-+  );
-diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
-index 3cdae2ad4..b7f389725 100644
---- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
-+++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
-@@ -478,6 +478,30 @@ CapsuleApply (
-   }
- }
- 
-+/**
-+  Tell coreboot that the firmware booted: with vboot, a new RW slot that it is
-+  trying (after an update) is then kept, instead of being given up for the
-+  other one when its tries run out.  Called once the console is up.
-+**/
-+VOID
-+PlatformMarkFirmwareGood (
-+  VOID
-+  )
-+{
-+  EFI_STATUS  Status;
-+
-+  if (EFI_ERROR (SmmStoreLibInitialize ())) {
-+    return;
-+  }
-+
-+  Status = SmmStoreLibVbootSlotGood ();
-+  if (Status != EFI_UNSUPPORTED) {
-+    DEBUG ((DEBUG_INFO, "Capsules: firmware slot marked good: %r\n", Status));
-+  }
-+
-+  SmmStoreLibDeinitialize ();
-+}
-+
- /**
-   Apply the update capsules of this boot, if it has any, and reset after
-   applying one.  Otherwise make sure that the whole flash is no longer
 diff --git a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
 index 875b7269b..e7a6b73c7 100644
 --- a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c

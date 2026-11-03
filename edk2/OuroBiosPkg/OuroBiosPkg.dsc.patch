@@ -244,10 +244,12 @@
    UefiBootManagerLib|MdeModulePkg/Library/UefiBootManagerLib/UefiBootManagerLib.inf
    BootLogoLib|MdeModulePkg/Library/BootLogoLib/BootLogoLib.inf
    CustomizedDisplayLib|MdeModulePkg/Library/CustomizedDisplayLib/CustomizedDisplayLib.inf
-@@ -332,6 +432,9 @@
+@@ -331,7 +431,10 @@
+   !endif
    PlatformHookLib|UefiPayloadPkg/Library/PlatformHookLib/PlatformHookLib.inf
  !endif
-   PlatformBootManagerLib|UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+-  PlatformBootManagerLib|UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
++  PlatformBootManagerLib|OuroBiosPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
 +!if $(VARIABLE_SUPPORT) == "EMU" || $(VARIABLE_SUPPORT) == "SMMSTORE" || $(VARIABLE_SUPPORT) == "SPI"
 +  PlatformPasswordLib|OuroBiosPkg/UserAuthPkg/Library/PlatformPasswordLibNull/PlatformPasswordLibNull.inf
 +!endif

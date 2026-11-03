@@ -26,10 +26,8 @@
 0024-UefiPayloadPkg-Library-PciHostBridgeLib-Add-warning-.patch
 0025-UefiPayloadPkg-Implement-CFR-support.patch
 0026-MdeModulePkg-DisplayEngineDxe-Change-the-delimiter-f.patch
-0027-UefiPayloadPkg-PlatformBootMgr-update-progress-messa.patch
 0028-UefiPayloadPkg-Extend-SmmStoreLib-for-64-bit-MMIO-st.patch
 0029-MdeModulePkg-UFS-pass-through-fix-and-boot-enumerati.patch
-0030-PlatformBootManagerLib-Refactor-BdsGetShellFvDeviceP.patch
 0031-UefiPayloadPkg-Add-iPXE-network-boot-option-support.patch
 0032-MdeModulePkg-UefiPayloadPkg-Add-Time-Date-Settings-d.patch
 0033-MdeModulePkg-Fix-Frontpage-banner-layout.patch
@@ -38,7 +36,6 @@
 0036-MdeModulePkg-SetupBrowserDxe-Sync-ordered-lists-befo.patch
 0037-PcRtcEntry-Don-t-assert-if-RTC-init-fails.patch
 0038-UefiPayloadEntry-Fix-use-of-uninitialized-memory.patch
-0039-UefiPayloadPkg-PlatformBootManager-Clear-boot-prompt.patch
 0040-FatPkg-Fix-FAT32-mount-on-small-4K-sector-ESP-partit.patch
 0041-MdeModulePkg-SecurityPkg-Use-HII-popup-for-setup-dia.patch
 0042-SecurityPkg-SecureBootConfigDxe-Overhaul-Secure-Boot.patch
@@ -49,7 +46,6 @@
 0047-UefiPayloadPkg-Add-option-to-enable-Secure-Boot-defa.patch
 0049-UefiPayloadPkg-ResetSystemLib-Select-S5-sleep-type-f.patch
 0050-UefiPayloadPkg-FmpDeviceSmmLib-Add-FMAP-based-scoped.patch
-0051-UefiPayloadPkg-Add-graphical-capsule-update-progress.patch
 0052-UefiPayloadPkg-FmpDeviceSmmLib-Harden-scoped-capsule.patch
 0053-UefiPayloadPkg-Fmp-Keep-capsule-updates-resilient-th.patch
 0054-MdeModulePkg-UefiPayloadPkg-Keep-ESRT-durable-across.patch
@@ -74,7 +70,6 @@
 0075-MdeModulePkg-Enter-Compat-Mode-When-non-NX_COMPAT-Ap.patch
 0076-MdeModulePkg-Add-Compat-Mode-Allowed-PCD.patch
 0077-UefiPayloadPkg-Append-DBX-updates-to-the-retained-ba.patch
-0078-UefiPayloadPkg-Unregister-the-setup-hotkey-before-cl.patch
 0079-MdeModulePkg-Add-Auto-Boot-Fall-Through-option.patch
 0080-MdeModulePkg-UiApp-List-the-forms-of-formsets-that-a.patch
 0081-UefiPayloadPkg-CfrSetupMenuDxe-Link-the-setup-passwo.patch
@@ -82,8 +77,6 @@
 0083-MdeModulePkg-Ps2MouseDxe-Report-at-100-Hz-and-8-coun.patch
 0084-UefiPayloadPkg-FmpDeviceSmmLib-Only-the-regions-of-a.patch
 0085-UefiPayloadPkg-SmmStoreLib-Let-the-caller-end-the-wh.patch
-0086-UefiPayloadPkg-PlatformBootManagerLib-Capsules-on-di.patch
-0087-UefiPayloadPkg-PlatformBootManagerLib-Capsules-on-di.patch
 0088-UefiPayloadPkg-Add-a-Firmware-Update-setup-page.patch
 0089-UefiPayloadPkg-Tell-coreboot-that-the-firmware-boote.patch
 0090-UefiPayloadPkg-FmpDeviceSmmLib-Update-one-vboot-slot.patch
@@ -91,7 +84,6 @@
 0092-SecurityPkg-TcgDxe-Log-into-the-bootloader-s-TCPA-ta.patch
 0093-UefiPayloadPkg-Go-back-to-the-other-vboot-slot-from-.patch
 0094-BaseTools-No-debug-directory-in-the-PE-images-of-a-r.patch
-0095-UefiPayloadPkg-iPXE-on-its-own-and-a-setup-switch-fo.patch
 0096-UefiPayloadPkg-CSMWrap-a-legacy-BIOS-as-a-boot-optio.patch
 0097-UefiPayloadPkg-A-firmware-update-screen-the-ouroboro.patch
 0098-UefiPayloadPkg-CfrSetupMenuDxe-Link-the-other-pages-.patch
@@ -100,7 +92,6 @@
 0101-MdeModulePkg-Core-Dxe-The-MAT-for-runtime-images-loa.patch
 0102-UefiPayloadPkg-Take-the-system-firmware-GUID-of-the-.patch
 0103-UefiPayloadPkg-PciPlatformDxe-A-setup-policy-for-the.patch
-0104-UefiPayloadPkg-PlatformBootManagerLib-USB-boot-and-p.patch
 0105-UefiPayloadPkg-Say-what-a-slot-switch-keeps-and-trai.patch
 0106-MdeModulePkg-Variable-Let-a-platform-keep-MOR-withou.patch
 0107-MdeModulePkg-UefiBootManagerLib-Fix-short-form-hard-.patch
@@ -108,7 +99,6 @@
 0109-UefiPayloadPkg-TCG-Secure-MOR-with-the-lock-that-cor.patch
 0110-UefiPayloadPkg-SmmStoreLib-The-arguments-in-the-com-.patch
 0111-UefiPayloadPkg-FmpDeviceSmmLib-Only-the-regions-the-.patch
-0112-UefiPayloadPkg-PlatformBootManagerLib-Keep-a-tried-s.patch
 0113-MdeModulePkg-UsbBusDxe-Guard-descriptor-on-SS-retry.patch
 0114-MdeModulePkg-UsbBusDxe-Bound-BOS-capability-parsing.patch
 0115-MdeModulePkg-UsbBusDxe-Free-BOS-buffer-on-read-failu.patch

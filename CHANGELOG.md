@@ -128,10 +128,11 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   [`edk2/OuroBiosPkg`](edk2/README.md) (the modules that TianoCore does
   not have: the setup, the splash, the password, the default Secure Boot
   keys, the update screen..., and the platform, `UefiPayloadPkg.dsc` and
-  `.fdf` as patches on TianoCore's) and `patches/tianocore` (75 commits of
-  MrChromebox, two commits and their reverts left out as they cancel
-  out, and 39 patches of `patches/edk2`, each without the files of
-  the package) from MrChromebox's tree with `patches/edk2`, and checks
+  `.fdf` as patches on TianoCore's, and `PlatformBootManagerLib`, carried
+  whole) and `patches/tianocore` (70 commits of MrChromebox and 34 patches
+  of `patches/edk2`, each without the files of the package; two commits
+  and their reverts, which cancel out, stay out) from MrChromebox's tree
+  with `patches/edk2`, and checks
   that the tag with the series is that tree in every other file; LvglPkg
   is a package of its own next to it. coreboot builds it with patch 0216
   (`EDK2_PLATFORM_DSC`, `EDK2_PACKAGES_PATH`, relative to the coreboot

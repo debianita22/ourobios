@@ -4,8 +4,9 @@ Date: Fri, 25 Sep 2026 11:02:52 -0500
 Subject: [PATCH] UefiPayloadPkg: Copy custom bootsplash BMP to the ESP
 
 [ouroBIOS: commit afe0e87d25d5 of MrChromebox's edk2, without the files
-that TianoCore's tree does not have (tools/edk2-import.py): 7 in
-edk2/OuroBiosPkg]
+that TianoCore's tree does not have (tools/edk2-import.py): 9 in
+edk2/OuroBiosPkg (2 in a directory of TianoCore's that the package
+carries whole)]
 
 Storing a USB device path made custom logos disappear after the media
 was removed. Validate the BMP at import with the same checks used at
@@ -15,12 +16,10 @@ display, and tell the user when import fails.
 
 Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
 ---
- .../Include/Guid/BootSplashConfig.h           |  13 ++
- .../Include/Library/BootSplashLib.h           | 100 ++++++++++++++++
- .../PlatformBootManagerLib/BootSplash.c       | 112 ++++--------------
- .../PlatformBootManagerLib.inf                |   3 +-
+ .../Include/Guid/BootSplashConfig.h           |  13 +++
+ .../Include/Library/BootSplashLib.h           | 100 ++++++++++++++++++
  UefiPayloadPkg/UefiPayloadPkg.dec             |   1 +
- 5 files changed, 140 insertions(+), 89 deletions(-)
+ 3 files changed, 114 insertions(+)
  create mode 100644 UefiPayloadPkg/Include/Library/BootSplashLib.h
 
 diff --git a/UefiPayloadPkg/Include/Guid/BootSplashConfig.h b/UefiPayloadPkg/Include/Guid/BootSplashConfig.h
@@ -153,170 +152,6 @@ index 0000000000000000000000000000000000000000..19dedc7b02c3d557e1d7f6ba1f5d50e6
 +  );
 +
 +#endif
-diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/BootSplash.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/BootSplash.c
-index 802430f054a84877df594dd5cc56207ef3d2cb65..775cf86e96a9ac2dae30a05d4e2bb8e79f07fc41 100644
---- a/UefiPayloadPkg/Library/PlatformBootManagerLib/BootSplash.c
-+++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/BootSplash.c
-@@ -11,8 +11,7 @@
- #include <Protocol/BootLogo2.h>
- #include <Protocol/GraphicsOutput.h>
- #include <Protocol/PlatformLogo.h>
--#include <Library/BmpSupportLib.h>
--#include <Library/FileHandleLib.h>
-+#include <Library/BootSplashLib.h>
- 
- /**
-   Read a UINT8 boot splash NVRAM variable or return DefaultValue.
-@@ -55,26 +54,19 @@ BootSplashDisplayCustom (
-   VOID
-   )
- {
--  EFI_STATUS                             Status;
--  UINTN                                  DataSize;
--  EFI_DEVICE_PATH_PROTOCOL               *StoredPath;
--  EFI_DEVICE_PATH_PROTOCOL               *FilePath;
--  EFI_DEVICE_PATH_PROTOCOL               *FilePathWalk;
--  EFI_FILE_HANDLE                        FileHandle;
--  UINT64                                 FileSize64;
--  UINTN                                  FileSize;
--  VOID                                   *BmpBuffer;
--  EFI_GRAPHICS_OUTPUT_BLT_PIXEL          *Blt;
--  UINTN                                  BltSize;
--  UINTN                                  Height;
--  UINTN                                  Width;
--  EFI_GRAPHICS_OUTPUT_PROTOCOL           *GraphicsOutput;
--  EFI_BOOT_LOGO_PROTOCOL                 *BootLogo;
--  EDKII_BOOT_LOGO2_PROTOCOL              *BootLogo2;
--  INTN                                   DestX;
--  INTN                                   DestY;
--  UINT32                                 SizeOfX;
--  UINT32                                 SizeOfY;
-+  EFI_STATUS                     Status;
-+  UINTN                          DataSize;
-+  EFI_DEVICE_PATH_PROTOCOL       *StoredPath;
-+  VOID                           *BmpBuffer;
-+  UINTN                          BmpSize;
-+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL  *Blt;
-+  UINTN                          Height;
-+  UINTN                          Width;
-+  INTN                           DestX;
-+  INTN                           DestY;
-+  EFI_GRAPHICS_OUTPUT_PROTOCOL   *GraphicsOutput;
-+  EFI_BOOT_LOGO_PROTOCOL         *BootLogo;
-+  EDKII_BOOT_LOGO2_PROTOCOL      *BootLogo2;
- 
-   StoredPath = AllocateZeroPool (BOOT_SPLASH_PATH_MAX_SIZE);
-   if (StoredPath == NULL) {
-@@ -96,58 +88,23 @@ BootSplashDisplayCustom (
-     return EFI_NOT_FOUND;
-   }
- 
--  FilePath = DuplicateDevicePath (StoredPath);
-+  BmpBuffer = NULL;
-+  BmpSize   = 0;
-+  Status    = BootSplashReadFile (StoredPath, &BmpBuffer, &BmpSize);
-   FreePool (StoredPath);
--  if (FilePath == NULL) {
--    return EFI_OUT_OF_RESOURCES;
--  }
--
--  FileHandle   = NULL;
--  FilePathWalk = FilePath;
--  Status       = EfiOpenFileByDevicePath (
--                   &FilePathWalk,
--                   &FileHandle,
--                   EFI_FILE_MODE_READ,
--                   0
--                   );
--  FreePool (FilePath);
--
--  if (EFI_ERROR (Status) || (FileHandle == NULL)) {
--    return EFI_ERROR (Status) ? Status : EFI_NOT_FOUND;
--  }
--
--  Status = FileHandleGetSize (FileHandle, &FileSize64);
--  if (EFI_ERROR (Status) || (FileSize64 == 0) || (FileSize64 > MAX_UINTN)) {
--    FileHandleClose (FileHandle);
--    return EFI_UNSUPPORTED;
--  }
--
--  FileSize  = (UINTN)FileSize64;
--  BmpBuffer = AllocatePool (FileSize);
--  if (BmpBuffer == NULL) {
--    FileHandleClose (FileHandle);
--    return EFI_OUT_OF_RESOURCES;
--  }
--
--  Status = FileHandleRead (FileHandle, &FileSize, BmpBuffer);
--  FileHandleClose (FileHandle);
-   if (EFI_ERROR (Status)) {
--    FreePool (BmpBuffer);
-     return Status;
-   }
- 
--  Blt     = NULL;
--  BltSize = 0;
--  Height  = 0;
--  Width   = 0;
--  Status  = TranslateBmpToGopBlt (BmpBuffer, FileSize, &Blt, &BltSize, &Height, &Width);
-+  Blt    = NULL;
-+  Width  = 0;
-+  Height = 0;
-+  DestX  = 0;
-+  DestY  = 0;
-+  Status = BootSplashDecodeBmp (BmpBuffer, BmpSize, &Blt, &Width, &Height, &DestX, &DestY);
-   FreePool (BmpBuffer);
--  if (EFI_ERROR (Status) || (Blt == NULL) || (Width == 0) || (Height == 0)) {
--    if (Blt != NULL) {
--      FreePool (Blt);
--    }
--
--    return EFI_UNSUPPORTED;
-+  if (EFI_ERROR (Status) || (Blt == NULL)) {
-+    return EFI_ERROR (Status) ? Status : EFI_UNSUPPORTED;
-   }
- 
-   Status = gBS->HandleProtocol (
-@@ -160,25 +117,6 @@ BootSplashDisplayCustom (
-     return Status;
-   }
- 
--  SizeOfX = GraphicsOutput->Mode->Info->HorizontalResolution;
--  SizeOfY = GraphicsOutput->Mode->Info->VerticalResolution;
--  if ((Width > SizeOfX) || (Height > SizeOfY)) {
--    FreePool (Blt);
--    return EFI_UNSUPPORTED;
--  }
--
--  DestX = (INTN)(SizeOfX - Width) / 2;
--  if (FixedPcdGetBool (PcdFollowBGRTSpecification)) {
--    DestY = (INTN)(SizeOfY * 382) / 1000 - (INTN)Height / 2;
--  } else {
--    DestY = (INTN)(SizeOfY - Height) / 2;
--  }
--
--  if ((DestX < 0) || (DestY < 0)) {
--    FreePool (Blt);
--    return EFI_UNSUPPORTED;
--  }
--
-   gST->ConOut->EnableCursor (gST->ConOut, FALSE);
- 
-   Status = GraphicsOutput->Blt (
-diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-index 6b015fa452c42602efdc0deb1b811a5f70168543..d1a15df444a8b8a5dc6c7ecba78f73fdba0a235b 100644
---- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-+++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-@@ -42,8 +42,7 @@
-   UefiLib
-   UefiBootManagerLib
-   BootLogoLib
--  BmpSupportLib
--  FileHandleLib
-+  BootSplashLib
-   PcdLib
-   DxeServicesLib
-   MemoryAllocationLib
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
 index 619b5eebc88c5ab3ce2fe3774e09b2a88617fe81..7f9b4391e5caafa9ea056372b879eb6b5c446885 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dec

@@ -5,7 +5,8 @@ Subject: [PATCH] UefiPayloadPkg: Go back to the other vboot slot from the
  setup
 
 [ouroBIOS: patches/edk2/0020, without the files that TianoCore's tree
-does not have (tools/edk2-import.py): 4 in edk2/OuroBiosPkg]
+does not have (tools/edk2-import.py): 7 in edk2/OuroBiosPkg (3 in a
+directory of TianoCore's that the package carries whole)]
 
 With coreboot's vboot and two RW slots, an update capsule writes the slot
 that does not run and boots it; the other slot keeps the release before,
@@ -102,120 +103,6 @@ index fab6c3385..3b7d054ab 100644
  /**
    Function to update a pointer on virtual address change.  Matches the signature
    and operation of EfiConvertPointer.
-diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
-index 7e63564cd..137a8831b 100644
---- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
-+++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
-@@ -166,7 +166,8 @@ PlatformProcessCapsules (
- 
- /**
-   Tell coreboot that the firmware booted, so that vboot keeps a new RW slot
--  that it is trying.
-+  that it is trying; lock the switch to the other slot before a boot option
-+  starts and at ExitBootServices().
- **/
- VOID
- PlatformMarkFirmwareGood (
-diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-index 8ce723505..c4b5bdfe5 100644
---- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-+++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-@@ -59,6 +59,8 @@
- 
- [Guids]
-   gEfiEndOfDxeEventGroupGuid
-+  gEfiEventExitBootServicesGuid   ## CONSUMES ## Event
-+  gEfiEventReadyToBootGuid        ## CONSUMES ## Event
-   gUefiShellFileGuid
-   gUefiPayloadBootSplashGuid
-   gEfiCapsuleReportGuid           ## CONSUMES ## Variable:L"CapsuleLast"
-diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
-index b7f389725..e7911b824 100644
---- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
-+++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
-@@ -478,10 +478,41 @@ CapsuleApply (
-   }
- }
- 
-+STATIC BOOLEAN  mFirmwareSlotsLocked;
-+
-+/**
-+  A boot option or an OS is about to start: from now on, only an update
-+  capsule, with its checks, may change the RW slot that vboot boots.
-+  Allocates nothing.
-+**/
-+STATIC
-+VOID
-+EFIAPI
-+PlatformLockFirmwareSlots (
-+  IN EFI_EVENT  Event,
-+  IN VOID       *Context
-+  )
-+{
-+  EFI_STATUS  Status;
-+
-+  if (mFirmwareSlotsLocked) {
-+    return;
-+  }
-+
-+  Status               = SmmStoreLibVbootLockSlots ();
-+  mFirmwareSlotsLocked = !EFI_ERROR (Status);
-+  DEBUG ((DEBUG_INFO, "Capsules: switch to the other firmware slot locked: %r\n", Status));
-+}
-+
- /**
-   Tell coreboot that the firmware booted: with vboot, a new RW slot that it is
-   trying (after an update) is then kept, instead of being given up for the
-   other one when its tries run out.  Called once the console is up.
-+
-+  With two RW slots, the setup can also switch to the other slot (the
-+  Firmware Update page); coreboot refuses that once a boot option starts
-+  (ReadyToBoot, which booting the setup does not signal) or anything calls
-+  ExitBootServices().
- **/
- VOID
- PlatformMarkFirmwareGood (
-@@ -489,6 +520,7 @@ PlatformMarkFirmwareGood (
-   )
- {
-   EFI_STATUS  Status;
-+  EFI_EVENT   Event;
- 
-   if (EFI_ERROR (SmmStoreLibInitialize ())) {
-     return;
-@@ -499,7 +531,31 @@ PlatformMarkFirmwareGood (
-     DEBUG ((DEBUG_INFO, "Capsules: firmware slot marked good: %r\n", Status));
-   }
- 
--  SmmStoreLibDeinitialize ();
-+  if (Status == EFI_UNSUPPORTED) {
-+    SmmStoreLibDeinitialize ();
-+    return;
-+  }
-+
-+  //
-+  // The library stays initialized for the lock: at ExitBootServices() it
-+  // cannot allocate.  Without both events, lock now: the setup then cannot
-+  // switch slots in this boot.
-+  //
-+  if (EFI_ERROR (EfiCreateEventReadyToBootEx (TPL_CALLBACK, PlatformLockFirmwareSlots, NULL, &Event)) ||
-+      EFI_ERROR (
-+        gBS->CreateEventEx (
-+               EVT_NOTIFY_SIGNAL,
-+               TPL_CALLBACK,
-+               PlatformLockFirmwareSlots,
-+               NULL,
-+               &gEfiEventExitBootServicesGuid,
-+               &Event
-+               )
-+        ))
-+  {
-+    DEBUG ((DEBUG_ERROR, "Capsules: no event for the lock of the firmware slots\n"));
-+    PlatformLockFirmwareSlots (NULL, NULL);
-+  }
- }
- 
- /**
 diff --git a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
 index e7a6b73c7..98f282b82 100644
 --- a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c

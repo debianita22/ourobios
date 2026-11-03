@@ -4,8 +4,9 @@ Date: Tue, 26 Jan 2021 14:17:40 +0100
 Subject: [PATCH] UefiPayloadPkg/SecurityPkg/OvmfPkg: Add TPM 1.2/2.0 support
 
 [ouroBIOS: commit c11151598eb8 of MrChromebox's edk2, without the files
-that TianoCore's tree does not have (tools/edk2-import.py): 13 in
-edk2/OuroBiosPkg]
+that TianoCore's tree does not have (tools/edk2-import.py): 16 in
+edk2/OuroBiosPkg (3 in a directory of TianoCore's that the package
+carries whole)]
 
 Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
 ---
@@ -26,16 +27,13 @@ Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
  .../Include/Guid/TcgPhysicalPresenceGuid.h    | 30 ++++++++
  UefiPayloadPkg/Include/Library/BlParseLib.h   | 16 ++++
  .../Library/CbParseLib/CbParseLib.c           | 46 +++++++++++
- .../PlatformBootManager.c                     |  8 ++
- .../PlatformBootManager.h                     |  2 +
- .../PlatformBootManagerLib.inf                |  3 +
  .../Library/SblParseLib/SblParseLib.c         | 15 ++++
  UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c   | 13 ++++
  .../UefiPayloadEntry/UefiPayloadEntry.c       | 13 ++++
  .../UefiPayloadEntry/UefiPayloadEntry.h       |  1 +
  .../UefiPayloadEntry/UefiPayloadEntry.inf     |  1 +
  UefiPayloadPkg/UefiPayloadPkg.dec             |  2 +
- 26 files changed, 421 insertions(+), 46 deletions(-)
+ 23 files changed, 408 insertions(+), 46 deletions(-)
  create mode 100644 OvmfPkg/Include/Library/Tcg2PhysicalPresencePlatformLib.h
  create mode 100644 OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.c
  create mode 100644 OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.inf
@@ -741,59 +739,6 @@ index 0f6d1d506fe65f0948c22ddf545bc74b4150deac..852dd1dde989fb54b1ab95aabecef756
 +
 +  return RETURN_SUCCESS;
 +}
-diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
-index 328696860c2f56d8f9a68114a9eccb33e04c874a..2cd33a5faaa32ee4e6cab202663d85139b39c5c1 100644
---- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
-+++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
-@@ -350,6 +350,14 @@ PlatformBootManagerAfterConsole (
-     gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
-   }
- 
-+  //
-+  // Process TPM PPI request
-+  //
-+  Status=TcgPhysicalPresenceLibProcessRequest (); // Check for TPM1.2 First
-+  if (EFI_ERROR (Status)) {
-+	  Tcg2PhysicalPresenceLibProcessRequest (NULL); //Check for TPM2.0
-+  }
-+
-   //
-   // Register UEFI Shell
-   //
-diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
-index 9f54b38d6d4ae854da4c43b5cc8148ea39e6d794..56e220773e694abd8ebce67f19076e2529837c62 100644
---- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
-+++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
-@@ -27,6 +27,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
- #include <Library/BootLogoLib.h>
- #include <Library/CapsuleLib.h>
- #include <Library/HobLib.h>
-+#include <Library/TcgPhysicalPresenceLib.h>
-+#include <Library/Tcg2PhysicalPresenceLib.h>
- #include <Protocol/SmmAccess2.h>
- 
- typedef struct {
-diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-index 372d26da49bd0c504183f5ba4decf89338710d6f..daa70366c59a60b262189aef41ef35bd449180ce 100644
---- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-+++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-@@ -32,6 +32,7 @@
-   MdeModulePkg/MdeModulePkg.dec
-   UefiPayloadPkg/UefiPayloadPkg.dec
-   ShellPkg/ShellPkg.dec
-+  SecurityPkg/SecurityPkg.dec
- 
- [LibraryClasses]
-   BaseLib
-@@ -49,6 +50,8 @@
-   PlatformHookLib
-   CapsuleLib
-   HobLib
-+  TcgPhysicalPresenceLib
-+  Tcg2PhysicalPresenceLib
- 
- [Guids]
-   gEfiEndOfDxeEventGroupGuid
 diff --git a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c b/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c
 index 7cc615a35e8ad67f1b6bf5cfde064801e493ebe3..2721e048eae084b9c813df8833ec6947ad2cef9c 100644
 --- a/UefiPayloadPkg/Library/SblParseLib/SblParseLib.c

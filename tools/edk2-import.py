@@ -57,6 +57,14 @@ O = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PKG = "OuroBiosPkg"
 PLATFORM = ("UefiPayloadPkg/UefiPayloadPkg.dsc", "UefiPayloadPkg/UefiPayloadPkg.fdf")
 DROPPED = ("UefiPayloadPkg/NetworkDrivers",)
+# Cartelle che il tag di TianoCore ha, ma che il package porta intere, come le
+# ha R (docs/edk2-migration.md, "package"): PlatformBootManagerLib, la
+# politica di boot della piattaforma, fatta in gran parte di commit di
+# MrChromebox e di patch del progetto. Escono da patches/tianocore, che per
+# loro non cambia piu' il tag, e la piattaforma del package le prende da li'.
+# Le patch della serie tengono i numeri di prima (make_series): una rimasta
+# senza file lascia il suo vuoto
+PACKAGE_MOVED = ("UefiPayloadPkg/Library/PlatformBootManagerLib",)
 # Commit di MrChromebox che patches/tianocore lascia fuori a coppie: un commit
 # e il suo revert, che nei file di TianoCore si annullano (docs/edk2-migration.md,
 # "drop"): i loro numeri restano vuoti, perche' le altre patch tengano i loro.
@@ -179,7 +187,8 @@ def under(path, dirs):
 
 def package_dirs(base, r):
     """Le cartelle nuove di R sotto UefiPayloadPkg, le piu' esterne (quelle
-    il cui genitore c'e' nel tag), meno DROPPED; e quelle in cima (TOP_DIRS).
+    il cui genitore c'e' nel tag), meno DROPPED; quelle di PACKAGE_MOVED; e
+    quelle in cima (TOP_DIRS).
     Non quelle di UefiPayloadPkg/Include: i moduli ne prendono gli header
     per le [Includes] di UefiPayloadPkg.dec, restano li'."""
     old = dirs_of(base)
@@ -194,6 +203,10 @@ def package_dirs(base, r):
                 new.add(d)
                 break
     keep = sorted(d for d in new if not under(d, DROPPED))
+    for d in PACKAGE_MOVED:
+        if not any(p.startswith(d + "/") for p in r):
+            raise Error("PACKAGE_MOVED: %s non c'e' in R" % d)
+        keep.append(d)
     for d in TOP_DIRS:
         if any(p.startswith(d + "/") for p in r) and d not in old:
             keep.append(d)
@@ -313,16 +326,22 @@ def check_cancelled(mrc, commits, pathspec):
 
 
 def make_series(mrc, tmp, base, head, excl, out):
-    """patches/tianocore in out: torna [(nome, origine)]."""
+    """patches/tianocore in out: torna [(nome, origine)]. I numeri sono quelli
+    che le patch avrebbero senza PACKAGE_MOVED: una patch che ha file solo
+    nelle cartelle spostate nel package, o una coppia di CANCELLED, lascia il
+    suo numero vuoto, cosi' le altre non cambiano nome."""
     pathspec = ["--", "."] + [":(exclude)%s" % p for p in excl]
+    numbered = [p for p in excl if p not in PACKAGE_MOVED]
+    pathspec_numbered = ["--", "."] + [":(exclude)%s" % p for p in numbered]
     made = []
     n = 0
     commits = git(mrc, "rev-list", "--reverse", "--topo-order", "%s..%s" % (base, head)).split()
     cancelled = check_cancelled(mrc, commits, pathspec)
     for c in commits:
-        if not git(mrc, "diff-tree", "--no-commit-id", "--name-only", "-r", c, *pathspec).split():
+        if not git(mrc, "diff-tree", "--no-commit-id", "--name-only", "-r", c, *pathspec_numbered).split():
             continue
-        if c in cancelled:
+        if c in cancelled or not git(mrc, "diff-tree", "--no-commit-id", "--name-only", "-r", c,
+                                     *pathspec).split():
             # il numero resta vuoto
             n += 1
             continue
@@ -340,11 +359,14 @@ def make_series(mrc, tmp, base, head, excl, out):
     for name in series("edk2"):
         with open(os.path.join(O, "patches", "edk2", name), "rb") as f:
             data = f.read()
+        if restrict_mail(data, lambda p: under(p, numbered) or p in numbered) is None:
+            continue
+        n += 1
         r = restrict_mail(data, lambda p: under(p, excl) or p in excl)
         if r is None:
+            # tutta in PACKAGE_MOVED: il numero resta vuoto
             continue
         data, dropped = r
-        n += 1
         note = ("[ouroBIOS: patches/edk2/%s%s]" % (name[:4], where_left(dropped, excl))).encode()
         data = note_after_headers(data, wrap(note))
         out_name = "%04d-%s" % (n, name.split("-", 1)[1])
@@ -365,9 +387,12 @@ def where_left(paths, excl):
     if not paths:
         return ", as it is"
     pkg = [p for p in paths if not under(p, DROPPED) and not under(p, SEPARATE)]
+    moved = [p for p in pkg if under(p, PACKAGE_MOVED)]
     parts = []
     if pkg:
-        parts.append("%d in edk2/OuroBiosPkg" % len(pkg))
+        parts.append("%d in edk2/OuroBiosPkg" % len(pkg) + (
+            " (%d in a directory of TianoCore's that the package carries whole)" % len(moved)
+            if moved else ""))
     if any(under(p, SEPARATE) for p in paths):
         parts.append("LvglPkg on its own")
     if any(under(p, DROPPED) for p in paths):

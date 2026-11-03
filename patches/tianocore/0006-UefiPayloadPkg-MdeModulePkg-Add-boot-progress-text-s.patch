@@ -4,17 +4,16 @@ Date: Fri, 29 Jul 2022 15:22:38 -0500
 Subject: [PATCH] UefiPayloadPkg/MdeModulePkg: Add boot progress text support
 
 [ouroBIOS: commit 0c433f7db1c6 of MrChromebox's edk2, without the files
-that TianoCore's tree does not have (tools/edk2-import.py): 1 in
-edk2/OuroBiosPkg]
+that TianoCore's tree does not have (tools/edk2-import.py): 3 in
+edk2/OuroBiosPkg (2 in a directory of TianoCore's that the package
+carries whole)]
 
 Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
 ---
  MdeModulePkg/Include/Library/BootLogoLib.h    | 13 +++++
  .../Library/BootLogoLib/BootLogoLib.c         | 53 +++++++++++++++++++
- .../PlatformBootManager.c                     | 50 ++++++++++++-----
- .../PlatformBootManagerLib.inf                |  1 +
  UefiPayloadPkg/UefiPayloadPkg.dec             |  3 ++
- 5 files changed, 108 insertions(+), 12 deletions(-)
+ 3 files changed, 69 insertions(+)
 
 diff --git a/MdeModulePkg/Include/Library/BootLogoLib.h b/MdeModulePkg/Include/Library/BootLogoLib.h
 index 19894b27cbf848e3109fc32a6340cf12f0d79203..88094f4bf6dec505b7c4301c7224378b31bbdcd6 100644
@@ -98,84 +97,6 @@ index 5beb0e0aa547a188a0269598c122c6adb7b10933..cba6f1983f645d83ec8eed5a1c74d4de
 +
 +  return EFI_SUCCESS;
 +}
-diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
-index 0788d850abf35065663553e8525c8da873d0b6be..328696860c2f56d8f9a68114a9eccb33e04c874a 100644
---- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
-+++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
-@@ -356,19 +356,41 @@ PlatformBootManagerAfterConsole (
-   PlatformRegisterFvBootOption (&gUefiShellFileGuid, L"UEFI Shell", LOAD_OPTION_ACTIVE);
- 
-   if (FixedPcdGetBool (PcdBootManagerEscape)) {
--    Print (
--      L"\n"
--      L"    Esc or Down      to enter Boot Manager Menu.\n"
--      L"    ENTER            to boot directly.\n"
--      L"\n"
--      );
-+    if (FixedPcdGetBool (PcdSerialTerminalPrintEnabled)) {
-+      Print (
-+        L"\n"
-+        L"    Esc              to enter Setup Option Menu.\n"
-+        L"    ENTER            to boot directly.\n"
-+        L"\n"
-+        );
-+    } else {
-+      BootLogoUpdateProgress (
-+        White,
-+        Black,
-+        L"Press ESC for Boot Options/Settings",
-+        White,
-+        0,
-+        0
-+        );
-+    }
-   } else {
--    Print (
--      L"\n"
--      L"    F2 or Down      to enter Boot Manager Menu.\n"
--      L"    ENTER           to boot directly.\n"
--      L"\n"
--      );
-+    if (FixedPcdGetBool (PcdSerialTerminalPrintEnabled)) {
-+      Print (
-+        L"\n"
-+        L"    F2 or Down      to enter Setup Option Menu.\n"
-+        L"    ENTER           to boot directly.\n"
-+        L"\n"
-+        );
-+    } else {
-+      BootLogoUpdateProgress (
-+        White,
-+        Black,
-+        L"Press F2 or Down for Boot Options/Settings",
-+        White,
-+        0,
-+        0
-+        );
-+    }
-   }
- }
- 
-@@ -383,6 +405,10 @@ PlatformBootManagerWaitCallback (
-   UINT16  TimeoutRemain
-   )
- {
-+  if (TimeoutRemain == 0) {
-+    BootLogoClearProgress ();
-+  }
-+
-   return;
- }
- 
-diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-index e803cc80c5cd6b9157dc0b06ed6249dce210da94..372d26da49bd0c504183f5ba4decf89338710d6f 100644
---- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-+++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
-@@ -73,3 +73,4 @@
-   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultParity
-   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultStopBits
-   gUefiPayloadPkgTokenSpaceGuid.PcdBootManagerEscape
-+  gUefiPayloadPkgTokenSpaceGuid.PcdSerialTerminalPrintEnabled
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
 index 2e135007299103099418cc42d8ace02eb74a9144..bba04554f801a7e87bbfc1b40abf2721e36552d6 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dec
