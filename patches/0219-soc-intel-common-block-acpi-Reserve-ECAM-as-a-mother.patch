@@ -10,8 +10,9 @@ northbridge ASL (PDRC) does not list it: it has the MCH, DMI and EP
 BARs, VT-d, the flash, the local APIC and HPET. The PCI Firmware
 Specification (3.3, 4.1.2) asks for the window to be reserved as a
 motherboard resource, and that is where Linux looks for it when it
-checks the window after the ACPI interpreter is up (pci_mmcfg_reserved(),
-"ECAM ... not reserved in ACPI motherboard resources" otherwise).
+checks the window after the ACPI interpreter is up
+(pci_mmcfg_reserved(), "ECAM ... not reserved in ACPI motherboard
+resources" otherwise).
 
 Add it to PDRC with ECAM_MMCONF_SUPPORT. Every SoC that selects
 SOC_INTEL_COMMON_BLOCK_SA has its window below 4 GiB by default

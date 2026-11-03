@@ -4,13 +4,13 @@ Date: Mon, 2 Nov 2026 21:10:00 +0100
 Subject: [PATCH] payloads/external/edk2: Two options of MrChromebox's tree for
  a custom one
 
-The Makefile passes the options of the downstream trees (FOLLOW_BGRT_SPEC,
-LOAD_OPTION_ROMS, NETWORK_IPXE, CSMWRAP, LVGL_ENABLE and the others) to
-any repository but the official one, and most of their Kconfig symbols
-depend on !EDK2_REPO_OFFICIAL accordingly. Two depend on
-EDK2_REPO_MRCHROMEBOX instead: EDK2_SECURE_BOOT_DEFAULT_ENABLE and
-EDK2_USE_LVGL_RENDERER. A custom repository whose platform has the same
-defines, such as upstream edk2 with a package outside the tree that
+The Makefile passes the options of the downstream trees
+(FOLLOW_BGRT_SPEC, LOAD_OPTION_ROMS, NETWORK_IPXE, CSMWRAP, LVGL_ENABLE
+and the others) to any repository but the official one, and most of
+their Kconfig symbols depend on !EDK2_REPO_OFFICIAL accordingly. Two
+depend on EDK2_REPO_MRCHROMEBOX instead: EDK2_SECURE_BOOT_DEFAULT_ENABLE
+and EDK2_USE_LVGL_RENDERER. A custom repository whose platform has the
+same defines, such as upstream edk2 with a package outside the tree that
 carries MrChromebox's modules (EDK2_PLATFORM_DSC, EDK2_PACKAGES_PATH),
 cannot select them, and its setup loses the LVGL renderer.
 
