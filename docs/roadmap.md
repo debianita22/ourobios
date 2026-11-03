@@ -29,7 +29,7 @@ is here. None of it is a promise of a date.
 | [Card reader of the W541](#card-reader-of-the-w541) | W541 | the premise was wrong: the reader is most likely not a Realtek | `lspci -nn` on the laptop |
 | [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | the field is reserved on Haswell client processors | the TCC line of `hw-report.py` on a W541 |
 | [Upstream changes not taken](#upstream-changes-not-taken) | W541 | 96893 unreviewed and no gain here; 95880 and 95912 at Code-Review -2 | the next coreboot pin; `rfkill` on a W541 |
-| [EDK II from TianoCore](#edk-ii-from-tianocore) | both | moved in v1.6.0: the payload of the ROMs is TianoCore's tag with the package [`edk2/OuroBiosPkg`](../edk2/README.md) and `patches/tianocore`, the same payload as MrChromebox's tree with `patches/edk2`; what is left is the carried series, 117 patches | the series shorter: the *drop* commits first, then the *package* ones into `OuroBiosPkg`, the *upstream* ones proposed ([docs/edk2-migration.md](edk2-migration.md)) |
+| [EDK II from TianoCore](#edk-ii-from-tianocore) | both | moved in v1.6.0: the payload of the ROMs is TianoCore's tag with the package [`edk2/OuroBiosPkg`](../edk2/README.md) and `patches/tianocore`, the same payload as MrChromebox's tree with `patches/edk2`; what is left is the carried series, 118 patches | the series shorter: the *drop* commits first, then the *package* ones into `OuroBiosPkg`, the *upstream* ones proposed ([docs/edk2-migration.md](edk2-migration.md)) |
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
 | [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
 | [Openness score](#openness-score) | both | already in `tools/sbom.py` | a comparison with Dasharo's own tool |
@@ -513,7 +513,7 @@ PCDs, the standard way), `PlatformGopPolicy`, `NetworkDrivers`,
 `EcAcpiBatteryStatusDxe`, the SD/MMC drivers, and the `-D` defines that
 coreboot's `payloads/external/edk2/Makefile` passes for the fork
 (`BOOTSPLASH_IMAGE`, `LVGL_ENABLE`, `CSMWRAP`, `NETWORK_IPXE`,
-`CAPSULE_MAIN_FW_GUID`). Of the 51 patches in `patches/edk2`, fourteen touch
+`CAPSULE_MAIN_FW_GUID`). Of the 52 patches in `patches/edk2`, fourteen touch
 packages outside `UefiPayloadPkg`: `0001` (UiApp), `0004` (OvmfPkg
 SioBusDxe), `0007` (Ps2MouseDxe), `0019` (TcgDxe), `0021` (BaseTools,
 `tools_def`), `0032` (DxeCore), `0039` and `0043` (Variable, MOR), and

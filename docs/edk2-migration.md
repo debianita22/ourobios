@@ -96,8 +96,8 @@ MrChromebox's tree at the commit of the defconfigs:
 
 - **The carried series**: each of the commits below and each patch of
   `patches/edk2`, in order, without the files that TianoCore's tree does
-  not have: 79 commits of MrChromebox (21 have nothing else) and 38 of
-  the project's 51 patches (13 change only the package or its platform).
+  not have: 79 commits of MrChromebox (21 have nothing else) and 39 of
+  the project's 52 patches (13 change only the package or its platform).
   The tag with the series is MrChromebox's tree with `patches/edk2` in
   every file but those (`edk2-import.py` checks it before it writes, and
   `--check` in `edk2-upstream.yml` checks the files of the repository).

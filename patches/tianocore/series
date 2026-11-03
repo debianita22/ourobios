@@ -118,3 +118,4 @@
 0115-MdeModulePkg-UsbBusDxe-Free-BOS-buffer-on-read-failu.patch
 0116-MdeModulePkg-Fix-GOP-device-path-pool-double-free.patch
 0117-MdeModulePkg-Fix-OptionOrder-double-free.patch
+0118-UefiPayloadPkg-UefiPayloadEntry-Fix-MMCONF-resource-.patch

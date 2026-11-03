@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patrick Rudolph <patrick.rudolph@9elements.com>
+Date: Sun, 1 Nov 2026 08:18:32 +0100
+Subject: [PATCH] UefiPayloadPkg: UefiPayloadEntry: Fix MMCONF resource type
+
+The Linux kernel expects the MMCONF MMIO space to be marked as
+reserved in the e820 / UEFI memory map. Add an exception to make
+sure the range is marked as reserved.
+
+The same code can be found on OvmfPkg that marks the MMCONF as
+reserved.
+
+TEST=Boot Linux and find the MMCONF MMIO space be marked as reserved.
+TEST="fwts mcfg" reports no test failures any more.
+
+Signed-off-by: Patrick Rudolph <patrick.rudolph@9elements.com>
+
+ouroBIOS backport of commit a87a9b251566 of MrChromebox's edk2, which
+uefipayload_2608 had on 2026-11-02 and no branch of that repository
+has on 2026-11-03: the lines of the patch that GitHub still shows for
+that commit. Drop it when the base includes the change; take the new
+version if MrChromebox brings it back changed.
+
+Why here: coreboot's memory table gives the ECAM window of both boards
+(and of QEMU q35) as reserved, and this callback made it MMIO, which
+does not reach the memory map that the OS reads: GetMemoryMap() lists
+reserved ranges, and MMIO only with EFI_MEMORY_RUNTIME. "fwts mcfg"
+then fails with MCFGMMIONotReserved (HIGH), which CONF-03 of ouroBIOS's
+docs/testing.md does not allow. Linux uses the window anyway, from the
+MCFG table at its early check, since the BIOS date is 2016 or later.
+
+TEST=made by hand from that patch on the series, whose file differs
+from MrChromebox's elsewhere (edk2/0030, 0042): the same 15 and 2
+lines, at upstream's lines. The update test of ouroBIOS checks the
+window in the memory map of ExitBootServices() in QEMU q35.
+---
+ .../UefiPayloadEntry/UefiPayloadEntry.c         | 17 +++++++++++++++--
+ 1 file changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+index c892b2906..75fd319a5 100644
+--- a/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
++++ b/UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.c
+@@ -61,9 +61,22 @@ MemInfoCallbackMmio (
+ 
+   if (MemoryMapEntry->Base == AcpiBoardInfo->PcieBaseAddress) {
+     //
+-    // MMCONF is always MMIO
++    // Note: there should be an
+     //
+-    Type = EFI_RESOURCE_MEMORY_MAPPED_IO;
++    //   Type = EFI_RESOURCE_MEMORY_MAPPED_IO;
++    //
++    // asignment below. However, Linux insists that the MMCONFIG area be
++    // marked in the E820 or UEFI memory map as "reserved memory" --
++    // Linux does not content itself with a simple gap
++    // in the memory map wherever the MCFG ACPI table points to.
++    //
++    // This appears to be a safety measure. The PCI Firmware Specification
++    // (rev 3.1) says in 4.1.2. "MCFG Table Description": "The resources can
++    // *optionally* be returned in [...] EFIGetMemoryMap as reserved memory
++    // [...]". (Emphasis added here.)
++    //
++    //
++    Type = EFI_RESOURCE_MEMORY_RESERVED;
+   } else if (MemoryMapEntry->Base < mTopOfLowerUsableDram) {
+     //
+     // It's in DRAM and thus must be reserved
+-- 
+2.43.0
+
