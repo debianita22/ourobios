@@ -193,8 +193,32 @@ in pairs after checking that they cancel out; the first *package* ones,
 `PlatformBootManagerLib` and `FmpDeviceSmmLib`, which the package now
 carries whole, as MrChromebox's tree with `patches/edk2` has them, and
 which take fourteen patches out of the series and part of twelve
-others. The other *drop* ones change the payload, and each needs its own
-test.
+others.
+
+The other *drop* ones, as looked at for v1.6.0:
+
+- **Out of the payload already**, kept out by build switches that the
+  boards leave off: the platform GOP policy (`076933b`, `1f9ab46`,
+  `a3657a3`, only with `USE_PLATFORM_GOP`), the UFS platform driver
+  (`b26a387`, only with `UFS_ENABLE`) and the network drivers of Realtek
+  and ASIX (`0ec988f`, only with `NETWORK_PXE_BOOT` or `NETWORK_ENABLE`).
+  Leaving them out changes no byte of the payload, but while
+  `patches/edk2` is where the changes are made, it takes a revert there
+  before `edk2/0026` (whose context in `UefiPayloadPkg.dec` has the GUID
+  of the GOP policy, so a revert at the end cannot be taken out of the
+  series with the commits) and `edk2-import.py` leaving the commits and
+  the revert out together:
+  one patch more in `patches/edk2` for two less in `patches/tianocore`,
+  and a number out of order. They wait for `patches/edk2` to retire, when
+  they are lines out of the series.
+- **In the payload**, each with its own test: `9174049` (SdMmcPciGliDxe)
+  and `5342f42` (SdhciNonPciDxe, with its record in `CbParseLib`), two
+  drivers in the volume for controllers these boards do not have;
+  `d7597bb` (HS400 enhanced strobe, in the `SdMmcPciHcDxe` that drives
+  the SD reader of the W541); `b8d0242` (in `UefiBootManagerLib` too);
+  `1287861` (the Secure Boot pages of the setup); `6cf55e1` (the MTRRs);
+  `0a270f8` (the aperture of the PCI root bridge, PCI-09 of
+  `tools/hw-report.py`).
 
 ## Setup menu and the other screens of the firmware
 
