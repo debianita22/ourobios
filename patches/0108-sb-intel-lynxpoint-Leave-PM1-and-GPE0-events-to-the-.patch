@@ -20,10 +20,11 @@ PWRBTN_STS is set at every wake, by the power button, the lid or a key:
 the first APMC command powered the laptop off, under Linux and macOS.
 
 Ignore PM1 and GPE0 in the SMI handler when SCI_EN is set, as
-soc/intel/common does since commit 517750745f7f ("soc/intel/common/
-block/smm: Ignore PM1 and GPE0 events in SCI mode"). Should those
-events alone have raised the SMI#, which SCI_EN rules out, clear them
-as before, without powering off, so that the SMI# does not repeat.
+soc/intel/common does since commit 517750745f7f
+("soc/intel/common/block/smm: Ignore PM1 and GPE0 events in SCI mode").
+Should those events alone have raised the SMI#, which SCI_EN rules out,
+clear them as before, without powering off, so that the SMI# does not
+repeat.
 
 TEST=Build the ThinkPad W541 (mrc and nri); on the laptop, S3 entered
 under Linux and macOS and left with the power button, the lid and a

@@ -4,16 +4,16 @@ Date: Sat, 10 Oct 2026 15:16:31 +0200
 Subject: [PATCH] cpu/intel/car/non-evict: Keep the code uncached while filling
  CAR
 
-Since commit 97dbfd309 (cpu/intel/car/non-evict: Improve CAR setup) the
-CAR region is filled with the ROM MTRR enabled and CR0.CD clear, so the
-code that runs the fill loop is cached too. On a CPU whose CAR region
-is as large as the cache that holds it, that code line takes the way of
-a CAR line in the same set, and that CAR line is lost: writes to it go
-nowhere and reads return garbage. Haswell is such a CPU: the CAR region
-is 256 KiB (DCACHE_RAM_SIZE plus DCACHE_RAM_MRC_VAR_SIZE, or 256 KiB of
-DCACHE_RAM_SIZE with the native RAM init), the size of its L2 cache.
-Which line is lost depends on where the fill loop happens to be in the
-bootblock; whether it matters depends on who uses that line.
+Since commit 97dbfd3098ae ("cpu/intel/car/non-evict: Improve CAR setup")
+the CAR region is filled with the ROM MTRR enabled and CR0.CD clear, so
+the code that runs the fill loop is cached too. On a CPU whose CAR
+region is as large as the cache that holds it, that code line takes the
+way of a CAR line in the same set, and that CAR line is lost: writes to
+it go nowhere and reads return garbage. Haswell is such a CPU: the CAR
+region is 256 KiB (DCACHE_RAM_SIZE plus DCACHE_RAM_MRC_VAR_SIZE, or 256
+KiB of DCACHE_RAM_SIZE with the native RAM init), the size of its L2
+cache. Which line is lost depends on where the fill loop happens to be
+in the bootblock; whether it matters depends on who uses that line.
 
 On a ThinkPad W541 with mrc.bin the fill loop sits in L2 set 471, and
 the S3 resume hangs inside mrc.bin at "Initializing Memory", with the
