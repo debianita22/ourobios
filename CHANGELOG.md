@@ -219,6 +219,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   carry, a fix to propose upstream, left out, or already upstream).
 - README and docs/m920x.md: the M920x releases are releases, as they
   have been since v1.4.0.
+- The release notes, README, docs/update.md and docs/m920x.md say that the
+  capsule installs on v1.5.0 or later, the read-only part of measured boot
+  (`BOARD_RO_SINCE` of `boards/*/board.sh`); the notes of v1.5.0 said
+  v1.3.0 on the W541 and any release on the M920x. The notes give the
+  flashrom command for the older releases: the read-only part and both
+  slots from v1.3.9-v1.4.x (v1.4.x on the M920x), every region but the
+  runtime ones from v1.0.3-v1.3.8.
 
 ## v1.5.1
 

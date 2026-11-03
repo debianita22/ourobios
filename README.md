@@ -64,7 +64,7 @@ firmware reports itself as `ouroBIOS-vX.Y.Z-<variant>` (coreboot's
 | `w541-coreboot-<version>-<variant>.rom` | complete 12 MiB flash image: descriptor, GbE, Intel ME and coreboot |
 | `…-4mb-chip.rom` | last 4 MiB of the image: the read-only part and slot B (up to v1.2.x all of coreboot), enough to boot, for an external programmer on the 4 MiB chip |
 | `…-8mb-chip.rom` | first 8 MiB of the image: descriptor, GbE and ME **of the machine the blobs come from**, for the 8 MiB chip |
-| `….cap` | signed UEFI capsule (from v1.2.0): updates a laptop that runs a release with the same flash map and read-only part (v1.3.9 or later; v1.3.0-v1.3.8 install the capsules of v1.3.0-v1.3.8, v1.2.x those of v1.2.x) from Linux, without flashrom ([docs/update.md](docs/update.md)) |
+| `….cap` | signed UEFI capsule (from v1.2.0): updates a laptop that runs a release with the same flash map and read-only part (v1.5.0 or later; v1.3.9-v1.4.x install the capsules of v1.3.9-v1.4.x, v1.3.0-v1.3.8 those of v1.3.0-v1.3.8, v1.2.x those of v1.2.x) from Linux, without flashrom ([docs/update.md](docs/update.md)) |
 | `….cab` | the same capsule as an fwupd package (from v1.2.2), signed for fwupd with the same key ([docs/update.md](docs/update.md#fwupd)) |
 | `….config` | the complete coreboot configuration |
 | `…-layout.txt` | flash map (FMAP) and CBFS contents |

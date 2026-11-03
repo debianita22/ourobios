@@ -333,6 +333,11 @@ EOF
 		echo "**Tested on a W541**: the move from v1.0.x with flashrom, boot and resume from suspend, capsule updates with the A/B slots (a slot rewritten across the two chips, the switch, the result in the ESRT), the fallback to the other slot when the running one is spoiled ([docs/vboot.md](https://github.com/${repo}/blob/main/docs/vboot.md#how-it-is-tested)), and DMA translation with \`intel_iommu=on\` under load, also after a resume ([docs/flashing.md](https://github.com/${repo}/blob/main/docs/flashing.md#first-boot-and-settings))."
 	fi
 	notes_changes
+	# le capsule da BOARD_RO_SINCE in su; prima, una volta flashrom: per
+	# v1.3.9-v1.4.x (la parte RO senza measured boot) il comando di
+	# docs/flashing.md#measured-boot-the-read-only-part, per v1.0.3-v1.3.8
+	# quello di docs/flashing.md#from-v12x-to-v130. Con una parte RO nuova
+	# questi comandi si rifanno
 	cat <<EOF
 
 ### Files and installation
@@ -342,7 +347,7 @@ EOF
 | \`${rom}\` | **complete 12 MiB flash image**: descriptor (IFD), GbE, Intel ME and coreboot |
 | \`${chip4}\` | its last 4 MiB: the read-only part and slot B, enough to boot, for an external programmer on the 4 MiB chip |
 | \`${chip8}\` | its first 8 MiB: descriptor, GbE and ME of the machine the blobs come from, for the 8 MiB chip |
-| \`${cap}\` | **signed UEFI capsule**: updates from Linux a W541 that already runs v1.3.0 or later, with \`tools/update.py\` |
+| \`${cap}\` | **signed UEFI capsule**: updates from Linux a W541 that already runs ${ro_since} or later, with \`tools/update.py\` |
 | \`${cab}\` | the same capsule as an **fwupd package** (\`fwupdmgr install\`, once the project certificate is in \`/etc/pki/fwupd\`) |
 | \`${cfg}\` | the complete coreboot \`.config\` |
 | \`${lay}\` | flash layout (FMAP) and CBFS contents |${meta_row}${sbom_rows}
@@ -360,7 +365,7 @@ a slot before it runs it
 update from Linux writes only the BIOS region, as below: it keeps the
 machine's own descriptor, ME and MAC address.
 
-**Update with the capsule**, on a W541 that already runs v1.3.0 or later:
+**Update with the capsule**, on a W541 that already runs ${ro_since} or later:
 the firmware checks the signature, writes the slot that is not running in
 about a minute and starts again on it; if the new slot does not verify or
 does not boot, vboot goes back to the old one. Settings, boot entries,
@@ -377,21 +382,49 @@ sudo systemctl reboot
 Or with fwupd ([docs/update.md](https://github.com/${repo}/blob/main/docs/update.md#fwupd)):
 ${fwupd_how}
 
-**From v1.0.3 to v1.2.x**: v1.3.0 changed the flash map (vboot, two RW
-slots), so an older firmware does not take its capsule. Write it once with
-flashrom, every region except those written at runtime, which are where they
-were since v1.0.3: settings, boot entries, Secure Boot keys, VPD and event
-log stay. *BIOS Lock* must be off; flashrom 1.2 or later
+**From a release before ${ro_since}**: ${ro_since} wrote the read-only part
+once more (measured boot), so a W541 on an older release takes neither this
+capsule nor, with \`update.py other-slot\`, these slots. Write them once with
+flashrom 1.2 or later, with *BIOS Lock* and, from v1.3.0, *Firmware
+protection* off (setup menu, *Security* → *Flash protection*; save and
+reboot first), the AC adapter connected and the battery charged. From
+v1.3.9 to v1.4.x, the read-only part, both slots and vboot's state:
+settings, boot entries, Secure Boot keys, supervisor password, VPD, event
+log and the memory training stay
+([details](https://github.com/${repo}/blob/main/docs/flashing.md#measured-boot-the-read-only-part)).
+
+\`\`\`sh
+( set -e
+  sha256sum -c SHA256SUMS --ignore-missing
+  sudo modprobe -r spi_intel_platform spi_intel || true   # flashrom must not go through /dev/mtd0
+  sudo flashrom -p internal -r backup.rom                 # keep it off the laptop
+  test "\$(stat -c %s backup.rom)" -eq 12582912            # 12 MiB, both chips
+  sudo flashrom -p internal --fmap-file ${rom} \\
+    -i RW_NVRAM -i RW_SECTION_A -i RW_SECTION_B -i WP_RO -w ${rom}
+)
+\`\`\`
+
+From v1.0.3 to v1.3.8 (the flash map before vboot up to v1.2.x, the
+read-only part of each variant from v1.3.0 to v1.3.8), every region but
+those written at runtime, which are where they were since v1.0.3: settings,
+boot entries, Secure Boot keys, supervisor password, VPD and event log
+stay, and the first boot trains the memory again
 ([details](https://github.com/${repo}/blob/main/docs/flashing.md#from-v12x-to-v130)).
 
 \`\`\`sh
-sha256sum -c SHA256SUMS --ignore-missing
-sudo modprobe -r spi_intel_platform spi_intel               # flashrom must not go through /dev/mtd0
-sudo flashrom -p internal -r backup-\$(date +%F).rom        # 12582912 bytes, keep it off the laptop
-sudo flashrom -p internal --fmap-file ${rom} \\
-  -i RW_MRC_CACHE -i RW_UNUSED -i RW_NVRAM -i RECOVERY_MRC_CACHE \\
-  -i RW_SECTION_A -i RW_SECTION_B -i WP_RO -w ${rom}
+( set -e
+  sha256sum -c SHA256SUMS --ignore-missing
+  sudo modprobe -r spi_intel_platform spi_intel || true   # flashrom must not go through /dev/mtd0
+  sudo flashrom -p internal -r backup.rom                 # keep it off the laptop
+  test "\$(stat -c %s backup.rom)" -eq 12582912            # 12 MiB, both chips
+  sudo flashrom -p internal --fmap-file ${rom} \\
+    -i RW_MRC_CACHE -i RW_UNUSED -i RW_NVRAM -i RECOVERY_MRC_CACHE \\
+    -i RW_SECTION_A -i RW_SECTION_B -i WP_RO -w ${rom}
+)
 \`\`\`
+
+flashrom must end with \`VERIFIED\`; if it does not, write again straight
+away.
 
 **Update with flashrom**, from older versions or other firmware, on a W541
 that already runs coreboot with an unlocked flash: only the BIOS region is
@@ -480,6 +513,9 @@ EOF
 		echo "**Pre-release**: not yet confirmed on real hardware. Keep a backup of your flash and an external programmer at hand."
 	fi
 	notes_changes
+	# come sul W541: le capsule da BOARD_RO_SINCE in su, prima (v1.4.x, la
+	# parte RO senza measured boot) il comando di
+	# docs/flashing.md#measured-boot-the-read-only-part
 	cat <<EOF
 
 ### Files and installation
@@ -489,7 +525,7 @@ EOF
 | \`${rom}\` | **complete 24 MiB flash image**: descriptor (IFD), GbE, Intel ME and coreboot |
 | \`${chip8}\` | its last 8 MiB: the read-only part and slot B, enough to boot, for an external programmer on the 8 MiB chip (BIOS2) |
 | \`${chip16}\` | its first 16 MiB: descriptor, GbE and ME of the machine the blobs come from, for the 16 MiB chip (BIOS1) |
-| \`${cap}\` | **signed UEFI capsule**: updates from Linux an M920x that already runs ouroBIOS, with \`tools/update.py\` |
+| \`${cap}\` | **signed UEFI capsule**: updates from Linux an M920x that already runs ${ro_since} or later, with \`tools/update.py\` |
 | \`${cab}\` | the same capsule as an **fwupd package** (\`fwupdmgr install\`, once the project certificate is in \`/etc/pki/fwupd\`) |
 | \`${cfg}\` | the complete coreboot \`.config\` |
 | \`${lay}\` | flash layout (FMAP) and CBFS contents |${sbom_rows}
@@ -508,11 +544,12 @@ before it runs it
 update from Linux writes only the BIOS region, as below: it keeps the
 machine's own descriptor, ME and MAC address.
 
-**Update with the capsule**, on an M920x that already runs ouroBIOS: the
-firmware checks the signature, writes the slot that is not running and
-starts again on it; if the new slot does not verify or does not boot, vboot
-goes back to the old one. Settings, boot entries, Secure Boot keys, VPD and
-event log stay, and *BIOS Lock* and *Firmware protection* can stay on
+**Update with the capsule**, on an M920x that already runs ${ro_since} or
+later: the firmware checks the signature, writes the slot that is not
+running and starts again on it; if the new slot does not verify or does
+not boot, vboot goes back to the old one. Settings, boot entries, Secure
+Boot keys, VPD and event log stay, and *BIOS Lock* and *Firmware
+protection* can stay on
 ([docs/update.md](https://github.com/${repo}/blob/main/docs/update.md)).
 The capsule rewrites the two slots only and keeps the memory training: an
 \`update.py\` from before v1.4.0 refuses it, so take the one of this
@@ -526,6 +563,31 @@ sudo systemctl reboot
 
 Or with fwupd ([docs/update.md](https://github.com/${repo}/blob/main/docs/update.md#fwupd)):
 ${fwupd_how}
+
+**From a release before ${ro_since}** (v1.4.0, v1.4.1): ${ro_since} wrote
+the read-only part once more (measured boot), so an M920x on an older
+release takes neither this capsule nor, with \`update.py other-slot\`, these
+slots. Write the read-only part, both slots and vboot's state once with
+flashrom, with Secure Boot, *BIOS Lock* and *Firmware protection* off
+(setup menu, *Security*; save and reboot first): settings, boot entries,
+Secure Boot keys, supervisor password, VPD, event log and the memory
+training stay
+([details](https://github.com/${repo}/blob/main/docs/flashing.md#measured-boot-the-read-only-part)).
+
+\`\`\`sh
+( set -e
+  sha256sum -c SHA256SUMS --ignore-missing
+  grep -q '\[none\]' /sys/kernel/security/lockdown        # Secure Boot is off
+  sudo modprobe -r spi_intel_pci spi_intel || true
+  sudo flashrom -p internal -r backup.rom                 # keep it off the machine
+  test "\$(stat -c %s backup.rom)" -eq 25165824            # 24 MiB, both chips
+  sudo flashrom -p internal --fmap-file ${rom} \\
+    -i RW_NVRAM -i RW_SECTION_A -i RW_SECTION_B -i WP_RO -w ${rom}
+)
+\`\`\`
+
+flashrom must end with \`VERIFIED\`; if it does not, write again straight
+away.
 
 **First install**, on an M920x that already runs coreboot with an unlocked
 flash, as the machine these blobs come from did: only the BIOS region is
@@ -604,13 +666,18 @@ EOF
 # l'inizio comune, il corpo della board (notes_<board>), i cambi dall'ultima
 # release dello stesso flavour
 cmd_notes() {
-	local d="${1:?cartella con le ROM}" fl="${2:?flavour}" board v n f version rom cap cab cfg lay repo sha cb cbdesc ipxe csm edk2 edk2_text npatch nedk2 pre=no machine=laptop
+	local d="${1:?cartella con le ROM}" fl="${2:?flavour}" board v n f version rom cap cab cfg lay repo sha cb cbdesc ipxe csm edk2 edk2_text npatch nedk2 ro_since pre=no machine=laptop
 	: "${VERSION:?}"
 	[ -n "${FL_BOARD[${fl}]:-}" ] || die "flavour '${fl}': uno di ${FLAVOURS[*]}"
 	flavours_for "${VERSION}"
 	[[ " ${FLAVOURS[*]} " == *" ${fl} "* ]] || die "flavour ${fl}: non nelle release di ${VERSION} (${FLAVOURS[*]})"
 	board="${FL_BOARD[${fl}]}"
 	v="${FL_VARIANT[${fl}]}"
+	# da quale release le capsule si installano (la parte RO di oggi); per
+	# una board senza BOARD_RO_SINCE, dalla sua prima release
+	ro_since="$(board_get "${board}" BOARD_RO_SINCE)"
+	[ -n "${ro_since}" ] || ro_since="$(board_get "${board}" BOARD_SINCE)"
+	[[ "${ro_since}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "boards/${board}/board.sh: BOARD_RO_SINCE (o BOARD_SINCE) '${ro_since}', non vX.Y.Z"
 	declare -F "notes_${board}" > /dev/null || die "${fl}: nessuna funzione notes_${board} in tools/ci.sh"
 	case "${board}" in m920x) machine=PC ;; esac
 	repo="${GITHUB_REPOSITORY:-debianita22/ourobios}"

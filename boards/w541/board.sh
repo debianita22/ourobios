@@ -30,6 +30,12 @@ BOARD_INTEL_SIZE=$((0x500000))
 BOARD_REFERENCE=legacy/coreboot-4.22/coreboot.rom
 # l'interfaccia della parte RO gia' sulle macchine (docs/vboot.md)
 BOARD_RO_INTERFACE=configs/ro-interface.txt
+# la prima release con la parte RO di oggi (la generazione di
+# BOARD_RO_INTERFACE, i GUID di VARIANTS in tools/update.py): le capsule si
+# installano da li' in su, prima con flashrom (le note di tools/ci.sh). Con
+# una parte RO nuova cambiano anche i comandi delle note per le release di
+# prima
+BOARD_RO_SINCE=v1.5.0
 # il CPUID per cui ci deve essere il microcode
 BOARD_CPUIDS=(306c3)
 # le risoluzioni della prova di fumo (smoke): tutta a 1920x1080, il solo

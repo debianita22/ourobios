@@ -25,6 +25,8 @@ BOARD_INTEL_SIZE=$((0xc00000))
 # boards/m920x/blobs/ come li mette la build (verify-rom.sh)
 BOARD_REFERENCE=boards/m920x/intel.sha256
 BOARD_RO_INTERFACE=boards/m920x/ro-interface.txt
+# la prima release con la parte RO di oggi, come sul W541 (boards/w541/board.sh)
+BOARD_RO_SINCE=v1.5.0
 # Coffee Lake e Coffee Lake Refresh (S, 6+2, 8+2)
 BOARD_CPUIDS=(906ea 906eb 906ec 906ed)
 # i file CBFS che ogni slot RW deve avere oltre a stage, payload, DSDT,

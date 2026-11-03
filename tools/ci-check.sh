@@ -2105,6 +2105,18 @@ for b in $(boards); do
 			bad "boards/${b}/board.sh: BOARD_SINCE '${since}', non vX.Y.Z"
 		fi
 	fi
+	# la prima release con la parte RO di oggi (le note delle release di
+	# tools/ci.sh: le capsule da li' in su), non prima della board
+	ro_since="$(board_get "${b}" BOARD_RO_SINCE)"
+	if [ -n "${ro_since}" ]; then
+		if ! [[ "${ro_since}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+			bad "boards/${b}/board.sh: BOARD_RO_SINCE '${ro_since}', non vX.Y.Z"
+		elif [ -n "${since}" ] && [ "$(printf '%s\n' "${since}" "${ro_since}" | sort -V | sed -n 1p)" != "${since}" ]; then
+			bad "boards/${b}/board.sh: BOARD_RO_SINCE ${ro_since} prima di BOARD_SINCE ${since}"
+		else
+			ok "${b}: capsule dalla ${ro_since} (la parte RO di oggi)"
+		fi
+	fi
 	for v in $(board_get "${b}" BOARD_VARIANTS); do
 		g="$(sed -n 's/^CONFIG_DRIVERS_EFI_MAIN_FW_GUID="\(.*\)"$/\1/p' "$(board_get "${b}" defconfig "${v}")" 2>/dev/null)"
 		echo "${b} ${v} ${prefix}${v} $((size)) ${g:--} ${regions:-${r_default}}" >> "${rows}"

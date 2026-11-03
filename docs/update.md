@@ -2,10 +2,11 @@
 
 Each release also has a signed UEFI capsule per variant,
 `w541-coreboot-vX.Y.Z-mrc.cap` and `-nri.cap`. A W541 that already runs
-v1.3.9 or later installs it from Linux, without flashrom (v1.3.0-v1.3.8,
-with the read-only part before v1.3.9, install the capsules of
-v1.3.0-v1.3.8 only, and v1.2.x, with the flash map before vboot, those of
-v1.2.x: see [The first time](#the-first-time)):
+v1.5.0 or later installs it from Linux, without flashrom (v1.3.9-v1.4.x,
+with the read-only part before measured boot, install the capsules of
+v1.3.9-v1.4.x only, v1.3.0-v1.3.8, with the read-only part before v1.3.9,
+those of v1.3.0-v1.3.8, and v1.2.x, with the flash map before vboot, those
+of v1.2.x: see [The first time](#the-first-time)):
 
 ```sh
 curl -LO https://raw.githubusercontent.com/debianita22/ourobios/main/tools/update.py
@@ -85,18 +86,24 @@ those PCRs asks for its passphrase or recovery key after the update.
 
 ## The first time
 
-The capsules of v1.3.9 and later need a firmware with the same flash map
-and the same read-only part, v1.3.9 or later (the lowest version they
-accept, `CONFIG_DRIVERS_EFI_MAIN_FW_LSV` of the defconfigs, is v1.3.9:
+The capsules of v1.5.0 and later need a firmware with the same flash map
+and the same read-only part, the one of measured boot: v1.5.0 or later,
+whose ESRT GUIDs are new in v1.5.0 (the lowest version they accept,
+`CONFIG_DRIVERS_EFI_MAIN_FW_LSV` of the defconfigs, is still v1.3.9:
 `update.py status` prints it). Install it once with flashrom: from
-v1.0.3-v1.3.8 as in [docs/flashing.md](flashing.md#from-v13x-to-v139)
-(settings, boot entries and VPD stay), from other firmware as in
+v1.3.9-v1.4.x as in [docs/flashing.md](flashing.md#measured-boot-the-read-only-part)
+(settings, boot entries, Secure Boot keys, VPD, event log and the memory
+training stay), from v1.0.3-v1.3.8 as in
+[docs/flashing.md](flashing.md#from-v12x-to-v130) (settings, boot entries,
+Secure Boot keys, VPD and event log stay), from other firmware as in
 [docs/flashing.md](flashing.md#internal-update) (VPD copied into the image
 first, *BIOS Lock* off). From there on, every update can be a capsule.
 `update.py status` tells whether the running firmware applies them
-(*mappa*: *vboot*, or *senza vboot* for v1.2.x), and `stage` refuses a
-capsule for the other map or for the other read-only part (v1.3.0-v1.3.8
-have their own ESRT GUIDs, and install the capsules of those releases).
+(*mappa*: *vboot*, *senza vboot* for v1.2.x, and the read-only part
+without measured boot for v1.3.9-v1.4.x), and `stage` refuses a capsule
+for the other map or for the other read-only part (v1.3.0-v1.3.8 and
+v1.3.9-v1.4.x have their own ESRT GUIDs, and install the capsules of those
+releases).
 
 v1.2.0 to v1.2.2 apply the capsules of v1.2.x, which rewrite the whole
 4 MiB chip, without A/B.
