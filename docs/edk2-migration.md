@@ -43,9 +43,9 @@ since steps (b) and (c), made by `tools/edk2-import.py`: the patch of
 | Capsule updates and the ESRT | 6 | 1 | 1 | 0 | 0 | 8 |
 | Secure Boot, TPM and crypto | 9 | 1 | 1 | 0 | 0 | 11 |
 | Memory protection | 1 | 6 | 0 | 2 | 0 | 9 |
-| Drivers for storage, USB, graphics and the console | 2 | 1 | 6 | 12 | 1 | 22 |
+| Drivers for storage, USB, graphics and the console | 2 | 3 | 6 | 10 | 1 | 22 |
 | Platform plumbing for coreboot | 4 | 4 | 5 | 2 | 1 | 16 |
-| **all** | 40 | 23 | 17 | 18 | 2 | 100 |
+| **all** | 40 | 25 | 17 | 16 | 2 | 100 |
 
 ## Step (a): `edk2-stable202608` in QEMU
 
@@ -290,7 +290,7 @@ test.
 | `6128cce` | UefiPayloadPkg/GraphicsOutputDxe: Allow for framebuffer at an offset from BAR | upstream |  | `tianocore/0003` |
 | `564cb49` | BaseSerialPortLib16550: Avoid reinitializing serial port or setting attributes | carry |  | `tianocore/0004` |
 | `e32b60d` | UefiPayloadPkg: Add and use EXT2/EXT4, exFAT, NTFS filesystem drivers | package | ext4 only (the boards build with EXTRA_FS_DRIVERS=FALSE) | package |
-| `a091558` | MdeModulePkg/SdMmcPciHcDxe: add Bayhub support | drop | no such controller | `tianocore/0010` |
+| `a091558` | MdeModulePkg/SdMmcPciHcDxe: add Bayhub support | carry | the SD reader of the W541 is most likely a Bayhub (O2 Micro) one ([roadmap](roadmap.md#card-reader-of-the-w541)): `lspci -nn` on the laptop decides | `tianocore/0010` |
 | `4c76525` | MdeModulePkg/Usb/Keyboard.c: remove Get/SetConfig calls | upstream | USB keyboards that fail the requests | `tianocore/0011` |
 | `076933b` | UefiPayloadPkg: Add and use PlatformGopPolicy | drop | no GOP driver: libgfxinit sets the mode | `tianocore/0013`, package |
 | `88b95ba` | UefiPayloadPkg: Add AmdPcoSdhciDxe driver for AMD Picasso eMMC | drop | reverted by 6aa87d0 | left out with its revert (0022 unused) |
@@ -305,7 +305,7 @@ test.
 | `5342f42` | UefiPayloadPkg: Add SdhciNonPciDxe for non-PCI SDHCI | drop | no such controller | `tianocore/0060`, package |
 | `acf9505` | MdeModulePkg/Usb: Warm reset downstream SuperSpeed ports | upstream |  | `tianocore/0061` |
 | `d7597bb` | MdeModulePkg/SdMmcPciHcDxe: add HS400 Enhanced Strobe for Intel eMMC | drop | no eMMC | `tianocore/0062` |
-| `c205ceb` | MdeModulePkg/SdMmcPciHcDxe: Don't force EmbeddedSlot for Bayhub | drop | no such controller | `tianocore/0065` |
+| `c205ceb` | MdeModulePkg/SdMmcPciHcDxe: Don't force EmbeddedSlot for Bayhub | carry | as a091558: Libreboot's fix for SD boot on the W541 | `tianocore/0065` |
 | `81c562f` | UefiPayloadPkg: Add CbfsLib to read files from coreboot's CBFS | package | if a module of the package reads CBFS | `tianocore/0068`, package |
 | `1f9ab46` | UefiPayloadPkg/PlatformGopPolicy: Load GOP driver and VBT from CBFS | drop | as 076933b | `tianocore/0069`, package |
 | `a3657a3` | UefiPayloadPkg: Conditionally use GraphicsDriverDxe in apriori dxe | drop | as 076933b | package |
