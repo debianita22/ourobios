@@ -211,3 +211,5 @@
 0215-drivers-smmstore-Option-to-take-the-parameters-only-.patch
 0216-payloads-external-edk2-Build-a-platform-of-a-package.patch
 0217-payloads-external-edk2-Two-options-of-MrChromebox-s-.patch
+0218-nb-intel-haswell-Reserve-the-ECAM-window-as-a-mother.patch
+0219-soc-intel-common-block-acpi-Reserve-ECAM-as-a-mother.patch

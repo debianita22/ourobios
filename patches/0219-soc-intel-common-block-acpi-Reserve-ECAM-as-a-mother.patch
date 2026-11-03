@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 3 Nov 2026 10:38:54 +0100
+Subject: [PATCH] soc/intel/common/block/acpi: Reserve ECAM as a motherboard
+ resource
+
+The MCFG table points the OS to the ECAM window at
+CONFIG_ECAM_MMCONF_BASE_ADDRESS, but the PNP0C02 device of the common
+northbridge ASL (PDRC) does not list it: it has the MCH, DMI and EP
+BARs, VT-d, the flash, the local APIC and HPET. The PCI Firmware
+Specification (3.3, 4.1.2) asks for the window to be reserved as a
+motherboard resource, and that is where Linux looks for it when it
+checks the window after the ACPI interpreter is up (pci_mmcfg_reserved(),
+"ECAM ... not reserved in ACPI motherboard resources" otherwise).
+
+Add it to PDRC with ECAM_MMCONF_SUPPORT. Every SoC that selects
+SOC_INTEL_COMMON_BLOCK_SA has its window below 4 GiB by default
+(0x80000000 to 0xe0000000), which Memory32Fixed covers. On Cannon Lake
+it starts at 0xe0000000, right above the 32-bit MMIO window of the host
+bridge's _CRS, which ends at 0xdfffffff.
+
+TEST=The DSDT of the ThinkCentre M920x build (Cannon Lake) of ouroBIOS
+compiles with iasl -w3 without a new warning. Still to test on the
+M920x: /proc/iomem shows the window under the pnp device of PDRC, and
+the boot of Linux and Windows as before.
+---
+ src/soc/intel/common/block/acpi/acpi/northbridge.asl | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/soc/intel/common/block/acpi/acpi/northbridge.asl b/src/soc/intel/common/block/acpi/acpi/northbridge.asl
+index 859473faa5..8974602383 100644
+--- a/src/soc/intel/common/block/acpi/acpi/northbridge.asl
++++ b/src/soc/intel/common/block/acpi/acpi/northbridge.asl
+@@ -328,6 +328,12 @@ Device (PDRC)
+ 
+ 			/* HPET address decode range */
+ 			Memory32Fixed (ReadWrite, HPET_BASE_ADDRESS, 0x400)
++
++#if CONFIG(ECAM_MMCONF_SUPPORT)
++			/* ECAM, which the MCFG table points to (PCI Firmware 3.3, 4.1.2) */
++			Memory32Fixed (ReadWrite, CONFIG_ECAM_MMCONF_BASE_ADDRESS,
++				       CONFIG_ECAM_MMCONF_LENGTH)
++#endif
+ 		})
+ 
+ 		CreateDwordField (BUF0, MCHB._BAS, MBR0)
+-- 
+2.43.0
+

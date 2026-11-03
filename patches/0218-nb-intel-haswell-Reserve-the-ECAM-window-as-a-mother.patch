@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 3 Nov 2026 10:38:03 +0100
+Subject: [PATCH] nb/intel/haswell: Reserve the ECAM window as a motherboard
+ resource
+
+The MCFG table points the OS to the ECAM window at
+CONFIG_ECAM_MMCONF_BASE_ADDRESS, but no PNP0C02 device listed it: PDRC
+has the RCBA, MCH, DMI and EP BARs, TXT, the TPM, the ICH range, eDRAM
+and GDXC. The PCI Firmware Specification (3.3, 4.1.2) asks for the
+window to be reserved as a motherboard resource, and that is where
+Linux looks for it when it checks the window after the ACPI interpreter
+is up (pci_mmcfg_reserved(), "ECAM ... not reserved in ACPI motherboard
+resources" otherwise).
+
+Add it to PDRC, after the other fixed ranges. The window stays out of
+the host bridge's _CRS, which lists the MMIO below and above it.
+
+TEST=The DSDT of the W541 builds (mrc and nri) of ouroBIOS compiles
+with iasl -w3 without a new warning. Still to test on the W541:
+/proc/iomem shows the window under the pnp device of PDRC, and the
+boot of Linux, Windows and macOS as before.
+---
+ src/northbridge/intel/haswell/acpi/hostbridge.asl | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/northbridge/intel/haswell/acpi/hostbridge.asl b/src/northbridge/intel/haswell/acpi/hostbridge.asl
+index 983190c1ee..e11e16478c 100644
+--- a/src/northbridge/intel/haswell/acpi/hostbridge.asl
++++ b/src/northbridge/intel/haswell/acpi/hostbridge.asl
+@@ -231,6 +231,9 @@ Device (PDRC)
+ 		Memory32Fixed (ReadWrite, 0xfed45000, 0x0004b000) // Misc ICH
+ 		Memory32Fixed (ReadWrite, EDRAM_BASE_ADDRESS, EDRAM_BASE_SIZE)
+ 		Memory32Fixed (ReadWrite, GDXC_BASE_ADDRESS, GDXC_BASE_SIZE)
++		/* ECAM, which the MCFG table points to (PCI Firmware 3.3, 4.1.2) */
++		Memory32Fixed (ReadWrite, CONFIG_ECAM_MMCONF_BASE_ADDRESS,
++			       CONFIG_ECAM_MMCONF_LENGTH)
+ 	})
+ 
+ 	// Current Resource Settings
+-- 
+2.43.0
+
