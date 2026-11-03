@@ -44,12 +44,12 @@ trap 'rm -rf "${TMP}"' EXIT
 
 pin() { sed -n "s/^$1=\"\([^\"]*\)\".*/\1/p" "${O}/tools/build.sh"; }
 
-# I file cambiati tra il commit $2 e HEAD del repository $1 nei percorsi
-# che seguono, uno per riga
+# I file cambiati tra i commit $2 e $3 del repository $1 nei percorsi che
+# seguono, uno per riga
 changed() {
-	local repo="$1" from="$2"
-	shift 2
-	git -C "${repo}" diff --name-only "${from}" HEAD -- "$@"
+	local repo="$1" from="$2" to="$3"
+	shift 3
+	git -C "${repo}" diff --name-only "${from}" "${to}" -- "$@"
 }
 
 # Una voce dell'issue: $1 cosa vuol dire, $2 i file (uno per riga); i primi
@@ -100,7 +100,7 @@ settle() {
 }
 
 check_coreboot() {
-	local repo commit desc base head tag newtag="" work="${TMP}" ahead when p sub stop="" merged=()
+	local repo commit desc base head tag newtag="" work="${TMP}" ahead when p sub stop="" merged=() mainrev
 	repo="$(pin COREBOOT_REPO)"
 	commit="$(pin COREBOOT_COMMIT)"
 	desc="$(pin COREBOOT_DESCRIBE)"
@@ -124,6 +124,8 @@ check_coreboot() {
 	git init -q "${work}/cb"
 	git -C "${work}/cb" fetch -q --shallow-since="${when}" "${repo}" main
 	git -C "${work}/cb" checkout -q --detach FETCH_HEAD
+	# main com'e', prima che la serie ci vada sopra
+	mainrev="$(git -C "${work}/cb" rev-parse HEAD)"
 	ahead="$(git -C "${work}/cb" rev-list --count HEAD)"
 	git -C "${work}/cb" log --format=%s HEAD > "${work}/subjects"
 
@@ -152,10 +154,10 @@ check_coreboot() {
 	local ro nri fspm
 	git -C "${work}/cb" fetch -q --depth 1 "${repo}" "${commit}" \
 		|| die "coreboot ${commit:0:12}: fetch del pin fallito"
-	ro="$(changed "${work}/cb" "${commit}" 3rdparty/vboot src/security/vboot src/security/tpm src/commonlib \
+	ro="$(changed "${work}/cb" "${commit}" "${mainrev}" 3rdparty/vboot src/security/vboot src/security/tpm src/commonlib \
 		src/arch/x86 src/cpu/x86 src/cpu/intel/car src/soc/intel/common/block/cpu src/lib src/console src/include)"
-	nri="$(changed "${work}/cb" "${commit}" src/northbridge/intel/haswell/native_raminit)"
-	fspm="$(changed "${work}/cb" "${commit}" src/soc/intel/cannonlake/romstage src/drivers/intel/fsp2_0 \
+	nri="$(changed "${work}/cb" "${commit}" "${mainrev}" src/northbridge/intel/haswell/native_raminit)"
+	fspm="$(changed "${work}/cb" "${commit}" "${mainrev}" src/soc/intel/cannonlake/romstage src/drivers/intel/fsp2_0 \
 		src/mainboard/lenovo/m720q_m920q)"
 	local title="coreboot:" body
 	[ -z "${newtag}" ] || title+=" release ${newtag},"
