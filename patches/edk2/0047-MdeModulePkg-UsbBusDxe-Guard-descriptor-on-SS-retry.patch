@@ -1,0 +1,87 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Michael D Kinney <michael.d.kinney@intel.com>
+Date: Fri, 16 Oct 2026 14:44:42 -0700
+Subject: [PATCH] MdeModulePkg/UsbBusDxe: Guard descriptor on SS retry
+
+UsbEnumerateNewDev() frees DevDesc before resetting the port for an
+enumeration retry. UsbRootHubResetPort() scans that device during the
+reset and previously dereferenced DevDesc without checking it.
+
+For a SuperSpeed-capable device running below SuperSpeed, IsSSDev and
+Speed still satisfy the scan's preceding conditions after DevDesc is
+cleared. The DeviceClass access can therefore cause a null-pointer
+exception. Add descriptor checks before those dereferences and clear
+IsSSDev when freeing the descriptor.
+
+The unsafe reset dereference was introduced by PR #12714:
+https://github.com/tianocore/edk2/pull/12714
+
+Signed-off-by: Michael D Kinney <michael.d.kinney@intel.com>
+
+ouroBIOS backport of tianocore/edk2 commit 7250fc9e3941 (merged on
+2026-10-21, after edk2-stable202608, the base of MrChromebox's
+uefipayload_2608), applied unchanged. Drop it when the base includes
+it.
+
+Why here: PR #12714 (4d5f8e68a1e9, "MdeModulePkg/UsbBusDxe: BOS
+Descriptor Check for SS Devices") is in the base. A SuperSpeed-capable
+device that comes up below SuperSpeed on a root port of the xHCI
+controller of either board (a USB 2 cable, a link that does not train)
+takes that retry, and UsbRootHubResetPort() then read the device class
+through the descriptor that UsbEnumerateNewDev() had freed and set to
+NULL. The payload has no NULL pointer detection
+(PcdNullPointerDetectionPropertyMask is 0), so the read went to low
+memory instead of faulting; its byte only decided whether the reset of
+the port waited longer.
+
+TEST=git am on the series: clean, at other offsets (MrChromebox's
+UsbEnumer.c and UsbHub.c move them), the same lines as upstream. No
+test with such a device.
+---
+ MdeModulePkg/Bus/Usb/UsbBusDxe/UsbEnumer.c | 2 ++
+ MdeModulePkg/Bus/Usb/UsbBusDxe/UsbHub.c    | 5 +++++
+ 2 files changed, 7 insertions(+)
+
+diff --git a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbEnumer.c b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbEnumer.c
+index 64da8d7bf..8808b9b99 100644
+--- a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbEnumer.c
++++ b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbEnumer.c
+@@ -862,6 +862,7 @@ DeviceRetry:
+      && (Bus->Usb2Hc->MajorRevision >= 0x3)
+      && (Child->IsSSDev)
+      && (Child->Speed < EFI_USB_SPEED_SUPER)
++     && (Child->DevDesc != NULL)
+      && (Child->DevDesc->Desc.DeviceClass != USB_HUB_CLASS_CODE))
+   {
+     goto ON_ERROR;
+@@ -918,6 +919,7 @@ ON_ERROR:
+     if ((Child != NULL) && (Child->DevDesc != NULL)) {
+       UsbFreeDevDesc (Child->DevDesc);
+       Child->DevDesc = NULL;
++      Child->IsSSDev = FALSE;
+     }
+ 
+     Status = HubApi->ResetPort (HubIf, Port);
+diff --git a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbHub.c b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbHub.c
+index a647ef2cf..8df914070 100644
+--- a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbHub.c
++++ b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbHub.c
+@@ -1180,10 +1180,15 @@ UsbRootHubResetPort (
+        && (Bus->Devices[Index]->ParentPort == Port)
+        && (Bus->Devices[Index]->ParentIf == RootIf))
+     {
++      //
++      // DevDesc is freed and set to NULL by UsbEnumerateNewDev() before
++      // it retries the port reset, so check it before dereferencing.
++      //
+       if (  (Bus->Usb2Hc != NULL)
+          && (Bus->Usb2Hc->MajorRevision >= 0x3)
+          && (Bus->Devices[Index]->IsSSDev)
+          && (Bus->Devices[Index]->Speed < EFI_USB_SPEED_SUPER)
++         && (Bus->Devices[Index]->DevDesc != NULL)
+          && (Bus->Devices[Index]->DevDesc->Desc.DeviceClass != USB_HUB_CLASS_CODE))
+       {
+         DEBUG ((DEBUG_INFO, "Found the device matched, Index = %d, Port = %X, ParentIf = %X\n", Index, Port, RootIf));
+-- 
+2.43.0
+

@@ -1,0 +1,103 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Michael D Kinney <michael.d.kinney@intel.com>
+Date: Fri, 16 Oct 2026 14:45:07 -0700
+Subject: [PATCH] MdeModulePkg/UsbBusDxe: Free BOS buffer on read failure
+
+[ouroBIOS: patches/edk2/0049, as it is]
+
+UsbGetDevBosDesc() allocates a buffer for the initial BOS descriptor
+request. If that request fails, the success-only cleanup is skipped and
+the function returns without freeing the buffer. Repeated enumeration
+attempts can leak one allocation per failure.
+
+Free the initial buffer before returning the transfer error.
+
+The leaking retrieval helper was introduced by PR #12714:
+https://github.com/tianocore/edk2/pull/12714
+
+Signed-off-by: Michael D Kinney <michael.d.kinney@intel.com>
+
+ouroBIOS backport of tianocore/edk2 commit 52fa6fe8996f (merged on
+2026-10-21, after edk2-stable202608, the base of MrChromebox's
+uefipayload_2608), applied unchanged. Drop it when the base includes
+it.
+
+Why here: the third fix, after 0047 and 0048, to the BOS code of PR
+#12714 in the base: a device whose BOS request failed left one
+allocation behind at every attempt to enumerate it.
+
+TEST=git am on the series: clean, at another offset (MrChromebox's
+UsbDesc.c moves it), the same lines as upstream.
+---
+ MdeModulePkg/Bus/Usb/UsbBusDxe/UsbDesc.c | 49 ++++++++++++++----------
+ 1 file changed, 29 insertions(+), 20 deletions(-)
+
+diff --git a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbDesc.c b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbDesc.c
+index be43bea7b..c12170954 100644
+--- a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbDesc.c
++++ b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbDesc.c
+@@ -742,32 +742,41 @@ UsbGetDevBosDesc (
+              Buf,
+              sizeof (EFI_USB_BOS_DESCRIPTOR)
+              );
+-  if (!EFI_ERROR (Status)) {
+-    TotalLength = ((EFI_USB_BOS_DESCRIPTOR *)Buf)->TotalLength;
++  if (EFI_ERROR (Status)) {
+     gBS->FreePool (Buf);
+-    Buf = NULL;
+-    Buf = AllocateZeroPool (TotalLength);
+-    if (Buf == NULL) {
+-      return EFI_OUT_OF_RESOURCES;
+-    }
++    return Status;
++  }
+ 
+-    Status = UsbCtrlGetDesc (
+-               UsbDev,
+-               USB_DESC_TYPE_BOS,
+-               0,
+-               0,
+-               Buf,
+-               TotalLength
+-               );
++  TotalLength = ((EFI_USB_BOS_DESCRIPTOR *)Buf)->TotalLength;
+ 
+-    if (EFI_ERROR (Status)) {
+-      gBS->FreePool (Buf);
+-      Buf = NULL;
+-    }
++  // The reported BOS length must include its fixed header before allocating.
++  if (TotalLength < sizeof (EFI_USB_BOS_DESCRIPTOR)) {
++    gBS->FreePool (Buf);
++    return EFI_DEVICE_ERROR;
++  }
+ 
+-    UsbDev->DevDesc->BosDesc = (EFI_USB_BOS_DESCRIPTOR *)Buf;
++  gBS->FreePool (Buf);
++  Buf = NULL;
++  Buf = AllocateZeroPool (TotalLength);
++  if (Buf == NULL) {
++    return EFI_OUT_OF_RESOURCES;
++  }
++
++  Status = UsbCtrlGetDesc (
++             UsbDev,
++             USB_DESC_TYPE_BOS,
++             0,
++             0,
++             Buf,
++             TotalLength
++             );
++
++  if (EFI_ERROR (Status)) {
++    gBS->FreePool (Buf);
++    Buf = NULL;
+   }
+ 
++  UsbDev->DevDesc->BosDesc = (EFI_USB_BOS_DESCRIPTOR *)Buf;
+   return Status;
+ }
+ 
+-- 
+2.43.0
+

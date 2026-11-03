@@ -276,6 +276,7 @@ the W541 resumes since v1.0.9.
 | USB-03 | both | boot from a USB drive | it boots (BOOT-06) | manual |
 | USB-04 | M920x | *Hardware* → *Devices*: front or rear USB off, reboot, on again | the ports go dead and come back | manual |
 | USB-05 | both | a bootable USB drive plugged in: `efibootmgr`; *General* → *Boot* → *Boot from USB drives* off, reboot twice; on again ([docs/m920x.md](m920x.md#boot-options)). W541 (v1.4.0, patch 0182): also the first boot of v1.4.0, with no variable stored, and the stick in a port of the laptop and in one of the dock | on (on the W541 also with no variable stored): its entry in `efibootmgr` and in the Esc menu; off: that entry gone, those of the disks, the Shell, iPXE and CSMWrap unchanged, and no new `Boot####` record at the second boot (`update.py vars --all` on a copy of the flash); on again: the entry back; not yet tried | manual |
+| USB-06 | both | v1.6.0 (`edk2/0047-0049`): a USB 3 drive through a USB 2 hub or cable, and a USB 3 hub with a keyboard behind it, plugged in before power-on; the Esc menu, the setup, a boot from the drive; on the W541 also in a port of the dock | the drive in the Esc menu and it boots, the keyboard types in the setup, no hang while the payload enumerates USB; not yet tried | manual |
 
 ### PCIe, NVMe and SATA (PCI)
 
@@ -481,7 +482,7 @@ kernel headers for its module).
 | CPU | 01 | 03 | 02, 04, 05 |
 | IDLE | 01 | 02 | |
 | S3 | 01 | 02 | 03 |
-| USB | | | 01-05 |
+| USB | | | 01-06 |
 | PCI | 01, 02, 06 | | 03-05, 07, 08 |
 | DISP | 04 | | 01-03 |
 | AUD | | | 01-03 |

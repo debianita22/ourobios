@@ -1,0 +1,98 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Michael D Kinney <michael.d.kinney@intel.com>
+Date: Fri, 16 Oct 2026 14:45:03 -0700
+Subject: [PATCH] MdeModulePkg/UsbBusDxe: Bound BOS capability parsing
+
+UsbIsSSDevice() trusts device-reported NumDeviceCaps and capability
+Length fields without bounding reads to the BOS buffer. Malformed values
+can cause out-of-bounds reads and an exception during device enumeration.
+
+Validate the BOS header and total length. Before reading each capability,
+check that its header and declared length fit in the remaining bytes.
+Reject malformed or truncated descriptors and recognize SuperSpeed only
+after validating the complete capability list.
+
+The unbounded parser was introduced by PR #12714:
+https://github.com/tianocore/edk2/pull/12714
+
+Signed-off-by: Michael D Kinney <michael.d.kinney@intel.com>
+
+ouroBIOS backport of tianocore/edk2 commit bf25b6e4017b (merged on
+2026-10-21, after edk2-stable202608, the base of MrChromebox's
+uefipayload_2608), applied unchanged. Drop it when the base includes
+it.
+
+Why here: the parser of PR #12714 is in the base, and
+UsbBuildDescTable() runs it for every device that reports USB 2.1 or
+later. It walked NumDeviceCaps capabilities by their Length fields
+without bounding them by the BOS descriptor it had read, so a device
+with malformed values made the payload read past that buffer, by up to
+about 64 KiB, while it enumerated the device at boot.
+
+TEST=git am on the series: clean, at another offset (MrChromebox's
+UsbDesc.c moves it), the same lines as upstream. No test with such a
+device.
+---
+ MdeModulePkg/Bus/Usb/UsbBusDxe/UsbDesc.c | 35 ++++++++++++++++++++----
+ 1 file changed, 30 insertions(+), 5 deletions(-)
+
+diff --git a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbDesc.c b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbDesc.c
+index 106757ecb..be43bea7b 100644
+--- a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbDesc.c
++++ b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbDesc.c
+@@ -355,22 +355,47 @@ UsbIsSSDevice (
+   UINT8                       Index;
+   UINT8                       NumCapDesc;
+   EFI_USB_DEV_CAP_DESCRIPTOR  *DevCapDesc;
+-
+-  if ((BosDesc->DescriptorType != USB_DESC_TYPE_BOS) || (Len == 0)) {
++  UINTN                       Remaining;
++  UINTN                       CapLength;
++  BOOLEAN                     IsSsDevice;
++
++  if (  (BosDesc == NULL)
++     || (Len < sizeof (*BosDesc))
++     || (BosDesc->DescriptorType != USB_DESC_TYPE_BOS)
++     || (BosDesc->Length < sizeof (*BosDesc))
++     || (BosDesc->Length > Len)
++     || (BosDesc->TotalLength < BosDesc->Length)
++     || (BosDesc->TotalLength > Len))
++  {
+     return FALSE;
+   }
+ 
+   NumCapDesc = BosDesc->NumDeviceCaps;
+   NextCap    = (UINT8 *)BosDesc + BosDesc->Length;
++  Remaining  = BosDesc->TotalLength - BosDesc->Length;
++  IsSsDevice = FALSE;
++
++  for (Index = 0; Index < NumCapDesc; Index++) {
++    if (Remaining < OFFSET_OF (EFI_USB_DEV_CAP_DESCRIPTOR, CapData)) {
++      return FALSE;
++    }
+ 
+-  for (Index = 0; Index < NumCapDesc; Index++, NextCap += DevCapDesc->Length) {
+     DevCapDesc = (EFI_USB_DEV_CAP_DESCRIPTOR *)NextCap;
++
++    CapLength = DevCapDesc->Length;
++    if ((CapLength < OFFSET_OF (EFI_USB_DEV_CAP_DESCRIPTOR, CapData)) || (CapLength > Remaining)) {
++      return FALSE;
++    }
++
+     if ((DevCapDesc->DescriptorType == USB_DESC_TYPE_DEV_CAP) && (DevCapDesc->DevCapabilityType == USB_DEV_CAP_SUPPERSPEED_USB)) {
+-      return TRUE;
++      IsSsDevice = TRUE;
+     }
++
++    NextCap   += CapLength;
++    Remaining -= CapLength;
+   }
+ 
+-  return FALSE;
++  return IsSsDevice;
+ }
+ 
+ /**
+-- 
+2.43.0
+

@@ -44,3 +44,8 @@
 0044-UefiPayloadPkg-SmmStoreLib-The-arguments-in-the-com-.patch
 0045-UefiPayloadPkg-FmpDeviceSmmLib-Only-the-regions-the-.patch
 0046-UefiPayloadPkg-PlatformBootManagerLib-Keep-a-tried-s.patch
+0047-MdeModulePkg-UsbBusDxe-Guard-descriptor-on-SS-retry.patch
+0048-MdeModulePkg-UsbBusDxe-Bound-BOS-capability-parsing.patch
+0049-MdeModulePkg-UsbBusDxe-Free-BOS-buffer-on-read-failu.patch
+0050-MdeModulePkg-Fix-GOP-device-path-pool-double-free.patch
+0051-MdeModulePkg-Fix-OptionOrder-double-free.patch

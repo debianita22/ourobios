@@ -54,6 +54,17 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   still run behind the read-only part of v1.5.0 (`rw-ok` in
   `configs/ro-interface.txt` and `boards/m920x/ro-interface.txt`, with
   what was compared): v1.6.0 installs from its capsule.
+- Five fixes that TianoCore merged after `edk2-stable202608`, taken into
+  the payload as they are (`edk2/0047-0051`, `tianocore/0113-0117`): in
+  the USB enumeration, a read through a NULL descriptor when a
+  SuperSpeed device comes up below SuperSpeed on a root port, the
+  capabilities of a device's BOS descriptor walked past their buffer when
+  their lengths are malformed, a buffer left behind by a failed BOS
+  request; in the boot manager, a double free of the GOP device paths of
+  a video controller whose GOP driver makes children of its own (an
+  option ROM of a card in the M920x could, not the boards' own graphics)
+  and one of `OptionOrder` when memory runs out. Nothing changes with
+  well-formed devices.
 - `docs/testing.md`: a conformance suite (CONF): the WSMT and its flags
   (`hw-report.py` CONF-01), the tables compiled again with `iasl -w3`,
   FWTS, chipsec with what each module must say on these boards (the
@@ -107,7 +118,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   not have: the setup, the splash, the password, the default Secure Boot
   keys, the update screen..., and the platform, `UefiPayloadPkg.dsc` and
   `.fdf` as patches on TianoCore's) and `patches/tianocore` (79 commits of
-  MrChromebox and 33 patches of `patches/edk2`, each without the files of
+  MrChromebox and 38 patches of `patches/edk2`, each without the files of
   the package) from MrChromebox's tree with `patches/edk2`, and checks
   that the tag with the series is that tree in every other file; LvglPkg
   is a package of its own next to it. coreboot builds it with patch 0216

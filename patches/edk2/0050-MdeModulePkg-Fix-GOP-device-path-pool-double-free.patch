@@ -1,0 +1,66 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Baraneedharan Anbazhagan <anbazhagan@hp.com>
+Date: Sun, 25 Oct 2026 08:43:05 -0500
+Subject: [PATCH] MdeModulePkg: Fix GOP device path pool double free
+
+Free the previous GOP device path pool only once when the recursive
+search returns a path to append. If it returns NULL, preserve paths
+collected from earlier children instead of freeing the pool.
+
+Signed-off-by: Anbazhagan Baraneedharan <anbazhagan@hp.com>
+
+ouroBIOS backport of tianocore/edk2 commit 859d22b8ef45 (merged on
+2026-11-03, after edk2-stable202608, the base of MrChromebox's
+uefipayload_2608), applied unchanged. Drop it when the base includes
+it.
+
+Why here: PlatformConsole.c of PlatformBootManagerLib connects every
+video controller with EfiBootManagerConnectVideoController(), which
+takes the GOP device paths from EfiBootManagerGetGopDevicePath(). When
+a child of the controller ended with a Controller device path node (a
+GOP driver with children of its own), the old code freed the pool that
+earlier children had filled twice if the search below that child found
+a GOP, and returned it freed if the search found none. The boards' own
+graphics (GraphicsOutputDxe on coreboot's framebuffer, an ACPI _ADR
+child) never take that path; the option ROM of a graphics card in the
+M920x could.
+
+TEST=git am on the series: clean, the same lines as upstream.
+---
+ MdeModulePkg/Library/UefiBootManagerLib/BmConsole.c | 6 +-----
+ 1 file changed, 1 insertion(+), 5 deletions(-)
+
+diff --git a/MdeModulePkg/Library/UefiBootManagerLib/BmConsole.c b/MdeModulePkg/Library/UefiBootManagerLib/BmConsole.c
+index 97267e0ab..d1fd2351b 100644
+--- a/MdeModulePkg/Library/UefiBootManagerLib/BmConsole.c
++++ b/MdeModulePkg/Library/UefiBootManagerLib/BmConsole.c
+@@ -3,6 +3,7 @@
+ 
+ Copyright (c) 2011 - 2018, Intel Corporation. All rights reserved.<BR>
+ (C) Copyright 2015 Hewlett Packard Enterprise Development LP<BR>
++(c) Copyright 2026 HP Development Company, L.P.
+ SPDX-License-Identifier: BSD-2-Clause-Patent
+ 
+ **/
+@@ -204,7 +205,6 @@ EfiBootManagerGetGopDevicePath (
+           // Recursively look for GOP child in this frame buffer handle
+           //
+           DEBUG ((DEBUG_INFO, "[Bds] Looking for GOP child deeper ... \n"));
+-          TempDevicePath   = GopPool;
+           ReturnDevicePath = EfiBootManagerGetGopDevicePath (OpenInfoBuffer[Index].ControllerHandle);
+           if (ReturnDevicePath != NULL) {
+             TempDevicePath = GopPool;
+@@ -215,10 +215,6 @@ EfiBootManagerGetGopDevicePath (
+ 
+             gBS->FreePool (ReturnDevicePath);
+           }
+-
+-          if (TempDevicePath != NULL) {
+-            gBS->FreePool (TempDevicePath);
+-          }
+         }
+       }
+     }
+-- 
+2.43.0
+

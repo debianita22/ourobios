@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Baraneedharan Anbazhagan <anbazhagan@hp.com>
+Date: Sun, 25 Oct 2026 08:43:16 -0500
+Subject: [PATCH] MdeModulePkg: Fix OptionOrder double free
+
+Remove the duplicate OptionOrder free on reallocation failure in
+EfiBootManagerGetLoadOptions().
+
+Signed-off-by: Anbazhagan Baraneedharan <anbazhagan@hp.com>
+
+ouroBIOS backport of tianocore/edk2 commit 011eca2e8f8b (merged on
+2026-11-03, after edk2-stable202608, the base of MrChromebox's
+uefipayload_2608), applied unchanged. Drop it when the base includes
+it.
+
+Why here: BdsDxe reads the load options with
+EfiBootManagerGetLoadOptions() at every boot. When a ####Order variable
+names options that do not exist and shrinking the array then failed,
+it freed OptionOrder a second time; only when the memory is exhausted.
+
+TEST=git am on the series: clean, the same lines as upstream.
+---
+ MdeModulePkg/Library/UefiBootManagerLib/BmLoadOption.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/MdeModulePkg/Library/UefiBootManagerLib/BmLoadOption.c b/MdeModulePkg/Library/UefiBootManagerLib/BmLoadOption.c
+index 66faf5732..1499f908b 100644
+--- a/MdeModulePkg/Library/UefiBootManagerLib/BmLoadOption.c
++++ b/MdeModulePkg/Library/UefiBootManagerLib/BmLoadOption.c
+@@ -3,6 +3,7 @@
+ 
+ Copyright (c) 2011 - 2019, Intel Corporation. All rights reserved.<BR>
+ (C) Copyright 2015-2018 Hewlett Packard Enterprise Development LP<BR>
++(c) Copyright 2026 HP Development Company, L.P.
+ SPDX-License-Identifier: BSD-2-Clause-Patent
+ 
+ **/
+@@ -1163,7 +1164,6 @@ EfiBootManagerGetLoadOptions (
+       Options = ReallocatePool (*OptionCount * sizeof (EFI_BOOT_MANAGER_LOAD_OPTION), OptionIndex * sizeof (EFI_BOOT_MANAGER_LOAD_OPTION), Options);
+       if (Options == NULL) {
+         ASSERT (Options != NULL);
+-        FreePool (OptionOrder);
+         return NULL;
+       }
+ 
+-- 
+2.43.0
+
