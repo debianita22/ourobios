@@ -53,6 +53,15 @@ CONFIG_UNLOCK_FLASH_REGIONS=y
 CONFIG_ME_REGION_ALLOW_CPU_READ_ACCESS=y
 CONFIG_VALIDATE_INTEL_DESCRIPTOR=y
 
+# I bit 3:0 della versione del training salvato (patch 0222; i bit 7:4 sono
+# processore e Hyper-Threading, patch 0173). La capsula lascia RW_MRC_CACHE
+# (BOARD_CAPSULE_REGIONS di board.sh): una release che cambia le UPD della
+# memoria che mette coreboot alza questo numero, e il primo avvio rifa' il
+# training. tools/fspm-settings.sh, in check.yml, ferma un cambio dei file di
+# quelle UPD finche' boards/m920x/fspm-settings.txt non dice che e' stato
+# guardato.
+CONFIG_FSP_MEMORY_SETTINGS_SOC_VERSION=0
+
 # Memoria azzerata a ogni avvio (non alla ripresa da S3); si spegne dal
 # menu, Security -> Memory protection.
 CONFIG_SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT=y

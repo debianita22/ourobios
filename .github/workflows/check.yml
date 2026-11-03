@@ -77,6 +77,11 @@ jobs:
       - name: PatchCheck di EDK II su patches/edk2
         run: ./tools/edk2-patchcheck.sh
 
+      # le UPD della memoria di FSP-M sulle board che tengono il training
+      # tra gli aggiornamenti (il M920x): un cambio va guardato
+      - name: Impostazioni di FSP-M
+        run: ./tools/fspm-settings.sh work/coreboot
+
       # la bozza per una nuova parte RO (patches/ro-next) non e' in nessuna
       # serie: un avviso, non un errore, se non applica piu' sopra la serie
       - name: patches/ro-next sopra la serie

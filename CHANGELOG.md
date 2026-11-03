@@ -130,6 +130,16 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   with `iasl -w3`, has a warning: v1.5.1 compiles without one on every
   board, the *object is not referenced* (4089) of the names and fields
   that only the OS reads aside, which the check leaves out.
+- The memory training of the M920x, which a capsule keeps, has the
+  settings that coreboot gives FSP-M in its version too, by hand:
+  `CONFIG_FSP_MEMORY_SETTINGS_SOC_VERSION` (patch 0222), 0 in
+  `boards/m920x/fsp.defconfig` as before, goes up with the release that
+  changes those settings, whose first boot then trains once.
+  `tools/fspm-settings.sh`, in `check.yml`, stops when the files that set
+  them change (`fsp_params.c` and `cnl_memcfg_init.c` of Cannon Lake, the
+  romstage and the devicetree of the board, in
+  `boards/m920x/fspm-settings.txt`) until the change has been looked at.
+  No training with this release.
 - `check.yml` holds the series to the style that coreboot's Gerrit and
   TianoCore's CI ask for: `util/lint/lint lint-stable` on the coreboot
   tree with the series, and `checkpatch.pl` with the tree's

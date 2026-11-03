@@ -1,0 +1,19 @@
+# Le impostazioni della memoria che coreboot passa a FSP-M sul M920x (le UPD
+# di FspmConfig), da cui dipende il training in RW_MRC_CACHE, che la capsula
+# lascia (BOARD_CAPSULE_REGIONS di board.sh): i file che le mettono, nell'albero
+# di coreboot con la serie, e la versione delle impostazioni
+# (CONFIG_FSP_MEMORY_SETTINGS_SOC_VERSION di fsp.defconfig, patch 0222).
+# tools/fspm-settings.sh, in check.yml, si ferma quando uno dei file cambia
+# (una patch, un pin nuovo di coreboot): se cambiano le UPD della memoria (o
+# i campi del devicetree che le danno: SaGv, RMT, enable_c6dram) si alza la
+# versione qui e nel defconfig, poi tools/fspm-settings.sh --update; se no
+# basta --update.
+#
+#   version N             CONFIG_FSP_MEMORY_SETTINGS_SOC_VERSION, 0-15
+#   sha256 HASH PERCORSO  un file dell'albero
+version 0
+sha256 97cc43297e004f363a1c4e73eeb30a2ed84f36bc8103966d89051b73ae09b07a src/soc/intel/cannonlake/romstage/fsp_params.c
+sha256 a3e03587e6d704452bee33e111850aa6c31cb38fd4b97f1f0a1a093117f376c4 src/soc/intel/cannonlake/cnl_memcfg_init.c
+sha256 b9637dbefae1497919a6d29af4659d836a292051302635a3cb6a8e3ec8e38f4b src/soc/intel/cannonlake/include/soc/cnl_memcfg_init.h
+sha256 9c04439bbb01c5bcdfcbbe07af761595ba0549509eeb1786cf407d88eac73835 src/mainboard/lenovo/m720q_m920q/romstage.c
+sha256 9540b1816f1d06dc496d07fe4c21b0d321e42598b79862009e76dd2bddba039c src/mainboard/lenovo/m720q_m920q/devicetree.cb

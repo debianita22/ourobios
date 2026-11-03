@@ -1,0 +1,67 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 3 Nov 2026 17:20:00 +0100
+Subject: [PATCH] drivers/intel/fsp2_0: Take the SoC memory settings version
+ from Kconfig
+
+FSP_PLATFORM_MEMORY_SETTINGS_VERSIONS mixes a SoC and a mainboard
+version into the version of the MRC cache, so that a build whose
+coreboot sets the FSP-M UPDs of the memory differently trains again
+instead of resuming the training of the build before. Only Apollo Lake
+has a fsp_memory_soc_version() of its own: for the other SoCs bits 3:0
+are always 0, and raising them takes a code change.
+
+Add FSP_MEMORY_SETTINGS_SOC_VERSION, 0-15, default 0, which the weak
+fsp_memory_soc_version() returns, with a prompt on the platforms that
+select FSP_PLATFORM_MEMORY_SETTINGS_VERSIONS. A board's defconfig can
+then raise it in the build that changes those settings. With the
+default the version, and the code, are those of before.
+
+TEST=Configured lenovo/m920x: FSP_MEMORY_SETTINGS_SOC_VERSION=0 in
+the .config, so fsp_memory_soc_version() still returns 0 and the
+version of the cache is the one of before; the .config of the boards
+without FSP 2.0 does not change.
+---
+ src/drivers/intel/fsp2_0/Kconfig       | 12 ++++++++++++
+ src/drivers/intel/fsp2_0/memory_init.c |  2 +-
+ 2 files changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/src/drivers/intel/fsp2_0/Kconfig b/src/drivers/intel/fsp2_0/Kconfig
+index 0333203eca..8d9a61b37d 100644
+--- a/src/drivers/intel/fsp2_0/Kconfig
++++ b/src/drivers/intel/fsp2_0/Kconfig
+@@ -269,6 +269,18 @@ config FSP_PLATFORM_MEMORY_SETTINGS_VERSIONS
+ 	  mainboard versions lets deployed systems invalidate stale training
+ 	  data when those settings change while keeping the same FSP binary.
+ 
++config FSP_MEMORY_SETTINGS_SOC_VERSION
++	int "SoC memory settings version (0-15)" if FSP_PLATFORM_MEMORY_SETTINGS_VERSIONS
++	range 0 15
++	default 0
++	help
++	  Bits 3:0 of the memory settings version that is mixed into the
++	  MRC cache version, unless the SoC code provides its own
++	  fsp_memory_soc_version(). Raise it in a build whose coreboot
++	  sets FSP-M UPDs that the memory training depends on differently,
++	  so that the training saved by an older build is done again
++	  instead of being resumed with the new settings.
++
+ config FSP_COMPRESS_FSP_S_LZMA
+ 	bool
+ 
+diff --git a/src/drivers/intel/fsp2_0/memory_init.c b/src/drivers/intel/fsp2_0/memory_init.c
+index a7a9bb230d..edaa15303d 100644
+--- a/src/drivers/intel/fsp2_0/memory_init.c
++++ b/src/drivers/intel/fsp2_0/memory_init.c
+@@ -224,7 +224,7 @@ uint8_t fsp_memory_mainboard_version(void)
+ __weak
+ uint8_t fsp_memory_soc_version(void)
+ {
+-	return 0;
++	return CONFIG_FSP_MEMORY_SETTINGS_SOC_VERSION;
+ }
+ 
+ /*
+-- 
+2.43.0
+

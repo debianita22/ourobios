@@ -18,7 +18,7 @@ is here. None of it is a promise of a date.
 | [Top Swap and the Protected Range test](#top-swap-and-the-protected-range-test) | M920x | the read-only part is never written by an update | FLASH-04 with the protection on; a map with room for a second bootblock |
 | [Settings reset on the W541](#settings-reset-on-the-w541) | W541 | built in v1.4.0 (patch 0180), off: the shared deletion is untested, and the OS may be able to set the RTC power loss bit | OPT-05 on the M920x, the bit checked on the W541, then OPT-05 there |
 | [Memory training across updates on the W541](#memory-training-across-updates-on-the-w541) | W541 | safe for `mrc`, not for `nri`, whose cache version is a number bumped by hand | a variant tag and a key from the code, `mrc` first |
-| [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | no release changes them yet | `fsp_memory_soc_version()` from a Kconfig, checked by `ci-check.sh` |
+| [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | done in v1.6.0 (patch 0222): a Kconfig for the version, and `tools/fspm-settings.sh` stops CI when the files of those settings change | the first bump, with the release that changes them |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
 | [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | the bit is documented for Sandy Bridge only; S3 and a reset loop unknown | a test build that reads the bit and the threads after S3 |
 | [Device switches on the W541](#device-switches-on-the-w541) | W541 | the Ethernet bit is sticky and needs a full reset; the others are soft switches | Ethernet the Sandy Bridge way, then card reader and microphone |
@@ -277,14 +277,22 @@ On the M920x the cache version is the revision of FSP-M with its build
 byte replaced by the processor and Hyper-Threading bits. The FSP-M
 settings that coreboot itself chooses (`fsp_params.c`, the romstage of the
 board) are not in it: a release that changed them would keep resuming the
-old training. Today the rule is written next to `BOARD_CAPSULE_REGIONS`
-in `boards/m920x/board.sh`: such a release bumps
-`fsp_memory_soc_version()` (bits 3:0 are free) or puts `RW_MRC_CACHE` back
-in the list.
+old training. The rule is written next to `BOARD_CAPSULE_REGIONS`
+in `boards/m920x/board.sh`: such a release bumps the version (bits 3:0
+are free) or puts `RW_MRC_CACHE` back in the list.
 
-- **Next step**: `fsp_memory_soc_version()` from a 4-bit Kconfig,
-  default 0 (today's version, no training), and a check in
-  `tools/ci-check.sh` that flags a change to those files without a bump.
+- **Done in v1.6.0** (patch 0222): `fsp_memory_soc_version()` returns
+  `CONFIG_FSP_MEMORY_SETTINGS_SOC_VERSION`, 0-15, set to 0 in
+  `boards/m920x/fsp.defconfig` (today's version: no training).
+  `tools/fspm-settings.sh`, in `check.yml`, keeps the SHA-256 of the files
+  that set those UPDs in the tree with the series (`fsp_params.c` and
+  `cnl_memcfg_init.c` of Cannon Lake, the romstage and the devicetree of
+  the board) in `boards/m920x/fspm-settings.txt`, with the version, and
+  stops when one of them changes, with a patch or a new coreboot pin: if
+  the memory settings change, the version goes up in the defconfig and in
+  the file, and the first boot after the update trains once; if not,
+  `tools/fspm-settings.sh --update` records the files as looked at.
+- **Next step**: the first bump, with the release that changes them.
 
 ## Setup switches not added
 
