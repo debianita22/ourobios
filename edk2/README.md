@@ -49,7 +49,8 @@ run again.
 (`EDK2_PACKAGES_SUBDIR`): `OuroBiosPkg` with each `OuroBiosPkg.<ext>.patch`
 applied to `UefiPayloadPkg.<ext>` of the TianoCore tree to make
 `OuroBiosPkg.<ext>`, and LvglPkg at `LVGLPKG_COMMIT` with
-`patches/lvglpkg`. coreboot builds it with `EDK2_PACKAGE_CONFIG`: a custom
+`patches/lvglpkg` and LVGL at `LVGL_COMMIT` (v9.6, in place of the v9.5.0
+of LvglPkg's submodule). coreboot builds it with `EDK2_PACKAGE_CONFIG`: a custom
 repository, TianoCore at the tag, `CONFIG_EDK2_PLATFORM_DSC` and
 `CONFIG_EDK2_PACKAGES_PATH` (patch 0216, a path relative to the coreboot
 tree), with the options of MrChromebox's tree (patch 0217). A platform

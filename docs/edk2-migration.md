@@ -117,7 +117,8 @@ MrChromebox's tree at the commit of the defconfigs:
   `.fdf` of MrChromebox's tree with the project's patches and the paths
   of the package, as patches on TianoCore's. LvglPkg is a package of its
   own next to it, at the commit of MrChromebox's submodule with
-  `patches/lvglpkg`; the binary network drivers of Realtek and ASIX
+  `patches/lvglpkg`, and LVGL in it at `LVGL_COMMIT` of `tools/build.sh`
+  (v9.6 from v1.6.0) in both trees; the binary network drivers of Realtek and ASIX
   (`0ec988f`, only with `NETWORK_PXE_BOOT`) stay out.
 - **Build**: coreboot's `payloads/external/edk2/Makefile` with patch 0216
   (`EDK2_PLATFORM_DSC`, and `EDK2_PACKAGES_PATH`, relative to the
