@@ -8,8 +8,10 @@ for upstream review (one change each, with the reasoning in the message).
 Gerrit does: `util/lint/lint lint-stable` on the tree with the series, and
 `checkpatch.pl` with the tree's `.checkpatch.conf` on every patch of the
 project's author; an `ERROR` stops it but *Missing Signed-off-by*, which the
-author adds when a patch goes upstream, and the ones already listed in
-`checkpatch-known.txt`.
+author adds when a patch goes upstream, and the ones listed in
+`checkpatch-known.txt`: four false positives in the native RAM init
+(0087-0088), the member of a compound literal, `(union ...) { ... }.raw`,
+as upstream's NRI code writes it, and the sign of `+1`.
 
 | Patches | What |
 |---|---|

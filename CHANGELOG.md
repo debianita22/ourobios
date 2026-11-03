@@ -145,8 +145,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   tree with the series, and `checkpatch.pl` with the tree's
   `.checkpatch.conf` on the patches of the project
   (`tools/coreboot-lint.sh`; the four errors of the native RAM init's
-  0087-0088, to be fixed with the next change of those patches, listed
-  in `patches/checkpatch-known.txt`), and `PatchCheck.py` of TianoCore on
+  0087-0088 are false positives on code written as upstream's NRI writes
+  it, the member of a compound literal and the sign of `+1`, listed in
+  `patches/checkpatch-known.txt`), and `PatchCheck.py` of TianoCore on
   the code of the project's patches in `patches/edk2`
   (`tools/edk2-patchcheck.sh`). The WSMT options of patch 0214 moved into
   a menu of their own, as `lint-stable` wants every prompt in a menu:

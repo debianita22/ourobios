@@ -2,8 +2,12 @@
 # check.yml): "<file della patch> <TIPO>", per ogni tipo di quella patch. Una
 # riga esce quando la patch si corregge.
 #
-# Spazi nel codice del raminit nativo (romstage): toccarli e' RISCHIO BRICK
-# anche se il codice compilato non cambia, e si correggono con la prossima
-# modifica di quelle patch, provata sul W541.
+# Falsi positivi nel codice del raminit nativo (romstage), da lasciare come
+# sono: "space required after that close brace" e' il membro di un compound
+# literal, "(union ...) { ... }.raw", come lo scrive il codice NRI di upstream
+# (activate_mc.c, change_margin.c, memory_scrub.c, reut.c);
+# "consistent spacing around '+'" e' il segno di +1, la direzione di
+# move_qclk() accanto a -1. Riscriverli per checkpatch toccherebbe il
+# raminit (RISCHIO BRICK) senza cambiare il codice compilato.
 0087-nb-intel-haswell-nri-Test-the-memory-after-training-.patch SPACING
 0088-nb-intel-haswell-nri-Shorten-the-read-round-trip-aft.patch SPACING
