@@ -88,7 +88,7 @@ and on).
 | BOOT-01 | the stages with `26.09-517` and the version `ci-244-98e7f1c` |
 | CONF-01 | the WSMT, revision 1, flags 7 |
 | CONF-07 | the ECAM window reserved in the memory map and among the `pnp` resources |
-| PCI-09 | PASS: every BAR of bus 0 inside the aperture of the payload |
+| PCI-09 | PASS, or INFO for a BAR of a device no driver of the payload uses (on the M920x the SPI controller, `00:1f.5`): every other BAR of bus 0 inside the aperture of the payload |
 | MEM-01 | the cache valid and used (W541: training at the first boot, the cache from the second) |
 
 Known, not a stop for the tag: on the W541 EC-01 WARN (an EC before
@@ -99,7 +99,7 @@ on (it stays in PC2 then); FLASH-01 WARN only while a protection is off.
 
 | ID | Test | Expected |
 |---|---|---|
-| CONF-03 | `sudo fwts acpi uefi wsmt mcfg -r fwts.log; cat fwts.log \| grep -E "FAILED\|CRITICAL\|HIGH"` | no CRITICAL or HIGH; no *MCFGMMIONotReserved* |
+| CONF-03 | `sudo fwts --acpitests --uefitests wsmt mcfg -r fwts.log; cat fwts.log \| grep -E "FAILED\|CRITICAL\|HIGH"` | no CRITICAL or HIGH; no *MCFGMMIONotReserved* |
 | OPT-02 | an option with a visible effect changed in the setup, *Save*, two reboots (SMMSTORE with the fixed com buffer: 0211-0215, `edk2/0044`) | the effect at every boot, OPT-01 with the value |
 | — | `sudo efibootmgr -t 3`, a reboot, `efibootmgr \| head -3` (variables written by the OS) | `Timeout: 3 seconds` |
 | MEM-09 | as in docs/testing.md, with *BIOS Lock* on | the lock reads `07 00 00 00 01`; writing `00` is refused; *request of the OS yes: clearing* after the reboot |
@@ -139,7 +139,7 @@ The list of `lvglpkg/0021`, within DISP-05:
 ## 5. M920x only
 
 - PCI-02 (hw-report): the PEG port off without a card on the riser.
-- PCI-09 PASS.
+- PCI-09 PASS or INFO (the SPI controller's BAR, no driver of the payload).
 - Optional, with Windows 11 on a disk of its own ([docs/hlk.md](hlk.md)):
   WIN-01, WIN-02; WIN-09,
   `(Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard).AvailableSecurityProperties`,

@@ -125,6 +125,8 @@ LOG_BAD = {"EMERG": "FAIL", "ALERT": "FAIL", "CRIT": "FAIL", "ERROR": "FAIL", "W
 KNOWN_FW_LOG = (
     (r"CBFS: 'fallback/slic' not found", None,
      "la tabella SLIC e' facoltativa: acpi.c la cerca sempre in CBFS"),
+    (r"HECI: CSE device 16\.0 is disabled", "m920x",
+     "alla ripresa da S3 con il ME spento (me_state): la ramstage lo cerca e lo trova nascosto"),
     (r"PMC: Duplicate GPE DW register values detected", "m920x",
      "dal bootblock di una parte RO di prima della patch 0166 (una capsula non la riscrive); "
      "il ramstage con la 0166 non lo stampa piu'"),
@@ -158,6 +160,9 @@ KNOWN_KERNEL = (
      "SGX non e' attivato (SOC_INTEL_COMMON_BLOCK_SGX_ENABLE, default n)"),
     (r"hpet_acpi_add: no address or irqs in _CRS", "m920x",
      "il _CRS dell'HPET (soc/intel/common/block/acpi/acpi/lpc.asl) ha solo l'indirizzo, senza IRQ"),
+    (r"i915 .*DPLL [0-9]+ not locked", None,
+     "intermittente all'avvio con un monitor HDMI collegato (M920x: 2 avvii su 6 di ci-244, anche su ci-209, "
+     "ci-211 e v1.5.x): i915 e l'init del display del firmware, da capire a parte (docs/roadmap.md)"),
     # Sul W541 non piu' noti: GPLV ("SystemIO range ... conflicts with
     # OpRegion") e "failed to evaluate _DSM" di iwlwifi li tolgono le patch
     # 0068 e 0069; se tornano e' una regressione
@@ -1874,7 +1879,8 @@ def ecam_status(mcfg, memmap, iomem):
     if iomem is not None:
         pnp = []
         for line in iomem.splitlines():
-            m = re.match(r"\s*([0-9a-f]+)-([0-9a-f]+) : pnp ", line)
+            # "pnp 00:0a" fino a Linux 6.x; dal 7.0 il nome ACPI, "PNP0C02:00"
+            m = re.match(r"\s*([0-9a-f]+)-([0-9a-f]+) : (?:pnp |PNP0C02:)", line)
             if m:
                 pnp.append((int(m.group(1), 16), int(m.group(2), 16)))
     details, missing, data = [], set(), {"windows": []}

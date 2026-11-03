@@ -272,12 +272,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   suspends. Nothing is extended nor logged on that path now, the log in
   cbmem keeps the entries of the boot, and the resume path no longer
   hashes what it loads for the measurement, the payload included.
-- On the M920x, with *BIOS Lock* on, the event log of ramstage was lost
-  at every boot, up to v1.5.0: the chipset lockdown set EISS and the BIOS
-  locks at `BS_DEV_RESOURCES`, before the boot count, the wake sources
-  and the resets are logged, and each write failed (*SPI Transaction
-  Error*, *ELOG: NV Write failed*, BOOT-03 of `hw-report.py`); the
-  entries written from SMM (S3, S5) still went in. Patch 0209
+- On the M920x the event log of ramstage was lost at every boot, up to
+  v1.5.0, with *BIOS Lock* on and off alike (seen with both on the M920x
+  of the port, on v1.5.0 next to this release's candidate): the chipset
+  lockdown set EISS and the BIOS locks at `BS_DEV_RESOURCES`, before the
+  boot count, the wake sources and the resets are logged, and each write
+  failed (*SPI Transaction Error*, *ELOG: NV Write failed*, BOOT-03 of
+  `hw-report.py`); the entries written from SMM (S3, S5) still went in. Patch 0209
   (`SOC_INTEL_COMMON_PCH_LOCKDOWN_SMM_BWP_LATE`) has the SMI handler set
   them at the finalize instead, after ramstage is done with the flash
   and before any boot option or OS runs, as Lynx Point does on the W541.

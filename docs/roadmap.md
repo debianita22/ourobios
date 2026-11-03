@@ -663,3 +663,17 @@ reports no backlight instead of the vendor one when neither is there
 brightness path on the W541 for no gain elsewhere: not planned. macOS
 answers "Darwin" only, unless an OpenCore configuration renames `_OSI`.
 
+
+## The DPLL of i915 at boot on the M920x
+
+With a monitor on HDMI, i915 reports `*ERROR* DPLL 1 not locked` at some
+boots of the M920x (BOOT-04 of `hw-report.py`, now a known message): 2
+of the 6 boots of the v1.6.0 candidate, 1 of 3 on two earlier builds,
+none in the two v1.5.0 boots looked at, so not a change of v1.6.0 nor of
+VT-d. The display works all the same. The firmware brings the display
+up (FSP-S with the VBT, the payload's GOP) and i915 takes it over with
+the pipe and the PLL as the firmware left them: whether the PLL the
+firmware programs is one i915 then expects to see locked, or the
+takeover races the PLL, is to be read from the register dumps of both
+boots (the one with the error and one without), and is not needed for
+the release.
