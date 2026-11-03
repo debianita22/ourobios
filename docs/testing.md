@@ -190,6 +190,10 @@ Esito: FAIL - 2 FAIL, 1 WARN, 15 PASS, 1 INFO, 1 SKIP (uscita 2)
    the issue of the candidate); a failed test with `sudo cbmem -1 > cbmem.txt`,
    the report and the commands that showed it.
 
+The candidate of v1.6.0 has its own checklist, with the build to try and
+the rules for whoever flashes it, an agent included:
+[docs/test-v1.6.0.md](test-v1.6.0.md).
+
 A CI build tried on hardware (`ci-test/**` branches) needs the smoke
 subset: steps 2 and 3 (BOOT, MEM-01, IDLE-01, PCI-02, VB-01 are in
 `hw-report.py`) and the suites the change touches.
