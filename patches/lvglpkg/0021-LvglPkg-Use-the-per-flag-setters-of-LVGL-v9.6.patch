@@ -1,0 +1,488 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 3 Nov 2026 14:14:03 +0100
+Subject: [PATCH] LvglPkg: Use the per-flag setters of LVGL v9.6
+
+LVGL v9.6 deprecates lv_obj_add_flag(), lv_obj_remove_flag() and
+lv_obj_has_flag() for a setter and a getter of each flag
+(lv_obj_set_hidden(), lv_obj_is_hidden() and the others), and v10
+removes them. 0020 kept the 54 calls of lv_port_indev.c and of the
+display engine with -Wno-deprecated-declarations.
+
+Call the setters and the getters instead, one for one. In v9.6,
+lv_obj_add_flag() and lv_obj_remove_flag() call those same setters,
+which change nothing when the flag has the value already, and
+lv_obj_has_flag() reads the same fields. LV_OBJ_FLAG_USER_1 has no
+setter of its own: lv_obj_set_user_flag() and lv_obj_get_user_flag()
+with bit 0 (LVGL_USER_FLAG_ROWS) set and read the same bit of
+user_flags. Both INF files drop -Wno-deprecated-declarations, so that
+a deprecated call stops the -Werror build again.
+
+TEST=LvglPkg.dsc builds with GCC -Werror (RELEASE, X64) and no
+warning; LvglSetupDxe.efi is the same, byte for byte.
+---
+ Library/LvglLib/LvglLib.inf                   |  4 +-
+ Library/LvglLib/lv_port_indev.c               | 12 +--
+ LvglDisplayEngineDxe/LvglAptioChrome.c        | 18 ++--
+ LvglDisplayEngineDxe/LvglDesktop.c            |  6 +-
+ LvglDisplayEngineDxe/LvglDisplayEngineDxe.inf |  5 --
+ LvglDisplayEngineDxe/LvglFormRenderer.c       | 85 ++++++++++---------
+ 6 files changed, 65 insertions(+), 65 deletions(-)
+
+diff --git a/Library/LvglLib/LvglLib.inf b/Library/LvglLib/LvglLib.inf
+index 558b986..d22f86b 100644
+--- a/Library/LvglLib/LvglLib.inf
++++ b/Library/LvglLib/LvglLib.inf
+@@ -553,6 +553,4 @@
+ 
+   # -Wno-unused-but-set-variable: newer GCC (e.g. with -Werror) flags dead assigns in
+   # upstream LVGL (e.g. txt_tot_i in lv_buttonmatrix.c) that we cannot bump yet.
+-  # -Wno-deprecated-declarations: LVGL v9.6 deprecates the flag API
+-  # (lv_obj_add_flag() and the others) that lv_port_indev.c uses; v10 removes it.
+-  GCC:*_*_*_CC_FLAGS = -Wno-format -Wno-unused-but-set-variable -Wno-deprecated-declarations
+\ No newline at end of file
++  GCC:*_*_*_CC_FLAGS = -Wno-format -Wno-unused-but-set-variable
+\ No newline at end of file
+diff --git a/Library/LvglLib/lv_port_indev.c b/Library/LvglLib/lv_port_indev.c
+index 79340e4..4e727ed 100644
+--- a/Library/LvglLib/lv_port_indev.c
++++ b/Library/LvglLib/lv_port_indev.c
+@@ -156,7 +156,7 @@ find_scrollable_at_point (
+   if (hit == NULL) return NULL;
+ 
+   for (lv_obj_t *o = hit; o != NULL; o = lv_obj_get_parent (o)) {
+-    if (lv_obj_has_flag (o, LV_OBJ_FLAG_SCROLLABLE) &&
++    if (lv_obj_is_scrollable (o) &&
+         lv_obj_get_scroll_top (o) + lv_obj_get_scroll_bottom (o) > 0)
+     {
+       return o;
+@@ -403,7 +403,7 @@ mouse_read (
+     mLeftButton = FALSE;
+     if (relative_pointer_read (hor_res, ver_res)) {
+       if (!mCursorVisible && (mCursorObj != NULL)) {
+-        lv_obj_clear_flag (mCursorObj, LV_OBJ_FLAG_HIDDEN);
++        lv_obj_set_hidden (mCursorObj, false);
+         mCursorVisible = TRUE;
+       }
+     } else if (mCursorVisible && !mRelSeen && (mCursorObj != NULL)) {
+@@ -411,7 +411,7 @@ mouse_read (
+       // No pointer device: keep the cursor hidden so it doesn't sit dead in
+       // the middle of the screen.
+       //
+-      lv_obj_add_flag (mCursorObj, LV_OBJ_FLAG_HIDDEN);
++      lv_obj_set_hidden (mCursorObj, true);
+       mCursorVisible = FALSE;
+     }
+ 
+@@ -452,7 +452,7 @@ mouse_read (
+     if (!mCursorVisible && (mCursorObj != NULL) &&
+         ((mLastCursorX != PrevX) || (mLastCursorY != PrevY) || mLeftButton))
+     {
+-      lv_obj_clear_flag (mCursorObj, LV_OBJ_FLAG_HIDDEN);
++      lv_obj_set_hidden (mCursorObj, false);
+       mCursorVisible = TRUE;
+     }
+ 
+@@ -471,7 +471,7 @@ mouse_read (
+   // A relative pointer (TrackPoint, touchpad) next to the absolute one.
+   //
+   if (relative_pointer_read (hor_res, ver_res) && !mCursorVisible && (mCursorObj != NULL)) {
+-    lv_obj_clear_flag (mCursorObj, LV_OBJ_FLAG_HIDDEN);
++    lv_obj_set_hidden (mCursorObj, false);
+     mCursorVisible = TRUE;
+   }
+ 
+@@ -666,7 +666,7 @@ void lv_port_indev_init (lv_display_t *disp)
+     //
+     mCursorObj     = cursor_obj;
+     mCursorVisible = FALSE;
+-    lv_obj_add_flag (mCursorObj, LV_OBJ_FLAG_HIDDEN);
++    lv_obj_set_hidden (mCursorObj, true);
+ 
+     //
+     // Centre the cursor and zero the wheel accumulator.
+diff --git a/LvglDisplayEngineDxe/LvglAptioChrome.c b/LvglDisplayEngineDxe/LvglAptioChrome.c
+index 4edb928..1e3b6bb 100644
+--- a/LvglDisplayEngineDxe/LvglAptioChrome.c
++++ b/LvglDisplayEngineDxe/LvglAptioChrome.c
+@@ -116,8 +116,8 @@ ChromeBox (
+ 
+   Box = lv_obj_create (Parent);
+   lv_obj_remove_style_all (Box);
+-  lv_obj_clear_flag (Box, LV_OBJ_FLAG_SCROLLABLE);
+-  lv_obj_clear_flag (Box, LV_OBJ_FLAG_CLICKABLE);
++  lv_obj_set_scrollable (Box, false);
++  lv_obj_set_clickable (Box, false);
+   return Box;
+ }
+ 
+@@ -410,7 +410,7 @@ ChromeRefreshBattery (
+   }
+ 
+   if (EFI_ERROR (ChromeReadBattery (&Percent, &Charging))) {
+-    lv_obj_add_flag (mBatteryLabel, LV_OBJ_FLAG_HIDDEN);
++    lv_obj_set_hidden (mBatteryLabel, true);
+     return;
+   }
+ 
+@@ -428,7 +428,7 @@ ChromeRefreshBattery (
+ 
+   AsciiSPrint (Buf, sizeof (Buf), "%d%%  %a%a", Percent, Symbol, Charging ? " " LV_SYMBOL_CHARGE : "");
+   ChromeSetLabelText (mBatteryLabel, Buf);
+-  lv_obj_clear_flag (mBatteryLabel, LV_OBJ_FLAG_HIDDEN);
++  lv_obj_set_hidden (mBatteryLabel, false);
+ }
+ 
+ /**
+@@ -761,7 +761,7 @@ BuildTitleBar (
+     mBackButton = lv_obj_create (Row);
+     lv_obj_remove_style_all (mBackButton);
+     lv_obj_set_size (mBackButton, LvglThemePx (30), LvglThemePx (26));
+-    lv_obj_clear_flag (mBackButton, LV_OBJ_FLAG_SCROLLABLE);
++    lv_obj_set_scrollable (mBackButton, false);
+     lv_obj_set_style_radius (mBackButton, THEME_RADIUS_CHIP, 0);
+     lv_obj_set_style_bg_color (mBackButton, lv_color_hex (THEME_COLOR_BUTTON_SECONDARY), 0);
+     lv_obj_set_style_bg_opa (mBackButton, LV_OPA_TRANSP, 0);
+@@ -1105,9 +1105,9 @@ CreateContentPanel (
+   lv_obj_set_flex_flow (Content, LV_FLEX_FLOW_COLUMN);
+   lv_obj_set_style_pad_row (Content, THEME_PAD_CONTENT_ROW_GAP, 0);
+   lv_obj_set_style_bg_opa (Content, LV_OPA_TRANSP, 0);
+-  lv_obj_add_flag (Content, LV_OBJ_FLAG_SCROLLABLE);
+-  lv_obj_clear_flag (Content, LV_OBJ_FLAG_SCROLL_ELASTIC);
+-  lv_obj_clear_flag (Content, LV_OBJ_FLAG_SCROLL_MOMENTUM);
++  lv_obj_set_scrollable (Content, true);
++  lv_obj_set_scroll_elastic (Content, false);
++  lv_obj_set_scroll_momentum (Content, false);
+   lv_obj_set_scrollbar_mode (Content, LV_SCROLLBAR_MODE_AUTO);
+   lv_obj_set_style_bg_color (Content, lv_color_hex (THEME_COLOR_TEXT_DISABLED), LV_PART_SCROLLBAR);
+   lv_obj_set_style_bg_opa (Content, LV_OPA_COVER, LV_PART_SCROLLBAR);
+@@ -1152,7 +1152,7 @@ AptioBuildChrome (
+   lv_obj_remove_style_all (Screen);
+   lv_obj_set_style_bg_color (Screen, lv_color_hex (THEME_COLOR_BACKDROP), 0);
+   lv_obj_set_style_bg_opa (Screen, LV_OPA_COVER, 0);
+-  lv_obj_clear_flag (Screen, LV_OBJ_FLAG_SCROLLABLE);
++  lv_obj_set_scrollable (Screen, false);
+ #if THEME_WALLPAPER
+   DesktopBuild (Screen);
+ #endif
+diff --git a/LvglDisplayEngineDxe/LvglDesktop.c b/LvglDisplayEngineDxe/LvglDesktop.c
+index 7de8576..848567a 100644
+--- a/LvglDisplayEngineDxe/LvglDesktop.c
++++ b/LvglDisplayEngineDxe/LvglDesktop.c
+@@ -198,9 +198,9 @@ DesktopBuild (
+       (HorRes * mOrbPlaces[Index].CenterXPct) / 100 - Radius,
+       (VerRes * mOrbPlaces[Index].CenterYPct) / 100 - Radius
+       );
+-    lv_obj_clear_flag (Orb, LV_OBJ_FLAG_CLICKABLE);
+-    lv_obj_clear_flag (Orb, LV_OBJ_FLAG_SCROLLABLE);
+-    lv_obj_add_flag (Orb, LV_OBJ_FLAG_IGNORE_LAYOUT);
++    lv_obj_set_clickable (Orb, false);
++    lv_obj_set_scrollable (Orb, false);
++    lv_obj_set_ignore_layout (Orb, true);
+     mOrbs[Index] = Orb;
+   }
+ 
+diff --git a/LvglDisplayEngineDxe/LvglDisplayEngineDxe.inf b/LvglDisplayEngineDxe/LvglDisplayEngineDxe.inf
+index b266030..7f5dc45 100644
+--- a/LvglDisplayEngineDxe/LvglDisplayEngineDxe.inf
++++ b/LvglDisplayEngineDxe/LvglDisplayEngineDxe.inf
+@@ -72,8 +72,3 @@
+   gLvglPkgTokenSpaceGuid.PcdLvglHelpPaneWidthPct
+   gLvglPkgTokenSpaceGuid.PcdLvglAptioHeaderTitle
+   gLvglPkgTokenSpaceGuid.PcdLvglAptioHeaderVendor
+-
+-[BuildOptions]
+-  # LVGL v9.6 deprecates the flag API (lv_obj_add_flag() and the others) that
+-  # the display engine uses; v10 removes it.
+-  GCC:*_*_*_CC_FLAGS = -Wno-deprecated-declarations
+diff --git a/LvglDisplayEngineDxe/LvglFormRenderer.c b/LvglDisplayEngineDxe/LvglFormRenderer.c
+index de5df29..4541592 100644
+--- a/LvglDisplayEngineDxe/LvglFormRenderer.c
++++ b/LvglDisplayEngineDxe/LvglFormRenderer.c
+@@ -44,10 +44,17 @@ STATIC lv_obj_t  *mContentPanel = NULL;
+ //
+ STATIC BOOLEAN  mSubtitleShowsDeviceModel = FALSE;
+ 
++//
++// The user flag (lv_obj_set_user_flag (), bit 0: LV_OBJ_FLAG_USER_1) of the
++// containers whose children are the rows that scrolling targets: the
++// settings cards and the sections of the grid menu (NavScrollTarget).
++//
++#define LVGL_USER_FLAG_ROWS  0
++
+ //
+ // Layout state while a form is built: the card that collects the rows of
+ // the current section (a new one starts after each subtitle). Cards carry
+-// LV_OBJ_FLAG_USER_1 so that scrolling targets their rows.
++// LVGL_USER_FLAG_ROWS so that scrolling targets their rows.
+ //
+ STATIC lv_obj_t  *mSectionCard = NULL;
+ 
+@@ -742,8 +749,8 @@ CreateIconSquare (
+   lv_obj_set_style_bg_grad_color (Square, lv_color_darken (lv_color_hex (Color), THEME_ICON_SHADE), 0);
+   lv_obj_set_style_bg_grad_dir (Square, LV_GRAD_DIR_VER, 0);
+   lv_obj_set_style_bg_opa (Square, LV_OPA_COVER, 0);
+-  lv_obj_clear_flag (Square, LV_OBJ_FLAG_CLICKABLE);
+-  lv_obj_clear_flag (Square, LV_OBJ_FLAG_SCROLLABLE);
++  lv_obj_set_clickable (Square, false);
++  lv_obj_set_scrollable (Square, false);
+ 
+   Label = lv_label_create (Square);
+   lv_label_set_text (Label, Symbol);
+@@ -1055,7 +1062,7 @@ OnTextareaFocused (
+     mSession.OnScreenKb,
+     IsNumeric ? LV_KEYBOARD_MODE_NUMBER : LV_KEYBOARD_MODE_TEXT_LOWER
+     );
+-  lv_obj_clear_flag (mSession.OnScreenKb, LV_OBJ_FLAG_HIDDEN);
++  lv_obj_set_hidden (mSession.OnScreenKb, false);
+   lv_obj_move_foreground (mSession.OnScreenKb);
+   lv_obj_scroll_to_view (Ta, LV_ANIM_OFF);
+ }
+@@ -1071,7 +1078,7 @@ OnTextareaDefocused (
+   }
+ 
+   (VOID)Event;
+-  lv_obj_add_flag (mSession.OnScreenKb, LV_OBJ_FLAG_HIDDEN);
++  lv_obj_set_hidden (mSession.OnScreenKb, true);
+   lv_keyboard_set_textarea (mSession.OnScreenKb, NULL);
+ }
+ 
+@@ -1086,7 +1093,7 @@ OnKeyboardCancel (
+   }
+ 
+   (VOID)Event;
+-  lv_obj_add_flag (mSession.OnScreenKb, LV_OBJ_FLAG_HIDDEN);
++  lv_obj_set_hidden (mSession.OnScreenKb, true);
+   lv_keyboard_set_textarea (mSession.OnScreenKb, NULL);
+ }
+ 
+@@ -1411,7 +1418,7 @@ CreateDialogShell (
+   lv_obj_set_size (Shell->Overlay, LV_PCT (100), LV_PCT (100));
+   lv_obj_set_style_bg_color (Shell->Overlay, lv_color_black (), 0);
+   lv_obj_set_style_bg_opa (Shell->Overlay, THEME_OVERLAY_OPA, 0);
+-  lv_obj_clear_flag (Shell->Overlay, LV_OBJ_FLAG_SCROLLABLE);
++  lv_obj_set_scrollable (Shell->Overlay, false);
+   lv_obj_set_flex_flow (Shell->Overlay, LV_FLEX_FLOW_COLUMN);
+   lv_obj_set_flex_align (
+     Shell->Overlay,
+@@ -1424,7 +1431,7 @@ CreateDialogShell (
+   lv_obj_remove_style_all (Shell->Card);
+   lv_obj_set_width (Shell->Card, THEME_DIALOG_WIDTH);
+   lv_obj_set_height (Shell->Card, LV_SIZE_CONTENT);
+-  lv_obj_clear_flag (Shell->Card, LV_OBJ_FLAG_SCROLLABLE);
++  lv_obj_set_scrollable (Shell->Card, false);
+   lv_obj_set_flex_flow (Shell->Card, LV_FLEX_FLOW_COLUMN);
+   lv_obj_set_flex_align (Shell->Card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+   lv_obj_set_style_pad_all (Shell->Card, THEME_PAD_DIALOG, 0);
+@@ -1454,7 +1461,7 @@ CreateDialogShell (
+   Shell->BtnRow = lv_obj_create (Shell->Card);
+   lv_obj_remove_style_all (Shell->BtnRow);
+   lv_obj_set_size (Shell->BtnRow, LV_PCT (100), LV_SIZE_CONTENT);
+-  lv_obj_clear_flag (Shell->BtnRow, LV_OBJ_FLAG_SCROLLABLE);
++  lv_obj_set_scrollable (Shell->BtnRow, false);
+   lv_obj_set_flex_flow (Shell->BtnRow, StackButtons ? LV_FLEX_FLOW_COLUMN : LV_FLEX_FLOW_ROW);
+   lv_obj_set_style_pad_column (Shell->BtnRow, THEME_PAD_DIALOG_COL_GAP, 0);
+   lv_obj_set_style_pad_row (Shell->BtnRow, THEME_PAD_DIALOG_COL_GAP, 0);
+@@ -2897,7 +2904,7 @@ OnHoverUpdateHelp (
+ /**
+   Return the object that should drive scroll positioning for a nav widget:
+   the row that holds it, which is a child of a settings card
+-  (LV_OBJ_FLAG_USER_1) or of the content panel.
++  (LVGL_USER_FLAG_ROWS) or of the content panel.
+ **/
+ STATIC
+ lv_obj_t *
+@@ -2918,7 +2925,7 @@ NavScrollTarget (
+       break;
+     }
+ 
+-    if ((Parent == mContentPanel) || lv_obj_has_flag (Parent, LV_OBJ_FLAG_USER_1)) {
++    if ((Parent == mContentPanel) || lv_obj_get_user_flag (Parent, LVGL_USER_FLAG_ROWS)) {
+       return Obj;
+     }
+   }
+@@ -2992,7 +2999,7 @@ AddToNavGroup (
+   )
+ {
+   lv_group_add_obj (Group, Widget);
+-  lv_obj_remove_flag (Widget, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
++  lv_obj_set_scroll_on_focus (Widget, false);
+   lv_obj_add_event_cb (Widget, OnNavFocused, LV_EVENT_FOCUSED, NULL);
+   lv_obj_add_event_cb (Widget, OnNavKey, LV_EVENT_KEY | LV_EVENT_PREPROCESS, Ctx);
+   if (Ctx != NULL) {
+@@ -3038,9 +3045,9 @@ CreateCard (
+   lv_obj_set_style_border_width (Card, THEME_BORDER_PANE, 0);
+   lv_obj_set_style_pad_all (Card, THEME_PAD_CARD, 0);
+   lv_obj_set_style_pad_row (Card, 0, 0);
+-  lv_obj_clear_flag (Card, LV_OBJ_FLAG_SCROLLABLE);
+-  lv_obj_clear_flag (Card, LV_OBJ_FLAG_CLICKABLE);
+-  lv_obj_add_flag (Card, LV_OBJ_FLAG_USER_1);
++  lv_obj_set_scrollable (Card, false);
++  lv_obj_set_clickable (Card, false);
++  lv_obj_set_user_flag (Card, LVGL_USER_FLAG_ROWS, true);
+   return Card;
+ }
+ 
+@@ -3061,16 +3068,16 @@ AddCardDivider (
+   lv_obj_set_size (Inset, LV_PCT (100), THEME_BORDER_PANE);
+   lv_obj_set_style_pad_left (Inset, THEME_PAD_ROW_X, 0);
+   lv_obj_set_style_pad_right (Inset, THEME_PAD_ROW_X, 0);
+-  lv_obj_clear_flag (Inset, LV_OBJ_FLAG_SCROLLABLE);
+-  lv_obj_clear_flag (Inset, LV_OBJ_FLAG_CLICKABLE);
++  lv_obj_set_scrollable (Inset, false);
++  lv_obj_set_clickable (Inset, false);
+ 
+   Line = lv_obj_create (Inset);
+   lv_obj_remove_style_all (Line);
+   lv_obj_set_size (Line, LV_PCT (100), LV_PCT (100));
+   lv_obj_set_style_bg_color (Line, lv_color_hex (THEME_COLOR_DIVIDER), 0);
+   lv_obj_set_style_bg_opa (Line, LV_OPA_COVER, 0);
+-  lv_obj_clear_flag (Line, LV_OBJ_FLAG_SCROLLABLE);
+-  lv_obj_clear_flag (Line, LV_OBJ_FLAG_CLICKABLE);
++  lv_obj_set_scrollable (Line, false);
++  lv_obj_set_clickable (Line, false);
+ }
+ 
+ /**
+@@ -3132,7 +3139,7 @@ StyleRow (
+   lv_obj_set_flex_flow (Row, LV_FLEX_FLOW_ROW);
+   lv_obj_set_flex_align (Row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+   lv_obj_set_style_pad_column (Row, THEME_PAD_ROW_GAP, 0);
+-  lv_obj_clear_flag (Row, LV_OBJ_FLAG_SCROLLABLE);
++  lv_obj_set_scrollable (Row, false);
+ 
+   // default: transparent on the card
+   lv_obj_set_style_bg_color (Row, lv_color_hex (THEME_COLOR_ROW_BG), 0);
+@@ -3187,9 +3194,9 @@ MarkRowChanged (
+   lv_obj_set_style_radius (Dot, LV_RADIUS_CIRCLE, 0);
+   lv_obj_set_style_bg_color (Dot, lv_color_hex (THEME_COLOR_WARNING), 0);
+   lv_obj_set_style_bg_opa (Dot, LV_OPA_COVER, 0);
+-  lv_obj_add_flag (Dot, LV_OBJ_FLAG_IGNORE_LAYOUT);
+-  lv_obj_clear_flag (Dot, LV_OBJ_FLAG_CLICKABLE);
+-  lv_obj_clear_flag (Dot, LV_OBJ_FLAG_SCROLLABLE);
++  lv_obj_set_ignore_layout (Dot, true);
++  lv_obj_set_clickable (Dot, false);
++  lv_obj_set_scrollable (Dot, false);
+   lv_obj_align (Dot, LV_ALIGN_LEFT_MID, -(((int32_t)THEME_PAD_ROW_X + Size) / 2), 0);
+ }
+ 
+@@ -3435,8 +3442,8 @@ CreateBox (
+ 
+   Box = lv_obj_create (Parent);
+   lv_obj_remove_style_all (Box);
+-  lv_obj_clear_flag (Box, LV_OBJ_FLAG_SCROLLABLE);
+-  lv_obj_clear_flag (Box, LV_OBJ_FLAG_CLICKABLE);
++  lv_obj_set_scrollable (Box, false);
++  lv_obj_set_clickable (Box, false);
+   return Box;
+ }
+ 
+@@ -3578,7 +3585,7 @@ CreateAboutSection (
+   // window).
+   //
+   if ((ModelText == NULL) || (mSubtitleShowsDeviceModel && !mGridMenu)) {
+-    lv_obj_add_flag (Model, LV_OBJ_FLAG_HIDDEN);
++    lv_obj_set_hidden (Model, true);
+   }
+ 
+   return Info;
+@@ -3682,9 +3689,9 @@ CreateBannerWidget (
+     // already or the window title shows it.
+     //
+     Model = lv_obj_get_child (mAboutInfo, 0);
+-    if ((!mSubtitleShowsDeviceModel || mGridMenu) && lv_obj_has_flag (Model, LV_OBJ_FLAG_HIDDEN)) {
++    if ((!mSubtitleShowsDeviceModel || mGridMenu) && lv_obj_is_hidden (Model)) {
+       lv_label_set_text (Model, Utf8);
+-      lv_obj_clear_flag (Model, LV_OBJ_FLAG_HIDDEN);
++      lv_obj_set_hidden (Model, false);
+     }
+ 
+     FreePool (Utf8);
+@@ -4411,7 +4418,7 @@ CreateOrderedListWidget (
+   lv_obj_set_style_pad_row (Panel, LvglThemePx (4), 0);
+   lv_obj_set_style_border_width (Panel, 0, 0);
+   lv_obj_set_style_bg_opa (Panel, LV_OPA_TRANSP, 0);
+-  lv_obj_clear_flag (Panel, LV_OBJ_FLAG_SCROLLABLE);
++  lv_obj_set_scrollable (Panel, false);
+ 
+   HelpCtx = AllocateZeroPool (sizeof (LVGL_STATEMENT_CONTEXT));
+   if (HelpCtx != NULL) {
+@@ -4479,7 +4486,7 @@ CreateOrderedListWidget (
+     lv_obj_set_style_pad_column (Row, THEME_PAD_ROW_GAP, 0);
+     lv_obj_set_style_border_width (Row, 0, 0);
+     lv_obj_set_style_bg_opa (Row, LV_OPA_TRANSP, 0);
+-    lv_obj_clear_flag (Row, LV_OBJ_FLAG_SCROLLABLE);
++    lv_obj_set_scrollable (Row, false);
+ 
+     CreatePromptIcon (Row, OptStr8, THEME_ICON_SQUARE, LvglThemeFontSmall ());
+ 
+@@ -4718,7 +4725,7 @@ CreatePasswordWidget (
+ 
+   Btn = lv_btn_create (RowParent (Parent));
+   StyleRow (Btn);
+-  lv_obj_add_flag (Btn, LV_OBJ_FLAG_STATE_TRICKLE);
++  lv_obj_set_state_trickle (Btn, true);
+ 
+   Label = lv_label_create (Btn);
+   lv_label_set_text (Label, (Text != NULL) ? Text : "Password");
+@@ -4904,7 +4911,7 @@ GridSection (
+       }
+ 
+       //
+-      // Tiles are the scroll targets (LV_OBJ_FLAG_USER_1, see
++      // Tiles are the scroll targets (LVGL_USER_FLAG_ROWS, see
+       // NavScrollTarget), not the whole grid.
+       //
+       mGridSection[Idx] = CreateBox (Grid);
+@@ -4913,7 +4920,7 @@ GridSection (
+       lv_obj_set_flex_align (mGridSection[Idx], LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+       lv_obj_set_style_pad_column (mGridSection[Idx], THEME_PAD_TILE_GAP_X, 0);
+       lv_obj_set_style_pad_row (mGridSection[Idx], THEME_PAD_TILE_GAP_Y, 0);
+-      lv_obj_add_flag (mGridSection[Idx], LV_OBJ_FLAG_USER_1);
++      lv_obj_set_user_flag (mGridSection[Idx], LVGL_USER_FLAG_ROWS, true);
+     }
+ 
+     mGridCaption = lv_label_create (Grid);
+@@ -4964,9 +4971,9 @@ CreateGridTile (
+   lv_obj_set_flex_align (Tile, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+   lv_obj_set_style_pad_top (Tile, THEME_PAD_TILE_TOP, 0);
+   lv_obj_set_style_pad_row (Tile, THEME_PAD_TILE_LABEL_GAP, 0);
+-  lv_obj_clear_flag (Tile, LV_OBJ_FLAG_SCROLLABLE);
+-  lv_obj_add_flag (Tile, LV_OBJ_FLAG_CLICKABLE);
+-  lv_obj_add_flag (Tile, LV_OBJ_FLAG_STATE_TRICKLE);
++  lv_obj_set_scrollable (Tile, false);
++  lv_obj_set_clickable (Tile, true);
++  lv_obj_set_state_trickle (Tile, true);
+ 
+   Square = CreateBox (Tile);
+   lv_obj_set_size (Square, THEME_TILE_SQUARE, THEME_TILE_SQUARE);
+@@ -5076,7 +5083,7 @@ CreateRefWidget (
+   Btn = lv_btn_create (Card);
+   StyleRow (Btn);
+   lv_obj_set_style_text_align (Btn, LV_TEXT_ALIGN_LEFT, 0);
+-  lv_obj_add_flag (Btn, LV_OBJ_FLAG_STATE_TRICKLE);
++  lv_obj_set_state_trickle (Btn, true);
+ 
+   CreatePromptIcon (
+     Btn,
+@@ -5090,7 +5097,7 @@ CreateRefWidget (
+   lv_obj_set_flex_grow (Column, 1);
+   lv_obj_set_flex_flow (Column, LV_FLEX_FLOW_COLUMN);
+   lv_obj_set_style_pad_row (Column, LvglThemePx (2), 0);
+-  lv_obj_add_flag (Column, LV_OBJ_FLAG_STATE_TRICKLE);
++  lv_obj_set_state_trickle (Column, true);
+ 
+   Label = lv_label_create (Column);
+   lv_label_set_text (Label, Text != NULL ? Text : "Goto");
+@@ -5561,7 +5568,7 @@ LvglRenderForm (
+   lv_obj_set_size (mSession.OnScreenKb, LV_PCT (100), LV_PCT (40));
+   lv_obj_align (mSession.OnScreenKb, LV_ALIGN_BOTTOM_MID, 0, 0);
+   LvglThemeStyleKeyboard (mSession.OnScreenKb);
+-  lv_obj_add_flag (mSession.OnScreenKb, LV_OBJ_FLAG_HIDDEN);
++  lv_obj_set_hidden (mSession.OnScreenKb, true);
+   lv_obj_add_event_cb (mSession.OnScreenKb, OnKeyboardCancel, LV_EVENT_CANCEL, NULL);
+   //
+   // Don't add the keyboard to the form's nav group: it's mouse-only.
+-- 
+2.43.0
+

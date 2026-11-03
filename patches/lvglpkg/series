@@ -17,3 +17,4 @@
 0018-LvglDisplayEngineDxe-Give-the-Compatibility-category.patch
 0019-LvglLib-Leave-the-UEFI-header-bindings-out-of-lvgl.h.patch
 0020-LvglLib-Build-LVGL-v9.6.patch
+0021-LvglPkg-Use-the-per-flag-setters-of-LVGL-v9.6.patch

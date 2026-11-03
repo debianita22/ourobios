@@ -76,7 +76,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `PDRC`, no device or path changes, so OpenCore's patches stay as they
   are. `tools/hw-report.py` checks both (CONF-07); the update test checks
   the memory map in QEMU q35.
-- **LVGL v9.6** in the setup (`patches/lvglpkg/0019-0020`): the graphics
+- **LVGL v9.6** in the setup (`patches/lvglpkg/0019-0021`): the graphics
   library under LvglPkg is LVGL v9.6, the last release of v9, at the head
   of its `release/v9.6` branch (`v9.6.0-23-gbb1ff0af416c`, with the fixes
   to the software renderer that came after the tag), in place of the
@@ -88,8 +88,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   pointer arguments, `LV_USE_CHECK_ARG`), and `lvgl.h` no longer
   includes the gnu-efi binding of LVGL's UEFI driver, which stopped
   every EDK II module that includes it (0019, a fix for LVGL upstream
-  too). The flag functions that v9.6 deprecates and v10 removes are
-  still in use, with their warning off
+  too). In place of the flag functions that v9.6 deprecates and v10
+  removes, the setup calls the setter and the getter of each flag (0021,
+  the 54 calls one for one), with the deprecation warning on again
   ([docs/roadmap.md](docs/roadmap.md#lvgl-v10)).
   `lvglpkg/0016`, the fix of the circle mask that the W541 needs at
   2880×1620, is gone, as v9.6.0 has it. The display engine is 20 KiB
