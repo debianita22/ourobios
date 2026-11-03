@@ -26,12 +26,12 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  3 files changed, 11 insertions(+), 1 deletion(-)
 
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
-index 67856e8375..8fbc7af462 100644
+index 16595e0111..0672cee61e 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 @@ -275,6 +275,15 @@ void raminit_main(const enum raminit_boot_mode bootmode)
  		status = try_raminit(&mighty_ctrl, fast_boot, ARRAY_SIZE(fast_boot));
- 		if (status == RAMINIT_STATUS_SUCCESS)
+ 		if (status == NRI_STATUS_SUCCESS)
  			return;
 +
 +		/*
@@ -59,7 +59,7 @@ index ab1e4ff1a3..9a05974083 100644
  	clear_disb();
  	system_reset();
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index eb8caa8240..f986a7d660 100644
+index 51338789e4..2d2d4febd2 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 @@ -611,6 +611,7 @@ static inline void reut_set_normal_mode(const uint8_t channel)
@@ -68,8 +68,8 @@ index eb8caa8240..f986a7d660 100644
  void raminit_main(enum raminit_boot_mode bootmode);
 +void raminit_reset(void);
  
- enum raminit_status collect_spd_info(struct sysinfo *ctrl);
- enum raminit_status initialise_mpll(struct sysinfo *ctrl);
+ enum nri_status collect_spd_info(struct sysinfo *ctrl);
+ enum nri_status initialise_mpll(struct sysinfo *ctrl);
 -- 
 2.43.0
 

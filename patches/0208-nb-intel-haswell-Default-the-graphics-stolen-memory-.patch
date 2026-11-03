@@ -25,7 +25,7 @@ must show 32 MB as the default.
  2 files changed, 5 insertions(+), 5 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/cfr.h b/src/northbridge/intel/haswell/cfr.h
-index 4133f6ac..4a1bbad2 100644
+index 4133f6acbb..4a1bbad2c4 100644
 --- a/src/northbridge/intel/haswell/cfr.h
 +++ b/src/northbridge/intel/haswell/cfr.h
 @@ -34,8 +34,8 @@ static const struct sm_object gfx_uma_size = SM_DECLARE_ENUM({
@@ -40,7 +40,7 @@ index 4133f6ac..4a1bbad2 100644
  				{ "32 MB",	IGD_UMA_SIZE_32MB	},
  				{ "64 MB",	IGD_UMA_SIZE_64MB	},
 diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
-index 59d334fa..8dfda0ff 100644
+index 59d334fad0..8dfda0ff24 100644
 --- a/src/northbridge/intel/haswell/early_init.c
 +++ b/src/northbridge/intel/haswell/early_init.c
 @@ -42,7 +42,7 @@ u8 haswell_igd_gms(void)

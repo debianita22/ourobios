@@ -26,6 +26,16 @@
 #                               cache di FMAP e CBFS: struct e indirizzi uguali)
 #   VARIANTE SIMBOLO INDIRIZZO  una regione della cache-as-RAM (car.ld), come la scrive nm
 coreboot 26.09-438-g206078d6d990
+# 26.09-517 (v1.6.0), controllato a mano sulla parte RO 26.09-438 (v1.5.0):
+# tra i due commit 3rdparty/vboot (vb2_shared_data, nvdata), src/security/tpm
+# (il registro del TPM), src/commonlib, src/arch/x86 e src/cpu sono uguali;
+# src/security/vboot cambia solo in ec_sync.c (l'EC di Chrome, non
+# compilato), src/lib solo in render_bmp.c (BMP_LOGO, spento) e thread.c (un
+# messaggio). include/console/uart.h e console/Makefile.mk cambiano per
+# BOOTBLOCK_CONSOLE e POSTCAR_CONSOLE: sul W541 la console seriale non c'e',
+# sul M920x le due opzioni sono accese e il codice resta quello di prima. Gli
+# indirizzi li controlla tools/verify-rom.sh su ogni build.
+rw-ok 26.09-517-geab226a1c3f7
 
 mrc _car_region_start ff7c0000
 mrc _vboot2_work ff7c0000

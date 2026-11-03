@@ -35,7 +35,7 @@ SMMSTORE_RET_FAILURE and logs the address.
  5 files changed, 37 insertions(+)
 
 diff --git a/src/cpu/x86/smm/smm_module_handler.c b/src/cpu/x86/smm/smm_module_handler.c
-index abec3c97..83307abc 100644
+index abec3c97ca..83307abc52 100644
 --- a/src/cpu/x86/smm/smm_module_handler.c
 +++ b/src/cpu/x86/smm/smm_module_handler.c
 @@ -75,6 +75,12 @@ void smm_get_smmstore_com_buffer(uintptr_t *base, size_t *size)
@@ -52,7 +52,7 @@ index abec3c97..83307abc 100644
  void smm_get_opal_s3_scratch_buffer(uintptr_t *base, size_t *size)
  {
 diff --git a/src/cpu/x86/smm/smm_module_loader.c b/src/cpu/x86/smm/smm_module_loader.c
-index f0fd2246..472e5a67 100644
+index f0fd2246a6..472e5a67ce 100644
 --- a/src/cpu/x86/smm/smm_module_loader.c
 +++ b/src/cpu/x86/smm/smm_module_loader.c
 @@ -378,6 +378,7 @@ static void setup_smihandler_params(struct smm_runtime *mod_params,
@@ -64,7 +64,7 @@ index f0fd2246..472e5a67 100644
  
  #if CONFIG(SMM_OPAL_S3_SCRATCH_CBMEM)
 diff --git a/src/drivers/smmstore/Kconfig b/src/drivers/smmstore/Kconfig
-index 65666fff..f65af669 100644
+index 65666fffd0..f65af66919 100644
 --- a/src/drivers/smmstore/Kconfig
 +++ b/src/drivers/smmstore/Kconfig
 @@ -29,6 +29,20 @@ config SMMSTORE_BLOCK_SIZE
@@ -89,7 +89,7 @@ index 65666fff..f65af669 100644
  	bool "TCG Secure MOR lock (MemoryOverwriteRequestControlLock)"
  	depends on DRIVERS_EFI_VARIABLE_STORE && SECURITY_CLEAR_DRAM_ON_REGULAR_BOOT
 diff --git a/src/drivers/smmstore/smi.c b/src/drivers/smmstore/smi.c
-index 7aa72689..ebfce2a3 100644
+index 7aa7268912..ebfce2a361 100644
 --- a/src/drivers/smmstore/smi.c
 +++ b/src/drivers/smmstore/smi.c
 @@ -27,6 +27,19 @@ static int range_check(void *start, size_t size)
@@ -113,7 +113,7 @@ index 7aa72689..ebfce2a3 100644
  }
  
 diff --git a/src/include/cpu/x86/smm.h b/src/include/cpu/x86/smm.h
-index 22477542..a68f0a6e 100644
+index 224775425c..a68f0a6e9f 100644
 --- a/src/include/cpu/x86/smm.h
 +++ b/src/include/cpu/x86/smm.h
 @@ -102,6 +102,8 @@ struct smm_runtime {

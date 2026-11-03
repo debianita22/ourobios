@@ -28,7 +28,7 @@ machine shows a WSMT of 40 bytes, revision 1, with "Protection Flags :
  3 files changed, 78 insertions(+)
 
 diff --git a/src/acpi/Kconfig b/src/acpi/Kconfig
-index 703eaf6e..4b605d32 100644
+index 703eaf6e1f..4b605d3295 100644
 --- a/src/acpi/Kconfig
 +++ b/src/acpi/Kconfig
 @@ -100,6 +100,41 @@ config ACPI_LPIT
@@ -74,7 +74,7 @@ index 703eaf6e..4b605d32 100644
  	bool
  	depends on HAVE_ACPI_TABLES
 diff --git a/src/acpi/acpi.c b/src/acpi/acpi.c
-index 5288b136..6dd578a0 100644
+index 5288b1364d..6dd578a063 100644
 --- a/src/acpi/acpi.c
 +++ b/src/acpi/acpi.c
 @@ -1345,6 +1345,31 @@ static void acpi_create_iort(acpi_header_t *header, void *unused)
@@ -127,7 +127,7 @@ index 5288b136..6dd578a0 100644
  		return -1;
  	}
 diff --git a/src/include/acpi/acpi.h b/src/include/acpi/acpi.h
-index fa3dea4b..c5c235bc 100644
+index fa3dea4b36..c5c235bcd7 100644
 --- a/src/include/acpi/acpi.h
 +++ b/src/include/acpi/acpi.h
 @@ -106,6 +106,7 @@ enum acpi_tables {

@@ -257,7 +257,7 @@ index 35d2f8dbc6..48d539b730 100644
  void peg_dmi_recipe(const bool is_peg, const pci_devfn_t dev);
  
 diff --git a/src/northbridge/intel/haswell/pcie.c b/src/northbridge/intel/haswell/pcie.c
-index 345f00d53d..c7c16c0427 100644
+index 0a5bfd6560..d109f21fbf 100644
 --- a/src/northbridge/intel/haswell/pcie.c
 +++ b/src/northbridge/intel/haswell/pcie.c
 @@ -149,6 +149,34 @@ static void peg_enable(struct device *dev)

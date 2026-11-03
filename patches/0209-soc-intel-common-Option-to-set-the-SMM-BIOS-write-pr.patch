@@ -37,7 +37,7 @@ flashrom refusing to write, a capsule update still installing.
  3 files changed, 42 insertions(+), 1 deletion(-)
 
 diff --git a/src/soc/intel/common/block/smm/smihandler.c b/src/soc/intel/common/block/smm/smihandler.c
-index 5ca77ee9..d282ad82 100644
+index 5ca77ee9d7..d282ad82fc 100644
 --- a/src/soc/intel/common/block/smm/smihandler.c
 +++ b/src/soc/intel/common/block/smm/smihandler.c
 @@ -407,6 +407,16 @@ static void finalize(void)
@@ -58,7 +58,7 @@ index 5ca77ee9..d282ad82 100644
  		set_insmm_sts(false);
  	}
 diff --git a/src/soc/intel/common/pch/lockdown/Kconfig b/src/soc/intel/common/pch/lockdown/Kconfig
-index 38f60d20..309100d6 100644
+index 38f60d2056..309100d6f1 100644
 --- a/src/soc/intel/common/pch/lockdown/Kconfig
 +++ b/src/soc/intel/common/pch/lockdown/Kconfig
 @@ -7,3 +7,21 @@ config SOC_INTEL_COMMON_PCH_LOCKDOWN
@@ -84,7 +84,7 @@ index 38f60d20..309100d6 100644
 +	  of the Lynx Point PCH code. The rest of the SPI lockdown (the
 +	  BAR, VSCC, the BIOS interface lock) is unchanged.
 diff --git a/src/soc/intel/common/pch/lockdown/lockdown.c b/src/soc/intel/common/pch/lockdown/lockdown.c
-index ff7ca959..e898e8cd 100644
+index ff7ca959fc..e898e8cd25 100644
 --- a/src/soc/intel/common/pch/lockdown/lockdown.c
 +++ b/src/soc/intel/common/pch/lockdown/lockdown.c
 @@ -1,6 +1,7 @@

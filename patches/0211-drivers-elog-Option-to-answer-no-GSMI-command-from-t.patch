@@ -26,7 +26,7 @@ log still has the S3 entry and the wake source of a suspend cycle, and
  2 files changed, 18 insertions(+)
 
 diff --git a/src/drivers/elog/Kconfig b/src/drivers/elog/Kconfig
-index 19b33318..a26966b1 100644
+index 19b33318c4..a26966b11f 100644
 --- a/src/drivers/elog/Kconfig
 +++ b/src/drivers/elog/Kconfig
 @@ -33,6 +33,20 @@ config ELOG_GSMI
@@ -51,7 +51,7 @@ index 19b33318..a26966b1 100644
  	bool "Maintain a monotonic boot number in CMOS"
  	default n
 diff --git a/src/drivers/elog/gsmi.c b/src/drivers/elog/gsmi.c
-index 36940f1c..2b17cc81 100644
+index 36940f1c76..2b17cc8152 100644
 --- a/src/drivers/elog/gsmi.c
 +++ b/src/drivers/elog/gsmi.c
 @@ -51,6 +51,10 @@ u32 gsmi_exec(u8 command, u32 *param)

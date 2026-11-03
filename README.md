@@ -107,7 +107,7 @@ address on the machine stay as they are.
 
 Inside coreboot:
 
-- coreboot `26.09-438-g206078d6d990` plus the [patch series](patches/), EDK2
+- coreboot `26.09-517-geab226a1c3f7` plus the [patch series](patches/), EDK2
   from upstream TianoCore at a stable tag with the project's package
   [`edk2/OuroBiosPkg`](edk2/README.md) and the
   [patches it carries](patches/README.md#tianocore-edk-ii-for-the-package):
@@ -228,7 +228,7 @@ what the two machines cannot meet:
 
 | Area | Baseline |
 |---|---|
-| coreboot | upstream `main` at the commit `tools/build.sh` pins (`COREBOOT_COMMIT`, 26.09-438 at v1.5.0), its cross toolchain and the [patch series](patches/README.md), each patch written for upstream review |
+| coreboot | upstream `main` at the commit `tools/build.sh` pins (`COREBOOT_COMMIT`, 26.09-517 from v1.6.0, 26.09-438 at v1.5.0), its cross toolchain and the [patch series](patches/README.md), each patch written for upstream review |
 | EDK II | from v1.6.0, upstream [TianoCore EDK II](https://github.com/tianocore/edk2) at a stable tag (`edk2-stable202608`, `EDK2_UPSTREAM_TAG` of `tools/build.sh`), with the package of the project, [`edk2/OuroBiosPkg`](edk2/README.md) (`.dec`, `.dsc`, `.fdf`, the setup, the splash, the password, the default Secure Boot keys and the other modules that TianoCore does not have), LvglPkg next to it, and [`patches/tianocore`](patches/README.md#tianocore-edk-ii-for-the-package) on TianoCore's own packages: MrChromebox's [edk2](https://github.com/mrchromebox/edk2) at `6c14abf865e0` with the project's [patches](patches/README.md#edk2-and-lvglpkg), moved onto the tag by `tools/edk2-import.py`, the same payload byte for byte (`tools/build.sh edk2-parity`). Up to v1.5.1, MrChromebox's tree itself ([`configs/edk2-pins.txt`](configs/edk2-pins.txt)). The carried patches go upstream, to the package or out over time ([docs/edk2-migration.md](docs/edk2-migration.md)) |
 | UEFI | the system table reports revision 2.7 (`EFI_SYSTEM_TABLE_REVISION` of this EDK II); the runtime services, variables, capsules, ESRT and Secure Boot are implemented and tested against the UEFI 2.10 text (`tools/efi/*.c` cite its sections); PI 1.8 (`PI_SPECIFICATION_VERSION`) for the HOBs the payload reads from coreboot |
 | ACPI | tables from coreboot's generator and ASL, compiled by the iasl of the cross toolchain (ACPICA 20251212 at v1.5.0) with warnings as errors (`-we`) and disassembled back for a check at every build, then compiled once more at `-w3` by `tools/build.sh`, which from v1.6.0 stops on any warning of that level but the names only the OS reads (4089; `build-<variant>/dsdt-w3.log`); the ASL follows the ACPI 6.5 text (no EC RAM before `_REG`, `Device` processors with ACPI0007 by default); from v1.6.0 a WSMT table, revision 1, with the three flags the SMI handlers keep |

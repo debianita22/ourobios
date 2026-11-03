@@ -36,7 +36,7 @@ writes of the other ranks' mode registers set CKE for all four ranks
 margins include it, but nobody has run such a setup yet: the hardware
 test below covers it. If the other DIMMs do not train with it in place,
 the boot stops after the second attempt, as before. When no DIMM is
-left, return RAMINIT_STATUS_UNSUPPORTED_MEMORY with its own message
+left, return NRI_STATUS_UNSUPPORTED_MEMORY with its own message
 rather than "No DIMMs were found".
 
 A fast boot compares the DIMM records with the cached ones. They are the
@@ -84,19 +84,19 @@ index af784fbc9d..019606ebad 100644
  	if (!s3resume)
  		save_mrc_data();
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index 1d45bb8fe2..487389eea0 100644
+index 3d6cd43ee5..af038c6021 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 @@ -617,6 +617,7 @@ void raminit_main(enum raminit_boot_mode bootmode);
  void raminit_reset(void);
  
- enum raminit_status collect_spd_info(struct sysinfo *ctrl);
+ enum nri_status collect_spd_info(struct sysinfo *ctrl);
 +void report_ignored_dimms(void);
- enum raminit_status initialise_mpll(struct sysinfo *ctrl);
- enum raminit_status convert_timings(struct sysinfo *ctrl);
- enum raminit_status configure_mc(struct sysinfo *ctrl);
+ enum nri_status initialise_mpll(struct sysinfo *ctrl);
+ enum nri_status convert_timings(struct sysinfo *ctrl);
+ enum nri_status configure_mc(struct sysinfo *ctrl);
 diff --git a/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c b/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
-index a481ad80ad..f051564445 100644
+index 817309551e..07fabf2290 100644
 --- a/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
 +++ b/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
 @@ -74,6 +74,51 @@ static void decode_spd(struct raminit_dimm_info *const dimm)
@@ -148,10 +148,10 @@ index a481ad80ad..f051564445 100644
 +	}
 +}
 +
- static enum raminit_status find_common_spd_parameters(struct sysinfo *ctrl)
+ static enum nri_status find_common_spd_parameters(struct sysinfo *ctrl)
  {
  	const union pci_capid0_a_reg capid0_a = {
-@@ -98,9 +143,11 @@ static enum raminit_status find_common_spd_parameters(struct sysinfo *ctrl)
+@@ -98,9 +143,11 @@ static enum nri_status find_common_spd_parameters(struct sysinfo *ctrl)
  	ctrl->tCWL = 0;
  	ctrl->tCMD = 0;
  	ctrl->chanmap = 0;
@@ -163,7 +163,7 @@ index a481ad80ad..f051564445 100644
  
  	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
  		ctrl->dpc[channel] = 0;
-@@ -114,6 +161,10 @@ static enum raminit_status find_common_spd_parameters(struct sysinfo *ctrl)
+@@ -114,6 +161,10 @@ static enum nri_status find_common_spd_parameters(struct sysinfo *ctrl)
  
  			printk(RAM_DEBUG, "\nCH%uS%u SPD:\n", channel, slot);
  			decode_spd(dimm);
@@ -174,17 +174,17 @@ index a481ad80ad..f051564445 100644
  
  			ctrl->chanmap |= BIT(channel);
  			ctrl->dpc[channel]++;
-@@ -150,6 +201,10 @@ static enum raminit_status find_common_spd_parameters(struct sysinfo *ctrl)
+@@ -150,6 +201,10 @@ static enum nri_status find_common_spd_parameters(struct sysinfo *ctrl)
  		}
  	}
  
 +	if (!ctrl->chanmap && ignored) {
 +		printk(BIOS_ERR, "No usable DIMMs: all have more than 10 column bits\n");
-+		return RAMINIT_STATUS_UNSUPPORTED_MEMORY;
++		return NRI_STATUS_UNSUPPORTED_MEMORY;
 +	}
  	if (!ctrl->chanmap) {
  		printk(BIOS_ERR, "No DIMMs were found\n");
- 		return RAMINIT_STATUS_NO_MEMORY_INSTALLED;
+ 		return NRI_STATUS_NO_MEMORY_INSTALLED;
 -- 
-2.47.3
+2.43.0
 

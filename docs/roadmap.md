@@ -480,10 +480,9 @@ The M920x has *TCC activation offset* from v1.4.0 (patch 0177).
   same place, though its `WLSW` returns a constant). Next step: `rfkill
   list` and EC 0x48 on a W541; with Bluetooth or WWAN hard-blocked, 95880
   set for the W541.
-- 96645-96647, NRI cleanups merged after the pin (no-ops on DDR3), and
-  96630 (acpigen): with the next coreboot pin, patches 0087, 0088 and 0185
-  rebased onto them. 0185 itself goes once 96694 is merged; `upstream.yml`
-  reports it by its subject.
+- 0185 goes once 96694 is merged; `upstream.yml` reports it by its
+  subject. 96645-96647 (NRI cleanups, no-ops on the W541) and 96630
+  (acpigen) are in the pin of v1.6.0, 26.09-517.
 
 ## Openness score
 

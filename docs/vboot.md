@@ -151,13 +151,14 @@ its root key, and vboot keeps the old one).
   part does not leave it: they would not boot, and after two tries vboot
   would go back to the old slot. [`configs/ro-interface.txt`](../configs/ro-interface.txt)
   records the read-only part on the laptops (coreboot and cache-as-RAM of
-  v1.3.9; of v1.3.0 before), and `tools/ci-check.sh` and `tools/verify-rom.sh`
+  v1.5.0; of v1.3.9 and v1.3.0 before), and `tools/ci-check.sh` and `tools/verify-rom.sh`
   stop a build that differs. Moving the pin takes either checking that the
   new slots still read what the old read-only part leaves, which a
   `rw-ok` line of `ro-interface.txt` with the new pin records (26.09-438,
   the pin from v1.3.10-rc12, behind the read-only part of v1.3.9 from
-  26.09-280), or a release that writes the read-only part as well, with
-  flashrom, as v1.3.9 does
+  26.09-280; 26.09-517, the pin of v1.6.0, behind the read-only part of
+  v1.5.0 from 26.09-438), or a release that writes the read-only part as
+  well, with flashrom, as v1.3.9 does
   ([The read-only part of v1.3.9](#the-read-only-part-of-v139)).
 - **No rollback protection for the slots.** vboot keeps its anti-rollback
   data in the TPM on Chromebooks; here it is mocked
@@ -251,6 +252,12 @@ it changes:
   (patch 0199): with mocked secdata vboot would ask for recovery mode,
   which these machines do not have. The log says *TPM setup failed ...
   booting without measurements*.
+- **The coreboot pin** of this read-only part is 26.09-438. From v1.6.0
+  the slots come from 26.09-517, checked to read what it leaves (`rw-ok`
+  in both files, with what was compared): vboot, the TPM log, the
+  commonlib structures and the x86 and CPU code are the same in the two
+  commits, and the console changes between them leave the code of these
+  boards as it was.
 - **New ESRT GUIDs**, for the same reason as v1.3.9: these slots and the
   older ones do not boot behind each other's read-only part. `update.py
   other-slot` also checks it from the code in the regions (the message of

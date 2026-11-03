@@ -91,7 +91,7 @@ index e525b72814..66c6f7c65a 100644
  
  romstage-$(CONFIG_DEBUG_RAM_SETUP) += info_dumps.c
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
-index 2ee883fd10..acb99371cd 100644
+index 1f814f20c4..922bf4d43c 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 @@ -133,6 +133,7 @@ static const struct task_entry cold_boot[] = {
@@ -110,9 +110,9 @@ index 2ee883fd10..acb99371cd 100644
 +			mighty_ctrl.no_latency_optimisation = true;
  		}
  		status = try_raminit(&mighty_ctrl, cold_boot, ARRAY_SIZE(cold_boot));
- 		if (status == RAMINIT_STATUS_SUCCESS)
+ 		if (status == NRI_STATUS_SUCCESS)
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index 4de4c434a2..1d45bb8fe2 100644
+index d18860abc6..3d6cd43ee5 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 @@ -386,6 +386,7 @@ struct sysinfo {
@@ -123,17 +123,17 @@ index 4de4c434a2..1d45bb8fe2 100644
  
  	long wait_time_us;
  
-@@ -639,6 +640,7 @@ enum raminit_status normal_state(struct sysinfo *ctrl);
- enum raminit_status activate_mc(struct sysinfo *ctrl);
- enum raminit_status ecc_scrub(struct sysinfo *ctrl);
- enum raminit_status memory_test(struct sysinfo *ctrl);
-+enum raminit_status optimise_round_trip(struct sysinfo *ctrl);
- enum raminit_status alias_check(struct sysinfo *ctrl);
- enum raminit_status raminit_done(struct sysinfo *ctrl);
+@@ -639,6 +640,7 @@ enum nri_status normal_state(struct sysinfo *ctrl);
+ enum nri_status activate_mc(struct sysinfo *ctrl);
+ enum nri_status ecc_scrub(struct sysinfo *ctrl);
+ enum nri_status memory_test(struct sysinfo *ctrl);
++enum nri_status optimise_round_trip(struct sysinfo *ctrl);
+ enum nri_status alias_check(struct sysinfo *ctrl);
+ enum nri_status raminit_done(struct sysinfo *ctrl);
  
 diff --git a/src/northbridge/intel/haswell/native_raminit/train_round_trip.c b/src/northbridge/intel/haswell/native_raminit/train_round_trip.c
 new file mode 100644
-index 0000000000..932b0311c2
+index 0000000000..669a2a8427
 --- /dev/null
 +++ b/src/northbridge/intel/haswell/native_raminit/train_round_trip.c
 @@ -0,0 +1,243 @@
@@ -271,14 +271,14 @@ index 0000000000..932b0311c2
 +	return failed;
 +}
 +
-+enum raminit_status optimise_round_trip(struct sysinfo *ctrl)
++enum nri_status optimise_round_trip(struct sysinfo *ctrl)
 +{
 +	if (!CONFIG(HASWELL_NRI_ROUND_TRIP))
-+		return RAMINIT_STATUS_SUCCESS;
++		return NRI_STATUS_SUCCESS;
 +
 +	if (ctrl->no_latency_optimisation) {
 +		printk(BIOS_INFO, "Round trip latency left as trained\n");
-+		return RAMINIT_STATUS_SUCCESS;
++		return NRI_STATUS_SUCCESS;
 +	}
 +
 +	uint8_t active = 0;
@@ -307,7 +307,7 @@ index 0000000000..932b0311c2
 +	if (failing) {
 +		printk(BIOS_WARNING, "RTL: read test fails as trained (0x%x), not optimising\n",
 +		       failing);
-+		return RAMINIT_STATUS_SUCCESS;
++		return NRI_STATUS_SUCCESS;
 +	}
 +
 +	uint8_t steps[NUM_CHANNELS] = { 0 };
@@ -378,7 +378,7 @@ index 0000000000..932b0311c2
 +		       ctrl->rt_latency[channel].rank[rank], ctrl->io_latency[channel][rank],
 +		       ctrl->rt_io_comp[channel]);
 +	}
-+	return RAMINIT_STATUS_SUCCESS;
++	return NRI_STATUS_SUCCESS;
 +}
 -- 
 2.43.0

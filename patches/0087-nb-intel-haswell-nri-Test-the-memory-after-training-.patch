@@ -73,7 +73,7 @@ index 87fba9f4ec..e525b72814 100644
  romstage-y += ranges.c
 diff --git a/src/northbridge/intel/haswell/native_raminit/memory_test.c b/src/northbridge/intel/haswell/native_raminit/memory_test.c
 new file mode 100644
-index 0000000000..3e845a216e
+index 0000000000..98557b9913
 --- /dev/null
 +++ b/src/northbridge/intel/haswell/native_raminit/memory_test.c
 @@ -0,0 +1,174 @@
@@ -94,7 +94,7 @@ index 0000000000..3e845a216e
 + * training values that it checked, and does not touch the memory contents.
 + */
 +
-+static enum raminit_status run_bank_test(struct sysinfo *ctrl, const uint8_t chanmask)
++static enum nri_status run_bank_test(struct sysinfo *ctrl, const uint8_t chanmask)
 +{
 +	mchbar_write32(REUT_GLOBAL_CTL, (union reut_seq_ctl_reg) {
 +		.start_test    = 1,
@@ -103,7 +103,7 @@ index 0000000000..3e845a216e
 +	}.raw);
 +	const uint8_t ch_error = wait_for_reut(ctrl, chanmask) & chanmask;
 +	if (!ch_error)
-+		return RAMINIT_STATUS_SUCCESS;
++		return NRI_STATUS_SUCCESS;
 +
 +	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
 +		if (!(ch_error & BIT(channel)))
@@ -113,17 +113,17 @@ index 0000000000..3e845a216e
 +		printk(BIOS_ERR, "Memory test: channel %u miscompare, lanes 0x%02x%08x%08x\n",
 +		       channel, errors.ecc, errors.upper, errors.lower);
 +	}
-+	return RAMINIT_STATUS_MEMTEST_FAILURE;
++	return NRI_STATUS_MEMTEST_FAILURE;
 +}
 +
-+enum raminit_status memory_test(struct sysinfo *ctrl)
++enum nri_status memory_test(struct sysinfo *ctrl)
 +{
 +	if (!CONFIG(HASWELL_NRI_MEMORY_TEST))
-+		return RAMINIT_STATUS_SUCCESS;
++		return NRI_STATUS_SUCCESS;
 +
 +	/* MRC skips the REUT-based checks for HSW A0, the subsequence bitfields differ */
 +	if (ctrl->stepping == STEPPING_A0)
-+		return RAMINIT_STATUS_SUCCESS;
++		return NRI_STATUS_SUCCESS;
 +
 +	printk(BIOS_INFO, "Testing the memory after training\n");
 +
@@ -185,7 +185,7 @@ index 0000000000..3e845a216e
 +			.inc_val = 1,
 +		},
 +	};
-+	enum raminit_status status = RAMINIT_STATUS_SUCCESS;
++	enum nri_status status = NRI_STATUS_SUCCESS;
 +	for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
 +		uint8_t chanmask = 0;
 +		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++)
@@ -252,7 +252,7 @@ index 0000000000..3e845a216e
 +	return status;
 +}
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
-index 8e29f4c4a9..2ee883fd10 100644
+index ca8fccab48..1f814f20c4 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 @@ -138,6 +138,7 @@ static const struct task_entry cold_boot[] = {
@@ -277,33 +277,33 @@ index 8e29f4c4a9..2ee883fd10 100644
 +			initialize_ctrl(&mighty_ctrl);
 +		}
 +		status = try_raminit(&mighty_ctrl, cold_boot, ARRAY_SIZE(cold_boot));
-+		if (status == RAMINIT_STATUS_SUCCESS)
++		if (status == NRI_STATUS_SUCCESS)
 +			return;
 +	}
  
--	if (status != RAMINIT_STATUS_SUCCESS)
+-	if (status != NRI_STATUS_SUCCESS)
 -		die("Memory initialization was met with utmost failure and misery\n");
 +	die("Memory initialization was met with utmost failure and misery\n");
  }
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index 19d57ec7f4..4de4c434a2 100644
+index cb5b19de32..d18860abc6 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-@@ -331,6 +331,7 @@ enum raminit_status {
- 	RAMINIT_STATUS_INVALID_CACHE,
- 	RAMINIT_STATUS_LCT_FAILURE,
- 	RAMINIT_STATUS_SCRUB_ERROR,
-+	RAMINIT_STATUS_MEMTEST_FAILURE,
- 	RAMINIT_STATUS_UNSPECIFIED_ERROR, /** TODO: Deprecated in favor of specific values **/
+@@ -331,6 +331,7 @@ enum nri_status {
+ 	NRI_STATUS_INVALID_CACHE,
+ 	NRI_STATUS_LCT_FAILURE,
+ 	NRI_STATUS_SCRUB_ERROR,
++	NRI_STATUS_MEMTEST_FAILURE,
+ 	NRI_STATUS_UNSPECIFIED_ERROR, /** TODO: Deprecated in favor of specific values **/
  };
  
-@@ -637,6 +638,7 @@ enum raminit_status exit_selfrefresh(struct sysinfo *ctrl);
- enum raminit_status normal_state(struct sysinfo *ctrl);
- enum raminit_status activate_mc(struct sysinfo *ctrl);
- enum raminit_status ecc_scrub(struct sysinfo *ctrl);
-+enum raminit_status memory_test(struct sysinfo *ctrl);
- enum raminit_status alias_check(struct sysinfo *ctrl);
- enum raminit_status raminit_done(struct sysinfo *ctrl);
+@@ -637,6 +638,7 @@ enum nri_status exit_selfrefresh(struct sysinfo *ctrl);
+ enum nri_status normal_state(struct sysinfo *ctrl);
+ enum nri_status activate_mc(struct sysinfo *ctrl);
+ enum nri_status ecc_scrub(struct sysinfo *ctrl);
++enum nri_status memory_test(struct sysinfo *ctrl);
+ enum nri_status alias_check(struct sysinfo *ctrl);
+ enum nri_status raminit_done(struct sysinfo *ctrl);
  
 -- 
 2.43.0

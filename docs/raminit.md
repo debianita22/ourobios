@@ -15,7 +15,7 @@ same machine.
 
 ## What runs
 
-At the coreboot pin of the releases (26.09-438; 26.09-280 up to v1.3.10-rc11), the NRI runs:
+At the coreboot pin of the releases (26.09-517 from v1.6.0; 26.09-438 up to v1.5.1, 26.09-280 up to v1.3.10-rc11), the NRI runs:
 
 - SPD, memory clock, timings, controller and memory map, JEDEC init;
 - sense amplifier offsets, receive enable, read MPR, write leveling;
@@ -245,7 +245,14 @@ firmware.
   receive enable training of Haswell from a round trip delta of 0 instead
   of 2, after a decompiled MemoryInit.efi. It was posted on 2026-10-30
   with no review yet, it also changes the ULT value, and on the W541 patch
-  0088 already ends at the 4 + 21 of `mrc.bin`. The NRI cleanups merged
-  after the pin (96645-96647) come with the next pin of coreboot, with
-  patches 0087, 0088 and 0185 rebased onto them
+  0088 already ends at the 4 + 21 of `mrc.bin`
   ([docs/roadmap.md](roadmap.md#upstream-changes-not-taken)).
+- The NRI changes of 26.09-517, the pin of v1.6.0 (96645-96647), change
+  nothing that the W541 programs: 96645 renames `raminit_status` to
+  `nri_status` (patches 0010, 0086-0088 and 0188 rebased onto it), 96646
+  fixes the receive clock stage count, which is set on ULT processors
+  only, and 96647 the static legs offset, which no step uses, its RdOdt
+  path writing the same registers as before. So the training saved by
+  v1.4.0-v1.5.1 stays valid (revision 3, no bump): after a vboot fallback
+  between a v1.5.x and a v1.6.0 slot either one boots on it (a capsule
+  empties `RW_MRC_CACHE` anyway).

@@ -39,6 +39,21 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   edk2-unit-test`, in `check.yml` and before the update test), and
   `tools/qemu-update.py` refuses a capsule naming `SMMSTORE` and one with
   the running slot alone, with nothing written.
+- coreboot `26.09-517-geab226a1c3f7`, 79 commits after the pin of v1.5.x
+  (26.09-438): the 213 patches rebased with the same changes, 22 of them
+  exported again (0010, 0086-0088 and 0188 with `nri_status`, the new
+  upstream name of the native RAM init's `raminit_status`; 0185 at
+  upstream's lines next to 96647; the others for their context). For these
+  boards it brings the consumer flag of the coreboot table device (`CTBL`
+  in coreboot's SSDT) in bit 0 of its `_CRS`, as ACPI 6.5 Table 6.48
+  defines it, no longer in reserved bit 4, and three changes of the native
+  RAM init that leave what the W541 programs as it was
+  ([docs/raminit.md](docs/raminit.md#limits)): the training saved by
+  v1.4.0-v1.5.1 stays valid. vboot, the TPM log, the commonlib structures
+  and the x86 and CPU code are the same in the two commits, so the slots
+  still run behind the read-only part of v1.5.0 (`rw-ok` in
+  `configs/ro-interface.txt` and `boards/m920x/ro-interface.txt`, with
+  what was compared): v1.6.0 installs from its capsule.
 - `docs/testing.md`: a conformance suite (CONF): the WSMT and its flags
   (`hw-report.py` CONF-01), the tables compiled again with `iasl -w3`,
   FWTS, chipsec with what each module must say on these boards (the

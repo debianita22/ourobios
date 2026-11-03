@@ -9,9 +9,10 @@ incorrectly assume that we should use 1:1 rank mapping.
 ouroBIOS backport of patch set 4 of
 https://review.coreboot.org/c/coreboot/+/96694 (Code-Review +2 and
 Verified +1, not merged on 2026-10-31), applied unchanged with git am
-(the hunks land 58 lines earlier than upstream's). Drop it when the
-base includes it; it touches change_margin.c as the merged 96647 does,
-so it needs a rebase at the next base bump.
+(the hunks landed 58 lines earlier than upstream's). On the base
+26.09-517-geab226a1c3f7, which has 96647, the rebase took it with a
+three-way merge, at upstream's lines, the change the same. Drop it
+when the base includes it.
 
 Why here: the 1D margin training (train_1d_margins.c) selects the rank
 under test as logical rank 0 with select_reut_ranks(ctrl, channel,
@@ -45,7 +46,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 7 insertions(+), 5 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/native_raminit/change_margin.c b/src/northbridge/intel/haswell/native_raminit/change_margin.c
-index 33af5d05c1..32ba48a4a4 100644
+index ebf99966ca..1126f4c6e9 100644
 --- a/src/northbridge/intel/haswell/native_raminit/change_margin.c
 +++ b/src/northbridge/intel/haswell/native_raminit/change_margin.c
 @@ -122,16 +122,15 @@ void download_regfile(
@@ -81,5 +82,5 @@ index 33af5d05c1..32ba48a4a4 100644
  		const uint32_t log_to_phys = mchbar_read32(REUT_ch_RANK_LOG_TO_PHYS(channel));
  		phys_rank = log_to_phys >> (reut_seq_base_addr.rank_addr * 4) & 0x3;
 -- 
-2.47.3
+2.43.0
 

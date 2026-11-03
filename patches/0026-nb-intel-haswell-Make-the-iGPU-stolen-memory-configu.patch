@@ -137,10 +137,10 @@ index 316ee2341c..35d2f8dbc6 100644
  #define  DMAR_LCKDN	(1 << 31)
  #define  SPCAPCTRL	(1 << 25)
 diff --git a/src/northbridge/intel/haswell/native_raminit/memory_map.c b/src/northbridge/intel/haswell/native_raminit/memory_map.c
-index e3aded2b37..af73b20e57 100644
+index 5de6cca8c0..14aa988d3a 100644
 --- a/src/northbridge/intel/haswell/native_raminit/memory_map.c
 +++ b/src/northbridge/intel/haswell/native_raminit/memory_map.c
-@@ -169,11 +169,11 @@ enum raminit_status configure_memory_map(struct sysinfo *ctrl)
+@@ -169,11 +169,11 @@ enum nri_status configure_memory_map(struct sysinfo *ctrl)
  		.tseg_size      = CONFIG_SMM_TSEG_SIZE >> 20,
  		.me_stolen_size = intel_early_me_uma_size(),
  	};

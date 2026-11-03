@@ -25,7 +25,7 @@ PNLF under macOS as before.
  4 files changed, 28 insertions(+), 35 deletions(-)
 
 diff --git a/src/drivers/intel/gma/acpi/gma.asl b/src/drivers/intel/gma/acpi/gma.asl
-index 7f2734d2..90b27a5f 100644
+index 7f2734d291..90b27a5ff4 100644
 --- a/src/drivers/intel/gma/acpi/gma.asl
 +++ b/src/drivers/intel/gma/acpi/gma.asl
 @@ -73,17 +73,16 @@ Scope (GFX0)
@@ -56,7 +56,7 @@ index 7f2734d2..90b27a5f 100644
  
  	Method (BCLM, 0, Serialized)
 diff --git a/src/ec/lenovo/h8/acpi/lid.asl b/src/ec/lenovo/h8/acpi/lid.asl
-index eafd2c08..04786fea 100644
+index eafd2c08b7..04786fea3d 100644
 --- a/src/ec/lenovo/h8/acpi/lid.asl
 +++ b/src/ec/lenovo/h8/acpi/lid.asl
 @@ -51,11 +51,9 @@ Device(LID)
@@ -74,7 +74,7 @@ index eafd2c08..04786fea 100644
  		}
  	}
 diff --git a/src/ec/lenovo/h8/acpi/sleepbutton.asl b/src/ec/lenovo/h8/acpi/sleepbutton.asl
-index eb34a1b3..e17caefe 100644
+index eb34a1b3d3..e17caefe4c 100644
 --- a/src/ec/lenovo/h8/acpi/sleepbutton.asl
 +++ b/src/ec/lenovo/h8/acpi/sleepbutton.asl
 @@ -31,12 +31,10 @@ Device(SLPB)
@@ -93,7 +93,7 @@ index eb34a1b3..e17caefe 100644
  			WKFN = 0
  		}
 diff --git a/src/mainboard/lenovo/haswell/acpi/pnlf.asl b/src/mainboard/lenovo/haswell/acpi/pnlf.asl
-index eca95e05..efe98a19 100644
+index eca95e051c..efe98a1914 100644
 --- a/src/mainboard/lenovo/haswell/acpi/pnlf.asl
 +++ b/src/mainboard/lenovo/haswell/acpi/pnlf.asl
 @@ -77,24 +77,22 @@ Scope (\_SB.PCI0.GFX0)

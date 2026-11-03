@@ -22,7 +22,7 @@ TEST=Not built. On a W541: the ports still route to xHCI at boot
  1 file changed, 5 insertions(+)
 
 diff --git a/src/southbridge/intel/lynxpoint/smihandler.c b/src/southbridge/intel/lynxpoint/smihandler.c
-index fb9ba87b..8e009844 100644
+index fb9ba87be3..8e009844e0 100644
 --- a/src/southbridge/intel/lynxpoint/smihandler.c
 +++ b/src/southbridge/intel/lynxpoint/smihandler.c
 @@ -368,6 +368,11 @@ static void southbridge_smi_apmc(void)

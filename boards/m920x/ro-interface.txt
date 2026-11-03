@@ -11,16 +11,25 @@
 # copia in cbmem. Lascia
 # il suo stato nella cache-as-RAM per la romstage dello slot (buffer di
 # lavoro di vboot, console prima della RAM, timestamp, cache di FMAP e CBFS):
-# gli slot devono trovarli agli stessi indirizzi. Finche' nessuna release del
-# M920x e' uscita, questo file segue il pin di coreboot; dopo, si cambia solo
-# con una release che riscrive anche la parte RO, o con una riga rw-ok
-# controllata a mano.
+# gli slot devono trovarli agli stessi indirizzi. Le release del M920x ci
+# sono dalla v1.4.0: si cambia solo con una release che riscrive anche la
+# parte RO, o con una riga rw-ok controllata a mano.
 #
 #   coreboot DESCRIBE           da cosa e' costruita la parte RO sulle macchine
 #   rw-ok DESCRIBE              un pin piu' nuovo i cui slot leggono ancora quello
 #                               che lascia quella parte RO
 #   VARIANTE SIMBOLO INDIRIZZO  una regione della cache-as-RAM (car.ld), come la scrive nm
 coreboot 26.09-438-g206078d6d990
+# 26.09-517 (v1.6.0), controllato a mano sulla parte RO 26.09-438 (v1.5.0):
+# tra i due commit 3rdparty/vboot (vb2_shared_data, nvdata), src/security/tpm
+# (il registro del TPM), src/commonlib, src/arch/x86 e src/cpu sono uguali;
+# src/security/vboot cambia solo in ec_sync.c (l'EC di Chrome, non
+# compilato), src/lib solo in render_bmp.c (BMP_LOGO, spento) e thread.c (un
+# messaggio). include/console/uart.h e console/Makefile.mk cambiano per
+# BOOTBLOCK_CONSOLE e POSTCAR_CONSOLE: sul W541 la console seriale non c'e',
+# sul M920x le due opzioni sono accese e il codice resta quello di prima. Gli
+# indirizzi li controlla tools/verify-rom.sh su ogni build.
+rw-ok 26.09-517-geab226a1c3f7
 fsp _car_region_start fef00000
 fsp _vboot2_work fef00000
 fsp _tpm_log fef03000

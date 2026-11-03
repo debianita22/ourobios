@@ -50,7 +50,7 @@ index a4fec10ee7..2b12027c00 100644
  
  	struct i915_gpu_controller_info gfx;
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
-index 8fbc7af462..8e29f4c4a9 100644
+index 0672cee61e..ca8fccab48 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 @@ -187,7 +187,8 @@ static void initialize_ctrl(struct sysinfo *ctrl)
@@ -64,7 +64,7 @@ index 8fbc7af462..8e29f4c4a9 100644
  	ctrl->restore_mrs = false;
  	ctrl->bootmode = bootmode;
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index f986a7d660..19d57ec7f4 100644
+index 2d2d4febd2..cb5b19de32 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 @@ -438,6 +438,7 @@ struct sysinfo {
@@ -76,10 +76,10 @@ index f986a7d660..19d57ec7f4 100644
  	union ddr_scram_misc_control_reg misc_control_0;
  
 diff --git a/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c b/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
-index d9319d20b1..a481ad80ad 100644
+index a49e0fb8be..817309551e 100644
 --- a/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
 +++ b/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
-@@ -193,6 +193,22 @@ static enum raminit_status find_common_spd_parameters(struct sysinfo *ctrl)
+@@ -193,6 +193,22 @@ static enum nri_status find_common_spd_parameters(struct sysinfo *ctrl)
  	/** TODO: Complete LPDDR support **/
  	ctrl->lpddr = false;
  
@@ -99,7 +99,7 @@ index d9319d20b1..a481ad80ad 100644
 +	printk(BIOS_INFO, "DRAM voltage: %u mV (%s)\n", ctrl->vdd_mv,
 +	       ctrl->vdd_mv_cfg ? "devicetree" : "SPD");
 +
- 	return RAMINIT_STATUS_SUCCESS;
+ 	return NRI_STATUS_SUCCESS;
  }
  
 -- 

@@ -30,7 +30,7 @@ ouroBIOS: EDK2_USE_LVGL_RENDERER=y as with EDK2_REPO_MRCHROMEBOX, and
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/payloads/external/edk2/Kconfig b/payloads/external/edk2/Kconfig
-index ebcac778..a2ac9f5c 100644
+index ebcac77850..a2ac9f5cb7 100644
 --- a/payloads/external/edk2/Kconfig
 +++ b/payloads/external/edk2/Kconfig
 @@ -300,7 +300,7 @@ config EDK2_SECURE_BOOT_SUPPORT

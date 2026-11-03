@@ -34,7 +34,7 @@ built from OuroBiosPkg outside the tree.
  3 files changed, 37 insertions(+), 1 deletion(-)
 
 diff --git a/payloads/external/Makefile.mk b/payloads/external/Makefile.mk
-index 2ad8a9d6..7cfa0990 100644
+index 2ad8a9d679..7cfa099086 100644
 --- a/payloads/external/Makefile.mk
 +++ b/payloads/external/Makefile.mk
 @@ -191,6 +191,8 @@ EDK2_CAPSULE_ARGS = \
@@ -56,7 +56,7 @@ index 2ad8a9d6..7cfa0990 100644
  	CONFIG_EDK2_RELEASE=$(CONFIG_EDK2_RELEASE) \
  	CONFIG_EDK2_BOOTSPLASH_FILE=$(CONFIG_EDK2_BOOTSPLASH_FILE) \
 diff --git a/payloads/external/edk2/Kconfig b/payloads/external/edk2/Kconfig
-index acb29c5b..ebcac778 100644
+index acb29c5b37..ebcac77850 100644
 --- a/payloads/external/edk2/Kconfig
 +++ b/payloads/external/edk2/Kconfig
 @@ -114,6 +114,26 @@ config EDK2_PLATFORMS_TAG_OR_REV
@@ -87,7 +87,7 @@ index acb29c5b..ebcac778 100644
  	prompt "edk2 build"
  	default EDK2_RELEASE
 diff --git a/payloads/external/edk2/Makefile b/payloads/external/edk2/Makefile
-index 56951811..72ec4ee2 100644
+index 5695181144..72ec4ee2df 100644
 --- a/payloads/external/edk2/Makefile
 +++ b/payloads/external/edk2/Makefile
 @@ -34,11 +34,23 @@ else
