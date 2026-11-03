@@ -235,7 +235,7 @@ test.
 | `4a4c3a1` | MdeModulePkg: Improve boot descriptions and skip duplicate eMMC | carry |  | `tianocore/0009` |
 | `4373c47` | ShellPkg: disable startup script, mapping print; show welcome banner | package | the 5 s of the Shell for `startup.nsh`: `PcdShellDefaultDelay` 0 in the package's .dsc ([step (a)](#step-a-edk2-stable202608-in-qemu)); the mapping and the banner are cosmetic | `tianocore/0012` |
 | `6676ad7` | UefiPayloadPkg/MdeModulePkg: Platform setup and boot defaults | package | PCD defaults of the package's .dsc | `tianocore/0016`, package |
-| `0ec988f` | UefiPayloadPkg: Add network and PXE boot support | drop | the UEFI network stack: the boards boot from the network with iPXE's own driver | package, binaries left out |
+| `0ec988f` | UefiPayloadPkg: Add network and PXE boot support | drop | the UEFI network stack: the boards boot from the network with iPXE's own driver, so NetworkPkg's PXE driver is not in the payload (not exposed to CVE-2026-97631, fixed on TianoCore's master by `560ed9b` on 2026-10-15, after `edk2-stable202608`) | package, binaries left out |
 | `9c5e2da` | PlatformBootManagerLib: Refactor BdsGetShellFvDevicePath | package |  | package |
 | `b581d3b` | UefiPayloadPkg: Add iPXE network boot option support | package | the iPXE entry of the firmware volume | `tianocore/0031`, package |
 | `6c14abf` | MdeModulePkg: Add Auto Boot Fall-Through option | carry | the setting next to *Auto Boot Time-out* (v1.4.1) | `tianocore/0079` |
