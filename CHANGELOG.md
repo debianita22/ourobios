@@ -138,7 +138,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   everywhere. IDLE-01 is INFO, to be run again, not a FAIL, when a
   process uses more than 5% of a core or an internal panel stays on below
   the pass limit (the PC6 of about 90% of the W541 is with the screen
-  off), and says how to measure with the screen off under Hyprland.
+  off), and points to `docs/testing.md` for the screen off; with its 3K
+  panel on, the W541 stays in PC2, which IDLE-01 now calls known rather
+  than asking for the measurement again. CPU-01 names the TCC option.
 - The move to upstream TianoCore EDK II starts in CI:
   `tools/build.sh edk2-upstream` builds `edk2-stable202608` as it is
   into two q35 images with this tree's coreboot, one with

@@ -757,6 +757,10 @@ sudo python3 tools/pm-regs.py > pm-regs.txt
 ```
 
 Things that keep the power up on the W541:
+- The 3K panel itself: with the screen on, the package stays in PC2, as
+  the screen reads the whole image at every refresh (about 1 GB/s,
+  above); PC6 and deeper only with the screen off, which is how IDLE-01
+  of [docs/testing.md](testing.md) measures it.
 - The NVIDIA GPU, with *NVIDIA discrete GPU* on, draws power whenever it
   is powered. Linux turns it off (`D3cold` in the report) when no driver
   uses it, or with nouveau, as long as `power/control` is `auto` for the

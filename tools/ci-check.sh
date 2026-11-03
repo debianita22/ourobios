@@ -393,6 +393,10 @@ assert hw.idle_verdict(0.0, 8.3, [(22.8, "Isolated Web Co"), (15.3, "firefox"), 
 assert hw.idle_verdict(0.0, 12.0, [], [])[1].startswith("macchina non a riposo (core occupati 12%)")
 assert hw.idle_verdict(5.0, 2.0, [(4.0, "Hyprland")], ["eDP-1"]) \
     == ("INFO", "pannello acceso (eDP-1): PC6+ 5.0%, ripetere a schermo spento")
+assert hw.idle_verdict(0.0, 0.6, [(1.1, "nordvpnd")], ["eDP-1 2880x1620"], "w541") \
+    == ("INFO", "pannello 3K acceso (eDP-1 2880x1620): il W541 resta in PC2 (noto), PC6+ 0.0%; "
+                "la soglia vale a schermo spento")
+assert hw.idle_verdict(0.0, 0.6, [], ["eDP-1 1920x1080"], "w541")[1].endswith("ripetere a schermo spento")
 assert hw.idle_verdict(60.0, 2.0, [], ["eDP-1"]) == ("PASS", None)
 rep = hw.Report()
 hw.check_boot_time(firmware("m920x", valid + ["[INFO ]  DRAM clear: option always: clearing"], ts(230000)), rep)

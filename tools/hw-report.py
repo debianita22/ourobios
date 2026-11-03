@@ -91,6 +91,8 @@ IDLE_BUSY_MAX = 10.0
 # Un processo che da solo usa piu' di questa parte di un core (in %): la
 # macchina non e' a riposo (un browser con una pagina animata, un video)
 IDLE_PROC_MAX = 5.0
+# Il modo nativo del pannello 3K del W541: acceso, il package resta in PC2
+W541_3K = "2880x1620"
 # Temperatura del package: oltre WARN, oltre FAIL (TjMax 100 gradi su entrambe)
 TEMP_LIMITS = (80.0, 95.0)
 
@@ -856,15 +858,15 @@ def check_cpu(fw, rep, msr):
         details.append("rapporto base %d (%d MHz), turbo a 1 core %s, TjMax %s" % (
             (pi >> 8) & 0xFF, ((pi >> 8) & 0xFF) * 100, "%d" % (tr & 0xFF) if tr else "?",
             "%d C" % ((tt >> 16) & 0xFF) if tt is not None else "?"))
-        # solo informativo: sul W541 dice se un'opzione per l'offset avrebbe senso
+        # solo informativo: l'offset che vale (sul W541 lo scrive l'opzione del setup, dalla v1.6.0)
         bits, mask = ("29:24", 0x3F) if fw.board == "m920x" else ("27:24", 0xF)
         tcc = {"tcc_programmable": bool(pi & PLATFORM_INFO_PROG_TCC),
                "tcc_offset": (tt >> 24) & mask if tt is not None else None}
         offset = "?" if tcc["tcc_offset"] is None else "%d" % tcc["tcc_offset"]
         details.append("offset TCC programmabile: %s (PLATFORM_INFO bit 30), offset attuale %s (MSR 0x1A2 bit %s)%s"
                        % ("si'" if tcc["tcc_programmable"] else "no", offset, bits,
-                          "; sul W541 nessuna opzione nel setup, il dato serve a decidere" if fw.board == "w541"
-                          else ""))
+                          "; sul W541 l'opzione e' Energy Saver > Thermal > TCC activation offset (dalla v1.6.0)"
+                          if fw.board == "w541" else ""))
     ec = fw.grep(r"EC: platform (\S+ \S+ \S+) \(PL1 (\d+) W\)") if fw.log is not None else []
     if ec:
         details.append("EC: platform %s, classe della CPU %s W" % (ec[-1].group(1), ec[-1].group(2)))
@@ -896,18 +898,24 @@ def package_temp(hw):
 
 
 def panels_on():
-    """I pannelli interni (eDP, LVDS) che il driver grafico tiene accesi."""
+    """I pannelli interni (eDP, LVDS) che il driver grafico tiene accesi, con il
+    modo nativo se c'e' (la prima riga di modes, il modo preferito del
+    pannello): "eDP-1 2880x1620"."""
     on = []
     for d in sorted(glob.glob("/sys/class/drm/card*-eDP-*") + glob.glob("/sys/class/drm/card*-LVDS-*")):
         if rd(os.path.join(d, "enabled"), "") == "enabled" and rd(os.path.join(d, "dpms"), "") == "On":
-            on.append(os.path.basename(d).split("-", 1)[1])
+            mode = rd(os.path.join(d, "modes"), "").split("\n", 1)[0].strip()
+            on.append(" ".join(filter(None, (os.path.basename(d).split("-", 1)[1], mode))))
     return on
 
 
-def idle_verdict(deep, avg_busy, procs, panels):
+def idle_verdict(deep, avg_busy, procs, panels, board=None):
     """Esito di IDLE-01: (stato, testo). Una misura fuori dalle condizioni del
     test (core occupati, un processo attivo, il pannello acceso sotto la
-    soglia: docs/testing.md la da' a schermo spento) e' INFO, da ripetere."""
+    soglia: docs/testing.md la da' a schermo spento) e' INFO. Il W541 con il
+    pannello 3K (W541_3K) acceso resta in PC2: lo schermo legge tutta
+    l'immagine a ogni refresh (docs/flashing.md, Power at idle), e la misura
+    non dice altro."""
     loud = [(c, n) for c, n in procs or () if c >= IDLE_PROC_MAX]
     if avg_busy > IDLE_BUSY_MAX:
         why = "core occupati %.0f%%" % avg_busy
@@ -919,6 +927,9 @@ def idle_verdict(deep, avg_busy, procs, panels):
         return "INFO", "macchina non a riposo (%s): PC6+ %.1f%%, ripetere a riposo" % (why, deep)
     status = "PASS" if deep >= IDLE_DEEP_LIMITS[0] else "WARN" if deep >= IDLE_DEEP_LIMITS[1] else "FAIL"
     if status != "PASS" and panels:
+        if board == "w541" and any(p.endswith(" " + W541_3K) for p in panels):
+            return "INFO", ("pannello 3K acceso (%s): il W541 resta in PC2 (noto), PC6+ %.1f%%; "
+                            "la soglia vale a schermo spento" % (", ".join(panels), deep))
         return "INFO", "pannello acceso (%s): PC6+ %.1f%%, ripetere a schermo spento" % (", ".join(panels), deep)
     return status, None
 
@@ -950,11 +961,9 @@ def check_idle(fw, rep, msr, seconds):
         return res
     panels = panels_on()
     if panels:
-        details.append("pannello acceso durante la misura: %s (a schermo spento: docs/testing.md, IDLE-01; "
-                       "con Hyprland hyprctl dispatch dpms off, con la sua configurazione in Lua "
-                       "hyprctl dispatch 'hl.dsp.dpms({ action = \"off\" })', con KDE Plasma "
-                       "kscreen-doctor --dpms off)" % ", ".join(panels))
-    status, summary = idle_verdict(deep, avg_busy, res.get("procs"), panels)
+        details.append("pannello acceso durante la misura: %s (a schermo spento: docs/testing.md, IDLE-01)"
+                       % ", ".join(panels))
+    status, summary = idle_verdict(deep, avg_busy, res.get("procs"), panels, fw.board)
     if summary is None:
         top = max(pkg.items(), key=lambda x: x[1])
         summary = "PC6 e oltre %.1f%% (soglie %.0f/%.0f%%), il piu' frequente %s %.1f%%" % (
