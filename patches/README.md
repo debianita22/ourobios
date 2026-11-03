@@ -4,6 +4,12 @@
 order, to coreboot at the commit pinned in `tools/build.sh`
 (`COREBOOT_COMMIT`). Every file is a `git format-patch` mail; they are written
 for upstream review (one change each, with the reasoning in the message).
+`tools/coreboot-lint.sh`, in `check.yml`, holds them to coreboot's style as
+Gerrit does: `util/lint/lint lint-stable` on the tree with the series, and
+`checkpatch.pl` with the tree's `.checkpatch.conf` on every patch of the
+project's author; an `ERROR` stops it but *Missing Signed-off-by*, which the
+author adds when a patch goes upstream, and the ones already listed in
+`checkpatch-known.txt`.
 
 | Patches | What |
 |---|---|

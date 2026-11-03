@@ -1,0 +1,9 @@
+# Gli ERROR di checkpatch.pl che la serie ha gia' (tools/coreboot-lint.sh, in
+# check.yml): "<file della patch> <TIPO>", per ogni tipo di quella patch. Una
+# riga esce quando la patch si corregge.
+#
+# Spazi nel codice del raminit nativo (romstage): toccarli e' RISCHIO BRICK
+# anche se il codice compilato non cambia, e si correggono con la prossima
+# modifica di quelle patch, provata sul W541.
+0087-nb-intel-haswell-nri-Test-the-memory-after-training-.patch SPACING
+0088-nb-intel-haswell-nri-Shorten-the-read-round-trip-aft.patch SPACING

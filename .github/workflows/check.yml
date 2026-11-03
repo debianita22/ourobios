@@ -8,7 +8,9 @@
 #             variante di ogni board (boards/*/board.sh): ogni riga dei
 #             defconfig deve restare (Kconfig la lascia cadere senza errori
 #             se mancano le dipendenze); le prove unitarie del payload
-#             sull'host (tools/build.sh edk2-unit-test)
+#             sull'host (tools/build.sh edk2-unit-test); lo stile di
+#             coreboot sulla serie (tools/coreboot-lint.sh: lint-stable e
+#             checkpatch.pl)
 name: Check
 
 on:
@@ -63,6 +65,11 @@ jobs:
 
       - name: Prove unitarie del payload
         run: ./tools/build.sh --toolchain host edk2-unit-test
+
+      # come Jenkins su Gerrit: lint-stable sull'albero con la serie,
+      # checkpatch.pl sulle patch del progetto
+      - name: Lint di coreboot sulla serie
+        run: ./tools/coreboot-lint.sh work/coreboot
 
       # la bozza per una nuova parte RO (patches/ro-next) non e' in nessuna
       # serie: un avviso, non un errore, se non applica piu' sopra la serie
