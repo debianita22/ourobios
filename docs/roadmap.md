@@ -666,14 +666,37 @@ answers "Darwin" only, unless an OpenCore configuration renames `_OSI`.
 
 ## The DPLL of i915 at boot on the M920x
 
-With a monitor on HDMI, i915 reports `*ERROR* DPLL 1 not locked` at some
-boots of the M920x (BOOT-04 of `hw-report.py`, now a known message): 2
-of the 6 boots of the v1.6.0 candidate, 1 of 3 on two earlier builds,
-none in the two v1.5.0 boots looked at, so not a change of v1.6.0 nor of
-VT-d. The display works all the same. The firmware brings the display
-up (FSP-S with the VBT, the payload's GOP) and i915 takes it over with
-the pipe and the PLL as the firmware left them: whether the PLL the
-firmware programs is one i915 then expects to see locked, or the
-takeover races the PLL, is to be read from the register dumps of both
-boots (the one with the error and one without), and is not needed for
-the release.
+With a monitor on HDMI, i915 reports `*ERROR* DPLL 1 not locked` at
+about one boot in three of the M920x (BOOT-04 of `hw-report.py`, a known
+message). The display works all the same. Measured on the machine of the
+port (Linux 7.0, 1360x768 on HDMI-A-2, 2026-11-03):
+
+- The error is i915's own PLL enable, not the firmware's: `skl_ddi_pll_enable()`
+  waits 5 ms for the lock bit of DPLL 1 (libgfxinit waits 10 ms and never
+  sees it fail at 84.75 MHz). At boot i915 always re-enables the PLL,
+  since the state it inherits cannot be kept (it wants 12 bits per
+  colour, port clock 127.125 MHz and a GCP infoframe; libgfxinit runs 8
+  bits, 84.75 MHz, no infoframes), and it re-enables it at every
+  blank/unblank of the output too, long after the firmware is gone.
+- The failure follows the activity of the system, not the firmware's
+  state: with the output switched off and on from fbcon, 0 to 4 failures
+  in 30 at idle, 7 to 20 in 30 with all four cores busy (the same at 800
+  MHz and with turbo off), 30 in 30 with a process reading the display
+  registers 20000 times a second. At 8 bits per colour none in 120. At
+  boot the system is busy, hence the rate. Not SAGV, not the DC states of
+  the DMC (the same with `enable_sagv=0` and `enable_dc=0`), not the
+  state i915 inherits (the same before and after a modeset asked from
+  userspace), not the change of PLL dividers. When it does lock in time
+  it locks within 1 ms; when it does not, the lock bit came 100 to 700
+  ms later in the two cases caught by a register poll.
+- The same error was logged once under MrChromebox's firmware on this
+  machine, and Intel's own CI saw it on Coffee Lake in 2018
+  (freedesktop bug 107345: gen9 inherited Broadwell's 5 ms, the spec
+  gives no value), where a longer timeout was proposed and not merged.
+
+Nothing in the firmware changes it: the PLL i915 enables is its own
+choice from the monitor's EDID, and a handoff i915 could keep (a
+fastset) would take deep colour and infoframes from libgfxinit, for a
+message that costs nothing. What would fix it is i915 (a longer wait, or
+a retry of the enable), to be reported upstream with these numbers;
+`tools/hw-report.py` keeps it as a known message meanwhile.
