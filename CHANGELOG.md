@@ -148,11 +148,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   PciHostBridgeLib with `tianocore/0024`): a memory BAR of bus 0 whose
   addition would make the aperture cover reserved memory stays out of it,
   and from v1.6.0 the ECAM window is reserved (`edk2/0052`), so that a BAR
-  on its other side from the first one scanned stays out. FAIL when that
-  is a USB, SATA, NVMe or SD controller, which the payload's drivers reach
-  only through the aperture; INFO for the other devices, the graphics
-  among them, as the payload's GOP draws into coreboot's framebuffer
-  without the aperture.
+  on its other side from the first one scanned would stay out. coreboot
+  keeps every 32-bit BAR of both boards below the ECAM window
+  (`DOMAIN_RESOURCE_32BIT_LIMIT`), so nothing is left out: PCI-09 watches
+  that it stays so. FAIL when a USB, SATA, NVMe or SD controller is left
+  out, which the payload's drivers reach only through the aperture; INFO
+  for the other devices, the graphics among them, as the payload's GOP
+  draws into coreboot's framebuffer without the aperture.
 - The move to upstream TianoCore EDK II starts in CI:
   `tools/build.sh edk2-upstream` builds `edk2-stable202608` as it is
   into two q35 images with this tree's coreboot, one with

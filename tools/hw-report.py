@@ -1131,7 +1131,9 @@ def payload_aperture(funcs, reserved):
     senza controlli; una BAR di memoria solo se il tratto che aggiunge, fino
     all'apertura di prima, non tocca memoria riservata
     (PcatPciRootBridgeWarnAboutBrokenFW): dalla v1.6.0 (edk2/0052) l'ECAM lo
-    e'. Torna (mem, mem4g, fuori): le due aperture [base, limite] (base
+    e'. Su queste board non succede: coreboot mette ogni BAR a 32 bit sotto
+    l'ECAM (DOMAIN_RESOURCE_32BIT_LIMIT); il controllo guarda che resti
+    cosi'. Torna (mem, mem4g, fuori): le due aperture [base, limite] (base
     2**64 - 1 se vuota) e le BAR lasciate fuori, (bdf, indice, base, limite,
     l'intervallo riservato)."""
     ap = {"mem": [(1 << 64) - 1, 0], "mem4g": [(1 << 64) - 1, 0]}

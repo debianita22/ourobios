@@ -44,8 +44,8 @@ since steps (b) and (c), made by `tools/edk2-import.py`: the patch of
 | Secure Boot, TPM and crypto | 9 | 1 | 1 | 0 | 0 | 11 |
 | Memory protection | 1 | 6 | 0 | 2 | 0 | 9 |
 | Drivers for storage, USB, graphics and the console | 2 | 3 | 6 | 10 | 1 | 22 |
-| Platform plumbing for coreboot | 4 | 5 | 5 | 1 | 1 | 16 |
-| **all** | 40 | 26 | 17 | 15 | 2 | 100 |
+| Platform plumbing for coreboot | 4 | 4 | 5 | 2 | 1 | 16 |
+| **all** | 40 | 25 | 17 | 16 | 2 | 100 |
 
 ## Step (a): `edk2-stable202608` in QEMU
 
@@ -333,7 +333,7 @@ with the stable tag that takes the new OpenSSL.
 | `7f7b9c7` | UefiPayloadPkg: drop Platform override config | package |  | package |
 | `9701a6f` | MdeModulePkg/FaultTolerantWrite: Don't check for block alignment | carry | SMMSTORE blocks; in [step (a)](#step-a-edk2-stable202608-in-qemu) FTW sets up its work space on the 512 KiB SMMSTORE without it, a fault tolerant write (a reclaim of the store) is still to be seen | `tianocore/0017` |
 | `2deb904` | UefiPayloadPkg: Check more ACPI tables | carry |  | `tianocore/0020` |
-| `0a270f8` | UefiPayloadPkg/Library/PciHostBridgeLib: Add warning for coreboot/EDK2 incompability | carry | not only a warning: when the root bridge aperture would grow over reserved memory to take a memory BAR of bus 0, the BAR stays out of it, and the payload's drivers then cannot reach that device; from v1.6.0 the ECAM window is reserved memory (`edk2/0052`), so that a BAR on its other side from the first one scanned stays out (bridge windows grow the aperture unchecked). `tools/hw-report.py` PCI-09 replays the scan on the machine; to be decided once both boards have run it | `tianocore/0024` |
+| `0a270f8` | UefiPayloadPkg/Library/PciHostBridgeLib: Add warning for coreboot/EDK2 incompability | drop | not only a warning: when the root bridge aperture would grow over reserved memory to take a memory BAR of bus 0, the BAR stays out of it, and the payload's drivers then cannot reach that device. From v1.6.0 the ECAM window is reserved memory (`edk2/0052`), but coreboot keeps every 32-bit BAR of both boards below it (`DOMAIN_RESOURCE_32BIT_LIMIT` is the ECAM base, 0xf0000000, on Haswell, and 0xe0000000, where the ECAM of the system agent starts, on Cannon Lake), so the check never leaves one out here; `tools/hw-report.py` PCI-09 replays it on the machine. Dropping it changes the payload's code, with no effect on these boards | `tianocore/0024` |
 | `4b57ca5` | UefiPayloadPkg: Set PcdCpuFeaturesInitOnS3Resume to FALSE for coreboot | package | a PCD of the .dsc | package |
 | `252f6d2` | UefiPayloadPkg: Extend SmmStoreLib for 64-bit MMIO store | upstream | SmmStoreLib | `tianocore/0028` |
 | `1c39058` | UefiPayloadPkg/Library/CbParseLib: Populate root bridges info from HOB | upstream | CbParseLib | `tianocore/0035` |
