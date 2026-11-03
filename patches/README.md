@@ -218,8 +218,8 @@ a clean tree to the pinned commit but leaves a modified one alone.
 `EDK2_UPSTREAM_TAG` (`tools/build.sh`), for the payload of
 [`edk2/OuroBiosPkg`](../edk2/README.md): steps (b) and (c) of the move to
 TianoCore ([docs/edk2-migration.md](../docs/edk2-migration.md#steps-b-and-c-the-package-and-the-carried-patches)).
-`tools/edk2-import.py` makes it from MrChromebox's tree at the commit of
-the defconfigs, with the package, and checks that the tag with the series
+`tools/edk2-import.py` makes it from MrChromebox's tree at
+`EDK2_MRCHROMEBOX_COMMIT`, with the package, and checks that the tag with the series
 is that tree with `patches/edk2` in every file outside the package and
 its platform. Each patch says where it comes from in the first lines of
 its message:
@@ -312,9 +312,10 @@ it calls for goes into a commit of its own (0186 for 0185), so that the
 backport stays as upstream has it. It keeps the upstream subject, so
 `upstream.yml` reports it when it is merged.
 
-The same for EDK2 (a tree at `CONFIG_EDK2_TAG_OR_REV`) and for its LvglPkg
-submodule (at the commit EDK2 pins), into `edk2/` and `lvglpkg/`, each with
-its own `series`. Leave out `MdeModulePkg/Logo/Logo.bmp`, which the payload
+The same for MrChromebox's EDK2 (a tree at `EDK2_MRCHROMEBOX_COMMIT` of
+`tools/build.sh`) and for its LvglPkg (at `LVGLPKG_COMMIT`), into `edk2/`
+and `lvglpkg/`, each with its own `series`; `tools/edk2-import.py` then
+makes the package and `tianocore/` from them again. Leave out `MdeModulePkg/Logo/Logo.bmp`, which the payload
 build overwrites with the boot splash.
 
 Then `tools/build.sh prepare config` checks that the series apply and that
