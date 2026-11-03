@@ -14,7 +14,7 @@ is here. None of it is a promise of a date.
 | [Firmware update mode](#firmware-update-mode) | both | capsules need none of it; touches the lockdown code of both boards | the attribute check in coreboot, a test of the Secure Boot one-shot |
 | [DMA protection](#dma-protection) | M920x | no pre-boot DMA protection to report; the FSP-M has no PMR data | reword the help of *Intel VT-d*; find the slot of the Thunderbolt card |
 | [Capsule regions in the payload](#capsule-regions-in-the-payload) | both | done in v1.6.0 (`edk2/0045`): the payload writes only the two slots and `RW_MRC_CACHE`, and on a flash with both slots only an update of one slot at a time | a new region in `PcdFmpDeviceSmmAllowedRegions` one release before any capsule that writes it |
-| [Variable store robustness](#variable-store-robustness) | both | the store has not been seen damaged; the fallbacks are safe | coreboot's reader stopping where EDK2's does |
+| [Variable store robustness](#variable-store-robustness) | both | looked at for v1.6.0: coreboot's all-or-nothing reader is upstream's choice, and the corner case of the reset is not one | none planned |
 | [Top Swap and the Protected Range test](#top-swap-and-the-protected-range-test) | M920x | the read-only part is never written by an update | FLASH-04 with the protection on; a map with room for a second bootblock |
 | [Settings reset on the W541](#settings-reset-on-the-w541) | W541 | built in v1.4.0 (patch 0180), off: the shared deletion is untested, and the OS may be able to set the RTC power loss bit | OPT-05 on the M920x, the bit checked on the W541, then OPT-05 there |
 | [Memory training across updates on the W541](#memory-training-across-updates-on-the-w541) | W541 | safe for `mrc`, not for `nri`, whose cache version is a number bumped by hand | a variant tag and a key from the code, `mrc` first |
@@ -173,13 +173,25 @@ The ME option is read with a fallback that sends no command, so this
 causes no reset loop. The settings reset of v1.4.0 refuses such a store and
 writes nothing.
 
-- **Why later**: no damaged store has been seen, and every fallback is
-  safe.
-- **Next step**: coreboot's `walk_variables()` stopping at the first
-  record without the `0x55AA` start, as EDK2's loop does, and returning the
-  matches before it, so that both read the same options after a cut write.
-  And a corner case of the v1.4.0 reset: a fault tolerant write block erased
-  in the middle of its own reclaim counts as no write pending.
+- **Looked at for v1.6.0, nothing to change**:
+  - coreboot's reader stopping at the first record without the `0x55AA`
+    start, as EDK2's loop does, would undo a choice of upstream: since
+    e25e29977f (review 95132) and fae8549751 (95583), in the pin of
+    v1.6.0, `walk_variables()` validates the whole store before it returns
+    a value and wants the unused bytes erased, and
+    `tests/drivers/efivars.c` checks it (`efi_test_validate_tail_after_match`).
+    After a cut write the two disagree for one boot, coreboot on the
+    defaults, until the payload's reclaim at its start; the defaults are
+    safe, so it stays as upstream has it.
+  - The corner case of the v1.4.0 reset, a fault tolerant write working
+    block erased in the middle of its own reclaim, which
+    `ftw_write_pending()` counts as no write pending (patch 0175), is
+    right: FaultTolerantWriteDxe then finds a valid work space in the
+    spare block, writes it back to the working block and aborts the last
+    write (`InitFtwProtocol()` in `FtwMisc.c`, which the payload does not
+    patch there), so no copy of the variable store is written back over
+    what the reset deleted.
+- **Next step**: none planned, unless upstream's reader changes.
 
 ## Top Swap and the Protected Range test
 
