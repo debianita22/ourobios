@@ -12,32 +12,35 @@ dword of flags, defined by Microsoft's "Windows SMM Security
 Mitigations Table" specification, revision 1.
 
 Add ACPI_WSMT and one option per flag, FIXED_COMM_BUFFERS,
-COMM_BUFFER_NESTED_PTR_PROTECTION and SYSTEM_RESOURCE_PROTECTION, each
-a claim about every SMI handler of the image, so that a platform sets
-only the ones it keeps after reading its handlers; the generator
-publishes the table with the flags set. Nothing is selected by
-default.
+COMM_BUFFER_NESTED_PTR_PROTECTION and SYSTEM_RESOURCE_PROTECTION, in a
+menu of their own, each a claim about every SMI handler of the image,
+so that a platform sets only the ones it keeps after reading its
+handlers; the generator publishes the table with the flags set. Nothing
+is selected by default.
 
-TEST=Not built. With ACPI_WSMT and the three flags on, acpidump on the
-machine shows a WSMT of 40 bytes, revision 1, with "Protection Flags :
-00000007"; fwts wsmt passes; without ACPI_WSMT no table.
+TEST=util/lint/lint lint-stable passes. Not yet run on a machine: there,
+with ACPI_WSMT and the three flags on, acpidump should show a WSMT of 40
+bytes, revision 1, with "Protection Flags : 00000007", and fwts wsmt
+pass; without ACPI_WSMT, no table.
 ---
- src/acpi/Kconfig        | 35 +++++++++++++++++++++++++++++++++++
+ src/acpi/Kconfig        | 39 +++++++++++++++++++++++++++++++++++++++
  src/acpi/acpi.c         | 28 ++++++++++++++++++++++++++++
  src/include/acpi/acpi.h | 15 +++++++++++++++
- 3 files changed, 78 insertions(+)
+ 3 files changed, 82 insertions(+)
 
 diff --git a/src/acpi/Kconfig b/src/acpi/Kconfig
-index 703eaf6e1f..4b605d3295 100644
+index 703eaf6e1f..ef1dde89fc 100644
 --- a/src/acpi/Kconfig
 +++ b/src/acpi/Kconfig
-@@ -100,6 +100,41 @@ config ACPI_LPIT
+@@ -100,6 +100,45 @@ config ACPI_LPIT
  	help
  	  Selected by platforms that support and fill Intel Low Power Idle Table.
  
++menu "Windows SMM Security Mitigations Table"
++	depends on HAVE_ACPI_TABLES && HAVE_SMI_HANDLER
++
 +config ACPI_WSMT
 +	bool "Publish the Windows SMM Security Mitigations Table (WSMT)"
-+	depends on HAVE_ACPI_TABLES && HAVE_SMI_HANDLER
 +	help
 +	  Publish a WSMT table with the flags below. Each flag is a claim
 +	  about every SMI handler of the image, and Windows enables SMM
@@ -69,6 +72,8 @@ index 703eaf6e1f..4b605d3295 100644
 +	  maps, IOMMU, PCI resources, the routing of devices) outside the
 +	  architectural ACPI interfaces: the handlers that do so for the
 +	  firmware refuse once the chipset is finalized.
++
++endmenu
 +
  config ACPI_GTDT
  	bool
