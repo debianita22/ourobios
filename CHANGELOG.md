@@ -105,9 +105,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   code writes it to bits 27:24 of MSR 0x1A2, 0 included, and the menu
   lists it only on a processor whose `PLATFORM_INFO` has bit 30. Intel
   marks the field reserved on Haswell client processors, but on a W541
-  with an i7-4810MQ bit 30 is set and an offset written from Linux reads
-  back on every core; that the processor throttles there is CPU-05 of
-  `docs/testing.md`. The T440p shares the menu.
+  with an i7-4810MQ bit 30 is set, and CPU-05 of `docs/testing.md`
+  passed there: the offset on every core, also after S3, and the package
+  throttling at TjMax less the offset under load. The T440p shares the
+  menu.
 - `docs/testing.md`: a conformance suite (CONF): the WSMT and its flags
   (`hw-report.py` CONF-01), the tables compiled again with `iasl -w3`,
   FWTS, chipsec with what each module must say on these boards (the
