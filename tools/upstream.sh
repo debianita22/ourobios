@@ -9,6 +9,7 @@
 #   tools/upstream.sh mirror [--dry-run]
 #   tools/upstream.sh dbx [--dry-run]
 #   tools/upstream.sh tianocore [--dry-run]
+#   tools/upstream.sh lvgl [--dry-run]
 #
 # coreboot  la serie di patches/ applica ancora su main? Qualche patch e' gia'
 #           entrata upstream (stesso Subject)? C'e' un tag di release dopo il
@@ -29,6 +30,11 @@
 #           patch della piattaforma del package (edk2/OuroBiosPkg/*.patch)
 #           applicano ancora a quel tag. TIANOCORE_TAG=edk2-stableAAAAMM
 #           prova il controllo su quel tag (con --dry-run).
+# lvgl      LVGL, il submodule di LvglPkg che il progetto porta a LVGL_COMMIT
+#           di tools/build.sh, sul ramo LVGL_BRANCH: il ramo ha commit dopo
+#           il pin (i fix portati sulla release), o non ha piu' il pin? C'e'
+#           una release di LVGL dopo quella del pin (LVGL_DESCRIBE)? Se si',
+#           issue "LVGL: ...".
 #
 # Con --dry-run scrive soltanto cosa farebbe (niente issue).
 set -euo pipefail
@@ -453,11 +459,70 @@ EOF
 	report "TianoCore:" "${title}" "${body}"
 }
 
+# LVGL: il ramo del pin (LVGL_BRANCH) dopo LVGL_COMMIT, e le release dopo
+# quella del pin (il tag in testa a LVGL_DESCRIBE). Della storia del ramo
+# bastano i commit (--filter=tree:0)
+check_lvgl() {
+	local repo branch rev desc base head latest g n=0 last="" title="" what=() gone=no
+	repo="$(pin LVGL_REPO)"
+	branch="$(pin LVGL_BRANCH)"
+	rev="$(pin LVGL_COMMIT)"
+	desc="$(pin LVGL_DESCRIBE)"
+	[ -n "${repo}" ] && [ -n "${branch}" ] && [ -n "${rev}" ] && [ -n "${desc}" ] \
+		|| die "LVGL_REPO, LVGL_BRANCH, LVGL_COMMIT o LVGL_DESCRIBE non trovati in tools/build.sh"
+	base="${desc%%-*}"
+	head="$(GIT_TERMINAL_PROMPT=0 git ls-remote --heads "${repo}" "refs/heads/${branch}" | cut -f1)"
+	[ -n "${head}" ] || die "${repo}: niente ramo ${branch}"
+	latest="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags "${repo}" 'refs/tags/v*' \
+		| sed -n 's#.*refs/tags/\(v[0-9]*\.[0-9]*\.[0-9]*\)$#\1#p' | sort -V | tail -n 1)"
+	[ -n "${latest}" ] || die "${repo}: nessun tag vX.Y.Z"
+	if [ "${head}" != "${rev}" ]; then
+		g="${TMP}/lvgl"
+		git init -q "${g}"
+		GIT_TERMINAL_PROMPT=0 git -C "${g}" fetch -q --filter=tree:0 "${repo}" "refs/heads/${branch}" \
+			|| die "${repo} ${branch}: fetch non riuscito"
+		if git -C "${g}" merge-base --is-ancestor "${rev}" FETCH_HEAD 2>/dev/null; then
+			n="$(git -C "${g}" rev-list --count "${rev}..FETCH_HEAD")"
+			last="$(git -C "${g}" log --format='- `%h` %s' -n 20 "${rev}..FETCH_HEAD")"
+			what+=("${n} commit su ${branch} dopo il pin")
+		else
+			gone=yes
+			what+=("${branch} non contiene piu' il pin")
+		fi
+	fi
+	if [ "$(printf '%s\n%s\n' "${base}" "${latest}" | sort -V | tail -n 1)" != "${base}" ]; then
+		what+=("${latest} dopo ${base}")
+	fi
+	if [ ${#what[@]} -eq 0 ]; then
+		settle "LVGL:" "LVGL: ${desc} e' in testa a ${branch} e ${base} e' l'ultima release"
+		return 0
+	fi
+	title="LVGL: $(printf '%s, ' "${what[@]}")"
+	title="${title%, }"
+	local body extra=""
+	if [ "${gone}" = yes ]; then
+		extra+=$'\n'"Il ramo non contiene piu' il pin (riscritto): il commit pinnato arriva ancora per hash finche' GitHub lo tiene."$'\n'
+	fi
+	if [ -n "${last}" ]; then
+		extra+=$'\n'"I commit dopo il pin (gli ultimi 20):"$'\n'"${last}"$'\n'
+	fi
+	body="$(cat <<EOF
+LVGL \`${branch}\` e' a \`${head:0:12}\`, l'ultima release e' \`${latest}\`; il setup grafico ha LVGL \`${desc}\` (\`LVGL_COMMIT\` di \`tools/build.sh\`, sopra il commit del submodule di LvglPkg).
+${extra}
+Per spostarsi (a mano): \`LVGL_COMMIT\` e \`LVGL_DESCRIBE\` (e \`LVGL_BRANCH\`, per una release nuova) in \`tools/build.sh\`, \`patches/lvglpkg\` rifatte se non applicano o non compilano (0019-0020: i sorgenti di \`LvglLib.inf\`, \`lv_conf.h\`), poi push su un ramo \`ci-test/...\` e \`ci-edk2/...\`; prima di una release, prova del setup sulle macchine (W541 a 2880x1620, M920x).
+
+Questo issue lo aggiorna e lo chiude \`upstream.yml\`.
+EOF
+)"
+	report "LVGL:" "${title}" "${body}"
+}
+
 case "${WHAT}" in
 	coreboot)  check_coreboot ;;
 	edk2)      check_edk2 ;;
 	mirror)    check_mirror ;;
 	dbx)       check_dbx ;;
 	tianocore) check_tianocore ;;
-	*) die "uso: upstream.sh coreboot|edk2|mirror|dbx|tianocore [--dry-run]" ;;
+	lvgl)      check_lvgl ;;
+	*) die "uso: upstream.sh coreboot|edk2|mirror|dbx|tianocore|lvgl [--dry-run]" ;;
 esac
