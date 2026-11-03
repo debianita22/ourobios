@@ -18,7 +18,7 @@
 #                  edk2/OuroBiosPkg e LvglPkg con patches/lvglpkg/series
 #                  (EDK2_PACKAGE_CONFIG), o l'EDK2 di MrChromebox al loro
 #                  commit con patches/edk2/series e il submodule LvglPkg con
-#                  patches/lvglpkg/series
+#                  patches/lvglpkg/series; in LvglPkg, LVGL a LVGL_COMMIT
 #   toolchain      il crossgcc di coreboot: i386 con Ada (libgfxinit), iasl e
 #                  nasm. La prima volta 30-60 minuti, poi resta in
 #                  util/crossgcc/xgcc dell'albero (e nella cache della CI)
@@ -223,6 +223,15 @@ EDK2_PACKAGES_SUBDIR="payloads/external/edk2/workspace/packages"
 # defconfig (tools/edk2-import.py --check lo controlla), con patches/lvglpkg
 LVGLPKG_REPO="https://github.com/MrChromebox/LvglPkg.git"
 LVGLPKG_COMMIT="659b502401d9439443dc636acb10ca711afe8bc5"
+# LVGL, il submodule di LvglPkg, che lo tiene a v9.5.0: il progetto lo porta
+# alla v9.6, l'ultima della serie 9, sul suo ramo LVGL_BRANCH (il tag v9.6.0
+# e i fix arrivati dopo). patches/lvglpkg e' per questo commit (0019-0020),
+# in tutti e due gli EDK2 (lvgl_pin); tools/upstream.sh lvgl dice i commit
+# nuovi del ramo e le release dopo
+LVGL_REPO="https://github.com/lvgl/lvgl.git"
+LVGL_BRANCH="release/v9.6"
+LVGL_COMMIT="bb1ff0af416c6aaabe8368f918c93b1dffe8c069"
+LVGL_DESCRIBE="v9.6.0-23-gbb1ff0af416c"
 # Le righe di un defconfig per il payload dal package: un repository
 # "custom", a cui il Makefile di coreboot passa le opzioni dei fork come a
 # quello di MrChromebox (patch 0217), il tag stabile e la piattaforma del
@@ -571,6 +580,7 @@ state() {
 			while read -r p; do sha256sum "patches/edk2/${p}"; done < <(series edk2)
 		fi
 		while read -r p; do sha256sum "patches/lvglpkg/${p}"; done < <(series lvglpkg)
+		echo "${LVGL_COMMIT}"
 		sha256sum tools/ui-font.py
 		local src dst
 		while read -r src dst; do echo "${dst}"; sha256sum "${src}"; done < <(tree_files)
@@ -902,6 +912,29 @@ pinned_commit() {
 	git -C "${dir}" cat-file -e "${rev}^{commit}" 2>/dev/null
 }
 
+# LVGL a LVGL_COMMIT nel submodule di LvglPkg $1, dove git submodule update
+# ha messo il commit di LvglPkg: un clone parziale come il submodule, i file
+# del commit arrivano con il checkout. Il commit e' sul ramo LVGL_BRANCH,
+# non su master: lo si chiede per hash, al remote del submodule o, se non
+# lo da', a LVGL_REPO. Poi il gitlink nell'indice di LvglPkg: il "git
+# submodule update --init --checkout --recursive" che il Makefile di
+# coreboot fa nell'EDK2 di MrChromebox segue l'indice, e lascia LVGL dov'e'
+# invece di riportarlo al commit di LvglPkg
+lvgl_pin() {
+	local d="$1/Library/LvglLib/lvgl"
+	local -x GIT_TERMINAL_PROMPT=0
+	[ -e "${d}/.git" ] || die "LvglPkg: senza il submodule di LVGL in ${d}"
+	if ! git -C "${d}" cat-file -e "${LVGL_COMMIT}^{commit}" 2>/dev/null; then
+		git -C "${d}" fetch -q --filter=blob:none origin "${LVGL_COMMIT}" 2>/dev/null \
+			|| git -C "${d}" fetch -q --filter=blob:none "${LVGL_REPO}" "${LVGL_COMMIT}" \
+			|| die "LVGL: ${LVGL_COMMIT:0:12} (${LVGL_BRANCH}) non arriva ne' dal submodule ne' da ${LVGL_REPO}"
+	fi
+	git -C "${d}" checkout -q --force --detach "${LVGL_COMMIT}" || die "LVGL: ${LVGL_COMMIT:0:12}"
+	git -C "${d}" clean -q -fd
+	git -C "$1" update-index --cacheinfo "160000,${LVGL_COMMIT},Library/LvglLib/lvgl" \
+		|| die "LvglPkg: il gitlink di LVGL a ${LVGL_COMMIT:0:12}"
+}
+
 # EDK2 al commit dei defconfig, i submodule ai loro commit, poi le patch
 # applicate come modifiche: patches/edk2 sull'albero, patches/lvglpkg sul
 # submodule LvglPkg. Il clone e' parziale (--filter=blob:none): la storia
@@ -1022,6 +1055,7 @@ prepare_edk2_mrchromebox() {
 		git -C "${EDK2_DIR}/CryptoPkg/Library/OpensslLib/openssl" config --unset-all "${p}"
 	done
 	git -C "${EDK2_DIR}/LvglPkg" submodule update -q --init --force --filter=blob:none || die "EDK2: LvglPkg/lvgl"
+	lvgl_pin "${EDK2_DIR}/LvglPkg"
 	git -C "${EDK2_DIR}" submodule foreach -q --recursive 'git clean -q -fd'
 	[ -d "${EDK2_DIR}/LvglPkg/.git" ] || [ -f "${EDK2_DIR}/LvglPkg/.git" ] || die "EDK2: senza il submodule LvglPkg"
 	# Le cartelle di include che i .dec dei pacchetti elencano nei submodule
@@ -1029,7 +1063,7 @@ prepare_edk2_mrchromebox() {
 	# una cartella che non c'e' ("error 000E"), anche se nessun modulo la
 	# usa. Vuote, nei percorsi dei submodule non inizializzati
 	edk2_dec_includes "${EDK2_DIR}" "${EDK2_SUBMODULES[@]}"
-	echo "  submodule: ${EDK2_SUBMODULES[*]}, LvglPkg/Library/LvglLib/lvgl"
+	echo "  submodule: ${EDK2_SUBMODULES[*]}, LvglPkg/Library/LvglLib/lvgl (LVGL ${LVGL_DESCRIBE})"
 
 	# --whitespace=nowarn: le righe CRLF dei file di EDK2 per git apply sono
 	# spazi in fondo alla riga
@@ -1237,10 +1271,12 @@ collect() {
 		if [ "$(edk2_base)" = package ]; then
 			echo "EDK2 $(edk2_rev) (TianoCore ${EDK2_UPSTREAM_TAG}) + $(series tianocore | wc -l) patches" \
 				"(patches/tianocore/series) and edk2/OuroBiosPkg (from MrChromebox ${EDK2_MRCHROMEBOX_COMMIT})," \
-				"LvglPkg ${LVGLPKG_COMMIT} + $(series lvglpkg | wc -l) patches (patches/lvglpkg/series)"
+				"LvglPkg ${LVGLPKG_COMMIT} + $(series lvglpkg | wc -l) patches (patches/lvglpkg/series)," \
+				"LVGL ${LVGL_DESCRIBE} (${LVGL_COMMIT})"
 		else
 			echo "EDK2 $(edk2_rev) + $(series edk2 | wc -l) patches (patches/edk2/series)," \
-				"LvglPkg + $(series lvglpkg | wc -l) patches (patches/lvglpkg/series)"
+				"LvglPkg + $(series lvglpkg | wc -l) patches (patches/lvglpkg/series)," \
+				"LVGL ${LVGL_DESCRIBE} (${LVGL_COMMIT})"
 		fi
 		echo "iPXE ${IPXE_COMMIT}, CSMWrap ${CSMWRAP_COMMIT}" \
 			"(SeaBIOS $(git -C "${WORK}/csmwrap/seabios" rev-parse HEAD 2>/dev/null || echo '?'))"
@@ -2279,6 +2315,7 @@ edk2_package() {
 	git -C "${lv}" checkout -q --force --detach "${LVGLPKG_COMMIT}" || die "LvglPkg: ${LVGLPKG_COMMIT:0:12}"
 	git -C "${lv}" clean -q -fd
 	git -C "${lv}" submodule update -q --init --force --filter=blob:none || die "LvglPkg: il submodule di LVGL"
+	lvgl_pin "${lv}"
 	git -C "${lv}" submodule foreach -q --recursive 'git clean -q -fd'
 	while read -r p; do
 		[ -f "${O}/patches/lvglpkg/${p}" ] || die "patches/lvglpkg/series: ${p} non c'e'"
@@ -2289,7 +2326,7 @@ edk2_package() {
 	python3 "${O}/tools/ui-font.py" "${lv}/Library/LvglLib/lvgl/src/font" \
 		"${dst}/OuroBiosPkg/Library/UpdateScreenLib/UpdateScreenFont.c" \
 		|| die "tools/ui-font.py: i font della schermata di aggiornamento del package non si fanno"
-	echo "  edk2/OuroBiosPkg e LvglPkg ${LVGLPKG_COMMIT:0:12} con ${n} patch di patches/lvglpkg in ${EDK2_PACKAGES_SUBDIR}"
+	echo "  edk2/OuroBiosPkg e LvglPkg ${LVGLPKG_COMMIT:0:12} (LVGL ${LVGL_DESCRIBE}) con ${n} patch di patches/lvglpkg in ${EDK2_PACKAGES_SUBDIR}"
 }
 
 # Le patch portate (patches/tianocore/series, la fase (c)) sull'albero di

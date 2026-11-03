@@ -30,6 +30,7 @@ is here. None of it is a promise of a date.
 | [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | the field is reserved on Haswell client processors | the TCC line of `hw-report.py` on a W541 |
 | [Upstream changes not taken](#upstream-changes-not-taken) | W541 | 96893 unreviewed and no gain here; 95880 and 95912 at Code-Review -2 | the next coreboot pin; `rfkill` on a W541 |
 | [EDK II from TianoCore](#edk-ii-from-tianocore) | both | moved in v1.6.0: the payload of the ROMs is TianoCore's tag with the package [`edk2/OuroBiosPkg`](../edk2/README.md) and `patches/tianocore`, the same payload as MrChromebox's tree with `patches/edk2`; what is left is the carried series, 100 patches | the series shorter: the *drop* commits first, then the *package* ones into `OuroBiosPkg`, the *upstream* ones proposed ([docs/edk2-migration.md](edk2-migration.md)) |
+| [LVGL v10](#lvgl-v10) | both | not out yet (v9.6, in the setup from v1.6.0, is the last of v9); it removes the flag functions that LvglPkg calls | the setters of v9.6 in LvglPkg, then the pin |
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
 | [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
 | [Openness score](#openness-score) | both | already in `tools/sbom.py` | a comparison with Dasharo's own tool |
@@ -567,6 +568,22 @@ import takes new commits ([docs/edk2-migration.md](edk2-migration.md#step-d-the-
 Left: the carried series, shorter one commit at a time, each with the
 payload's tests, until what remains of MrChromebox's work is the package
 and the patches proposed upstream.
+
+## LVGL v10
+
+From v1.6.0 the setup runs LVGL v9.6, the last release of v9, at the head
+of its `release/v9.6` branch (`LVGL_COMMIT` of `tools/build.sh`,
+`patches/lvglpkg/0019-0020`), in place of the v9.5.0 of LvglPkg's
+submodule. v9.6 deprecates the generic flag functions
+(`lv_obj_add_flag()`, `lv_obj_remove_flag()`, `lv_obj_has_flag()`...) for
+a setter and a getter per flag, and v10 removes them with the other
+deprecated symbols. LvglPkg calls them 54 times, in the display engine and
+in `lv_port_indev.c`, and builds with `-Wno-deprecated-declarations`
+meanwhile. `lvglpkg/0019`, the UEFI header bindings out of `lvgl.h`, is a
+fix for LVGL itself: its master has the same lines. Next step: LVGL's
+`scripts/migration/migrate_obj_flags.py` on LvglPkg, offered to
+MrChromebox's repository so that `patches/lvglpkg` does not carry it, and
+0019 to LVGL; then the pin, when v10 is out.
 
 ## HSTI
 
