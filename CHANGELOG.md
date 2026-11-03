@@ -269,9 +269,14 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   OS is the one of the boot, so after a suspend PCR 2 no longer replayed
   from the log (TPM-03 of `hw-report.py` failed; a remote attestation
   after a suspend would have): seen on the M920x of the port with five
-  suspends. Nothing is extended nor logged on that path now, the log in
-  cbmem keeps the entries of the boot, and the resume path no longer
-  hashes what it loads for the measurement, the payload included.
+  suspends. Nothing is extended nor logged on that path now, in the
+  bootblock and verstage too (on rc1 they still logged three entries per
+  resume: they know a resume from the PM registers only, the power
+  state comes with romstage), the log in cbmem keeps the entries of the
+  boot, and the resume path no longer hashes what it loads for the
+  measurement, the payload included. On the W541 the romstage keeps
+  the state `southbridge_detect_s3_resume()` found after it clears
+  SLP_TYP, so `mrc.bin` is not measured again either.
 - On the M920x the event log of ramstage was lost at every boot, up to
   v1.5.0, with *BIOS Lock* on and off alike (seen with both on the M920x
   of the port, on v1.5.0 next to this release's candidate): the chipset

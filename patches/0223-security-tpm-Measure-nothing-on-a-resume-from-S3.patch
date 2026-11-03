@@ -19,50 +19,108 @@ init (which clears the pre-RAM log, so romstage copies no stale entry
 into cbmem): nothing is extended and nothing is logged, and the log in
 cbmem keeps the entries of the boot. cbfs_file_hash_mismatch() skips
 the hash for the measurement on that path too, the whole payload on a
-resume. acpi_is_wakeup_s3() answers in every stage from the PM
-registers, then from the romstage handoff, and is false without
-HAVE_ACPI_RESUME.
+resume.
+
+tspi_resuming_from_s3() tells the path: the bootblock and verstage ask
+the PM registers (platform_is_resuming()), since the power state that
+acpi_is_wakeup_s3() reads before ramstage comes with romstage, from
+pmc_fill_power_state() on the Intel SoCs; the stages from romstage on
+ask acpi_is_wakeup_s3(). On Lynx Point southbridge_detect_s3_resume()
+clears SLP_TYP at the start of romstage, before mrc.bin is loaded: it
+now leaves the state it found to pmbase, and acpi_get_sleep_type()
+tells it for the rest of romstage. Without HAVE_ACPI_RESUME nothing
+changes.
 
 Seen on a Lenovo ThinkCentre M920x with a TPM 2.0 (SHA-1 and SHA-256
-banks): five suspends, PCR 2 past the log after the first.
+banks): five suspends, PCR 2 past the log after the first. With the
+guard on acpi_is_wakeup_s3() alone the bootblock and verstage still
+logged the FMAP, the bootblock and romstage at every resume (three
+entries more in the log of cbmem each time, none extended).
 ---
- src/lib/cbfs.c               |  4 +++-
- src/security/tpm/tspi/tspi.c | 17 +++++++++++++++++
- 2 files changed, 20 insertions(+), 1 deletion(-)
+ src/lib/cbfs.c                        |  4 +++-
+ src/security/tpm/tspi.h               |  8 +++++++
+ src/security/tpm/tspi/tspi.c          | 33 +++++++++++++++++++++++++++
+ src/southbridge/intel/common/pmbase.c | 14 ++++++++++++
+ src/southbridge/intel/common/pmbase.h |  5 ++++
+ src/southbridge/intel/common/pmclib.c |  3 +++
+ 6 files changed, 66 insertions(+), 1 deletion(-)
 
 diff --git a/src/lib/cbfs.c b/src/lib/cbfs.c
-index 79cc2d95141..d6ecc48a50f 100644
+index 79cc2d95141..a72fa9465d9 100644
 --- a/src/lib/cbfs.c
 +++ b/src/lib/cbfs.c
-@@ -1,5 +1,6 @@
- /* SPDX-License-Identifier: GPL-2.0-only */
- 
-+#include <acpi/acpi.h>
- #include <assert.h>
- #include <boot_device.h>
- #include <cbfs.h>
+@@ -11,6 +11,7 @@
+ #include <fmap.h>
+ #include <lib.h>
+ #include <metadata_hash.h>
++#include <security/tpm/tspi.h>
+ #include <security/tpm/tspi/crtm.h>
+ #include <security/vboot/vboot_common.h>
+ #include <security/vboot/misc.h>
 @@ -196,7 +197,8 @@ static bool cbfs_file_hash_mismatch(const void *buffer, size_t size,
  		}
  	}
  
 -	if (CONFIG(TPM_MEASURED_BOOT) && !ENV_SMM) {
 +	/* Nothing is measured on a resume from S3 (tpm_extend_pcr_banks()): no hash either */
-+	if (CONFIG(TPM_MEASURED_BOOT) && !ENV_SMM && !acpi_is_wakeup_s3()) {
++	if (CONFIG(TPM_MEASURED_BOOT) && !ENV_SMM && !tspi_resuming_from_s3()) {
  		struct vb2_hash calculated_hash;
  
  		/* No need to re-hash file if we already have it from verification. */
+diff --git a/src/security/tpm/tspi.h b/src/security/tpm/tspi.h
+index aa734bfc73b..e65b79ca4f4 100644
+--- a/src/security/tpm/tspi.h
++++ b/src/security/tpm/tspi.h
+@@ -170,6 +170,14 @@ tpm_result_t tpm_setup(int s3flag);
+  * @param *rname Name of the region that is measured
+  * @return TPM error code in case of error otherwise TPM_SUCCESS
+  */
++/*
++ * Whether the platform is resuming from S3, for the stages that measure what
++ * they load: nothing is measured on that path (the TPM keeps its PCRs, the event
++ * log of the OS is the one of the boot). The bootblock and verstage ask the PM
++ * registers; the stages from romstage on, acpi_is_wakeup_s3().
++ */
++bool tspi_resuming_from_s3(void);
++
+ tpm_result_t tpm_measure_region(const struct region_device *rdev, uint8_t pcr,
+ 				const char *rname);
+ 
 diff --git a/src/security/tpm/tspi/tspi.c b/src/security/tpm/tspi/tspi.c
-index fa4227b85e1..8f6d2e37589 100644
+index fa4227b85e1..9ef9a5b3ffb 100644
 --- a/src/security/tpm/tspi/tspi.c
 +++ b/src/security/tpm/tspi/tspi.c
-@@ -1,5 +1,6 @@
+@@ -1,5 +1,7 @@
  /* SPDX-License-Identifier: GPL-2.0-only */
  
 +#include <acpi/acpi.h>
++#include <bootmode.h>
  #include <console/console.h>
  #include <security/tpm/tspi/crtm.h>
  #include <security/tpm/tspi/logs.h>
-@@ -245,6 +246,22 @@ tpm_result_t tpm_extend_pcr_banks(int pcr, enum vb2_hash_algorithm digest_algo,
+@@ -219,6 +221,21 @@ tpm_result_t tpm_clear_and_reenable(void)
+ 	return TPM_SUCCESS;
+ }
+ 
++bool tspi_resuming_from_s3(void)
++{
++	if (!acpi_s3_resume_allowed())
++		return false;
++	/*
++	 * The power state that acpi_is_wakeup_s3() reads before ramstage comes
++	 * with romstage (on the Intel SoCs pmc_fill_power_state(), on Lynx Point
++	 * southbridge_detect_s3_resume(), which clears SLP_TYP and leaves what it
++	 * found): the bootblock and verstage have the PM registers only.
++	 */
++	if (ENV_BOOTBLOCK || ENV_SEPARATE_VERSTAGE)
++		return platform_is_resuming() > 0;
++	return acpi_is_wakeup_s3();
++}
++
+ tpm_result_t tpm_extend_pcr(int pcr, enum vb2_hash_algorithm digest_algo,
+ 			const uint8_t *digest, size_t digest_len, const char *name)
+ {
+@@ -245,6 +262,22 @@ tpm_result_t tpm_extend_pcr_banks(int pcr, enum vb2_hash_algorithm digest_algo,
  			return rc;
  	}
  
@@ -73,7 +131,7 @@ index fa4227b85e1..8f6d2e37589 100644
 +	 * extended nor logged on this path, as vboot already skips its own
 +	 * extends; the CRTM init above still clears the pre-RAM log.
 +	 */
-+	if (CONFIG(TPM_MEASURED_BOOT) && acpi_is_wakeup_s3()) {
++	if (CONFIG(TPM_MEASURED_BOOT) && tspi_resuming_from_s3()) {
 +		static bool reported;
 +
 +		if (!reported)
@@ -85,6 +143,72 @@ index fa4227b85e1..8f6d2e37589 100644
  	if (tspi_tpm_is_setup()) {
  		rc = tlcl_lib_init();
  		if (rc != TPM_SUCCESS) {
+diff --git a/src/southbridge/intel/common/pmbase.c b/src/southbridge/intel/common/pmbase.c
+index 5a339c91f79..c7f62ffe697 100644
+--- a/src/southbridge/intel/common/pmbase.c
++++ b/src/southbridge/intel/common/pmbase.c
+@@ -76,8 +76,22 @@ u8 read_pmbase8(const u8 addr)
+ 	return inb(lpc_get_pmbase() + addr);
+ }
+ 
++/*
++ * southbridge_detect_s3_resume() clears SLP_TYP early in romstage, and what it
++ * found is what the rest of romstage must see (acpi_is_wakeup_s3(): the TPM
++ * measurements of what romstage loads on a resume, mrc.bin among them).
++ */
++static int sleep_type_found = -1;
++
++void pmbase_set_sleep_type_found(int sleep_type)
++{
++	sleep_type_found = sleep_type;
++}
++
+ int acpi_get_sleep_type(void)
+ {
++	if (ENV_SEPARATE_ROMSTAGE && sleep_type_found >= 0)
++		return sleep_type_found;
+ 	return acpi_sleep_from_pm1(read_pmbase32(PM1_CNT));
+ }
+ 
+diff --git a/src/southbridge/intel/common/pmbase.h b/src/southbridge/intel/common/pmbase.h
+index febcff21cfb..d01a603cb0c 100644
+--- a/src/southbridge/intel/common/pmbase.h
++++ b/src/southbridge/intel/common/pmbase.h
+@@ -8,6 +8,11 @@ void write_pmbase32(const u8 addr, const u32 val);
+ void write_pmbase16(const u8 addr, const u16 val);
+ void write_pmbase8(const u8 addr, const u8 val);
+ 
++/*
++ * The sleep state southbridge_detect_s3_resume() found before it cleared
++ * SLP_TYP: acpi_get_sleep_type() tells it for the rest of romstage
++ */
++void pmbase_set_sleep_type_found(int sleep_type);
+ u32 read_pmbase32(const u8 addr);
+ u16 read_pmbase16(const u8 addr);
+ u8 read_pmbase8(const u8 addr);
+diff --git a/src/southbridge/intel/common/pmclib.c b/src/southbridge/intel/common/pmclib.c
+index abfa2b77f50..3bfd6051495 100644
+--- a/src/southbridge/intel/common/pmclib.c
++++ b/src/southbridge/intel/common/pmclib.c
+@@ -30,15 +30,18 @@ int southbridge_detect_s3_resume(void)
+ 		if (read_pmbase16(PM1_STS) & PRBTNOR_STS) {
+ 			printk(BIOS_DEBUG,
+ 			       "SB: Power button override after S3, not resuming.\n");
++			pmbase_set_sleep_type_found(ACPI_S0);
+ 			return 0;
+ 		}
+ 
+ 		if (!acpi_s3_resume_allowed()) {
+ 			printk(BIOS_DEBUG, "SB: Resume from S3 detected, but disabled.\n");
++			pmbase_set_sleep_type_found(ACPI_S0);
+ 			return 0;
+ 		}
+ 
+ 		printk(BIOS_DEBUG, "SB: Resume from S3 detected.\n");
++		pmbase_set_sleep_type_found(ACPI_S3);
+ 		return 1;
+ 	}
+ 
 -- 
 2.47.3
 
