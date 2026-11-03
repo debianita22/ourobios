@@ -108,9 +108,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   the first boot with the hash lists of Microsoft's latest signed release
   of `microsoft/secureboot_objects` (`tools/upstream.sh dbx`, by git blob
   id, nothing downloaded) and opens an issue when they differ. On
-  2026-11-02 they are the same, v1.7.1-signed; its SVN entries (the
-  Windows boot manager at SVN 11) stay out of the defaults, as Windows
-  writes them itself after updating its boot manager. It also looks for a
+  2026-11-03 they are those of v1.7.2-signed, the same since
+  v1.7.0-signed; its SVN entries (the Windows boot manager at SVN 12
+  from v1.7.2) stay out of the defaults, as Windows writes them itself
+  after updating its boot manager. It also looks for a
   stable tag of TianoCore after the one of `edk2-upstream`, and says
   whether the patches of `edk2/OuroBiosPkg` still apply to its
   `UefiPayloadPkg` (`tools/upstream.sh tianocore`).
