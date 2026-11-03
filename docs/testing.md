@@ -303,6 +303,7 @@ the W541 resumes since v1.0.9.
 | DISP-02 | M920x | a monitor on each DisplayPort | the same; from v1.4.0 the VBT of coreboot bug #670 (patch 0174), not yet tried | manual |
 | DISP-03 | W541 | the panel and each external output, with and without the NVIDIA GPU | the image at each step | manual |
 | DISP-04 | both | `journalctl -k -b \| grep i915` | no `WARN` or error of i915 | BOOT-04 |
+| DISP-05 | both | v1.6.0 (LVGL v9.6, `lvglpkg/0019-0020`): the setup at each *UI Scale* of *Graphical UI Configuration* (a reboot after each), on the W541 panel at 2880×1620 and on a monitor of the M920x: the front page, a category with switches and drop-down menus, a text field, the supervisor password dialogs, *Firmware Update*, *Compatibility*; keys, TrackPoint, touchpad or a USB mouse; save, reboot, the setting kept | each screen draws whole (wallpaper, menu bar, dock), nothing stops or goes black, the cursor follows the pointer, the setting stays | manual |
 
 ### Audio (AUD)
 
@@ -485,7 +486,7 @@ kernel headers for its module).
 | S3 | 01 | 02 | 03 |
 | USB | | | 01-06 |
 | PCI | 01, 02, 06 | | 03-05, 07, 08 |
-| DISP | 04 | | 01-03 |
+| DISP | 04 | | 01-03, 05 |
 | AUD | | | 01-03 |
 | NET | | | 01-05 |
 | FAN | 01, 06 | 02, 05 | 03, 04, 07-10 |
