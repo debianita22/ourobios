@@ -102,6 +102,7 @@ LIC = {
     "libhwbase": ("id", "GPL-2.0-or-later"),
     "edk2": ("id", "BSD-2-Clause-Patent"),
     "lvglpkg": ("id", "MIT"),
+    "lvgl": ("id", "MIT"),
     "ipxe": ("id", "GPL-2.0-or-later"),
     "csmwrap": ("name", "LGPL-2.1"),
     "seabios": ("id", "LGPL-3.0-only"),
@@ -605,6 +606,11 @@ def parse_layout(text):
                 m.group(1), int(m.group(3)), int(m.group(6))
             if m.group(2):
                 lay["edk2_tag"], lay["edk2_from"], lay["lvgl_commit"] = m.group(2), m.group(4), m.group(5)
+            # dalla v1.6.0 LVGL al commit di tools/build.sh (LVGL_COMMIT), non a
+            # quello del submodule di LvglPkg
+            m = re.search(r", LVGL (\S+) \(([0-9a-f]{40})\)", line)
+            if m:
+                lay["lvgl_version"], lay["lvgl_rev"] = m.group(1), m.group(2)
         m = re.match(r"^iPXE ([0-9a-f]{40}), CSMWrap ([0-9a-f]{40}) \(SeaBIOS ([0-9a-f]{40}|\?)\)", line)
         if m:
             lay["ipxe_commit"], lay["csmwrap_commit"] = m.group(1), m.group(2)
@@ -1140,6 +1146,16 @@ def components(info):
         comps.append(kw)
         return kw
 
+    def add_lvgl():
+        # LVGL sotto LvglPkg, quando la build dice il suo commit (LVGL_COMMIT)
+        lv, lvc = info["layout"].get("lvgl_version"), info["layout"].get("lvgl_rev")
+        if lv:
+            add(ref="lvgl", name="LVGL", type="library", open=True, version=lv,
+                text="lvgl/lvgl `%s`" % lv, license=LIC["lvgl"], vcs="https://github.com/lvgl/lvgl",
+                commit=lvc, url=gh("lvgl/lvgl", lvc), supplier="LVGL",
+                desc="the graphics library under LvglPkg, at the commit of the build in place of the one "
+                     "of LvglPkg's submodule")
+
     cbc = pins["coreboot_commit"]
     if not cbc:
         # senza layout e repository: il commit abbreviato del git describe
@@ -1190,6 +1206,7 @@ def components(info):
                 url=gh("MrChromebox/LvglPkg", lc), supplier="MrChromebox",
                 desc="LVGL graphics of the setup menu, with the Montserrat (OFL-1.1) and Font Awesome Free "
                      "(CC-BY-4.0) fonts", props=[("patches", lp)])
+            add_lvgl()
     elif cfg.get("CONFIG_PAYLOAD_EDK2") == "y" or cfg.get("CONFIG_EDK2_TAG_OR_REV"):
         rev = cfg.get("CONFIG_EDK2_TAG_OR_REV") or info["layout"].get("edk2_rev")
         repo = cfg.get("CONFIG_EDK2_REPOSITORY", "")
@@ -1211,6 +1228,7 @@ def components(info):
                 label="`LvglPkg` of EDK II" if m and rev else None, supplier="MrChromebox",
                 desc="LVGL graphics of the setup menu, with the Montserrat (OFL-1.1) and Font Awesome Free "
                      "(CC-BY-4.0) fonts", props=[("patches", lp)])
+            add_lvgl()
     if cfg.get("CONFIG_EDK2_ENABLE_IPXE") == "y" or pay.get("ipxe"):
         c = pins["ipxe_commit"]
         v = pay.get("ipxe")
