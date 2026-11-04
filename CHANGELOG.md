@@ -276,7 +276,12 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   boot, and the resume path no longer hashes what it loads for the
   measurement, the payload included. On the W541 the romstage keeps
   the state `southbridge_detect_s3_resume()` found after it clears
-  SLP_TYP, so `mrc.bin` is not measured again either.
+  SLP_TYP, so `mrc.bin` is not measured again either. The bootblock is
+  in the read-only part, which capsules do not write: with a read-only
+  part from before this release it still logs the FMAP, itself and
+  romstage into cbmem's log at every resume (three entries, none
+  extended, none in the log of the OS), until the read-only part is
+  written again.
 - On the M920x the event log of ramstage was lost at every boot, up to
   v1.5.0, with *BIOS Lock* on and off alike (seen with both on the M920x
   of the port, on v1.5.0 next to this release's candidate): the chipset

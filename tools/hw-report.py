@@ -581,7 +581,15 @@ def check_raminit(fw, rep):
         summary = "%s %.2f s con %s (soglie %.0f/%.0f s)" % (
             what, s, {"s3": "la ripresa da S3", "valid": "la cache valida"}.get(state, "cache non nota"),
             RAMINIT_LIMITS[0], RAMINIT_LIMITS[1])
-        if status != "PASS" and state == "valid":
+        # M920x con il ME spento dal setup (patch 0191): FSP-M aspetta la risposta
+        # al DRAM Init Done fino a 5 s, a caso per avvio o ripresa; noto, non un
+        # difetto della build
+        if (status != "PASS" and state in ("valid", "s3") and 5.0 <= s <= 5.6 and
+                fw.grep(r"ME disabled: no HECI retries or MBP read in FSP-M")):
+            status = "INFO"
+            summary += "; noto: con il ME spento FSP-M aspetta fino a 5 s la risposta del ME al DRAM " \
+                       "Init Done (patch 0191), a caso per avvio o ripresa"
+        elif status != "PASS" and state == "valid":
             details.append("con la cache valida FSP-M non rifa' il training: un tempo cosi', uguale a ogni "
                            "avvio, e' un'attesa o un timeout (ci-150 e ci-151: 15.24 s)")
     rep.add("MEM-01", "RAM init", status, summary, details, {"seconds": round(s, 3), "cache": state})

@@ -254,7 +254,11 @@ it changes:
   ramstage, the payload, FSP-M and FSP-S on the M920x) are not extended a
   second time, and the log in cbmem is left as it was. Up to v1.5.0 they
   were, and after a suspend PCR 2 no longer replayed from the log
-  (TPM-03 of `hw-report.py`).
+  (TPM-03 of `hw-report.py`). The bootblock, with vboot in it, is in
+  the read-only part: a machine whose read-only part is older than
+  this patch still logs the FMAP, the bootblock and romstage into
+  cbmem's log at each resume (three entries, none extended, none in the
+  log of the OS) until the read-only part is written again.
 - **A TPM that does not start costs the measurements, not the boot**
   (patch 0199): with mocked secdata vboot would ask for recovery mode,
   which these machines do not have. The log says *TPM setup failed ...

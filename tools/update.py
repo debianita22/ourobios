@@ -1513,7 +1513,9 @@ def cmd_vboot(args):
                                    ("slot B", "FW_MAIN_B", "RW_SECTION_B")):
             if name not in areas or sum(areas[name]) > len(data):
                 continue
-            found = region_releases(data, areas[name])
+            # anche le build della CI, e la parte RO minimale porta il nome
+            # della build che l'ha fatta
+            found = region_builds(data, areas[name])
             print("%-12s%-8s%s" % (head, label, " + ".join(found) + (
                 "  (mescolate: scritto a meta'?)" if len(found) > 1 else "")
                 if found else "non riconosciuto: vuoto o rovinato?"))

@@ -89,7 +89,7 @@ and on).
 | CONF-01 | the WSMT, revision 1, flags 7 |
 | CONF-07 | the ECAM window reserved in the memory map and among the `pnp` resources |
 | PCI-09 | PASS, or INFO for a BAR of a device no driver of the payload uses (on the M920x the SPI controller, `00:1f.5`): every other BAR of bus 0 inside the aperture of the payload |
-| MEM-01 | the cache valid and used (W541: training at the first boot, the cache from the second) |
+| MEM-01 | the cache valid and used (W541: training at the first boot, the cache from the second); on the M920x with the ME disabled, INFO at 5.2 s on some boots and resumes (the DRAM Init Done wait, patch 0191) |
 
 Known, not a stop for the tag: on the W541 EC-01 WARN (an EC before
 1.15), ME-01 as in the reports of v1.5.0, IDLE-01 INFO with the 3K panel
