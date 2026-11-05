@@ -554,6 +554,14 @@ def raminit_span(fw):
     return None, None
 
 
+def me_did_wait(fw, seconds, state):
+    """M920x con il ME spento dal setup (patch 0191): FSP-M aspetta la risposta
+    del ME al DRAM Init Done fino a 5 s, a caso per avvio o ripresa; noto,
+    non un difetto della build."""
+    return (fw.log is not None and state in ("valid", "s3") and 5.0 <= seconds <= 5.6 and
+            bool(fw.grep(r"ME disabled: no HECI retries or MBP read in FSP-M")))
+
+
 def check_raminit(fw, rep):
     """MEM-01: quanto ha preso la RAM init, rispetto alla cache del training."""
     if not fw.ts:
@@ -581,11 +589,7 @@ def check_raminit(fw, rep):
         summary = "%s %.2f s con %s (soglie %.0f/%.0f s)" % (
             what, s, {"s3": "la ripresa da S3", "valid": "la cache valida"}.get(state, "cache non nota"),
             RAMINIT_LIMITS[0], RAMINIT_LIMITS[1])
-        # M920x con il ME spento dal setup (patch 0191): FSP-M aspetta la risposta
-        # al DRAM Init Done fino a 5 s, a caso per avvio o ripresa; noto, non un
-        # difetto della build
-        if (status != "PASS" and state in ("valid", "s3") and 5.0 <= s <= 5.6 and
-                fw.grep(r"ME disabled: no HECI retries or MBP read in FSP-M")):
+        if status != "PASS" and me_did_wait(fw, s, state):
             status = "INFO"
             summary += "; noto: con il ME spento FSP-M aspetta fino a 5 s la risposta del ME al DRAM " \
                        "Init Done (patch 0191), a caso per avvio o ripresa"
@@ -641,7 +645,9 @@ def check_boot_time(fw, rep):
     # con il training si toglie la RAM init (sugli slot della NRI senza i suoi
     # timestamp tutta la romstage, che la contiene)
     raminit = raminit_span(fw)[0] or 0
-    eff = total - raminit if state == "training" else total
+    # e i 5 s dell'attesa nota del ME spento (me_did_wait), che non sono della build
+    me_wait = state != "training" and me_did_wait(fw, raminit / 1e6, state)
+    eff = total - raminit if state == "training" or me_wait else total
     b = BOARDS.get(fw.board)
     s = eff / 1e6
     if b is None:
@@ -652,7 +658,9 @@ def check_boot_time(fw, rep):
         limits = " (soglie %.0f/%.0f s per %s)" % (warn, fail, b["name"])
     summary = "%.2f s dal reset %s%s%s" % (total / 1e6, "al ritorno nell'OS (ripresa da S3)" if state == "s3"
                                            else "al payload", (", %.2f s senza il training" % s)
-                                           if state == "training" else "", limits)
+                                           if state == "training" else (", %.2f s senza l'attesa nota del ME "
+                                                                        "spento (patch 0191)" % s)
+                                           if me_wait else "", limits)
     rep.add("BOOT-02", "Tempo di avvio", status, summary, details,
             {"total_s": round(total / 1e6, 3), "without_training_s": round(s, 3), "cache": state})
 
