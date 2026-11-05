@@ -514,8 +514,8 @@ that release's image: flashrom, not a capsule.
     which *System Configuration* lists too; and, from v1.3.6, *Boot*:
     *Network boot (iPXE)* and *Legacy boot (CSMWrap)*, both on by
     default. On, each is an entry of the boot menu (*iPXE Network Boot*,
-    *CSMWrap Legacy Boot*), added at the end of the boot order, after the disks and the
-    UEFI Shell: it starts when chosen in the boot menu (Esc at power-on)
+    *CSMWrap Legacy Boot*), added at the end of the boot order, after the
+    disks: it starts when chosen in the boot menu (Esc at power-on)
     or moved up the boot order; off, the entry is deleted at the next
     boot. iPXE drives the Ethernet port itself (its Intel driver, for the
     I217), does PXE (DHCP and TFTP), HTTP and iPXE scripts, and chainloads
@@ -535,11 +535,11 @@ that release's image: flashrom, not a capsule.
     *Option Key Display* of the Lenovo setup. *Boot from USB drives* off
     keeps the USB drives of the laptop and of the dock out of the boot
     order and the boot menu; it is not a security setting: a USB drive
-    still starts from an entry that an OS made, from the UEFI Shell, from
-    CSMWrap, from *Boot From File* and through `\EFI\BOOT\BOOTX64.EFI`,
-    which the firmware tries when no entry boots, and a capsule on it
-    still installs. *Boot menu prompt* off hides "Press ESC for Boot
-    Options/Settings" on the logo, and Esc still opens the boot menu, from
+    still starts from an entry that an OS made, from CSMWrap, from *Boot
+    From File* and through `\EFI\BOOT\BOOTX64.EFI`, which the firmware
+    tries when no entry boots, and a capsule on it still installs. *Boot
+    menu prompt* off hides "Press ESC for Boot Options/Settings" on the
+    logo, and Esc still opens the boot menu, from
     the keyboard of the laptop too. The setting of the M920x for the
     option ROMs of the cards is not there: the W541 firmware runs none;
   - *Energy Saver*: battery charge thresholds (*OS controlled* keeps what

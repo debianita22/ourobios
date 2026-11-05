@@ -199,3 +199,9 @@ CONFIG_EDK2_CSMWRAP_FILE="m920x/csmwrap.efi"
 # EDK2 le verifica con le chiavi di db
 CONFIG_EDK2_LOAD_OPTION_ROMS=y
 CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D UFS_ENABLE=FALSE -D UHCI_ENABLE=FALSE -D EBC_ENABLE=FALSE -D EXTRA_FS_DRIVERS=FALSE -D CRYPTO_PROTOCOL_SUPPORT=TRUE"
+# Niente Shell UEFI nel payload (SHELL_TYPE NONE, dalla v1.6.0): circa
+# 250 KiB per slot, e con Secure Boot acceso partiva dal menu di avvio
+# senza firma, come ogni file del firmware volume. Il boot manager
+# toglie la voce che ne resta da una versione di prima (edk2/0053); una
+# Shell su una chiavetta parte come ogni altro loader
+# CONFIG_EDK2_HAVE_EFI_SHELL is not set

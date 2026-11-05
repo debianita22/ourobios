@@ -174,8 +174,8 @@ Inside coreboot:
   the boot menu (Esc at power-on) drives the Intel I217 Ethernet
   controller itself (iPXE with its Intel driver, no UEFI network stack),
   does PXE and HTTP and runs iPXE scripts; Ctrl-B at its banner opens its
-  shell. The entry goes at the end of the boot order, after the disks and
-  the UEFI Shell; *General* → *Boot* in the setup turns it off;
+  shell. The entry goes at the end of the boot order, after the disks;
+  *General* → *Boot* in the setup turns it off;
 - legacy BIOS boot with CSMWrap (from v1.3.6): the *CSMWrap Legacy Boot*
   entry of the boot menu starts [CSMWrap](https://github.com/CSMWrap/CSMWrap),
   which runs the CSM and the VGA BIOS of SeaBIOS as a UEFI application:
@@ -188,6 +188,12 @@ Inside coreboot:
   while Secure Boot is on the entry goes and the firmware refuses to start
   CSMWrap, however it is chosen; *General* → *Boot* in the setup turns it
   off;
+- no UEFI Shell in the firmware (from v1.6.0): about 250 KiB less in
+  each slot, and no program left that anyone at the boot menu could start
+  with Secure Boot on without a signature (a file of the firmware volume
+  is not checked against `db`). A Shell on a USB drive starts like any
+  other loader: from its entry, Boot From File or `\EFI\BOOT\BOOTX64.EFI`,
+  signed for the keys in `db` or with Secure Boot off;
 - macOS with OpenCore (from v1.3.10): in the setup (*Compatibility* →
   *macOS*) the CPUs as `Processor` objects with `plugin-type`, CFG Lock
   off, the device properties of the W541 (framebuffer, audio layout), the

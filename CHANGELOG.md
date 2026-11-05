@@ -249,6 +249,19 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   flashrom command for the older releases: the read-only part and both
   slots from v1.3.9-v1.4.x (v1.4.x on the M920x), every region but the
   runtime ones from v1.0.3-v1.3.8.
+- **No UEFI Shell in the payload** (`EDK2_HAVE_EFI_SHELL` off on `mrc`,
+  `nri` and `fsp`): about 250 KiB less in each slot, and no program left
+  that anyone at the boot menu could start with Secure Boot on without a
+  signature (`DxeImageVerificationLib` lets every file of the firmware
+  volume run). The boot manager deletes the *UEFI Shell* entry that an
+  earlier version left in the boot order and the boot menu
+  (`edk2/0053`), and the help of *Boot from USB drives* no longer lists
+  it (patch 0227). A Shell on a USB drive still starts as any loader
+  does: from its entry, *Boot From File* or `\EFI\BOOT\BOOTX64.EFI`,
+  signed for the keys in `db` or with Secure Boot off. The smoke test
+  writes its variables, `BootNext` for iPXE and CSMWrap included, with
+  `tools/efi/setvar.c` from an EFI system partition, which takes them
+  from QEMU's fw_cfg, where it typed `setvar` into the Shell.
 
 ## v1.5.1
 

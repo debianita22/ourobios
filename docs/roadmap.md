@@ -35,7 +35,7 @@ is here. None of it is a promise of a date.
 | [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
 | [Openness score](#openness-score) | both | already in `tools/sbom.py` | a comparison with Dasharo's own tool |
 | [Clearing the memory on every core](#clearing-the-memory-on-every-core) | both | the clear runs on the boot processor only, 2.0 s for 40 GB on the M920x (about 21 GB/s); what the memory controller gives to four cores is not measured | a test build that times the clear with one, two and four cores |
-| [The UEFI Shell in the payload](#the-uefi-shell-in-the-payload) | both | 12% of the payload, and firmware code that runs with Secure Boot on; the smoke test drives the payload through it | a smoke test with a Shell from a disk image, then the choice |
+| [The UEFI Shell in the payload](#the-uefi-shell-in-the-payload) | both | done in v1.6.0 (`edk2/0053`, patch 0227): the boards' payload leaves the Shell out, and the smoke test writes its variables with `tools/efi/setvar.c` from a disk image | none planned |
 | [The DPLL of i915 at boot on the M920x](#the-dpll-of-i915-at-boot-on-the-m920x) | M920x | i915's own wait for the PLL, not the firmware's | a report to i915 with the numbers |
 
 ## Firmware watchdog
@@ -711,11 +711,19 @@ from a volume run), so whoever sits at the boot menu has `mm`,
 `setvar` and `bcfg` without a signed loader; the flash and the
 authenticated variables stay protected by SMM.
 
-What holds it back: the smoke test of the payload (`tools/qemu-smoke.py`)
-drives the payload through the built-in Shell: `setvar` into SMMSTORE,
-`BootNext` for iPXE and CSMWrap. A Shell from a disk image of the test
-would keep that, and then the choice is the owner's: the Shell as it is,
-off, or off only with Secure Boot on.
+What held it back: the smoke test of the payload (`tools/qemu-smoke.py`)
+drove the payload through the built-in Shell: `setvar` into SMMSTORE,
+`BootNext` for iPXE and CSMWrap.
+
+- **Done in v1.6.0**: the owner chose the Shell off (2026-11-05).
+  `EDK2_HAVE_EFI_SHELL` is off in the three configurations (`SHELL_TYPE`
+  NONE); the boot manager deletes the `Boot####` option for the Shell that
+  an earlier version made (`edk2/0053`), and the help of *Boot from USB
+  drives* no longer lists it (patch 0227). The smoke test boots
+  `tools/efi/setvar.c` from an EFI system partition on a fresh copy of
+  the image: it takes the variable from QEMU's fw_cfg and writes it with
+  `SetVariable()`, for the test variable and for `BootNext`. The upstream
+  test (`tools/build.sh edk2-upstream`) keeps the Shell of its payloads.
 
 ## The DPLL of i915 at boot on the M920x
 

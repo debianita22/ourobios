@@ -583,7 +583,7 @@ newer release in the other slot (after going back), the entry reads *Switch
 to* that release.
 
 Only the setup can do it: the firmware refuses the switch once it starts a
-boot option (an OS loader, the UEFI Shell), after `ExitBootServices()` and
+boot option (an OS loader, a UEFI Shell), after `ExitBootServices()` and
 after a resume from suspend, so an OS goes back only with a signed capsule
 and its checks. What runs before the boot options, a `Driver####` or
 `SysPrep####` option or the option ROM of a device, can still ask for it
