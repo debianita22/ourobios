@@ -6,7 +6,7 @@ upstream TianoCore EDK II, the payload of the ROMs from v1.6.0
 with [`patches/tianocore`](../patches/README.md#tianocore-edk-ii-for-the-package)
 on the tree of `EDK2_UPSTREAM_TAG` (`tools/build.sh`) and LvglPkg next to
 it, it has the same sources, file for file, as MrChromebox's EDK II at
-`EDK2_MRCHROMEBOX_COMMIT` with `patches/edk2`, the payload up to v1.5.1.
+`EDK2_MRCHROMEBOX_COMMIT` with `patches/edk2`, the payload up to v1.5.0.
 
 | File | What it is |
 |---|---|

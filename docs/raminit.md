@@ -15,7 +15,7 @@ same machine.
 
 ## What runs
 
-At the coreboot pin of the releases (26.09-517 from v1.6.0; 26.09-438 up to v1.5.1, 26.09-280 up to v1.3.10-rc11), the NRI runs:
+At the coreboot pin of the releases (26.09-517 from v1.6.0; 26.09-438 up to v1.5.0, 26.09-280 up to v1.3.10-rc11), the NRI runs:
 
 - SPD, memory clock, timings, controller and memory map, JEDEC init;
 - sense amplifier offsets, receive enable, read MPR, write leveling;
@@ -253,6 +253,6 @@ firmware.
   fixes the receive clock stage count, which is set on ULT processors
   only, and 96647 the static legs offset, which no step uses, its RdOdt
   path writing the same registers as before. So the training saved by
-  v1.4.0-v1.5.1 stays valid (revision 3, no bump): after a vboot fallback
+  v1.4.0-v1.5.0 stays valid (revision 3, no bump): after a vboot fallback
   between a v1.5.x and a v1.6.0 slot either one boots on it (a capsule
   empties `RW_MRC_CACHE` anyway).

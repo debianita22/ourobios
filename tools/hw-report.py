@@ -149,11 +149,11 @@ KNOWN_FW_LOG = (
     (r"CBFS: 'fallback/slic' not found", None,
      "la tabella SLIC e' facoltativa: acpi.c la cerca sempre in CBFS"),
     (r"SPI Transaction Error at Flash Offset [0-9a-f]+ HSFSTS = 0x0[c8]04f803", "m920x",
-     "fino a v1.5.1 la protezione in scrittura del BIOS (FLOCKDN, FCERR) precede i due eventi di "
-     "fine ramstage; da v1.6.0 la applica il finalize in SMM (patch 0209)", (1, 5, 1)),
+     "fino a v1.5.0 la protezione in scrittura del BIOS (FLOCKDN, FCERR) precede i due eventi di "
+     "fine ramstage; da v1.6.0 la applica il finalize in SMM (patch 0209)", (1, 5, 0)),
     (r"ELOG: NV Write failed at 0x[0-9a-f]+, size 0x[0-9a-f]+", "m920x",
-     "fino a v1.5.1 il registro perde il 'boot' e il 'System reset' di ogni avvio: vedi l'errore SPI; "
-     "corretto da v1.6.0 (patch 0209)", (1, 5, 1)),
+     "fino a v1.5.0 il registro perde il 'boot' e il 'System reset' di ogni avvio: vedi l'errore SPI; "
+     "corretto da v1.6.0 (patch 0209)", (1, 5, 0)),
     (r"HECI: CSE device 16\.0 is disabled", "m920x",
      "alla ripresa da S3 con il ME spento (me_state): la ramstage lo cerca e lo trova nascosto"),
     (r"PMC: Duplicate GPE DW register values detected", "m920x",

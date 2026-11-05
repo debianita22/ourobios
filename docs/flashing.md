@@ -46,7 +46,7 @@ read-only part.
 - The laptop must already run coreboot with a writable flash, like the 4.22
   image in `legacy/` and every image from this repository (unlocked
   descriptor, *BIOS Lock* off in the setup menu: its default up to v1.5.0,
-  on from v1.5.1, so turn it off first; from v1.3.0 also *Firmware
+  on from v1.6.0, so turn it off first; from v1.3.0 also *Firmware
   protection* off, see [Internal update](#internal-update)).
   The Lenovo firmware does not allow it: the first flash needs an
   [external programmer](#external-programmer).

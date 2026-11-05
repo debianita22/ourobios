@@ -147,7 +147,7 @@ out for the same reason; Windows Kernel DMA Protection also needs a TPM
 
 ## Capsule regions in the payload
 
-Up to v1.5.1 the payload wrote every region that the manifest of a signed
+Up to v1.5.0 the payload wrote every region that the manifest of a signed
 capsule named (`FmpDeviceSmmLib`), through the SMMSTORE handler, which
 serves the whole flash on an update boot, descriptor, GbE and ME included
 (the release descriptor leaves them writable). `tools/update.py` and the

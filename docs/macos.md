@@ -186,7 +186,7 @@ The two display options, which by default leave the display as before:
   logo, the setup, the OpenCore picker and the boot of macOS run at the
   resolution of the panel instead of 1920×1080 scaled by 1.5. The
   framebuffer takes 18.7 MB of the graphics stolen memory (32 MB with
-  `mrc.bin`, and from v1.5.1 by default with the native RAM init too, 64
+  `mrc.bin`, and from v1.6.0 by default with the native RAM init too, 64
   MB before); the setup draws
   2.25 times the pixels, and its text is smaller: raise the scale in
   *Graphical UI Configuration*, OpenCore's with `UIScale`. From rc4: with

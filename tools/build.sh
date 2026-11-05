@@ -176,7 +176,7 @@ SUBMODULES=(
 )
 
 # EDK2 di MrChromebox (CONFIG_EDK2_REPO_MRCHROMEBOX) nella cartella dove lo
-# cerca il Makefile del payload: il payload delle ROM fino alla v1.5.1, e da
+# cerca il Makefile del payload: il payload delle ROM fino alla v1.5.0, e da
 # li' l'origine del package su TianoCore (tools/edk2-import.py, sotto),
 # EDK2_MRCHROMEBOX_COMMIT con patches/edk2. Le patch vanno nell'albero come
 # modifiche, non come commit: il Makefile riporta al commit pinnato un
@@ -1531,7 +1531,7 @@ cmd_keys() {
 # as in coreboot's Makefile.mk (3150), and "object is not referenced"
 # (4089), which -w3 says of every name, field and method that only the OS
 # reads or calls (PSWP, the EC fields, ...). Any other warning stops the
-# build: from v1.5.1 there is none on any board. Remarks (2173, named
+# build: from v1.6.0 there is none on any board. Remarks (2173, named
 # objects in a method, which the BAR-at-the-moment methods create on
 # purpose) do not count.
 check_dsdt_w3() {

@@ -682,7 +682,7 @@ The event log (`tools/elog.py`, `elogtool`) shows the reboots of an update.
   regions of `PcdFmpDeviceSmmAllowedRegions`, `RW_SECTION_A RW_SECTION_B
   RW_MRC_CACHE`, and on a flash with both slots only a manifest with both;
   anything else is refused before a byte is written, also through fwupd
-  and the setup, which trust the signature. Up to v1.5.1 the payload wrote
+  and the setup, which trust the signature. Up to v1.5.0 the payload wrote
   whatever a signed manifest named, checked only by the build and
   `update.py` (`info`, `stage`). The capsule boot confirms the running
   slot to vboot before the capsules (`edk2/0046`), as a normal boot does

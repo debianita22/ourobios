@@ -29,7 +29,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   (`PcdFmpDeviceSmmAllowedRegions`, `edk2/0045`), and, on a flash with
   both slots, one that does not name both (a slot alone could be the one
   that runs): *immagine non valida* (0x1800) in the ESRT and in
-  `update.py status`. Up to v1.5.1 the payload wrote whatever a signed manifest
+  `update.py status`. Up to v1.5.0 the payload wrote whatever a signed manifest
   named, checked only by the build and `update.py`; the capsules of every
   release name only those regions, so they still install, rollbacks
   included. A boot with capsules also confirms the slot that runs before
@@ -49,7 +49,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   defines it, no longer in reserved bit 4, and three changes of the native
   RAM init that leave what the W541 programs as it was
   ([docs/raminit.md](docs/raminit.md#limits)): the training saved by
-  v1.4.0-v1.5.1 stays valid. vboot, the TPM log, the commonlib structures
+  v1.4.0-v1.5.0 stays valid. vboot, the TPM log, the commonlib structures
   and the x86 and CPU code are the same in the two commits, so the slots
   still run behind the read-only part of v1.5.0 (`rw-ok` in
   `configs/ro-interface.txt` and `boards/m920x/ro-interface.txt`, with
@@ -139,7 +139,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   whether the patches of `edk2/OuroBiosPkg` still apply to its
   `UefiPayloadPkg` (`tools/upstream.sh tianocore`).
 - `tools/build.sh roms` stops when the DSDT of a build, compiled again
-  with `iasl -w3`, has a warning: v1.5.1 compiles without one on every
+  with `iasl -w3`, has a warning: v1.6.0 compiles without one on every
   board, the *object is not referenced* (4089) of the names and fields
   that only the OS reads aside, which the check leaves out.
 - The memory training of the M920x, which a capsule keeps, has the
@@ -263,9 +263,6 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   writes its variables, `BootNext` for iPXE and CSMWrap included, with
   `tools/efi/setvar.c` from an EFI system partition, which takes them
   from QEMU's fw_cfg, where it typed `setvar` into the Shell.
-
-## v1.5.1
-
 - *BIOS Lock* (*Security* → *Flash protection*) is on by default, on both
   boards (`CONFIG_BOOTMEDIA_SMM_BWP`, the default of the option only): a
   setting already saved in `SMMSTORE` is kept, a store without one and a

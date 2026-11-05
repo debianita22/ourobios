@@ -117,7 +117,7 @@ CONFIG_SMBIOS_UUID_FROM_VPD=y
 CONFIG_SMBIOS_SYSTEM_DATA_FROM_VPD=y
 
 # BIOS Lock e Firmware protection nel menu (Security -> Flash protection),
-# come sul W541: BIOS Lock acceso di default dalla v1.5.1 (spento fino alla
+# come sul W541: BIOS Lock acceso di default dalla v1.6.0 (spento fino alla
 # v1.5.0; BOOTMEDIA_SMM_BWP e' solo il default dell'opzione, un'impostazione
 # salvata resta). Su soc/intel/common EISS e WPD si impostavano a
 # BS_DEV_RESOURCES (pch/lockdown/lockdown.c), prima delle scritture del

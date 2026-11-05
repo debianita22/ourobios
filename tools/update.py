@@ -2045,14 +2045,14 @@ BIOS_WINDOW_MAX = 16 << 20
 # Il default delle opzioni che coreboot legge senza variabile
 # (security/lockdown/lockdown.h): Firmware protection sempre accesa; BIOS Lock
 # il CONFIG_BOOTMEDIA_SMM_BWP della build, spento sulle due board fino alla
-# v1.5.0 e acceso dalla v1.5.1 (lock_option_default)
+# v1.5.0 e acceso dalla v1.6.0 (lock_option_default)
 LOCK_OPTIONS = {"bootmedia_lock": 1, "bios_lock": 0}
-BIOS_LOCK_DEFAULT_ON_SINCE = (1, 5, 1, 0)
+BIOS_LOCK_DEFAULT_ON_SINCE = (1, 6, 0, 0)
 
 
 def lock_option_default(name):
     """Il default di un'opzione di LOCK_OPTIONS per il firmware che gira: BIOS
-    Lock acceso dalla v1.5.1 (rc comprese), spento prima, o quando la versione
+    Lock acceso dalla v1.6.0 (rc comprese), spento prima, o quando la versione
     non si legge o non e' una release (una build di prova della CI)."""
     if name == "bios_lock":
         key = build_release_key(read_text(BIOS_VERSION) or "")

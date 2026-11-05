@@ -1,10 +1,11 @@
 # Moving the payload to TianoCore EDK II
 
-Up to v1.5.1 the payload was MrChromebox's EDK II, branch
+Up to v1.5.0 the payload was MrChromebox's EDK II, branch
 `uefipayload_2608`, at `6c14abf865e0`: the stable tag `edk2-stable202608`
 of TianoCore (`2970e5699ba6`, 2026-08-12) and 100 commits of MrChromebox on
 top of it, then the patches of [`patches/edk2`](../patches/edk2) (43 in
-v1.5.1, 46 now) and the 18 of [`patches/lvglpkg`](../patches/lvglpkg). From
+v1.5.0, 53 now) and those of [`patches/lvglpkg`](../patches/lvglpkg) (18
+then, 20 now). From
 v1.6.0 it is the same sources on the TianoCore tag ([step (d)](#step-d-the-boards-on-the-package)).
 This page lists those 100
 commits with what each becomes when the payload moves to TianoCore, in the
@@ -170,14 +171,14 @@ the MrChromebox commit they come from (`EDK2_MRCHROMEBOX_COMMIT`).
   2026-11-02) both boards build the same 11 534 336 bytes either way: the
   W541 (`mrc`, whose payload `nri` shares) SHA-256 `9eca1a4374ba7cbe...`,
   the M920x `ab90569e4320baf7...`; the full build of `ci-test/next` with
-  the payload from the package passes the smoke and update tests as v1.5.1.
+  the payload from the package passes the smoke and update tests as v1.5.0 did.
 - **What is watched**: `tools/upstream.sh edk2` says when MrChromebox's
   branch moves past `EDK2_MRCHROMEBOX_COMMIT` (to take his commits: the
   constant moved, `patches/edk2` rebased, the import again), `tianocore`
   when TianoCore has a newer stable tag (whether the series and the
   platform still apply), `dbx` reads the dbx of the package.
 - **Going back**: the defconfigs with `CONFIG_EDK2_TAG_OR_REV` of
-  MrChromebox in place of the package's lines build the payload of v1.5.1's
+  MrChromebox in place of the package's lines build the payload of v1.5.0's
   base again (`tools/build.sh` follows the defconfigs).
 
 What comes next, each with the payload's tests: the series shorter, commit

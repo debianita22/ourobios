@@ -100,7 +100,7 @@
 # --size controlla che il setup sia disegnato a quella risoluzione:
 # tools/build.sh smoke prova cosi' anche il setup alla risoluzione del
 # pannello 3K del W541 (gfx_fb_limit), dove v1.3.10-rc3 si fermava su un page
-# fault di LVGL v9.5.0 (il fix e' di LVGL v9.6.0: fino alla v1.5.1
+# fault di LVGL v9.5.0 (il fix e' di LVGL v9.6.0: fino alla v1.5.0
 # patches/lvglpkg/0016, poi LVGL_COMMIT di tools/build.sh).
 #
 # --upstream prova il payload di EDK II di TianoCore senza le patch del
