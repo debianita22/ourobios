@@ -328,7 +328,19 @@ Prepared or possible, not in v1.3.9:
   `mrc` and 237 KiB with `nri`, whose romstage carries the RAM init.
 - **vboot's CBFS verification** (`VBOOT_CBFS_INTEGRATION`), which hashes
   each file as it is loaded instead of reading the slot twice: about 0.2 s
-  less at every boot ([docs/flashing.md](flashing.md), boot time).
+  less at every boot ([docs/flashing.md](flashing.md), boot time). On the
+  M920x of v1.6.0-rc5 verstage reads the 3.4 MiB of the slot in 0.25 s
+  and hashes them in 0.04 s, and measured boot hashes every file it loads
+  again for the TPM: with the CBFS verification one SHA-256 per file
+  would serve both.
+- **A larger early console on the M920x**: 3.5 KiB in its cache-as-RAM
+  (`_preram_cbmem_console` in `boards/m920x/ro-interface.txt`, the
+  default of Cannon Lake). The bootblock, verstage and romstage until
+  CBMEM fill it at every boot, as every line up to DEBUG goes to the
+  CBMEM console at any level, so `cbmem -1` loses the start, with the
+  banner of the bootblock that gives the version of the read-only part
+  (BOOT-01 of `hw-report.py`; `update.py status` still gives its
+  generation). The W541 has 16 KiB since v1.3.9 (patch 0085).
 - **The `nri` image with the `mrc` read-only part**, so that one read-only
   part is on every laptop whatever the image flashed first.
 
