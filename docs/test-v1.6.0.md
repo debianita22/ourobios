@@ -169,10 +169,12 @@ The list of `lvglpkg/0021`, within DISP-05:
 
 ## 5. M920x only
 
-Done on rc1-rc5 (2026-11-03 to 11-05): the findings became patches 0223
-(TPM-03 after S3) and 0224 (the processor graphics always on); the report
-of rc5 passes, with PCI-09 INFO for the SPI controller; the boot time of
-rc5 step by step is in [docs/m920x.md](m920x.md#boot-time). With rc6:
+Done on rc1-rc6 (2026-11-03 to 11-05, the record in
+[docs/tests/v1.6.0/m920x-fsp/](tests/v1.6.0/m920x-fsp/README.md)): the
+findings became patches 0223 (TPM-03 after S3) and 0224 (the processor
+graphics always on); the report of rc5 passes, with PCI-09 INFO for the
+SPI controller; the boot time of rc5 step by step is in
+[docs/m920x.md](m920x.md#boot-time). With rc6:
 the two reports again (BOOT-01 with the serial port off, BOOT-02 without
 the Shell to load: the boot time against the table of rc5), the rows new
 in rc6, the rows of section 4 not run there yet, and the items below.
@@ -187,7 +189,9 @@ in rc6, the rows of section 4 not run there yet, and the items below.
 
 ## 6. What to bring back
 
-For each board and variant, in its folder:
+The M920x's are in [docs/tests/v1.6.0/m920x-fsp/](tests/v1.6.0/m920x-fsp/README.md):
+the record of ci-244 to rc6, the reports and logs of rc6 and the i915
+DPLL measurements. For each board and variant, in its folder:
 - the two reports;
 - a table of the IDs of the manual tests with their results;
 - `sudo cbmem -1 > cbmem-BOARD-VARIANT.txt` of the second boot, whole;
