@@ -308,6 +308,15 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `cbmem -1` keeps them, as the CBMEM console takes every line up to
   DEBUG at any level; the OS reads the log from the TPM2 and TCPA
   tables as before.
+- On the M920x the serial console of coreboot is off by default
+  (*Console* → *Serial Console*, `CONSOLE_SERIAL` off with
+  `CONSOLE_SERIAL_RUNTIME`): COM1 of the Super I/O sits behind an
+  optional module, and at 115200 baud the port cost time at every boot
+  with or without it (6.2 s at the DEBUG level on rc5, and the lines of
+  the other processors on top). With the module, turn it on in the menu:
+  it prints from romstage on. `cbmem -1` keeps every line up to DEBUG
+  either way, and Linux still finds the port (`ttyS0`). A setting saved
+  before stays as it was.
 - `tools/hw-report.py` counts from the coreboot log what the M920x's
   serial port costs at the level of the boot and at Info, Notice and
   Error, the other processors' lines included, and says whether

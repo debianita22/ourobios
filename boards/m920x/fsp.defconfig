@@ -96,13 +96,16 @@ CONFIG_ELOG_GSMI=y
 CONFIG_CMOS_POST=y
 CONFIG_CMOS_POST_OFFSET=0x70
 
-# Console: la seriale (COM1 del Super I/O, il connettore opzionale) dal
-# livello INFO, la console CBMEM (sudo cbmem -1) sempre fino a DEBUG. A
-# 115200 baud le righe DEBUG costavano circa 4 s a ogni avvio; per vederle
-# anche sulla seriale: menu, Console -> Console Log Level.
+# Console: la seriale (COM1 del Super I/O, dietro il connettore opzionale)
+# spenta di default: il modulo COM e' facoltativo, e a 115200 baud la
+# seriale costava a ogni avvio, con o senza cavo (6,2 s al livello DEBUG
+# sulla v1.6.0-rc5). Si accende dal menu, Console -> Serial Console
+# (CONSOLE_SERIAL_RUNTIME, l'opzione serial_console), da romstage in poi:
+# bootblock e verstage seguono la parte RO, postcar resta senza seriale
+# perche' non legge le opzioni. La console CBMEM (sudo cbmem -1) ha sempre
+# fino a DEBUG; il livello della seriale: menu, Console -> Console Log Level.
 CONFIG_DEFAULT_CONSOLE_LOGLEVEL_6=y
-# E nel menu Console -> Serial Console, per spegnerla (senza cavo l'avvio
-# non la aspetta): accesa di default, come CONSOLE_SERIAL
+# CONFIG_CONSOLE_SERIAL is not set
 CONFIG_CONSOLE_SERIAL_RUNTIME=y
 
 # I dati di questa macchina dalla VPD (RO_VPD, vuota nelle release, si
