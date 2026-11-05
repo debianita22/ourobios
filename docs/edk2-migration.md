@@ -217,7 +217,9 @@ The other *drop* ones, as looked at for v1.6.0:
   (SdhciNonPciDxe, the SDHCI off the PCI bus, with its record in
   `CbParseLib` and `NonDiscoverablePciDeviceDxe`, which only it fed), two
   drivers in the volume for controllers these boards do not have, left
-  out by `edk2/0054` and `edk2/0055`: `tools/edk2-import.py` keeps their
+  out by `edk2/0054` and `edk2/0055` (the payload of the W541 9,357 bytes
+  smaller, that of the M920x 8,863, with the smoke test and `edk2-parity`
+  passed on the build of the branch): `tools/edk2-import.py` keeps their
   directories out of TianoCore's tree (`LEFT_OUT`), so the commit that
   adds each and the patch that removes it take no number in
   `patches/tianocore`, and the other numbers stay; what `5342f42` adds

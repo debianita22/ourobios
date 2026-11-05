@@ -249,9 +249,11 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `SdMmcPciHcDxe` as before), and SdhciNonPciDxe, for the SDHCI off the
   PCI bus, with its record of the coreboot table, the parser of
   `CbParseLib` and `NonDiscoverablePciDeviceDxe`, which only it fed.
-  Each was dispatched at every boot to bind nothing. `tools/edk2-import.py`
-  keeps their directories out of TianoCore's tree (`LEFT_OUT`), so the
-  numbers of `patches/tianocore` stay.
+  Each was dispatched at every boot to bind nothing; the payload of the
+  W541 is 9,357 bytes smaller (1,798,200), that of the M920x 8,863
+  (1,800,049). `tools/edk2-import.py` keeps their directories out of
+  TianoCore's tree (`LEFT_OUT`), so the numbers of `patches/tianocore`
+  stay.
 - [docs/edk2-migration.md](docs/edk2-migration.md): the 100 commits of
   MrChromebox's branch over `edk2-stable202608`, each with what it
   becomes in the move to TianoCore (the project's package, a patch to
