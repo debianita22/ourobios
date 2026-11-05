@@ -301,6 +301,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   (`SOC_INTEL_COMMON_PCH_LOCKDOWN_SMM_BWP_LATE`) has the SMI handler set
   them at the finalize instead, after ramstage is done with the flash
   and before any boot option or OS runs, as Lynx Point does on the W541.
+- coreboot prints its measurement log before the payload at DEBUG
+  instead of INFO (patch 0225): on the M920x, whose serial console runs
+  at INFO by default, the 14 entries with both digests no longer go to
+  the UART at every boot, 2.7 KiB and 0.27 s at 115200 baud on rc5.
+  `cbmem -1` keeps them, as the CBMEM console takes every line up to
+  DEBUG at any level; the OS reads the log from the TPM2 and TCPA
+  tables as before.
 - The graphics stolen memory of the `nri` variant (*Hardware* → *Intel
   graphics* → *DVMT pre-allocated memory*) defaults to 32 MB, what
   `mrc.bin` reserves (patch 0208): the two variants boot with the same

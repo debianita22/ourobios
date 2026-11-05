@@ -218,3 +218,4 @@
 0222-drivers-intel-fsp2_0-Take-the-SoC-memory-settings-ve.patch
 0223-security-tpm-Measure-nothing-on-a-resume-from-S3.patch
 0224-mb-lenovo-m720q_m920q-Keep-the-processor-graphics-on.patch
+0225-security-tpm-Dump-the-measurement-log-at-BIOS_DEBUG.patch

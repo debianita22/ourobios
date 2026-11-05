@@ -1,0 +1,124 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 5 Nov 2026 14:25:00 +0100
+Subject: [PATCH] security/tpm: Dump the measurement log at BIOS_DEBUG
+
+tpm_log_dump() prints every entry of coreboot's measurement log at
+BIOS_INFO before the payload starts: a line with the digest in hex and
+the name, and, when TPM_MEASURED_BOOT_SHA1_BANK keeps both banks, a
+second one with the SHA-1 digest. A build that lowers the console log
+level to INFO to keep the slow consoles short still sends all of it to
+them. On a ThinkCentre M920x built so, the 14 entries of a boot are
+about 2.7 KiB on the UART of the Super I/O at 115200 baud: 273 ms of
+console time in BS_PAYLOAD_BOOT entry at every boot, with or without a
+cable on the optional COM connector.
+
+The dump is a debugging aid. The OS reads the log from the TPM2 or
+TCPA table (cbmem -L shows it too), and the CBMEM console takes every
+message up to BIOS_DEBUG whatever the log level (console_log_level(),
+CONSOLE_LOG_FAST), so `cbmem -1` keeps the dump. At BIOS_DEBUG it
+leaves the UART at log level INFO and below and stays there at DEBUG.
+---
+ src/security/tpm/tspi/log-tpm1.c | 10 +++++-----
+ src/security/tpm/tspi/log-tpm2.c | 16 ++++++++--------
+ src/security/tpm/tspi/log.c      | 10 +++++-----
+ 3 files changed, 18 insertions(+), 18 deletions(-)
+
+diff --git a/src/security/tpm/tspi/log-tpm1.c b/src/security/tpm/tspi/log-tpm1.c
+index 14886ea8204..4846d59b9b4 100644
+--- a/src/security/tpm/tspi/log-tpm1.c
++++ b/src/security/tpm/tspi/log-tpm1.c
+@@ -76,18 +76,18 @@ void tpm1_log_dump(void)
+ 	if (!tclt)
+ 		return;
+ 
+-	printk(BIOS_INFO, "coreboot TPM 1.2 measurements:\n\n");
++	printk(BIOS_DEBUG, "coreboot TPM 1.2 measurements:\n\n");
+ 	for (i = 0; i < le16toh(tclt->vendor.num_entries); i++) {
+ 		struct tpm_1_log_entry *tce = &tclt->entries[i];
+ 
+-		printk(BIOS_INFO, " PCR-%u ", le32toh(tce->pcr));
++		printk(BIOS_DEBUG, " PCR-%u ", le32toh(tce->pcr));
+ 
+ 		for (j = 0; j < TPM_1_LOG_DIGEST_MAX_LENGTH; j++)
+-			printk(BIOS_INFO, "%02x", tce->digest[j]);
++			printk(BIOS_DEBUG, "%02x", tce->digest[j]);
+ 
+-		printk(BIOS_INFO, " %s [%s]\n", "SHA1", (char *)tce->data);
++		printk(BIOS_DEBUG, " %s [%s]\n", "SHA1", (char *)tce->data);
+ 	}
+-	printk(BIOS_INFO, "\n");
++	printk(BIOS_DEBUG, "\n");
+ }
+ 
+ void tpm1_log_add_table_entry(const char *name, const uint32_t pcr,
+diff --git a/src/security/tpm/tspi/log-tpm2.c b/src/security/tpm/tspi/log-tpm2.c
+index 00c227be9e4..f6e38db98e9 100644
+--- a/src/security/tpm/tspi/log-tpm2.c
++++ b/src/security/tpm/tspi/log-tpm2.c
+@@ -106,24 +106,24 @@ void tpm2_log_dump(void)
+ 	hash_size = vb2_digest_size(TPM_MEASURE_ALGO);
+ 	alg_name = vb2_get_hash_algorithm_name(TPM_MEASURE_ALGO);
+ 
+-	printk(BIOS_INFO, "coreboot TPM 2.0 measurements:\n\n");
++	printk(BIOS_DEBUG, "coreboot TPM 2.0 measurements:\n\n");
+ 	for (i = 0; i < le16toh(tclt->vendor.num_entries); i++) {
+ 		struct tpm_2_log_entry *tce = &tclt->entries[i];
+ 
+-		printk(BIOS_INFO, " PCR-%u ", le32toh(tce->pcr));
++		printk(BIOS_DEBUG, " PCR-%u ", le32toh(tce->pcr));
+ 
+ 		for (j = 0; j < hash_size; j++)
+-			printk(BIOS_INFO, "%02x", tce->digest[j]);
++			printk(BIOS_DEBUG, "%02x", tce->digest[j]);
+ 
+-		printk(BIOS_INFO, " %s [%s]\n", alg_name, tce->data);
++		printk(BIOS_DEBUG, " %s [%s]\n", alg_name, tce->data);
+ #if CONFIG(TPM_MEASURED_BOOT_SHA1_BANK)
+-		printk(BIOS_INFO, "        ");
++		printk(BIOS_DEBUG, "        ");
+ 		for (j = 0; j < SHA1_DIGEST_SIZE; j++)
+-			printk(BIOS_INFO, "%02x", tce->sha1[j]);
+-		printk(BIOS_INFO, " SHA1\n");
++			printk(BIOS_DEBUG, "%02x", tce->sha1[j]);
++		printk(BIOS_DEBUG, " SHA1\n");
+ #endif
+ 	}
+-	printk(BIOS_INFO, "\n");
++	printk(BIOS_DEBUG, "\n");
+ }
+ 
+ void tpm2_log_add_table_entry(const char *name, const uint32_t pcr,
+diff --git a/src/security/tpm/tspi/log.c b/src/security/tpm/tspi/log.c
+index ea4e9197a27..dc2d38ad3da 100644
+--- a/src/security/tpm/tspi/log.c
++++ b/src/security/tpm/tspi/log.c
+@@ -39,20 +39,20 @@ void tpm_cb_log_dump(void)
+ 	if (!tclt)
+ 		return;
+ 
+-	printk(BIOS_INFO, "coreboot TPM log measurements:\n\n");
++	printk(BIOS_DEBUG, "coreboot TPM log measurements:\n\n");
+ 	for (i = 0; i < tclt->num_entries; i++) {
+ 		struct tpm_cb_log_entry *tce = &tclt->entries[i];
+ 		if (tce) {
+-			printk(BIOS_INFO, " PCR-%u ", tce->pcr);
++			printk(BIOS_DEBUG, " PCR-%u ", tce->pcr);
+ 
+ 			for (j = 0; j < tce->digest_length; j++)
+-				printk(BIOS_INFO, "%02x", tce->digest[j]);
++				printk(BIOS_DEBUG, "%02x", tce->digest[j]);
+ 
+-			printk(BIOS_INFO, " %s [%s]\n",
++			printk(BIOS_DEBUG, " %s [%s]\n",
+ 				   tce->digest_type, tce->name);
+ 		}
+ 	}
+-	printk(BIOS_INFO, "\n");
++	printk(BIOS_DEBUG, "\n");
+ }
+ 
+ void tpm_cb_log_add_table_entry(const char *name, const uint32_t pcr,
+-- 
+2.43.0
+
