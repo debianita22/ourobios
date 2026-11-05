@@ -308,6 +308,20 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `cbmem -1` keeps them, as the CBMEM console takes every line up to
   DEBUG at any level; the OS reads the log from the TPM2 and TCPA
   tables as before.
+- On the M920x *Security* → *Management Engine* → *Intel Management
+  Engine* has a third choice, *Disabled (HAP bit)* (patch 0226): the ME
+  stops after its bring-up, with no HECI and no message to answer, so
+  the boot loses the up to 5 s wait of the soft disable at FSP-M's DRAM
+  Init Done. At the first boot after *Save* coreboot writes the HAP bit
+  into the flash descriptor, which this board's descriptor lets the
+  host do, reads it back and logs `HAP: written`; the ME takes it at the
+  next start from power off (shut down, unplug for ten seconds).
+  *Enabled* or *Disabled* clear it the same way. **RISCHIO BRICK**: a
+  power cut during that one write (about 50 ms) leaves the board unable
+  to start until the descriptor is written back with an external
+  programmer ([docs/m920x.md](docs/m920x.md#intel-me)). ME-01 of
+  `hw-report.py` knows the new state. The W541 is unchanged: its
+  descriptor has had AltMeDisable set from the start.
 - On the M920x the serial console of coreboot is off by default
   (*Console* → *Serial Console*, `CONSOLE_SERIAL` off with
   `CONSOLE_SERIAL_RUNTIME`): COM1 of the Super I/O sits behind an
