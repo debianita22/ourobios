@@ -196,3 +196,8 @@ CONFIG_EDK2_CSMWRAP_FILE="m920x/csmwrap.efi"
 # EDK2 le verifica con le chiavi di db
 CONFIG_EDK2_LOAD_OPTION_ROMS=y
 CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D UFS_ENABLE=FALSE -D UHCI_ENABLE=FALSE -D EBC_ENABLE=FALSE -D EXTRA_FS_DRIVERS=FALSE -D CRYPTO_PROTOCOL_SUPPORT=TRUE"
+
+# Solo per la build di misura (ci-test/v1.6.0-m920x-diag2), mai in una
+# release: il tempo di ogni callback degli stati di avvio di ramstage nel
+# log ("BS: callback ... (N ms)"), per la SMI di finalize e post_cpus_init
+CONFIG_DEBUG_BOOT_STATE=y

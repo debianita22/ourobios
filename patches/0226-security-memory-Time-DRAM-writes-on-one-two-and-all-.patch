@@ -1,0 +1,162 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 5 Nov 2026 15:30:00 +0100
+Subject: [PATCH] security/memory: Time DRAM writes on one, two and all
+ processors
+
+Test builds only, not for a release: whether clearing the memory at
+boot on every processor would be faster than on the boot processor
+alone. On a ThinkCentre M920x with 40 GB clear_memory() takes 2.0 s,
+about 21 GB/s, while two channels of DDR4-2400 peak at 38.4 GB/s.
+
+At the exit of BS_DEV_INIT, after clear_memory(), up to 512 MiB of the
+largest piece of usable RAM below 4 GiB, from 16 MiB up and outside
+CBMEM, are written with memset by one processor, two, four and so on up
+to all of them, each its part, and the console says how long each
+pass took. That memory is what clear_memory() writes at a boot the OS
+asked it for, and nothing in it is in use at this point.
+---
+ src/security/memory/Makefile.mk    |   1 +
+ src/security/memory/dram_bw_test.c | 121 +++++++++++++++++++++++++++++
+ 2 files changed, 122 insertions(+)
+ create mode 100644 src/security/memory/dram_bw_test.c
+
+diff --git a/src/security/memory/Makefile.mk b/src/security/memory/Makefile.mk
+index 4f07bbbcb4e..3b082979ffd 100644
+--- a/src/security/memory/Makefile.mk
++++ b/src/security/memory/Makefile.mk
+@@ -5,3 +5,4 @@ postcar-$(CONFIG_PLATFORM_HAS_DRAM_CLEAR) += memory.c
+ ramstage-$(CONFIG_PLATFORM_HAS_DRAM_CLEAR) += memory.c
+ 
+ ramstage-$(CONFIG_PLATFORM_HAS_DRAM_CLEAR) += memory_clear.c
++ramstage-$(CONFIG_PLATFORM_HAS_DRAM_CLEAR) += dram_bw_test.c
+diff --git a/src/security/memory/dram_bw_test.c b/src/security/memory/dram_bw_test.c
+new file mode 100644
+index 00000000000..6c7ade3bd50
+--- /dev/null
++++ b/src/security/memory/dram_bw_test.c
+@@ -0,0 +1,121 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * Test builds only: how fast the processors write DRAM, one, two and all
++ * of them at once, to decide whether clearing the memory at boot on every
++ * processor would be faster than on the boot processor alone. Up to
++ * 512 MiB of usable RAM below 4 GiB, outside CBMEM, are written with
++ * memset, as clear_memory() would write them, each processor its part.
++ */
++
++#include <arch/cpu.h>
++#include <bootstate.h>
++#include <cbmem.h>
++#include <commonlib/helpers.h>
++#include <console/console.h>
++#include <cpu/x86/mp.h>
++#include <device/device.h>
++#include <device/resource.h>
++#include <memrange.h>
++#include <string.h>
++#include <timer.h>
++#include <types.h>
++
++#define BW_TEST_MAX	(512 * MiB)
++#define BW_TEST_LOW	(16 * MiB)
++
++struct bw_job {
++	uintptr_t base;
++	size_t chunk;
++	int cpus;
++};
++
++static struct bw_job job;
++
++static void bw_slice(void *arg)
++{
++	const struct bw_job *j = arg;
++	const unsigned long i = cpu_index();
++
++	if (i >= (unsigned long)j->cpus)
++		return;
++	memset((void *)(j->base + i * j->chunk), 0, j->chunk);
++}
++
++static void bw_nothing(void *arg)
++{
++}
++
++static void dram_bw_test(void *unused)
++{
++	const struct range_entry *r;
++	struct memranges mem;
++	uint64_t base = 0, end = 0;
++	void *cbmem_base;
++	size_t cbmem_size;
++	const int ncpus = dev_count_cpu();
++	int n;
++
++	if (!CONFIG(PARALLEL_MP_AP_WORK) || ncpus < 1)
++		return;
++
++	memranges_init(&mem, IORESOURCE_MEM | IORESOURCE_FIXED | IORESOURCE_STORED |
++		       IORESOURCE_ASSIGNED | IORESOURCE_CACHEABLE,
++		       IORESOURCE_MEM | IORESOURCE_FIXED | IORESOURCE_STORED |
++		       IORESOURCE_ASSIGNED | IORESOURCE_CACHEABLE, BM_MEM_RAM);
++	if (cbmem_get_region(&cbmem_base, &cbmem_size)) {
++		memranges_teardown(&mem);
++		return;
++	}
++	memranges_insert(&mem, (uintptr_t)cbmem_base, cbmem_size, BM_MEM_TABLE);
++
++	/* The largest piece of RAM below 4 GiB, from 16 MiB up */
++	memranges_each_entry(r, &mem) {
++		uint64_t b = MAX(range_entry_base(r), (uint64_t)BW_TEST_LOW);
++		uint64_t e = MIN(range_entry_end(r), 4ULL * GiB);
++
++		if (range_entry_tag(r) != BM_MEM_RAM || e <= b)
++			continue;
++		b = ALIGN_UP(b, 2 * MiB);
++		e = ALIGN_DOWN(e, 2 * MiB);
++		if (e > b && e - b > end - base) {
++			base = b;
++			end = e;
++		}
++	}
++	memranges_teardown(&mem);
++	if (end - base < 64 * MiB)
++		return;
++
++	const size_t total = ALIGN_DOWN(MIN(end - base, (uint64_t)BW_TEST_MAX), 8 * MiB);
++	printk(BIOS_INFO, "DRAM write test: %zu MiB at 0x%llx, %d processors\n",
++	       total / MiB, base, ncpus);
++
++	for (n = 1;; n = MIN(2 * n, ncpus)) {
++		struct stopwatch sw;
++		int64_t us;
++
++		job.base = base;
++		job.cpus = n;
++		job.chunk = ALIGN_DOWN(total / n, 4096);
++
++		stopwatch_init(&sw);
++		/* The APs take the job, the BSP does its part, then a job that
++		   each AP takes only once it is done with the first one */
++		if (n > 1 && mp_run_on_aps(bw_slice, &job, MP_RUN_ON_ALL_CPUS,
++					   100 * USECS_PER_MSEC) != CB_SUCCESS)
++			break;
++		bw_slice(&job);
++		if (n > 1 && mp_run_on_aps(bw_nothing, NULL, MP_RUN_ON_ALL_CPUS,
++					   10 * USECS_PER_SEC) != CB_SUCCESS)
++			break;
++		us = stopwatch_duration_usecs(&sw);
++		printk(BIOS_INFO, "DRAM write test: %d processor%s: %lld us, %lld MB/s\n",
++		       n, n > 1 ? "s" : "", (long long)us,
++		       us ? (long long)job.chunk * n / us : 0LL);
++		if (n == ncpus)
++			break;
++	}
++}
++
++BOOT_STATE_INIT_ENTRY(BS_DEV_INIT, BS_ON_EXIT, dram_bw_test, NULL);
+-- 
+2.43.0
+
