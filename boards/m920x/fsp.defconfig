@@ -205,3 +205,8 @@ CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D UFS_ENABLE=FALSE -D UHCI_ENABLE=FALSE -D EBC
 # avvio, tolti i 105 KiB in piu' che verstage e ramstage leggono e
 # misurano. Solo ramstage decomprime il payload: la parte RO non cambia
 CONFIG_COMPRESSED_PAYLOAD_ZSTD=y
+
+# Solo per la build di misura (ci-test/v1.6.0-m920x-diag), mai in una
+# release: il tempo di ogni callback degli stati di avvio di ramstage nel
+# log ("BS: callback ... (N ms)"), per la SMI di finalize e post_cpus_init
+CONFIG_DEBUG_BOOT_STATE=y
