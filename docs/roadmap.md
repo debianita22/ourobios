@@ -34,6 +34,9 @@ is here. None of it is a promise of a date.
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
 | [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
 | [Openness score](#openness-score) | both | already in `tools/sbom.py` | a comparison with Dasharo's own tool |
+| [Clearing the memory on every core](#clearing-the-memory-on-every-core) | both | the clear runs on the boot processor only, 2.0 s for 40 GB on the M920x (about 21 GB/s); what the memory controller gives to four cores is not measured | a test build that times the clear with one, two and four cores |
+| [The UEFI Shell in the payload](#the-uefi-shell-in-the-payload) | both | 12% of the payload, and firmware code that runs with Secure Boot on; the smoke test drives the payload through it | a smoke test with a Shell from a disk image, then the choice |
+| [The DPLL of i915 at boot on the M920x](#the-dpll-of-i915-at-boot-on-the-m920x) | M920x | i915's own wait for the PLL, not the firmware's | a report to i915 with the numbers |
 
 ## Firmware watchdog
 
@@ -663,6 +666,46 @@ reports no backlight instead of the vendor one when neither is there
 brightness path on the W541 for no gain elsewhere: not planned. macOS
 answers "Darwin" only, unless an OpenCore configuration renames `_OSI`.
 
+
+## Clearing the memory on every core
+
+*Clear memory at power-on* runs `clear_memory()` of
+`security/memory/memory_clear.c` on the boot processor at the exit of
+`BS_DEV_INIT`: `memset` below 4 GiB, `memset_pae()` through one PAE
+window above. On the M920x of v1.6.0-rc5 that is 2.0 s for 40 GB (about
+21 GB/s, BS_DEV_INIT exit "exec"), at every boot where Linux asked
+([docs/flashing.md](flashing.md#clearing-the-memory-at-power-on)); on the
+W541 1.7 s for 32 GB. The processors are up by then (MP init at
+`BS_DEV_INIT_CHIPS`), so the ranges could be split among them with
+`mp_run_on_all_cpus()`, each with its own PAE tables and window, as
+`memset_pae()` changes the paging of the processor it runs on. DDR4-2400
+in two channels peaks at 38.4 GB/s, so the gain is between none and about
+0.8 s: a test build that times the clear with one, two and four
+processors decides, ramstage only, and the S3 resume never clears.
+
+## The UEFI Shell in the payload
+
+The payload carries the UEFI Shell (`EDK2_HAVE_EFI_SHELL`, coreboot's
+default), with a boot entry after the disks. Measured on the M920x
+payload of v1.6.0-rc5 with the volume's files: the Shell is 954,430 bytes,
+about 249 KiB compressed alone with LZMA, some 12% of the 2.0 MB
+payload, the third file after `CryptoDxe` (470 KiB) and
+`VariableRuntimeDxe` (384 KiB, its own copy of the crypto, which it needs
+at runtime), ahead of the LVGL display engine (245 KiB), CSMWrap with
+SeaBIOS (181 KiB) and iPXE (128 KiB). Left out (`-D SHELL_TYPE=NONE`), it
+would save about 0.05 s per boot of reading and decompressing on the
+M920x, and 249 KiB of slot on the W541 (295-365 KiB free on rc5).
+With Secure Boot on it starts like any file of the firmware volume,
+without a check against db (`DxeImageVerificationLib` lets every image
+from a volume run), so whoever sits at the boot menu has `mm`,
+`setvar` and `bcfg` without a signed loader; the flash and the
+authenticated variables stay protected by SMM.
+
+What holds it back: the smoke test of the payload (`tools/qemu-smoke.py`)
+drives the payload through the built-in Shell: `setvar` into SMMSTORE,
+`BootNext` for iPXE and CSMWrap. A Shell from a disk image of the test
+would keep that, and then the choice is the owner's: the Shell as it is,
+off, or off only with Secure Boot on.
 
 ## The DPLL of i915 at boot on the M920x
 
