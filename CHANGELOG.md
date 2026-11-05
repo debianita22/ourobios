@@ -236,6 +236,12 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `patches/tianocore` applies to a newer stable tag, `edk2` watches
   MrChromebox's branch from the commit the package comes from, `dbx`
   reads the dbx of the package.
+- `tools/sbom.py` counts the flash descriptor, the GbE NVM and the VBT
+  as data in the openness figures, as Dasharo's Openness Score does
+  (they were closed binaries: 0.1% of the code at most). The report says
+  where it still differs from Dasharo's tool: the ME region counts by
+  the bytes that are not erased flash, not whole
+  ([docs/roadmap.md](docs/roadmap.md#openness-score)).
 - Two drivers of MrChromebox's tree for controllers these boards do not
   have are out of the payload (`edk2/0054`, `edk2/0055`), the first
   *drop* commits of the move: SdMmcPciGliDxe, for the SDHCI of Genesys

@@ -33,7 +33,7 @@ is here. None of it is a promise of a date.
 | [LVGL v10](#lvgl-v10) | both | not out yet (v9.6, in the setup from v1.6.0, is the last of v9); LvglPkg calls the setters of v9.6 in place of the flag functions that v10 removes (`lvglpkg/0021`) | the pin |
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
 | [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
-| [Openness score](#openness-score) | both | already in `tools/sbom.py` | a comparison with Dasharo's own tool |
+| [Openness score](#openness-score) | both | already in `tools/sbom.py`; compared with Dasharo's tool after rc5: the descriptor, GbE and VBT are data there too now, the ME region is counted whole by Dasharo and by its bytes here | none planned |
 | [Clearing the memory on every core](#clearing-the-memory-on-every-core) | both | the clear runs on the boot processor only, 2.0 s for 40 GB on the M920x (about 21 GB/s); what the memory controller gives to four cores is not measured | a test build that times the clear with one, two and four cores |
 | [The UEFI Shell in the payload](#the-uefi-shell-in-the-payload) | both | done in v1.6.0 (`edk2/0053`, patch 0227): the boards' payload leaves the Shell out, and the smoke test writes its variables with `tools/efi/setvar.c` from a disk image | none planned |
 | [The DPLL of i915 at boot on the M920x](#the-dpll-of-i915-at-boot-on-the-m920x) | M920x | i915's own wait for the PLL, not the firmware's | a report to i915 with the numbers |
@@ -544,9 +544,26 @@ of the code of the M920x image is open source (63.4% Intel's FSP, ME and
 other binaries), 85.9% of the W541 `mrc` image and 89.3% of the `nri`
 one.
 
-- **Next step**: only a comparison with Dasharo's own tool on one image,
-  to see whether it counts the descriptor and the GbE region as closed
-  binaries, as `sbom.py` does.
+- **Done after v1.6.0-rc5** (2026-11-05), by reading Dasharo's
+  [Openness-Score](https://github.com/Dasharo/Openness-Score)
+  (`openness_score/coreboot.py`) against the rc5 images, not by running
+  it. The classes match (stages, the payload and `dsdt.aml` open;
+  microcode, FSP, `mrc.bin` and option ROMs closed; metadata, the splash,
+  the runtime regions and vboot's data; erased flash and free CBFS
+  space empty) but for two things. The descriptor, the GbE NVM and the
+  Platform Data region are data for Dasharo (`IFD_DATA_REGIONS`), and so
+  is the VBT, whose format Intel publishes; `sbom.py` counted them as
+  closed binaries and now counts them as data too, which moves the
+  shares by 0.1% at most (rc5: 37.2% of the code open on the M920x,
+  86.2% on `mrc`, 89.6% on `nri`). And Dasharo counts the ME region of
+  the descriptor whole, as closed code, unless every byte of it is
+  erased (`_classify_ifdtool_region`), where `sbom.py` counts the bytes
+  of every region that are not erased flash: on the W541, whose ME was
+  cut down with `me_cleaner -S` to 86 KiB of its 5 MiB region, Dasharo's
+  rule gives 44.6% (`mrc`) and 46.2% (`nri`), and on the M920x, with 5.2
+  MiB of CSME in a 12 MiB region, 24.2%. `sbom.py` keeps its rule, the
+  code that is in the flash, and says so in the report; the Dasharo
+  figure for an image is the same report with the ME region taken whole.
 
 ## EDK II from TianoCore
 

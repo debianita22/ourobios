@@ -766,7 +766,9 @@ def cbfs_class(f):
     if t == 0x61 or n == "mrc.bin":
         return "Intel MRC (mrc.bin)", CLOSED
     if n == "vbt.bin":
-        return "Intel VBT", CLOSED
+        # dati, come per l'Openness Score di Dasharo: Intel pubblica il
+        # formato di ogni byte del VBT (BSF e JSON)
+        return "Intel VBT", DATA
     if t == 0x30:
         m = re.fullmatch(r"pci([0-9a-f]{4}),([0-9a-f]{4})\.rom", n)
         return ("option ROM %s:%s" % m.groups()) if m else "option ROM %s" % n, CLOSED
@@ -783,9 +785,17 @@ def cbfs_class(f):
     return "unknown CBFS file %s" % n, CLOSED
 
 
+# Le regioni dell'IFD che sono codice: il ME e l'EC. Il descrittore, la GbE
+# (la configurazione del controller di rete) e la Platform Data sono dati,
+# come li conta l'Openness Score di Dasharo (IFD_DATA_REGIONS del suo
+# coreboot.py); di ogni regione si contano i byte che non sono flash vuota
+# (scan), non la regione intera come fa Dasharo
+IFD_CODE = ("Intel ME", "EC")
+
+
 def area_class(area, ifd_kind):
     if ifd_kind:
-        return IFD_LABELS.get(ifd_kind, "IFD region %s" % ifd_kind), CLOSED
+        return IFD_LABELS.get(ifd_kind, "IFD region %s" % ifd_kind), CLOSED if ifd_kind in IFD_CODE else DATA
     if area.name in VBOOT_AREAS:
         return "vboot keys and signatures (GBB, VBLOCK)", DATA
     if area.name in ID_AREAS:
@@ -1565,10 +1575,12 @@ def render_markdown(info, comps, notes=False):
     w("## Openness")
     w("")
     w("Every byte of the %s image in one class: open-source code (coreboot stages and ACPI tables, the payload "
-      "with EDK II, iPXE, CSMWrap and SeaBIOS), closed binaries (Intel FSP, ME, microcode, VBT, flash "
-      "descriptor and GbE, other vendors' blobs), data (flash map, vboot keys and signatures, coreboot's "
+      "with EDK II, iPXE, CSMWrap and SeaBIOS), closed binaries (Intel FSP, ME, microcode, other vendors' "
+      "blobs), data (flash map, flash descriptor, GbE NVM, VBT, vboot keys and signatures, coreboot's "
       "metadata, runtime regions) and empty (erased flash, runs of at least 64 bytes of 0xFF outside CBFS, "
-      "and free CBFS space). Open source is **%.1f%%** of the code." % (human(info["size"]), pct))
+      "and free CBFS space), the classes of Dasharo's Openness Score; of the ME region only the bytes that "
+      "are not erased flash count, where Dasharo counts the whole region. Open source is **%.1f%%** of "
+      "the code." % (human(info["size"]), pct))
     w("")
     w("| Class | Bytes | Share of the image | Share of the code |")
     w("|---|---|---|---|")
