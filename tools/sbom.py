@@ -28,7 +28,9 @@
 # CBFS (src/commonlib/bsd/include/commonlib/bsd/fmap_serialized.h e
 # cbfs_serialized.h, il giro di cbfs_walk() in cbfs_private.c), payload SELF
 # (src/lib/selfboot.c), LZMA come lo scrive cbfstool (util/cbfstool/lzma/
-# lzma.c: 5 byte di proprieta' e 8 di dimensione, il formato "alone"),
+# lzma.c: 5 byte di proprieta' e 8 di dimensione, il formato "alone"), zstd
+# (un frame intero, util/cbfstool/compress.c) con compression.zstd di
+# Python 3.14 o, prima, con il comando zstd se c'e',
 # FSP_INFO_HEADER (src/drivers/intel/fsp2_0/include/fsp/info_header.h),
 # microcode (src/cpu/intel/microcode/microcode.c), VBT
 # (src/drivers/intel/gma/intel_bios.h), descrittore e ME come
@@ -36,7 +38,8 @@
 # vboot (firmware/2lib/include/2struct.h). Solo lettura: non scrive che il
 # file di -o.
 #
-# Solo la libreria standard di Python.
+# Solo la libreria standard di Python (per un payload zstd prima della 3.14,
+# il comando zstd, se c'e').
 import argparse
 import datetime
 import glob
@@ -45,6 +48,7 @@ import json
 import lzma
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -250,8 +254,8 @@ def cbfs_walk(rom, area):
 
 
 def decompress(data, comp):
-    """I dati di un file CBFS; None se compressi in un formato che la
-    libreria standard non ha (LZ4, zstd)."""
+    """I dati di un file CBFS; None se compressi in un formato che non si
+    legge qui (LZ4; zstd senza Python 3.14 e senza il comando zstd)."""
     if comp == 0:
         return data
     if comp == 1:
@@ -259,7 +263,29 @@ def decompress(data, comp):
             return lzma.LZMADecompressor(format=lzma.FORMAT_ALONE).decompress(data)
         except lzma.LZMAError:
             return None
+    if comp == 3:
+        return unzstd(data)
     return None
+
+
+def unzstd(data):
+    """Un frame zstd: compression.zstd (Python 3.14 in su), se no il comando
+    zstd (c'e' nelle macchine di GitHub Actions); None senza nessuno dei due
+    o con un frame che non si legge."""
+    try:
+        from compression import zstd
+    except ImportError:
+        zstd = None
+    if zstd is not None:
+        try:
+            return zstd.decompress(data)
+        except zstd.ZstdError:
+            return None
+    exe = shutil.which("zstd")
+    if exe is None:
+        return None
+    r = subprocess.run([exe, "-d", "-c", "-q"], input=data, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    return r.stdout if r.returncode == 0 else None
 
 
 def file_data(rom, f):

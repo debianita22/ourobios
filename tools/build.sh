@@ -1933,6 +1933,9 @@ cmd_smoke() {
 				# 0215): il payload deve passarli dove l'SMI di q35, con lo
 				# stesso codice, li accetta
 				grep -x 'CONFIG_SMMSTORE_PARAMS_IN_COM_BUFFER=y' "$(defconfig "${v}")" || true
+				# la compressione del payload della board (zstd sul M920x):
+				# il ramstage di q35 lo decomprime come quello della board
+				grep -x 'CONFIG_COMPRESSED_PAYLOAD_[A-Z0-9]*=y' "$(defconfig "${v}")" || true
 				echo "CONFIG_LOCALVERSION=\"$(localversion "${v}")-q35\""
 				if [ "${TOOLCHAIN}" = host ]; then echo "CONFIG_ANY_TOOLCHAIN=y"; fi
 			} > "${TREE}/build-${q}/defconfig"

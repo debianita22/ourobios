@@ -100,8 +100,9 @@ TEMP_LIMITS = (80.0, 95.0)
 TS_ROMSTAGE_START, TS_INITRAM_START, TS_INITRAM_END, TS_ROMSTAGE_END = 1, 2, 3, 4
 TS_VBOOT_START, TS_VBOOT_END, TS_RAMSTAGE_START = 5, 6, 10
 TS_LOAD_PAYLOAD, TS_SELFBOOT_JUMP = 90, 99
-# "finished LZMA decompress": dopo TS_LOAD_PAYLOAD, la fine del payload compresso
-TS_LZMA_END = 16
+# la fine di una decompressione (LZMA, LZ4, zstd): la prima dopo
+# TS_LOAD_PAYLOAD e' quella del payload
+TS_DECOMPRESS_END = (16, 18, 20)
 TS_FSP_MEMORY_INIT_START, TS_FSP_MEMORY_INIT_END = 950, 951
 TS_FSP_SILICON_INIT_START, TS_FSP_SILICON_INIT_END = 954, 955
 
@@ -712,7 +713,8 @@ def check_boot_time(fw, rep):
     # di FSP, il registro del TPM sulla console)
     load, jump = fw.stamp(TS_LOAD_PAYLOAD), fw.stamp(TS_SELFBOOT_JUMP)
     if load is not None and jump is not None:
-        lz = fw.stamp(TS_LZMA_END, load)
+        ends = [t for t in (fw.stamp(i, load) for i in TS_DECOMPRESS_END) if t is not None]
+        lz = min(ends) if ends else None
         if lz is not None and lz <= jump:
             details.append("%-38s %8s" % ("caricamento del payload", sec(lz - load)))
             details.append("%-38s %8s" % ("dal payload caricato al salto", sec(jump - lz)))

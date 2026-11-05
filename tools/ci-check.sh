@@ -426,6 +426,16 @@ assert hw.idle_verdict(0.0, 0.6, [(1.1, "nordvpnd")], ["eDP-1 2880x1620"], "w541
                 "la soglia vale a schermo spento")
 assert hw.idle_verdict(0.0, 0.6, [], ["eDP-1 1920x1080"], "w541")[1].endswith("ripetere a schermo spento")
 assert hw.idle_verdict(60.0, 2.0, [], ["eDP-1"]) == ("PASS", None)
+# BOOT-02: il payload diviso alla fine della sua decompressione, la prima
+# dopo "starting to load payload" (LZMA 16, zstd 20; il 16 di ramstage prima
+# non conta)
+rep = hw.Report()
+hw.check_boot_time(firmware("m920x", valid, [(0, 220423, 0, "1st timestamp"), (16, 1650522, 0, "finished LZMA"),
+                                             (90, 9665449, 0, "starting to load payload"),
+                                             (19, 10079108, 0, "starting ZSTD"), (20, 10100000, 0, "finished ZSTD"),
+                                             (99, 10865138, 0, "selfboot jump")]), rep)
+assert "%-38s %8s" % ("caricamento del payload", "0.43 s") in rep.checks[0]["details"] and \
+    "%-38s %8s" % ("dal payload caricato al salto", "0.77 s") in rep.checks[0]["details"], rep.checks[0]["details"]
 rep = hw.Report()
 hw.check_boot_time(firmware("m920x", valid + ["[INFO ]  DRAM clear: option always: clearing"], ts(230000)), rep)
 assert "Clear memory at power-on: Always: memoria cancellata (~0.5 s ogni 10 GB)" in rep.checks[0]["details"], \
