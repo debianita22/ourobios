@@ -34,6 +34,7 @@ is here. None of it is a promise of a date.
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
 | [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
 | [Openness score](#openness-score) | both | already in `tools/sbom.py` | a comparison with Dasharo's own tool |
+| [Clearing the memory on every core](#clearing-the-memory-on-every-core) | both | the clear runs on the boot processor only, 2.0 s for 40 GB on the M920x (about 21 GB/s); what the memory controller gives to four cores is not measured | a test build that times the clear with one, two and four cores |
 | [A zstd payload on the W541](#a-zstd-payload-on-the-w541) | W541 | the M920x has it from v1.6.0; on the W541 the payload would take 105 KiB more of slots with 295-365 KiB free, for a gain not measured there yet | the time of its LZMA in `cbmem -t` of the v1.6.0 test, then the choice |
 | [The DPLL of i915 at boot on the M920x](#the-dpll-of-i915-at-boot-on-the-m920x) | M920x | i915's own wait for the PLL, not the firmware's | a report to i915 with the numbers |
 
@@ -665,6 +666,22 @@ reports no backlight instead of the vendor one when neither is there
 brightness path on the W541 for no gain elsewhere: not planned. macOS
 answers "Darwin" only, unless an OpenCore configuration renames `_OSI`.
 
+
+## Clearing the memory on every core
+
+*Clear memory at power-on* runs `clear_memory()` of
+`security/memory/memory_clear.c` on the boot processor at the exit of
+`BS_DEV_INIT`: `memset` below 4 GiB, `memset_pae()` through one PAE
+window above. On the M920x of v1.6.0-rc5 that is 2.0 s for 40 GB (about
+21 GB/s, BS_DEV_INIT exit "exec"), at every boot where Linux asked
+([docs/flashing.md](flashing.md#clearing-the-memory-at-power-on)); on the
+W541 1.7 s for 32 GB. The processors are up by then (MP init at
+`BS_DEV_INIT_CHIPS`), so the ranges could be split among them with
+`mp_run_on_all_cpus()`, each with its own PAE tables and window, as
+`memset_pae()` changes the paging of the processor it runs on. DDR4-2400
+in two channels peaks at 38.4 GB/s, so the gain is between none and about
+0.8 s: a test build that times the clear with one, two and four
+processors decides, ramstage only, and the S3 resume never clears.
 
 ## A zstd payload on the W541
 
