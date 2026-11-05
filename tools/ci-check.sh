@@ -384,6 +384,34 @@ for bios, log, want in (("CBET4000 ouroBIOS-v1.5.0-nri", w541, "PASS"),
     rep = hw.Report()
     hw.check_firmware(fw, rep)
     assert rep.checks[0]["status"] == want, (bios, rep.checks[0])
+# BOOT-01 sul M920x: i byte della seriale per livello dal log di CBMEM (la
+# sequenza ANSI, il prefisso, il testo, il reset e \r\n; una riga senza
+# marcatore con il livello di prima), dalla romstage in poi; postcar resta al
+# suo livello anche quando l'opzione cambia
+st = hw.serial_bytes(["[DEBUG]  before the slot", "[NOTE ]  coreboot-v Thu romstage starting (log level: 7)...",
+                      "[DEBUG]  abc", "[INFO ]  abcdef", "",
+                      "[NOTE ]  coreboot-v Thu postcar starting (log level: 6)...", "[DEBUG]  x", "[INFO ]  y"])
+assert st == {"romstage": (7, [0, 0, 0, 0, 0, 69, 31, 22, 0]), "postcar": (6, [0, 0, 0, 0, 0, 68, 20, 20, 0])}, st
+assert abs(hw.serial_seconds(st) - 210 * 10 / 115200) < 1e-9 and abs(hw.serial_seconds(st, 5) - 157 * 10 / 115200) < 1e-9
+import os
+import tempfile
+spcr_dir = tempfile.mkdtemp()
+hw.SPCR_TABLE = os.path.join(spcr_dir, "SPCR")
+m920x = [banner % ("v1.6.0-rc5-m920x-fsp", "romstage", 7), banner % ("v1.6.0-rc5-m920x-fsp", "ramstage", 7)] + \
+    ["[DEBUG]  " + "d" * 91] * 1000 + ["[INFO ]  " + "i" * 91] * 100
+for spcr, text in ((True, "seriale, COM1 a 115200 baud: ~10.5 s agli stage dello slot"),
+                   (False, "seriale spenta (Console > Serial Console)")):
+    if spcr:
+        open(hw.SPCR_TABLE, "w").close()
+    elif os.path.exists(hw.SPCR_TABLE):
+        os.remove(hw.SPCR_TABLE)
+    fw = firmware("m920x", m920x, [])
+    fw.bios = "ouroBIOS-v1.6.0-rc5-m920x-fsp"
+    rep = hw.Report()
+    hw.check_firmware(fw, rep)
+    serial = rep.checks[0]["data"]["serial"]
+    assert rep.checks[0]["details"][-1].startswith(text), rep.checks[0]["details"]
+    assert serial["on"] is spcr and serial["by_level"]["Info"] == 0.98, serial
 # IDLE-01: una misura fuori dalle condizioni del test non e' un FAIL
 assert hw.idle_verdict(84.1, 1.0, [(0.6, "kworker")], []) == ("PASS", None)
 assert hw.idle_verdict(0.0, 1.0, [], [])[0] == "FAIL"
@@ -512,7 +540,7 @@ assert st == "FAIL" and [x["bdf"] for x in data["excluded"]] == ["00:02.0", "00:
 assert any(l.startswith("l'apertura copre ECAM") for l in det), det
 EOF
 	then
-		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, messaggi noti ed eventi del log, microcode con PRMRR, il registro del measured boot rifatto contro i PCR (TPM 2.0 e 1.2), la finestra ECAM di MCFG (CONF-07), l'apertura PCI del payload (PCI-09), la versione del W541 in SMBIOS (BOOT-01), una misura degli stati C non a riposo (IDLE-01)"
+		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, il costo della seriale del M920x per livello (BOOT-01), messaggi noti ed eventi del log, microcode con PRMRR, il registro del measured boot rifatto contro i PCR (TPM 2.0 e 1.2), la finestra ECAM di MCFG (CONF-07), l'apertura PCI del payload (PCI-09), la versione del W541 in SMBIOS (BOOT-01), una misura degli stati C non a riposo (IDLE-01)"
 	else
 		bad "tools/hw-report.py: i controlli non danno gli esiti attesi"
 	fi

@@ -100,6 +100,8 @@ TEMP_LIMITS = (80.0, 95.0)
 TS_ROMSTAGE_START, TS_INITRAM_START, TS_INITRAM_END, TS_ROMSTAGE_END = 1, 2, 3, 4
 TS_VBOOT_START, TS_VBOOT_END, TS_RAMSTAGE_START = 5, 6, 10
 TS_LOAD_PAYLOAD, TS_SELFBOOT_JUMP = 90, 99
+# "finished LZMA decompress": dopo TS_LOAD_PAYLOAD, la fine del payload compresso
+TS_LZMA_END = 16
 TS_FSP_MEMORY_INIT_START, TS_FSP_MEMORY_INIT_END = 950, 951
 TS_FSP_SILICON_INIT_START, TS_FSP_SILICON_INIT_END = 954, 955
 
@@ -120,6 +122,24 @@ MRC_UPDATED = re.compile(r"MRC: updated '(.*)'")
 # Il livello dei messaggi nel log di CBMEM (console/printk: [EMERG] ... [SPEW ])
 LOG_LEVEL = re.compile(r"^\[(EMERG|ALERT|CRIT |ERROR|WARN |NOTE |INFO |DEBUG|SPEW )\]\s+(.*)$")
 LOG_BAD = {"EMERG": "FAIL", "ALERT": "FAIL", "CRIT": "FAIL", "ERROR": "FAIL", "WARN": "WARN"}
+
+# La console seriale del M920x: COM1 del Super I/O, 115200 baud, 8N1 (10 bit
+# per byte), con il prefisso e le sequenze ANSI del defconfig. Una riga al
+# livello L costa la sequenza di L (bios_log_escape, commonlib/loglevel.h),
+# il prefisso "[DEBUG]  " che cbmem -1 scrive uguale, il testo, il reset
+# "\x1b[0m" e "\r\n" (console/printk.c, console/console.c). Il log di CBMEM ha
+# ogni riga fino a DEBUG a qualsiasi livello (console_log_level(),
+# CONSOLE_LOG_FAST), anche quelle degli AP, quindi da' i byte di ogni livello
+SERIAL_BAUD = 115200
+LEVEL_NUMBER = {"EMERG": 0, "ALERT": 1, "CRIT ": 2, "ERROR": 3, "WARN ": 4, "NOTE ": 5, "INFO ": 6,
+                "DEBUG": 7, "SPEW ": 8}
+LEVEL_ESCAPE = ("1;4;5;7", "1;4;7", "1;7", "7", "1;4", "1", "0", "0", "0")
+LEVEL_NAME = ("Emergency", "Alert", "Critical", "Error", "Warning", "Notice", "Info", "Debug", "Spew")
+STAGE_BANNER = re.compile(r"coreboot-(\S+) .* (bootblock|verstage|romstage|postcar|ramstage) starting "
+                          r"\(log level: (\d+)\)")
+# la tabella ACPI che coreboot scrive solo con la console seriale accesa
+# (acpi_create_spcr(), console_serial_enabled(): Console > Serial Console)
+SPCR_TABLE = "/sys/firmware/acpi/tables/SPCR"
 
 # Messaggi gia' noti del log di coreboot: (regex, board o None per tutte, perche')
 # (espressione, board o None, motivo[, ultima release in cui e' noto]): con il
@@ -251,6 +271,42 @@ def redact(s):
 
 def sec(us):
     return "%.2f s" % (us / 1e6)
+
+
+def serial_bytes(log):
+    """I byte che gli stage dello slot (romstage, postcar, ramstage) mandano
+    alla seriale per le righe di ogni livello del log di CBMEM: {stage:
+    (livello dello stage dal banner, [byte dei livelli 0..8])}. Le righe prima
+    della romstage non contano: bootblock e verstage sono della parte RO, con
+    il suo livello. Una riga senza marcatore (vuota, o il seguito di una
+    riga) va con il livello della riga prima."""
+    stages, cur, last = {}, None, None
+    for line in log or ():
+        m = LOG_LEVEL.match(line)
+        if m:
+            last = LEVEL_NUMBER[m.group(1)]
+            b = STAGE_BANNER.search(m.group(2))
+            if b:
+                cur = b.group(2) if b.group(2) in ("romstage", "postcar", "ramstage") else None
+                if cur:
+                    stages[cur] = (int(b.group(3)), [0] * len(LEVEL_NAME))
+            if cur:
+                stages[cur][1][last] += len("\x1b[%sm" % LEVEL_ESCAPE[last]) + len(line) + len("\x1b[0m\r\n")
+        elif cur and last is not None:
+            stages[cur][1][last] += len(line) + len("\x1b[0m\r\n")
+    return stages
+
+
+def serial_seconds(stages, level=None):
+    """I secondi della seriale per gli stage dello slot: al livello di ognuno
+    (dal banner) o, con level, a quel livello per romstage e ramstage, che
+    leggono Console > Console Log Level; postcar resta al default della build
+    (con le variabili UEFI non legge le opzioni)."""
+    total = 0
+    for stage, (lv, counts) in stages.items():
+        use = lv if level is None or stage == "postcar" else level
+        total += sum(counts[:use + 1])
+    return total * 10 / SERIAL_BAUD
 
 
 class Report:
@@ -405,13 +461,40 @@ def check_firmware(fw, rep):
     level = banners.get("ramstage", (None, None))[1]
     console = sum(int(m.group(3)) for m in fw.grep(r"BS: (.+?) times \(exec / console\): (.+?) / (\d+) ms"))
     if level is not None:
-        details.append("console: %.1f s negli stage (righe BS:), livello %d%s" % (
-            console / 1000, level, " (DEBUG: Console > Console Log Level, Info toglie ~4 s sulla seriale)"
-            if level >= 7 and fw.board == "m920x" else ""))
+        # le righe BS: contano la console del solo processore di avvio: quella
+        # degli AP (MP init, MTRR) finisce nella colonna exec
+        details.append("console: %.1f s negli stage (righe BS:, processore di avvio), livello %d" % (
+            console / 1000, level))
+    serial = serial_report(fw) if fw.board == "m920x" else None
+    if serial:
+        details.append(serial["text"])
     kind = "release" if is_release else "build della CI" if is_ci else "?"
     rep.add("BOOT-01", "Firmware", status, "%s (%s)" % (bios or "?", kind), details,
             {"bios_version": bios, "banners": {k: v[0] for k, v in banners.items()}, "log_level": level,
-             "console_ms": console})
+             "console_ms": console, "serial": {k: v for k, v in serial.items() if k != "text"} if serial else None})
+
+
+def serial_report(fw):
+    """La seriale del M920x: accesa o no (la tabella SPCR), e i secondi che
+    costa agli stage dello slot al livello di ora e agli altri dell'opzione,
+    contati sul log (serial_bytes)."""
+    stages = serial_bytes(fw.log)
+    if "ramstage" not in stages:
+        return None
+    on = os.path.exists(SPCR_TABLE) if os.path.isdir(os.path.dirname(SPCR_TABLE)) else None
+    level = stages["ramstage"][0]
+    now = serial_seconds(stages)
+    alt = {LEVEL_NAME[lv]: round(serial_seconds(stages, lv), 2) for lv in (6, 5, 3) if lv != level}
+    if on is False:
+        text = ("seriale spenta (Console > Serial Console): la COM1 non costa niente; accesa, al livello %d "
+                "(%s), ~%.1f s agli stage dello slot" % (level, LEVEL_NAME[level], now))
+    else:
+        text = ("seriale%s, COM1 a %d baud: ~%.1f s agli stage dello slot (romstage, postcar, ramstage, AP "
+                "compresi) al livello %d (%s); %s; spenta (Console > Serial Console) 0. Il log di CBMEM "
+                "resta fino a DEBUG a ogni livello" % (
+                    "" if on else " (tabella SPCR non letta)", SERIAL_BAUD, now, level, LEVEL_NAME[level],
+                    ", ".join("a %s ~%.1f s" % (k, v) for k, v in alt.items())))
+    return {"text": text, "on": on, "seconds": round(now, 2), "by_level": alt}
 
 
 VB2_FW_RESULT_FAILURE = 3
@@ -607,7 +690,6 @@ SEGMENTS = (
     ("postcar e caricamento di ramstage", TS_ROMSTAGE_END, TS_RAMSTAGE_START),
     ("ramstage", TS_RAMSTAGE_START, TS_LOAD_PAYLOAD),
     ("  di cui FspSiliconInit", TS_FSP_SILICON_INIT_START, TS_FSP_SILICON_INIT_END),
-    ("caricamento del payload", TS_LOAD_PAYLOAD, TS_SELFBOOT_JUMP),
 )
 
 
@@ -625,6 +707,17 @@ def check_boot_time(fw, rep):
         d = (fw.stamp(b) if a is None else fw.span(a, b))
         if d is not None:
             details.append("%-38s %8s" % (label, sec(d)))
+    # il payload: caricato e decompresso, poi i passi prima del salto
+    # (BS_PAYLOAD_LOAD exit e BS_PAYLOAD_BOOT: la SMI di finalize, le notifiche
+    # di FSP, il registro del TPM sulla console)
+    load, jump = fw.stamp(TS_LOAD_PAYLOAD), fw.stamp(TS_SELFBOOT_JUMP)
+    if load is not None and jump is not None:
+        lz = fw.stamp(TS_LZMA_END, load)
+        if lz is not None and lz <= jump:
+            details.append("%-38s %8s" % ("caricamento del payload", sec(lz - load)))
+            details.append("%-38s %8s" % ("dal payload caricato al salto", sec(jump - lz)))
+        else:
+            details.append("%-38s %8s" % ("caricamento del payload", sec(jump - load)))
     top = sorted(fw.ts[1:], key=lambda x: -x[2])[:5]
     details.append("i passi piu' lunghi: " + "; ".join("%s fino a '%s'" % (sec(d), n) for _, _, d, n in top))
     # Clear memory at power-on: dalla riga di security/memory (patch 0192),

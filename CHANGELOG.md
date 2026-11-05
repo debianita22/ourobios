@@ -308,6 +308,12 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `cbmem -1` keeps them, as the CBMEM console takes every line up to
   DEBUG at any level; the OS reads the log from the TPM2 and TCPA
   tables as before.
+- `tools/hw-report.py` counts from the coreboot log what the M920x's
+  serial port costs at the level of the boot and at Info, Notice and
+  Error, the other processors' lines included, and says whether
+  *Serial Console* is on (BOOT-01, from the SPCR table); BOOT-02 splits
+  the payload into its loading and the steps before the jump
+  ([docs/m920x.md](docs/m920x.md#boot-time)).
 - The graphics stolen memory of the `nri` variant (*Hardware* → *Intel
   graphics* → *DVMT pre-allocated memory*) defaults to 32 MB, what
   `mrc.bin` reserves (patch 0208): the two variants boot with the same
