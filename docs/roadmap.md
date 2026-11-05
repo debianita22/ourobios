@@ -724,6 +724,11 @@ drove the payload through the built-in Shell: `setvar` into SMMSTORE,
   the image: it takes the variable from QEMU's fw_cfg and writes it with
   `SetVariable()`, for the test variable and for `BootNext`. The upstream
   test (`tools/build.sh edk2-upstream`) keeps the Shell of its payloads.
+  Measured on the build of the branch (run 258): the payload of the W541
+  from 2,046,796 to 1,807,557 bytes, of the M920x from 2,048,878 to
+  1,808,912, 234 KiB each; the slots of the W541 have 528 KiB (`nri`) and
+  597 KiB (`mrc`) free. The time on the M920x is to be measured on the
+  machine (BOOT-02, the loading of the payload).
 
 ## The DPLL of i915 at boot on the M920x
 

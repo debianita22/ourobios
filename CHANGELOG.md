@@ -250,10 +250,11 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   slots from v1.3.9-v1.4.x (v1.4.x on the M920x), every region but the
   runtime ones from v1.0.3-v1.3.8.
 - **No UEFI Shell in the payload** (`EDK2_HAVE_EFI_SHELL` off on `mrc`,
-  `nri` and `fsp`): about 250 KiB less in each slot, and no program left
-  that anyone at the boot menu could start with Secure Boot on without a
-  signature (`DxeImageVerificationLib` lets every file of the firmware
-  volume run). The boot manager deletes the *UEFI Shell* entry that an
+  `nri` and `fsp`): 234 KiB less in each slot (the payload of the W541
+  from 2,046,796 to 1,807,557 bytes, now 528-597 KiB free in its slots),
+  and no program left that anyone at the boot menu could start with
+  Secure Boot on without a signature (`DxeImageVerificationLib` lets
+  every file of the firmware volume run). The boot manager deletes the *UEFI Shell* entry that an
   earlier version left in the boot order and the boot menu
   (`edk2/0053`), and the help of *Boot from USB drives* no longer lists
   it (patch 0227). A Shell on a USB drive still starts as any loader

@@ -188,12 +188,13 @@ Inside coreboot:
   while Secure Boot is on the entry goes and the firmware refuses to start
   CSMWrap, however it is chosen; *General* → *Boot* in the setup turns it
   off;
-- no UEFI Shell in the firmware (from v1.6.0): about 250 KiB less in
-  each slot, and no program left that anyone at the boot menu could start
-  with Secure Boot on without a signature (a file of the firmware volume
-  is not checked against `db`). A Shell on a USB drive starts like any
-  other loader: from its entry, Boot From File or `\EFI\BOOT\BOOTX64.EFI`,
-  signed for the keys in `db` or with Secure Boot off;
+- no UEFI Shell in the firmware (from v1.6.0): 234 KiB less in each slot
+  (the payload is 1.81 MB), and no program left that anyone at the boot
+  menu could start with Secure Boot on without a signature (a file of the
+  firmware volume is not checked against `db`). A Shell on a USB drive
+  starts like any other loader: from its entry, Boot From File or
+  `\EFI\BOOT\BOOTX64.EFI`, signed for the keys in `db` or with Secure
+  Boot off;
 - macOS with OpenCore (from v1.3.10): in the setup (*Compatibility* →
   *macOS*) the CPUs as `Processor` objects with `plugin-type`, CFG Lock
   off, the device properties of the W541 (framebuffer, audio layout), the
