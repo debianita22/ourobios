@@ -11,7 +11,7 @@ is here. None of it is a promise of a date.
 | Item | Boards | Why not now | Next step |
 |---|---|---|---|
 | [Firmware watchdog](#firmware-watchdog) | both | never used on Cannon Point upstream; testing it means resetting the machine on purpose; the W541 is a laptop someone sits at | a read-only check of the timer on hardware, then a build with the option off |
-| [Firmware update mode](#firmware-update-mode) | both | capsules need none of it; touches the lockdown code of both boards | the attribute check in coreboot, a test of the Secure Boot one-shot |
+| [Firmware update mode](#firmware-update-mode) | both | decided on 2026-11-05: not made; capsules need none of it, and a one-shot of the protections and Secure Boot is security code that can fail open | none planned; `update.py other-slot` reminds to turn *BIOS Lock* on again |
 | [DMA protection](#dma-protection) | M920x | no pre-boot DMA protection to report; the FSP-M has no PMR data | reword the help of *Intel VT-d*; find the slot of the Thunderbolt card |
 | [Capsule regions in the payload](#capsule-regions-in-the-payload) | both | done in v1.6.0 (`edk2/0045`): the payload writes only the two slots and `RW_MRC_CACHE`, and on a flash with both slots only an update of one slot at a time | a new region in `PcdFmpDeviceSmmAllowedRegions` one release before any capsule that writes it |
 | [Variable store robustness](#variable-store-robustness) | both | looked at for v1.6.0: coreboot's all-or-nothing reader is upstream's choice, and the corner case of the reset is not one | none planned |
@@ -99,6 +99,16 @@ setup to turn things off and another to turn them on, often forgotten.
   suppressed number option instead of a bool; then the hardware test of
   the Secure Boot one-shot (SecureBoot must read 0 in that boot and 1
   after) on both boards.
+- **Decided (2026-11-05)**: not made. Every supported update goes in with
+  the protections on, through a capsule; what is left for flashrom (the
+  other W541 variant behind the `mrc` read-only part, a new read-only
+  part about once a year, a recovery) is rare enough for two trips to the
+  setup, and a mode that turns the protections and Secure Boot off by
+  itself adds a way to leave them off, and on a Secure Boot boot a PCR 7
+  that disk keys sealed to the TPM do not expect. What it would have
+  saved, the forgotten second trip, `update.py other-slot` now says in its
+  last lines, and `update.py protection` and FLASH-01 of `hw-report.py`
+  report.
 
 ## DMA protection
 

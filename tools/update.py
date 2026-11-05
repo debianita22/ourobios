@@ -1812,7 +1812,9 @@ def cmd_other_slot(args):
           % other)
     print("di fila (spegnere e riaccendere a ogni blocco), vboot torna allo slot %s. BIOS Lock deve essere"
           % current)
-    print("spento.")
+    print("spento per flashrom, e va riacceso nel setup dopo il primo avvio (Security > Flash protection;")
+    print("sul M920x anche Secure Boot, se lo era): update.py protection e hw-report.py (FLASH-01) dicono se")
+    print("e' rimasto spento.")
     print_sealing()
     return 0
 
