@@ -332,7 +332,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   *Enabled* or *Disabled* clear it the same way. **RISCHIO BRICK**: a
   power cut during that one write (about 50 ms) leaves the board unable
   to start until the descriptor is written back with an external
-  programmer ([docs/m920x.md](docs/m920x.md#intel-me)). ME-01 of
+  programmer ([docs/m920x.md](docs/m920x.md#intel-me)), as would a board
+  that does not start with the ME stopped (not tried on an M920x yet,
+  ME-05 of docs/testing.md). ME-01 of
   `hw-report.py` knows the new state. The W541 is unchanged: its
   descriptor has had AltMeDisable set from the start.
 - On the M920x the serial console of coreboot is off by default
