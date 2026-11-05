@@ -17,8 +17,8 @@ pass took. That memory is what clear_memory() writes at a boot the OS
 asked it for, and nothing in it is in use at this point.
 ---
  src/security/memory/Makefile.mk    |   1 +
- src/security/memory/dram_bw_test.c | 121 +++++++++++++++++++++++++++++
- 2 files changed, 122 insertions(+)
+ src/security/memory/dram_bw_test.c | 122 +++++++++++++++++++++++++++++
+ 2 files changed, 123 insertions(+)
  create mode 100644 src/security/memory/dram_bw_test.c
 
 diff --git a/src/security/memory/Makefile.mk b/src/security/memory/Makefile.mk
@@ -32,10 +32,10 @@ index 4f07bbbcb4e..3b082979ffd 100644
 +ramstage-$(CONFIG_PLATFORM_HAS_DRAM_CLEAR) += dram_bw_test.c
 diff --git a/src/security/memory/dram_bw_test.c b/src/security/memory/dram_bw_test.c
 new file mode 100644
-index 00000000000..6c7ade3bd50
+index 00000000000..f6687f2a8f4
 --- /dev/null
 +++ b/src/security/memory/dram_bw_test.c
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,122 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +/*
@@ -47,6 +47,7 @@ index 00000000000..6c7ade3bd50
 + */
 +
 +#include <arch/cpu.h>
++#include <bootmem.h>
 +#include <bootstate.h>
 +#include <cbmem.h>
 +#include <commonlib/helpers.h>
