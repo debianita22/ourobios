@@ -45,7 +45,9 @@
 #                  una ROM coreboot per QEMU q35 con lo stesso UEFIPAYLOAD.fd
 #                  (EDK2 non si ricompila), avviata in QEMU da
 #                  tools/qemu-smoke.py: il payload parte, il setup si apre e
-#                  risponde ai tasti; i servizi runtime funzionano anche
+#                  risponde ai tasti; le variabili in SMMSTORE, iPXE e
+#                  CSMWrap da BootNext, scritte da tools/efi/setvar.c come
+#                  dal setvar della Shell; i servizi runtime funzionano anche
 #                  spostati come li sposta boot.efi di macOS senza
 #                  AvoidRuntimeDefrag (tools/efi/rt-reloc-test.c); l'ESRT
 #                  e Secure Boot (tools/efi/secure-boot-test.c); il TPM 1.2
@@ -1856,7 +1858,9 @@ smoke_sb_app() {
 # il GUID e la versione della variante, come sul W541: senza, FmpDxe del
 # payload non sa che firmware e' e si ferma (misconfiguration). Niente
 # USE_UEFI_VARIABLE_STORE: il romstage di q35 non ha il flash scrivibile.
-# Poi i servizi runtime spostati come da boot.efi di macOS
+# Le variabili, iPXE e CSMWrap con tools/efi/setvar.c (i passi 6-8: il
+# payload delle board non ha la Shell UEFI). Poi i servizi runtime spostati
+# come da boot.efi di macOS
 # (tools/efi/rt-reloc-test.c, il passo 9 di tools/qemu-smoke.py), l'ESRT con
 # Secure Boot (tools/efi/secure-boot-test.c, il passo 10) e il TPM 1.2 di
 # swtpm con il log delle misure (il passo 11): per la variante il cui
@@ -1873,6 +1877,8 @@ cmd_smoke() {
 		xgcc_ok || die "crossgcc mancante in ${XGCC}: prima tools/build.sh toolchain"
 		export PATH="${XGCC}/bin:${PATH}"
 	fi
+	local setvar="${WORK}/setvar.efi"
+	efi_app "${O}/tools/efi/setvar.c" "${setvar}" || die "smoke: tools/efi/setvar.c non compila"
 	local reloc="${WORK}/rt-reloc-test.efi"
 	efi_app "${O}/tools/efi/rt-reloc-test.c" "${reloc}" || die "smoke: tools/efi/rt-reloc-test.c non compila"
 	local pcrs="${WORK}/tpm-pcr-test.efi"
@@ -1954,8 +1960,9 @@ cmd_smoke() {
 					--out "${WORK}/smoke-$(bkey "${v}")" "${TREE}/build-${q}/coreboot.rom" \
 					|| die "smoke ${v}: l'ESRT o Secure Boot non passano la prova in QEMU (${WORK}/smoke-$(bkey "${v}"))"
 			elif [ "${res}" = 1920x1080 ]; then
-				python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-$(bkey "${v}")" --reloc-test "${reloc}" \
-					--sb-test "${sb}" --esrt "${esrt}" --tpm "${pcrs}" ${tpm2} "${TREE}/build-${q}/coreboot.rom" \
+				python3 "${O}/tools/qemu-smoke.py" --out "${WORK}/smoke-$(bkey "${v}")" --setvar "${setvar}" \
+					--reloc-test "${reloc}" --sb-test "${sb}" --esrt "${esrt}" --tpm "${pcrs}" ${tpm2} \
+					"${TREE}/build-${q}/coreboot.rom" \
 					|| die "smoke ${v}: il payload non passa la prova in QEMU (${WORK}/smoke-$(bkey "${v}"))"
 				tested="${fd}"
 				tested_v="${v}"

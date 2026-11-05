@@ -4,7 +4,7 @@
 # prima di una release che il payload parte, disegna e risponde ai tasti.
 #
 #   python3 tools/qemu-smoke.py [--out DIR] [--timeout S] [--setup-only]
-#                               [--vga-mb N] [--size WxH] [--reloc-test EFI]
+#                               [--vga-mb N] [--size WxH] [--setvar EFI] [--reloc-test EFI]
 #                               [--sb-test EFI --esrt GUID:VERSIONE:LSV [--sb-only]]
 #                               [--tpm EFI [--tpm2]] ROM
 #   python3 tools/qemu-smoke.py --upstream [--out DIR] [--reloc-test EFI]
@@ -14,19 +14,24 @@
 #   1. coreboot arriva al payload ("Jumping to boot code" sulla seriale);
 #   2. lo schermo non e' piu' di un colore solo (il payload disegna);
 #   3. con Esc, premuto durante l'avvio, il payload apre il setup, e lo
-#      schermo si ferma su una pagina grafica: non la Shell UEFI, dove il
-#      payload arriva senza dischi se Esc non apre il setup;
+#      schermo si ferma su una pagina grafica: non su una di testo, come
+#      quelle delle voci di boot (iPXE, CSMWrap) dove il payload va senza
+#      dischi se Esc non apre il setup;
 #   4. Giu' e Invio aprono un'altra pagina, Esc torna indietro: il setup
 #      risponde ai tasti;
 #   5. QEMU e' ancora vivo: nessun riavvio, nessun triple fault (-no-reboot);
-#   6. le variabili UEFI in SMMSTORE: senza dischi il payload arriva alla
-#      Shell, dove setvar scrive una variabile di prova; spenta la macchina,
-#      la variabile deve essere nello store del flash, con i suoi dati. Al
-#      secondo avvio la Shell la riscrive con un altro valore: il driver deve
-#      trovare la copia di prima nel flash e cancellarla, e ne deve restare
-#      una sola valida;
+#   6. con --setvar, le variabili UEFI in SMMSTORE: su una copia nuova della
+#      ROM, con un'ESP dalla prima accensione, il payload avvia
+#      tools/efi/setvar.c (\EFI\BOOT\BOOTX64.EFI), che scrive con
+#      SetVariable() la variabile che QEMU gli passa in fw_cfg, come il
+#      setvar della Shell UEFI, che il payload delle board non ha piu'
+#      (patches/edk2/0053); spenta la macchina, la variabile di prova deve
+#      essere nello store del flash, con i suoi dati. Al secondo avvio
+#      setvar.efi la riscrive con un altro valore: il driver deve trovare la
+#      copia di prima nel flash e cancellarla, e ne deve restare una sola
+#      valida;
 #   7. iPXE: la voce "iPXE Network Boot" (il suo numero Boot#### letto dallo
-#      store) messa in BootNext dalla Shell, poi un avvio con una scheda
+#      store) messa in BootNext da setvar.efi, poi un avvio con una scheda
 #      e1000 sulla rete utente di QEMU, che fa da DHCP e TFTP: iPXE deve
 #      prendere l'indirizzo, scaricare lo script del DHCP (opzione 67) ed
 #      eseguirlo; lo script ne chiama un altro, e la richiesta TFTP di quel
@@ -394,6 +399,17 @@ VAR_NAME = "OuroSmoke"
 VAR_GUID = "2c1a8e3f-6d5b-4f1e-9a37-0b6e5f4d2c11"
 VAR_DATA = ("4F55524F", "424F4F5432")      # "OURO", "BOOT2"
 VAR_VALID = (0x3F, 0x3E)                   # VAR_ADDED, e in cancellazione
+# I passi 6-8: il file di fw_cfg da cui tools/efi/setvar.c prende la
+# variabile da scrivere, e il prefisso delle sue righe sulla seriale
+SETVAR_FILE = "opt/ourobios/setvar"
+SETVAR_MARK = "ouroBIOS setvar: "
+
+
+def setvar_args(name, guid, data):
+    """Le opzioni di QEMU che danno a setvar.efi la variabile name, del GUID
+    guid (stringa), con i dati data in esadecimale: "NOME GUID DATI", il GUID
+    nei 16 byte come in memoria."""
+    return ["-fw_cfg", "name=%s,string=%s %s %s" % (SETVAR_FILE, name, uuid.UUID(guid).bytes_le.hex(), data)]
 
 
 def store_vars(flash, header=False):
@@ -556,6 +572,115 @@ def esp_image(path, efi):
         shutil.copyfileobj(p, f)
     os.remove(part)
 
+
+def setvar_test(rom, efi, out, timeout, vga_mb, at):
+    """I passi 6-8, su una copia nuova della ROM con un'ESP dalla prima
+    accensione: la voce di boot del disco e' la prima, e il payload avvia
+    efi (tools/efi/setvar.c), che scrive con SetVariable() la variabile che
+    QEMU gli passa (fw_cfg, setvar_args) e aspetta. Finito ("RESULT" sulla
+    seriale), ogni scrittura di SetVariable() e' nel flash emulato, che QEMU
+    scrive su disco appena il firmware lo programma: si chiude QEMU e la si
+    cerca nello store. L'ESP resta in ogni avvio, iPXE compreso: senza, il
+    boot manager toglierebbe la voce del disco, e al ritorno la rimetterebbe
+    in fondo a BootOrder. Torna le righe del riassunto; at() da' i secondi."""
+    nv = Smoke(rom, out, timeout, vga_mb)
+    steps = []
+    try:
+        esp = os.path.join(nv.tmp, "esp.img")
+        esp_image(esp, efi)
+        drive = ["-drive", "file=%s,format=raw,if=none,id=esp" % esp, "-device", "ide-hd,drive=esp,bus=ide.0"]
+
+        def to_payload():
+            nv.wait("coreboot non e' arrivato al payload (\"Jumping to boot code\" nella seriale)",
+                    lambda: (nv.alive(), "Jumping to boot code" in nv.serial_text())[1], timeout)
+
+        def marks():
+            return [line.split(SETVAR_MARK, 1)[1].strip() for line in nv.serial_text().splitlines()
+                    if SETVAR_MARK in line]
+
+        def setvar(tag, name, guid, data):
+            nv.boot(tag, drive + setvar_args(name, guid, data))
+            to_payload()
+            nv.wait("setvar.efi non ha finito (nessun RESULT in serial-%s.log): il payload non l'ha avviato "
+                    "dall'ESP" % tag,
+                    lambda: (nv.alive(), any(m.startswith("RESULT") for m in marks()))[1], timeout)
+            nv.shot(tag)
+            nv.halt()
+            if "RESULT OK" not in marks():
+                raise Fail("setvar.efi non ha scritto %s: %s (serial-%s.log)"
+                           % (name, "; ".join(m for m in marks() if not m.startswith("RESULT")), tag))
+
+        # 6. la variabile di prova; al secondo avvio un altro valore: il
+        # driver delle variabili deve trovare la copia di prima nel flash e
+        # cancellarla, e ne deve restare una sola valida
+        for i, value in enumerate(VAR_DATA):
+            setvar("setvar-%d" % (i + 1), VAR_NAME, VAR_GUID, value)
+            copies = store_copies(nv.flash)
+            valid = [c for c in copies if c[0] in VAR_VALID]
+            if len(valid) != 1 or valid[0][2] != value:
+                raise Fail("nello store %d copie valide di %s (%s), attesa una con %s"
+                           % (len(valid), VAR_NAME, ", ".join(c[2] for c in valid) or "nessuna", value))
+            if valid[0][1] & 0x7 != 0x7:
+                raise Fail("%s con attributi 0x%x, attesi NV+BS+RT (0x7)" % (VAR_NAME, valid[0][1]))
+            if i == 0:
+                steps.append("%s  setvar.efi dall'ESP: SetVariable() scrive %s in SMMSTORE (NV+BS+RT)"
+                             % (at(), VAR_NAME))
+            else:
+                if len(copies) < 2:
+                    raise Fail("la copia di prima di %s non c'e' piu' nello store" % VAR_NAME)
+                steps.append("%s  dopo un riavvio: riscritta, la copia di prima cancellata, una sola "
+                             "valida" % at())
+
+        # 7-8. iPXE e CSMWrap: le voci della FV che il boot manager registra.
+        # BootNext, scritto da setvar.efi, sceglie la voce per l'avvio dopo
+        # (il numero letto dallo store)
+        def boot_next(tag, description):
+            n = boot_option_number(nv.flash, description)
+            if n is None:
+                raise Fail("nello store nessuna voce Boot#### \"%s\": il boot manager non l'ha registrata"
+                           % description)
+            setvar(tag, "BootNext", str(uuid.UUID(bytes_le=GLOBAL_GUID)), "%02X%02X" % (n & 0xFF, n >> 8))
+            if boot_next_number(nv.flash) != n:
+                raise Fail("BootNext non e' %04X nello store del flash" % n)
+            return n
+
+        n = boot_next("setvar-ipxe", "iPXE Network Boot")
+        tftp = os.path.join(nv.tmp, "tftp")
+        os.makedirs(tftp, exist_ok=True)
+        with open(os.path.join(tftp, IPXE_SCRIPT), "w") as f:
+            f.write("#!ipxe\necho ouroBIOS smoke: ${net0/ip} from ${next-server}\nchain tftp://${next-server}/%s\n"
+                    % IPXE_SCRIPT_2)
+        with open(os.path.join(tftp, IPXE_SCRIPT_2), "w") as f:
+            f.write("#!ipxe\necho ouroBIOS smoke: second script\nexit\n")
+        pcap = os.path.join(out, "ipxe.pcap")
+        nv.boot("ipxe", drive + ["-netdev", "user,id=n0,tftp=%s,bootfile=%s" % (tftp, IPXE_SCRIPT),
+                                 "-device", "e1000,netdev=n0", "-object", "filter-dump,id=d0,netdev=n0,file=" + pcap])
+        to_payload()
+        nv.wait("iPXE non ha chiesto in TFTP %s, poi %s (pcap in %s)" % (IPXE_SCRIPT, IPXE_SCRIPT_2, pcap),
+                lambda: (nv.alive(), IPXE_SCRIPT_2 in tftp_requests(pcap))[1], timeout)
+        nv.shot("ipxe")
+        nv.halt()
+        steps.append("%s  iPXE (Boot%04X): DHCP dalla rete di QEMU, %s scaricato in TFTP ed eseguito, "
+                     "che ha chiesto %s" % (at(), n, IPXE_SCRIPT, IPXE_SCRIPT_2))
+
+        n = boot_next("setvar-csm", "CSMWrap Legacy Boot")
+        disk = os.path.join(nv.tmp, "legacy.img")
+        mbr_image(disk)
+        # due CPU: CSMWrap ne tiene una, logica, per i suoi servizi BIOS (il
+        # "BIOS proxy": senza un AP si ferma, "BIOS proxy initialization
+        # failed"). Il disco con l'MBR al posto dell'ESP, su ide.0: il BIOS
+        # legacy avvia il primo disco, e l'MBR dell'ESP non ha codice
+        nv.boot("csmwrap", ["-smp", "2", "-drive", "file=%s,format=raw,if=ide" % disk])
+        to_payload()
+        nv.wait("CSMWrap non ha avviato l'MBR del disco (niente %s sulla seriale)" % CSM_MARK.decode(),
+                lambda: (nv.alive(), CSM_MARK.decode() in nv.serial_text())[1], timeout)
+        nv.shot("csmwrap")
+        nv.halt()
+        steps.append("%s  CSMWrap (Boot%04X): il BIOS legacy ha avviato l'MBR del disco SATA, che ha scritto "
+                     "sulla seriale" % (at(), n))
+        return steps
+    finally:
+        nv.close()
 
 def reloc_test(rom, efi, out, timeout):
     """Il passo 9, su una copia nuova della ROM: con l'ESP dalla prima
@@ -1273,7 +1398,7 @@ def run_upstream(rom, out, timeout, reloc_efi=None, tpm=None, auth_rom=None, gap
 
 
 def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=None, sb_efi=None,
-        esrt=None, sb_only=False, tpm=None, tpm2=False):
+        esrt=None, sb_only=False, tpm=None, tpm2=False, setvar_efi=None):
     os.makedirs(out, exist_ok=True)
     if sb_only:
         t0 = time.monotonic()
@@ -1284,15 +1409,15 @@ def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=Non
     t0 = time.monotonic()
     at = lambda: "%3.0f s" % (time.monotonic() - t0)
 
-    def to_payload():
-        sm.wait("coreboot non e' arrivato al payload (\"Jumping to boot code\" nella seriale)",
-                lambda: (sm.alive(), "Jumping to boot code" in sm.serial_text())[1], timeout)
+    def to_payload(m):
+        m.wait("coreboot non e' arrivato al payload (\"Jumping to boot code\" nella seriale)",
+               lambda: (m.alive(), "Jumping to boot code" in m.serial_text())[1], timeout)
 
     try:
         # 1. il setup: Esc durante l'avvio lo apre (BOOT_MANAGER_ESCAPE); la
         # pagina principale lo ignora, cosi' si puo' premere finche' non c'e'
         sm.boot("setup")
-        to_payload()
+        to_payload(sm)
         steps.append("%s  coreboot -> payload" % at())
 
         def drawn():
@@ -1306,8 +1431,8 @@ def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=Non
         home = sm.stable("il setup non si e' fermato su una pagina", timeout, keys=("esc",))
         sm.shot("setup")
         if home.colors() <= 8:
-            raise Fail("lo schermo si e' fermato con %d colori: la Shell UEFI o la console di testo, "
-                       "non il setup (Esc non l'ha aperto)" % home.colors())
+            raise Fail("lo schermo si e' fermato con %d colori: la console di testo (una voce di boot, "
+                       "senza dischi), non il setup (Esc non l'ha aperto)" % home.colors())
         if size and home.size != size:
             raise Fail("il setup e' a %dx%d, non a %dx%d" % (home.size + size))
         steps.append("%s  setup, pagina principale (%d colori, %dx%d)" % ((at(), home.colors()) + home.size))
@@ -1335,106 +1460,20 @@ def run(rom, out, timeout, setup_only=False, vga_mb=16, size=None, reloc_efi=Non
         if setup_only:
             return steps
 
-        # 2. le variabili UEFI in SMMSTORE: senza dischi il payload arriva
-        # alla Shell, dove setvar scrive la variabile di prova e reset -s
-        # spegne; la si cerca poi nello store del flash. Al secondo avvio la
-        # Shell la riscrive: il driver delle variabili deve trovare la copia
-        # di prima nel flash e cancellarla, e ne deve restare una sola
-        for i, value in enumerate(VAR_DATA):
-            sm.boot("shell-%d" % (i + 1))
-            to_payload()
-            shell = sm.stable("il payload non e' arrivato alla Shell UEFI", timeout)
-            if shell.colors() > 8:
-                raise Fail("senza dischi il payload non si e' fermato nella Shell (%d colori)"
-                           % shell.colors())
-            sm.type("setvar %s -guid %s -bs -rt -nv =%s\n" % (VAR_NAME, VAR_GUID, value))
-            # QEMU scrive il flash emulato su disco appena il firmware lo
-            # programma: si aspetta la variabile li', non una schermata ferma
-            # (la Shell lo e' anche prima di setvar). Poi si chiude QEMU.
-            # Niente reset -s: il PM di ICH9 in QEMU spegne con SLP_TYP 0,
-            # coreboot da' a S5 il 7 dei PCH Intel
-            sm.wait("setvar non ha scritto %s nel flash" % VAR_NAME,
-                    lambda: (sm.alive(), any(c[0] in VAR_VALID and c[2] == value
-                                             for c in store_copies(sm.flash)))[1], timeout)
-            sm.shot("shell-%d" % (i + 1))
+        # 2. le variabili UEFI in SMMSTORE, iPXE e CSMWrap (i passi 6-8), su
+        # una copia nuova della ROM
+        if setvar_efi:
             sm.halt()
-            copies = store_copies(sm.flash)
-            valid = [c for c in copies if c[0] in VAR_VALID]
-            if len(valid) != 1 or valid[0][2] != value:
-                raise Fail("nello store %d copie valide di %s (%s), attesa una con %s"
-                           % (len(valid), VAR_NAME, ", ".join(c[2] for c in valid) or "nessuna", value))
-            if valid[0][1] & 0x7 != 0x7:
-                raise Fail("%s con attributi 0x%x, attesi NV+BS+RT (0x7)" % (VAR_NAME, valid[0][1]))
-            if i == 0:
-                steps.append("%s  Shell: setvar scrive %s in SMMSTORE (NV+BS+RT)" % (at(), VAR_NAME))
-            else:
-                if len(copies) < 2:
-                    raise Fail("la copia di prima di %s non c'e' piu' nello store" % VAR_NAME)
-                steps.append("%s  dopo un riavvio: riscritta, la copia di prima cancellata, una sola "
-                             "valida" % at())
-
-        # 3. iPXE e CSMWrap: le voci della FV che il boot manager registra.
-        # Senza dischi il payload va alla Shell: da li' BootNext sceglie la
-        # voce per l'avvio dopo (setvar sul nome, letto dallo store)
-        def boot_next(tag, description):
-            n = boot_option_number(sm.flash, description)
-            if n is None:
-                raise Fail("nello store nessuna voce Boot#### \"%s\": il boot manager non l'ha registrata"
-                           % description)
-            sm.boot(tag)
-            to_payload()
-            shell = sm.stable("il payload non e' arrivato alla Shell UEFI", timeout)
-            if shell.colors() > 8:
-                raise Fail("senza dischi il payload non si e' fermato nella Shell (%d colori)" % shell.colors())
-            sm.type("setvar BootNext -guid %s -bs -rt -nv =%02X%02X\n"
-                    % (str(uuid.UUID(bytes_le=GLOBAL_GUID)), n & 0xFF, n >> 8))
-            sm.wait("setvar non ha scritto BootNext nel flash",
-                    lambda: (sm.alive(), boot_next_number(sm.flash) == n)[1], timeout)
-            sm.halt()
-            return n
-
-        n = boot_next("shell-ipxe", "iPXE Network Boot")
-        tftp = os.path.join(sm.tmp, "tftp")
-        os.makedirs(tftp, exist_ok=True)
-        with open(os.path.join(tftp, IPXE_SCRIPT), "w") as f:
-            f.write("#!ipxe\necho ouroBIOS smoke: ${net0/ip} from ${next-server}\nchain tftp://${next-server}/%s\n"
-                    % IPXE_SCRIPT_2)
-        with open(os.path.join(tftp, IPXE_SCRIPT_2), "w") as f:
-            f.write("#!ipxe\necho ouroBIOS smoke: second script\nexit\n")
-        pcap = os.path.join(out, "ipxe.pcap")
-        sm.boot("ipxe", ["-netdev", "user,id=n0,tftp=%s,bootfile=%s" % (tftp, IPXE_SCRIPT),
-                         "-device", "e1000,netdev=n0", "-object", "filter-dump,id=d0,netdev=n0,file=" + pcap])
-        to_payload()
-        sm.wait("iPXE non ha chiesto in TFTP %s, poi %s (pcap in %s)" % (IPXE_SCRIPT, IPXE_SCRIPT_2, pcap),
-                lambda: (sm.alive(), IPXE_SCRIPT_2 in tftp_requests(pcap))[1], timeout)
-        sm.shot("ipxe")
-        sm.halt()
-        steps.append("%s  iPXE (Boot%04X): DHCP dalla rete di QEMU, %s scaricato in TFTP ed eseguito, "
-                     "che ha chiesto %s" % (at(), n, IPXE_SCRIPT, IPXE_SCRIPT_2))
-
-        n = boot_next("shell-csm", "CSMWrap Legacy Boot")
-        disk = os.path.join(sm.tmp, "legacy.img")
-        mbr_image(disk)
-        # due CPU: CSMWrap ne tiene una, logica, per i suoi servizi BIOS (il "BIOS
-        # proxy": senza un AP si ferma, "BIOS proxy initialization failed")
-        sm.boot("csmwrap", ["-smp", "2", "-drive", "file=%s,format=raw,if=ide" % disk])
-        to_payload()
-        sm.wait("CSMWrap non ha avviato l'MBR del disco (niente %s sulla seriale)" % CSM_MARK.decode(),
-                lambda: (sm.alive(), CSM_MARK.decode() in sm.serial_text())[1], timeout)
-        sm.shot("csmwrap")
-        sm.halt()
-        steps.append("%s  CSMWrap (Boot%04X): il BIOS legacy ha avviato l'MBR del disco SATA, che ha scritto "
-                     "sulla seriale" % (at(), n))
-
-        # 4. i servizi runtime spostati, come da boot.efi di macOS
+            steps += setvar_test(rom, setvar_efi, out, timeout, vga_mb, at)
+        # 3. i servizi runtime spostati, come da boot.efi di macOS
         if reloc_efi:
             line = reloc_test(rom, reloc_efi, out, timeout)
             steps.append("%s  %s" % (at(), line))
-        # 5. l'ESRT e Secure Boot, su un'altra copia nuova della ROM
+        # 4. l'ESRT e Secure Boot, su un'altra copia nuova della ROM
         if sb_efi:
             line = secure_boot_test(rom, sb_efi, out, timeout, esrt)
             steps.append("%s  %s" % (at(), line))
-        # 6. il TPM 1.2 e il log delle misure, su un'altra copia nuova
+        # 5. il TPM 1.2 e il log delle misure, su un'altra copia nuova
         if tpm:
             line = tpm_test(rom, tpm, out, timeout, tpm2)
             steps.append("%s  %s" % (at(), line))
@@ -1451,6 +1490,9 @@ def main():
     ap.add_argument("--setup-only", action="store_true", help="solo il setup (passi 1-5)")
     ap.add_argument("--vga-mb", type=int, default=16, help="MiB della VGA di QEMU (default 16)")
     ap.add_argument("--size", help="la risoluzione attesa del setup, LxA (es. 2880x1620)")
+    ap.add_argument("--setvar", metavar="EFI",
+                    help="tools/efi/setvar.c compilato: i passi 6-8 (tools/build.sh smoke), che senza non "
+                    "si fanno; serve salvo con --setup-only e --sb-only")
     ap.add_argument("--reloc-test", metavar="EFI",
                     help="tools/efi/rt-reloc-test.c compilato: il passo 9 (tools/build.sh smoke)")
     ap.add_argument("--sb-test", metavar="EFI",
@@ -1505,10 +1547,17 @@ def main():
         ap.error("--tpm2 vuole --tpm")
     if args.tpm and not os.path.isfile(args.tpm):
         sys.exit("--tpm: %s non c'e'" % args.tpm)
-    if args.reloc_test or args.sb_test or args.tpm:
+    if args.setvar:
+        if args.upstream:
+            ap.error("--setvar non va con --upstream, che scrive le variabili dalla Shell")
+        if not os.path.isfile(args.setvar):
+            sys.exit("--setvar: %s non c'e'" % args.setvar)
+    elif not (args.setup_only or args.sb_only or args.upstream):
+        ap.error("--setvar EFI (tools/efi/setvar.c compilato) per i passi 6-8, o --setup-only")
+    if args.setvar or args.reloc_test or args.sb_test or args.tpm:
         for tool in ("mformat", "mmd", "mcopy"):
             if not shutil.which(tool):
-                sys.exit("serve %s per i passi 9, 10 e 11 (Debian/Ubuntu: apt install mtools)" % tool)
+                sys.exit("serve %s per i passi 6-11 (Debian/Ubuntu: apt install mtools)" % tool)
     if args.upstream:
         if args.sb_test or args.sb_only or args.setup_only or args.tpm2:
             ap.error("--upstream: solo --reloc-test, --tpm, --auth-rom e --gap")
@@ -1528,7 +1577,7 @@ def main():
         return 0
     try:
         steps = run(args.rom, args.out, args.timeout, args.setup_only, args.vga_mb, size,
-                    args.reloc_test, args.sb_test, esrt, args.sb_only, args.tpm, args.tpm2)
+                    args.reloc_test, args.sb_test, esrt, args.sb_only, args.tpm, args.tpm2, args.setvar)
     except Fail as e:
         print("smoke: FALLITO (%s): %s (schermate e seriale in %s)" % (ACCEL.upper(), e, args.out))
         return 1

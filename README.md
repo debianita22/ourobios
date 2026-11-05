@@ -360,12 +360,15 @@ image for QEMU's q35 and boots it with `tools/qemu-smoke.py` (once per
 payload: a variant with the same payload, byte for byte, as one already
 tested is not tested again): coreboot must
 reach the payload, the payload must draw, Esc must open the setup, and the
-setup must open a page and go back, without a reset. Then, in two more
-boots, the UEFI Shell writes a test variable with `setvar`: it must be in
-the SMMSTORE store of the emulated flash, and after the reboot the second
-write must find and delete the first copy, leaving one. Then the two boot
-entries of the firmware volume, each chosen with `BootNext` from the
-Shell: iPXE, with an e1000 on QEMU's user network, must get an address
+setup must open a page and go back, without a reset. Then, on a fresh
+copy of the image with an EFI system partition, in two boots,
+`tools/efi/setvar.c` writes a test variable with `SetVariable()`, as the
+`setvar` of the UEFI Shell did before the boards' payload left the Shell
+out: it must be in the SMMSTORE store of the emulated flash, and after the
+reboot the second write must find and delete the first copy, leaving one.
+Then the two boot entries of the firmware volume, each chosen with
+`BootNext`, written the same way: iPXE, with an e1000 on QEMU's user
+network, must get an address
 from its DHCP, download the script the DHCP names over TFTP and run it
 (the script chains a second one, whose TFTP request in the traffic dump
 is the proof); CSMWrap, with two CPUs and a SATA disk, must boot the
