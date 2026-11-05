@@ -1,0 +1,65 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 5 Nov 2026 16:07:39 +0100
+Subject: [PATCH] mb/lenovo: Drop the UEFI Shell from the USB boot help
+
+The payload of the W541 and of the M920x no longer carries the UEFI
+Shell (EDK2_HAVE_EFI_SHELL off in their configurations: about 249 KiB of
+the payload, and a program any user at the boot menu could start
+without a signature check, as a file of the firmware volume). The help
+of "Boot from USB drives" listed the Shell and its startup.nsh among the
+ways a USB drive still boots with the option off; it lists the ones
+left. A Shell on the drive itself starts through those, Boot From File
+or \EFI\BOOT\BOOTX64.EFI.
+---
+ src/mainboard/lenovo/haswell/cfr.c     | 12 ++++++------
+ src/mainboard/lenovo/m720q_m920q/cfr.c | 10 +++++-----
+ 2 files changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 7b96c01b..2f8dc41f 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -259,12 +259,12 @@ static const struct sm_object usb_boot = SM_DECLARE_BOOL({
+ 	.ui_helptext	= "The USB drives (laptop and dock ports) in the boot order\n"
+ 			  "and the boot menu.\n"
+ 			  "Off: the firmware does not list them, but they can still\n"
+-			  "boot: from the entries that an OS made, from the UEFI\n"
+-			  "Shell and its startup.nsh, from CSMWrap, from Boot From\n"
+-			  "File in the setup's Boot Maintenance Manager, and through\n"
+-			  "\\EFI\\BOOT\\BOOTX64.EFI, which the firmware tries on every\n"
+-			  "drive once no boot entry works (PlatformRecovery). An\n"
+-			  "update capsule on a USB drive still installs.\n"
++			  "boot: from the entries that an OS made, from CSMWrap,\n"
++			  "from Boot From File in the setup's Boot Maintenance\n"
++			  "Manager, and through \\EFI\\BOOT\\BOOTX64.EFI, which the\n"
++			  "firmware tries on every drive once no boot entry works\n"
++			  "(PlatformRecovery). An update capsule on a USB drive\n"
++			  "still installs.\n"
+ 			  "Not a security setting: with Secure Boot on, these paths\n"
+ 			  "start only signed programs, and the default keys accept\n"
+ 			  "those signed by Microsoft (Windows, shim).\n"
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index 9f288af2..fdf2c255 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -259,11 +259,11 @@ static const struct sm_object usb_boot = SM_DECLARE_BOOL({
+ 	.ui_name	= "Boot from USB drives",
+ 	.ui_helptext	= "The USB drives in the boot order and the boot menu.\n"
+ 			  "Off: the firmware does not list them, but they can still\n"
+-			  "boot: from the entries that an OS made, from the UEFI\n"
+-			  "Shell and its startup.nsh, from CSMWrap, from Boot From\n"
+-			  "File in the setup's Boot Maintenance Manager, and through\n"
+-			  "\\EFI\\BOOT\\BOOTX64.EFI, which the firmware tries on every\n"
+-			  "drive once no boot entry works (PlatformRecovery).\n"
++			  "boot: from the entries that an OS made, from CSMWrap,\n"
++			  "from Boot From File in the setup's Boot Maintenance\n"
++			  "Manager, and through \\EFI\\BOOT\\BOOTX64.EFI, which the\n"
++			  "firmware tries on every drive once no boot entry works\n"
++			  "(PlatformRecovery).\n"
+ 			  "Not a security setting: with Secure Boot on, these paths\n"
+ 			  "start only signed programs, and the default keys accept\n"
+ 			  "those signed by Microsoft (Windows, shim).\n"
+-- 
+2.43.0
+
