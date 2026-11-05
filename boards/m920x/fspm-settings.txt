@@ -12,7 +12,7 @@
 #   version N             CONFIG_FSP_MEMORY_SETTINGS_SOC_VERSION, 0-15
 #   sha256 HASH PERCORSO  un file dell'albero
 version 0
-sha256 97cc43297e004f363a1c4e73eeb30a2ed84f36bc8103966d89051b73ae09b07a src/soc/intel/cannonlake/romstage/fsp_params.c
+sha256 e573bf422884c7e00901305600783cbe8ee01dcc3c89804c7022898f7876fed5 src/soc/intel/cannonlake/romstage/fsp_params.c
 sha256 a3e03587e6d704452bee33e111850aa6c31cb38fd4b97f1f0a1a093117f376c4 src/soc/intel/cannonlake/cnl_memcfg_init.c
 sha256 b9637dbefae1497919a6d29af4659d836a292051302635a3cb6a8e3ec8e38f4b src/soc/intel/cannonlake/include/soc/cnl_memcfg_init.h
 sha256 9c04439bbb01c5bcdfcbbe07af761595ba0549509eeb1786cf407d88eac73835 src/mainboard/lenovo/m720q_m920q/romstage.c
