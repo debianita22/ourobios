@@ -1,0 +1,147 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 5 Nov 2026 12:00:00 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Keep the processor graphics on, no
+ option
+
+The setup offered "Intel graphics" under Hardware, the igd_enabled
+option that soc/intel/cannonlake reads for the FSP-M InternalGfx UPD.
+Off, the DisplayPort and HDMI ports of the rear panel go dark with the
+firmware screen and the setup itself: without a graphics card on the
+riser there is no way back from the setup, only a write to the option
+from the OS or an external programmer. The gain was small: a card on
+the riser gives the firmware screen through its option ROM with the
+processor graphics on as well.
+
+SOC_INTEL_CANNONLAKE_IGD_ALWAYS_ON, which the board selects: the
+romstage keeps InternalGfx on whatever a stale igd_enabled in the
+store says (a machine that had it off comes back with the next
+update), and still turns it off for a processor without graphics. The
+menu keeps the stolen memory and the aperture, no longer behind the
+option; the help of "Option ROMs of the cards" no longer names the
+case.
+---
+ src/mainboard/lenovo/m720q_m920q/Kconfig      |  1 +
+ src/mainboard/lenovo/m720q_m920q/cfr.c        | 34 ++++++++-----------
+ src/soc/intel/cannonlake/Kconfig              |  8 +++++
+ .../intel/cannonlake/romstage/fsp_params.c    |  3 +-
+ 4 files changed, 25 insertions(+), 21 deletions(-)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/Kconfig b/src/mainboard/lenovo/m720q_m920q/Kconfig
+index 4713cb6ceee..5efe3599e7b 100644
+--- a/src/mainboard/lenovo/m720q_m920q/Kconfig
++++ b/src/mainboard/lenovo/m720q_m920q/Kconfig
+@@ -11,6 +11,7 @@ config BOARD_SPECIFIC_OPTIONS
+ 	select DRIVERS_UART_8250IO
+ 	select FSP_PLATFORM_MEMORY_SETTINGS_VERSIONS
+ 	select HAVE_ACPI_RESUME
++	select SOC_INTEL_CANNONLAKE_IGD_ALWAYS_ON
+ 	select HAVE_ACPI_TABLES
+ 	select HAVE_CMOS_DEFAULT
+ 	select HAVE_OPTION_TABLE
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index db7b6ea8d00..b2e2a482190 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -241,11 +241,11 @@ static const struct sm_object option_roms = SM_DECLARE_ENUM({
+ 			  "which the firmware runs (with Secure Boot on, only those\n"
+ 			  "that the db keys allow). Graphics cards only: just those\n"
+ 			  "of graphics cards, which give the firmware screen with a\n"
+-			  "processor without graphics (F models) or with Hardware >\n"
+-			  "Intel graphics off. NVMe, SATA (AHCI) and USB cards still\n"
+-			  "boot with the firmware's own drivers, Intel network cards\n"
+-			  "through iPXE; a card that needs its ROM (RAID, SAS, other\n"
+-			  "network cards) then works in the OS only.\n"
++			  "processor without graphics (F models). NVMe, SATA (AHCI)\n"
++			  "and USB cards still boot with the firmware's own drivers,\n"
++			  "Intel network cards through iPXE; a card that needs its\n"
++			  "ROM (RAID, SAS, other network cards) then works in the OS\n"
++			  "only.\n"
+ 			  "Default: All.",
+ 	.default_value	= 2,
+ 	.values		= (const struct sm_enum_value[]) {
+@@ -436,18 +436,13 @@ static const struct sm_object energy_power = SM_DECLARE_FORM({
+ 
+ /* Hardware */
+ 
+-/* Read by FSP-M parameters (soc/intel/cannonlake/romstage/fsp_params.c) */
+-static const struct sm_object igd_enabled = SM_DECLARE_BOOL({
+-	.opt_name	= "igd_enabled",
+-	.ui_name	= "Intel graphics",
+-	.ui_helptext	= "The graphics of the processor, behind the DisplayPort and\n"
+-			  "HDMI ports of the rear panel.\n"
+-			  "Default: on. Turn it off only with a graphics card on the\n"
+-			  "PCIe riser, connected to the screen: off, the rear ports\n"
+-			  "stay dark, the firmware screen included.",
+-	.default_value	= true,
+-});
+-
++/*
++ * Read by FSP-M parameters (soc/intel/cannonlake/romstage/fsp_params.c). No
++ * "igd_enabled" here: the processor graphics stays on
++ * (SOC_INTEL_CANNONLAKE_IGD_ALWAYS_ON). Off, the rear ports went dark with the
++ * firmware screen and the setup, and only a graphics card on the riser or a
++ * write to the option from the OS could bring the setup back.
++ */
+ static const struct sm_object igd_dvmt = SM_DECLARE_ENUM({
+ 	.opt_name	= "igd_dvmt_prealloc",
+ 	.ui_name	= "Graphics stolen memory",
+@@ -462,7 +457,7 @@ static const struct sm_object igd_dvmt = SM_DECLARE_ENUM({
+ 				{ "96 MB",	IGD_SM_96MB	},
+ 				{ "128 MB",	IGD_SM_128MB	},
+ 				SM_ENUM_VALUE_END		},
+-}, WITH_DEP_VALUES(&igd_enabled, true));
++});
+ 
+ static const struct sm_object igd_aperture = SM_DECLARE_ENUM({
+ 	.opt_name	= "igd_aperture_size",
+@@ -476,12 +471,11 @@ static const struct sm_object igd_aperture = SM_DECLARE_ENUM({
+ 				{ "256 MB",	IGD_AP_SZ_256MB	},
+ 				{ "512 MB",	IGD_AP_SZ_512MB	},
+ 				SM_ENUM_VALUE_END		},
+-}, WITH_DEP_VALUES(&igd_enabled, true));
++});
+ 
+ static const struct sm_object hardware_intel_graphics = SM_DECLARE_FORM({
+ 	.ui_name	= "Intel graphics",
+ 	.obj_list	= (const struct sm_object *[]) {
+-		&igd_enabled,
+ 		&igd_dvmt,
+ 		&igd_aperture,
+ 		NULL
+diff --git a/src/soc/intel/cannonlake/Kconfig b/src/soc/intel/cannonlake/Kconfig
+index df2af90ca69..0abf1995c56 100644
+--- a/src/soc/intel/cannonlake/Kconfig
++++ b/src/soc/intel/cannonlake/Kconfig
+@@ -131,6 +131,14 @@ config SOC_INTEL_COMETLAKE_V
+ 	bool
+ 	select SOC_INTEL_COMETLAKE
+ 
++config SOC_INTEL_CANNONLAKE_IGD_ALWAYS_ON
++	bool
++	help
++	  Keep the processor graphics on whatever the "igd_enabled" option
++	  in the option backend says: for a board whose setup does not offer
++	  the option, where a stale value would leave the firmware screen and
++	  the setup dark. A processor without graphics is still detected.
++
+ config SOC_INTEL_CANNONLAKE_PCH_H
+ 	bool
+ 
+diff --git a/src/soc/intel/cannonlake/romstage/fsp_params.c b/src/soc/intel/cannonlake/romstage/fsp_params.c
+index b5c1b146410..ca330758b62 100644
+--- a/src/soc/intel/cannonlake/romstage/fsp_params.c
++++ b/src/soc/intel/cannonlake/romstage/fsp_params.c
+@@ -30,7 +30,8 @@ void platform_fsp_memory_init_params_cb(FSPM_UPD *mupd, uint32_t version)
+ 
+ 	m_cfg->HyperThreading = get_uint_option("hyper_threading", CONFIG(FSP_HYPERTHREADING));
+ 
+-	bool igd_enabled = get_uint_option("igd_enabled", !CONFIG(SOC_INTEL_DISABLE_IGD))
++	bool igd_enabled = (CONFIG(SOC_INTEL_CANNONLAKE_IGD_ALWAYS_ON) ||
++			    get_uint_option("igd_enabled", !CONFIG(SOC_INTEL_DISABLE_IGD)))
+ 			&& is_devfn_enabled(SA_DEVFN_IGD);
+ 
+ 	/* Probe for no IGD and disable InternalGfx and panel power to prevent a crash in FSP-M. */
+-- 
+2.47.3
+

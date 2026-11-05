@@ -262,6 +262,15 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   off in the setup first ([docs/flashing.md](docs/flashing.md)).
   `tools/update.py protection` and `status` report the default of the
   running version.
+- On the M920x the *Intel graphics* switch under *Hardware* is gone
+  and the processor graphics stays on (patch 0224): off, the DisplayPort
+  and HDMI ports went dark with the firmware screen and the setup
+  itself, and without a graphics card on the riser nothing but a write
+  to the option from the OS or an external programmer brought the setup
+  back. A machine that had it off comes back with this update: romstage
+  no longer reads the option (`SOC_INTEL_CANNONLAKE_IGD_ALWAYS_ON`), and
+  still turns the graphics off for a processor without them. The stolen
+  memory and the aperture stay in the menu, under *Intel graphics*.
 - Measured boot leaves the PCRs alone on a resume from S3 (patch 0223):
   up to v1.5.0 the stages loaded again on the resume path were measured
   again into PCR 2 (on the M920x the microcode, FSP-M, FSP-S and the VBT
