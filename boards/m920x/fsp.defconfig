@@ -196,3 +196,12 @@ CONFIG_EDK2_CSMWRAP_FILE="m920x/csmwrap.efi"
 # EDK2 le verifica con le chiavi di db
 CONFIG_EDK2_LOAD_OPTION_ROMS=y
 CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D UFS_ENABLE=FALSE -D UHCI_ENABLE=FALSE -D EBC_ENABLE=FALSE -D EXTRA_FS_DRIVERS=FALSE -D CRYPTO_PROTOCOL_SUPPORT=TRUE"
+
+# Il payload compresso con zstd invece che con LZMA. Sulla v1.6.0-rc5
+# ramstage decomprimeva i 2.0 MB dell'LZMA in 169 ms (cbmem -t); con zstd il
+# file e' di 105 KiB piu' grande (2.06 MiB, cbfstool), e i decompressori di
+# coreboot, misurati sullo stesso payload fuori dalla macchina (x86 a 32 bit,
+# le opzioni della build), vanno da 161 a 18 ms: circa 0.13 s in meno a ogni
+# avvio, tolti i 105 KiB in piu' che verstage e ramstage leggono e
+# misurano. Solo ramstage decomprime il payload: la parte RO non cambia
+CONFIG_COMPRESSED_PAYLOAD_ZSTD=y

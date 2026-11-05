@@ -308,6 +308,16 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `cbmem -1` keeps them, as the CBMEM console takes every line up to
   DEBUG at any level; the OS reads the log from the TPM2 and TCPA
   tables as before.
+- The M920x's payload is compressed with zstd instead of LZMA
+  (`CONFIG_COMPRESSED_PAYLOAD_ZSTD`): on rc5 ramstage decompressed its
+  2.0 MB of LZMA in 169 ms; the zstd file is 105 KiB larger, and
+  coreboot's decoders take 18 ms for it against 161 ms for the LZMA,
+  measured on the same payload off the machine. About 0.13 s less at
+  every boot, BOOT-02 of `hw-report.py` will tell on the machine. Only
+  ramstage reads the payload, so the read-only part is the same; the
+  smoke test boots the zstd payload in QEMU, and `tools/sbom.py` reads
+  it with `compression.zstd` of Python 3.14 or the `zstd` command. The
+  W541 keeps LZMA for now ([docs/roadmap.md](docs/roadmap.md#a-zstd-payload-on-the-w541)).
 - `tools/hw-report.py` counts from the coreboot log what the M920x's
   serial port costs at the level of the boot and at Info, Notice and
   Error, the other processors' lines included, and says whether

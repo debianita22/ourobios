@@ -34,6 +34,8 @@ is here. None of it is a promise of a date.
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
 | [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
 | [Openness score](#openness-score) | both | already in `tools/sbom.py` | a comparison with Dasharo's own tool |
+| [A zstd payload on the W541](#a-zstd-payload-on-the-w541) | W541 | the M920x has it from v1.6.0; on the W541 the payload would take 105 KiB more of slots with 295-365 KiB free, for a gain not measured there yet | the time of its LZMA in `cbmem -t` of the v1.6.0 test, then the choice |
+| [The DPLL of i915 at boot on the M920x](#the-dpll-of-i915-at-boot-on-the-m920x) | M920x | i915's own wait for the PLL, not the firmware's | a report to i915 with the numbers |
 
 ## Firmware watchdog
 
@@ -663,6 +665,25 @@ reports no backlight instead of the vendor one when neither is there
 brightness path on the W541 for no gain elsewhere: not planned. macOS
 answers "Darwin" only, unless an OpenCore configuration renames `_OSI`.
 
+
+## A zstd payload on the W541
+
+From v1.6.0 the M920x compresses its payload with zstd instead of LZMA
+(`CONFIG_COMPRESSED_PAYLOAD_ZSTD`): on v1.6.0-rc5 ramstage decompressed the
+2.0 MB of LZMA in 169 ms, and coreboot's decoders, built as the boards
+build them (32-bit, `-Os`, the decompressors' options), take 161 ms and 18
+ms for the LZMA and the zstd of that payload off the machine. The zstd
+file is 105 KiB larger (2,156,038 bytes against 2,048,979), read and
+measured by verstage and ramstage, about 15 ms on the M920x: about 0.13 s
+less at every boot.
+
+The W541's payload behaves the same off the machine (2,047,010 bytes of
+LZMA, 2,154,776 of zstd), but its slots are smaller: on rc5 `FW_MAIN_A`
+has 363 KiB free with `mrc` and 295 KiB with `nri`, the zstd decoder adds
+some 20 KiB to ramstage, so about 235 and 170 KiB would be left, and the
+flash map is in the read-only part ([docs/vboot.md](vboot.md#later-with-another-read-only-part)).
+How long its LZMA takes is not known yet: `cbmem -t` of the v1.6.0 test
+gives it, and with it the choice.
 
 ## The DPLL of i915 at boot on the M920x
 
