@@ -212,14 +212,22 @@ The other *drop* ones, as looked at for v1.6.0:
   one patch more in `patches/edk2` for two less in `patches/tianocore`,
   and a number out of order. They wait for `patches/edk2` to retire, when
   they are lines out of the series.
-- **In the payload**, each with its own test: `9174049` (SdMmcPciGliDxe)
-  and `5342f42` (SdhciNonPciDxe, with its record in `CbParseLib`), two
-  drivers in the volume for controllers these boards do not have;
-  `d7597bb` (HS400 enhanced strobe, in the `SdMmcPciHcDxe` that drives
-  the SD reader of the W541); `b8d0242` (in `UefiBootManagerLib` too);
-  `1287861` (the Secure Boot pages of the setup); `6cf55e1` (the MTRRs);
-  `0a270f8` (the aperture of the PCI root bridge, PCI-09 of
-  `tools/hw-report.py`).
+- **In the payload**, each with its own test. Done after v1.6.0-rc5:
+  `9174049` (SdMmcPciGliDxe, the SDHCI of Genesys Logic) and `5342f42`
+  (SdhciNonPciDxe, the SDHCI off the PCI bus, with its record in
+  `CbParseLib` and `NonDiscoverablePciDeviceDxe`, which only it fed), two
+  drivers in the volume for controllers these boards do not have, left
+  out by `edk2/0054` and `edk2/0055`: `tools/edk2-import.py` keeps their
+  directories out of TianoCore's tree (`LEFT_OUT`), so the commit that
+  adds each and the patch that removes it take no number in
+  `patches/tianocore`, and the other numbers stay; what `5342f42` adds
+  outside its directory stays in `tianocore/0060`, and `tianocore/0120`
+  takes it out again, because `94a236511` (the boot media record) is
+  written against it. Still to do: `d7597bb` (HS400 enhanced strobe, in
+  the `SdMmcPciHcDxe` that drives the SD reader of the W541); `b8d0242`
+  (in `UefiBootManagerLib` too); `1287861` (the Secure Boot pages of the
+  setup); `6cf55e1` (the MTRRs); `0a270f8` (the aperture of the PCI root
+  bridge, PCI-09 of `tools/hw-report.py`).
 
 ## Setup menu and the other screens of the firmware
 
@@ -333,14 +341,14 @@ with the stable tag that takes the new OpenSSL.
 | `076933b` | UefiPayloadPkg: Add and use PlatformGopPolicy | drop | no GOP driver: libgfxinit sets the mode | `tianocore/0013`, package |
 | `88b95ba` | UefiPayloadPkg: Add AmdPcoSdhciDxe driver for AMD Picasso eMMC | drop | reverted by 6aa87d0 | left out with its revert (0022 unused) |
 | `42865d9` | MdeModulePkg: Improve USB error handling for faulting devices | upstream |  | `tianocore/0023` |
-| `9174049` | UefiPayload: Add new SdMmcPciGli driver | drop | no such controller | package |
+| `9174049` | UefiPayload: Add new SdMmcPciGli driver | drop | no such controller | left out (`edk2/0054`) |
 | `b26a387` | UefiPayloadPkg/UfsPlatformDxe: Add new UFS platform driver | drop | UFS_ENABLE=FALSE | package |
 | `b8d0242` | MdeModulePkg: UFS pass-through fix and boot enumeration filter | drop | UFS | `tianocore/0029` |
 | `a79398a` | PcRtcEntry: Don't assert if RTC init fails | upstream |  | `tianocore/0037` |
 | `dde0798` | FatPkg: Fix FAT32 mount on small 4K-sector ESP partitions | upstream |  | `tianocore/0040` |
 | `97a12e8` | MdeModulePkg/ScsiDiskDxe: Don't fail media detection on FUA query error | merged | in master after the tag | `tianocore/0044` |
 | `6aa87d0` | Revert "UefiPayloadPkg: Add AmdPcoSdhciDxe driver for AMD Picasso eMMC" | drop | reverts 88b95ba | left out with 88b95ba (0059 unused) |
-| `5342f42` | UefiPayloadPkg: Add SdhciNonPciDxe for non-PCI SDHCI | drop | no such controller | `tianocore/0060`, package |
+| `5342f42` | UefiPayloadPkg: Add SdhciNonPciDxe for non-PCI SDHCI | drop | no such controller | left out (`edk2/0055`); `tianocore/0060` keeps its record and parser, `tianocore/0120` takes them out |
 | `acf9505` | MdeModulePkg/Usb: Warm reset downstream SuperSpeed ports | upstream |  | `tianocore/0061` |
 | `d7597bb` | MdeModulePkg/SdMmcPciHcDxe: add HS400 Enhanced Strobe for Intel eMMC | drop | no eMMC | `tianocore/0062` |
 | `c205ceb` | MdeModulePkg/SdMmcPciHcDxe: Don't force EmbeddedSlot for Bayhub | carry | as a091558: Libreboot's fix for SD boot on the W541 | `tianocore/0065` |

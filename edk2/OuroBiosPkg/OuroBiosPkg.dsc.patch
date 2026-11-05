@@ -695,20 +695,7 @@
  !if $(NVME_ENABLE) == TRUE
    MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf
  !endif
-@@ -1096,6 +1429,12 @@
-   # SD/eMMC Support
-   #
- !if $(SD_ENABLE) == TRUE
-+  MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf
-+  OuroBiosPkg/SdhciNonPciDxe/SdhciNonPciDxe.inf {
-+    <LibraryClasses>
-+      NonDiscoverableDeviceRegistrationLib|MdeModulePkg/Library/NonDiscoverableDeviceRegistrationLib/NonDiscoverableDeviceRegistrationLib.inf
-+  }
-+  OuroBiosPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.inf
-   MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.inf
-   MdeModulePkg/Bus/Sd/EmmcDxe/EmmcDxe.inf
-   MdeModulePkg/Bus/Sd/SdDxe/SdDxe.inf
-@@ -1111,13 +1450,19 @@
+@@ -1111,13 +1444,19 @@
    #
    # Usb Support
    #
@@ -728,7 +715,7 @@
  
    #
    # ISA Support
-@@ -1144,7 +1489,15 @@
+@@ -1144,7 +1483,15 @@
  !if $(DISABLE_SERIAL_TERMINAL) == FALSE
    MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf
  !endif
@@ -744,7 +731,7 @@
  !if $(PERFORMANCE_MEASUREMENT_ENABLE)
    MdeModulePkg/Universal/Acpi/FirmwarePerformanceDataTableDxe/FirmwarePerformanceDxe.inf
  !endif
-@@ -1175,6 +1528,8 @@
+@@ -1175,6 +1522,8 @@
        NULL|MdeModulePkg/Library/VarCheckUefiLib/VarCheckUefiLib.inf
        NULL|EmbeddedPkg/Library/NvVarStoreFormattedLib/NvVarStoreFormattedLib.inf
    }
@@ -753,7 +740,7 @@
  !elseif $(VARIABLE_SUPPORT) == "SPI"
    MdeModulePkg/Universal/Variable/RuntimeDxe/VariableSmm.inf {
      <LibraryClasses>
-@@ -1200,6 +1555,46 @@
+@@ -1200,6 +1549,46 @@
        TlsLib|CryptoPkg/Library/TlsLib/TlsLib.inf
    }
  !endif
@@ -800,7 +787,7 @@
  !endif
  
  [Components.X64]
-@@ -1282,7 +1677,6 @@
+@@ -1282,7 +1671,6 @@
    DevicePathLib|MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib.inf
    FileHandleLib|MdePkg/Library/UefiFileHandleLib/UefiFileHandleLib.inf
    ShellLib|ShellPkg/Library/UefiShellLib/UefiShellLib.inf

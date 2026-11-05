@@ -101,3 +101,4 @@
 0116-MdeModulePkg-Fix-GOP-device-path-pool-double-free.patch
 0117-MdeModulePkg-Fix-OptionOrder-double-free.patch
 0118-UefiPayloadPkg-UefiPayloadEntry-Fix-MMCONF-resource-.patch
+0120-UefiPayloadPkg-Leave-SdhciNonPciDxe-out-of-the-paylo.patch

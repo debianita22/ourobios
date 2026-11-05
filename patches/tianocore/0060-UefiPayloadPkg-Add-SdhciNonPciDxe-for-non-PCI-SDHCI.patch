@@ -4,8 +4,9 @@ Date: Mon, 13 Jul 2026 18:34:33 -0500
 Subject: [PATCH] UefiPayloadPkg: Add SdhciNonPciDxe for non-PCI SDHCI
 
 [ouroBIOS: commit 5342f428abac of MrChromebox's edk2, without the files
-that TianoCore's tree does not have (tools/edk2-import.py): 5 in
-edk2/OuroBiosPkg]
+that TianoCore's tree does not have (tools/edk2-import.py): 2 in
+edk2/OuroBiosPkg, SdhciNonPciDxe left out of the payload
+(patches/edk2/0055)]
 
 When coreboot leaves SDHCI controllers off the PCI bus (ACPI-mode SCC
 on Baytrail/Braswell, or fixed-MMIO eMMC on AMD PCO), the payload can

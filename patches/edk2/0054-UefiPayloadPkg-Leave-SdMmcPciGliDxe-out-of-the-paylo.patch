@@ -1,0 +1,5000 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 5 Nov 2026 19:30:15 +0100
+Subject: [PATCH] UefiPayloadPkg: Leave SdMmcPciGliDxe out of the payload
+
+SdMmcPciGliDxe drives the SDHCI controllers of Genesys Logic (GL9750,
+GL9755, GL9763E: PCI vendor 0x17a0, the only one it binds). No board of
+ouroBIOS has one: the card reader of the W541 is an O2 Micro OZ777, which
+SdMmcPciHcDxe of MdeModulePkg drives, and the M920x has no reader. The
+driver was 4,700 lines of the volume, dispatched at every boot to bind
+nothing.
+
+The module and its two lines of the platform go. SdMmcPciHcDxe, EmmcDxe
+and SdDxe stay as they are.
+---
+ UefiPayloadPkg/SdMmcPciGliDxe/README.md       |  58 --
+ UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGli.c   | 852 ------------------
+ .../SdMmcPciGliDxe/SdMmcPciGliBlockIo.c       | 392 --------
+ .../SdMmcPciGliDxe/SdMmcPciGliDiskInfo.c      | 132 ---
+ .../SdMmcPciGliDxe/SdMmcPciGliDxe.c           | 825 -----------------
+ .../SdMmcPciGliDxe/SdMmcPciGliDxe.h           | 651 -------------
+ .../SdMmcPciGliDxe/SdMmcPciGliDxe.inf         |  62 --
+ .../SdMmcPciGliDxe/SdMmcPciGliDxe.uni         |  12 -
+ .../SdMmcPciGliDxe/SdMmcPciGliDxeExtra.uni    |  10 -
+ .../SdMmcPciGliDxe/SdMmcPciGliMmc.c           | 398 --------
+ UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliSd.c | 661 --------------
+ .../SdMmcPciGliDxe/SdMmcPciGliSdhci.c         | 805 -----------------
+ UefiPayloadPkg/UefiPayloadPkg.dsc             |   1 -
+ UefiPayloadPkg/UefiPayloadPkg.fdf             |   1 -
+ 14 files changed, 4860 deletions(-)
+ delete mode 100644 UefiPayloadPkg/SdMmcPciGliDxe/README.md
+ delete mode 100644 UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGli.c
+ delete mode 100644 UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliBlockIo.c
+ delete mode 100644 UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDiskInfo.c
+ delete mode 100644 UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.c
+ delete mode 100644 UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.h
+ delete mode 100644 UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.inf
+ delete mode 100644 UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.uni
+ delete mode 100644 UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxeExtra.uni
+ delete mode 100644 UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliMmc.c
+ delete mode 100644 UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliSd.c
+ delete mode 100644 UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliSdhci.c
+
+diff --git a/UefiPayloadPkg/SdMmcPciGliDxe/README.md b/UefiPayloadPkg/SdMmcPciGliDxe/README.md
+deleted file mode 100644
+index 09f291743ef9617e13bf5e45c63da16eb5ab88dc..0000000000000000000000000000000000000000
+--- a/UefiPayloadPkg/SdMmcPciGliDxe/README.md
++++ /dev/null
+@@ -1,58 +0,0 @@
+-# SdMmcPciGliDxe - Genesys Logic SDHCI Driver for EDK2
+-
+-**Gli** = Genesys Logic - Specialized driver for GL9750/GL9755/GL9763E controllers
+-
+-## Purpose
+-Optimized SDHCI driver specifically for Genesys Logic SD/MMC controllers.
+-Based on Depthcharge's SDHCI stack with vendor-specific initialization from coreboot.
+-
+-## Supported Controllers
+-- **GL9763E** (0xe763) - eMMC controller with HS400-ES support
+-- **GL9750** (0x9750) - SD card controller with UHS-I support
+-- **GL9755** (0x9755) - SD card controller with UHS-I and LTR support
+-
+-## Features
+-✅ **Vendor register programming** - Proper ASPM/L1/LTR configuration
+-✅ **UHS-I support** - SDR50/SDR104 for SD cards (up to 208 MHz)
+-✅ **HS400-ES support** - Enhanced Strobe for eMMC (up to 400 MHz effective)
+-✅ **Hot-plug detection** - SD card insertion/removal support
+-✅ **Warm boot support** - Survives system resets
+-✅ **Release build stable** - Works with all optimization levels
+-
+-## Architecture
+-This driver uses a **monolithic BlockIo approach** (like Depthcharge):
+-- Directly implements BlockIo protocol
+-- Simple polling-based command execution
+-- No PassThru protocol layer
+-- Minimal dependencies
+-
+-This allows it to coexist with the generic `SdMmcPciHcDxe` driver:
+-- **SdMmcPciGliDxe** handles Genesys Logic controllers (returns UNSUPPORTED for others)
+-- **SdMmcPciHcDxe** handles all other SDHCI controllers
+-
+-## Files
+-- `SdMmcPciGliDxe.inf` - Build configuration
+-- `SdMmcPciGliDxe.h` - Register definitions and structures
+-- `SdMmcPciGliDxe.c` - Driver entry point and PCI binding
+-- `SdMmcPciGliSdhci.c` - SDHCI core functions (from Depthcharge)
+-- `SdMmcPciGliMmc.c` - eMMC initialization and commands
+-- `SdMmcPciGliSd.c` - SD card initialization and UHS-I support
+-- `SdMmcPciGli.c` - Genesys Logic vendor-specific initialization
+-- `SdMmcPciGliBlockIo.c` - EDK2 BlockIo protocol implementation
+-- `SdMmcPciGliDiskInfo.c` - DiskInfo protocol implementation
+-
+-## Key Improvements Over Generic Driver
+-1. **Vendor register unlock/lock** - Proper CFG_EN sequence for GL controllers
+-2. **Optimized for release builds** - Critical timing delays for optimized code paths
+-3. **Voltage switch validation** - Proper 1.8V signaling with recovery
+-4. **GL-specific quirks** - Each controller variant properly configured
+-5. **Clean, focused codebase** - Only necessary registers/functions, proper encapsulation
+-
+-## Code Quality
+-- **Minimal surface area** - Header exposes only cross-module interfaces
+-- **Proper scoping** - Internal helper functions marked STATIC
+-- **No dead code** - Unused register/command definitions removed
+-- **Well-documented** - Clear comments from Depthcharge/coreboot sources
+-
+-## Status
+-✅ **Production Ready** - Tested on Intel Alderlake and AMD Picasso platforms
+diff --git a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGli.c b/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGli.c
+deleted file mode 100644
+index c18a905707c8446a92e9ad88a36104ea115f143e..0000000000000000000000000000000000000000
+--- a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGli.c
++++ /dev/null
+@@ -1,852 +0,0 @@
+-/** @file
+-  GL9763E/GL9750/GL9755-specific initialization (ported from Depthcharge sdhci_gli.c)
+-
+-  Copyright (c) 2025, Matt DeVillier. All rights reserved.
+-  SPDX-License-Identifier: BSD-2-Clause-Patent
+-
+-**/
+-
+-#include "SdMmcPciGliDxe.h"
+-
+-/**
+-  Lock or unlock Genesys Logic vendor configuration registers.
+-  Equivalent to Linux's gl9750_wt_on() / gl9750_wt_off().
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-  @param[in] Lock    TRUE to lock, FALSE to unlock.
+-
+-  @retval EFI_SUCCESS  Operation successful
+-  @retval Others       PCI I/O error
+-**/
+-STATIC
+-EFI_STATUS
+-GliVendorConfigLockUnlock (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN BOOLEAN           Lock
+-  )
+-{
+-  EFI_STATUS  Status;
+-  UINT32      Value;
+-
+-  Status = Device->PciIo->Pci.Read (
+-                                Device->PciIo,
+-                                EfiPciIoWidthUint32,
+-                                GLI_CFG,
+-                                1,
+-                                &Value
+-                                );
+-  if (EFI_ERROR (Status)) {
+-    return Status;
+-  }
+-
+-  if (Lock) {
+-    Value &= ~GLI_CFG_EN;  // Clear CFG_EN to lock
+-  } else {
+-    Value |= GLI_CFG_EN;   // Set CFG_EN to unlock
+-  }
+-
+-  Status = Device->PciIo->Pci.Write (
+-                                Device->PciIo,
+-                                EfiPciIoWidthUint32,
+-                                GLI_CFG,
+-                                1,
+-                                &Value
+-                                );
+-
+-  return Status;
+-}
+-
+-/**
+-  Initialize Genesys Logic vendor-specific registers (GL9750/GL9755).
+-  Based on src/drivers/genesyslogic/ in coreboot.
+-
+-  @param[in] Device  Device context
+-
+-  @retval EFI_SUCCESS  Initialization successful
+-**/
+-EFI_STATUS
+-Gl975xInit (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  EFI_STATUS  Status;
+-  UINT32      Value;
+-  UINT32      Cfg2Reg;
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Genesys Logic vendor init start\n"));
+-
+-  //
+-  // Step 1: UNLOCK vendor config registers (GL9750/GL9755 only)
+-  //
+-  Status = GliVendorConfigLockUnlock (Device, FALSE);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to unlock vendor config: %r\n", Status));
+-    return Status;
+-  }
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: GL vendor config UNLOCKED\n"));
+-
+-  //
+-  // Step 2: GL9755-specific LTR configuration (not needed for GL9750)
+-  //
+-  if (Device->IsGL9755) {
+-    Value = GL9755_LTR_SNOOP_VALUE | GL9755_LTR_SNOOP_SCALE |
+-            GL9755_LTR_NO_SNOOP_VALUE | GL9755_LTR_NO_SNOOP_SCALE;
+-
+-    Status = Device->PciIo->Pci.Write (
+-                                  Device->PciIo,
+-                                  EfiPciIoWidthUint32,
+-                                  GL9755_LTR,
+-                                  1,
+-                                  &Value
+-                                  );
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to write GL9755 LTR: %r\n", Status));
+-      return Status;
+-    }
+-    Device->PciIo->Flush (Device->PciIo);
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: GL9755 LTR configured = 0x%08X\n", Value));
+-
+-    //
+-    // GL9755: Configure PECONF - clear LFCLK and DMACLK for proper DMA operation
+-    //
+-    Status = Device->PciIo->Pci.Read (
+-                                  Device->PciIo,
+-                                  EfiPciIoWidthUint32,
+-                                  GL9755_PECONF,
+-                                  1,
+-                                  &Value
+-                                  );
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to read GL9755 PECONF: %r\n", Status));
+-      return Status;
+-    }
+-
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: GL9755 PECONF before = 0x%08X\n", Value));
+-
+-    Value &= ~GL9755_PECONF_LFCLK_MASK;  // Clear LFCLK [14:12]
+-    Value &= ~GL9755_PECONF_DMACLK;      // Clear DMACLK [29]
+-
+-    Status = Device->PciIo->Pci.Write (
+-                                  Device->PciIo,
+-                                  EfiPciIoWidthUint32,
+-                                  GL9755_PECONF,
+-                                  1,
+-                                  &Value
+-                                  );
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to write GL9755 PECONF: %r\n", Status));
+-      return Status;
+-    }
+-    Device->PciIo->Flush (Device->PciIo);
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: GL9755 PECONF after = 0x%08X (LFCLK/DMACLK cleared)\n", Value));
+-
+-    //
+-    // GL9755: Enable short circuit protection in SerDes register
+-    // Clear SCP_DIS (bit 19) to enable SCP/OCP
+-    //
+-    Status = Device->PciIo->Pci.Read (
+-                                  Device->PciIo,
+-                                  EfiPciIoWidthUint32,
+-                                  GL9755_SERDES,
+-                                  1,
+-                                  &Value
+-                                  );
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to read GL9755 SerDes: %r\n", Status));
+-      return Status;
+-    }
+-
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: GL9755 SerDes before = 0x%08X\n", Value));
+-
+-    Value &= ~GL9755_SERDES_SCP_DIS;  // Clear SCP_DIS (bit 19)
+-
+-    Status = Device->PciIo->Pci.Write (
+-                                  Device->PciIo,
+-                                  EfiPciIoWidthUint32,
+-                                  GL9755_SERDES,
+-                                  1,
+-                                  &Value
+-                                  );
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to write GL9755 SerDes: %r\n", Status));
+-      return Status;
+-    }
+-    Device->PciIo->Flush (Device->PciIo);
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: GL9755 SerDes after = 0x%08X (SCP enabled)\n", Value));
+-  }
+-
+-  //
+-  // Step 3: Configure CFG2 (ASPM L0s/L1 settings)
+-  // Each GL variant uses a different register offset
+-  //
+-  if (Device->IsGL9755) {
+-    Cfg2Reg = GL9755_CFG2;
+-  } else if (Device->IsGL9750) {
+-    Cfg2Reg = GL9750_CFG2;
+-  }
+-
+-  Status = Device->PciIo->Pci.Read (
+-                                Device->PciIo,
+-                                EfiPciIoWidthUint32,
+-                                Cfg2Reg,
+-                                1,
+-                                &Value
+-                                );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to read CFG2: %r\n", Status));
+-    return Status;
+-  }
+-
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: GL CFG2 (0x%03X) before = 0x%08X\n", Cfg2Reg, Value));
+-
+-  // Disable L0s support (all GL variants)
+-  if (Device->IsGL9755) {
+-    Value &= ~GL9755_CFG2_L0S_SUPPORT;  // Bit 6 for GL9755
+-  } else if (Device->IsGL9750) {
+-    Value &= ~GL9750_CFG2_L0S_SUPPORT;  // Bit 6 for GL9750
+-  }
+-
+-  // Configure L1 latency
+-  if (Device->IsGL9755) {
+-    // GL9755: Set L1 exit latency to 64us (different format: two bit fields)
+-    Value &= ~GL9755_CFG2_L1_LAT_MASK;
+-    Value |= GL9755_CFG2_L1_LAT_64US;
+-  } else {
+-    // GL9750: Set L1 delay to 84us - single field
+-    Value &= ~GL9750_CFG2_L1DLY_MASK;
+-    Value |= (GL9750_CFG2_L1DLY_84US << GL9750_CFG2_L1DLY_SHIFT);
+-  }
+-
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: GL CFG2 target = 0x%08X\n", Value));
+-
+-  Status = Device->PciIo->Pci.Write (
+-                                Device->PciIo,
+-                                EfiPciIoWidthUint32,
+-                                Cfg2Reg,
+-                                1,
+-                                &Value
+-                                );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to write CFG2: %r\n", Status));
+-    return Status;
+-  }
+-  Device->PciIo->Flush (Device->PciIo);
+-
+-  // Read back to verify
+-  Status = Device->PciIo->Pci.Read (
+-                                Device->PciIo,
+-                                EfiPciIoWidthUint32,
+-                                Cfg2Reg,
+-                                1,
+-                                &Value
+-                                );
+-
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: GL CFG2 after  = 0x%08X\n", Value));
+-
+-  //
+-  // Step 4: LOCK vendor config registers
+-  //
+-  Status = GliVendorConfigLockUnlock (Device, TRUE);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to lock vendor config: %r\n", Status));
+-    return Status;
+-  }
+-  Device->PciIo->Flush (Device->PciIo);
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: GL vendor config LOCKED\n"));
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Genesys Logic vendor init complete\n"));
+-
+-  return EFI_SUCCESS;
+-}
+-
+-/**
+-  Enable or disable Enhanced Strobe for HS400-ES mode.
+-  Based on Depthcharge's gl9763e_set_ios().
+-
+-  @param[in] Device  Device context
+-  @param[in] Enable  TRUE to enable Enhanced Strobe, FALSE to disable
+-**/
+-VOID
+-Gl9763eSetEnhancedStrobe (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN BOOLEAN           Enable
+-  )
+-{
+-  UINT32  Ctrl;
+-
+-  //
+-  // Read current EMMC_CTRL register value
+-  //
+-  Ctrl = SdhciReadl (Device, GL9763E_SDHC_EMMC_CTRL);
+-
+-  if (Enable) {
+-    Ctrl |= GL9763E_ENHANCED_STROBE;
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: GL9763E Enhanced Strobe enabled\n"));
+-  } else {
+-    Ctrl &= ~GL9763E_ENHANCED_STROBE;
+-    DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: GL9763E Enhanced Strobe disabled\n"));
+-  }
+-
+-  //
+-  // Write updated value back
+-  //
+-  SdhciWritel (Device, GL9763E_SDHC_EMMC_CTRL, Ctrl);
+-}
+-
+-/**
+-  Check if GL9750 SSC (Spread Spectrum Clocking) is enabled.
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-
+-  @retval TRUE   SSC is enabled.
+-  @retval FALSE  SSC is disabled.
+-**/
+-STATIC
+-BOOLEAN
+-Gl9750SscEnable (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  UINT32  Misc;
+-
+-  Misc = SdhciReadl (Device, GL9750_MISC);
+-  return (Misc & GL9750_MISC_SSC_OFF) == 0;  // SSC enabled if bit is NOT set
+-}
+-
+-/**
+-  Disable GL9750 SSC PLL before clock change.
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-**/
+-VOID
+-Gl9750DisableSscPll (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  UINT32  Pll;
+-
+-  Pll = SdhciReadl (Device, GL9750_PLL);
+-  Pll &= ~(GL9750_PLL_DIR | GL9750_PLLSSC_EN);
+-  SdhciWritel (Device, GL9750_PLL, Pll);
+-}
+-
+-/**
+-  Set GL9750 SSC (Spread Spectrum Clocking) parameters.
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-  @param[in] Enable  Enable or disable SSC.
+-  @param[in] Step    SSC step value.
+-  @param[in] Ppm     SSC PPM (parts per million) value.
+-**/
+-STATIC
+-VOID
+-Gl9750SetSsc (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN BOOLEAN           Enable,
+-  IN UINT8             Step,
+-  IN UINT16            Ppm
+-  )
+-{
+-  UINT32  Pll;
+-  UINT32  Ssc;
+-
+-  Pll = SdhciReadl (Device, GL9750_PLL);
+-  Ssc = SdhciReadl (Device, GL9750_PLLSSC);
+-
+-  Pll &= ~(GL9750_PLLSSC_STEP | GL9750_PLLSSC_EN);
+-  Pll |= ((UINT32)Step << 24) | (Enable ? GL9750_PLLSSC_EN : 0);
+-
+-  Ssc &= ~GL9750_PLLSSC_PPM;
+-  Ssc |= ((UINT32)Ppm << 16);  // GL9750 PPM is in bits [31:16]
+-
+-  SdhciWritel (Device, GL9750_PLLSSC, Ssc);
+-  SdhciWritel (Device, GL9750_PLL, Pll);
+-}
+-
+-/**
+-  Set GL9750 PLL divider parameters.
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-  @param[in] Dir     PLL direction.
+-  @param[in] Ldiv    PLL loop divider.
+-  @param[in] Pdiv    PLL P divider.
+-**/
+-STATIC
+-VOID
+-Gl9750SetPll (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN UINT8             Dir,
+-  IN UINT16            Ldiv,
+-  IN UINT8             Pdiv
+-  )
+-{
+-  UINT32  Pll;
+-
+-  Pll = SdhciReadl (Device, GL9750_PLL);
+-
+-  Pll &= ~(GL9750_PLL_LDIV | GL9750_PLL_PDIV | GL9750_PLL_DIR);
+-  Pll |= ((UINT32)Ldiv & 0x3FF) | (((UINT32)Pdiv & 0x7) << 12) | (Dir ? GL9750_PLL_DIR : 0);
+-
+-  SdhciWritel (Device, GL9750_PLL, Pll);
+-
+-  // Wait for PLL to stabilize
+-  gBS->Stall (1000);  // 1ms
+-}
+-
+-/**
+-  Configure GL9750 PLL for 205 MHz (SDR104).
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-**/
+-VOID
+-Gl9750SetSscPll205Mhz (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  BOOLEAN  Enable;
+-
+-  Enable = Gl9750SscEnable (Device);
+-
+-  // SSC: Step=0xF (15), PPM=0x5A1D (23069)
+-  Gl9750SetSsc (Device, Enable, 0xF, 0x5A1D);
+-
+-  // PLL: Dir=1, Ldiv=0x246 (582), Pdiv=0
+-  Gl9750SetPll (Device, 0x1, 0x246, 0x0);
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: GL9750 PLL set to 205 MHz (SDR104)\n"));
+-}
+-
+-/**
+-  Configure GL9750 PLL for 100 MHz (SDR50).
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-**/
+-VOID
+-Gl9750SetSscPll100Mhz (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  BOOLEAN  Enable;
+-
+-  Enable = Gl9750SscEnable (Device);
+-
+-  // SSC: Step=0xE (14), PPM=0x51EC (20972)
+-  Gl9750SetSsc (Device, Enable, 0xE, 0x51EC);
+-
+-  // PLL: Dir=1, Ldiv=0x244 (580), Pdiv=1
+-  Gl9750SetPll (Device, 0x1, 0x244, 0x1);
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: GL9750 PLL set to 100 MHz (SDR50)\n"));
+-}
+-
+-/**
+-  Configure GL9750 PLL for 50 MHz (High Speed).
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-**/
+-VOID
+-Gl9750SetSscPll50Mhz (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  BOOLEAN  Enable;
+-
+-  Enable = Gl9750SscEnable (Device);
+-
+-  // SSC: Step=0xE (14), PPM=0x51EC (20972)
+-  Gl9750SetSsc (Device, Enable, 0xE, 0x51EC);
+-
+-  // PLL: Dir=1, Ldiv=0x244 (580), Pdiv=3
+-  Gl9750SetPll (Device, 0x1, 0x244, 0x3);
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: GL9750 PLL set to 50 MHz (High Speed)\n"));
+-}
+-
+-/**
+-  Configure GL9750 tuning parameters for SDR104 mode.
+-  Based on Linux driver's gli_set_9750() function.
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-**/
+-VOID
+-Gl9750SetupTuning (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  UINT32  DrivingValue;
+-  UINT32  SwCtrlValue;
+-  UINT32  MiscValue;
+-  UINT32  ParameterValue;
+-  UINT32  ControlValue;
+-  UINT16  Ctrl2;
+-  UINT32  PllValue;
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Setting up GL9750 tuning parameters\n"));
+-
+-  // Unlock vendor registers (gl9750_wt_on equivalent)
+-  GliVendorConfigLockUnlock (Device, FALSE);
+-
+-  // Read current values
+-  DrivingValue = SdhciReadl (Device, 0x860);  // SDHCI_GLI_9750_DRIVING
+-  SwCtrlValue = SdhciReadl (Device, 0x874);  // SDHCI_GLI_9750_SW_CTRL
+-  MiscValue = SdhciReadl (Device, GL9750_MISC);
+-  ParameterValue = SdhciReadl (Device, 0x544);  // SDHCI_GLI_9750_TUNING_PARAMETERS
+-  ControlValue = SdhciReadl (Device, 0x540);  // SDHCI_GLI_9750_TUNING_CONTROL
+-
+-  // Configure driving values
+-  DrivingValue &= ~0x0FFF;  // Clear DRIVING_1
+-  DrivingValue &= ~0x0C000000;  // Clear DRIVING_2
+-  DrivingValue |= 0xFFF;  // DRIVING_1 = 0xFFF
+-  DrivingValue |= 0x0C000000;  // DRIVING_2 = 0x3
+-  DrivingValue &= ~0x1A000000;  // Clear SEL_1, SEL_2, ALL_RST
+-  DrivingValue |= 0x80000000;  // Set SEL_2
+-  SdhciWritel (Device, 0x860, DrivingValue);
+-
+-  // Configure switch control
+-  SwCtrlValue &= ~0xC0;  // Clear SW_CTRL_4
+-  SwCtrlValue |= 0xC0;  // SW_CTRL_4 = 0x3
+-  SdhciWritel (Device, 0x874, SwCtrlValue);
+-
+-  // Configure PLL tuning parameters
+-  PllValue = SdhciReadl (Device, GL9750_PLL);
+-  PllValue &= ~0x00800000;  // Clear TX2_INV
+-  PllValue &= ~0x00700000;  // Clear TX2_DLY
+-  PllValue |= 0x00800000;  // TX2_INV = 1
+-  // TX2_DLY = 0 (already cleared)
+-  SdhciWritel (Device, GL9750_PLL, PllValue);
+-
+-  // Configure MISC tuning parameters
+-  MiscValue &= ~0x04;  // Clear TX1_INV
+-  MiscValue &= ~0x08;  // Clear RX_INV
+-  MiscValue &= ~0x70;  // Clear TX1_DLY
+-  // TX1_INV = 0 (already cleared)
+-  // RX_INV = 0 (already cleared)
+-  MiscValue |= 0x50;  // TX1_DLY = 0x5
+-  SdhciWritel (Device, GL9750_MISC, MiscValue);
+-
+-  // Configure tuning parameters
+-  ParameterValue &= ~0x07;  // Clear RX_DLY
+-  ParameterValue |= 0x01;  // RX_DLY = 0x1
+-  SdhciWritel (Device, 0x544, ParameterValue);
+-
+-  // Configure tuning control
+-  ControlValue &= ~0x10;  // Clear GLITCH_1
+-  ControlValue &= ~0x180000;  // Clear GLITCH_2
+-  ControlValue |= 0x10;  // GLITCH_1 = 1
+-  ControlValue |= 0x100000;  // GLITCH_2 = 0x2
+-
+-  // Disable tuned clk
+-  Ctrl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-  Ctrl2 &= ~SDHCI_CTRL_TUNED_CLK;
+-  SdhciWritew (Device, SDHCI_HOST_CONTROL2, Ctrl2);
+-
+-  // Enable tuning parameters control
+-  ControlValue &= ~0x10;  // Clear TUNING_CONTROL_EN
+-  ControlValue |= 0x10;  // TUNING_CONTROL_EN = 1
+-  SdhciWritel (Device, 0x540, ControlValue);
+-
+-  // Write tuning parameters
+-  SdhciWritel (Device, 0x544, ParameterValue);
+-
+-  // Disable tuning parameters control
+-  ControlValue &= ~0x10;  // Clear TUNING_CONTROL_EN
+-  SdhciWritel (Device, 0x540, ControlValue);
+-
+-  // Clear tuned clk
+-  Ctrl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-  Ctrl2 &= ~SDHCI_CTRL_TUNED_CLK;
+-  SdhciWritew (Device, SDHCI_HOST_CONTROL2, Ctrl2);
+-
+-  // Lock vendor registers (gl9750_wt_off equivalent)
+-  GliVendorConfigLockUnlock (Device, TRUE);
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: GL9750 tuning parameters configured\n"));
+-}
+-
+-
+-/**
+-  Check if GL9755 SSC (Spread Spectrum Clocking) is enabled.
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-
+-  @retval TRUE   SSC is enabled.
+-  @retval FALSE  SSC is disabled.
+-**/
+-STATIC
+-BOOLEAN
+-Gl9755SscEnable (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  EFI_STATUS  Status;
+-  UINT32      Pll;
+-
+-  Status = Device->PciIo->Pci.Read (
+-                                Device->PciIo,
+-                                EfiPciIoWidthUint32,
+-                                GL9755_PLL,
+-                                1,
+-                                &Pll
+-                                );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_WARN, "SdMmcPciGli: Failed to read GL9755 PLL register: %r\n", Status));
+-    return FALSE;
+-  }
+-
+-  return (Pll & GL9755_PLLSSC_EN) != 0;
+-}
+-
+-/**
+-  Disable GL9755 SSC PLL before clock change.
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-**/
+-VOID
+-Gl9755DisableSscPll (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  EFI_STATUS  Status;
+-  UINT32      Pll;
+-
+-  Status = Device->PciIo->Pci.Read (
+-                                Device->PciIo,
+-                                EfiPciIoWidthUint32,
+-                                GL9755_PLL,
+-                                1,
+-                                &Pll
+-                                );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to read GL9755 PLL: %r\n", Status));
+-    return;
+-  }
+-
+-  // Clear both DIR and SSC_EN to fully disable PLL
+-  // Linux does NOT modify MISC register, only PLL
+-  Pll &= ~(GL9755_PLL_DIR | GL9755_PLLSSC_EN);
+-  Status = Device->PciIo->Pci.Write (
+-                                Device->PciIo,
+-                                EfiPciIoWidthUint32,
+-                                GL9755_PLL,
+-                                1,
+-                                &Pll
+-                                );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to disable GL9755 PLL SSC: %r\n", Status));
+-    return;
+-  }
+-
+-  Device->PciIo->Flush (Device->PciIo);
+-}
+-
+-/**
+-  Set GL9755 SSC (Spread Spectrum Clocking) parameters.
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-  @param[in] Enable  Enable or disable SSC.
+-  @param[in] Step    SSC step value.
+-  @param[in] Ppm     SSC PPM (parts per million) value.
+-**/
+-STATIC
+-VOID
+-Gl9755SetSsc (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN BOOLEAN           Enable,
+-  IN UINT8             Step,
+-  IN UINT16            Ppm
+-  )
+-{
+-  EFI_STATUS  Status;
+-  UINT32      Pll;
+-  UINT32      Ssc;
+-
+-  Status = Device->PciIo->Pci.Read (
+-                                Device->PciIo,
+-                                EfiPciIoWidthUint32,
+-                                GL9755_PLL,
+-                                1,
+-                                &Pll
+-                                );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to read GL9755 PLL: %r\n", Status));
+-    return;
+-  }
+-
+-  Pll &= ~(GL9755_PLLSSC_STEP | GL9755_PLLSSC_EN);
+-  Pll |= ((UINT32)Step << 24) | (Enable ? GL9755_PLLSSC_EN : 0);
+-
+-  Status = Device->PciIo->Pci.Write (
+-                                Device->PciIo,
+-                                EfiPciIoWidthUint32,
+-                                GL9755_PLL,
+-                                1,
+-                                &Pll
+-                                );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to write GL9755 PLL: %r\n", Status));
+-    return;
+-  }
+-
+-  Status = Device->PciIo->Pci.Read (
+-                                Device->PciIo,
+-                                EfiPciIoWidthUint32,
+-                                GL9755_PLLSSC,
+-                                1,
+-                                &Ssc
+-                                );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to read GL9755 PLLSSC: %r\n", Status));
+-    return;
+-  }
+-
+-  Ssc &= ~GL9755_PLLSSC_PPM;
+-  Ssc |= Ppm;
+-
+-  // Set signal integrity bits (per Linux gl9755_vendor_init)
+-  Ssc &= ~GL9755_PLLSSC_RTL;
+-  Ssc |= GL9755_PLLSSC_RTL;  // RTL = 1
+-
+-  Ssc &= ~GL9755_PLLSSC_TRANS_PASS;
+-  Ssc |= GL9755_PLLSSC_TRANS_PASS;  // TRANS_PASS = 1
+-
+-  Ssc &= ~GL9755_PLLSSC_RECV;
+-  // RECV = 0 (already cleared)
+-
+-  Ssc &= ~GL9755_PLLSSC_TRAN;
+-  Ssc |= GL9755_PLLSSC_TRAN;  // TRAN = 3 (both bits set)
+-
+-  Status = Device->PciIo->Pci.Write (
+-                                Device->PciIo,
+-                                EfiPciIoWidthUint32,
+-                                GL9755_PLLSSC,
+-                                1,
+-                                &Ssc
+-                                );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to write GL9755 PLLSSC: %r\n", Status));
+-  }
+-
+-  Device->PciIo->Flush (Device->PciIo);
+-}
+-
+-/**
+-  Set GL9755 PLL divider parameters.
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-  @param[in] Dir     PLL direction.
+-  @param[in] Ldiv    PLL loop divider.
+-  @param[in] Pdiv    PLL P divider.
+-**/
+-STATIC
+-VOID
+-Gl9755SetPll (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN UINT8             Dir,
+-  IN UINT16            Ldiv,
+-  IN UINT8             Pdiv
+-  )
+-{
+-  EFI_STATUS  Status;
+-  UINT32      Pll;
+-
+-  Status = Device->PciIo->Pci.Read (
+-                                Device->PciIo,
+-                                EfiPciIoWidthUint32,
+-                                GL9755_PLL,
+-                                1,
+-                                &Pll
+-                                );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to read GL9755 PLL: %r\n", Status));
+-    return;
+-  }
+-
+-  Pll &= ~(GL9755_PLL_LDIV | GL9755_PLL_PDIV | GL9755_PLL_DIR);
+-  Pll |= ((UINT32)Ldiv & 0x3FF) | (((UINT32)Pdiv & 0x7) << 12) | (Dir ? GL9755_PLL_DIR : 0);
+-
+-  Status = Device->PciIo->Pci.Write (
+-                                Device->PciIo,
+-                                EfiPciIoWidthUint32,
+-                                GL9755_PLL,
+-                                1,
+-                                &Pll
+-                                );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to write GL9755 PLL: %r\n", Status));
+-  }
+-
+-  Device->PciIo->Flush (Device->PciIo);
+-
+-  // Wait for PLL to stabilize (per Linux kernel)
+-  gBS->Stall (1000);  // 1ms
+-}
+-
+-/**
+-  Configure GL9755 PLL for 205 MHz (SDR104).
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-**/
+-VOID
+-Gl9755SetSscPll205Mhz (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  BOOLEAN  Enable;
+-
+-  Enable = Gl9755SscEnable (Device);
+-
+-  // SSC: Step=0xF (15), PPM=0x5A1D (23069)
+-  Gl9755SetSsc (Device, Enable, 0xF, 0x5A1D);
+-
+-  // PLL: Dir=1, Ldiv=0x246 (582), Pdiv=0
+-  Gl9755SetPll (Device, 0x1, 0x246, 0x0);
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: GL9755 PLL set to 205 MHz (SDR104)\n"));
+-}
+-
+-/**
+-  Configure GL9755 PLL for 100 MHz (SDR50).
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-**/
+-VOID
+-Gl9755SetSscPll100Mhz (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  BOOLEAN  Enable;
+-
+-  Enable = Gl9755SscEnable (Device);
+-
+-  // SSC: Step=0xE (14), PPM=0x51EC (20972)
+-  Gl9755SetSsc (Device, Enable, 0xE, 0x51EC);
+-
+-  // PLL: Dir=1, Ldiv=0x244 (580), Pdiv=1
+-  Gl9755SetPll (Device, 0x1, 0x244, 0x1);
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: GL9755 PLL set to 100 MHz (SDR50)\n"));
+-}
+-
+-/**
+-  Configure GL9755 PLL for 50 MHz (High Speed).
+-
+-  @param[in] Device  Pointer to SD_MMC_CB_DEVICE structure.
+-**/
+-VOID
+-Gl9755SetSscPll50Mhz (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  BOOLEAN  Enable;
+-
+-  Enable = Gl9755SscEnable (Device);
+-
+-  // SSC: Step=0xE (14), PPM=0x51EC (20972)
+-  Gl9755SetSsc (Device, Enable, 0xE, 0x51EC);
+-
+-  // PLL: Dir=1, Ldiv=0x244 (580), Pdiv=3
+-  Gl9755SetPll (Device, 0x1, 0x244, 0x3);
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: GL9755 PLL set to 50 MHz (High Speed)\n"));
+-}
+-
+diff --git a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliBlockIo.c b/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliBlockIo.c
+deleted file mode 100644
+index 4e92a36730d2ff51ac3ad789ef53d7bf154d3fd9..0000000000000000000000000000000000000000
+--- a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliBlockIo.c
++++ /dev/null
+@@ -1,392 +0,0 @@
+-/** @file
+-  BlockIo Protocol Implementation
+-
+-  Copyright (c) 2025, Matt DeVillier. All rights reserved.
+-  SPDX-License-Identifier: BSD-2-Clause-Patent
+-
+-**/
+-
+-#include "SdMmcPciGliDxe.h"
+-
+-/**
+-  Check if media is present and update media status.
+-  For removable media (SD cards), checks PRESENT_STATE register.
+-  For eMMC, always returns TRUE.
+-
+-  @param[in] Device  Device context
+-
+-  @retval EFI_SUCCESS       Media is present
+-  @retval EFI_NO_MEDIA      No media in device
+-  @retval EFI_MEDIA_CHANGED Media was changed
+-**/
+-STATIC
+-EFI_STATUS
+-CheckMediaPresence (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  BOOLEAN  CurrentPresent;
+-  BOOLEAN  PreviousPresent;
+-  UINT32   PresentState;
+-
+-  //
+-  // eMMC is always present (embedded)
+-  //
+-  if (Device->IsEMMC) {
+-    return EFI_SUCCESS;
+-  }
+-
+-  //
+-  // For SD cards, check PRESENT_STATE register
+-  //
+-  PresentState = SdhciReadl (Device, SDHCI_PRESENT_STATE);
+-  CurrentPresent = (PresentState & SDHCI_CARD_PRESENT) != 0;
+-  PreviousPresent = Device->BlockIoMedia.MediaPresent;
+-
+-  //
+-  // Check if media state changed
+-  //
+-  if (CurrentPresent != PreviousPresent) {
+-    Device->BlockIoMedia.MediaPresent = CurrentPresent;
+-    Device->BlockIoMedia.MediaId++;  // Increment to indicate media change
+-
+-    if (CurrentPresent) {
+-      DEBUG ((DEBUG_INFO, "SdMmcPciGli: Media status: inserted\n"));
+-    } else {
+-      DEBUG ((DEBUG_INFO, "SdMmcPciGli: Media status: removed\n"));
+-    }
+-
+-    return EFI_MEDIA_CHANGED;
+-  }
+-
+-  //
+-  // No change, but check current state
+-  //
+-  if (!CurrentPresent) {
+-    return EFI_NO_MEDIA;
+-  }
+-
+-  return EFI_SUCCESS;
+-}
+-
+-/**
+-  Reset the block device.
+-
+-  @param[in] This                 Pointer to the BLOCK_IO_PROTOCOL instance.
+-  @param[in] ExtendedVerification Indicates extended verification is requested.
+-
+-  @retval EFI_SUCCESS             The device was reset.
+-  @retval EFI_DEVICE_ERROR        The device is not functioning correctly.
+-
+-**/
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcBlockIoReset (
+-  IN EFI_BLOCK_IO_PROTOCOL  *This,
+-  IN BOOLEAN                ExtendedVerification
+-  )
+-{
+-  SD_MMC_CB_DEVICE  *Device;
+-  EFI_STATUS        Status;
+-
+-  Device = SD_MMC_CB_DEVICE_FROM_BLOCK_IO (This);
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: BlockIoReset\n"));
+-
+-  //
+-  // Check media presence for removable media
+-  //
+-  Status = CheckMediaPresence (Device);
+-  if (Status == EFI_NO_MEDIA) {
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: Reset: No media present\n"));
+-    return EFI_SUCCESS;  // Reset succeeded, but no media
+-  }
+-
+-  //
+-  // Reset the controller
+-  //
+-  return SdhciReset (Device, SDHCI_RESET_ALL);
+-}
+-
+-/**
+-  Read blocks from the block device.
+-
+-  @param[in]  This       Pointer to the BLOCK_IO_PROTOCOL instance.
+-  @param[in]  MediaId    Media ID that the read request is for.
+-  @param[in]  Lba        The starting logical block address to read from.
+-  @param[in]  BufferSize The size of the buffer in bytes.
+-  @param[out] Buffer     Pointer to the destination buffer.
+-
+-  @retval EFI_SUCCESS           The data was read correctly.
+-  @retval EFI_DEVICE_ERROR      The device reported an error.
+-  @retval EFI_NO_MEDIA          There is no media in the device.
+-  @retval EFI_MEDIA_CHANGED     The MediaId is not for the current media.
+-  @retval EFI_BAD_BUFFER_SIZE   The buffer size is not a multiple of the block size.
+-  @retval EFI_INVALID_PARAMETER The read request contains LBAs that are not valid.
+-
+-**/
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcBlockIoReadBlocks (
+-  IN  EFI_BLOCK_IO_PROTOCOL  *This,
+-  IN  UINT32                 MediaId,
+-  IN  EFI_LBA                Lba,
+-  IN  UINTN                  BufferSize,
+-  OUT VOID                   *Buffer
+-  )
+-{
+-  SD_MMC_CB_DEVICE  *Device;
+-  EFI_STATUS        Status;
+-  UINT32            BlockCount;
+-  UINT32            Response[4];
+-
+-  Device = SD_MMC_CB_DEVICE_FROM_BLOCK_IO (This);
+-
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: ReadBlocks LBA=%ld, BufferSize=%d\n", Lba, BufferSize));
+-
+-  //
+-  // Check media presence (for removable media like SD cards)
+-  //
+-  Status = CheckMediaPresence (Device);
+-  if (Status == EFI_MEDIA_CHANGED) {
+-    return EFI_MEDIA_CHANGED;
+-  }
+-  if (Status == EFI_NO_MEDIA) {
+-    return EFI_NO_MEDIA;
+-  }
+-
+-  //
+-  // Validate MediaId
+-  //
+-  if (MediaId != Device->BlockIoMedia.MediaId) {
+-    return EFI_MEDIA_CHANGED;
+-  }
+-
+-  //
+-  // Validate parameters
+-  //
+-  if (Buffer == NULL) {
+-    return EFI_INVALID_PARAMETER;
+-  }
+-
+-  if (BufferSize == 0) {
+-    return EFI_SUCCESS;
+-  }
+-
+-  if (BufferSize % Device->BlockSize != 0) {
+-    return EFI_BAD_BUFFER_SIZE;
+-  }
+-
+-  if (Lba + (BufferSize / Device->BlockSize) > Device->TotalBlocks) {
+-    return EFI_INVALID_PARAMETER;
+-  }
+-
+-  BlockCount = BufferSize / Device->BlockSize;
+-
+-  // Only log large transfers to reduce serial output overhead
+-  if (BlockCount > 8) {
+-    DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: ReadBlocks LBA=%ld Count=%d Size=%d\n",
+-            Lba, BlockCount, BufferSize));
+-  }
+-
+-  //
+-  // Calculate command argument based on addressing mode
+-  // High capacity: block addressing (LBA)
+-  // Low capacity: byte addressing (LBA * block size)
+-  //
+-  UINT32 CmdArg;
+-  if (Device->HighCapacity) {
+-    CmdArg = (UINT32)Lba;
+-  } else {
+-    CmdArg = (UINT32)(Lba * Device->BlockSize);
+-  }
+-
+-  //
+-  // Use CMD17 (single block) or CMD18 (multiple blocks)
+-  //
+-  if (BlockCount == 1) {
+-    Status = SdhciSendCommand (
+-               Device,
+-               MMC_CMD_READ_SINGLE_BLOCK,
+-               CmdArg,
+-               MMC_RSP_R1,
+-               Response,
+-               Buffer,
+-               Device->BlockSize,
+-               1,
+-               TRUE
+-               );
+-  } else {
+-    Status = SdhciSendCommand (
+-               Device,
+-               MMC_CMD_READ_MULTIPLE_BLOCK,
+-               CmdArg,
+-               MMC_RSP_R1,
+-               Response,
+-               Buffer,
+-               Device->BlockSize,
+-               BlockCount,
+-               TRUE
+-               );
+-  }
+-
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Read failed: %r\n", Status));
+-    return EFI_DEVICE_ERROR;
+-  }
+-
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Read successful, returning to caller\n"));
+-  return EFI_SUCCESS;
+-}
+-
+-/**
+-  Write blocks to the block device.
+-
+-  @param[in] This       Pointer to the BLOCK_IO_PROTOCOL instance.
+-  @param[in] MediaId    Media ID that the write request is for.
+-  @param[in] Lba        The starting logical block address to write to.
+-  @param[in] BufferSize The size of the buffer in bytes.
+-  @param[in] Buffer     Pointer to the source buffer.
+-
+-  @retval EFI_SUCCESS           The data was written correctly.
+-  @retval EFI_DEVICE_ERROR      The device reported an error.
+-  @retval EFI_NO_MEDIA          There is no media in the device.
+-  @retval EFI_MEDIA_CHANGED     The MediaId is not for the current media.
+-  @retval EFI_BAD_BUFFER_SIZE   The buffer size is not a multiple of the block size.
+-  @retval EFI_INVALID_PARAMETER The write request contains LBAs that are not valid.
+-  @retval EFI_WRITE_PROTECTED   The device cannot be written to.
+-
+-**/
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcBlockIoWriteBlocks (
+-  IN EFI_BLOCK_IO_PROTOCOL  *This,
+-  IN UINT32                 MediaId,
+-  IN EFI_LBA                Lba,
+-  IN UINTN                  BufferSize,
+-  IN VOID                   *Buffer
+-  )
+-{
+-  SD_MMC_CB_DEVICE  *Device;
+-  EFI_STATUS        Status;
+-  UINT32            BlockCount;
+-  UINT32            Response[4];
+-
+-  Device = SD_MMC_CB_DEVICE_FROM_BLOCK_IO (This);
+-
+-  //
+-  // Check media presence (for removable media like SD cards)
+-  //
+-  Status = CheckMediaPresence (Device);
+-  if (Status == EFI_MEDIA_CHANGED) {
+-    return EFI_MEDIA_CHANGED;
+-  }
+-  if (Status == EFI_NO_MEDIA) {
+-    return EFI_NO_MEDIA;
+-  }
+-
+-  //
+-  // Validate MediaId
+-  //
+-  if (MediaId != Device->BlockIoMedia.MediaId) {
+-    return EFI_MEDIA_CHANGED;
+-  }
+-
+-  //
+-  // Validate parameters
+-  //
+-  if (Buffer == NULL) {
+-    return EFI_INVALID_PARAMETER;
+-  }
+-
+-  if (BufferSize == 0) {
+-    return EFI_SUCCESS;
+-  }
+-
+-  if (BufferSize % Device->BlockSize != 0) {
+-    return EFI_BAD_BUFFER_SIZE;
+-  }
+-
+-  if (Lba + (BufferSize / Device->BlockSize) > Device->TotalBlocks) {
+-    return EFI_INVALID_PARAMETER;
+-  }
+-
+-  BlockCount = BufferSize / Device->BlockSize;
+-
+-  // Only log large transfers to reduce serial output overhead
+-  if (BlockCount > 8) {
+-    DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: WriteBlocks LBA=%ld Count=%d Size=%d\n",
+-            Lba, BlockCount, BufferSize));
+-  }
+-
+-  //
+-  // Calculate command argument based on addressing mode
+-  // High capacity: block addressing (LBA)
+-  // Low capacity: byte addressing (LBA * block size)
+-  //
+-  UINT32 CmdArg;
+-  if (Device->HighCapacity) {
+-    CmdArg = (UINT32)Lba;
+-  } else {
+-    CmdArg = (UINT32)(Lba * Device->BlockSize);
+-  }
+-
+-  //
+-  // Use CMD24 (single block) or CMD25 (multiple blocks)
+-  //
+-  if (BlockCount == 1) {
+-    Status = SdhciSendCommand (
+-               Device,
+-               MMC_CMD_WRITE_SINGLE_BLOCK,
+-               CmdArg,
+-               MMC_RSP_R1,
+-               Response,
+-               Buffer,
+-               Device->BlockSize,
+-               1,
+-               FALSE
+-               );
+-  } else {
+-    Status = SdhciSendCommand (
+-               Device,
+-               MMC_CMD_WRITE_MULTIPLE_BLOCK,
+-               CmdArg,
+-               MMC_RSP_R1,
+-               Response,
+-               Buffer,
+-               Device->BlockSize,
+-               BlockCount,
+-               FALSE
+-               );
+-  }
+-
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Write failed: %r\n", Status));
+-    return EFI_DEVICE_ERROR;
+-  }
+-
+-  // DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Write successful\n"));
+-  return EFI_SUCCESS;
+-}
+-
+-/**
+-  Flush the block device.
+-
+-  @param[in] This Pointer to the BLOCK_IO_PROTOCOL instance.
+-
+-  @retval EFI_SUCCESS      All outstanding data was written to the device.
+-  @retval EFI_DEVICE_ERROR The device reported an error.
+-  @retval EFI_NO_MEDIA     There is no media in the device.
+-
+-**/
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcBlockIoFlushBlocks (
+-  IN EFI_BLOCK_IO_PROTOCOL  *This
+-  )
+-{
+-  //
+-  // eMMC doesn't have a flush command, data is written immediately
+-  //
+-  return EFI_SUCCESS;
+-}
+diff --git a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDiskInfo.c b/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDiskInfo.c
+deleted file mode 100644
+index 93523cda0299ff030fb8c115293aff8680941438..0000000000000000000000000000000000000000
+--- a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDiskInfo.c
++++ /dev/null
+@@ -1,132 +0,0 @@
+-/** @file
+-  Implements EFI Disk Info Protocol for SD/MMC devices.
+-
+-  Based on MdeModulePkg/Bus/Sd/EmmcDxe/EmmcDiskInfo.c
+-  Copyright (c) 2017, Intel Corporation. All rights reserved.<BR>
+-  Copyright (c) 2025, Matt DeVillier. All rights reserved.
+-  SPDX-License-Identifier: BSD-2-Clause-Patent
+-
+-**/
+-
+-#include "SdMmcPciGliDxe.h"
+-
+-/**
+-  Provides inquiry information for the controller type.
+-
+-  For SD/MMC, this returns the CID (Card Identification) data.
+-
+-  @param[in]      This              Pointer to the EFI_DISK_INFO_PROTOCOL instance.
+-  @param[in, out] InquiryData       Pointer to a buffer for the inquiry data.
+-  @param[in, out] InquiryDataSize   Pointer to the value for the inquiry data size.
+-
+-  @retval EFI_SUCCESS            The command was accepted without any errors.
+-  @retval EFI_BUFFER_TOO_SMALL   InquiryDataSize not big enough.
+-  @retval EFI_INVALID_PARAMETER  InquiryDataSize is NULL.
+-
+-**/
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcDiskInfoInquiry (
+-  IN     EFI_DISK_INFO_PROTOCOL  *This,
+-  IN OUT VOID                    *InquiryData,
+-  IN OUT UINT32                  *InquiryDataSize
+-  )
+-{
+-  EFI_STATUS        Status;
+-  SD_MMC_CB_DEVICE  *Device;
+-  UINT32            RequiredSize;
+-
+-  Device = SD_MMC_CB_DEVICE_FROM_DISK_INFO (This);
+-
+-  if (Device->IsEMMC) {
+-    RequiredSize = sizeof (EMMC_CID);
+-  } else {
+-    RequiredSize = sizeof (SD_CID);
+-  }
+-
+-  if (*InquiryDataSize >= RequiredSize) {
+-    Status = EFI_SUCCESS;
+-    if (Device->IsEMMC) {
+-      CopyMem (InquiryData, &Device->Cid.EmmcCid, sizeof (EMMC_CID));
+-    } else {
+-      CopyMem (InquiryData, &Device->Cid.SdCid, sizeof (SD_CID));
+-    }
+-  } else {
+-    Status = EFI_BUFFER_TOO_SMALL;
+-  }
+-
+-  *InquiryDataSize = RequiredSize;
+-
+-  return Status;
+-}
+-
+-/**
+-  Provides identify information for the controller type.
+-
+-  Not used for SD/MMC.
+-
+-  @param[in]      This              Pointer to the EFI_DISK_INFO_PROTOCOL instance.
+-  @param[in, out] IdentifyData      Pointer to a buffer for the identify data.
+-  @param[in, out] IdentifyDataSize  Pointer to the value for the identify data size.
+-
+-  @retval EFI_NOT_FOUND   The device does not support this data class.
+-
+-**/
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcDiskInfoIdentify (
+-  IN     EFI_DISK_INFO_PROTOCOL  *This,
+-  IN OUT VOID                    *IdentifyData,
+-  IN OUT UINT32                  *IdentifyDataSize
+-  )
+-{
+-  return EFI_NOT_FOUND;
+-}
+-
+-/**
+-  Provides sense data information for the controller type.
+-
+-  Not used for SD/MMC.
+-
+-  @param[in]  This              Pointer to the EFI_DISK_INFO_PROTOCOL instance.
+-  @param[out] SenseData         Pointer to the SenseData.
+-  @param[in, out] SenseDataSize      Size of SenseData in bytes.
+-  @param[out] SenseDataNumber   Number of items in SenseData.
+-
+-  @retval EFI_NOT_FOUND   The device does not support this data class.
+-
+-**/
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcDiskInfoSenseData (
+-  IN     EFI_DISK_INFO_PROTOCOL  *This,
+-  IN OUT VOID                    *SenseData,
+-  IN OUT UINT32                  *SenseDataSize,
+-  OUT    UINT8                   *SenseDataNumber
+-  )
+-{
+-  return EFI_NOT_FOUND;
+-}
+-
+-/**
+-  Provides IDE channel and device information for the IDE/ATAPI controller.
+-
+-  Not used for SD/MMC.
+-
+-  @param[in]  This        Pointer to the EFI_DISK_INFO_PROTOCOL instance.
+-  @param[out] IdeChannel  Pointer to the IdeChannel.
+-  @param[out] IdeDevice   Pointer to the IdeDevice.
+-
+-  @retval EFI_UNSUPPORTED This is not an IDE device.
+-
+-**/
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcDiskInfoWhichIde (
+-  IN  EFI_DISK_INFO_PROTOCOL  *This,
+-  OUT UINT32                  *IdeChannel,
+-  OUT UINT32                  *IdeDevice
+-  )
+-{
+-  return EFI_UNSUPPORTED;
+-}
+diff --git a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.c b/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.c
+deleted file mode 100644
+index 6eb7a2ece2bb5b2513bf7baa2d435172bc43f8ac..0000000000000000000000000000000000000000
+--- a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.c
++++ /dev/null
+@@ -1,825 +0,0 @@
+-/** @file
+-  Depthcharge-based SD/MMC PCI Host Controller Driver
+-  Main driver entry point and PCI binding logic
+-
+-  Copyright (c) 2025, Matt DeVillier. All rights reserved.
+-  SPDX-License-Identifier: BSD-2-Clause-Patent
+-
+-**/
+-
+-#include "SdMmcPciGliDxe.h"
+-
+-//
+-// PCI Class codes
+-//
+-#define PCI_CLASS_SYSTEM_PERIPHERAL  0x08
+-#define PCI_SUBCLASS_SD_HOST_CONTROLLER  0x05
+-#define PCI_BASE_ADDRESSREG_OFFSET  0x10
+-
+-EFI_DRIVER_BINDING_PROTOCOL gSdMmcPciGliDriverBinding = {
+-  SdMmcPciGliDriverBindingSupported,
+-  SdMmcPciGliDriverBindingStart,
+-  SdMmcPciGliDriverBindingStop,
+-  0x10,
+-  NULL,  // ImageHandle - will be set in entry point
+-  NULL   // DriverBindingHandle - will be set in entry point
+-};
+-
+-/**
+-  Timer callback to check for SD card insertion/removal.
+-
+-  @param[in] Event    The timer event
+-  @param[in] Context  Pointer to SD_MMC_CB_DEVICE
+-
+-**/
+-VOID
+-EFIAPI
+-MediaChangeTimerCallback (
+-  IN EFI_EVENT  Event,
+-  IN VOID       *Context
+-  )
+-{
+-  SD_MMC_CB_DEVICE  *Device;
+-  UINT32            PresentState;
+-  BOOLEAN           CurrentPresent;
+-  BOOLEAN           PreviousPresent;
+-
+-  Device = (SD_MMC_CB_DEVICE *)Context;
+-
+-  //
+-  // Only check for removable media (SD cards)
+-  //
+-  if (Device->IsEMMC) {
+-    return;
+-  }
+-
+-  //
+-  // Check if card is present
+-  //
+-  PresentState = SdhciReadl (Device, SDHCI_PRESENT_STATE);
+-  CurrentPresent = (PresentState & SDHCI_CARD_PRESENT) != 0;
+-  PreviousPresent = Device->BlockIoMedia.MediaPresent;
+-
+-  //
+-  // If media state changed, update and trigger reconnection
+-  //
+-  if (CurrentPresent != PreviousPresent) {
+-    Device->BlockIoMedia.MediaPresent = CurrentPresent;
+-    Device->BlockIoMedia.MediaId++;
+-
+-    if (CurrentPresent) {
+-      DEBUG ((DEBUG_INFO, "SdMmcCb: SD card inserted! MediaId=%d\n", Device->BlockIoMedia.MediaId));
+-
+-      //
+-      // Re-initialize the SD card to get its capacity and parameters
+-      // First, reset the controller to clear any stale state from previous card
+-      //
+-      SdhciReset (Device, SDHCI_RESET_ALL);
+-      gBS->Stall (10000);  // 10ms for reset to complete
+-
+-      // Re-initialize the controller for the new card
+-      EFI_STATUS Status = SdhciInit (Device);
+-      if (EFI_ERROR (Status)) {
+-        DEBUG ((DEBUG_ERROR, "SdMmcCb: SdhciInit failed during hot-plug: %r\n", Status));
+-        Device->BlockIoMedia.MediaPresent = FALSE;
+-        Device->BlockIoMedia.LastBlock = 0;
+-      } else {
+-        // Now initialize the card
+-        Status = SdStartup (Device);
+-        if (!EFI_ERROR (Status)) {
+-          // Update BlockIo media with new card's capacity
+-          Device->BlockIoMedia.BlockSize = Device->BlockSize;
+-          Device->BlockIoMedia.LastBlock = Device->TotalBlocks > 0 ? Device->TotalBlocks - 1 : 0;
+-          DEBUG ((DEBUG_INFO, "SdMmcCb: SD card initialized: %lld blocks\n", Device->TotalBlocks));
+-        } else {
+-          DEBUG ((DEBUG_ERROR, "SdMmcCb: SD card initialization failed: %r\n", Status));
+-          // Set media as not present if init fails
+-          Device->BlockIoMedia.MediaPresent = FALSE;
+-          Device->BlockIoMedia.LastBlock = 0;
+-        }
+-      }
+-    } else {
+-      DEBUG ((DEBUG_INFO, "SdMmcCb: SD card removed! MediaId=%d\n", Device->BlockIoMedia.MediaId));
+-      // Reset capacity when card is removed
+-      Device->TotalBlocks = 0;
+-      Device->BlockIoMedia.LastBlock = 0;
+-    }
+-
+-    //
+-    // Reinstall BlockIo protocol to trigger BDS reconnection
+-    // This makes the boot menu refresh automatically
+-    //
+-    gBS->ReinstallProtocolInterface (
+-           Device->ChildHandle,
+-           &gEfiBlockIoProtocolGuid,
+-           &Device->BlockIo,
+-           &Device->BlockIo
+-           );
+-  }
+-}
+-
+-/**
+-  Test to see if this driver supports ControllerHandle.
+-
+-  @param  This                 Protocol instance pointer.
+-  @param  Controller           Handle of device to test.
+-  @param  RemainingDevicePath  Optional parameter use to pick a specific child
+-                               device to start.
+-
+-  @retval EFI_SUCCESS          This driver supports this device.
+-  @retval EFI_ALREADY_STARTED  This driver is already running on this device.
+-  @retval other                This driver does not support this device.
+-
+-**/
+-EFI_STATUS
+-EFIAPI
+-SdMmcPciGliDriverBindingSupported (
+-  IN EFI_DRIVER_BINDING_PROTOCOL  *This,
+-  IN EFI_HANDLE                   Controller,
+-  IN EFI_DEVICE_PATH_PROTOCOL     *RemainingDevicePath
+-  )
+-{
+-  EFI_STATUS           Status;
+-  EFI_PCI_IO_PROTOCOL  *PciIo;
+-  PCI_TYPE00           PciData;
+-
+-  PciIo            = NULL;
+-
+-  //DEBUG ((DEBUG_INFO, "SdMmcPciGli: Supported() called\n"));
+-
+-  //
+-  // Open PCI I/O Protocol
+-  //
+-  Status = gBS->OpenProtocol (
+-                  Controller,
+-                  &gEfiPciIoProtocolGuid,
+-                  (VOID **)&PciIo,
+-                  This->DriverBindingHandle,
+-                  Controller,
+-                  EFI_OPEN_PROTOCOL_BY_DRIVER
+-                  );
+-  if (EFI_ERROR (Status)) {
+-    //DEBUG ((DEBUG_WARN, "SdMmcPciGli: OpenProtocol failed: %r\n", Status));
+-    return Status;
+-  }
+-
+-  //DEBUG ((DEBUG_INFO, "SdMmcPciGli: OpenProtocol succeeded, reading PCI config...\n"));
+-
+-  //
+-  // Read PCI configuration space
+-  //
+-  Status = PciIo->Pci.Read (
+-                        PciIo,
+-                        EfiPciIoWidthUint32,
+-                        0,
+-                        sizeof (PciData) / sizeof (UINT32),
+-                        &PciData
+-                        );
+-  if (EFI_ERROR (Status)) {
+-    //DEBUG ((DEBUG_ERROR, "SdMmcPciGli: PCI read failed: %r\n", Status));
+-    goto Done;
+-  }
+-
+-  //
+-  // Debug: Print every device we check
+-  //
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Checking device %04x:%04x\n",
+-          PciData.Hdr.VendorId, PciData.Hdr.DeviceId));
+-
+-  //
+-  // Check if this is an SD Host Controller (Class 08, SubClass 05)
+-  // This matches Depthcharge's approach: support ALL SDHCI controllers
+-  //
+-  if (PciData.Hdr.ClassCode[2] != PCI_CLASS_SYSTEM_PERIPHERAL ||
+-      PciData.Hdr.ClassCode[1] != PCI_SUBCLASS_SD_HOST_CONTROLLER) {
+-    Status = EFI_UNSUPPORTED;
+-    goto Done;
+-  }
+-
+-  //
+-  // This is an SDHCI controller - we support it!
+-  // Same universal approach as Depthcharge's pci_sdhci.c
+-  //
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Found SDHCI controller %04x:%04x (Class=%02x SubClass=%02x)\n",
+-          PciData.Hdr.VendorId, PciData.Hdr.DeviceId,
+-          PciData.Hdr.ClassCode[2], PciData.Hdr.ClassCode[1]));
+-
+-  //
+-  // This driver ONLY supports Genesys Logic controllers
+-  // Return EFI_UNSUPPORTED for all other vendors to allow other drivers to bind
+-  //
+-  if (PciData.Hdr.VendorId != 0x17a0) {
+-    Status = EFI_UNSUPPORTED;
+-    goto Done;
+-  }
+-
+-  //
+-  // Check for supported Genesys Logic device IDs
+-  //
+-  if (PciData.Hdr.DeviceId == 0xe763) {
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: -> Genesys Logic GL9763E (eMMC)\n"));
+-    Status = EFI_SUCCESS;
+-  } else if (PciData.Hdr.DeviceId == 0x9750) {
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: -> Genesys Logic GL9750 (SD)\n"));
+-    Status = EFI_SUCCESS;
+-  } else if (PciData.Hdr.DeviceId == 0x9755) {
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: -> Genesys Logic GL9755 (SD)\n"));
+-    Status = EFI_SUCCESS;
+-  } else {
+-    DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Unsupported Genesys Logic device 0x%04x\n", PciData.Hdr.DeviceId));
+-    Status = EFI_UNSUPPORTED;
+-  }
+-
+-Done:
+-  gBS->CloseProtocol (
+-         Controller,
+-         &gEfiPciIoProtocolGuid,
+-         This->DriverBindingHandle,
+-         Controller
+-         );
+-
+-  return Status;
+-}
+-
+-/**
+-  Start this driver on ControllerHandle.
+-
+-  @param  This                 Protocol instance pointer.
+-  @param  Controller           Handle of device to bind driver to.
+-  @param  RemainingDevicePath  Optional parameter use to pick a specific child
+-                               device to start.
+-
+-  @retval EFI_SUCCESS          This driver is added to ControllerHandle.
+-  @retval EFI_ALREADY_STARTED  This driver is already running on ControllerHandle.
+-  @retval other                This driver does not support this device.
+-
+-**/
+-EFI_STATUS
+-EFIAPI
+-SdMmcPciGliDriverBindingStart (
+-  IN EFI_DRIVER_BINDING_PROTOCOL  *This,
+-  IN EFI_HANDLE                   Controller,
+-  IN EFI_DEVICE_PATH_PROTOCOL     *RemainingDevicePath
+-  )
+-{
+-  EFI_STATUS               Status;
+-  SD_MMC_CB_DEVICE         *Device;
+-  EFI_PCI_IO_PROTOCOL      *PciIo;
+-  UINT64                   Supports;
+-  UINTN                    MmioBase;
+-  PCI_TYPE00               PciData;
+-  UINT32                   SlotType;
+-  EFI_DEVICE_PATH_PROTOCOL *NewDevicePath;
+-  EMMC_DEVICE_PATH         EmmcNode;
+-  SD_DEVICE_PATH           SdNode;
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: DriverBindingStart called\n"));
+-
+-  Device = NULL;
+-
+-  //
+-  // Open PCI I/O Protocol
+-  //
+-  Status = gBS->OpenProtocol (
+-                  Controller,
+-                  &gEfiPciIoProtocolGuid,
+-                  (VOID **)&PciIo,
+-                  This->DriverBindingHandle,
+-                  Controller,
+-                  EFI_OPEN_PROTOCOL_BY_DRIVER
+-                  );
+-  if (EFI_ERROR (Status)) {
+-    return Status;
+-  }
+-
+-  //
+-  // Allocate device context
+-  //
+-  Device = AllocateZeroPool (sizeof (SD_MMC_CB_DEVICE));
+-  if (Device == NULL) {
+-    Status = EFI_OUT_OF_RESOURCES;
+-    goto Error;
+-  }
+-
+-  Device->Signature = SD_MMC_CB_SIGNATURE;
+-  Device->ControllerHandle = Controller;
+-  Device->PciIo = PciIo;
+-
+-  //
+-  // Detect controller type
+-  //
+-  Status = PciIo->Pci.Read (
+-                        PciIo,
+-                        EfiPciIoWidthUint32,
+-                        0,
+-                        sizeof (PciData) / sizeof (UINT32),
+-                        &PciData
+-                        );
+-  if (EFI_ERROR (Status)) {
+-    goto Error;
+-  }
+-
+-  //
+-  // Detect controller type and set quirk flags
+-  //
+-  Device->IsGL9763E = FALSE;
+-  Device->IsGL9750 = FALSE;
+-  Device->IsGL9755 = FALSE;
+-
+-  if (PciData.Hdr.VendorId == 0x17a0) {
+-    // Genesys Logic controllers
+-    if (PciData.Hdr.DeviceId == 0xe763) {
+-      Device->IsGL9763E = TRUE;
+-      DEBUG ((DEBUG_INFO, "SdMmcPciGli: Genesys Logic GL9763E detected (will apply vendor init)\n"));
+-    } else if (PciData.Hdr.DeviceId == 0x9750) {
+-      Device->IsGL9750 = TRUE;
+-      DEBUG ((DEBUG_INFO, "SdMmcPciGli: Genesys Logic GL9750 detected (will apply vendor init)\n"));
+-    } else if (PciData.Hdr.DeviceId == 0x9755) {
+-      Device->IsGL9755 = TRUE;
+-      DEBUG ((DEBUG_INFO, "SdMmcPciGli: Genesys Logic GL9755 detected (will apply vendor init)\n"));
+-    }
+-  }
+-
+-  //
+-  // Get device path from controller
+-  //
+-  Status = gBS->OpenProtocol (
+-                  Controller,
+-                  &gEfiDevicePathProtocolGuid,
+-                  (VOID **)&Device->DevicePath,
+-                  This->DriverBindingHandle,
+-                  Controller,
+-                  EFI_OPEN_PROTOCOL_GET_PROTOCOL
+-                  );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_WARN, "SdMmcPciGli: Failed to get DevicePath: %r\n", Status));
+-    Device->DevicePath = NULL;
+-  }
+-
+-  //
+-  // Enable PCI attributes
+-  //
+-  Status = PciIo->Attributes (
+-                    PciIo,
+-                    EfiPciIoAttributeOperationGet,
+-                    0,
+-                    &Supports
+-                    );
+-  if (EFI_ERROR (Status)) {
+-    goto Error;
+-  }
+-
+-  Supports &= (UINT64)EFI_PCI_DEVICE_ENABLE;
+-  Status = PciIo->Attributes (
+-                    PciIo,
+-                    EfiPciIoAttributeOperationEnable,
+-                    Supports,
+-                    NULL
+-                    );
+-  if (EFI_ERROR (Status)) {
+-    goto Error;
+-  }
+-
+-  //
+-  // Get BAR0 (MMIO base) - Read directly from PCI config space
+-  //
+-  Status = PciIo->Pci.Read (
+-                        PciIo,
+-                        EfiPciIoWidthUint32,
+-                        PCI_BASE_ADDRESSREG_OFFSET,
+-                        1,
+-                        &MmioBase
+-                        );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to read BAR0: %r\n", Status));
+-    goto Error;
+-  }
+-
+-  //
+-  // Clear lower bits (memory type flags - bit 0=Memory Space Indicator, bits 1-2=Type, bit 3=Prefetchable)
+-  //
+-  MmioBase &= ~0xFULL;
+-
+-  if (MmioBase == 0) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: BAR0 is not assigned!\n"));
+-    Status = EFI_DEVICE_ERROR;
+-    goto Error;
+-  }
+-
+-  Device->MmioBase = (VOID *)MmioBase;
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: MMIO Base = 0x%016lx\n", (UINT64)MmioBase));
+-
+-  //
+-  // Read controller version and capabilities
+-  //
+-  Device->Version = SdhciReadw (Device, SDHCI_HOST_VERSION);
+-  Device->Capabilities = SdhciReadl (Device, SDHCI_CAPABILITIES);
+-
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Version = 0x%04x\n", Device->Version));
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Capabilities = 0x%08x\n", Device->Capabilities));
+-
+-  //
+-  // Auto-detect eMMC vs SD card
+-  // Priority: 1) Vendor-specific knowledge, 2) SDHCI capabilities register
+-  //
+-  SlotType = (Device->Capabilities & SDHCI_SLOT_TYPE_MASK) >> SDHCI_SLOT_TYPE_SHIFT;
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Slot Type (from caps) = %d\n", SlotType));
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Device flags: IsGL9763E=%d, IsGL9750=%d, IsGL9755=%d\n",
+-          Device->IsGL9763E, Device->IsGL9750, Device->IsGL9755));
+-
+-  // Use vendor-specific knowledge to set the slot type
+-  if (Device->IsGL9763E) {
+-    Device->IsEMMC = TRUE;  // GL9763E is always eMMC controller
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: Vendor-specific: eMMC controller\n"));
+-  } else if (Device->IsGL9750 || Device->IsGL9755) {
+-    Device->IsEMMC = FALSE;  // GL9750/GL9755 are always SD controllers
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: Vendor-specific: SD controller\n"));
+-  }
+-
+-  //
+-  // Phase 2: Initialize SDHCI controller
+-  //
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Initializing SDHCI controller...\n"));
+-  Status = SdhciInit (Device);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: SdhciInit failed: %r\n", Status));
+-    goto Error;
+-  }
+-
+-  //
+-  // Phase 3: Initialize card (eMMC or SD)
+-  //
+-  if (Device->IsEMMC) {
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: Initializing eMMC device...\n"));
+-    Status = MmcStartup (Device);
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "SdMmcPciGli: MmcStartup failed: %r\n", Status));
+-      goto Error;
+-    }
+-  } else {
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: Initializing SD card...\n"));
+-    Status = SdStartup (Device);
+-    if (EFI_ERROR (Status)) {
+-      if (Status == EFI_NOT_FOUND) {
+-        // SD card not present - this is OK for removable media
+-        // Set defaults and continue (BlockIo will report no media, hot-plug will detect insertion)
+-        Device->BlockSize = 512;
+-        Device->TotalBlocks = 0;
+-        Device->HighCapacity = TRUE;
+-        Device->BlockIoMedia.MediaPresent = FALSE;
+-        DEBUG ((DEBUG_INFO, "SdMmcPciGli: No SD card present, installing driver for hot-plug support\n"));
+-      } else {
+-        // Actual initialization failure (timeout, device error, etc.)
+-        // Don't install BlockIo protocol - controller is not functional
+-        DEBUG ((DEBUG_ERROR, "SdMmcPciGli: SD card initialization failed: %r\n", Status));
+-        goto Error;
+-      }
+-    }
+-  }
+-
+-  //
+-  // Phase 4: Install BlockIo Protocol
+-  //
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Installing BlockIo protocol...\n"));
+-
+-  //
+-  // Initialize BlockIo Media
+-  //
+-  Device->BlockIoMedia.MediaId = 0;
+-  Device->BlockIoMedia.RemovableMedia = !Device->IsEMMC;  // SD cards are removable
+-  Device->BlockIoMedia.MediaPresent = TRUE;  // Assume present (updated during init if failed)
+-  Device->BlockIoMedia.LogicalPartition = FALSE;
+-  Device->BlockIoMedia.ReadOnly = FALSE;
+-  Device->BlockIoMedia.WriteCaching = FALSE;
+-  Device->BlockIoMedia.BlockSize = Device->BlockSize;
+-  Device->BlockIoMedia.IoAlign = 4; // 32-bit aligned
+-  Device->BlockIoMedia.LastBlock = Device->TotalBlocks > 0 ? Device->TotalBlocks - 1 : 0;
+-
+-  //
+-  // Initialize BlockIo Protocol
+-  //
+-  Device->BlockIo.Revision = EFI_BLOCK_IO_PROTOCOL_REVISION3;
+-  Device->BlockIo.Media = &Device->BlockIoMedia;
+-  Device->BlockIo.Reset = SdMmcDcBlockIoReset;
+-  Device->BlockIo.ReadBlocks = SdMmcDcBlockIoReadBlocks;
+-  Device->BlockIo.WriteBlocks = SdMmcDcBlockIoWriteBlocks;
+-  Device->BlockIo.FlushBlocks = SdMmcDcBlockIoFlushBlocks;
+-
+-  //
+-  // Initialize DiskInfo Protocol
+-  //
+-  if (Device->IsEMMC) {
+-    CopyGuid (&Device->DiskInfo.Interface, &gEfiDiskInfoSdMmcInterfaceGuid);
+-  } else {
+-    CopyGuid (&Device->DiskInfo.Interface, &gEfiDiskInfoSdMmcInterfaceGuid);
+-  }
+-  Device->DiskInfo.Inquiry = SdMmcDcDiskInfoInquiry;
+-  Device->DiskInfo.Identify = SdMmcDcDiskInfoIdentify;
+-  Device->DiskInfo.SenseData = SdMmcDcDiskInfoSenseData;
+-  Device->DiskInfo.WhichIde = SdMmcDcDiskInfoWhichIde;
+-
+-  //
+-  // Create device path for the card device
+-  // The parent controller should have a device path; we append an SD/eMMC node to it
+-  //
+-  NewDevicePath = NULL;
+-  if (Device->DevicePath != NULL) {
+-    if (Device->IsEMMC) {
+-      // Use MSG_EMMC_DP for eMMC to get "Internal eMMC" naming in BDS
+-      EmmcNode.Header.Type = MESSAGING_DEVICE_PATH;
+-      EmmcNode.Header.SubType = MSG_EMMC_DP;
+-      SetDevicePathNodeLength (&EmmcNode.Header, sizeof (EMMC_DEVICE_PATH));
+-      EmmcNode.SlotNumber = 0;  // Single eMMC device on this controller
+-
+-      NewDevicePath = AppendDevicePathNode (Device->DevicePath, (EFI_DEVICE_PATH_PROTOCOL *)&EmmcNode);
+-    } else {
+-      // Use MSG_SD_DP for SD card
+-      SdNode.Header.Type = MESSAGING_DEVICE_PATH;
+-      SdNode.Header.SubType = MSG_SD_DP;
+-      SetDevicePathNodeLength (&SdNode.Header, sizeof (SD_DEVICE_PATH));
+-      SdNode.SlotNumber = 0;
+-
+-      NewDevicePath = AppendDevicePathNode (Device->DevicePath, (EFI_DEVICE_PATH_PROTOCOL *)&SdNode);
+-    }
+-
+-    if (NewDevicePath == NULL) {
+-      DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to create device path\n"));
+-      Status = EFI_OUT_OF_RESOURCES;
+-      goto Error;
+-    }
+-  }
+-
+-  //
+-  // Install BlockIo, DiskInfo, and DevicePath Protocols on child handle
+-  //
+-  Device->ChildHandle = NULL;
+-  if (NewDevicePath != NULL) {
+-    Status = gBS->InstallMultipleProtocolInterfaces (
+-                    &Device->ChildHandle,
+-                    &gEfiDevicePathProtocolGuid,
+-                    NewDevicePath,
+-                    &gEfiBlockIoProtocolGuid,
+-                    &Device->BlockIo,
+-                    &gEfiDiskInfoProtocolGuid,
+-                    &Device->DiskInfo,
+-                    NULL
+-                    );
+-  } else {
+-    Status = gBS->InstallMultipleProtocolInterfaces (
+-                    &Device->ChildHandle,
+-                    &gEfiBlockIoProtocolGuid,
+-                    &Device->BlockIo,
+-                    &gEfiDiskInfoProtocolGuid,
+-                    &Device->DiskInfo,
+-                    NULL
+-                    );
+-  }
+-
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to install BlockIo: %r\n", Status));
+-    if (NewDevicePath != NULL) {
+-      FreePool (NewDevicePath);
+-    }
+-    goto Error;
+-  }
+-
+-  //
+-  // Open PciIo protocol BY_CHILD_CONTROLLER
+-  //
+-  Status = gBS->OpenProtocol (
+-                  Controller,
+-                  &gEfiPciIoProtocolGuid,
+-                  (VOID **)&PciIo,
+-                  This->DriverBindingHandle,
+-                  Device->ChildHandle,
+-                  EFI_OPEN_PROTOCOL_BY_CHILD_CONTROLLER
+-                  );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to open PciIo BY_CHILD: %r\n", Status));
+-    gBS->UninstallMultipleProtocolInterfaces (
+-           Device->ChildHandle,
+-           &gEfiBlockIoProtocolGuid,
+-           &Device->BlockIo,
+-           &gEfiDiskInfoProtocolGuid,
+-           &Device->DiskInfo,
+-           NULL
+-           );
+-    goto Error;
+-  }
+-
+-  if (Device->IsEMMC) {
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: Driver start complete! eMMC initialized successfully!\n"));
+-  } else {
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: Driver start complete! SD card reader ready!\n"));
+-
+-    //
+-    // For removable media (SD cards), create a timer to poll for media changes
+-    // This allows automatic boot menu refresh when cards are inserted/removed
+-    //
+-    Status = gBS->CreateEvent (
+-                    EVT_TIMER | EVT_NOTIFY_SIGNAL,
+-                    TPL_CALLBACK,
+-                    MediaChangeTimerCallback,
+-                    Device,  // Pass device context to callback
+-                    &Device->MediaChangeEvent
+-                    );
+-    if (!EFI_ERROR (Status)) {
+-      // Poll every 100ms (same as standard driver)
+-      Status = gBS->SetTimer (
+-                      Device->MediaChangeEvent,
+-                      TimerPeriodic,
+-                      1000000  // 100ms in 100ns units
+-                      );
+-      if (EFI_ERROR (Status)) {
+-        gBS->CloseEvent (Device->MediaChangeEvent);
+-        Device->MediaChangeEvent = NULL;
+-      } else {
+-        DEBUG ((DEBUG_INFO, "SdMmcPciGli: Media change polling enabled (100ms)\n"));
+-      }
+-    }
+-  }
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: BlockIo installed on handle %p\n", Device->ChildHandle));
+-
+-  return EFI_SUCCESS;
+-
+-Error:
+-  if (Device != NULL) {
+-    FreePool (Device);
+-  }
+-
+-  gBS->CloseProtocol (
+-         Controller,
+-         &gEfiPciIoProtocolGuid,
+-         This->DriverBindingHandle,
+-         Controller
+-         );
+-
+-  return Status;
+-}
+-
+-/**
+-  Stop this driver on ControllerHandle.
+-
+-  @param  This              Protocol instance pointer.
+-  @param  Controller        Handle of device to stop driver on.
+-  @param  NumberOfChildren  Number of Handles in ChildHandleBuffer. If number of
+-                            children is zero stop the entire bus driver.
+-  @param  ChildHandleBuffer List of Child Handles to Stop.
+-
+-  @retval EFI_SUCCESS       This driver is removed ControllerHandle.
+-  @retval other             This driver was not removed from this device.
+-
+-**/
+-EFI_STATUS
+-EFIAPI
+-SdMmcPciGliDriverBindingStop (
+-  IN  EFI_DRIVER_BINDING_PROTOCOL  *This,
+-  IN  EFI_HANDLE                   Controller,
+-  IN  UINTN                        NumberOfChildren,
+-  IN  EFI_HANDLE                   *ChildHandleBuffer
+-  )
+-{
+-  EFI_STATUS                Status;
+-  EFI_BLOCK_IO_PROTOCOL     *BlockIo;
+-  SD_MMC_CB_DEVICE          *Device;
+-  EFI_DEVICE_PATH_PROTOCOL  *DevicePath;
+-
+-  if (NumberOfChildren == 0) {
+-    //
+-    // Close PciIo protocol
+-    //
+-    gBS->CloseProtocol (
+-           Controller,
+-           &gEfiPciIoProtocolGuid,
+-           This->DriverBindingHandle,
+-           Controller
+-           );
+-    return EFI_SUCCESS;
+-  }
+-
+-  //
+-  // Get BlockIo protocol from child handle
+-  //
+-  Status = gBS->OpenProtocol (
+-                  ChildHandleBuffer[0],
+-                  &gEfiBlockIoProtocolGuid,
+-                  (VOID **)&BlockIo,
+-                  This->DriverBindingHandle,
+-                  Controller,
+-                  EFI_OPEN_PROTOCOL_GET_PROTOCOL
+-                  );
+-  if (EFI_ERROR (Status)) {
+-    return Status;
+-  }
+-
+-  Device = SD_MMC_CB_DEVICE_FROM_BLOCK_IO (BlockIo);
+-
+-  //
+-  // Get device path to free it later
+-  //
+-  Status = gBS->OpenProtocol (
+-                  ChildHandleBuffer[0],
+-                  &gEfiDevicePathProtocolGuid,
+-                  (VOID **)&DevicePath,
+-                  This->DriverBindingHandle,
+-                  Controller,
+-                  EFI_OPEN_PROTOCOL_GET_PROTOCOL
+-                  );
+-
+-  //
+-  // Close PciIo protocol opened BY_CHILD_CONTROLLER
+-  //
+-  gBS->CloseProtocol (
+-         Controller,
+-         &gEfiPciIoProtocolGuid,
+-         This->DriverBindingHandle,
+-         ChildHandleBuffer[0]
+-         );
+-
+-  //
+-  // Uninstall protocols from child handle
+-  //
+-  Status = gBS->UninstallMultipleProtocolInterfaces (
+-                  ChildHandleBuffer[0],
+-                  &gEfiBlockIoProtocolGuid,
+-                  &Device->BlockIo,
+-                  &gEfiDiskInfoProtocolGuid,
+-                  &Device->DiskInfo,
+-                  &gEfiDevicePathProtocolGuid,
+-                  DevicePath,
+-                  NULL
+-                  );
+-  if (EFI_ERROR (Status)) {
+-    return Status;
+-  }
+-
+-  //
+-  // Free device path
+-  //
+-  if (DevicePath != NULL) {
+-    FreePool (DevicePath);
+-  }
+-
+-  //
+-  // Stop and close media change timer if it exists (for SD cards)
+-  //
+-  if (Device->MediaChangeEvent != NULL) {
+-    gBS->SetTimer (Device->MediaChangeEvent, TimerCancel, 0);
+-    gBS->CloseEvent (Device->MediaChangeEvent);
+-    Device->MediaChangeEvent = NULL;
+-  }
+-
+-  //
+-  // Free ADMA descriptors if allocated
+-  //
+-  if (Device->AdmaDescs != NULL) {
+-    FreePool (Device->AdmaDescs);
+-  }
+-  if (Device->Adma64Descs != NULL) {
+-    FreePool (Device->Adma64Descs);
+-  }
+-
+-  //
+-  // Free device structure
+-  //
+-  FreePool (Device);
+-
+-  return EFI_SUCCESS;
+-}
+-
+-/**
+-  Driver entry point.
+-
+-  @param  ImageHandle  The firmware allocated handle for the EFI image.
+-  @param  SystemTable  A pointer to the EFI System Table.
+-
+-  @retval EFI_SUCCESS  The driver was initialized successfully.
+-
+-**/
+-EFI_STATUS
+-EFIAPI
+-InitializeSdMmcPciGliDxe (
+-  IN EFI_HANDLE        ImageHandle,
+-  IN EFI_SYSTEM_TABLE  *SystemTable
+-  )
+-{
+-  EFI_STATUS  Status;
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Depthcharge-based SDHCI Driver Loading...\n"));
+-
+-  Status = EfiLibInstallDriverBindingComponentName2 (
+-             ImageHandle,
+-             SystemTable,
+-             &gSdMmcPciGliDriverBinding,
+-             ImageHandle,
+-             NULL,  // ComponentName protocol not needed
+-             NULL   // ComponentName2 protocol not needed
+-             );
+-  ASSERT_EFI_ERROR (Status);
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Driver installed, Status = %r\n", Status));
+-
+-  return Status;
+-}
+-
+diff --git a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.h b/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.h
+deleted file mode 100644
+index 2d7cbc6b5568e163e994c3f18baa69ce116af6f1..0000000000000000000000000000000000000000
+--- a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.h
++++ /dev/null
+@@ -1,651 +0,0 @@
+-/** @file
+-  Depthcharge-based SD/MMC PCI Host Controller Driver Header
+-  Register definitions and structures ported from Depthcharge
+-
+-  Copyright (c) 2025, Matt DeVillier. All rights reserved.
+-  SPDX-License-Identifier: BSD-2-Clause-Patent
+-
+-**/
+-
+-#ifndef _SD_MMC_PCI_DC_DXE_H_
+-#define _SD_MMC_PCI_DC_DXE_H_
+-
+-#include <Uefi.h>
+-#include <Protocol/PciIo.h>
+-#include <Protocol/BlockIo.h>
+-#include <Protocol/DevicePath.h>
+-#include <Protocol/DiskInfo.h>
+-#include <Library/UefiDriverEntryPoint.h>
+-#include <Library/UefiBootServicesTableLib.h>
+-#include <Library/UefiLib.h>
+-#include <Library/BaseLib.h>
+-#include <Library/BaseMemoryLib.h>
+-#include <Library/MemoryAllocationLib.h>
+-#include <Library/DebugLib.h>
+-#include <Library/DevicePathLib.h>
+-#include <IndustryStandard/Pci.h>
+-#include <IndustryStandard/Emmc.h>
+-#include <IndustryStandard/Sd.h>
+-
+-extern EFI_DRIVER_BINDING_PROTOCOL   gSdMmcPciGliDriverBinding;
+-
+-//
+-// SDHCI Register Definitions
+-//
+-
+-#define SDHCI_BLOCK_SIZE            0x04
+-#define  SDHCI_MAKE_BLKSZ(dma, blksz) (((dma & 0x7) << 12) | (blksz & 0xFFF))
+-
+-#define SDHCI_BLOCK_COUNT           0x06
+-
+-#define SDHCI_ARGUMENT              0x08
+-
+-#define SDHCI_TRANSFER_MODE         0x0C
+-#define  SDHCI_TRNS_DMA             0x01
+-#define  SDHCI_TRNS_BLK_CNT_EN      0x02
+-#define  SDHCI_TRNS_ACMD12          0x04
+-#define  SDHCI_TRNS_READ            0x10
+-#define  SDHCI_TRNS_MULTI           0x20
+-
+-#define SDHCI_COMMAND               0x0E
+-#define  SDHCI_CMD_RESP_MASK        0x03
+-#define  SDHCI_CMD_CRC              0x08
+-#define  SDHCI_CMD_INDEX            0x10
+-#define  SDHCI_CMD_DATA             0x20
+-
+-#define  SDHCI_CMD_RESP_NONE        0x00
+-#define  SDHCI_CMD_RESP_LONG        0x01
+-#define  SDHCI_CMD_RESP_SHORT       0x02
+-#define  SDHCI_CMD_RESP_SHORT_BUSY  0x03
+-
+-#define SDHCI_MAKE_CMD(c, f) (((c & 0xff) << 8) | (f & 0xff))
+-#define SDHCI_GET_CMD(c) ((c>>8) & 0x3f)
+-
+-#define SDHCI_RESPONSE              0x10
+-
+-#define SDHCI_PRESENT_STATE         0x24
+-#define  SDHCI_CMD_INHIBIT          0x00000001
+-#define  SDHCI_DATA_INHIBIT         0x00000002
+-#define  SDHCI_CARD_PRESENT         0x00010000
+-
+-#define SDHCI_HOST_CONTROL          0x28
+-#define  SDHCI_CTRL_4BITBUS         0x02
+-#define  SDHCI_CTRL_HISPD           0x04
+-#define  SDHCI_CTRL_DMA_MASK        0x18
+-#define   SDHCI_CTRL_ADMA32         0x10
+-#define  SDHCI_CTRL_8BITBUS         0x20
+-
+-#define SDHCI_POWER_CONTROL         0x29
+-#define  SDHCI_POWER_ON             0x01
+-#define  SDHCI_POWER_180            0x0A
+-#define  SDHCI_POWER_300            0x0C
+-#define  SDHCI_POWER_330            0x0E
+-
+-#define SDHCI_CLOCK_CONTROL         0x2C
+-#define  SDHCI_DIVIDER_SHIFT        8
+-#define  SDHCI_DIV_MASK             0xFF
+-#define  SDHCI_CLOCK_CARD_EN        0x0004
+-#define  SDHCI_CLOCK_INT_STABLE     0x0002
+-#define  SDHCI_CLOCK_INT_EN         0x0001
+-
+-#define SDHCI_TIMEOUT_CONTROL       0x2E
+-
+-#define SDHCI_SOFTWARE_RESET        0x2F
+-#define  SDHCI_RESET_ALL            0x01
+-#define  SDHCI_RESET_CMD            0x02
+-#define  SDHCI_RESET_DATA           0x04
+-
+-#define SDHCI_INT_STATUS            0x30
+-#define SDHCI_INT_ENABLE            0x34
+-#define SDHCI_SIGNAL_ENABLE         0x38
+-#define  SDHCI_INT_RESPONSE         0x00000001
+-#define  SDHCI_INT_DATA_END         0x00000002
+-#define  SDHCI_INT_DMA_END          0x00000008
+-#define  SDHCI_INT_DATA_AVAIL       0x00000020
+-#define  SDHCI_INT_ERROR            0x00008000
+-#define  SDHCI_INT_TIMEOUT          0x00010000
+-#define  SDHCI_INT_CRC              0x00020000
+-#define  SDHCI_INT_END_BIT          0x00040000
+-#define  SDHCI_INT_INDEX            0x00080000
+-#define  SDHCI_INT_DATA_TIMEOUT     0x00100000
+-#define  SDHCI_INT_DATA_CRC         0x00200000
+-#define  SDHCI_INT_DATA_END_BIT     0x00400000
+-#define  SDHCI_INT_ADMA_ERROR       0x02000000
+-
+-#define  SDHCI_INT_CMD_MASK         (SDHCI_INT_RESPONSE | SDHCI_INT_TIMEOUT | \
+-                                     SDHCI_INT_CRC | SDHCI_INT_END_BIT | SDHCI_INT_INDEX)
+-#define  SDHCI_INT_DATA_MASK        (SDHCI_INT_DATA_END | SDHCI_INT_DMA_END | \
+-                                     SDHCI_INT_DATA_AVAIL | \
+-                                     SDHCI_INT_DATA_TIMEOUT | SDHCI_INT_DATA_CRC | \
+-                                     SDHCI_INT_DATA_END_BIT | SDHCI_INT_ADMA_ERROR)
+-#define SDHCI_INT_ALL_MASK          ((UINT32)-1)
+-
+-#define SDHCI_HOST_CONTROL2         0x3E
+-#define  SDHCI_CTRL_UHS_MASK        0x0007
+-#define   SDHCI_CTRL_UHS_SDR25      0x0001
+-#define   SDHCI_CTRL_UHS_SDR50      0x0002
+-#define   SDHCI_CTRL_UHS_SDR104     0x0003
+-#define   SDHCI_CTRL_HS400          0x0005
+-#define  SDHCI_CTRL_180V_SIGNALING_ENABLE  0x0008
+-#define  SDHCI_CTRL_DRV_TYPE_SHIFT  4
+-#define  SDHCI_CTRL_DRV_TYPE_MASK   0x0030
+-#define   SDHCI_CTRL_DRV_TYPE_A     0x0010
+-#define  SDHCI_CTRL_EXEC_TUNING     0x0040
+-#define  SDHCI_CTRL_TUNED_CLK       0x0080
+-
+-#define SDHCI_CAPABILITIES          0x40
+-#define  SDHCI_CLOCK_BASE_MASK      0x00003F00
+-#define  SDHCI_CLOCK_V3_BASE_MASK   0x0000FF00
+-#define  SDHCI_CLOCK_BASE_SHIFT     8
+-#define  SDHCI_CAN_DO_ADMA2         0x00080000
+-#define  SDHCI_SLOT_TYPE_MASK       0xC0000000  // bits 30:31
+-#define  SDHCI_SLOT_TYPE_SHIFT      30
+-
+-#define SDHCI_CAPABILITIES_1        0x44
+-#define SDHCI_SUPPORT_SDR50         0x00000001
+-#define SDHCI_SUPPORT_SDR104        0x00000002
+-#define SDHCI_SUPPORT_DDR50         0x00000004
+-#define SDHCI_SUPPORT_HS400         0x80000000
+-
+-#define SDHCI_ADMA_ERROR            0x54
+-
+-#define SDHCI_ADMA_ADDRESS          0x58
+-#define SDHCI_ADMA_ADDRESS_HI       0x5C
+-
+-//
+-// ADMA descriptor attributes (from Depthcharge)
+-//
+-#define SDHCI_ADMA_VALID            0x01
+-#define SDHCI_ADMA_END              0x02
+-#define SDHCI_ACT_TRAN              (2 << 4)
+-#define SDHCI_MAX_PER_DESCRIPTOR    0x10000  // 64KB max per descriptor
+-
+-#define SDHCI_HOST_VERSION          0xFE
+-
+-//
+-// Genesys Logic Vendor Registers (GL9750/GL9755/GL9763E)
+-//
+-
+-// Common GL vendor config control (GL9750/GL9755)
+-#define GLI_CFG                     0x800  // Vendor config lock/unlock
+-#define  GLI_CFG_EN                 0x00000001  // Bit 0: Enable vendor config writes
+-
+-// GL9750 vendor config registers
+-#define GL9750_CFG2                    0x848  // Vendor config register 2 (ASPM/power management)
+-#define  GL9750_CFG2_L0S_SUPPORT       0x00000040  // Bit 6: L0s ASPM support
+-#define  GL9750_CFG2_L1DLY_MASK        0x1FF80000  // Bits [28:19]: L1 entry delay
+-#define  GL9750_CFG2_L1DLY_SHIFT       19
+-#define  GL9750_CFG2_L1DLY_84US        0x54  // L1 delay value for 84 units
+-
+-// GL9755 vendor config registers
+-#define GL9755_CFG2             0x48   // CFG2 at different offset than GL9750
+-#define  GL9755_CFG2_L1_LAT_MASK  0x00007038  // Bits [14:12] and [5:3]: L1 exit latency
+-#define  GL9755_CFG2_L1_LAT_64US  0x00006030  // 64us: (6 << 12) | (6 << 3)
+-#define  GL9755_CFG2_L0S_SUPPORT  0x00000040  // Bit 6: L0s support
+-
+-#define GL9755_PECONF           0x44   // PECONF register for DMA configuration
+-#define  GL9755_PECONF_LFCLK_MASK  0x00007000  // Bits [14:12]: LFCLK
+-#define  GL9755_PECONF_DMACLK      0x20000000  // Bit 29: DMACLK
+-
+-#define GL9755_LTR              0x5C   // LTR (Latency Tolerance Reporting)
+-#define  GL9755_LTR_SNOOP_VALUE    0x00000025     // Snoop latency value
+-#define  GL9755_LTR_SNOOP_SCALE    0x00000C00     // Snoop scale (bits [11:10])
+-#define  GL9755_LTR_NO_SNOOP_VALUE 0x00250000     // No-snoop latency value (bits [23:16])
+-#define  GL9755_LTR_NO_SNOOP_SCALE 0x0C000000     // No-snoop scale (bits [27:26])
+-
+-#define GL9755_SERDES           0x70   // SerDes register for short circuit protection
+-#define  GL9755_SERDES_SCP_DIS     0x00080000  // Bit 19: SCP disable (clear to enable)
+-
+-// GL9750 PLL/SSC registers for clock programming (MMIO)
+-#define GL9750_PLL              0x864
+-#define  GL9750_PLL_LDIV        0x000003FF  // Bits [9:0]: PLL loop divider
+-#define  GL9750_PLL_PDIV        0x00007000  // Bits [14:12]: PLL P divider
+-#define  GL9750_PLL_DIR         0x00008000  // Bit 15: PLL direction
+-#define  GL9750_PLLSSC_STEP     0x1F000000  // Bits [28:24]: SSC step
+-#define  GL9750_PLLSSC_EN       0x80000000  // Bit 31: SSC enable
+-
+-#define GL9750_PLLSSC           0x86C
+-#define  GL9750_PLLSSC_PPM      0xFFFF0000  // Bits [31:16]: SSC PPM
+-
+-#define GL9750_MISC             0x878
+-#define  GL9750_MISC_SSC_OFF    0x04000000  // Bit 26: SSC off
+-
+-// GL9755 PLL/SSC registers for clock programming (PCI config space)
+-#define GL9755_PLL              0x64
+-#define  GL9755_PLL_LDIV        0x000003FF  // Bits [9:0]: PLL loop divider
+-#define  GL9755_PLL_PDIV        0x00007000  // Bits [14:12]: PLL P divider
+-#define  GL9755_PLL_DIR         0x00008000  // Bit 15: PLL direction
+-#define  GL9755_PLLSSC_STEP     0x1F000000  // Bits [28:24]: SSC step
+-#define  GL9755_PLLSSC_EN       0x80000000  // Bit 31: SSC enable
+-
+-#define GL9755_PLLSSC           0x68
+-#define  GL9755_PLLSSC_PPM      0x0000FFFF  // Bits [15:0]: SSC PPM
+-#define  GL9755_PLLSSC_RTL      0x01000000  // Bit 24: RTL
+-#define  GL9755_PLLSSC_TRANS_PASS 0x08000000  // Bit 27: Trans pass
+-#define  GL9755_PLLSSC_RECV     0x30000000  // Bits [29:28]: Receive
+-#define  GL9755_PLLSSC_TRAN     0xC0000000  // Bits [31:30]: Transmit
+-
+-#define GL9755_MISC             0x78
+-#define  GL9755_MISC_SSC_OFF    0x04000000  // Bit 26: SSC off
+-
+-// GL9763E eMMC Control register for Enhanced Strobe
+-#define GL9763E_SDHC_EMMC_CTRL      0x52C
+-#define  GL9763E_ENHANCED_STROBE    0x00000100  // Bit 8
+-
+-//
+-// PCI Configuration Space Registers (Common)
+-//
+-#define PCI_LINK_CONTROL_OFFSET     0x50  // PCI Link Control register
+-#define  PCI_ASPM_L0S_L1_MASK       0x0C  // Bits [3:2]: ASPM L0s and L1 support
+-
+-//
+-// MMC Command Definitions
+-//
+-
+-#define MMC_CMD_GO_IDLE_STATE       0
+-#define MMC_CMD_SEND_OP_COND        1
+-#define MMC_CMD_ALL_SEND_CID        2
+-#define MMC_CMD_SET_RELATIVE_ADDR   3
+-#define MMC_CMD_SWITCH              6
+-#define MMC_CMD_SELECT_CARD         7
+-#define MMC_CMD_SEND_EXT_CSD        8
+-#define MMC_CMD_SEND_STATUS         13
+-#define MMC_CMD_SET_BLOCKLEN        16
+-#define MMC_CMD_READ_SINGLE_BLOCK   17
+-#define MMC_CMD_READ_MULTIPLE_BLOCK 18
+-#define MMC_CMD_WRITE_SINGLE_BLOCK  24
+-#define MMC_CMD_WRITE_MULTIPLE_BLOCK 25
+-
+-//
+-// SD Command Definitions
+-//
+-#define SD_CMD_SEND_IF_COND         8   // CMD8
+-#define SD_CMD_SEND_CSD             9   // CMD9
+-#define SD_VOLTAGE_SWITCH           11  // CMD11 (UHS-I voltage switch)
+-#define SD_CMD_APP_CMD              55  // CMD55 (precedes ACMD)
+-
+-// SD Application Commands (preceded by CMD55)
+-#define SD_ACMD_SET_BUS_WIDTH       6   // ACMD6
+-#define SD_ACMD_SEND_OP_COND        41  // ACMD41
+-
+-// SD CMD8 argument
+-#define SD_CMD8_VHS_27_36           0x00000100  // 2.7-3.6V
+-#define SD_CMD8_CHECK_PATTERN       0x000000AA
+-
+-// SD ACMD41 argument
+-#define SD_OCR_VDD_32_33            0x00200000
+-#define SD_OCR_HCS                  0x40000000  // High Capacity Support
+-#define SD_OCR_S18R                 0x01000000  // 1.8V switching request
+-
+-// OCR (Operating Conditions Register) bits
+-#define OCR_BUSY                    0x80000000
+-#define OCR_HCS                     0x40000000  // High Capacity Support
+-
+-// EXT_CSD fields (from Depthcharge)
+-#define EXT_CSD_BUS_WIDTH           183
+-#define EXT_CSD_STROBE_SUPPORT      184  // Enhanced Strobe support
+-#define EXT_CSD_HS_TIMING           185
+-#define EXT_CSD_CARD_TYPE           196
+-#define EXT_CSD_REV                 192
+-#define EXT_CSD_SEC_CNT             212
+-#define EXT_CSD_SIZE                512
+-
+-// EXT_CSD BUS_WIDTH values
+-#define EXT_CSD_BUS_WIDTH_8         2
+-
+-// EXT_CSD HS_TIMING values
+-#define EXT_CSD_TIMING_HS           1
+-#define EXT_CSD_TIMING_HS200        2
+-#define EXT_CSD_TIMING_HS400        3
+-
+-// EXT_CSD BUS_WIDTH DDR values
+-#define EXT_CSD_DDR_BUS_WIDTH_8     6
+-
+-// EXT_CSD BUS_WIDTH Enhanced Strobe bit (OR with DDR width)
+-#define EXT_CSD_BUS_WIDTH_STROBE    0x80
+-
+-// EXT_CSD CARD_TYPE bits
+-#define EXT_CSD_CARD_TYPE_HS200_1_8V 0x10
+-#define EXT_CSD_CARD_TYPE_HS400_1_8V 0x40
+-
+-// MMC_SWITCH mode
+-#define MMC_SWITCH_MODE_WRITE_BYTE  0x03
+-
+-// Response types
+-#define MMC_RSP_PRESENT (1 << 0)
+-#define MMC_RSP_136     (1 << 1)
+-#define MMC_RSP_CRC     (1 << 2)
+-#define MMC_RSP_BUSY    (1 << 3)
+-#define MMC_RSP_OPCODE  (1 << 4)
+-
+-#define MMC_RSP_NONE    (0)
+-#define MMC_RSP_R1      (MMC_RSP_PRESENT|MMC_RSP_CRC|MMC_RSP_OPCODE)
+-#define MMC_RSP_R1B     (MMC_RSP_PRESENT|MMC_RSP_CRC|MMC_RSP_OPCODE|MMC_RSP_BUSY)
+-#define MMC_RSP_R2      (MMC_RSP_PRESENT|MMC_RSP_136|MMC_RSP_CRC)
+-#define MMC_RSP_R3      (MMC_RSP_PRESENT)
+-#define MMC_RSP_R6      (MMC_RSP_PRESENT|MMC_RSP_CRC|MMC_RSP_OPCODE)  // SD: Published RCA
+-#define MMC_RSP_R7      (MMC_RSP_PRESENT|MMC_RSP_CRC|MMC_RSP_OPCODE)  // SD: Card interface condition
+-
+-//
+-// EDK2 Device Context
+-//
+-
+-//
+-// ADMA descriptor structures (from Depthcharge)
+-//
+-#pragma pack(1)
+-typedef struct {
+-  UINT16  Attributes;
+-  UINT16  Length;
+-  UINT32  Address;
+-} SDHCI_ADMA_DESC;
+-
+-typedef struct {
+-  UINT16  Attributes;
+-  UINT16  Length;
+-  UINT32  Address;
+-  UINT32  AddressHi;
+-} SDHCI_ADMA64_DESC;
+-#pragma pack()
+-
+-#define SD_MMC_CB_SIGNATURE  SIGNATURE_32 ('S', 'D', 'D', 'C')
+-
+-typedef struct {
+-  UINT32                      Signature;
+-  EFI_HANDLE                  ControllerHandle;
+-  EFI_HANDLE                  ChildHandle;
+-  EFI_PCI_IO_PROTOCOL         *PciIo;
+-  EFI_DEVICE_PATH_PROTOCOL    *DevicePath;
+-  EFI_BLOCK_IO_PROTOCOL       BlockIo;
+-  EFI_BLOCK_IO_MEDIA          BlockIoMedia;
+-  EFI_DISK_INFO_PROTOCOL      DiskInfo;
+-
+-  // SDHCI controller info
+-  VOID                        *MmioBase;
+-  UINT32                      Capabilities;
+-  UINT32                      Version;
+-  UINT32                      ClockBase;
+-  UINT32                      CurrentClock;
+-  BOOLEAN                     Initialized;
+-
+-  // eMMC/SD device info
+-  UINT32                      RelativeCardAddress;
+-  UINT32                      BlockSize;
+-  UINT64                      TotalBlocks;
+-  BOOLEAN                     HighCapacity;  // Block addressing vs byte addressing
+-
+-  // Card Identification Data (structured, for DiskInfo)
+-  union {
+-    EMMC_CID                  EmmcCid;
+-    SD_CID                    SdCid;
+-  } Cid;
+-
+-  // Vendor-specific flags
+-  BOOLEAN                     IsGL9763E;  // Genesys Logic GL9763E eMMC controller
+-  BOOLEAN                     IsGL9750;   // Genesys Logic GL9750 SD controller
+-  BOOLEAN                     IsGL9755;   // Genesys Logic GL9755 SD controller
+-  BOOLEAN                     IsEMMC;     // TRUE for eMMC, FALSE for SD card
+-
+-  // Media change detection for removable media
+-  EFI_EVENT                   MediaChangeEvent;  // Timer for polling
+-
+-  // ADMA support
+-  SDHCI_ADMA_DESC             *AdmaDescs;
+-  SDHCI_ADMA64_DESC           *Adma64Descs;
+-  UINT32                      AdmaDescCount;
+-  BOOLEAN                     UseDma64;
+-} SD_MMC_CB_DEVICE;
+-
+-#define SD_MMC_CB_DEVICE_FROM_BLOCK_IO(a) \
+-  CR(a, SD_MMC_CB_DEVICE, BlockIo, SD_MMC_CB_SIGNATURE)
+-
+-#define SD_MMC_CB_DEVICE_FROM_DISK_INFO(a) \
+-  CR(a, SD_MMC_CB_DEVICE, DiskInfo, SD_MMC_CB_SIGNATURE)
+-
+-//
+-// Driver Binding Protocol
+-//
+-
+-extern EFI_DRIVER_BINDING_PROTOCOL  gSdMmcPciGliDriverBinding;
+-
+-//
+-// Function Prototypes
+-//
+-
+-// From SdMmcPciGliDxe.c
+-EFI_STATUS
+-EFIAPI
+-SdMmcPciGliDriverBindingSupported (
+-  IN EFI_DRIVER_BINDING_PROTOCOL  *This,
+-  IN EFI_HANDLE                   Controller,
+-  IN EFI_DEVICE_PATH_PROTOCOL     *RemainingDevicePath
+-  );
+-
+-EFI_STATUS
+-EFIAPI
+-SdMmcPciGliDriverBindingStart (
+-  IN EFI_DRIVER_BINDING_PROTOCOL  *This,
+-  IN EFI_HANDLE                   Controller,
+-  IN EFI_DEVICE_PATH_PROTOCOL     *RemainingDevicePath
+-  );
+-
+-EFI_STATUS
+-EFIAPI
+-SdMmcPciGliDriverBindingStop (
+-  IN  EFI_DRIVER_BINDING_PROTOCOL  *This,
+-  IN  EFI_HANDLE                   Controller,
+-  IN  UINTN                        NumberOfChildren,
+-  IN  EFI_HANDLE                   *ChildHandleBuffer
+-  );
+-
+-// From SdMmcPciGliSdhci.c
+-EFI_STATUS
+-SdhciReset (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN UINT8             Mask
+-  );
+-
+-EFI_STATUS
+-SdhciSetPower (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN UINT8             PowerMode
+-  );
+-
+-EFI_STATUS
+-SdhciSetClock (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN UINT32            Clock
+-  );
+-
+-EFI_STATUS
+-SdhciSendCommand (
+-  IN     SD_MMC_CB_DEVICE  *Device,
+-  IN     UINT32            Cmd,
+-  IN     UINT32            Arg,
+-  IN     UINT32            ResponseType,
+-  OUT    UINT32            *Response,
+-  IN     VOID              *DataBuffer    OPTIONAL,
+-  IN     UINT32            BlockSize      OPTIONAL,
+-  IN     UINT32            BlockCount     OPTIONAL,
+-  IN     BOOLEAN           IsRead         OPTIONAL
+-  );
+-
+-EFI_STATUS
+-SdhciInit (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  );
+-
+-EFI_STATUS
+-SdhciSetupAdma (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN VOID              *DataBuffer,
+-  IN UINT32            TotalBytes,
+-  IN BOOLEAN           IsRead
+-  );
+-
+-EFI_STATUS
+-SdhciCompleteAdma (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN UINT32            TimeoutMs
+-  );
+-
+-// From SdMmcPciGliMmc.c
+-EFI_STATUS
+-MmcStartup (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  );
+-
+-// From SdMmcPciGliSd.c
+-EFI_STATUS
+-SdStartup (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  );
+-
+-// From SdMmcPciGliGli.c
+-EFI_STATUS
+-Gl975xInit (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  );
+-
+-VOID
+-Gl9763eSetEnhancedStrobe (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN BOOLEAN           Enable
+-  );
+-
+-VOID
+-Gl9750DisableSscPll (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  );
+-
+-VOID
+-Gl9750SetSscPll205Mhz (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  );
+-
+-VOID
+-Gl9750SetSscPll100Mhz (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  );
+-
+-VOID
+-Gl9750SetSscPll50Mhz (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  );
+-
+-VOID
+-Gl9750SetupTuning (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  );
+-
+-VOID
+-Gl9755DisableSscPll (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  );
+-
+-VOID
+-Gl9755SetSscPll205Mhz (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  );
+-
+-VOID
+-Gl9755SetSscPll100Mhz (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  );
+-
+-VOID
+-Gl9755SetSscPll50Mhz (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  );
+-
+-// From SdMmcPciGliBlockIo.c
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcBlockIoReset (
+-  IN EFI_BLOCK_IO_PROTOCOL  *This,
+-  IN BOOLEAN                ExtendedVerification
+-  );
+-
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcBlockIoReadBlocks (
+-  IN  EFI_BLOCK_IO_PROTOCOL  *This,
+-  IN  UINT32                 MediaId,
+-  IN  EFI_LBA                Lba,
+-  IN  UINTN                  BufferSize,
+-  OUT VOID                   *Buffer
+-  );
+-
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcBlockIoWriteBlocks (
+-  IN EFI_BLOCK_IO_PROTOCOL  *This,
+-  IN UINT32                 MediaId,
+-  IN EFI_LBA                Lba,
+-  IN UINTN                  BufferSize,
+-  IN VOID                   *Buffer
+-  );
+-
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcBlockIoFlushBlocks (
+-  IN EFI_BLOCK_IO_PROTOCOL  *This
+-  );
+-
+-// Helper macros for register access
+-#define SdhciReadl(Device, Reg) \
+-  *(volatile UINT32 *)((UINTN)(Device)->MmioBase + (Reg))
+-
+-#define SdhciWritel(Device, Reg, Val) \
+-  *(volatile UINT32 *)((UINTN)(Device)->MmioBase + (Reg)) = (Val)
+-
+-#define SdhciReadw(Device, Reg) \
+-  *(volatile UINT16 *)((UINTN)(Device)->MmioBase + (Reg))
+-
+-#define SdhciWritew(Device, Reg, Val) \
+-  *(volatile UINT16 *)((UINTN)(Device)->MmioBase + (Reg)) = (Val)
+-
+-#define SdhciReadb(Device, Reg) \
+-  *(volatile UINT8 *)((UINTN)(Device)->MmioBase + (Reg))
+-
+-#define SdhciWriteb(Device, Reg, Val) \
+-  *(volatile UINT8 *)((UINTN)(Device)->MmioBase + (Reg)) = (Val)
+-
+-//
+-// DiskInfo Protocol functions
+-//
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcDiskInfoInquiry (
+-  IN     EFI_DISK_INFO_PROTOCOL  *This,
+-  IN OUT VOID                    *InquiryData,
+-  IN OUT UINT32                  *InquiryDataSize
+-  );
+-
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcDiskInfoIdentify (
+-  IN     EFI_DISK_INFO_PROTOCOL  *This,
+-  IN OUT VOID                    *IdentifyData,
+-  IN OUT UINT32                  *IdentifyDataSize
+-  );
+-
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcDiskInfoSenseData (
+-  IN     EFI_DISK_INFO_PROTOCOL  *This,
+-  IN OUT VOID                    *SenseData,
+-  IN OUT UINT32                  *SenseDataSize,
+-  OUT    UINT8                   *SenseDataNumber
+-  );
+-
+-EFI_STATUS
+-EFIAPI
+-SdMmcDcDiskInfoWhichIde (
+-  IN  EFI_DISK_INFO_PROTOCOL  *This,
+-  OUT UINT32                  *IdeChannel,
+-  OUT UINT32                  *IdeDevice
+-  );
+-
+-#endif // _SD_MMC_PCI_DC_DXE_H_
+-
+diff --git a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.inf b/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.inf
+deleted file mode 100644
+index 118be47f32cddd206ce43d6b4763a25a1975f026..0000000000000000000000000000000000000000
+--- a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.inf
++++ /dev/null
+@@ -1,62 +0,0 @@
+-## @file
+-#  Genesys Logic SD/MMC PCI Host Controller Driver
+-#  Specialized SDHCI driver for GL9750/GL9755/GL9763E controllers
+-#
+-#  This driver implements Depthcharge's proven SDHCI/MMC stack combined with
+-#  coreboot's vendor-specific register programming for Genesys Logic controllers.
+-#
+-#  Supported controllers:
+-#  - GL9763E (0xe763) - eMMC with HS400-ES support
+-#  - GL9750 (0x9750) - SD card with UHS-I support
+-#  - GL9755 (0x9755) - SD card with UHS-I and LTR support
+-#
+-#  Returns EFI_UNSUPPORTED for non-Genesys Logic controllers to allow
+-#  SdMmcPciHcDxe to bind to them.
+-#
+-##
+-
+-[Defines]
+-  INF_VERSION                    = 0x00010005
+-  BASE_NAME                      = SdMmcPciGliDxe
+-  MODULE_UNI_FILE                = SdMmcPciGliDxe.uni
+-  FILE_GUID                      = 2b3c4d5e-6f70-8091-a2b3-c4d5e6f70809
+-  MODULE_TYPE                    = UEFI_DRIVER
+-  VERSION_STRING                 = 1.0
+-  ENTRY_POINT                    = InitializeSdMmcPciGliDxe
+-
+-[Sources]
+-  SdMmcPciGliDxe.h
+-  SdMmcPciGliDxe.c
+-  SdMmcPciGliSdhci.c
+-  SdMmcPciGliMmc.c
+-  SdMmcPciGliSd.c
+-  SdMmcPciGli.c
+-  SdMmcPciGliBlockIo.c
+-  SdMmcPciGliDiskInfo.c
+-
+-[Packages]
+-  MdePkg/MdePkg.dec
+-
+-[LibraryClasses]
+-  UefiDriverEntryPoint
+-  UefiBootServicesTableLib
+-  UefiLib
+-  BaseLib
+-  BaseMemoryLib
+-  MemoryAllocationLib
+-  DebugLib
+-  DevicePathLib
+-
+-[Protocols]
+-  gEfiPciIoProtocolGuid                       ## TO_START
+-  gEfiBlockIoProtocolGuid                     ## BY_START
+-  gEfiDevicePathProtocolGuid                  ## BY_START
+-  gEfiDiskInfoProtocolGuid                    ## BY_START
+-  gEfiDriverBindingProtocolGuid               ## PRODUCES
+-
+-[Guids]
+-  gEfiDiskInfoSdMmcInterfaceGuid              ## SOMETIMES_CONSUMES
+-
+-[UserExtensions.TianoCore."ExtraFiles"]
+-  SdMmcPciGliDxeExtra.uni
+-
+diff --git a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.uni b/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.uni
+deleted file mode 100644
+index 92a5787f8f7f7a5999d231a97bd8a1a822cac25a..0000000000000000000000000000000000000000
+--- a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.uni
++++ /dev/null
+@@ -1,12 +0,0 @@
+-// /** @file
+-// Depthcharge-based SD/MMC PCI Host Controller Driver
+-//
+-// Copyright (c) 2025, Matt DeVillier. All rights reserved.
+-// SPDX-License-Identifier: BSD-2-Clause-Patent
+-//
+-// **/
+-
+-#string STR_MODULE_ABSTRACT             #language en-US "Depthcharge-based GL97xx SD/MMC PCI Host Controller Driver"
+-
+-#string STR_MODULE_DESCRIPTION          #language en-US "Complete port of Depthcharge's SDHCI driver for GL97xx support"
+-
+diff --git a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxeExtra.uni b/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxeExtra.uni
+deleted file mode 100644
+index 05f62a6c21f104f2a1eda1d826d0f3827c0daf49..0000000000000000000000000000000000000000
+--- a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxeExtra.uni
++++ /dev/null
+@@ -1,10 +0,0 @@
+-// /** @file
+-// Depthcharge-based SD/MMC PCI Host Controller Driver - Extra strings
+-//
+-// Copyright (c) 2025, Matt DeVillier. All rights reserved.
+-// SPDX-License-Identifier: BSD-2-Clause-Patent
+-//
+-// **/
+-
+-#string STR_PROPERTIES_MODULE_NAME     #language en-US "Depthcharge GL97xx SD/MMC PCI Host Controller Driver"
+-
+diff --git a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliMmc.c b/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliMmc.c
+deleted file mode 100644
+index 4d9cd3b6435a14f8461e44c14c665b7733b8f69a..0000000000000000000000000000000000000000
+--- a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliMmc.c
++++ /dev/null
+@@ -1,398 +0,0 @@
+-/** @file
+-  MMC/eMMC Protocol Functions (ported from Depthcharge mmc.c)
+-
+-  Copyright (c) 2025, Matt DeVillier. All rights reserved.
+-  SPDX-License-Identifier: BSD-2-Clause-Patent
+-
+-**/
+-
+-#include "SdMmcPciGliDxe.h"
+-
+-/**
+-  Initialize eMMC device and read parameters.
+-
+-  @param[in] Device  Device context
+-
+-  @retval EFI_SUCCESS  eMMC initialized successfully
+-  @retval other        Initialization failed
+-**/
+-EFI_STATUS
+-MmcStartup (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  EFI_STATUS  Status;
+-  UINT32      Response[4];
+-  UINT32      OcrValue;
+-  UINT32      Retry;
+-  UINT8       HostControl;
+-  UINT16      HostControl2;
+-  UINT8       *ExtCsd;
+-  UINT32      SecCount;
+-  UINT32      SwitchArg;
+-  BOOLEAN     SupportsHS400;
+-  BOOLEAN     SupportsHS200;
+-  BOOLEAN     SupportsStrobe;
+-  BOOLEAN     UseEnhancedStrobe;
+-  UINT8       BusWidthValue;
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: MmcStartup begin\n"));
+-
+-  //
+-  // SdhciInit already set up the controller (power, clock @400kHz, ADMA)
+-  // Like depthcharge, we just start sending commands to the card
+-  //
+-
+-  //
+-  // CMD0: GO_IDLE_STATE
+-  //
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Sending CMD0\n"));
+-  Status = SdhciSendCommand (Device, MMC_CMD_GO_IDLE_STATE, 0, MMC_RSP_NONE, NULL, NULL, 0, 0, FALSE);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD0 failed: %r\n", Status));
+-    return Status;
+-  }
+-
+-  // 10ms delay after CMD0 - eMMC needs time to exit idle state
+-  gBS->Stall (10000);
+-
+-  //
+-  // CMD1: SEND_OP_COND (with retry loop like Depthcharge)
+-  //
+-  OcrValue = 0x40FF8000; // High capacity, voltage range
+-  Retry = 100;
+-
+-  while (Retry > 0) {
+-    // DEBUG ((DEBUG_INFO, "SdMmcPciGli: Sending CMD1 (retry=%d)\n", Retry));
+-    Status = SdhciSendCommand (Device, MMC_CMD_SEND_OP_COND, OcrValue, MMC_RSP_R3, Response, NULL, 0, 0, FALSE);
+-
+-    if (!EFI_ERROR (Status)) {
+-      // DEBUG ((DEBUG_INFO, "SdMmcPciGli: CMD1 response = 0x%08x\n", Response[0]));
+-
+-      //
+-      // Check if busy bit is clear (card ready)
+-      //
+-      if (Response[0] & OCR_BUSY) {
+-        //
+-        // Check for High Capacity Support (block addressing)
+-        //
+-        Device->HighCapacity = ((Response[0] & OCR_HCS) == OCR_HCS);
+-        DEBUG ((DEBUG_INFO, "SdMmcPciGli: eMMC ready! OCR=0x%08x, HighCapacity=%d\n",
+-                Response[0], Device->HighCapacity));
+-        break;
+-      }
+-    }
+-
+-    gBS->Stall (10000); // 10ms delay between retries
+-    Retry--;
+-  }
+-
+-  if (Retry == 0) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD1 never succeeded\n"));
+-    return EFI_DEVICE_ERROR;
+-  }
+-
+-  //
+-  // CMD2: ALL_SEND_CID
+-  //
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Sending CMD2\n"));
+-  Status = SdhciSendCommand (Device, MMC_CMD_ALL_SEND_CID, 0, MMC_RSP_R2, Response, NULL, 0, 0, FALSE);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD2 failed: %r\n", Status));
+-    return Status;
+-  }
+-
+-  // Save CID for DiskInfo protocol
+-  // Per SD Host Controller Simplified Spec 3.0 Table 2-12, CID is in Response[0-3]
+-  // but we need to skip the first byte and copy 15 bytes for EMMC_CID structure
+-  CopyMem (((UINT8 *)&Device->Cid.EmmcCid) + 1, &Response[0], sizeof (EMMC_CID) - 1);
+-
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: CID = %08x %08x %08x %08x\n",
+-          Response[0], Response[1], Response[2], Response[3]));
+-
+-  //
+-  // CMD3: SET_RELATIVE_ADDR
+-  //
+-  Device->RelativeCardAddress = 1; // Use RCA = 1
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Sending CMD3\n"));
+-  Status = SdhciSendCommand (Device, MMC_CMD_SET_RELATIVE_ADDR,
+-                             Device->RelativeCardAddress << 16, MMC_RSP_R1, Response, NULL, 0, 0, FALSE);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD3 failed: %r\n", Status));
+-    return Status;
+-  }
+-
+-  //
+-  // CMD7: SELECT_CARD - Put the card in transfer state
+-  //
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Sending CMD7 (SELECT_CARD)\n"));
+-  Status = SdhciSendCommand (Device, MMC_CMD_SELECT_CARD,
+-                             Device->RelativeCardAddress << 16, MMC_RSP_R1, Response, NULL, 0, 0, FALSE);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD7 failed: %r\n", Status));
+-    return Status;
+-  }
+-
+-  //
+-  // CMD16: SET_BLOCKLEN to 512 bytes
+-  //
+-  Device->BlockSize = 512;
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Sending CMD16 (SET_BLOCKLEN to %d)\n", Device->BlockSize));
+-  Status = SdhciSendCommand (Device, MMC_CMD_SET_BLOCKLEN,
+-                             Device->BlockSize, MMC_RSP_R1, Response, NULL, 0, 0, FALSE);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD16 failed: %r\n", Status));
+-    return Status;
+-  }
+-
+-  //
+-  // CMD8: SEND_EXT_CSD to get extended CSD register
+-  //
+-  ExtCsd = AllocatePool (EXT_CSD_SIZE);
+-  if (ExtCsd == NULL) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to allocate EXT_CSD buffer\n"));
+-    return EFI_OUT_OF_RESOURCES;
+-  }
+-
+-  Status = SdhciSendCommand (Device, MMC_CMD_SEND_EXT_CSD, 0, MMC_RSP_R1, Response,
+-                             ExtCsd, EXT_CSD_SIZE, 1, TRUE);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD8 (SEND_EXT_CSD) failed: %r\n", Status));
+-    FreePool (ExtCsd);
+-    return Status;
+-  }
+-
+-  //
+-  // Get capacity from EXT_CSD
+-  //
+-  SecCount = *(UINT32 *)&ExtCsd[EXT_CSD_SEC_CNT];
+-  Device->TotalBlocks = SecCount;
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: EXT_CSD: REV=%d, CARD_TYPE=0x%02x, SEC_CNT=%d, STROBE=%d\n",
+-          ExtCsd[EXT_CSD_REV], ExtCsd[EXT_CSD_CARD_TYPE], SecCount, ExtCsd[EXT_CSD_STROBE_SUPPORT]));
+-
+-  //
+-  // Switch to best supported speed mode
+-  // Priority: HS400-ES > HS400 > HS200 > HS
+-  //
+-  SupportsHS400 = (ExtCsd[EXT_CSD_CARD_TYPE] & EXT_CSD_CARD_TYPE_HS400_1_8V) != 0;
+-  SupportsHS200 = (ExtCsd[EXT_CSD_CARD_TYPE] & EXT_CSD_CARD_TYPE_HS200_1_8V) != 0;
+-  SupportsStrobe = (ExtCsd[EXT_CSD_STROBE_SUPPORT] != 0);
+-
+-  if (SupportsHS400 || SupportsHS200) {
+-    //
+-    // Card supports HS200 - switch to it for maximum performance (200 MHz)
+-    //
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: Switching to HS200 mode (200 MHz)...\n"));
+-
+-
+-    //
+-    // HS200 sequence (matches depthcharge mmc_select_hs200):
+-    // 1. Switch card to 8-bit bus width
+-    // 2. Switch host to 8-bit
+-    // 3. Switch card to HS200 timing
+-    // 4. Switch host to HS200 timing
+-    //
+-
+-    // Step 1: Switch card to 8-bit bus width
+-    SwitchArg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) |
+-                (EXT_CSD_BUS_WIDTH << 16) |
+-                (EXT_CSD_BUS_WIDTH_8 << 8);
+-    Status = SdhciSendCommand (Device, MMC_CMD_SWITCH, SwitchArg, MMC_RSP_R1B, Response, NULL, 0, 0, FALSE);
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_WARN, "SdMmcPciGli: Failed to switch to 8-bit: %r\n", Status));
+-      goto FallbackToHS;
+-    }
+-
+-    // Step 2: Set host controller to 8-bit bus width (matches depthcharge mmc_set_bus_width)
+-    // Disable clock, set bus width, re-enable clock
+-    SdhciWritew (Device, SDHCI_CLOCK_CONTROL, 0);
+-
+-    HostControl = SdhciReadb (Device, SDHCI_HOST_CONTROL);
+-    HostControl |= SDHCI_CTRL_8BITBUS;
+-    SdhciWriteb (Device, SDHCI_HOST_CONTROL, HostControl);
+-
+-    Status = SdhciSetClock (Device, 400000);
+-    if (EFI_ERROR (Status)) {
+-      goto FallbackToHS;
+-    }
+-    DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Host set to 8-bit bus\n"));
+-
+-    // Step 3: Switch eMMC to HS200 timing
+-    SwitchArg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) |
+-                (EXT_CSD_HS_TIMING << 16) |
+-                (EXT_CSD_TIMING_HS200 << 8);
+-    Status = SdhciSendCommand (Device, MMC_CMD_SWITCH, SwitchArg, MMC_RSP_R1B, Response, NULL, 0, 0, FALSE);
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_WARN, "SdMmcPciGli: Failed to switch to HS200: %r\n", Status));
+-      goto FallbackToHS;
+-    }
+-
+-    // Step 4: Set host timing to HS200 and clock to 200 MHz (matches depthcharge mmc_set_timing)
+-    // Disable clock, configure HOST_CONTROL2, re-enable at 200MHz
+-    SdhciWritew (Device, SDHCI_CLOCK_CONTROL, 0);
+-
+-    HostControl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-    HostControl2 &= ~SDHCI_CTRL_UHS_MASK;
+-    HostControl2 &= ~SDHCI_CTRL_DRV_TYPE_MASK;
+-    HostControl2 |= SDHCI_CTRL_UHS_SDR104;  // HS200 uses SDR104 timing
+-    HostControl2 |= SDHCI_CTRL_DRV_TYPE_A;  // Driver strength Type A
+-    HostControl2 |= SDHCI_CTRL_180V_SIGNALING_ENABLE;  // Ensure 1.8V signaling
+-    SdhciWritew (Device, SDHCI_HOST_CONTROL2, HostControl2);
+-
+-    // Note: HISPD bit is NOT set for HS200 (only for MMC_HS with 3.3V VCCQ)
+-    // HS200 timing is controlled via UHS mode bits in HOST_CONTROL2
+-
+-    Status = SdhciSetClock (Device, 200000000);
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_WARN, "SdMmcPciGli: Failed to set 200 MHz clock: %r\n", Status));
+-      goto FallbackToHS;
+-    }
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: Switched to HS200 @ 200 MHz, 8-bit, 1.8V!\n"));
+-
+-    //
+-    // If card supports HS400, switch from HS200 to HS400 (or HS400-ES) for DDR performance
+-    // HS400 tuning sequence: HS200 → HS → HS400 (or HS400-ES if strobe supported)
+-    //
+-    if (SupportsHS400) {
+-      UseEnhancedStrobe = SupportsStrobe && Device->IsGL9763E;  // GL9763E supports ES
+-
+-      if (UseEnhancedStrobe) {
+-        DEBUG ((DEBUG_INFO, "SdMmcPciGli: Upgrading to HS400-ES (DDR 200 MHz + Enhanced Strobe)...\n"));
+-      } else {
+-        DEBUG ((DEBUG_INFO, "SdMmcPciGli: Upgrading to HS400 (DDR 200 MHz)...\n"));
+-      }
+-
+-      // Step 1: Switch card from HS200 to HS timing
+-      SwitchArg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) |
+-                  (EXT_CSD_HS_TIMING << 16) |
+-                  (EXT_CSD_TIMING_HS << 8);
+-      Status = SdhciSendCommand (Device, MMC_CMD_SWITCH, SwitchArg, MMC_RSP_R1B, Response, NULL, 0, 0, FALSE);
+-      if (EFI_ERROR (Status)) {
+-        DEBUG ((DEBUG_WARN, "SdMmcPciGli: Failed to switch to HS for HS400: %r\n", Status));
+-        goto HS200Complete;
+-      }
+-
+-      // Configure host for HS timing and 52 MHz (matches depthcharge mmc_set_timing)
+-      SdhciWritew (Device, SDHCI_CLOCK_CONTROL, 0);
+-
+-      HostControl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-      HostControl2 &= ~SDHCI_CTRL_UHS_MASK;
+-      HostControl2 |= SDHCI_CTRL_UHS_SDR25;  // HS timing uses SDR25
+-      SdhciWritew (Device, SDHCI_HOST_CONTROL2, HostControl2);
+-
+-      Status = SdhciSetClock (Device, 52000000);
+-      if (EFI_ERROR (Status)) {
+-        DEBUG ((DEBUG_WARN, "SdMmcPciGli: Failed to set 52 MHz clock: %r\n", Status));
+-        goto HS200Complete;
+-      }
+-      DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Host set to HS timing @ 52 MHz\n"));
+-
+-      // Send CMD13 to verify card is ready (matches depthcharge mmc_send_status)
+-      Status = SdhciSendCommand (Device, MMC_CMD_SEND_STATUS, Device->RelativeCardAddress << 16, MMC_RSP_R1, Response, NULL, 0, 0, FALSE);
+-      if (EFI_ERROR (Status)) {
+-        DEBUG ((DEBUG_WARN, "SdMmcPciGli: Status check failed after HS switch: %r\n", Status));
+-        goto HS200Complete;
+-      }
+-      DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Card status after HS switch = 0x%08x\n", Response[0]));
+-
+-      // Step 2: Switch card to 8-bit DDR bus width (with Enhanced Strobe if supported)
+-      BusWidthValue = EXT_CSD_DDR_BUS_WIDTH_8;
+-      if (UseEnhancedStrobe) {
+-        BusWidthValue |= EXT_CSD_BUS_WIDTH_STROBE;  // Enable Enhanced Strobe
+-      }
+-
+-      SwitchArg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) |
+-                  (EXT_CSD_BUS_WIDTH << 16) |
+-                  (BusWidthValue << 8);
+-      Status = SdhciSendCommand (Device, MMC_CMD_SWITCH, SwitchArg, MMC_RSP_R1B, Response, NULL, 0, 0, FALSE);
+-      if (EFI_ERROR (Status)) {
+-        DEBUG ((DEBUG_WARN, "SdMmcPciGli: Failed to switch to 8-bit DDR%s: %r\n",
+-                UseEnhancedStrobe ? "+Strobe" : "", Status));
+-        goto HS200Complete;
+-      }
+-
+-      // Configure host for 8-bit bus (matches depthcharge mmc_set_bus_width)
+-      // Note: Bus width already 8-bit from HS200, no change needed
+-
+-      // Step 3: Switch card to HS400 timing
+-      SwitchArg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) |
+-                  (EXT_CSD_HS_TIMING << 16) |
+-                  (EXT_CSD_TIMING_HS400 << 8);
+-      Status = SdhciSendCommand (Device, MMC_CMD_SWITCH, SwitchArg, MMC_RSP_R1B, Response, NULL, 0, 0, FALSE);
+-      if (EFI_ERROR (Status)) {
+-        DEBUG ((DEBUG_WARN, "SdMmcPciGli: Failed to switch to HS400: %r\n", Status));
+-        goto HS200Complete;
+-      }
+-
+-      // Step 4: Configure host for HS400 timing and 200 MHz (matches depthcharge mmc_set_timing)
+-      SdhciWritew (Device, SDHCI_CLOCK_CONTROL, 0);
+-
+-      HostControl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-      HostControl2 &= ~SDHCI_CTRL_UHS_MASK;
+-      HostControl2 &= ~SDHCI_CTRL_DRV_TYPE_MASK;
+-      HostControl2 |= SDHCI_CTRL_HS400;  // HS400 mode
+-      HostControl2 |= SDHCI_CTRL_DRV_TYPE_A;
+-      HostControl2 |= SDHCI_CTRL_180V_SIGNALING_ENABLE;
+-      SdhciWritew (Device, SDHCI_HOST_CONTROL2, HostControl2);
+-
+-      Status = SdhciSetClock (Device, 200000000);
+-      if (EFI_ERROR (Status)) {
+-        DEBUG ((DEBUG_WARN, "SdMmcPciGli: Failed to set 200 MHz for HS400: %r\n", Status));
+-        goto HS200Complete;
+-      }
+-
+-      // Step 5: Enable Enhanced Strobe in GL9763E register if using HS400-ES
+-      if (UseEnhancedStrobe && Device->IsGL9763E) {
+-        Gl9763eSetEnhancedStrobe (Device, TRUE);
+-      }
+-
+-      if (UseEnhancedStrobe) {
+-        DEBUG ((DEBUG_INFO, "SdMmcPciGli: Switched to HS400-ES @ 200 MHz DDR (400 MHz effective + Strobe), 8-bit, 1.8V!\n"));
+-      } else {
+-        DEBUG ((DEBUG_INFO, "SdMmcPiCb: Switched to HS400 @ 200 MHz DDR (400 MHz effective), 8-bit, 1.8V!\n"));
+-      }
+-    }
+-HS200Complete:
+-    ;  // Empty statement for label
+-  } else {
+-FallbackToHS:
+-    //
+-    // Fallback to HS mode (52 MHz)
+-    //
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: Switching to HS mode (52 MHz)...\n"));
+-
+-    SwitchArg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) |
+-                (EXT_CSD_HS_TIMING << 16) |
+-                (EXT_CSD_TIMING_HS << 8);
+-    Status = SdhciSendCommand (Device, MMC_CMD_SWITCH, SwitchArg, MMC_RSP_R1B, Response, NULL, 0, 0, FALSE);
+-    if (!EFI_ERROR (Status)) {
+-      // Switch bus width to 8-bit
+-      SwitchArg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) |
+-                  (EXT_CSD_BUS_WIDTH << 16) |
+-                  (EXT_CSD_BUS_WIDTH_8 << 8);
+-      Status = SdhciSendCommand (Device, MMC_CMD_SWITCH, SwitchArg, MMC_RSP_R1B, Response, NULL, 0, 0, FALSE);
+-      if (!EFI_ERROR (Status)) {
+-        HostControl = SdhciReadb (Device, SDHCI_HOST_CONTROL);
+-        HostControl |= SDHCI_CTRL_8BITBUS | SDHCI_CTRL_HISPD;
+-        SdhciWriteb (Device, SDHCI_HOST_CONTROL, HostControl);
+-      }
+-
+-      // Set clock to 52 MHz
+-      Status = SdhciSetClock (Device, 52000000);
+-      if (!EFI_ERROR (Status)) {
+-        DEBUG ((DEBUG_INFO, "SdMmcPciGli: Switched to HS mode @ 52 MHz, 8-bit!\n"));
+-      }
+-    }
+-  }
+-
+-  FreePool (ExtCsd);
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: eMMC initialization complete!\n"));
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: RCA = %d\n", Device->RelativeCardAddress));
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Block size = %d bytes\n", Device->BlockSize));
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Total blocks = %ld\n", Device->TotalBlocks));
+-
+-  return EFI_SUCCESS;
+-}
+-
+diff --git a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliSd.c b/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliSd.c
+deleted file mode 100644
+index 7a96f2cf40dad908421364233bec27abd342ef98..0000000000000000000000000000000000000000
+--- a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliSd.c
++++ /dev/null
+@@ -1,661 +0,0 @@
+-/** @file
+-  SD card initialization routines for Depthcharge-based SD/MMC driver.
+-
+-  Copyright (c) 2025, Matt DeVillier. All rights reserved.
+-  SPDX-License-Identifier: BSD-2-Clause-Patent
+-
+-**/
+-
+-#include "SdMmcPciGliDxe.h"
+-
+-/**
+-  Send SD application command (ACMD).
+-  This is a helper that sends CMD55 followed by the actual ACMD.
+-
+-  @param[in]  Device        Device context
+-  @param[in]  Acmd          Application command index
+-  @param[in]  Arg           Command argument
+-  @param[in]  ResponseType  Expected response type
+-  @param[out] Response      Response buffer
+-
+-  @retval EFI_SUCCESS       Command succeeded
+-  @retval Others            Command failed
+-**/
+-STATIC
+-EFI_STATUS
+-SdSendAppCmd (
+-  IN  SD_MMC_CB_DEVICE  *Device,
+-  IN  UINT32            Acmd,
+-  IN  UINT32            Arg,
+-  IN  UINT32            ResponseType,
+-  OUT UINT32            *Response
+-  )
+-{
+-  EFI_STATUS  Status;
+-  UINT32      Rca;
+-
+-  // First send CMD55 (APP_CMD) with RCA
+-  Rca = Device->RelativeCardAddress << 16;
+-  Status = SdhciSendCommand (Device, SD_CMD_APP_CMD, Rca, MMC_RSP_R1, Response, NULL, 0, 0, FALSE);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD55 failed: %r\n", Status));
+-    return Status;
+-  }
+-
+-  // Then send the actual application command
+-  Status = SdhciSendCommand (Device, Acmd, Arg, ResponseType, Response, NULL, 0, 0, FALSE);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: ACMD%d failed: %r\n", Acmd, Status));
+-    return Status;
+-  }
+-
+-  return EFI_SUCCESS;
+-}
+-
+-/**
+-  Initialize SD card.
+-
+-  Based on SD Physical Layer Simplified Specification and Depthcharge's sd.c
+-
+-  @param[in] Device  Device context
+-
+-  @retval EFI_SUCCESS           SD card initialized successfully
+-  @retval EFI_DEVICE_ERROR      SD card initialization failed
+-  @retval EFI_NOT_FOUND         No SD card present
+-**/
+-EFI_STATUS
+-SdStartup (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  EFI_STATUS  Status;
+-  UINT32      Response[4];
+-  UINT32      Ocr;
+-  UINT32      Retry;
+-  UINT16      HostControl2;
+-  UINT32      PresentState;
+-  UINT8       HostControl;
+-  UINT32      Arg;
+-  BOOLEAN     CardSupports1_8V;
+-  UINT32      Caps1;
+-  BOOLEAN     ControllerSupportsUHS;
+-  UINT32      DatTimeout;
+-  UINT32      DatLines;
+-  UINT8       CsdStructure;
+-  UINT32      ReadBlLen;
+-  UINT32      CSize;
+-  UINT32      CMult;
+-  UINT8       *SwitchStatus;
+-  UINT8       SupportedModes;
+-  UINT8       TargetMode;
+-  UINT32      TargetClock;
+-  UINT16      UhsMode;
+-  CONST CHAR8 *ModeName;
+-  UINT32      SwitchArg;
+-  BOOLEAN     TuningSuccess;
+-  UINT32      i;
+-  UINT32      Timeout;
+-  UINT32      IntStatus;
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: SdStartup begin\n"));
+-
+-  //
+-  // Check if card is present (for removable SD cards)
+-  //
+-  PresentState = SdhciReadl (Device, SDHCI_PRESENT_STATE);
+-  if (!(PresentState & SDHCI_CARD_PRESENT)) {
+-    DEBUG ((DEBUG_WARN, "SdMmcPciGli: No SD card present (PRESENT_STATE=0x%08x)\n", PresentState));
+-    return EFI_NOT_FOUND;
+-  }
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Card present detected\n"));
+-
+-  //
+-  // Clear any leftover timing modes from previous boot/hot-plug
+-  // This is critical for release builds where controller state might be inconsistent
+-  // IMPORTANT: Only clear timing/bus width bits, preserve DMA mode set by SdhciInit
+-  //
+-  HostControl = SdhciReadb (Device, SDHCI_HOST_CONTROL);
+-  HostControl &= ~(SDHCI_CTRL_HISPD | SDHCI_CTRL_4BITBUS | SDHCI_CTRL_8BITBUS);  // Clear timing modes
+-  SdhciWriteb (Device, SDHCI_HOST_CONTROL, HostControl);
+-
+-  // Clear HOST_CONTROL2 UHS mode bits (preserve 1.8V signaling if set)
+-  HostControl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-  HostControl2 &= ~0x0007;  // Clear UHS mode select bits [0:2], preserve 1.8V signaling [3]
+-  SdhciWritew (Device, SDHCI_HOST_CONTROL2, HostControl2);
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Cleared timing modes for clean start\n"));
+-
+-  //
+-  // CMD0: GO_IDLE_STATE
+-  //
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Sending CMD0 (GO_IDLE_STATE)\n"));
+-  Status = SdhciSendCommand (Device, MMC_CMD_GO_IDLE_STATE, 0, 0, Response, NULL, 0, 0, FALSE);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD0 failed: %r\n", Status));
+-    return Status;
+-  }
+-
+-  // 10ms delay after CMD0 - SD card needs time to exit idle state
+-  // This delay is critical for release builds (debug output provides natural delay)
+-  gBS->Stall (25000);
+-
+-  //
+-  // CMD8: SEND_IF_COND (check if card supports 2.7-3.6V and SD 2.0+)
+-  //
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Sending CMD8 (SEND_IF_COND)\n"));
+-  Status = SdhciSendCommand (
+-             Device,
+-             SD_CMD_SEND_IF_COND,
+-             SD_CMD8_VHS_27_36 | SD_CMD8_CHECK_PATTERN,
+-             MMC_RSP_R7,
+-             Response,
+-             NULL, 0, 0, FALSE
+-             );
+-
+-  if (EFI_ERROR (Status)) {
+-    // Card doesn't support CMD8 - might be SD 1.x
+-    DEBUG ((DEBUG_WARN, "SdMmcPciGli: CMD8 not supported - SD 1.x card?\n"));
+-    // Continue anyway - we'll try ACMD41 without HCS bit
+-  } else {
+-    // Check echo-back pattern
+-    if ((Response[0] & 0xFF) != SD_CMD8_CHECK_PATTERN) {
+-      DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD8 pattern mismatch: 0x%02x\n", Response[0] & 0xFF));
+-      return EFI_DEVICE_ERROR;
+-    }
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: SD 2.0+ card detected\n"));
+-  }
+-
+-  //
+-  // ACMD41: SD_SEND_OP_COND - Poll until card is ready
+-  //
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Polling ACMD41 (SD_SEND_OP_COND)\n"));
+-
+-  // Note: For ACMD41 during initialization, RCA is 0
+-  Device->RelativeCardAddress = 0;
+-
+-  Retry = 100;
+-  while (Retry > 0) {
+-    // Send ACMD41 with HCS (High Capacity Support), S18R (1.8V request), and voltage range
+-    Arg = SD_OCR_HCS | SD_OCR_S18R | SD_OCR_VDD_32_33 | 0x00FF8000;  // 2.7-3.6V range + 1.8V switching
+-
+-    Status = SdSendAppCmd (Device, SD_ACMD_SEND_OP_COND, Arg, MMC_RSP_R3, Response);
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "SdMmcPciGli: ACMD41 failed: %r\n", Status));
+-      return Status;
+-    }
+-
+-    Ocr = Response[0];
+-
+-    // Check if card is ready (busy bit clear)
+-    if (Ocr & OCR_BUSY) {
+-      break;
+-    }
+-
+-    gBS->Stall (10000);  // 10ms delay
+-    Retry--;
+-  }
+-
+-  if (Retry == 0) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: ACMD41 timeout - card not ready\n"));
+-    return EFI_DEVICE_ERROR;
+-  }
+-
+-  // Check if High Capacity
+-  Device->HighCapacity = (Ocr & OCR_HCS) != 0;
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: SD card ready! OCR=0x%08x, HighCapacity=%d\n",
+-          Ocr, Device->HighCapacity));
+-
+-  //
+-  // Perform voltage switch to 1.8V if supported (UHS-I requirement)
+-  // Must be done early, before CMD2/CMD3
+-  //
+-  // Check voltage switch support
+-  CardSupports1_8V = (Ocr & SD_OCR_S18R) != 0;
+-  Caps1 = SdhciReadl (Device, SDHCI_CAPABILITIES_1);
+-  ControllerSupportsUHS = ((Caps1 & (SDHCI_SUPPORT_SDR50 | SDHCI_SUPPORT_SDR104 | SDHCI_SUPPORT_DDR50)) != 0);
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: UHS-I capability check: Ctrl SDR50=%d, Ctrl 1.8V=%d, Card 1.8V=%d, IsGL9750=%d\n",
+-          (Caps1 & SDHCI_SUPPORT_SDR50) ? 1 : 0,
+-          ControllerSupportsUHS ? 1 : 0,
+-          CardSupports1_8V ? 1 : 0,
+-          Device->IsGL9750 ? 1 : 0));
+-
+-  if (CardSupports1_8V && ControllerSupportsUHS) {
+-    // GL9750 voltage switch may fail on some boards (board lacks 1.8V regulator)
+-    // If voltage switch fails and recovery also fails, just skip UHS-I for GL9750
+-    // Card will work fine at High Speed (50 MHz) in 3.3V mode
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: Attempting voltage switch to 1.8V for UHS-I...\n"));
+-
+-    // Send CMD11
+-    Status = SdhciSendCommand (Device, SD_VOLTAGE_SWITCH, 0, MMC_RSP_R1, Response, NULL, 0, 0, FALSE);
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_WARN, "SdMmcPciGli: CMD11 failed: %r, continuing without UHS\n", Status));
+-    } else {
+-      // Stop SD clock
+-      SdhciWritew (Device, SDHCI_CLOCK_CONTROL, 0);
+-      gBS->Stall (10000);  // 10ms
+-
+-      // Check DAT[3:0] lines should be 0
+-      PresentState = SdhciReadl (Device, SDHCI_PRESENT_STATE);
+-      if (((PresentState >> 20) & 0xF) != 0) {
+-        DEBUG ((DEBUG_WARN, "SdMmcPciGli: Voltage switch failed - DAT lines not 0 (PresentState=0x%08x)\n", PresentState));
+-      } else {
+-        // Set 1.8V signaling enable bit
+-        HostControl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-        HostControl2 |= SDHCI_CTRL_180V_SIGNALING_ENABLE;
+-        SdhciWritew (Device, SDHCI_HOST_CONTROL2, HostControl2);
+-
+-        // GL9750/GL9755 require extended delay for voltage regulator stabilization
+-        // Per Linux kernel sdhci-pci-gli.c: Both use sdhci_gli_voltage_switch()
+-        // which waits 100ms - "controller requires far longer than 5ms before
+-        // the card will actually work reliably"
+-        gBS->Stall (100000);
+-
+-        // Verify bit is set
+-        HostControl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-        if (!(HostControl2 & SDHCI_CTRL_180V_SIGNALING_ENABLE)) {
+-          DEBUG ((DEBUG_WARN, "SdMmcPciGli: 1.8V signaling bit not set\n"));
+-        } else {
+-          DEBUG ((DEBUG_INFO, "SdMmcPciGli: Voltage switched to 1.8V successfully\n"));
+-        }
+-      }
+-
+-      // Restart SD clock
+-      SdhciSetClock (Device, 400000);  // Restart at 400 KHz
+-
+-      // Poll for DAT[3:0] to go high (card signals voltage switch complete)
+-      DatTimeout = 100000;  // 100ms timeout
+-      DatLines = 0;
+-      while (DatTimeout > 0) {
+-        PresentState = SdhciReadl (Device, SDHCI_PRESENT_STATE);
+-        DatLines = (PresentState >> 20) & 0xF;
+-        if (DatLines == 0xF) {
+-          break;  // Success!
+-        }
+-        gBS->Stall (1000);  // 1ms between polls
+-        DatTimeout -= 1000;
+-      }
+-
+-      DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Voltage switch: DAT[3:0] went high in %d ms\n",
+-              (100000 - DatTimeout) / 1000));
+-
+-      if (DatLines != 0xF) {
+-        DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Voltage switch validation failed - DAT[3:0]=0x%x (expected 0xF)\n", DatLines));
+-        DEBUG ((DEBUG_ERROR, "SdMmcPciGli: All GL devices support 1.8V - this indicates a hardware issue\n"));
+-        return EFI_DEVICE_ERROR;
+-      }
+-    }
+-  }
+-
+-  //
+-  // CMD2: ALL_SEND_CID
+-  //
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Sending CMD2 (ALL_SEND_CID)\n"));
+-  Status = SdhciSendCommand (Device, MMC_CMD_ALL_SEND_CID, 0, MMC_RSP_R2, Response, NULL, 0, 0, FALSE);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD2 failed: %r\n", Status));
+-    return Status;
+-  }
+-
+-  // Save CID for DiskInfo protocol (SD format, not eMMC format)
+-  CopyMem (((UINT8 *)&Device->Cid.SdCid) + 1, &Response[0], sizeof (SD_CID) - 1);
+-
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: CID = %08x %08x %08x %08x\n",
+-          Response[0], Response[1], Response[2], Response[3]));
+-
+-  //
+-  // CMD3: SEND_RELATIVE_ADDR (SD card selects its own RCA)
+-  //
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Sending CMD3 (SEND_RELATIVE_ADDR)\n"));
+-  Status = SdhciSendCommand (Device, MMC_CMD_SET_RELATIVE_ADDR, 0, MMC_RSP_R6, Response, NULL, 0, 0, FALSE);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD3 failed: %r\n", Status));
+-    return Status;
+-  }
+-
+-  // Extract RCA from response (upper 16 bits)
+-  Device->RelativeCardAddress = Response[0] >> 16;
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: RCA = 0x%04x\n", Device->RelativeCardAddress));
+-
+-  //
+-  // CMD9: SEND_CSD - Get Card Specific Data
+-  //
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Sending CMD9 (SEND_CSD)\n"));
+-  Status = SdhciSendCommand (
+-             Device,
+-             SD_CMD_SEND_CSD,
+-             Device->RelativeCardAddress << 16,
+-             MMC_RSP_R2,
+-             Response,
+-             NULL, 0, 0, FALSE
+-             );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD9 failed: %r\n", Status));
+-    return Status;
+-  }
+-
+-  // Parse CSD to get capacity
+-  // Extract CSD_STRUCTURE from bits [127:126] (first 2 bits of Response[0])
+-  CsdStructure = (Response[0] >> 30) & 0x03;
+-
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: CSD Response = %08x %08x %08x %08x\n",
+-          Response[0], Response[1], Response[2], Response[3]));
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: CSD_STRUCTURE = %d\n", CsdStructure));
+-
+-  if (CsdStructure == 0) {
+-    // CSD Version 1.0 (SDSC): C_SIZE at bits [73:62], C_SIZE_MULT at bits [49:47], READ_BL_LEN at bits [83:80]
+-    ReadBlLen = (Response[1] >> 16) & 0x0F;  // bits [83:80]
+-    CSize = ((Response[1] & 0x03FF) << 2) | ((Response[2] >> 30) & 0x03);  // bits [73:62]
+-    CMult = (Response[2] >> 15) & 0x07;  // bits [49:47]
+-
+-    Device->TotalBlocks = (CSize + 1) * (1 << (CMult + 2)) * (1 << ReadBlLen) / 512;
+-  } else if (CsdStructure == 1) {
+-    // CSD Version 2.0 (SDHC/SDXC): C_SIZE at bits [69:48]
+-    CSize = ((Response[1] & 0x3F) << 16) | (Response[2] >> 16);  // bits [69:48]
+-    Device->TotalBlocks = (CSize + 1) * 1024;  // In 512-byte blocks
+-  } else {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Unknown CSD structure version: %d\n", CsdStructure));
+-    return EFI_DEVICE_ERROR;
+-  }
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: SD capacity: %lld blocks (CSD v%d)\n",
+-          Device->TotalBlocks, CsdStructure));
+-
+-  //
+-  // CMD7: SELECT_CARD
+-  //
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Sending CMD7 (SELECT_CARD)\n"));
+-  Status = SdhciSendCommand (
+-             Device,
+-             MMC_CMD_SELECT_CARD,
+-             Device->RelativeCardAddress << 16,
+-             MMC_RSP_R1B,
+-             Response,
+-             NULL, 0, 0, FALSE
+-             );
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD7 failed: %r\n", Status));
+-    return Status;
+-  }
+-
+-  //
+-  // Set block size to 512 bytes
+-  //
+-  Device->BlockSize = 512;
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Sending CMD16 (SET_BLOCKLEN to 512)\n"));
+-  Status = SdhciSendCommand (Device, MMC_CMD_SET_BLOCKLEN, 512, MMC_RSP_R1, Response, NULL, 0, 0, FALSE);
+-  if (EFI_ERROR (Status)) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD16 failed: %r\n", Status));
+-    return Status;
+-  }
+-
+-  //
+-  // Switch to 4-bit bus width using ACMD6
+-  //
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Switching to 4-bit bus width\n"));
+-  Status = SdSendAppCmd (Device, SD_ACMD_SET_BUS_WIDTH, 2, MMC_RSP_R1, Response);  // 2 = 4-bit
+-  if (!EFI_ERROR (Status)) {
+-    // Set controller to 4-bit mode
+-    HostControl = SdhciReadb (Device, SDHCI_HOST_CONTROL);
+-    HostControl |= SDHCI_CTRL_4BITBUS;
+-    SdhciWriteb (Device, SDHCI_HOST_CONTROL, HostControl);
+-    DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Switched to 4-bit bus width\n"));
+-  }
+-
+-  //
+-  // Switch to High Speed mode (50 MHz) if supported
+-  // Read Switch Function status to check HS support
+-  // Note: Must be DMA-aligned for ADMA transfers
+-  //
+-  SwitchStatus = AllocateAlignedPages (EFI_SIZE_TO_PAGES (64), 512);
+-  if (SwitchStatus == NULL) {
+-    DEBUG ((DEBUG_WARN, "SdMmcPciGli: Failed to allocate SwitchStatus buffer\n"));
+-    Status = SdhciSetClock (Device, 25000000);
+-    goto SkipHighSpeed;
+-  }
+-
+-  // CMD6: SWITCH_FUNC - Check if High Speed is supported (Mode 0 = check)
+-  Status = SdhciSendCommand (
+-             Device,
+-             MMC_CMD_SWITCH,
+-             0x00FFFF01,  // Mode=0 (check), Group1=1 (HS), keep others at 0xF
+-             MMC_RSP_R1,
+-             Response,
+-             SwitchStatus,
+-             64,
+-             1,
+-             TRUE
+-             );
+-
+-  if (!EFI_ERROR (Status)) {
+-    // Check if High Speed is supported (bits 401-415 in switch status)
+-    if (SwitchStatus[13] & 0x02) {
+-      DEBUG ((DEBUG_INFO, "SdMmcPciGli: High Speed supported, switching...\n"));
+-
+-      // CMD6: SWITCH_FUNC - Switch to High Speed (Mode 1 = switch)
+-      Status = SdhciSendCommand (
+-                 Device,
+-                 MMC_CMD_SWITCH,
+-                 0x80FFFF01,  // Mode=1 (switch), Group1=1 (HS)
+-                 MMC_RSP_R1,
+-                 Response,
+-                 SwitchStatus,
+-                 64,
+-                 1,
+-                 TRUE
+-                 );
+-
+-      if (!EFI_ERROR (Status)) {
+-        // Disable clock before changing timing (required by SDHCI spec)
+-        SdhciWritew (Device, SDHCI_CLOCK_CONTROL, 0);
+-
+-        // Set HISPD bit in HOST_CONTROL
+-        HostControl = SdhciReadb (Device, SDHCI_HOST_CONTROL);
+-        HostControl |= SDHCI_CTRL_HISPD;
+-        SdhciWriteb (Device, SDHCI_HOST_CONTROL, HostControl);
+-
+-        // Increase clock to 50 MHz
+-        Status = SdhciSetClock (Device, 50000000);
+-        if (!EFI_ERROR (Status)) {
+-          DEBUG ((DEBUG_INFO, "SdMmcPciGli: Switched to High Speed @ 50 MHz!\n"));
+-        }
+-
+-        //
+-        // Try to upgrade to UHS-I modes if 1.8V signaling is enabled
+-        //
+-        HostControl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-        if (HostControl2 & SDHCI_CTRL_180V_SIGNALING_ENABLE) {
+-          DEBUG ((DEBUG_INFO, "SdMmcPciGli: 1.8V signaling enabled, attempting UHS-I mode upgrade...\n"));
+-
+-          // Try SDR104 first (fastest), then SDR50
+-          TargetMode = 0;
+-          TargetClock = 0;
+-          UhsMode = 0;
+-          ModeName = NULL;
+-
+-          // Check card capabilities via CMD6 mode 0 (check)
+-          Status = SdhciSendCommand (
+-                     Device,
+-                     MMC_CMD_SWITCH,
+-                     0x00FFFF01,  // Mode=0 (check), Group1=0xF (query all)
+-                     MMC_RSP_R1,
+-                     Response,
+-                     SwitchStatus,
+-                     64,
+-                     1,
+-                     TRUE
+-                     );
+-
+-          if (!EFI_ERROR (Status)) {
+-            // Check which UHS modes are supported (byte 13, bits 400-407)
+-            // Bit 403=SDR104, 402=SDR50, 401=HS (already set), 400=Default
+-            SupportedModes = SwitchStatus[13];
+-            DEBUG ((DEBUG_INFO, "SdMmcPciGli: Card supported modes = 0x%02x\n", SupportedModes));
+-
+-            // Try SDR104 @ 200 MHz (bit 3) - will be programmed to 205MHz by PLL
+-            if (SupportedModes & 0x08) {
+-              TargetMode = 3;  // SDR104
+-              TargetClock = 200000000;
+-              UhsMode = SDHCI_CTRL_UHS_SDR104;
+-              ModeName = "SDR104";
+-            }
+-            // Try SDR50 @ 100 MHz (bit 2)
+-            else if (SupportedModes & 0x04) {
+-              TargetMode = 2;  // SDR50
+-              TargetClock = 100000000;
+-              UhsMode = SDHCI_CTRL_UHS_SDR50;
+-              ModeName = "SDR50";
+-            }
+-
+-            if (TargetMode != 0) {
+-              DEBUG ((DEBUG_INFO, "SdMmcPciGli: Attempting to switch to %a...\n", ModeName));
+-
+-              // CMD6 mode 1 (switch) to target mode
+-              SwitchArg = 0x80FFFF00 | TargetMode;  // Mode=1 (switch), Group1=target
+-              Status = SdhciSendCommand (
+-                         Device,
+-                         MMC_CMD_SWITCH,
+-                         SwitchArg,
+-                         MMC_RSP_R1,
+-                         Response,
+-                         SwitchStatus,
+-                         64,
+-                         1,
+-                         TRUE
+-                         );
+-
+-              if (!EFI_ERROR (Status)) {
+-                // Stop clock before changing timing
+-                SdhciWritew (Device, SDHCI_CLOCK_CONTROL, 0);
+-
+-                // Set UHS mode in HOST_CONTROL2
+-                HostControl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-                HostControl2 &= ~SDHCI_CTRL_UHS_MASK;
+-                HostControl2 |= UhsMode;
+-                SdhciWritew (Device, SDHCI_HOST_CONTROL2, HostControl2);
+-
+-                // Set the target clock frequency
+-                Status = SdhciSetClock (Device, TargetClock);
+-                if (!EFI_ERROR (Status)) {
+-                  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Switched to UHS-I %a @ %d MHz!\n",
+-                          ModeName, TargetClock / 1000000));
+-
+-                  // Perform tuning for SDR104 mode (required by SD specification)
+-                  // For GL9750, follow Linux driver's two-pass RX inversion approach
+-                  if (UhsMode == SDHCI_CTRL_UHS_SDR104) {
+-                    DEBUG ((DEBUG_INFO, "SdMmcPciGli: Performing SDR104 tuning...\n"));
+-
+-                    TuningSuccess = FALSE;
+-
+-                    // Setup GL9750-specific tuning parameters if needed
+-                    if (Device->IsGL9750) {
+-                      Gl9750SetupTuning (Device);
+-                    }
+-
+-                    // Standard SDHCI tuning (works for both GL9750 and GL9755)
+-                    HostControl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-                    HostControl2 |= SDHCI_CTRL_EXEC_TUNING;
+-                    SdhciWritew (Device, SDHCI_HOST_CONTROL2, HostControl2);
+-
+-                    // Send tuning commands (CMD19) - up to 40 iterations
+-                    // Note: Linux uses PIO mode for tuning, not ADMA
+-                    for (i = 0; i < 40; i++) {
+-                      // Clear interrupts
+-                      SdhciWritel (Device, SDHCI_INT_STATUS, SDHCI_INT_ALL_MASK);
+-
+-                      // Set block size (64 bytes for 4-bit SD bus)
+-                      SdhciWritew (Device, SDHCI_BLOCK_SIZE, SDHCI_MAKE_BLKSZ(7, 64));
+-
+-                      // Set transfer mode (read, NO DMA - tuning uses PIO)
+-                      SdhciWritew (Device, SDHCI_TRANSFER_MODE, SDHCI_TRNS_READ);
+-
+-                      // Set argument (0 for CMD19)
+-                      SdhciWritel (Device, SDHCI_ARGUMENT, 0);
+-
+-                      // Send CMD19
+-                      SdhciWritew (Device, SDHCI_COMMAND,
+-                        SDHCI_MAKE_CMD(19, (SDHCI_CMD_RESP_SHORT | SDHCI_CMD_CRC |
+-                                           SDHCI_CMD_INDEX | SDHCI_CMD_DATA)));
+-
+-                      // Wait for command/data completion
+-                      Timeout = 50000;  // 50ms per tuning command
+-                      while (Timeout > 0) {
+-                        IntStatus = SdhciReadl (Device, SDHCI_INT_STATUS);
+-                        if (IntStatus & (SDHCI_INT_ERROR | SDHCI_INT_DATA_AVAIL | SDHCI_INT_DATA_END)) {
+-                          // Clear the interrupt
+-                          SdhciWritel (Device, SDHCI_INT_STATUS, IntStatus);
+-                          break;
+-                        }
+-                        gBS->Stall (10);
+-                        Timeout -= 10;
+-                      }
+-
+-                      // Check if tuning is complete (hardware clears EXEC_TUNING when done)
+-                      HostControl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-                      if (!(HostControl2 & SDHCI_CTRL_EXEC_TUNING)) {
+-                        // Tuning finished
+-                        if (HostControl2 & SDHCI_CTRL_TUNED_CLK) {
+-                          DEBUG ((DEBUG_INFO, "SdMmcPciGli: SDR104 tuning succeeded after %d iterations\n", i + 1));
+-                          TuningSuccess = TRUE;
+-                        }
+-                        break;
+-                      }
+-                    }
+-
+-                    if (!TuningSuccess) {
+-                      DEBUG ((DEBUG_WARN, "SdMmcPciGli: SDR104 tuning failed - falling back to SDR50\n"));
+-
+-                      // Clear tuning bits
+-                      HostControl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-                      HostControl2 &= ~(SDHCI_CTRL_TUNED_CLK | SDHCI_CTRL_EXEC_TUNING);
+-                      SdhciWritew (Device, SDHCI_HOST_CONTROL2, HostControl2);
+-
+-                      // Fall back to SDR50
+-                      HostControl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-                      HostControl2 &= ~SDHCI_CTRL_UHS_MASK;
+-                      HostControl2 |= SDHCI_CTRL_UHS_SDR50;
+-                      SdhciWritew (Device, SDHCI_HOST_CONTROL2, HostControl2);
+-
+-                      // Set SDR50 clock (100 MHz) - SdhciSetClock will program PLL
+-                      SdhciSetClock (Device, 100000000);
+-
+-                      DEBUG ((DEBUG_INFO, "SdMmcPciGli: Switched to SDR50 @ 100 MHz\n"));
+-                    }
+-                  }
+-                } else {
+-                  DEBUG ((DEBUG_WARN, "SdMmcPciGli: Failed to set %d MHz clock\n", TargetClock / 1000000));
+-                }
+-              } else {
+-                DEBUG ((DEBUG_WARN, "SdMmcPciGli: CMD6 switch to %a failed: %r\n", ModeName, Status));
+-              }
+-            } else {
+-              DEBUG ((DEBUG_INFO, "SdMmcPciGli: No UHS-I modes supported by card, staying at HS\n"));
+-            }
+-          } else {
+-            DEBUG ((DEBUG_WARN, "SdMmcPciGli: CMD6 check for UHS modes failed: %r\n", Status));
+-          }
+-        }
+-      }  // Close if (!EFI_ERROR (Status)) from CMD6 mode 1 for HS
+-    } // Close if (SwitchStatus[13] & 0x02) - HS supported check
+-    else {  // HS not supported
+-      DEBUG ((DEBUG_INFO, "SdMmcPciGli: High Speed not supported, staying at 25 MHz\n"));
+-      Status = SdhciSetClock (Device, 25000000);
+-    }
+-  } // Close if (!EFI_ERROR (Status)) from line 304 (CMD6 mode 0 for HS)
+-  else {
+-    // CMD6 failed, stay at default speed
+-    DEBUG ((DEBUG_WARN, "SdMmcPciGli: CMD6 failed, staying at default speed\n"));
+-    Status = SdhciSetClock (Device, 25000000);
+-  }
+-
+-  // Free the aligned buffer
+-  FreeAlignedPages (SwitchStatus, EFI_SIZE_TO_PAGES (64));
+-
+-SkipHighSpeed:
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: SD card initialization complete!\n"));
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: RCA = 0x%04x\n", Device->RelativeCardAddress));
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Block size = %d bytes\n", Device->BlockSize));
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Total blocks = %lld\n", Device->TotalBlocks));
+-
+-  return EFI_SUCCESS;
+-}
+-
+diff --git a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliSdhci.c b/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliSdhci.c
+deleted file mode 100644
+index 0c7f1656efdfc9a404d1aff12389f7441f943d7c..0000000000000000000000000000000000000000
+--- a/UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliSdhci.c
++++ /dev/null
+@@ -1,805 +0,0 @@
+-/** @file
+-  SDHCI Core Functions (ported from Depthcharge sdhci.c)
+-
+-  Copyright (c) 2025, Matt DeVillier. All rights reserved.
+-  SPDX-License-Identifier: BSD-2-Clause-Patent
+-
+-**/
+-
+-#include "SdMmcPciGliDxe.h"
+-
+-/**
+-  Reset the SDHCI controller.
+-
+-  @param[in] Device  Device context
+-  @param[in] Mask    Reset mask (SDHCI_RESET_ALL, SDHCI_RESET_CMD, SDHCI_RESET_DATA)
+-
+-  @retval EFI_SUCCESS  Reset successful
+-  @retval other        Reset failed
+-**/
+-EFI_STATUS
+-SdhciReset (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN UINT8             Mask
+-  )
+-{
+-  UINT32  Timeout;
+-  UINT8   Value;
+-
+-  // DEBUG ((DEBUG_INFO, "SdMmcPciGli: SdhciReset(0x%02x)\n", Mask));
+-
+-  //
+-  // Write reset mask
+-  //
+-  SdhciWriteb (Device, SDHCI_SOFTWARE_RESET, Mask);
+-
+-  //
+-  // Wait for reset to complete (max 100ms)
+-  //
+-  Timeout = 100000; // 100ms in microseconds
+-  while (Timeout > 0) {
+-    Value = SdhciReadb (Device, SDHCI_SOFTWARE_RESET);
+-    if ((Value & Mask) == 0) {
+-      DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Reset complete\n"));
+-      return EFI_SUCCESS;
+-    }
+-    gBS->Stall (10);
+-    Timeout -= 10;
+-  }
+-
+-  DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Reset timeout!\n"));
+-  return EFI_TIMEOUT;
+-}
+-
+-/**
+-  Set power mode and voltage.
+-
+-  @param[in] Device     Device context
+-  @param[in] PowerMode  Power mode (SDHCI_POWER_330, etc.)
+-
+-  @retval EFI_SUCCESS  Power set successfully
+-**/
+-EFI_STATUS
+-SdhciSetPower (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN UINT8             PowerMode
+-  )
+-{
+-  // DEBUG ((DEBUG_INFO, "SdMmcPciGli: SdhciSetPower(0x%02x)\n", PowerMode));
+-
+-  //
+-  // Set voltage and power on
+-  //
+-  SdhciWriteb (Device, SDHCI_POWER_CONTROL, PowerMode | SDHCI_POWER_ON);
+-
+-  //
+-  // Wait 10ms for power to stabilize
+-  //
+-  gBS->Stall (10000);
+-
+-  return EFI_SUCCESS;
+-}
+-
+-/**
+-  Set clock frequency.
+-
+-  @param[in] Device  Device context
+-  @param[in] Clock   Desired clock frequency in Hz
+-
+-  @retval EFI_SUCCESS  Clock set successfully
+-**/
+-EFI_STATUS
+-SdhciSetClock (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN UINT32            Clock
+-  )
+-{
+-  UINT32   Div;
+-  UINT16   ClkReg;
+-  UINT32   Timeout;
+-  UINT32   ActualClock;
+-  BOOLEAN  PllProgrammed;
+-  UINT16   HostControl2;
+-  UINT8    UhsMode;
+-  BOOLEAN  IsSdr104;
+-
+-  // DEBUG ((DEBUG_INFO, "SdMmcPciGli: SdhciSetClock(%d Hz)\n", Clock));
+-
+-  //
+-  // For GL9750/GL9755, disable SSC PLL before changing clock
+-  //
+-  if (Device->IsGL9750) {
+-    Gl9750DisableSscPll (Device);
+-  } else if (Device->IsGL9755) {
+-    Gl9755DisableSscPll (Device);
+-  }
+-
+-  //
+-  // Disable clock first
+-  //
+-  SdhciWritew (Device, SDHCI_CLOCK_CONTROL, 0);
+-
+-  if (Clock == 0) {
+-    return EFI_SUCCESS;
+-  }
+-
+-  //
+-  // Calculate divisor (SDHCI 3.0 spec: Actual Clock = Base Clock / (2 * Div))
+-  // Div = 0 means no division (full speed)
+-  // Note: Calculate BEFORE PLL programming (Linux does this)
+-  //
+-  Div = 0;
+-  ActualClock = Clock;
+-  PllProgrammed = FALSE;
+-
+-  if (Device->ClockBase > 0) {
+-    for (Div = 1; Div < 256; Div++) {
+-      if ((Device->ClockBase / (2 * Div)) <= Clock) {
+-        break;
+-      }
+-    }
+-    if (Div == 256) {
+-      Div = 255;
+-    }
+-    Div >>= 1;
+-
+-    // Calculate actual clock (before PLL programming)
+-    if (Div == 0) {
+-      ActualClock = Device->ClockBase;
+-    } else {
+-      ActualClock = Device->ClockBase / (2 * Div);
+-    }
+-  }
+-
+-  //
+-  // For GL9750/GL9755, program PLL for specific frequencies AFTER calculating divisor
+-  // The PLL effectively becomes the new base clock
+-  // Per Linux: Only use 205MHz PLL for SDR104 mode specifically
+-  //
+-  if (Device->IsGL9750 || Device->IsGL9755) {
+-    // Check if we're in SDR104 mode by checking HOST_CONTROL2 register
+-    HostControl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-    UhsMode = HostControl2 & 0x0007;  // UHS mode bits [2:0]
+-    IsSdr104 = (UhsMode == 0x0003);  // SDR104 = 0x0003
+-
+-    if (Clock == 200000000 && IsSdr104) {
+-      // SDR104: Use 205MHz PLL
+-      if (Device->IsGL9750) {
+-        Gl9750SetSscPll205Mhz (Device);
+-      } else {
+-        Gl9755SetSscPll205Mhz (Device);
+-      }
+-      ActualClock = 205000000;
+-      Div = 0;  // No division with PLL
+-      PllProgrammed = TRUE;
+-    } else if (Clock == 100000000) {
+-      // SDR50/DDR50: Use 100MHz PLL
+-      if (Device->IsGL9750) {
+-        Gl9750SetSscPll100Mhz (Device);
+-      } else {
+-        Gl9755SetSscPll100Mhz (Device);
+-      }
+-      ActualClock = 100000000;
+-      Div = 0;
+-      PllProgrammed = TRUE;
+-    } else if (Clock == 50000000) {
+-      // High Speed: Use 50MHz PLL
+-      if (Device->IsGL9750) {
+-        Gl9750SetSscPll50Mhz (Device);
+-      } else {
+-        Gl9755SetSscPll50Mhz (Device);
+-      }
+-      ActualClock = 50000000;
+-      Div = 0;
+-      PllProgrammed = TRUE;
+-    }
+-  }
+-
+-  if (PllProgrammed) {
+-    DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Clock: requested=%u, divider=%u, actual=%u Hz (PLL)\n",
+-            Clock, Div, ActualClock));
+-  } else {
+-    DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Clock: requested=%u, divider=%u, actual=%u Hz\n",
+-            Clock, Div, ActualClock));
+-  }
+-
+-  //
+-  // Set divisor and enable internal clock
+-  //
+-  ClkReg = (Div << SDHCI_DIVIDER_SHIFT) | SDHCI_CLOCK_INT_EN;
+-  SdhciWritew (Device, SDHCI_CLOCK_CONTROL, ClkReg);
+-
+-  //
+-  // Wait for internal clock to stabilize
+-  //
+-  Timeout = 20000; // 20ms
+-  while (Timeout > 0) {
+-    if (SdhciReadw (Device, SDHCI_CLOCK_CONTROL) & SDHCI_CLOCK_INT_STABLE) {
+-      break;
+-    }
+-    gBS->Stall (10);
+-    Timeout -= 10;
+-  }
+-
+-  if (Timeout == 0) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Internal clock never stabilized\n"));
+-    return EFI_TIMEOUT;
+-  }
+-
+-  //
+-  // Enable SD clock
+-  //
+-  ClkReg |= SDHCI_CLOCK_CARD_EN;
+-  SdhciWritew (Device, SDHCI_CLOCK_CONTROL, ClkReg);
+-
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Clock enabled\n"));
+-
+-  return EFI_SUCCESS;
+-}
+-
+-/**
+-  Send command (using Depthcharge's simple polling approach).
+-
+-  @param[in]  Device        Device context
+-  @param[in]  Cmd           Command index
+-  @param[in]  Arg           Command argument
+-  @param[in]  ResponseType  Expected response type (MMC_RSP_*)
+-  @param[out] Response      Response buffer (4 x UINT32)
+-  @param[in]  DataBuffer    Optional data buffer for read/write
+-  @param[in]  BlockSize     Block size for data transfer
+-  @param[in]  BlockCount    Number of blocks to transfer
+-  @param[in]  IsRead        TRUE for read, FALSE for write
+-
+-  @retval EFI_SUCCESS  Command successful
+-  @retval other        Command failed
+-**/
+-EFI_STATUS
+-SdhciSendCommand (
+-  IN     SD_MMC_CB_DEVICE  *Device,
+-  IN     UINT32            Cmd,
+-  IN     UINT32            Arg,
+-  IN     UINT32            ResponseType,
+-  OUT    UINT32            *Response,
+-  IN     VOID              *DataBuffer    OPTIONAL,
+-  IN     UINT32            BlockSize      OPTIONAL,
+-  IN     UINT32            BlockCount     OPTIONAL,
+-  IN     BOOLEAN           IsRead         OPTIONAL
+-  )
+-{
+-  EFI_STATUS  Status;
+-  UINT32      PresentState;
+-  UINT32      Timeout;
+-  UINT32      IntStatus;
+-  UINT16      CmdReg;
+-  UINT16      TransferMode;
+-  UINT8       Flags;
+-  UINT32      InhibitMask;
+-
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: CMD%d arg=0x%08x%s\n",
+-          Cmd, Arg, (DataBuffer != NULL) ? " [DATA]" : ""));
+-
+-  //
+-  // Wait for CMD and DAT lines to be ready
+-  // For R1B responses (busy), we need to wait for DATA_INHIBIT to clear as well
+-  //
+-  Timeout = 10000;
+-  InhibitMask = SDHCI_CMD_INHIBIT;
+-  if (DataBuffer != NULL || (ResponseType & MMC_RSP_BUSY)) {
+-    InhibitMask |= SDHCI_DATA_INHIBIT;
+-  }
+-
+-  while (Timeout > 0) {
+-    PresentState = SdhciReadl (Device, SDHCI_PRESENT_STATE);
+-    if ((PresentState & InhibitMask) == 0) {
+-      break;
+-    }
+-    gBS->Stall (10);
+-    Timeout -= 10;
+-  }
+-
+-  if (Timeout == 0) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD%d line not ready! PresentState=0x%08x (need 0x%08x clear)\n",
+-            Cmd, PresentState, InhibitMask));
+-    return EFI_TIMEOUT;
+-  }
+-
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: CMD%d ready, PresentState=0x%08x\n", Cmd, PresentState));
+-
+-  //
+-  // Clear all status bits
+-  //
+-  SdhciWritel (Device, SDHCI_INT_STATUS, SDHCI_INT_ALL_MASK);
+-
+-  //
+-  // Set up data transfer if needed - Always use ADMA (like coreboot does)
+-  //
+-  if (DataBuffer != NULL && BlockSize > 0 && BlockCount > 0) {
+-    //
+-    // Set up ADMA descriptors
+-    //
+-    Status = SdhciSetupAdma (Device, DataBuffer, BlockSize * BlockCount, IsRead);
+-    if (EFI_ERROR (Status)) {
+-      DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to setup ADMA: %r\n", Status));
+-      return Status;
+-    }
+-
+-    //
+-    // Set block size and count
+-    //
+-    SdhciWritew (Device, SDHCI_BLOCK_SIZE, SDHCI_MAKE_BLKSZ(7, BlockSize));
+-    SdhciWritew (Device, SDHCI_BLOCK_COUNT, (UINT16)BlockCount);
+-
+-    //
+-    // Set transfer mode with DMA enabled
+-    //
+-    TransferMode = SDHCI_TRNS_DMA;
+-    if (IsRead) {
+-      TransferMode |= SDHCI_TRNS_READ;
+-    }
+-    if (BlockCount > 1) {
+-      TransferMode |= SDHCI_TRNS_MULTI | SDHCI_TRNS_BLK_CNT_EN | SDHCI_TRNS_ACMD12;
+-    }
+-    SdhciWritew (Device, SDHCI_TRANSFER_MODE, TransferMode);
+-  }
+-
+-  //
+-  // Set argument
+-  //
+-  SdhciWritel (Device, SDHCI_ARGUMENT, Arg);
+-
+-  //
+-  // Build command register
+-  //
+-  Flags = 0;
+-  if (DataBuffer != NULL) {
+-    Flags |= SDHCI_CMD_DATA;
+-  }
+-  if (ResponseType & MMC_RSP_PRESENT) {
+-    if (ResponseType & MMC_RSP_136) {
+-      Flags |= SDHCI_CMD_RESP_LONG;  // Fixed: OR instead of assign
+-    } else if (ResponseType & MMC_RSP_BUSY) {
+-      Flags |= SDHCI_CMD_RESP_SHORT_BUSY;  // Fixed: OR instead of assign
+-    } else {
+-      Flags |= SDHCI_CMD_RESP_SHORT;  // Fixed: OR instead of assign
+-    }
+-  } else {
+-    Flags |= SDHCI_CMD_RESP_NONE;  // Fixed: OR instead of assign (though 0)
+-  }
+-
+-  if (ResponseType & MMC_RSP_CRC) {
+-    Flags |= SDHCI_CMD_CRC;
+-  }
+-  if (ResponseType & MMC_RSP_OPCODE) {
+-    Flags |= SDHCI_CMD_INDEX;
+-  }
+-
+-  CmdReg = SDHCI_MAKE_CMD (Cmd, Flags);
+-
+-  //
+-  // Send command
+-  //
+-  SdhciWritew (Device, SDHCI_COMMAND, CmdReg);
+-
+-  //
+-  // Poll for command complete
+-  //
+-  Timeout = 100000; // 100ms
+-  while (Timeout > 0) {
+-    IntStatus = SdhciReadl (Device, SDHCI_INT_STATUS);
+-
+-    if (IntStatus & SDHCI_INT_ERROR) {
+-      DEBUG ((DEBUG_ERROR, "SdMmcPciGli: CMD%d error! IntStatus=0x%08x (", Cmd, IntStatus));
+-      if (IntStatus & SDHCI_INT_TIMEOUT) DEBUG ((DEBUG_ERROR, "TIMEOUT "));
+-      if (IntStatus & SDHCI_INT_CRC) DEBUG ((DEBUG_ERROR, "CRC "));
+-      if (IntStatus & SDHCI_INT_END_BIT) DEBUG ((DEBUG_ERROR, "ENDBIT "));
+-      if (IntStatus & SDHCI_INT_INDEX) DEBUG ((DEBUG_ERROR, "INDEX "));
+-      if (IntStatus & SDHCI_INT_DATA_TIMEOUT) DEBUG ((DEBUG_ERROR, "DATA_TIMEOUT "));
+-      if (IntStatus & SDHCI_INT_DATA_CRC) DEBUG ((DEBUG_ERROR, "DATA_CRC "));
+-      if (IntStatus & SDHCI_INT_DATA_END_BIT) DEBUG ((DEBUG_ERROR, "DATA_ENDBIT "));
+-      if (IntStatus & SDHCI_INT_ADMA_ERROR) DEBUG ((DEBUG_ERROR, "ADMA_ERROR "));
+-      DEBUG ((DEBUG_ERROR, ")\n"));
+-      SdhciWritel (Device, SDHCI_INT_STATUS, SDHCI_INT_ALL_MASK);
+-      return EFI_DEVICE_ERROR;
+-    }
+-
+-    if (IntStatus & SDHCI_INT_RESPONSE) {
+-      //
+-      // Command complete!
+-      //
+-      SdhciWritel (Device, SDHCI_INT_STATUS, SDHCI_INT_RESPONSE);
+-
+-      //
+-      // Read response if needed
+-      //
+-      if (Response != NULL && (ResponseType & MMC_RSP_PRESENT)) {
+-        if (ResponseType & MMC_RSP_136) {
+-          // Long response (R2) - CRC is stripped so we need to do some shifting
+-          // Read in reverse order and shift by 8 bits (like Depthcharge does)
+-          Response[0] = SdhciReadl (Device, SDHCI_RESPONSE + 12) << 8;
+-          Response[1] = SdhciReadl (Device, SDHCI_RESPONSE + 8) << 8;
+-          Response[2] = SdhciReadl (Device, SDHCI_RESPONSE + 4) << 8;
+-          Response[3] = SdhciReadl (Device, SDHCI_RESPONSE + 0) << 8;
+-          // OR in the last byte from the previous register
+-          Response[0] |= (SdhciReadl (Device, SDHCI_RESPONSE + 8) >> 24) & 0xFF;
+-          Response[1] |= (SdhciReadl (Device, SDHCI_RESPONSE + 4) >> 24) & 0xFF;
+-          Response[2] |= (SdhciReadl (Device, SDHCI_RESPONSE + 0) >> 24) & 0xFF;
+-        } else {
+-          // Short response
+-          Response[0] = SdhciReadl (Device, SDHCI_RESPONSE);
+-        }
+-      }
+-
+-      // DEBUG ((DEBUG_INFO, "SdMmcPciGli: CMD%d complete!\n", Cmd));
+-
+-      //
+-      // If no data transfer, we're done
+-      //
+-      if (DataBuffer == NULL) {
+-        return EFI_SUCCESS;
+-      }
+-
+-      //
+-      // ADMA Data Transfer - controller handles everything
+-      //
+-      return SdhciCompleteAdma (Device, 10000);
+-    }
+-
+-    gBS->Stall (10);
+-    Timeout -= 10;
+-  }
+-
+-  DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Command timeout!\n"));
+-  return EFI_TIMEOUT;
+-}
+-
+-/**
+-  Setup ADMA descriptor table for data transfer (from Depthcharge)
+-
+-  @param[in]  Device      Pointer to device context
+-  @param[in]  DataBuffer  Data buffer address (may be above 4GB)
+-  @param[in]  TotalBytes  Total bytes to transfer
+-  @param[in]  IsRead      TRUE for read, FALSE for write
+-
+-  @retval EFI_SUCCESS     ADMA descriptors set up successfully
+-  @retval Others          Error occurred
+-**/
+-EFI_STATUS
+-SdhciSetupAdma (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN VOID              *DataBuffer,
+-  IN UINT32            TotalBytes,
+-  IN BOOLEAN           IsRead
+-  )
+-{
+-  UINT32                NeedDescriptors;
+-  UINT32                Remaining;
+-  UINT32                i;
+-  UINT8                 *BufferPtr;
+-  UINT16                Attributes;
+-  UINT32                DescLength;
+-  EFI_PHYSICAL_ADDRESS  DescTableAddr;
+-  UINTN                 BufferAddress;
+-
+-  if (TotalBytes == 0) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: SdhciSetupAdma: Invalid TotalBytes=0\n"));
+-    return EFI_INVALID_PARAMETER;
+-  }
+-
+-  BufferAddress = (UINTN)DataBuffer;
+-
+-  //
+-  // ADMA32 can only address 32-bit memory (below 4GB)
+-  //
+-  if (BufferAddress > 0xFFFFFFFF) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Buffer at 0x%lx is above 4GB, ADMA32 cannot access it\n", BufferAddress));
+-    return EFI_UNSUPPORTED;
+-  }
+-
+-  //
+-  // Calculate how many descriptors we need
+-  //
+-  NeedDescriptors = TotalBytes / SDHCI_MAX_PER_DESCRIPTOR;
+-  if (TotalBytes % SDHCI_MAX_PER_DESCRIPTOR != 0) {
+-    NeedDescriptors++;
+-  }
+-
+-  //
+-  // Allocate descriptor table, growing it only if needed
+-  // This avoids constant reallocation and pool fragmentation
+-  //
+-  if (Device->AdmaDescs == NULL || Device->AdmaDescCount < NeedDescriptors) {
+-    // Free old allocation if we need to grow
+-    if (Device->AdmaDescs != NULL) {
+-      FreePool (Device->AdmaDescs);
+-    }
+-
+-    // Allocate with some headroom to avoid frequent reallocations
+-    Device->AdmaDescCount = NeedDescriptors + 4;  // Add 4 extra descriptors (~256KB headroom)
+-    Device->AdmaDescs = AllocateZeroPool (Device->AdmaDescCount * sizeof (SDHCI_ADMA_DESC));
+-    if (Device->AdmaDescs == NULL) {
+-      Device->AdmaDescCount = 0;
+-      DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Failed to allocate %d ADMA descriptors\n", Device->AdmaDescCount));
+-      return EFI_OUT_OF_RESOURCES;
+-    }
+-  } else {
+-    // Reuse existing allocation, just zero it
+-    ZeroMem (Device->AdmaDescs, NeedDescriptors * sizeof (SDHCI_ADMA_DESC));
+-  }
+-
+-  //
+-  // Build descriptor chain using direct physical addresses
+-  //
+-  BufferPtr = (UINT8 *)DataBuffer;
+-  Remaining = TotalBytes;
+-
+-  for (i = 0; Remaining > 0; i++) {
+-    if (Remaining < SDHCI_MAX_PER_DESCRIPTOR) {
+-      DescLength = Remaining;
+-    } else {
+-      DescLength = SDHCI_MAX_PER_DESCRIPTOR;
+-    }
+-    Remaining -= DescLength;
+-
+-    Attributes = SDHCI_ADMA_VALID | SDHCI_ACT_TRAN;
+-    if (Remaining == 0) {
+-      Attributes |= SDHCI_ADMA_END;
+-    }
+-
+-    Device->AdmaDescs[i].Attributes = Attributes;
+-    Device->AdmaDescs[i].Length = (UINT16)(DescLength & 0xFFFF);
+-    Device->AdmaDescs[i].Address = (UINT32)(UINTN)BufferPtr;
+-
+-    BufferPtr += DescLength;
+-  }
+-
+-  //
+-  // Write descriptor table address to ADMA registers
+-  //
+-  DescTableAddr = (EFI_PHYSICAL_ADDRESS)(UINTN)Device->AdmaDescs;
+-
+-  //
+-  // Verify descriptor table is below 4GB (ADMA32 limitation)
+-  //
+-  if (DescTableAddr > 0xFFFFFFFF) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: Descriptor table at 0x%lx is above 4GB!\n", DescTableAddr));
+-    return EFI_UNSUPPORTED;
+-  }
+-
+-  SdhciWritel (Device, SDHCI_ADMA_ADDRESS, (UINT32)DescTableAddr);
+-  if (Device->UseDma64) {
+-    SdhciWritel (Device, SDHCI_ADMA_ADDRESS_HI, (UINT32)(DescTableAddr >> 32));
+-  }
+-
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: ADMA setup: %d descriptors, %d bytes, buffer=0x%lx\n",
+-          NeedDescriptors, TotalBytes, BufferAddress));
+-
+-  return EFI_SUCCESS;
+-}
+-
+-/**
+-  Wait for ADMA transfer to complete (from Depthcharge)
+-
+-  @param[in]  Device      Pointer to device context
+-  @param[in]  TimeoutMs   Timeout in milliseconds
+-
+-  @retval EFI_SUCCESS     Transfer completed successfully
+-  @retval EFI_TIMEOUT     Transfer timed out
+-  @retval Others          Error occurred
+-**/
+-EFI_STATUS
+-SdhciCompleteAdma (
+-  IN SD_MMC_CB_DEVICE  *Device,
+-  IN UINT32            TimeoutMs
+-  )
+-{
+-  UINT32  IntStatus;
+-  UINT32  Mask;
+-  UINT32  Retry;
+-
+-  //
+-  // Wait for command response or data end
+-  // (On some controllers, DATA_END may arrive before RESPONSE for fast transfers)
+-  //
+-  Mask = SDHCI_INT_RESPONSE | SDHCI_INT_DATA_END | SDHCI_INT_ERROR;
+-  Retry = 10000;  // 10ms timeout for command
+-
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Starting ADMA transfer wait\n"));
+-
+-  while (Retry > 0) {
+-    IntStatus = SdhciReadl (Device, SDHCI_INT_STATUS);
+-    if ((IntStatus & Mask) != 0) {
+-      break;
+-    }
+-    gBS->Stall (1);  // 1 microsecond delay
+-    Retry--;
+-  }
+-
+-  if (Retry == 0) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: ADMA command timeout! IntStatus=0x%08x\n", IntStatus));
+-    SdhciReset (Device, SDHCI_RESET_CMD | SDHCI_RESET_DATA);
+-    return EFI_TIMEOUT;
+-  }
+-
+-  // Check for errors first
+-  if ((IntStatus & SDHCI_INT_ERROR) != 0) {
+-    UINT32 AdmaError = SdhciReadl (Device, SDHCI_ADMA_ERROR);
+-    UINT32 AdmaAddr = SdhciReadl (Device, SDHCI_ADMA_ADDRESS);
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: ADMA command error: IntStatus=0x%08x, AdmaError=0x%08x, AdmaAddr=0x%08x\n",
+-            IntStatus, AdmaError, AdmaAddr));
+-
+-    // Reset controller
+-    SdhciReset (Device, SDHCI_RESET_CMD | SDHCI_RESET_DATA);
+-    return EFI_DEVICE_ERROR;
+-  }
+-
+-  // If we got DATA_END already, transfer is complete!
+-  if ((IntStatus & SDHCI_INT_DATA_END) != 0) {
+-    // DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: ADMA transfer complete (fast path)\n"));
+-    SdhciWritel (Device, SDHCI_INT_STATUS, SDHCI_INT_ALL_MASK);
+-    return EFI_SUCCESS;
+-  }
+-
+-  // Otherwise, clear command response and wait for data
+-  SdhciWritel (Device, SDHCI_INT_STATUS, SDHCI_INT_RESPONSE);
+-  // DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: ADMA command response received, waiting for data...\n"));
+-
+-  //
+-  // Now wait for data transfer to complete
+-  //
+-  Mask = SDHCI_INT_DATA_END | SDHCI_INT_ERROR | SDHCI_INT_ADMA_ERROR;
+-  Retry = TimeoutMs * 1000;  // Convert to microseconds
+-
+-  while (Retry > 0) {
+-    IntStatus = SdhciReadl (Device, SDHCI_INT_STATUS);
+-    if ((IntStatus & Mask) != 0) {
+-      break;
+-    }
+-    gBS->Stall (1);  // 1 microsecond delay
+-    Retry--;
+-  }
+-
+-  // Clear all status bits
+-  SdhciWritel (Device, SDHCI_INT_STATUS, IntStatus);
+-
+-  if (Retry == 0) {
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: ADMA data timeout\n"));
+-    return EFI_TIMEOUT;
+-  }
+-
+-  if ((IntStatus & (SDHCI_INT_ERROR | SDHCI_INT_ADMA_ERROR)) != 0) {
+-    UINT32  AdmaError = SdhciReadl (Device, SDHCI_ADMA_ERROR);
+-    DEBUG ((DEBUG_ERROR, "SdMmcPciGli: ADMA transfer error: IntStatus=0x%08x, AdmaError=0x%08x\n",
+-            IntStatus, AdmaError));
+-
+-    // Reset data line
+-    SdhciReset (Device, SDHCI_RESET_DATA);
+-    return EFI_DEVICE_ERROR;
+-  }
+-
+-  // DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: ADMA transfer complete\n"));
+-  return EFI_SUCCESS;
+-}
+-
+-EFI_STATUS
+-SdhciInit (
+-  IN SD_MMC_CB_DEVICE  *Device
+-  )
+-{
+-  EFI_STATUS  Status;
+-  UINT32      Caps;
+-  UINT8       PowerMode;
+-  UINT16      HostControl2;
+-  UINT8       HostControl;
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: SdhciInit start\n"));
+-
+-  //
+-  // Reset controller
+-  //
+-  Status = SdhciReset (Device, SDHCI_RESET_ALL);
+-  if (EFI_ERROR (Status)) {
+-    return Status;
+-  }
+-
+-  //
+-  // Power cycle to ensure clean state (important for warm boot)
+-  // On warm boot, card may be in high-speed mode (HS400/HS200/SDR50)
+-  //
+-  SdhciWriteb (Device, SDHCI_POWER_CONTROL, 0);
+-  gBS->Stall (10000);  // 10ms
+-
+-  // Set appropriate voltage (1.8V for eMMC, will be adjusted for SD if needed)
+-  PowerMode = SDHCI_POWER_ON;
+-  if (Device->IsEMMC) {
+-    PowerMode |= SDHCI_POWER_180;
+-  } else {
+-    PowerMode |= SDHCI_POWER_330;
+-  }
+-  SdhciWriteb (Device, SDHCI_POWER_CONTROL, PowerMode);
+-  gBS->Stall (10000);  // 10ms for power to stabilize
+-
+-  //
+-  // For eMMC, enable 1.8V signaling in HOST_CONTROL2 (matches depthcharge)
+-  // eMMC VCCQ (I/O Signaling) is typically hard wired, no voltage switching protocol
+-  //
+-  if (Device->IsEMMC) {
+-    HostControl2 = SdhciReadw (Device, SDHCI_HOST_CONTROL2);
+-    HostControl2 |= SDHCI_CTRL_180V_SIGNALING_ENABLE;
+-    SdhciWritew (Device, SDHCI_HOST_CONTROL2, HostControl2);
+-    DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Enabled 1.8V signaling for eMMC\n"));
+-  }
+-
+-  //
+-  // Read capabilities to determine clock base and ADMA support
+-  //
+-  Caps = SdhciReadl (Device, SDHCI_CAPABILITIES);
+-  Device->ClockBase = ((Caps & SDHCI_CLOCK_V3_BASE_MASK) >> SDHCI_CLOCK_BASE_SHIFT) * 1000000;
+-
+-  if (Device->ClockBase == 0) {
+-    // Fallback for older controllers
+-    Device->ClockBase = ((Caps & SDHCI_CLOCK_BASE_MASK) >> SDHCI_CLOCK_BASE_SHIFT) * 1000000;
+-  }
+-
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: Clock base = %d Hz\n", Device->ClockBase));
+-
+-  //
+-  // Check for ADMA support and enable it
+-  // Force ADMA32 mode for compatibility (ADMA64 only needed for buffers >4GB)
+-  //
+-  DEBUG ((DEBUG_VERBOSE, "SdMmcPciGli: Checking ADMA support: Caps=0x%08x, ADMA2 bit=%d\n",
+-          Caps, (Caps & SDHCI_CAN_DO_ADMA2) ? 1 : 0));
+-
+-  if ((Caps & SDHCI_CAN_DO_ADMA2) != 0) {
+-    Device->UseDma64 = FALSE;  // Force ADMA32 for now
+-
+-    HostControl = SdhciReadb (Device, SDHCI_HOST_CONTROL);
+-    // Clear timing/bus width bits (like depthcharge MMC_TIMING_INITIALIZATION)
+-    HostControl &= ~(SDHCI_CTRL_DMA_MASK | SDHCI_CTRL_HISPD | SDHCI_CTRL_4BITBUS | SDHCI_CTRL_8BITBUS);
+-    HostControl |= SDHCI_CTRL_ADMA32;
+-    SdhciWriteb (Device, SDHCI_HOST_CONTROL, HostControl);
+-    DEBUG ((DEBUG_INFO, "SdMmcPciGli: Enabling ADMA32 mode, cleared timing/bus bits\n"));
+-  } else {
+-    DEBUG ((DEBUG_WARN, "SdMmcPciGli: Controller doesn't support ADMA - will use PIO mode\n"));
+-    Device->UseDma64 = FALSE;
+-    // Leave DMA mode disabled in HOST_CONTROL
+-  }
+-
+-
+-  //
+-  // Enable interrupts - Match Depthcharge EXACTLY
+-  // Enable only data and command interrupts for status polling
+-  //
+-  SdhciWritel (Device, SDHCI_INT_ENABLE, SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK);
+-  SdhciWritel (Device, SDHCI_SIGNAL_ENABLE, 0x0); // Depthcharge uses 0, not ALL_MASK!
+-
+-  //
+-  // Set initial clock to 400 KHz for identification
+-  // This must be done BEFORE vendor init (GL9750/GL9755 need clock for PLL programming)
+-  //
+-  Status = SdhciSetClock (Device, 400000);
+-  if (EFI_ERROR (Status)) {
+-    return Status;
+-  }
+-
+-  //
+-  // Genesys Logic vendor-specific initialization (GL9750, GL9755)
+-  //
+-  if (Device->IsGL9750 || Device->IsGL9755) {
+-    Status = Gl975xInit (Device);
+-    if (EFI_ERROR (Status)) {
+-      return Status;
+-    }
+-  }
+-
+-  //
+-  // Set timeout to maximum (matches depthcharge)
+-  // Must be AFTER vendor init in case it gets reset
+-  //
+-  SdhciWriteb (Device, SDHCI_TIMEOUT_CONTROL, 0xe);
+-
+-  Device->Initialized = TRUE;
+-  DEBUG ((DEBUG_INFO, "SdMmcPciGli: SdhciInit complete\n"));
+-
+-  return EFI_SUCCESS;
+-}
+-
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
+index 94846bc49ff912c87bbb7db7164b823b223c2cf1..699d2b7ef20dd9cba5abdd18acf1aef86f79cf19 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dsc
++++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
+@@ -1428,7 +1428,6 @@
+     <LibraryClasses>
+       NonDiscoverableDeviceRegistrationLib|MdeModulePkg/Library/NonDiscoverableDeviceRegistrationLib/NonDiscoverableDeviceRegistrationLib.inf
+   }
+-  UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.inf
+   MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.inf
+   MdeModulePkg/Bus/Sd/EmmcDxe/EmmcDxe.inf
+   MdeModulePkg/Bus/Sd/SdDxe/SdDxe.inf
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
+index bcefe4cfc21786110a01308d9c37fe0fe4d32739..9b2e252927805d60a919b58ec9194826917aa2e1 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.fdf
++++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
+@@ -465,7 +465,6 @@ INF  RuleOverride=BINARY USE = X64 FSDrivers/ntfs.inf
+ !if $(SD_ENABLE) == TRUE
+ INF MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf
+ INF UefiPayloadPkg/SdhciNonPciDxe/SdhciNonPciDxe.inf
+-INF UefiPayloadPkg/SdMmcPciGliDxe/SdMmcPciGliDxe.inf
+ INF MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.inf
+ INF MdeModulePkg/Bus/Sd/EmmcDxe/EmmcDxe.inf
+ INF MdeModulePkg/Bus/Sd/SdDxe/SdDxe.inf
+-- 
+2.43.0
+

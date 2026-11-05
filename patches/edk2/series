@@ -51,3 +51,5 @@
 0051-MdeModulePkg-Fix-OptionOrder-double-free.patch
 0052-UefiPayloadPkg-UefiPayloadEntry-Fix-MMCONF-resource-.patch
 0053-UefiPayloadPkg-PlatformBootManagerLib-No-UEFI-Shell-.patch
+0054-UefiPayloadPkg-Leave-SdMmcPciGliDxe-out-of-the-paylo.patch
+0055-UefiPayloadPkg-Leave-SdhciNonPciDxe-out-of-the-paylo.patch

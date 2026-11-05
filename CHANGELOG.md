@@ -236,6 +236,16 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   `patches/tianocore` applies to a newer stable tag, `edk2` watches
   MrChromebox's branch from the commit the package comes from, `dbx`
   reads the dbx of the package.
+- Two drivers of MrChromebox's tree for controllers these boards do not
+  have are out of the payload (`edk2/0054`, `edk2/0055`), the first
+  *drop* commits of the move: SdMmcPciGliDxe, for the SDHCI of Genesys
+  Logic (the SD reader of the W541, an O2 Micro OZ777, is driven by
+  `SdMmcPciHcDxe` as before), and SdhciNonPciDxe, for the SDHCI off the
+  PCI bus, with its record of the coreboot table, the parser of
+  `CbParseLib` and `NonDiscoverablePciDeviceDxe`, which only it fed.
+  Each was dispatched at every boot to bind nothing. `tools/edk2-import.py`
+  keeps their directories out of TianoCore's tree (`LEFT_OUT`), so the
+  numbers of `patches/tianocore` stay.
 - [docs/edk2-migration.md](docs/edk2-migration.md): the 100 commits of
   MrChromebox's branch over `edk2-stable202608`, each with what it
   becomes in the move to TianoCore (the project's package, a patch to

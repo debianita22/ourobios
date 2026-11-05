@@ -41,6 +41,11 @@
 #     MrChromebox, binari, solo con NETWORK_PXE_BOOT (0ec988f, "drop" in
 #     docs/edk2-migration.md); iPXE e' a parte, lo copia li' il Makefile di
 #     coreboot, come CSMWrap in UefiPayloadPkg/LegacyBoot;
+#   - le cartelle di LEFT_OUT: moduli di MrChromebox che una patch di
+#     patches/edk2 toglie dal payload (i "drop" nel payload di
+#     docs/edk2-migration.md): il commit che li aggiunge e la patch che li
+#     toglie non prendono un numero in patches/tianocore, e gli altri
+#     numeri restano quelli di prima;
 #   - LvglPkg e .gitmodules: LvglPkg e' un package a se', clonato da
 #     tools/build.sh al commit del submodule di R (LVGLPKG_COMMIT) con
 #     patches/lvglpkg;
@@ -57,6 +62,11 @@ O = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PKG = "OuroBiosPkg"
 PLATFORM = ("UefiPayloadPkg/UefiPayloadPkg.dsc", "UefiPayloadPkg/UefiPayloadPkg.fdf")
 DROPPED = ("UefiPayloadPkg/NetworkDrivers",)
+# Cartelle di moduli di MrChromebox che una patch di patches/edk2 (il valore)
+# toglie dal payload: fuori dall'albero di TianoCore come DROPPED. R non le
+# ha, e il commit che le aggiunge resta senza numero come prima (sopra)
+LEFT_OUT = {"UefiPayloadPkg/SdMmcPciGliDxe": "0054",       # 9174049: i controller di Genesys Logic
+            "UefiPayloadPkg/SdhciNonPciDxe": "0055"}       # 5342f42: gli SDHCI fuori dal bus PCI
 # Cartelle che il tag di TianoCore ha, ma che il package porta intere, come le
 # ha R (docs/edk2-migration.md, "package"): PlatformBootManagerLib, la
 # politica di boot della piattaforma, e FmpDeviceSmmLib, la scrittura delle
@@ -206,7 +216,7 @@ def package_dirs(base, r):
             if d not in old:
                 new.add(d)
                 break
-    keep = sorted(d for d in new if not under(d, DROPPED))
+    keep = sorted(d for d in new if not under(d, DROPPED) and not under(d, LEFT_OUT))
     for d in PACKAGE_MOVED:
         if not any(p.startswith(d + "/") for p in r):
             raise Error("PACKAGE_MOVED: %s non c'e' in R" % d)
@@ -390,7 +400,7 @@ def where_left(paths, excl):
     """Dove sono i file di una patch che patches/tianocore non ha."""
     if not paths:
         return ", as it is"
-    pkg = [p for p in paths if not under(p, DROPPED) and not under(p, SEPARATE)]
+    pkg = [p for p in paths if not under(p, DROPPED) and not under(p, SEPARATE) and not under(p, LEFT_OUT)]
     moved = [p for p in pkg if under(p, PACKAGE_MOVED)]
     parts = []
     if pkg:
@@ -401,6 +411,9 @@ def where_left(paths, excl):
         parts.append("LvglPkg on its own")
     if any(under(p, DROPPED) for p in paths):
         parts.append("the network drivers of Realtek and ASIX left out")
+    for d, patch in sorted(LEFT_OUT.items()):
+        if any(under(p, (d,)) for p in paths):
+            parts.append("%s left out of the payload (patches/edk2/%s)" % (d.rsplit("/", 1)[1], patch))
     return (", without the files that TianoCore's tree does not have (tools/edk2-import.py): %s"
             % ", ".join(parts))
 
@@ -487,7 +500,7 @@ def main():
             raise Error("LVGLPKG_COMMIT di tools/build.sh e' %s, il submodule LvglPkg di %s e' %s" % (
                 lvgl[:12], head[:12], r_entries.get("LvglPkg", ("", "nessuno"))[1][:12]))
         dirs = package_dirs(base_entries, r_entries)
-        excl = sorted(set(dirs) | set(DROPPED) | set(SEPARATE) | set(PLATFORM))
+        excl = sorted(set(dirs) | set(DROPPED) | set(LEFT_OUT) | set(SEPARATE) | set(PLATFORM))
         print("R %s (%s + %d patch di patches/edk2): %d file, package: %s" % (
             r_tree[:12], head[:12], len(series("edk2")), len(r_entries), " ".join(pkg_path(d) for d in dirs)))
         pkg = package_files(mrc, r_entries, dirs)

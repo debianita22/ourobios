@@ -1,0 +1,233 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 5 Nov 2026 19:31:20 +0100
+Subject: [PATCH] UefiPayloadPkg: Leave SdhciNonPciDxe out of the payload
+
+[ouroBIOS: patches/edk2/0055, without the files that TianoCore's tree
+does not have (tools/edk2-import.py): 2 in edk2/OuroBiosPkg,
+SdhciNonPciDxe left out of the payload (patches/edk2/0055)]
+
+SdhciNonPciDxe registers the SDHCI controllers that coreboot leaves off
+the PCI bus (the ACPI-mode SCC of Bay Trail and Braswell, the fixed MMIO
+eMMC of AMD Picasso) from the LB_TAG_SDHCI_NONPCI record of the coreboot
+table, for NonDiscoverablePciDeviceDxe to drive. No board of ouroBIOS
+has such a controller, and no board of theirs writes the record: the
+driver was dispatched at every boot to find nothing.
+
+The module, its GUID and header, the record in Coreboot.h and the parser
+of CbParseLib go, as before MrChromebox's commit 5342f428abac; so does
+NonDiscoverablePciDeviceDxe, which only that driver fed and which
+TianoCore's UefiPayloadPkg does not list. The SD block of the platform
+is TianoCore's again: SdMmcPciHcDxe, EmmcDxe and SdDxe.
+---
+diff --git a/UefiPayloadPkg/Include/Coreboot.h b/UefiPayloadPkg/Include/Coreboot.h
+index 2c2320d0ce8c872c2ed19cab9fd6c7a53dbdfaaa..0cde4c88df0244aa8ff5c436def449891333ed86 100644
+--- a/UefiPayloadPkg/Include/Coreboot.h
++++ b/UefiPayloadPkg/Include/Coreboot.h
+@@ -249,23 +249,6 @@ struct cb_cbmem_tab {
+   UINT64    cbmem_tab;
+ };
+ 
+-#define CB_TAG_SDHCI_NONPCI  0x004a
+-struct cb_sdhci_nonpci_control {
+-  UINT32    mmio_base;
+-  UINT32    mmio_size;
+-  UINT8     slot;
+-  UINT8     flags;
+-  UINT8     reserved[2];
+-};
+-
+-struct cb_sdhci_nonpci {
+-  UINT32                            tag;
+-  UINT32                            size;
+-  UINT32                            version;
+-  UINT32                            count;
+-  struct cb_sdhci_nonpci_control    ctrl[8];
+-};
+-
+ #define CB_TAG_BOOT_MEDIA_PARAMS  0x0030
+ struct cb_boot_media_params {
+   UINT32    tag;
+diff --git a/UefiPayloadPkg/Include/Guid/SdhciNonPciInfoGuid.h b/UefiPayloadPkg/Include/Guid/SdhciNonPciInfoGuid.h
+deleted file mode 100644
+index ff52791a2c8cf9f31452dc07142b5a2e49dc18ed..0000000000000000000000000000000000000000
+--- a/UefiPayloadPkg/Include/Guid/SdhciNonPciInfoGuid.h
++++ /dev/null
+@@ -1,40 +0,0 @@
+-/** @file
+-  HOB describing non-PCI SDHCI controllers for the payload.
+-
+-  Layout matches LB_TAG_SDHCI_NONPCI body (commonlib/bsd/sdhci_nonpci_info.h).
+-  Used for ACPI-mode PCI SDHCI (variable BAR) and fixed-MMIO SDHCI.
+-
+-  Copyright (c) 2026, Matt DeVillier <matt.devillier@gmail.com>
+-  SPDX-License-Identifier: BSD-2-Clause-Patent
+-**/
+-
+-#pragma once
+-
+-///
+-/// Coreboot non-PCI SDHCI info GUID
+-///
+-extern EFI_GUID  gUefiSdhciNonPciInfoGuid;
+-
+-#define SDHCI_NONPCI_INFO_VERSION  1
+-
+-#define SDHCI_NONPCI_SLOT_EMMC  0
+-#define SDHCI_NONPCI_SLOT_SDIO  1
+-#define SDHCI_NONPCI_SLOT_SD    2
+-
+-#define SDHCI_NONPCI_FLAG_EMBEDDED  0x01
+-
+-#define SDHCI_NONPCI_CTRL_MAX  8
+-
+-typedef struct {
+-  UINT32    MmioBase;
+-  UINT32    MmioSize;
+-  UINT8     Slot;
+-  UINT8     Flags;
+-  UINT8     Reserved[2];
+-} SDHCI_NONPCI_CONTROL;
+-
+-typedef struct {
+-  UINT32                Version;
+-  UINT32                Count;
+-  SDHCI_NONPCI_CONTROL  Ctrl[SDHCI_NONPCI_CTRL_MAX];
+-} SDHCI_NONPCI_INFO;
+diff --git a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
+index 6bf284c607da3c01ea11d6bb731e6687605f0677..554cd569f31df871f27ea2c05fd7b95dbac38399 100644
+--- a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
++++ b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
+@@ -21,7 +21,6 @@
+ #include <IndustryStandard/Acpi.h>
+ #include <Coreboot.h>
+ #include <Guid/CfrSetupMenuGuid.h>
+-#include <Guid/SdhciNonPciInfoGuid.h>
+ #include <UniversalPayload/PciRootBridges.h>
+ 
+ /**
+@@ -628,80 +627,13 @@ ParseGfxDeviceInfo (
+ }
+ 
+ /**
+-  Publish non-PCI SDHCI controller info from LB_TAG_SDHCI_NONPCI as a GUID HOB.
++  Find the RootBridge info.
+ 
+-  @retval RETURN_SUCCESS     Successfully created the HOB.
+-  @retval RETURN_NOT_FOUND   LB tag absent.
+-  @retval RETURN_UNSUPPORTED Invalid record contents.
+-  @retval RETURN_OUT_OF_RESOURCES  Could not build HOB.
+-**/
+-STATIC
+-RETURN_STATUS
+-ParseSdhciNonPciInfo (
+-  VOID
+-  )
+-{
+-  struct cb_sdhci_nonpci  *Rec;
+-  SDHCI_NONPCI_INFO       *Hob;
+-  UINT32                  Idx;
+-  UINT32                  MinSize;
+-
+-  Rec = FindCbTag (CB_TAG_SDHCI_NONPCI);
+-  if (Rec == NULL) {
+-    return RETURN_NOT_FOUND;
+-  }
+-
+-  //
+-  // Require tag/size/version/count, then validate the ctrl[] payload against
+-  // count rather than assuming a fixed ctrl[SDHCI_NONPCI_CTRL_MAX] record.
+-  //
+-  if ((Rec->size < OFFSET_OF (struct cb_sdhci_nonpci, ctrl)) ||
+-      (Rec->version != SDHCI_NONPCI_INFO_VERSION) ||
+-      (Rec->count == 0) ||
+-      (Rec->count > SDHCI_NONPCI_CTRL_MAX))
+-  {
+-    DEBUG ((
+-      DEBUG_ERROR,
+-      "Invalid SDHCI non-PCI LB record (size=0x%x ver=%u count=%u)\n",
+-      Rec->size,
+-      Rec->version,
+-      Rec->count
+-      ));
+-    return RETURN_UNSUPPORTED;
+-  }
+-
+-  MinSize = OFFSET_OF (struct cb_sdhci_nonpci, ctrl) +
+-            Rec->count * sizeof (Rec->ctrl[0]);
+-  if (Rec->size < MinSize) {
+-    DEBUG ((
+-      DEBUG_ERROR,
+-      "Invalid SDHCI non-PCI LB record size 0x%x (need >= 0x%x for count=%u)\n",
+-      Rec->size,
+-      MinSize,
+-      Rec->count
+-      ));
+-    return RETURN_UNSUPPORTED;
+-  }
+-
+-  Hob = BuildGuidHob (&gUefiSdhciNonPciInfoGuid, sizeof (SDHCI_NONPCI_INFO));
+-  if (Hob == NULL) {
+-    return RETURN_OUT_OF_RESOURCES;
+-  }
+-
+-  ZeroMem (Hob, sizeof (SDHCI_NONPCI_INFO));
+-  Hob->Version = Rec->version;
+-  Hob->Count   = Rec->count;
+-  for (Idx = 0; Idx < Rec->count; Idx++) {
+-    Hob->Ctrl[Idx].MmioBase = Rec->ctrl[Idx].mmio_base;
+-    Hob->Ctrl[Idx].MmioSize = Rec->ctrl[Idx].mmio_size;
+-    Hob->Ctrl[Idx].Slot     = Rec->ctrl[Idx].slot;
+-    Hob->Ctrl[Idx].Flags    = Rec->ctrl[Idx].flags;
+-  }
+-
+-  DEBUG ((DEBUG_INFO, "Created SDHCI non-PCI info hob: count=%u\n", Rec->count));
+-  return RETURN_SUCCESS;
+-}
++  @param  SmmStoreInfo       Pointer to the SMMSTORE_INFO structure
+ 
++  @retval RETURN_SUCCESS     Successfully find the Smm store buffer information.
++  @retval RETURN_NOT_FOUND   Failed to find the Smm store buffer information .
++**/
+ RETURN_STATUS
+ EFIAPI
+ ParseRootBridgeInfo (
+@@ -769,10 +701,6 @@ ParseMiscInfo (
+     DEBUG ((DEBUG_INFO, "Failed to create PCI root bridge info guid hob\n"));
+   }
+ 
+-  if (ParseSdhciNonPciInfo () != RETURN_SUCCESS) {
+-    DEBUG ((DEBUG_INFO, "No SDHCI non-PCI info in coreboot table\n"));
+-  }
+-
+   //
+   // CFR has several CB tags, though these are nested structures,
+   // not for individual table-to-HOB conversion
+diff --git a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.inf b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.inf
+index 32803157e72adfeb2365c04d6cde87c5637137c9..c73bf66153c8b2cbb4e952ccb2be31bbd64b3a28 100644
+--- a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.inf
++++ b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.inf
+@@ -40,7 +40,6 @@
+ [Guids]
+   gEfiCfrSetupMenuFormGuid
+   gUniversalPayloadPciRootBridgeInfoGuid
+-  gUefiSdhciNonPciInfoGuid
+ 
+ [Pcd]
+   gUefiPayloadPkgTokenSpaceGuid.PcdBootloaderParameter
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
+index bdaf58d931655306cca203397671c9e95b432e6e..930c0df5a1cdcd6c505ad3e6e231a05376671932 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dec
++++ b/UefiPayloadPkg/UefiPayloadPkg.dec
+@@ -69,8 +69,6 @@
+   gEfiFirmwareInfoHobGuid  = { 0xe0653829, 0x274e, 0x4b1e, { 0x87, 0x2d, 0xa2, 0x20, 0xf5, 0xaf, 0x8f, 0x3d } }
+   ## Include/Guid/BootMediaInfoGuid.h
+   gEfiBootMediaInfoHobGuid = { 0xd0fad08b, 0xb129, 0x40ff, { 0xb8, 0x29, 0xf5, 0x9a, 0xbe, 0x75, 0x83, 0x8e } }
+-  ## Include/Guid/SdhciNonPciInfoGuid.h
+-  gUefiSdhciNonPciInfoGuid = { 0x374cb7ae, 0x5560, 0x4ed2, { 0xbd, 0x88, 0x1d, 0x80, 0x1f, 0x1b, 0xd4, 0x96 } }
+ 
+   gEfiTcgPhysicalPresenceInfoHobGuid = { 0xf367be59, 0x5891, 0x40eb, { 0x21, 0x44, 0xed, 0x2e, 0xac, 0x57, 0xfd, 0x14 }}
+ 
+-- 
+2.43.0
+
