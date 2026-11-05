@@ -426,6 +426,19 @@ assert hw.idle_verdict(0.0, 0.6, [(1.1, "nordvpnd")], ["eDP-1 2880x1620"], "w541
                 "la soglia vale a schermo spento")
 assert hw.idle_verdict(0.0, 0.6, [], ["eDP-1 1920x1080"], "w541")[1].endswith("ripetere a schermo spento")
 assert hw.idle_verdict(60.0, 2.0, [], ["eDP-1"]) == ("PASS", None)
+# ME-01 sul M920x con il bit HAP chiesto (me_state 2, patch 0226): scritto e
+# il ME ancora acceso fino all'accensione da spento (INFO), il ME fermato (PASS
+# senza HECI), il bit che non c'e' (WARN)
+hap_log = ["[DEBUG]  CMOS: me_state = 2", "[DEBUG]  ME: Error Code                  : 0"]
+for extra, ws, mode, want in ((["[NOTE ]  HAP: setting the bit in the flash descriptor (PCHSTRP0 00010000)",
+                                "[NOTE ]  HAP: written; the ME takes it at the next start from power off"], 5, 0, "INFO"),
+                              (["[DEBUG]  HAP: set in the flash descriptor, as me_state asks"], 2, 0,
+                               "WARN" if os.path.exists(hw.update.HECI_PCI) else "PASS"),
+                              (["[ERROR]  HAP: flash descriptor not read"], 2, 0, "WARN")):
+    rep = hw.Report()
+    hw.check_me(firmware("m920x", hap_log + extra + ["[DEBUG]  ME: Current Working State       : %d" % ws,
+                                                     "[DEBUG]  ME: Current Operation Mode      : %d" % mode], []), rep)
+    assert rep.checks[0]["status"] == want, (extra, rep.checks[0])
 rep = hw.Report()
 hw.check_boot_time(firmware("m920x", valid + ["[INFO ]  DRAM clear: option always: clearing"], ts(230000)), rep)
 assert "Clear memory at power-on: Always: memoria cancellata (~0.5 s ogni 10 GB)" in rep.checks[0]["details"], \
@@ -540,7 +553,7 @@ assert st == "FAIL" and [x["bdf"] for x in data["excluded"]] == ["00:02.0", "00:
 assert any(l.startswith("l'apertura copre ECAM") for l in det), det
 EOF
 	then
-		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, il costo della seriale del M920x per livello (BOOT-01), messaggi noti ed eventi del log, microcode con PRMRR, il registro del measured boot rifatto contro i PCR (TPM 2.0 e 1.2), la finestra ECAM di MCFG (CONF-07), l'apertura PCI del payload (PCI-09), la versione del W541 in SMBIOS (BOOT-01), una misura degli stati C non a riposo (IDLE-01)"
+		ok "tools/hw-report.py: soglie della RAM init e del tempo di avvio, il costo della seriale del M920x per livello (BOOT-01), ME-01 con il bit HAP, messaggi noti ed eventi del log, microcode con PRMRR, il registro del measured boot rifatto contro i PCR (TPM 2.0 e 1.2), la finestra ECAM di MCFG (CONF-07), l'apertura PCI del payload (PCI-09), la versione del W541 in SMBIOS (BOOT-01), una misura degli stati C non a riposo (IDLE-01)"
 	else
 		bad "tools/hw-report.py: i controlli non danno gli esiti attesi"
 	fi

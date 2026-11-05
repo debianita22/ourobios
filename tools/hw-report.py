@@ -1515,9 +1515,21 @@ def check_me(fw, rep):
     cws, com, err = (g(r"^ME: Current Working State\s*: (.+)$"), g(r"^ME: Current Operation Mode\s*: (.+)$"),
                      g(r"^ME: Error Code\s*: (.+)$"))
     opt = g(r"^CMOS: me_state = (\d+)")
+    # il bit HAP del descrittore (me_state 2, patch 0226): hap.c lo dice a
+    # ogni avvio, o quando lo scrive
+    hap = g(r"^HAP: (set|clear) in the flash descriptor|^HAP: (written)|^HAP: (not written|the flash descriptor could not)")
+    hap_set = bool(hap) and (hap.group(1) == "set" or (hap.group(2) == "written" and
+                                                         bool(fw.grep(r"^HAP: setting the bit"))))
     heci = os.path.exists(update.HECI_PCI)
     drv = os.path.basename(os.path.realpath(update.HECI_PCI + "/driver")) \
         if os.path.exists(update.HECI_PCI + "/driver") else "-"
+    if com is None and opt and int(opt.group(1)) == 2:
+        rep.add("ME-01", "Intel ME", "PASS" if hap_set and not heci else "WARN",
+                "spento dal bit HAP" + (", HECI nascosto" if not heci else ", ma HECI 00:16.0 e' visibile")
+                if hap_set else "chiesto il bit HAP, ma il descrittore non lo ha (righe 'HAP:' del log)",
+                ["opzione me_state: 2 (Disabled, HAP bit); nessuna riga 'ME: Current Operation Mode' nel log"],
+                {"me_state": 2, "hap": hap_set, "heci": heci})
+        return
     if com is None:
         hint = debug_hint(fw, "le righe 'ME:'")
         rep.add("ME-01", "Intel ME", "SKIP", "nessuna riga 'ME: Current Operation Mode' nel log",
@@ -1528,8 +1540,8 @@ def check_me(fw, rep):
     ec = me_value(err.group(1), {"No Error": 0}) if err else None
     want = int(opt.group(1)) if opt else None
     details = ["HFSTS1: working state %s, operation mode %s, error code %s" % (ws, mode, ec),
-               "opzione me_state: %s" % ({0: "0 (Enabled)", 1: "1 (Disabled)"}.get(want, want) if opt else
-                                        "non nel log"),
+               "opzione me_state: %s" % ({0: "0 (Enabled)", 1: "1 (Disabled)", 2: "2 (Disabled, HAP bit)"}
+                                        .get(want, want) if opt else "non nel log"),
                "HECI 00:16.0 nel sistema: %s" % (("si', driver %s" % drv) if heci else "no")]
     for m in fw.grep(r"^ME: (Version: .*|Manufacturing Mode\s*: YES|FW Partition Table\s*: BAD|"
                      r"Bringup Loader Failure\s*: YES)$"):
@@ -1538,7 +1550,20 @@ def check_me(fw, rep):
         rep.add("ME-01", "Intel ME", "INFO", "operation mode %s, working state %s" % (mode, ws), details)
         return
     status = "PASS"
-    if want == 1 or (want is None and mode == ME_HFS1_COM_SOFT_TEMP_DISABLE):
+    if want == 2:
+        details.append("bit HAP nel descrittore: %s" % ("impostato" if hap_set else "no"))
+        if not hap_set:
+            status, summary = "WARN", "chiesto il bit HAP, ma il descrittore non lo ha (righe 'HAP:' del log)"
+        elif mode in (ME_HFS1_COM_NORMAL, ME_HFS1_COM_SOFT_TEMP_DISABLE) and \
+                (ws == ME_HFS1_CWS_NORMAL or mode == ME_HFS1_COM_SOFT_TEMP_DISABLE):
+            status, summary = "INFO", ("bit HAP impostato, il ME e' ancora %s: si ferma alla prossima accensione "
+                                       "da spento (spina staccata 10 s)" % ("acceso" if mode == ME_HFS1_COM_NORMAL
+                                                                          else "in soft disable"))
+        elif heci:
+            status, summary = "WARN", "spento dal bit HAP, ma HECI 00:16.0 e' visibile"
+        else:
+            summary = "spento dal bit HAP (working state %s, operation mode %s), HECI nascosto" % (ws, mode)
+    elif want == 1 or (want is None and mode == ME_HFS1_COM_SOFT_TEMP_DISABLE):
         summary = "spento (soft temporary disable)"
         if mode != ME_HFS1_COM_SOFT_TEMP_DISABLE:
             status, summary = "WARN", "chiesto spento (me_state 1) ma operation mode %s" % mode
@@ -1557,7 +1582,8 @@ def check_me(fw, rep):
         else:
             summary += ", normale, HECI con %s" % drv
     rep.add("ME-01", "Intel ME", status, summary, details,
-            {"operation_mode": mode, "working_state": ws, "error_code": ec, "me_state": want, "heci": heci})
+            {"operation_mode": mode, "working_state": ws, "error_code": ec, "me_state": want, "heci": heci,
+             "hap": hap_set})
 
 
 def separator_pcr(alg):
