@@ -159,3 +159,8 @@ change as expected.
   `cbmem -T` of that boot, whole.
 - [fwts-m920x-fsp.log](fwts-m920x-fsp.log): fwts on rc6.
 - [dpll.md](dpll.md): the i915 DPLL measurements.
+- [development.md](development.md): what the machine gives the next
+  items of the roadmap (the memory clear on every core, the device
+  switches, Hyper-Threading, the firmware watchdog), with
+  [devices-m920x-fsp.txt](devices-m920x-fsp.txt), its devices and
+  codec pins.

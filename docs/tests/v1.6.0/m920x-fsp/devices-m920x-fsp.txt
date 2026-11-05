@@ -1,0 +1,122 @@
+# lspci -nn
+00:00.0 Host bridge [0600]: Intel Corporation 8th Gen Core 4-core Desktop Processor Host Bridge/DRAM Registers [Coffee Lake S] [8086:3e1f] (rev 08)
+00:02.0 VGA compatible controller [0300]: Intel Corporation CoffeeLake-S GT2 [UHD Graphics 630] [8086:3e91]
+00:04.0 Signal processing controller [1180]: Intel Corporation Xeon E3-1200 v5/E3-1500 v5/6th Gen Core Processor Thermal Subsystem [8086:1903] (rev 08)
+00:08.0 System peripheral [0880]: Intel Corporation Xeon E3-1200 v5/v6 / E3-1500 v5 / 6th/7th/8th Gen Core Processor Gaussian Mixture Model [8086:1911]
+00:12.0 Signal processing controller [1180]: Intel Corporation Cannon Lake PCH Thermal Controller [8086:a379] (rev 10)
+00:14.0 USB controller [0c03]: Intel Corporation Cannon Lake PCH USB 3.1 xHCI Host Controller [8086:a36d] (rev 10)
+00:14.2 RAM memory [0500]: Intel Corporation Cannon Lake PCH Shared SRAM [8086:a36f] (rev 10)
+00:17.0 SATA controller [0106]: Intel Corporation Cannon Lake PCH SATA AHCI Controller [8086:a352] (rev 10)
+00:1b.0 PCI bridge [0604]: Intel Corporation Cannon Lake PCH PCI Express Root Port #21 [8086:a32c] (rev f0)
+00:1c.0 PCI bridge [0604]: Intel Corporation Cannon Lake PCH PCI Express Root Port #6 [8086:a33d] (rev f0)
+00:1f.0 ISA bridge [0601]: Intel Corporation Q370 Chipset LPC/eSPI Controller [8086:a306] (rev 10)
+00:1f.3 Audio device [0403]: Intel Corporation Cannon Lake PCH cAVS [8086:a348] (rev 10)
+00:1f.4 SMBus [0c05]: Intel Corporation Cannon Lake PCH SMBus Controller [8086:a323] (rev 10)
+00:1f.5 Serial bus controller [0c80]: Intel Corporation Cannon Lake PCH SPI Controller [8086:a324] (rev 10)
+00:1f.6 Ethernet controller [0200]: Intel Corporation Ethernet Connection (7) I219-LM [8086:15bb] (rev 10)
+01:00.0 Non-Volatile memory controller [0108]: Samsung Electronics Co Ltd NVMe SSD Controller SM981/PM981/PM983 [144d:a808]
+02:00.0 Network controller [0280]: Intel Corporation Dual Band Wireless-AC 3165 Plus Bluetooth [8086:3166] (rev 99)
+
+# lspci -tv
+-[0000:00]-+-00.0  Intel Corporation 8th Gen Core 4-core Desktop Processor Host Bridge/DRAM Registers [Coffee Lake S]
+           +-02.0  Intel Corporation CoffeeLake-S GT2 [UHD Graphics 630]
+           +-04.0  Intel Corporation Xeon E3-1200 v5/E3-1500 v5/6th Gen Core Processor Thermal Subsystem
+           +-08.0  Intel Corporation Xeon E3-1200 v5/v6 / E3-1500 v5 / 6th/7th/8th Gen Core Processor Gaussian Mixture Model
+           +-12.0  Intel Corporation Cannon Lake PCH Thermal Controller
+           +-14.0  Intel Corporation Cannon Lake PCH USB 3.1 xHCI Host Controller
+           +-14.2  Intel Corporation Cannon Lake PCH Shared SRAM
+           +-17.0  Intel Corporation Cannon Lake PCH SATA AHCI Controller
+           +-1b.0-[01]----00.0  Samsung Electronics Co Ltd NVMe SSD Controller SM981/PM981/PM983
+           +-1c.0-[02]----00.0  Intel Corporation Dual Band Wireless-AC 3165 Plus Bluetooth
+           +-1f.0  Intel Corporation Q370 Chipset LPC/eSPI Controller
+           +-1f.3  Intel Corporation Cannon Lake PCH cAVS
+           +-1f.4  Intel Corporation Cannon Lake PCH SMBus Controller
+           +-1f.5  Intel Corporation Cannon Lake PCH SPI Controller
+           \-1f.6  Intel Corporation Ethernet Connection (7) I219-LM
+
+# lsusb -t
+/:  Bus 001.Port 001: Dev 001, Class=root_hub, Driver=xhci_hcd/16p, 480M
+    |__ Port 002: Dev 002, If 0, Class=Human Interface Device, Driver=usbhid, 1.5M
+    |__ Port 002: Dev 002, If 1, Class=Human Interface Device, Driver=usbhid, 1.5M
+    |__ Port 014: Dev 003, If 0, Class=Wireless, Driver=btusb, 12M
+    |__ Port 014: Dev 003, If 1, Class=Wireless, Driver=btusb, 12M
+/:  Bus 002.Port 001: Dev 001, Class=root_hub, Driver=xhci_hcd/10p, 10000M
+
+# lsusb
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 002: ID 046d:c312 Logitech, Inc. DeLuxe 250 Keyboard
+Bus 001 Device 003: ID 8087:0a2a Intel Corp. Bluetooth wireless interface
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+
+# /proc/asound/card0/codec#0 (pin complex)
+Node 0x12 [Pin Complex] wcaps 0x40040b: Stereo Amp-In
+  Pin Default 0x40000000: [N/A] Line Out at Ext N/A
+  Pin-ctls: 0x00:
+Node 0x14 [Pin Complex] wcaps 0x40058d: Stereo Amp-Out
+  Pin Default 0x90170110: [Fixed] Speaker at Int N/A
+  Pin-ctls: 0x40: OUT
+Node 0x17 [Pin Complex] wcaps 0x40050c: Mono Amp-Out
+  Pin Default 0x411111f0: [N/A] Speaker at Ext Rear
+  Pin-ctls: 0x00:
+Node 0x18 [Pin Complex] wcaps 0x40048b: Stereo Amp-In
+  Pin Default 0x411111f0: [N/A] Speaker at Ext Rear
+  Pin-ctls: 0x20: IN VREF_HIZ
+Node 0x19 [Pin Complex] wcaps 0x40048b: Stereo Amp-In
+  Pin Default 0x02a11020: [Jack] Mic at Ext Front
+  Pin-ctls: 0x24: IN VREF_80
+Node 0x1a [Pin Complex] wcaps 0x40048b: Stereo Amp-In
+  Pin Default 0x02a11030: [Jack] Mic at Ext Front
+  Pin-ctls: 0x24: IN VREF_80
+Node 0x1b [Pin Complex] wcaps 0x40058f: Stereo Amp-In Amp-Out
+  Pin Default 0x411111f0: [N/A] Speaker at Ext Rear
+  Pin-ctls: 0x20: IN VREF_HIZ
+Node 0x1d [Pin Complex] wcaps 0x400400: Mono
+  Pin Default 0x40400001: [N/A] SPDIF Out at Ext N/A
+  Pin-ctls: 0x20: IN
+Node 0x1e [Pin Complex] wcaps 0x400781: Stereo Digital
+  Pin Default 0x411111f0: [N/A] Speaker at Ext Rear
+  Pin-ctls: 0x40: OUT
+Node 0x21 [Pin Complex] wcaps 0x40058d: Stereo Amp-Out
+  Pin Default 0x0221101f: [Jack] HP Out at Ext Front
+  Pin-ctls: 0xc0: OUT HP
+
+# lscpu
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           39 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  4
+On-line CPU(s) list:                     0-3
+Vendor ID:                               GenuineIntel
+Model name:                              Intel(R) Core(TM) i3-8100 CPU @ 3.60GHz
+CPU family:                              6
+Model:                                   158
+Thread(s) per core:                      1
+Core(s) per socket:                      4
+Socket(s):                               1
+Stepping:                                11
+CPU(s) scaling MHz:                      100%
+CPU max MHz:                             3600.0000
+CPU min MHz:                             800.0000
+BogoMIPS:                                7200.00
+Virtualization:                          VT-x
+L1d cache:                               128 KiB (4 instances)
+L1i cache:                               128 KiB (4 instances)
+L2 cache:                                1 MiB (4 instances)
+L3 cache:                                6 MiB (1 instance)
+NUMA node(s):                            1
+NUMA node0 CPU(s):                       0-3
+
+# dmidecode -t 17 (memory)
+	Size: 32 GB
+	Locator: Channel-0-DIMM-0
+	Bank Locator: BANK 0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Configured Memory Speed: 2400 MT/s
+	Size: 8 GB
+	Locator: Channel-1-DIMM-0
+	Bank Locator: BANK 0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Configured Memory Speed: 2400 MT/s

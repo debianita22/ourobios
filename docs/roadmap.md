@@ -64,7 +64,10 @@ second timeout never resets once SMIs run.
   with a long timeout (300 s or more) and the stop ready. In the code: a
   second read-back at `BS_PAYLOAD_BOOT`, the status bits kept as they are
   in every write, and the option hidden on the M720q/M920q, which share
-  `cfr.c`.
+  `cfr.c`. Read on the M920x under rc6 (2026-11-05): `OC_WDT_CTL`
+  `0x00002000`, the watchdog there and off, FSP leaves it alone; the
+  TCO timer halted and locked, no `WDAT` table
+  ([docs/tests/v1.6.0/m920x-fsp/development.md](tests/v1.6.0/m920x-fsp/development.md#the-firmware-watchdog)).
 
 On the W541 the same watchdog is in Lynx Point (PMBASE + 0x54, which
 coreboot only names `C3_RES`), and the Lenovo firmware drives it
@@ -363,7 +366,9 @@ which coreboot sets for Sandy Bridge and Ivy Bridge (`model_206ax`).
   option, with a read-back, at most one reset per boot, and shown as on
   the M920x (when it is off, or when CPUID reports more than one thread),
   checked with `lscpu`, the ACPI processor objects (`Processor` for macOS
-  too) and the MADT.
+  too) and the MADT. The M920x of the port cannot help: its i3-8100 has
+  one thread per core
+  ([docs/tests/v1.6.0/m920x-fsp/development.md](tests/v1.6.0/m920x-fsp/development.md#hyper-threading)).
 
 ## Device switches on the W541
 
@@ -390,6 +395,9 @@ have a switch.
   microphone (pin configuration), with help texts that call them soft
   switches; the camera and the fingerprint reader through their USB
   ports.
+- **From the M920x** (2026-11-05): how each switch looks on a Cannon
+  Point PCH, the devices and the codec pins of the Tiny, in
+  [docs/tests/v1.6.0/m920x-fsp/development.md](tests/v1.6.0/m920x-fsp/development.md#device-switches).
 
 ## Wake on LAN after a shutdown on the W541
 
@@ -709,6 +717,13 @@ W541 1.7 s for 32 GB. The processors are up by then (MP init at
 in two channels peaks at 38.4 GB/s, so the gain is between none and about
 0.8 s: a test build that times the clear with one, two and four
 processors decides, ramstage only, and the S3 resume never clears.
+Measured on the M920x of the port on 2026-11-05
+([docs/tests/v1.6.0/m920x-fsp/development.md](tests/v1.6.0/m920x-fsp/development.md#clearing-the-memory-on-every-core)):
+42.7 GB in 2.0 s, 21.4 GB/s; in Linux one core zeroes at 29-35 GB/s and
+four at about 45 together, but that machine has 32 + 8 GB, dual-channel
+over 16 GB only, so the clear is bound by the memory there; the test
+build wants two equal DIMMs, and the single-processor loop has headroom
+of its own.
 
 ## The UEFI Shell in the payload
 
