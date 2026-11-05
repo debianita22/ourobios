@@ -1,7 +1,7 @@
 # Hardware tests of the v1.6.0 candidate
 
 The tests before the tag of v1.6.0, on the W541 (`mrc` and `nri`) and the
-M920x (`fsp`), with the CI build `ci-244-98e7f1c`. The IDs are those of
+M920x (`fsp`), with the candidate v1.6.0-rc5. The IDs are those of
 [docs/testing.md](testing.md). Whoever runs them, a person or an agent
 such as Claude Code on the machine, follows the rules below; the results
 stay on the machine, in `~/ourobios-test-v1.6.0/`, one folder per board
@@ -10,26 +10,30 @@ test a release candidate*, step 5).
 
 ## The build
 
-- **Run**: [Build #244](https://github.com/debianita22/ourobios/actions/runs/41675819773)
-  of `ci-test/v1.6.0-final`, which is `next` at `98e7f1c`: every ROM, the
-  smoke test of the setup at 1920x1080 and 2880x1620, the A/B update in
-  QEMU, the ROMs again on another runner, a reproducible build.
-- **Artifact**: `ourobios-ci-244-98e7f1c`, kept until 2026-11-17:
-  `w541-coreboot-ci-244-98e7f1c-mrc.rom`,
-  `w541-coreboot-ci-244-98e7f1c-nri.rom`,
-  `m920x-coreboot-ci-244-98e7f1c-fsp.rom`, with `SHA256SUMS`. A CI build
-  has no capsule (its version is 0): it goes in with `update.py
-  other-slot`.
-- **Tools**: from a clone at `next`, `98e7f1c` or later. On the machine:
+- **Candidate**: the pre-releases
+  [v1.6.0-rc5-mrc](https://github.com/debianita22/ourobios/releases/tag/v1.6.0-rc5-mrc),
+  [v1.6.0-rc5-nri](https://github.com/debianita22/ourobios/releases/tag/v1.6.0-rc5-nri) and
+  [v1.6.0-rc5-m920x-fsp](https://github.com/debianita22/ourobios/releases/tag/v1.6.0-rc5-m920x-fsp),
+  built by [Release #42022785715](https://github.com/debianita22/ourobios/actions/runs/42022785715)
+  from `next` at `cafc6b2`: for each variant the ROM, the capsule (`.cap`,
+  version v1.6.0-rc5, so it installs and goes back as a release does) and
+  `SHA256SUMS`.
+- **After rc5** `next` has patch 0225 (the measurement log of coreboot at
+  DEBUG, off the serial port of the M920x at INFO) and the serial port
+  counted by `hw-report.py` (BOOT-01): they go into the next candidate;
+  these tests run rc5 with the tools of `next`.
+- **Tools**: from a clone at `next`, `cafc6b2` or later. On the machine:
   `python3`, flashrom 1.2 or later, `cbmem` (coreboot's `util/cbmem`),
   `dmidecode`, `fwts` (CONF-03), `mokutil`, `efibootmgr`, and `gh` to
-  download the artifact.
+  download the candidate.
 
 ```sh
 git -C CLONE fetch origin && git -C CLONE checkout next && git -C CLONE pull --ff-only
 mkdir -p ~/ourobios-test-v1.6.0 && cd ~/ourobios-test-v1.6.0
-gh run download 41675819773 -R debianita22/ourobios -n ourobios-ci-244-98e7f1c -D rom
-( cd rom && sha256sum -c SHA256SUMS --ignore-missing )
+for v in mrc nri m920x-fsp; do
+  gh release download v1.6.0-rc5-$v -R debianita22/ourobios -D rom/$v -p '*.rom' -p '*.cap' -p SHA256SUMS
+  ( cd rom/$v && sha256sum -c SHA256SUMS --ignore-missing )
+done
 ```
 
 ## Rules
@@ -37,11 +41,12 @@ gh run download 41675819773 -R debianita22/ourobios -n ourobios-ci-244-98e7f1c -
 1. A copy of the flash first: `flashrom -p internal -r flash-before.bin`,
    12582912 bytes on the W541, 25165824 on the M920x, kept off the
    machine.
-2. Write only what `update.py other-slot` prints: the flashrom command as
-   it is (the slot that is not running and `RW_NVRAM`, on the W541 with
-   `RW_MRC_CACHE`). Never `WP_RO`, `--ifd`, the descriptor, ME, GbE or
-   the whole image: writing those is a brick risk and no part of these
-   tests.
+2. Write only through the capsules (`update.py stage`, `update.py
+   rollback`: the firmware writes the slot that is not running) or what
+   `update.py other-slot` prints: the flashrom command as it is (the slot
+   that is not running and `RW_NVRAM`, on the W541 with `RW_MRC_CACHE`).
+   Never `WP_RO`, `--ifd`, the descriptor, ME, GbE or the whole image:
+   writing those is a brick risk and no part of these tests.
 3. An agent shows each flashrom write and runs it only after an explicit
    yes from the owner of the machine.
 4. flashrom must end with `VERIFIED`; if not, the same command once
@@ -54,27 +59,34 @@ gh run download 41675819773 -R debianita22/ourobios -n ourobios-ci-244-98e7f1c -
 
 ## 1. Install
 
-*BIOS Lock* off in the setup (*Security* → *Flash protection*), save and
-reboot: `update.py protection` must say *BIOS Lock: spento*. *Firmware
-protection* can stay on, it covers the read-only part only. On the M920x
-Secure Boot off too, or the kernel's lockdown keeps flashrom away from the
-flash. On the W541, behind the read-only part of `mrc` both variants can
-be tried; behind the one of `nri`, `nri` only (`other-slot` refuses a slot
-that cannot start).
+As a user updates (UPD-02): the capsule of rc5 of the variant that runs,
+on v1.5.0, with *BIOS Lock* on (the payload writes the slot through SMM).
+The read-only part stays the one of v1.5.0.
 
 ```sh
-# W541, as a user with sudo; on the M920x the same, unloading spi_intel_pci spi_intel
-sudo modprobe -r spi_intel_platform spi_intel || true
+# as a user with sudo; the copy of the flash first (rule 1)
+sudo modprobe -r spi_intel_platform spi_intel || true    # M920x: spi_intel_pci spi_intel
 sudo flashrom -p internal -r flash-before.bin && stat -c %s flash-before.bin
-python3 CLONE/tools/update.py other-slot flash-before.bin rom/w541-coreboot-ci-244-98e7f1c-nri.rom
-# the flashrom command that other-slot prints, after the yes, then:
+sudo python3 CLONE/tools/update.py stage rom/mrc/w541-coreboot-v1.6.0-rc5-mrc.cap   # or nri, m920x-fsp
 sudo systemctl reboot
 ```
 
-After the first boot, *BIOS Lock* on again (and Secure Boot on the M920x as
-it was): the tests run with it on. The W541 trains the memory at that boot
-(a few seconds of black screen). The M920x does not train coming from
-v1.5.x: the version of its cache is the same (patch 0222 at 0).
+The update screen, then rc5 from the other slot: `update.py status` says
+it. The W541 trains the memory at that boot (a few seconds of black
+screen); the M920x does not, the version of its cache is the same (patch
+0222 at 0). The other variant on the W541 goes in with `other-slot`, as
+in the rules, and only behind the read-only part of `mrc`; behind the one
+of `nri`, `nri` only (`other-slot` refuses a slot that cannot start):
+*BIOS Lock* off for that write (*Security* → *Flash protection*; on the
+M920x also Secure Boot, or the kernel's lockdown keeps flashrom away),
+on again after the first boot.
+
+```sh
+sudo flashrom -p internal -r flash-now.bin       # the copy of this boot
+python3 CLONE/tools/update.py other-slot flash-now.bin rom/nri/w541-coreboot-v1.6.0-rc5-nri.rom
+# the flashrom command that other-slot prints, after the yes, then:
+sudo systemctl reboot
+```
 
 ## 2. The reports
 
@@ -85,7 +97,7 @@ and on).
 | Check | Expected |
 |---|---|
 | all | PASS, but those known below |
-| BOOT-01 | the stages with `26.09-517` and the version `ci-244-98e7f1c` |
+| BOOT-01 | the stages with `26.09-517` and the version `v1.6.0-rc5-VARIANT`; on the M920x the serial port line (the level of the boot, and at Info, Notice, Error) |
 | CONF-01 | the WSMT, revision 1, flags 7 |
 | CONF-07 | the ECAM window reserved in the memory map and among the `pnp` resources |
 | PCI-09 | PASS, or INFO for a BAR of a device no driver of the payload uses (on the M920x the SPI controller, `00:1f.5`): every other BAR of bus 0 inside the aperture of the payload |
@@ -103,9 +115,9 @@ on (it stays in PC2 then); FLASH-01 WARN only while a protection is off.
 | OPT-02 | an option with a visible effect changed in the setup, *Save*, two reboots (SMMSTORE with the fixed com buffer: 0211-0215, `edk2/0044`) | the effect at every boot, OPT-01 with the value |
 | — | `sudo efibootmgr -t 3`, a reboot, `efibootmgr \| head -3` (variables written by the OS) | `Timeout: 3 seconds` |
 | MEM-09 | as in docs/testing.md, with *BIOS Lock* on | the lock reads `07 00 00 00 01`; writing `00` is refused; *request of the OS yes: clearing* after the reboot |
-| UPD-02 | from `ci-244`, the capsule of v1.5.0 of the same variant (`gh release download v1.5.0-mrc -R debianita22/ourobios -p '*.cap'`, or `v1.5.0-nri`, `v1.5.0-m920x-fsp`), `sudo python3 CLONE/tools/update.py stage FILE.cap`, a reboot, *BIOS Lock* on: the payload of `ci-244` writes it (`edk2/0045`, `edk2/0046`, the arguments in the com buffer) | the update screen; the other slot holds v1.5.0 and boots; settings, VPD and event log stay. Back to `ci-244`: `other-slot` again, as in step 1 (the setup's *Go back to* takes releases only, and a CI build has no version in its name) |
+| UPD-02 | the install of step 1 (the payload of v1.5.0 writes rc5); the next candidate's capsule staged from rc5, when there is one, for the payload of v1.6.0 (`edk2/0045`, `edk2/0046`, the arguments in the com buffer) | the update screen; the other slot holds the new version and boots; settings, VPD and event log stay |
 | UPD-06 | `update.py stage` with the v1.5.0 capsule of the other board and of the other W541 variant | refused before the reboot |
-| UPD-05 | rollback | with a tag only: `update.py rollback` does not go back to a CI build |
+| UPD-05 | from rc5, `update.py rollback` (or the setup's *Go back to*): the payload of rc5 takes the v1.5.0 capsule, finds the slot written and switches; then `update.py stage` of the rc5 capsule again | v1.5.0 boots (the W541 trains again: `RW_MRC_CACHE` is cleared), then rc5; settings stay |
 | USB-06 | a USB 3 drive behind a USB 2 hub and a keyboard behind a USB 3 hub, plugged in before power-on | the Esc menu, the setup and the boot from the drive work |
 | DISP-05 | the setup at every *UI Scale* (W541 at 2880x1620, M920x on a monitor), a reboot for each; the list below | every screen drawn whole |
 | CPU-05 | the TCC offset of the W541 | passed on 2026-11-03 |
@@ -128,7 +140,7 @@ The list of `lvglpkg/0021`, within DISP-05:
 | ID | Test | Expected |
 |---|---|---|
 | S3-02, S3-03 | `systemctl suspend` five times; on the W541 also the lid and Fn | back each time; `sudo cbmem -1` with *S3 Resume* and *TPM: resuming from S3, nothing is measured*; network, USB, video, audio and Wi-Fi work |
-| TPM-03 (after S3) | hw-report after the five suspends, without a reboot | PASS: the PCRs still replay from the log (patch 0223; up to v1.5.0 and on `ci-244` PCR 2 was extended again on every resume) |
+| TPM-03 (after S3) | hw-report after the five suspends, without a reboot | PASS: the PCRs still replay from the log (patch 0223; up to v1.5.0 PCR 2 was extended again on every resume). The bootblock of the read-only part of v1.5.0 still logs three entries per resume in cbmem's log, none extended |
 | — | W541: *NVIDIA discrete GPU* on and then off, a boot and a suspend with each | `lspci -nn \| grep -i nvidia` as the option says; S3 as above |
 | — | W541: macOS from OpenCore | boot, sleep and wake, dark wake (the panel stays off on a dark wake), also with the dGPU off |
 | — | Secure Boot on, with a system signed for Microsoft's keys (shim: a live USB of Fedora or Ubuntu, if the installed one is not); `mokutil --sb-state`, `sudo mokutil --pk \| grep Subject` | `SecureBoot enabled`; `CN=Windows OEM Devices PK`; it boots |
@@ -138,6 +150,12 @@ The list of `lvglpkg/0021`, within DISP-05:
 | TPM-01, TPM-03 | hw-report | TPM 1.2 and TCPA on the W541, TPM 2.0 on the M920x |
 
 ## 5. M920x only
+
+Done on rc1-rc5 (2026-11-03 to 11-05): the findings became patches 0223
+(TPM-03 after S3) and 0224 (the processor graphics always on); the report
+of rc5 passes, with PCI-09 INFO for the SPI controller; the boot time of
+rc5 step by step is in [docs/m920x.md](m920x.md#boot-time). Left for the
+tag: the rows of section 4 not run there yet, and the items below.
 
 - PCI-02 (hw-report): the PEG port off without a card on the riser.
 - PCI-09 PASS or INFO (the SPI controller's BAR, no driver of the payload).
@@ -152,6 +170,7 @@ The list of `lvglpkg/0021`, within DISP-05:
 For each board and variant, in its folder:
 - the two reports;
 - a table of the IDs of the manual tests with their results;
+- `sudo cbmem -1 > cbmem-BOARD-VARIANT.txt` of the second boot, whole;
 - for a test that did not pass, `sudo cbmem -1 > cbmem.txt`, the report
   and the commands that showed it;
 - for the roadmap item *Memory training across updates on the W541*,
