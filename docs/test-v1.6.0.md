@@ -19,9 +19,12 @@ test a release candidate*, step 5).
   version v1.6.0-rc5, so it installs and goes back as a release does) and
   `SHA256SUMS`.
 - **After rc5** `next` has patch 0225 (the measurement log of coreboot at
-  DEBUG, off the serial port of the M920x at INFO) and the serial port
-  counted by `hw-report.py` (BOOT-01): they go into the next candidate;
-  these tests run rc5 with the tools of `next`.
+  DEBUG, off the serial port of the M920x at INFO), the serial port
+  counted by `hw-report.py` (BOOT-01), the serial console of the M920x off
+  by default, *Disabled (HAP bit)* for its ME (patch 0226) and the payload
+  without the UEFI Shell (`edk2/0053`, patch 0227): they go into the next
+  candidate, with the rows at the end of section 3; these tests run rc5
+  with the tools of `next`.
 - **Tools**: from a clone at `next`, `cafc6b2` or later. On the machine:
   `python3`, flashrom 1.2 or later, `cbmem` (coreboot's `util/cbmem`),
   `dmidecode`, `fwts` (CONF-03), `mokutil`, `efibootmgr`, and `gh` to
@@ -121,6 +124,14 @@ on (it stays in PC2 then); FLASH-01 WARN only while a protection is off.
 | USB-06 | a USB 3 drive behind a USB 2 hub and a keyboard behind a USB 3 hub, plugged in before power-on | the Esc menu, the setup and the boot from the drive work |
 | DISP-05 | the setup at every *UI Scale* (W541 at 2880x1620, M920x on a monitor), a reboot for each; the list below | every screen drawn whole |
 | CPU-05 | the TCC offset of the W541 | passed on 2026-11-03 |
+
+With the next candidate, not in rc5:
+
+| ID | Test | Expected |
+|---|---|---|
+| BOOT-09 | M920x: the serial console with no setting saved, then *Console* → *Serial Console* on | off by default (BOOT-01, no SPCR table); on, the SPCR table and the log on COM1 |
+| BOOT-10 | the first boot after the capsule: `efibootmgr`, the boot menu | no *UEFI Shell* entry; the disks, iPXE and CSMWrap as before |
+| ME-05 | M920x, optional, **RISCHIO BRICK**: the firmware writes the descriptor itself (about 50 ms), which rule 2 keeps out of the other tests; only after an explicit yes of the owner, with the copy of rule 1 off the machine, recovery with the external programmer ([docs/m920x.md](m920x.md#intel-me)). *Disabled (HAP bit)*, a power cycle, then *Disabled* again | as in docs/testing.md: `HAP: written`, then *ME: Disabled (HAP bit)*, no `00:16.0`, no 5 s wait at DRAM Init Done |
 
 The list of `lvglpkg/0021`, within DISP-05:
 - the cursor shows with the TrackPoint or the touchpad and hides when only
