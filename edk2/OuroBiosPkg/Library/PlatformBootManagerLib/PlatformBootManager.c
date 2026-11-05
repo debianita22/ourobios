@@ -766,9 +766,15 @@ PlatformBootManagerAfterConsole (
   }
 
   //
-  // Register UEFI Shell
+  // Register the UEFI Shell if the firmware volume has it; a build without
+  // it (SHELL_TYPE NONE) deletes the option that an older one made, which
+  // would only fail.
   //
-  PlatformRegisterFvBootOption (&gUefiShellFileGuid, L"UEFI Shell", LOAD_OPTION_ACTIVE);
+  if (BdsGetFvFileDevicePath (&gUefiShellFileGuid) != NULL) {
+    PlatformRegisterFvBootOption (&gUefiShellFileGuid, L"UEFI Shell", LOAD_OPTION_ACTIVE);
+  } else {
+    PlatformRemoveFvBootOption (&gUefiShellFileGuid);
+  }
 
   //
   // Register iPXE if the binary is present in the firmware volume and the

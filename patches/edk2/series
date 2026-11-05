@@ -50,3 +50,4 @@
 0050-MdeModulePkg-Fix-GOP-device-path-pool-double-free.patch
 0051-MdeModulePkg-Fix-OptionOrder-double-free.patch
 0052-UefiPayloadPkg-UefiPayloadEntry-Fix-MMCONF-resource-.patch
+0053-UefiPayloadPkg-PlatformBootManagerLib-No-UEFI-Shell-.patch
