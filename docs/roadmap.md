@@ -37,6 +37,7 @@ is here. None of it is a promise of a date.
 | [Clearing the memory on every core](#clearing-the-memory-on-every-core) | both | the clear runs on the boot processor only, 2.0 s for 40 GB on the M920x (about 21 GB/s); what the memory controller gives to four cores is not measured | on the W541 one core already fills the memory (measured); a test build on the M920x with two equal DIMMs, and `rep stosb` on one core |
 | [The UEFI Shell in the payload](#the-uefi-shell-in-the-payload) | both | done in v1.6.0 (`edk2/0053`, patch 0227): the boards' payload leaves the Shell out, and the smoke test writes its variables with `tools/efi/setvar.c` from a disk image | none planned |
 | [The DPLL of i915 at boot on the M920x](#the-dpll-of-i915-at-boot-on-the-m920x) | M920x | i915's own wait for the PLL, not the firmware's | a report to i915 with the numbers |
+| [A USB 3.0 drive after a warm reset on the W541](#a-usb-30-drive-after-a-warm-reset-on-the-w541) | W541 | seen once with one drive on `nri`, rc6: the SuperSpeed link stays in Polling or Compliance after a reboot, fine after a cold boot; the early USB init of `nri` times out on every resume | the same port with another drive across a reboot, then that drive under v1.5.0 and `mrc` |
 
 ## Firmware watchdog
 
@@ -827,3 +828,36 @@ fastset) would take deep colour and infoframes from libgfxinit, for a
 message that costs nothing. What would fix it is i915 (a longer wait, or
 a retry of the enable), to be reported upstream with these numbers;
 `tools/hw-report.py` keeps it as a known message meanwhile.
+
+## A USB 3.0 drive after a warm reset on the W541
+
+Found in the tests of v1.6.0-rc6 on the W541 with `nri`
+([docs/tests/v1.6.0/w541-nri/README.md](tests/v1.6.0/w541-nri/README.md#findings),
+2026-11-06). A SanDisk Ultra Flair (`0781:5591`) left in the left USB
+3.0 port (xHCI SuperSpeed port SS2) links at 5 Gb/s after a cold boot
+and keeps the link through a suspend; after every reboot from Linux
+its link stays in *Polling* with the port reset bit set (`PORTSC`
+`0x2f0`) or in *Compliance mode* (`0x340`), Linux logs `usb4-port2:
+Cannot enable` each time the xHCI leaves runtime suspend, about every
+4 s, and the controller's wake-ups cost package C-states. The v1.3.10
+entry of the CHANGELOG describes the same compliance mode on `nri`, in
+a different setting (the EHCI controllers hidden, dropped in rc2).
+
+What the firmware does with the SuperSpeed ports on `nri`, in the code
+of the pin: in romstage `early_usb_native.c` (built for `nri` and for
+Broadwell's MRC, not for `mrc`) warm-resets every USB 3.0 port and
+polls the port reset bit for up to 100 ms (`warm_reset_usb3_ports()`),
+on a warm boot after the USB 2 reset and on every S3 resume; in the log
+of rc6 it times out (`BIOS_ERR`) on every resume with a device in a
+USB 3.0 port, and takes 6 µs at a warm boot. In ramstage
+`usb_xhci.c` resets the disconnected or polling ports once more, on an
+S3 resume only (`usb_xhci_reset_usb3()`). Which of the two leaves the
+link in Polling after a reboot, and whether it is this drive, is not
+known.
+
+- **Next step**: on the W541, a reboot with another USB 3.0 device in
+  the left port, then this drive under v1.5.0 (slot B, `update.py
+  rollback`) and under `mrc`, which has no early USB init. If `nri`
+  alone does it, the romstage reset is the place to look (the BWG's
+  sequence against what `early_usb_native.c` does for a port with a
+  device attached); if every variant does it, the drive.
