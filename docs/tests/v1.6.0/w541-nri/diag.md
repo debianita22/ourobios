@@ -55,8 +55,12 @@ rc6). The message stays a known one of the report (BOOT-04).
 
 ## The USB 3.0 drive: not reproduced; a warm reset keeps its state
 
-The drive is a SanDisk Ultra Flair (`0781:5591`) in the **lower port on
-the right side**, xHCI SuperSpeed port SS2 (`port17`), USB2 port 2: not
+Afterwards, while the connectors were mapped, a hotplug into the same
+connector reproduced it, and replugs pinned it on that connector:
+[below](#the-right-ss-connector-trains-its-superspeed-link-badly).
+
+The drive is a SanDisk Ultra Flair (`0781:5591`) in the **SS port on
+the right side** (farthest from the screen), xHCI SuperSpeed port SS2 (`port17`), USB2 port 2: not
 in "the left port" as the README of the record first said from the
 `_PLD` of the firmware (below).
 
@@ -115,30 +119,68 @@ resume's message go and cost nothing when the ports are empty.
 
 ## The USB ports are described on the wrong side
 
-Moving the drive through the four connectors with every `PORTSC`
-watched (section 5 of [diag-usb-linux.txt](diag-usb-linux.txt)):
+Checked connector by connector with the owner naming each one
+([diag-portmap.txt](diag-portmap.txt), 12:14-12:27): the drive put in
+each connector, the attach watched in the kernel log and in every
+`PORTSC`:
 
 | Connector | xHCI port | Speed | `_UPC`/`_PLD` of patch 0071 (the OEM tables) |
 |---|---|---|---|
-| right side, lower | 2: HS2 and SS2 (`port17`) | USB 3.0 | left, lower: **wrong side** |
-| right side, upper | 6: HS6 | USB 2.0 | right: right |
-| left side, first (towards the screen) | 3: HS3 | USB 2.0 | back: **wrong panel** |
-| left side, second | 1: HS1 and SS1 (`port16`) | USB 3.0 | right, the *Always On* one: **wrong side** |
+| left side, nearest the screen, the *Always On* one | 3: HS3, no SuperSpeed | USB 2.0, 480 Mb/s | back: **wrong panel** |
+| left side, farthest from the screen, marked SS | 1: HS1 and SS1 (`port16`) | USB 3.0, 5 Gb/s | right, and the comment calls it the *Always On* one: **wrong side** |
+| right side, nearest the screen | 6: HS6, no SuperSpeed | USB 2.0, 480 Mb/s | right: right |
+| right side, farthest from the screen, marked SS | 2: HS2 and SS2 (`port17`) | USB 3.0, 5 Gb/s | left: **wrong side** |
 
-The order of the two ports on the left is the one asked of the owner,
-from the screen backwards. Three of the four connectors are on another
-panel than the tables say. Patch 0071 took the OEM buffers of GNET as
-they are; the OS shows the position to users only (Windows's port
-names, the `physical_location` of Linux), so nothing works differently,
-but the comment of `usb.asl` and the buffers want the sides of this
-table, and the help of *USB always on* the side of port 1, once someone
-checks which connector has the yellow mark.
+Three of the four connectors are on another panel than the tables say,
+and the *Always On* connector is the USB 2.0 port 3, not port 1. Patch
+0071 took the OEM buffers of GNET as they are; the OS shows the position
+to users only (port names, the `physical_location` of Linux), so nothing
+works differently, but the comment of `usb.asl` and the buffers want the
+sides of this table, and the help of *USB always on* the connector it
+powers (port 3). Earlier in this file and in the README the two right
+ports were called "lower" and "upper"; "farthest from the screen" and
+"nearest" are the owner's names.
+
+## The right SS connector trains its SuperSpeed link badly
+
+During the same check the drive, plugged into the right SS connector,
+went to *Compliance mode* (`port17` `0x0a000340`) and showed up nowhere,
+neither at 5 Gb/s nor at 480 Mb/s: the failure of 11-05, this time from a
+hotplug under rc6, with no warm reset involved. With the xHCI held in D0
+Linux does not notice (Compliance sets no change bit); let into runtime
+suspend, the controller stayed asleep. Removing and rescanning the
+controller (a reset by Linux, HCRST) brought the drive up at 5 Gb/s at
+once: the stuck state is in the port and the controller, which a
+controller reset clears, and which a warm reset of the machine carries
+over (the drive keeps power, so it does not restart its own training).
+
+Then replugs of the same drive, the same way, into each connector:
+
+| Connector | Plugs | At 5 Gb/s at the first try | No link |
+|---|---|---|---|
+| left SS (SS1) | 6 | 6 | 0 |
+| right SS (SS2) | about 8 | 3 | 5: Polling for about 0.5 s, then Rx.Detect, or Compliance |
+| right SS with the SuperSpeed of port 2 off (`USB3_PSSEN` bit 1 cleared from Linux, put back after) | 3 | 3, at 480 Mb/s on HS2 | 0 |
+
+When the SuperSpeed link fails, this drive does not fall back to the
+USB 2.0 pair of the connector, which works (the last row): it stays
+on the SuperSpeed side, so the user sees nothing at all. The drive is
+not the cause (6 of 6 on the left), nor is the firmware (the same
+controller, the same code for both ports, and the failures come at a
+hotplug with Linux running): the SuperSpeed contacts or the signal path
+of the right SS connector are marginal on this W541. The way to confirm
+it is another USB 3.0 device in that connector, and the connector
+cleaned; nothing to change in the firmware for it, but the CHANGELOG's
+note of v1.3.10 (a drive in Compliance mode with `nri`) may well be the
+same connector.
 
 ## Files
 
 - [diag-tsc-linux.txt](diag-tsc-linux.txt): part 1a.
 - [diag-usb-linux.txt](diag-usb-linux.txt): part 1b, the port at each
   step, the replug and the port map.
+- [diag-portmap.txt](diag-portmap.txt): the connectors one by one, the
+  Compliance mode from a hotplug and the replugs of each SS connector.
 - [diag-build-w541-nri.txt](diag-build-w541-nri.txt): part 2, the
   `DIAG` lines of each boot of the measurement build (the first one,
   with the training, lost its romstage points to the pre-CBMEM console),

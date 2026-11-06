@@ -79,7 +79,7 @@ and one of 11-06 after three reboots; `SMMSTORE`, `RW_ELOG` and
 ## Findings
 
 - **A USB 3.0 drive after a warm reset.** A SanDisk Ultra Flair
-  (`0781:5591`) in the lower port on the right (xHCI SS2, port 17; the
+  (`0781:5591`) in the SS port on the right (xHCI SS2, port 17; the
   `_PLD` of the tables puts that port on the left, see below) stayed in
   *Polling* with the port reset bit set (`PORTSC 0x2f0`) or in
   *Compliance mode* (`0x340`) in the boots of 11-05 and 11-06 that came
@@ -92,6 +92,12 @@ and one of 11-06 after three reboots; `SMMSTORE`, `RW_ELOG` and
   The `warm_reset_usb3_ports: timed out` of every resume is a 100 ms
   limit shorter than a warm reset with a device on the port: the port
   is in U0 10 ms later.
+  Later the same day a hotplug into that connector reproduced it, and
+  replugs settled it: the right SS connector links at 5 Gb/s 3 times in
+  about 8, the left one 6 in 6 with the same drive, and the right one
+  always at 480 Mb/s with its SuperSpeed turned off: the SuperSpeed side
+  of that connector is marginal on this machine, not the firmware
+  ([diag.md](diag.md#the-right-ss-connector-trains-its-superspeed-link-badly)).
 - **`TSC ADJUST differs` at every resume is not coreboot**: the register
   is 0 at every point of the resume path up to the jump to the wake
   vector, and Linux finds the TSC of before the suspend written back
@@ -113,8 +119,8 @@ and one of 11-06 after three reboots; `SMMSTORE`, `RW_ELOG` and
 
 - The rows of the table marked *not run*, with someone at the screen.
 - CONF-03 with `fwts`.
-- The USB 3.0 drive: another USB 3.0 device in the lower right port
-  across a reboot (none was at hand).
+- The right SS connector: another USB 3.0 device in it, and the
+  connector cleaned (none was at hand).
 - At the end *Firmware protection* on, and `hw-report.py` with
   FLASH-01 PASS.
 
@@ -137,5 +143,6 @@ and one of 11-06 after three reboots; `SMMSTORE`, `RW_ELOG` and
 - [diag.md](diag.md): the troubleshooting of `TSC ADJUST` and of the USB
   3.0 drive, with the measurement build, and the map of the USB ports,
   with [diag-tsc-linux.txt](diag-tsc-linux.txt),
-  [diag-usb-linux.txt](diag-usb-linux.txt) and
+  [diag-usb-linux.txt](diag-usb-linux.txt),
+  [diag-portmap.txt](diag-portmap.txt) and
   [diag-build-w541-nri.txt](diag-build-w541-nri.txt).

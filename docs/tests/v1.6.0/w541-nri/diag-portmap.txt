@@ -1,0 +1,310 @@
+# W541 nri, rc6, 2026-11-06 12:14-12:27: the USB connectors, one by one, named by the owner
+# the xHCI held in D0 while watching; PORTSC sampled every 0.1 s
+
+## The owner's names and what the xHCI saw
+12:15:18 | owner: left side, nearest the screen, the Always On port | usb 2-3 = xHCI USB2 port 3 (HS3), no SuperSpeed peer, 480 Mb/s | _PLD back/center/left
+12:15:56 | owner: left side, farthest from the screen, marked SS | usb 4-1 = xHCI SS1 (port16), peer USB2 port 1 (HS1), 5000 Mb/s | _PLD right/lower/center
+12:16:53 | owner: right side, nearest the screen | usb 2-6 = xHCI USB2 port 6 (HS6), no SuperSpeed peer, 480 Mb/s | _PLD right/center/right
+12:17:5x | owner: right side, farthest from the screen, marked SS | usb 4-2 = xHCI SS2 (port17), peer USB2 port 2 (HS2) | _PLD left/lower/right | hotplug: Compliance mode, fixed by remove/rescan
+
+## Events (kernel attach/detach, the firmware's _UPC/_PLD of the port as Linux reads it, every non-idle PORTSC)
+# start 2026-11-06T12:14:39+01:00
+== 12:15:20 nov 06 12:15:18 usb 2-3: new high-speed USB device number 4 using xhci_hcd
+   root port: usb2-port3  
+   USB2 HS3: connect_type=hotplug _PLD=back/center/left peer=
+   device:  USB  SanDisk 3.2Gen1 0781:5591 speed=480 Mb/s
+   non-idle PORTSC: port03=0x00000e03 Speed=3 Link=U0 CCS PP PED  port11=0x00000663 Speed=1 Link=U3 CCS PP PED  port12=0x00000e63 Speed=3 Link=U3 CCS PP PED 
+== 12:15:36 nov 06 12:15:34 usb 2-3: USB disconnect, device number 4
+   root port: usb2-port3  
+   USB2 HS3: connect_type=hotplug _PLD=back/center/left peer=
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:15:58 nov 06 12:15:56 usb 4-1: new SuperSpeed USB device number 2 using xhci_hcd
+   root port: usb4-port1  
+   USB3 SS1: connect_type=hotplug _PLD=right/lower/center peer=usb2-port1
+   device:  USB  SanDisk 3.2Gen1 0781:5591 speed=5000 Mb/s
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED  port16=0x00001203 Speed=4 Link=U0 CCS PP PED 
+== 12:16:38 nov 06 12:16:36 usb 4-1: USB disconnect, device number 2
+   root port: usb4-port1  
+   USB3 SS1: connect_type=hotplug _PLD=right/lower/center peer=usb2-port1
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:16:55 nov 06 12:16:53 usb 2-6: new high-speed USB device number 5 using xhci_hcd
+   root port: usb2-port6  
+   USB2 HS6: connect_type=hotplug _PLD=right/center/right peer=
+   device:  USB  SanDisk 3.2Gen1 0781:5591 speed=480 Mb/s
+   non-idle PORTSC: port06=0x00000e03 Speed=3 Link=U0 CCS PP PED  port11=0x00000663 Speed=1 Link=U3 CCS PP PED  port12=0x00000e63 Speed=3 Link=U3 CCS PP PED 
+== 12:17:40 nov 06 12:17:38 usb 2-6: USB disconnect, device number 5
+   root port: usb2-port6  
+   USB2 HS6: connect_type=hotplug _PLD=right/center/right peer=
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:20:00 nov 06 12:19:58 usb 2-11: USB disconnect, device number 2
+   root port: usb2-port11  
+   USB2 HS11: connect_type= _PLD=// peer=
+   non-idle PORTSC: port*=
+== 12:20:01 nov 06 12:19:58 usb 2-12: USB disconnect, device number 3
+   root port: usb2-port12  
+   USB2 HS12: connect_type=hardwired _PLD=unknown/upper/left peer=
+   non-idle PORTSC: port11=0x00000603 Speed=1 Link=U0 CCS PP PED  port12=0x00000e03 Speed=3 Link=U0 CCS PP PED  port17=0x00001203 Speed=4 Link=U0 CCS PP PED 
+== 12:20:03 nov 06 12:20:00 usb 2-11: new full-speed USB device number 2 using xhci_hcd
+   root port: usb2-port11  
+   USB2 HS11: connect_type=hardwired _PLD=unknown/upper/left peer=
+   device:   8087:0025 speed=12 Mb/s
+   non-idle PORTSC: port11=0x00000663 Speed=1 Link=U3 CCS PP PED  port12=0x00000e03 Speed=3 Link=U0 CCS PP PED  port17=0x00001203 Speed=4 Link=U0 CCS PP PED 
+== 12:20:05 nov 06 12:20:01 usb 4-2: new SuperSpeed USB device number 2 using xhci_hcd
+   root port: usb4-port2  
+   USB3 SS2: connect_type=hotplug _PLD=left/lower/right peer=usb2-port2
+   device:  USB  SanDisk 3.2Gen1 0781:5591 speed=5000 Mb/s
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED  port17=0x00001203 Speed=4 Link=U0 CCS PP PED 
+== 12:20:06 nov 06 12:20:01 usb 2-12: new high-speed USB device number 3 using xhci_hcd
+   root port: usb2-port12  
+   USB2 HS12: connect_type=hardwired _PLD=unknown/upper/left peer=
+   device: SunplusIT Inc Integrated Camera 5986:0366 speed=480 Mb/s
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED  port17=0x00001203 Speed=4 Link=U0 CCS PP PED 
+== 12:20:48 nov 06 12:20:46 usb 4-2: USB disconnect, device number 2
+   root port: usb4-port2  
+   USB3 SS2: connect_type=hotplug _PLD=left/lower/right peer=usb2-port2
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:21:41 nov 06 12:21:40 usb 4-2: new SuperSpeed USB device number 3 using xhci_hcd
+   root port: usb4-port2  
+   USB3 SS2: connect_type=hotplug _PLD=left/lower/right peer=usb2-port2
+   device:  USB  SanDisk 3.2Gen1 0781:5591 speed=5000 Mb/s
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED  port17=0x00001203 Speed=4 Link=U0 CCS PP PED 
+== 12:21:54 nov 06 12:21:52 usb 4-2: USB disconnect, device number 3
+   root port: usb4-port2  
+   USB3 SS2: connect_type=hotplug _PLD=left/lower/right peer=usb2-port2
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:22:07 nov 06 12:22:05 usb 4-2: new SuperSpeed USB device number 4 using xhci_hcd
+   root port: usb4-port2  
+   USB3 SS2: connect_type=hotplug _PLD=left/lower/right peer=usb2-port2
+   device:   : speed= Mb/s
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:22:09 nov 06 12:22:07 usb 4-2: USB disconnect, device number 4
+   root port: usb4-port2  
+   USB3 SS2: connect_type=hotplug _PLD=left/lower/right peer=usb2-port2
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:22:29 nov 06 12:22:27 usb 4-2: new SuperSpeed USB device number 5 using xhci_hcd
+   root port: usb4-port2  
+   USB3 SS2: connect_type=hotplug _PLD=left/lower/right peer=usb2-port2
+   device:  USB  SanDisk 3.2Gen1 0781:5591 speed=5000 Mb/s
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED  port17=0x00001203 Speed=4 Link=U0 CCS PP PED 
+== 12:22:39 nov 06 12:22:38 usb 4-2: USB disconnect, device number 5
+   root port: usb4-port2  
+   USB3 SS2: connect_type=hotplug _PLD=left/lower/right peer=usb2-port2
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:23:54 nov 06 12:23:53 usb 2-2: new high-speed USB device number 4 using xhci_hcd
+   root port: usb2-port2  
+   USB2 HS2: connect_type=hotplug _PLD=left/lower/right peer=usb4-port2
+   device:  USB  SanDisk 3.2Gen1 0781:5591 speed=480 Mb/s
+   non-idle PORTSC: port02=0x00000e03 Speed=3 Link=U0 CCS PP PED  port11=0x00000663 Speed=1 Link=U3 CCS PP PED  port12=0x00000e63 Speed=3 Link=U3 CCS PP PED 
+== 12:24:03 nov 06 12:24:01 usb 2-2: USB disconnect, device number 4
+   root port: usb2-port2  
+   USB2 HS2: connect_type=hotplug _PLD=left/lower/right peer=usb4-port2
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:24:12 nov 06 12:24:10 usb 2-2: new high-speed USB device number 5 using xhci_hcd
+   root port: usb2-port2  
+   USB2 HS2: connect_type=hotplug _PLD=left/lower/right peer=usb4-port2
+   device:  USB  SanDisk 3.2Gen1 0781:5591 speed=480 Mb/s
+   non-idle PORTSC: port02=0x00000e03 Speed=3 Link=U0 CCS PP PED  port11=0x00000663 Speed=1 Link=U3 CCS PP PED  port12=0x00000e63 Speed=3 Link=U3 CCS PP PED 
+== 12:24:21 nov 06 12:24:19 usb 2-2: USB disconnect, device number 5
+   root port: usb2-port2  
+   USB2 HS2: connect_type=hotplug _PLD=left/lower/right peer=usb4-port2
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:24:30 nov 06 12:24:28 usb 2-2: new high-speed USB device number 6 using xhci_hcd
+   root port: usb2-port2  
+   USB2 HS2: connect_type=hotplug _PLD=left/lower/right peer=usb4-port2
+   device:  USB  SanDisk 3.2Gen1 0781:5591 speed=480 Mb/s
+   non-idle PORTSC: port02=0x00000e03 Speed=3 Link=U0 CCS PP PED  port11=0x00000663 Speed=1 Link=U3 CCS PP PED  port12=0x00000e63 Speed=3 Link=U3 CCS PP PED 
+== 12:25:16 nov 06 12:25:14 usb 2-2: USB disconnect, device number 6
+   root port: usb2-port2  
+   USB2 HS2: connect_type=hotplug _PLD=left/lower/right peer=usb4-port2
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:25:27 nov 06 12:25:25 usb 4-1: new SuperSpeed USB device number 6 using xhci_hcd
+   root port: usb4-port1  
+   USB3 SS1: connect_type=hotplug _PLD=right/lower/center peer=usb2-port1
+   device:  USB  SanDisk 3.2Gen1 0781:5591 speed=5000 Mb/s
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED  port16=0x00001203 Speed=4 Link=U0 CCS PP PED 
+== 12:25:33 nov 06 12:25:31 usb 4-1: USB disconnect, device number 6
+   root port: usb4-port1  
+   USB3 SS1: connect_type=hotplug _PLD=right/lower/center peer=usb2-port1
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:25:40 nov 06 12:25:38 usb 4-1: new SuperSpeed USB device number 7 using xhci_hcd
+   root port: usb4-port1  
+   USB3 SS1: connect_type=hotplug _PLD=right/lower/center peer=usb2-port1
+   device:  USB  SanDisk 3.2Gen1 0781:5591 speed=5000 Mb/s
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED  port16=0x00001203 Speed=4 Link=U0 CCS PP PED 
+== 12:25:47 nov 06 12:25:45 usb 4-1: USB disconnect, device number 7
+   root port: usb4-port1  
+   USB3 SS1: connect_type=hotplug _PLD=right/lower/center peer=usb2-port1
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:25:55 nov 06 12:25:53 usb 4-1: new SuperSpeed USB device number 8 using xhci_hcd
+   root port: usb4-port1  
+   USB3 SS1: connect_type=hotplug _PLD=right/lower/center peer=usb2-port1
+   device:  USB  SanDisk 3.2Gen1 0781:5591 speed=5000 Mb/s
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED  port16=0x00001203 Speed=4 Link=U0 CCS PP PED 
+== 12:26:02 nov 06 12:26:00 usb 4-1: USB disconnect, device number 8
+   root port: usb4-port1  
+   USB3 SS1: connect_type=hotplug _PLD=right/lower/center peer=usb2-port1
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:26:10 nov 06 12:26:08 usb 4-1: new SuperSpeed USB device number 9 using xhci_hcd
+   root port: usb4-port1  
+   USB3 SS1: connect_type=hotplug _PLD=right/lower/center peer=usb2-port1
+   device:  USB  SanDisk 3.2Gen1 0781:5591 speed=5000 Mb/s
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED  port16=0x00001203 Speed=4 Link=U0 CCS PP PED 
+== 12:26:18 nov 06 12:26:16 usb 4-1: USB disconnect, device number 9
+   root port: usb4-port1  
+   USB3 SS1: connect_type=hotplug _PLD=right/lower/center peer=usb2-port1
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:26:25 nov 06 12:26:24 usb 4-1: new SuperSpeed USB device number 10 using xhci_hcd
+   root port: usb4-port1  
+   USB3 SS1: connect_type=hotplug _PLD=right/lower/center peer=usb2-port1
+   device:  USB  SanDisk 3.2Gen1 0781:5591 speed=5000 Mb/s
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED  port16=0x00001203 Speed=4 Link=U0 CCS PP PED 
+== 12:26:34 nov 06 12:26:32 usb 4-1: USB disconnect, device number 10
+   root port: usb4-port1  
+   USB3 SS1: connect_type=hotplug _PLD=right/lower/center peer=usb2-port1
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED 
+== 12:26:40 nov 06 12:26:38 usb 4-1: new SuperSpeed USB device number 11 using xhci_hcd
+   root port: usb4-port1  
+   USB3 SS1: connect_type=hotplug _PLD=right/lower/center peer=usb2-port1
+   device:  USB  SanDisk 3.2Gen1 0781:5591 speed=5000 Mb/s
+   non-idle PORTSC: port11=0x0c000663 Speed=1 Link=U3 CCS PP WDE WOE PED  port12=0x0c000e63 Speed=3 Link=U3 CCS PP WDE WOE PED  port16=0x00001203 Speed=4 Link=U0 CCS PP PED 
+
+## Hotplug into the right SS connector at 12:17: Compliance mode, and what cleared it
+# hotplug into the lower right port at ~12:17:5x, xHCI held in D0
+[0-as-found] 12:18:42 port17=0x0a000340 Speed=0 Link=Compliance mode PP WCE WOE  port02=0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE  | lsusb:  | Cannot enable: 0
+[0-wait1] 12:18:45 port17=0x0a000340 Speed=0 Link=Compliance mode PP WCE WOE  port02=0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE  | lsusb:  | Cannot enable: 0
+[0-wait2] 12:18:48 port17=0x0a000340 Speed=0 Link=Compliance mode PP WCE WOE  port02=0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE  | lsusb:  | Cannot enable: 0
+[0-wait3] 12:18:51 port17=0x0a000340 Speed=0 Link=Compliance mode PP WCE WOE  port02=0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE  | lsusb:  | Cannot enable: 0
+-- No entries --
+[1-runtime-pm-15s] 12:19:18 port17=0x0a000340 Speed=0 Link=Compliance mode PP WCE WOE  port02=0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE  | lsusb:  | Cannot enable: 0
+12:19:33 runtime_status=suspended usb4=suspended
+12:19:37 runtime_status=suspended usb4=suspended
+12:19:41 runtime_status=suspended usb4=suspended
+12:19:45 runtime_status=suspended usb4=suspended
+12:19:49 runtime_status=suspended usb4=suspended
+[2-remove-rescan] 12:19:58 start
+[2-remove-rescan] 12:20:13 port17=0x00001203 Speed=4 Link=U0 CCS PP PED  port02=0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE  | lsusb: Bus 004 Device 002: ID 0781:5591 SanDisk Corp. Ultra Flair | Cannot enable: 0
+nov 06 12:20:01 Wurtz kernel: usb 4-2: new SuperSpeed USB device number 2 using xhci_hcd
+nov 06 12:20:01 Wurtz kernel: usb 4-2: New USB device found, idVendor=0781, idProduct=5591, bcdDevice= 1.00
+nov 06 12:20:01 Wurtz kernel: usb 4-2: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+nov 06 12:20:01 Wurtz kernel: usb 4-2: Product:  SanDisk 3.2Gen1
+nov 06 12:20:01 Wurtz kernel: usb 4-2: Manufacturer:  USB
+nov 06 12:20:01 Wurtz kernel: usb 4-2: SerialNumber: 0101a099bb9e72db64400ee8ffc48bb083b8a20a3513c143dbdc7b66e58feab8ab8a00000000000000000000c523d1b6ff9d4f0091558107a5acbb8a
+
+## Replugs into the right SS connector (port17 = SS2, port02 = HS2); from 12:23:3x the SuperSpeed of port 2 off (USB3_PSSEN 0x3f -> 0x3d), back at the end
+12:20:26.270 port17 0x00001203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:20:46.651 port17 0x000002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:20:46.756 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000202a0 Speed=0 Link=RxDetect
+12:20:46.860 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000002a0 Speed=0 Link=RxDetect
+12:20:46.965 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:21:08.167 port17 0x0a0002e0 Speed=0 Link=Polling | 0x0a0002a0 Speed=0 Link=RxDetect
+12:21:09.099 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:21:09.204 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000202a0 Speed=0 Link=RxDetect
+12:21:09.309 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000002a0 Speed=0 Link=RxDetect
+12:21:09.413 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:21:28.652 port17 0x0a0002e0 Speed=0 Link=Polling | 0x0a0002a0 Speed=0 Link=RxDetect
+12:21:29.274 port17 0x0a0002e0 Speed=0 Link=Polling | 0x000202a0 Speed=0 Link=RxDetect
+12:21:29.379 port17 0x0a0002e0 Speed=0 Link=Polling | 0x000002a0 Speed=0 Link=RxDetect
+12:21:29.483 port17 0x0a0002e0 Speed=0 Link=Polling | 0x0a0002a0 Speed=0 Link=RxDetect
+12:21:29.588 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:21:39.929 port17 0x00001203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:21:52.658 port17 0x000002a0 Speed=0 Link=RxDetect | 0x000202a0 Speed=0 Link=RxDetect
+12:21:52.763 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000002a0 Speed=0 Link=RxDetect
+12:21:52.868 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:05.797 port17 0x00001203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:05.902 port17 0x00201203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:06.007 port17 0x00001203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:07.145 port17 0x000002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:07.352 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:16.764 port17 0x0a0002e0 Speed=0 Link=Polling | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:17.284 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:27.213 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000202a0 Speed=0 Link=RxDetect
+12:22:27.318 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000002a0 Speed=0 Link=RxDetect
+12:22:27.423 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:27.527 port17 0x00001203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:27.632 port17 0x00201203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:27.736 port17 0x00001203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:38.097 port17 0x000002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:38.202 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:49.274 port17 0x0a0002e0 Speed=0 Link=Polling | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:49.792 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:51.242 port17 0x0a0002e0 Speed=0 Link=Polling | 0x0a0002a0 Speed=0 Link=RxDetect
+12:22:51.760 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:23:52.578 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000202a0 Speed=0 Link=RxDetect
+12:23:52.683 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000002a0 Speed=0 Link=RxDetect
+12:23:52.788 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:23:52.996 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000006e1 Speed=1 Link=Polling
+12:23:53.101 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x00200e03 Speed=3 Link=U0
+12:23:53.206 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x00000f91 Speed=3 Link=Unknown
+12:23:53.312 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x00000e03 Speed=3 Link=U0
+12:24:01.907 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000002a0 Speed=0 Link=RxDetect
+12:24:02.012 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:24:10.803 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000006e1 Speed=1 Link=Polling
+12:24:10.908 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x00000e03 Speed=3 Link=U0
+12:24:19.611 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000002a0 Speed=0 Link=RxDetect
+12:24:19.716 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:24:27.785 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000202a0 Speed=0 Link=RxDetect
+12:24:27.889 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000002a0 Speed=0 Link=RxDetect
+12:24:27.995 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:24:28.204 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x000006e1 Speed=1 Link=Polling
+12:24:28.309 port17 0x0a0002a0 Speed=0 Link=RxDetect | 0x00000e03 Speed=3 Link=U0
+12:23:37 USB3_PSSEN 0x3f -> 0x3d (SuperSpeed of port 2 off)
+12:24:57 USB3_PSSEN back to 0x3f
+
+## Replugs into the left SS connector (port16 = SS1, port01 = HS1)
+12:25:05.009 port16 0x0a0002a0 Speed=0 Link=RxDetect | 0x000002a0 Speed=0 Link=RxDetect
+12:25:14.630 port16 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:25:24.872 port16 0x0a0002a0 Speed=0 Link=RxDetect | 0x000202a0 Speed=0 Link=RxDetect
+12:25:24.977 port16 0x0a0002a0 Speed=0 Link=RxDetect | 0x000002a0 Speed=0 Link=RxDetect
+12:25:25.091 port16 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:25:25.196 port16 0x00001203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:25:31.410 port16 0x000002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:25:31.619 port16 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:25:38.344 port16 0x00021203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:25:38.449 port16 0x00001203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:25:45.703 port16 0x000002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:25:45.807 port16 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:25:52.948 port16 0x0a0002a0 Speed=0 Link=RxDetect | 0x000202a0 Speed=0 Link=RxDetect
+12:25:53.053 port16 0x0a0002a0 Speed=0 Link=RxDetect | 0x000002a0 Speed=0 Link=RxDetect
+12:25:53.158 port16 0x0a0002e0 Speed=0 Link=Polling | 0x0a0002a0 Speed=0 Link=RxDetect
+12:25:53.264 port16 0x00001203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:26:00.620 port16 0x000002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:26:00.828 port16 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:26:08.585 port16 0x00001203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:26:08.690 port16 0x00201203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:26:08.795 port16 0x00001203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:26:16.255 port16 0x000002a0 Speed=0 Link=RxDetect | 0x000002a0 Speed=0 Link=RxDetect
+12:26:16.360 port16 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:26:23.596 port16 0x0a0002a0 Speed=0 Link=RxDetect | 0x000202a0 Speed=0 Link=RxDetect
+12:26:23.701 port16 0x0a0002a0 Speed=0 Link=RxDetect | 0x000002a0 Speed=0 Link=RxDetect
+12:26:23.806 port16 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:26:23.911 port16 0x00001203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:26:24.015 port16 0x00201203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:26:24.120 port16 0x00001203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:26:32.718 port16 0x000002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:26:32.925 port16 0x0a0002a0 Speed=0 Link=RxDetect | 0x0a0002a0 Speed=0 Link=RxDetect
+12:26:38.718 port16 0x00001203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:26:38.823 port16 0x00201203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+12:26:38.928 port16 0x00001203 Speed=4 Link=U0 | 0x0a0002a0 Speed=0 Link=RxDetect
+
+## watch.sh
+#!/bin/bash
+# logs each USB attach/detach on the xHCI with the port, speed, PORTSC and the firmware's _UPC/_PLD
+D=/home/domenico/ourobios-test-v1.6.0/w541-nri/diag/portmap; LOG=$D/events.txt
+mount | grep -q debugfs || mount -t debugfs none /sys/kernel/debug
+X=/sys/kernel/debug/usb/xhci/0000:00:14.0/ports
+echo on > /sys/bus/pci/devices/0000:00:14.0/power/control
+pld() { local p=$1; local s=/sys/bus/usb/devices/$p; echo "connect_type=$(cat $s/connect_type 2>/dev/null) _PLD=$(cat $s/physical_location/panel 2>/dev/null)/$(cat $s/physical_location/vertical_position 2>/dev/null)/$(cat $s/physical_location/horizontal_position 2>/dev/null) peer=$(basename "$(readlink $s/peer 2>/dev/null)" 2>/dev/null)"; }
+echo "# start $(date -Is)" >> $LOG
+journalctl -k -f -n 0 --no-pager | grep --line-buffered -E "usb [24]-[0-9]+: (new .*USB device|USB disconnect)" | while read -r line; do
+  sleep 1.5
+  dev=$(echo "$line" | grep -oE "usb [24]-[0-9]+" | cut -d' ' -f2); bus=${dev%%-*}; port=${dev##*-}
+  {
+    echo "== $(date +%T) $line" | sed 's/Wurtz kernel: //'
+    echo "   root port: usb${bus}-port${port}  $(pld 4-0:1.0/usb4-port$port 2>/dev/null | grep -q . && true)"
+    [ $bus = 4 ] && echo "   USB3 SS$port: $(pld 4-0:1.0/usb4-port$port)" || echo "   USB2 HS$port: $(pld 2-0:1.0/usb2-port$port)"
+    if echo "$line" | grep -q new; then
+      echo "   device: $(cat /sys/bus/usb/devices/$dev/manufacturer 2>/dev/null) $(cat /sys/bus/usb/devices/$dev/product 2>/dev/null) $(cat /sys/bus/usb/devices/$dev/idVendor 2>/dev/null):$(cat /sys/bus/usb/devices/$dev/idProduct 2>/dev/null) speed=$(cat /sys/bus/usb/devices/$dev/speed 2>/dev/null) Mb/s"
+    fi
+    echo -n "   non-idle PORTSC:"; for p in $X/port*; do v=$(cut -d' ' -f1 $p/portsc); case $v in 0x0a0002a0|0x000002a0) ;; *) echo -n " $(basename $p)=$(cat $p/portsc)";; esac; done; echo
+  } >> $LOG
+done

@@ -116,7 +116,8 @@ The devices, read under rc6 (whole lists in
 function-disabled. The W541's xHCI has six SuperSpeed ports, of which
 the ACPI `_UPC` names SS1 and SS2 as hotplug, SS5
 hardwired (paired with USB2 port 9), and the rest unused; SS1 is the
-second port on the left side and SS2 the lower one on the right, not
+SS connector on the left (farthest from the screen) and SS2 the one
+on the right, and the *Always On* connector is the USB 2.0 port 3, not
 what the `_PLD` says ([diag.md](diag.md#the-usb-ports-are-described-on-the-wrong-side)).
 
 ## Hyper-Threading on the W541

@@ -37,7 +37,7 @@ is here. None of it is a promise of a date.
 | [Clearing the memory on every core](#clearing-the-memory-on-every-core) | both | measured on both: on the W541 one core already fills the memory, on the M920x the clear is bound by its unequal DIMMs; the loop is `rep stosl` already | decided on 2026-11-06: not made; a test build only for a machine with two equal DIMMs |
 | [The UEFI Shell in the payload](#the-uefi-shell-in-the-payload) | both | done in v1.6.0 (`edk2/0053`, patch 0227): the boards' payload leaves the Shell out, and the smoke test writes its variables with `tools/efi/setvar.c` from a disk image | none planned |
 | [The DPLL of i915 at boot on the M920x](#the-dpll-of-i915-at-boot-on-the-m920x) | M920x | i915's own wait for the PLL, not the firmware's | a report to i915 with the numbers |
-| [A USB 3.0 drive after a warm reset on the W541](#a-usb-30-drive-after-a-warm-reset-on-the-w541) | W541 | not reproduced (2026-11-06): a warm reset keeps the drive's state, and coreboot hands the port without a link at every boot; the resume's time-out is a 100 ms limit, the port in U0 10 ms later; the `_PLD` puts three of the four connectors on the wrong side | the same port with another USB 3.0 device across a reboot; a longer limit (or `WRC`) in `warm_reset_usb3_ports()`; the sides of patch 0071 |
+| [A USB 3.0 drive after a warm reset on the W541](#a-usb-30-drive-after-a-warm-reset-on-the-w541) | W541 | settled (2026-11-06): the SuperSpeed side of the right SS connector of that W541 trains badly (3 links in about 8 plugs, the left one 6 in 6, the same drive); a warm reset carries a stuck port over; not the firmware | the sides of the connectors in patch 0071; a longer limit (or `WRC`) in `warm_reset_usb3_ports()` |
 | [TSC ADJUST after a resume on the W541](#tsc-adjust-after-a-resume-on-the-w541) | W541 | not coreboot (measured 2026-11-06): the register is 0 up to the jump to the wake vector, and the TSC of before the suspend is written back after it | the Linux side, with a debug kernel rather than MSR tracepoints across a suspend |
 
 ## Firmware watchdog
@@ -854,7 +854,7 @@ a retry of the enable), to be reported upstream with these numbers;
 Found in the tests of v1.6.0-rc6 on the W541 with `nri`
 ([docs/tests/v1.6.0/w541-nri/README.md](tests/v1.6.0/w541-nri/README.md#findings),
 2026-11-06). A SanDisk Ultra Flair (`0781:5591`) left in a USB
-3.0 port (xHCI SuperSpeed port SS2, the lower one on the right side) links at 5 Gb/s after a cold boot
+3.0 port (xHCI SuperSpeed port SS2, the SS connector on the right side) links at 5 Gb/s after a cold boot
 and keeps the link through a suspend; after every reboot from Linux
 its link stays in *Polling* with the port reset bit set (`PORTSC`
 `0x2f0`) or in *Compliance mode* (`0x340`), Linux logs `usb4-port2:
@@ -890,7 +890,7 @@ no early USB init, so it tells the two apart.
   resume, says whether the reset engages and in which link state it
   leaves the port; if every variant does it, the drive.
 - **Measured on 2026-11-06** ([docs/tests/v1.6.0/w541-nri/diag.md](tests/v1.6.0/w541-nri/diag.md#the-usb-30-drive-not-reproduced-a-warm-reset-keeps-its-state)):
-  the drive is in the lower port on the right (the `_PLD` says left).
+  the drive is in the SS connector on the right (the `_PLD` says left).
   Not reproduced under rc6 across warm resets, three resumes, the xHCI
   held in D0, its removal and rescan, and a replug; a warm reset keeps
   the port powered, so the drive keeps its state, stuck or linked, and
@@ -903,6 +903,15 @@ no early USB init, so it tells the two apart.
   at hand, nor was v1.5.0 run. The ports themselves:
   [three of the four connectors](tests/v1.6.0/w541-nri/diag.md#the-usb-ports-are-described-on-the-wrong-side)
   are on another panel than the `_PLD` of patch 0071.
+- **Settled the same day** ([docs/tests/v1.6.0/w541-nri/diag.md](tests/v1.6.0/w541-nri/diag.md#the-right-ss-connector-trains-its-superspeed-link-badly)):
+  a hotplug into that connector under rc6 left it in Compliance mode,
+  and a reset of the controller by Linux cleared it; with the same
+  drive the right SS connector links at 5 Gb/s 3 times in about 8, the
+  left one 6 in 6, and the right one always at 480 Mb/s with its
+  SuperSpeed turned off. The SuperSpeed side of that connector is
+  marginal on this W541: not the firmware. Left for the docs: the
+  sides in patch 0071 (the *Always On* connector is the USB 2.0 port 3),
+  and the 100 ms limit of `warm_reset_usb3_ports()`.
 
 ## TSC ADJUST after a resume on the W541
 
