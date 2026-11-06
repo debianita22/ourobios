@@ -1,0 +1,67 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 6 Nov 2026 13:00:00 +0100
+Subject: [PATCH] sb/intel/lynxpoint: Give the warm reset of the SuperSpeed
+ ports 200 ms
+
+warm_reset_usb3_ports() writes WPR into every SuperSpeed port and waits
+for the port reset bit to clear, up to 100 ms, then logs an error. With
+a device on a port the reset takes longer than that by design: the warm
+reset LFPS burst alone lasts 80 to 120 ms by the USB 3.0 specification,
+and the receiver detection, the LFPS handshake and the link training
+come after it. On a ThinkPad W541 (native raminit) with a USB 3.0 drive
+in U3 at every S3 resume the bit is still set at 100 ms, with the port
+in Polling, and the port is in U0 about 10 ms later: the error line is
+in the log of every resume, for a reset that completes right after the
+code stops looking.
+
+Wait up to 200 ms. An empty port clears the bit within microseconds, so
+the limit changes nothing there; with a device the wait ends when the
+reset does, about 10 ms after the old limit on this machine, and the
+rest of romstage finds the port linked.
+
+TEST=ThinkPad W541 (nri): with prints around the reset, at an S3 resume
+with a SanDisk Ultra Flair in a USB 3.0 port, PORTSC goes from U3
+(0x1263) to Polling with PR set (0x12f1) at 100 ms and to U0 with WRC
+and PRC (0x281203) about 10 ms later; at a warm boot the six ports clear
+PR in 5 us.
+---
+ src/southbridge/intel/lynxpoint/early_usb_native.c | 14 ++++++++++++--
+ 1 file changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/src/southbridge/intel/lynxpoint/early_usb_native.c b/src/southbridge/intel/lynxpoint/early_usb_native.c
+index ff167fa1..7861c8b1 100644
+--- a/src/southbridge/intel/lynxpoint/early_usb_native.c
++++ b/src/southbridge/intel/lynxpoint/early_usb_native.c
+@@ -248,6 +248,16 @@ static bool reset_usb2_ports(const unsigned int ehci_ports)
+ 	return !reg32;
+ }
+ 
++/*
++ * The warm reset of a port with a device on it lasts more than 100 ms: the
++ * LFPS burst alone is 80 to 120 ms by the USB 3.0 specification, and the
++ * receiver detection, the LFPS handshake and the link training follow. On
++ * a ThinkPad W541 with a drive in U3 at an S3 resume, the port reset bit
++ * stays set past 100 ms and the port is in U0 about 10 ms later. An empty
++ * port clears the bit at once, so the limit costs nothing there.
++ */
++#define USB3_WARM_RESET_TIMEOUT_MS	200
++
+ /* Returns whether warm reset was successful */
+ static bool warm_reset_usb3_ports(const unsigned int xhci_ports)
+ {
+@@ -258,9 +268,9 @@ static bool warm_reset_usb3_ports(const unsigned int xhci_ports)
+ 			XHCI_USB3_PORTSC_PED,
+ 			XHCI_USB3_PORTSC_WPR);
+ 	}
+-	/* Poll for port reset bit to be cleared or time out at 100ms */
++	/* Poll for port reset bit to be cleared or time out */
+ 	struct stopwatch timer;
+-	stopwatch_init_msecs_expire(&timer, 100);
++	stopwatch_init_msecs_expire(&timer, USB3_WARM_RESET_TIMEOUT_MS);
+ 	uint32_t reg32;
+ 	do {
+ 		reg32 = 0;
+-- 
+2.43.0
+

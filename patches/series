@@ -223,3 +223,5 @@
 0227-mb-lenovo-Drop-the-UEFI-Shell-from-the-USB-boot-help.patch
 0228-sb-intel-common-acpi_pirq_gen-Declare-the-PIC-_PRT-w.patch
 0229-soc-intel-common-block-acpi-pep-Skip-a-device-withou.patch
+0231-sb-intel-lynxpoint-Give-the-warm-reset-of-the-SuperS.patch
+0232-mb-lenovo-haswell-Put-the-W541-s-USB-connectors-on-t.patch
