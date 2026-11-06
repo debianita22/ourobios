@@ -2460,18 +2460,38 @@ def spi_verdict(p, areas=None):
                         "rpe": bool(v & FPR_RPE), "locked": locked, "areas": range_names(areas, lo, hi)})
     wp = [(r["lo"], r["hi"]) for r in prs if r["wpe"]]
     touching = lambda o, s, kind: [r for r in prs if r[kind] and r["lo"] <= o + s - 1 and r["hi"] >= o]
-    v = {"prs": prs, "flockdn": bool(hsfs & HSFS_FLOCKDN), "ro": None}
+
+    def state(o, s):
+        """Un'area (offset, size) sotto i PR in scrittura: (stato, [PR])."""
+        mine = touching(o, s, "wpe")
+        full = covered(o, o + s - 1, wp)
+        return ("ok" if full and all(r["locked"] for r in mine) else
+                "unlocked" if full else "partial" if mine else "off"), [r["name"] for r in mine]
+
+    v = {"prs": prs, "flockdn": bool(hsfs & HSFS_FLOCKDN), "ro": None, "si": None}
     ro = areas.get("WP_RO")
     if ro:
-        mine = touching(ro[0], ro[1], "wpe")
-        full = covered(ro[0], ro[0] + ro[1] - 1, wp)
-        v["ro"] = "ok" if full and all(r["locked"] for r in mine) else \
-            "unlocked" if full else "partial" if mine else "off"
-        v["ro_by"] = [r["name"] for r in mine]
+        v["ro"], v["ro_by"] = state(*ro)
+    # SI_ALL (descrittore, GbE, ME): dalla v1.6.1 la Firmware protection ci
+    # mette un PR (patch 0235). Senza la FMAP vale l'unione delle regioni del
+    # controller (FREG0 descrittore, FREG2 ME, FREG3 GbE)
+    si = areas.get("SI_ALL")
+    if not si:
+        fr = [flash_range(regs[SPIBAR_FREG0 + 4 * n]) for n in (0, 2, 3)]
+        fr = [(lo, hi) for lo, hi in fr if lo <= hi]
+        if fr:
+            lo, hi = min(a for a, _ in fr), max(b for _, b in fr)
+            si = (lo, hi - lo + 1)
+    if si:
+        v["si"], v["si_by"] = state(*si)
+        v["si_range"] = (si[0], si[0] + si[1] - 1)
     v["smm_only"], v["smm_by_smi"] = bios_lock_state(p)
     # la regione BIOS (1) e il descrittore (0) scrivibili dalla CPU (BRWA)
     v["bios_host_write"] = bool(fracc & (1 << 9))
-    v["desc_writable"] = bool(fracc & (1 << 8)) and not covered(0, 0xfff, wp)
+    # il descrittore: dato in scrittura alla CPU dal descrittore stesso
+    # (UNLOCK_FLASH_REGIONS), e scrivibile adesso (nessun PR sopra)
+    v["desc_host"] = bool(fracc & (1 << 8))
+    v["desc_writable"] = v["desc_host"] and not covered(0, 0xfff, wp)
     v["capsule_block"] = sorted({r["name"] + " " + n for n in CAPSULE_WRITES if n in areas
                                  for r in touching(areas[n][0], areas[n][1], "wpe")})
     # la capsula legge la FMAP del flash attraverso SMMSTORE
@@ -2502,7 +2522,8 @@ def protection_lines(devmem=None):
         return [("protezione", "%s; BIOS_CNTL 0x%02x" % (p.get("error"), p["bios_cntl"])),
                 ("BIOS Lock", bios_lock_text(p, {"smm_only": smm, "smm_by_smi": by_smi}))]
     v = spi_verdict(p)
-    return [("WP_RO", ro_text(p, v)), ("BIOS Lock", bios_lock_text(p, v)), ("slot RW", slots_text(p, v))]
+    return [("WP_RO", ro_text(p, v)), ("SI_ALL", si_text(p, v)), ("BIOS Lock", bios_lock_text(p, v)),
+            ("slot RW", slots_text(p, v))]
 
 
 def option_text(p, name):
@@ -2523,8 +2544,6 @@ def ro_text(p, v):
         text = "protetta fino al prossimo reset o ripresa da S3 (%s)" % ", ".join(v["ro_by"])
         if v["ro"] == "unlocked":
             text += ", ma FLOCKDN e' spento: i PR si possono togliere"
-        if v["desc_writable"]:
-            text += "; ma il descrittore e' scrivibile dalla CPU (UNLOCK_FLASH_REGIONS): si puo' aggirare"
         if not on:
             text += "; spenta nel setup, vale dal prossimo avvio o ripresa da S3"
         return text
@@ -2536,6 +2555,38 @@ def ro_text(p, v):
     return text + "; Firmware protection %s: se cambiata dopo l'avvio vale dal prossimo avvio o ripresa " \
         "da S3, se no " \
         "sudo cbmem -1 | grep -E \"BM-LOCKDOWN|FPR\"" % why
+
+
+def si_text(p, v):
+    """SI_ALL, il descrittore con la GbE e il ME: con UNLOCK_FLASH_REGIONS il
+    descrittore li da' in scrittura alla CPU (FRAP/FRACC), e dalla v1.6.1 la
+    Firmware protection ci mette un PR insieme a quello di WP_RO (patch 0235).
+    Il BIOS Lock non li copre: vale solo per la regione BIOS."""
+    opt = p["options"].get("bootmedia_lock")
+    on = opt if opt is not None else lock_option_default("bootmedia_lock")
+    if v["si"] is None:
+        return "non trovata: ne' nella FMAP ne' nelle regioni del controller"
+    if not v["desc_host"]:
+        text = "il descrittore non la da' in scrittura alla CPU"
+        if v["si"] in ("ok", "unlocked"):
+            text += "; e sotto %s" % ", ".join(v["si_by"])
+        return text
+    if v["si"] in ("ok", "unlocked"):
+        text = "protetta fino al prossimo reset o ripresa da S3 (%s)" % ", ".join(v["si_by"])
+        if v["si"] == "unlocked":
+            text += ", ma FLOCKDN e' spento: i PR si possono togliere"
+        if not on:
+            text += "; Firmware protection spenta nel setup, vale dal prossimo avvio o ripresa da S3"
+        return text
+    text = ("protetta solo in parte (%s)" % ", ".join(v["si_by"]) if v["si"] == "partial" else
+            "NON protetta: descrittore, GbE e ME scrivibili dalla CPU (UNLOCK_FLASH_REGIONS)")
+    if not on:
+        return text + " (Firmware protection spenta, anche nel setup)"
+    if v["ro"] in ("ok", "unlocked"):
+        # WP_RO si', SI_ALL no: un firmware senza BOOTMEDIA_LOCK_SI_ALL
+        return text + "; firmware senza la protezione di SI_ALL (prima della v1.6.1), o lock fallito: " \
+            "sudo cbmem -1 | grep -E \"BM-LOCKDOWN|FPR\""
+    return text + "; Firmware protection accesa ma non applicata, come per WP_RO"
 
 
 def bios_lock_text(p, v):
@@ -2718,9 +2769,13 @@ def cmd_protection(args):
         print("PR0-PR4:     tutti vuoti" if lpt else "PR, GPR0:    tutti vuoti")
     print_options(p)
     print("WP_RO:       %s" % ro_text(p, v))
-    print("descrittore: %s" % ("scrivibile dalla CPU (%s, nessun PR su 0x0-0xfff): con WP_RO "
-                               "protetta, si aggira al prossimo reset; il BIOS Lock non lo copre"
-                               % ("FRAP" if lpt else "FRACC") if v["desc_writable"] else "non scrivibile dalla CPU"))
+    frap = "FRAP" if lpt else "FRACC"
+    print("descrittore: %s" % (
+        "scrivibile dalla CPU (%s, nessun PR su 0x0-0xfff): con WP_RO protetta, si aggira al prossimo "
+        "reset; il BIOS Lock non lo copre" % frap if v["desc_writable"] else
+        "dato in scrittura alla CPU (%s), ma sotto un PR fino al prossimo reset o ripresa da S3" % frap
+        if v["desc_host"] else "non scrivibile dalla CPU: il descrittore non lo da' (%s)" % frap))
+    print("SI_ALL:      %s%s" % (si_text(p, v), " [0x%07x-0x%07x]" % v["si_range"] if v.get("si_range") else ""))
     print("BIOS Lock:   %s" % bios_lock_text(p, v))
     unmapped = "non verificabile: %s attivi, %s" % (", ".join(v["unmapped"]), UNMAPPED)
     print("capsula:     %s" % ("NO: %s" % ", ".join(v["capsule_block"]) if v["capsule_block"] else

@@ -1751,9 +1751,10 @@ def check_measured_boot(fw, rep):
 def flash_spi(p, details):
     """FLASH-01 con la sonda di tools/update.py (spi_protection), sul M920x e
     sul W541: (i PR che coprono tutta WP_RO o None, se sono bloccati, FLOCKDN
-    o None, errore)."""
+    o None, errore, lo stato di SI_ALL come spi_verdict() o None se il
+    descrittore non la da' in scrittura alla CPU, i PR che la coprono)."""
     if not p["root"]:
-        return None, None, None, "serve root"
+        return None, None, None, "serve root", None, ""
     lpt = p.get("ctrl") == "lpt"
     bc = p.get("bios_cntl")
     if bc is not None:
@@ -1769,18 +1770,20 @@ def flash_spi(p, details):
             # BIOS_CNTL viene dallo spazio PCI, anche senza /dev/mem
             smm, by_smi = update.bios_lock_state(p)
             details.append("BIOS Lock: %s" % update.bios_lock_text(p, {"smm_only": smm, "smm_by_smi": by_smi}))
-        return None, None, None, p.get("error") or "registri non letti"
+        return None, None, None, p.get("error") or "registri non letti", None, ""
     v = update.spi_verdict(p)
     details[-1] += ", FLOCKDN %s" % ("si'" if v["flockdn"] else "no")
     for r in v["prs"]:
         details.append("%s 0x%07x-0x%07x%s%s" % (r["name"], r["lo"], r["hi"], " scrittura protetta" if r["wpe"]
                                                  else "", (" (" + ", ".join(r["areas"][:4]) + ")") if r["areas"]
                                                  else ""))
-    for label, fn in (("WP_RO", update.ro_text), ("BIOS Lock", update.bios_lock_text),
+    for label, fn in (("WP_RO", update.ro_text), ("SI_ALL", update.si_text), ("BIOS Lock", update.bios_lock_text),
                       ("slot RW", update.slots_text)):
         details.append("%s: %s" % (label, fn(p, v)))
     full = v["ro"] in ("ok", "unlocked")
-    return ", ".join(v["ro_by"]) if full else None, v["ro"] == "ok", v["flockdn"], None
+    si = v["si"] if v["desc_host"] else None
+    return ", ".join(v["ro_by"]) if full else None, v["ro"] == "ok", v["flockdn"], None, si, \
+        ", ".join(v.get("si_by", []))
 
 
 def logged_fpr(fw):
@@ -1794,15 +1797,16 @@ def logged_fpr(fw):
 
 
 def check_flash(fw, rep):
-    """FLASH-01: Firmware protection (WP_RO in un Protected Range) e BIOS Lock."""
+    """FLASH-01: Firmware protection (WP_RO e, dalla v1.6.1, SI_ALL in un
+    Protected Range) e BIOS Lock."""
     status, details = "PASS", []
     lock = [m.group(0) for m in fw.grep(r"^BM-LOCKDOWN: (Enabled bootmedia protection.*|Boot media protection off.*|"
                                         r"Failed to enable.*|Could not find region.*)")] if fw.log is not None else []
     details.extend("log: " + l for l in lock)
-    covered, locked, flockdn, err, from_log = None, None, None, None, None
+    covered, locked, flockdn, err, from_log, si, si_by = None, None, None, None, None, None, ""
     p = spi_probe(fw)
     if p is not None:
-        covered, locked, flockdn, err = flash_spi(p, details)
+        covered, locked, flockdn, err, si, si_by = flash_spi(p, details)
     else:
         err = "nessun controller conosciuto (00:1f.5 Cannon Point, 00:1f.0 Lynx Point)"
     if err:
@@ -1832,7 +1836,15 @@ def check_flash(fw, rep):
         status = "WARN"
         summary = "WP_RO in %s, ma il PR non e' bloccato (FLOCKDN spento): si puo' togliere" % covered
     elif covered is not None:
-        summary = "WP_RO protetto (%s)%s" % (covered, ", registri bloccati" if flockdn else "")
+        summary = "WP_RO protetto (%s)%s%s" % (
+            covered, " e SI_ALL (%s)" % si_by if si in ("ok", "unlocked") else "",
+            ", registri bloccati" if flockdn else "")
+        if si in ("partial", "off"):
+            # il descrittore da' SI_ALL alla CPU e i PR non la coprono: un
+            # firmware senza la patch 0235, o il suo lock fallito (gia' FAIL)
+            status = "WARN"
+            summary += "; SI_ALL (descrittore, GbE, ME) scrivibile dalla CPU: firmware senza la protezione " \
+                "di SI_ALL (dalla v1.6.1)"
     elif from_log is not None:
         status = "INFO"
         summary = "WP_RO protetto all'avvio secondo il log (%s dal log; registri non letti, FLOCKDN non noto)" % \
@@ -1845,7 +1857,7 @@ def check_flash(fw, rep):
         status, summary = "INFO", "nessuna riga BM-LOCKDOWN nel log"
     rep.add("FLASH-01", "Protezione del flash", status, summary, details,
             {"wp_ro_protected": covered is not None and bool(locked), "wp_ro_from_log": from_log,
-             "option_off": off})
+             "option_off": off, "si_all_protected": si == "ok"})
 
 
 EC_CVE = "CVE-2019-6171"

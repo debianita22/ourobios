@@ -685,7 +685,8 @@ eperm = {"root": True, "ctrl": "lpt", "bios_cntl": 0x09, "regs": None, "options"
 c = run(hw.check_flash, firmware(cached, raw={hw.CBMEM_ID_FMAP: fmap}, spi=eperm))
 assert c["status"] == "INFO" and c["summary"].startswith("WP_RO protetto all'avvio secondo il log (PR0 dal log"), c
 assert "BIOS Lock: spento: il sistema puo' scrivere il flash" in c["details"], c["details"]
-assert c["data"] == {"wp_ro_protected": False, "wp_ro_from_log": "PR0", "option_off": False}, c["data"]
+assert c["data"] == {"wp_ro_protected": False, "wp_ro_from_log": "PR0", "option_off": False,
+                     "si_all_protected": False}, c["data"]
 # nessun controller conosciuto: lo stesso, dal log
 c = run(hw.check_flash, firmware(cached, raw={hw.CBMEM_ID_FMAP: fmap}, spi=None))
 assert c["status"] == "INFO" and "PR0 dal log" in c["summary"], c
@@ -1342,16 +1343,32 @@ v = update.spi_verdict(p)
 assert v["ro"] == "off" and v["desc_writable"] and not v["smm_only"] and not v["capsule_block"]
 assert update.protection_lines(dm) == [
     ("WP_RO", "NON protetta (Firmware protection spenta, anche nel setup)"),
+    ("SI_ALL", "NON protetta: descrittore, GbE e ME scrivibili dalla CPU (UNLOCK_FLASH_REGIONS) (Firmware "
+               "protection spenta, anche nel setup)"),
     ("BIOS Lock", "spento: il sistema puo' scrivere il flash"),
     ("slot RW", "scrivibili con la capsula e con flashrom")], update.protection_lines(dm)
-# Firmware protection: PR0 su WP_RO, come lo scrive fast_spi_flash_protect()
-fixture(prs=((0, 0x97ff1700),), options=((1, 0, 0x3f),))
+# Firmware protection: PR0 su WP_RO e PR1 su SI_ALL (patch 0235), come li
+# scrive fast_spi_flash_protect()
+fixture(prs=((0, 0x97ff1700), (1, 0x8bff0000)), options=((1, 0, 0x3f),))
 p = update.spi_protection(dm)
 v = update.spi_verdict(p)
 assert v["ro"] == "ok" and v["prs"][0]["areas"] == ["WP_RO"] and not v["capsule_block"], v
-assert update.ro_text(p, v).startswith("protetta fino al prossimo reset o ripresa da S3 (PR0); ma il descrittore "
-                                      "e' scrivibile")
+assert v["si"] == "ok" and v["si_by"] == ["PR1"] and v["prs"][1]["areas"] == ["SI_ALL"], v
+assert v["desc_host"] and not v["desc_writable"] and v["si_range"] == (0, 0xbfffff), v
+assert update.ro_text(p, v) == "protetta fino al prossimo reset o ripresa da S3 (PR0)"
+assert update.si_text(p, v) == "protetta fino al prossimo reset o ripresa da S3 (PR1)"
 assert update.slots_text(p, v) == "scrivibili con la capsula e con flashrom"
+# un firmware senza la 0235: PR0 su WP_RO e basta, il descrittore scrivibile
+fixture(prs=((0, 0x97ff1700),), options=((1, 0, 0x3f),))
+p = update.spi_protection(dm)
+v = update.spi_verdict(p)
+assert v["ro"] == "ok" and v["si"] == "off" and v["desc_writable"], v
+assert update.si_text(p, v) == ("NON protetta: descrittore, GbE e ME scrivibili dalla CPU (UNLOCK_FLASH_REGIONS); "
+                                "firmware senza la protezione di SI_ALL (prima della v1.6.1), o lock fallito: "
+                                "sudo cbmem -1 | grep -E \"BM-LOCKDOWN|FPR\"")
+# senza SI_ALL nella FMAP: l'unione delle regioni del controller
+v = update.spi_verdict(p, {k: a for k, a in p["areas"].items() if k != "SI_ALL"})
+assert v["si"] == "off" and v["si_range"] == (0, 0xbfffff), v
 # WP_RO coperta da due PR insieme
 fixture(prs=((0, 0x97ff1780), (1, 0x977f1700)), options=((1, 0, 0x3f),))
 assert update.spi_verdict(update.spi_protection(dm))["ro"] == "ok"
@@ -1444,7 +1461,7 @@ assert update.protection_lines(dm)[0][1].startswith("non verificabile")
 shutil.rmtree(root)
 EOF
 	then
-		ok "tools/update.py: protection su registri finti (nessun PR, PR0 su WP_RO, PR su uno slot, BIOS Lock, store non sano o rovinato, senza FMAP, --expect-ro, senza root, nessun controller)"
+		ok "tools/update.py: protection su registri finti (nessun PR, PR0 su WP_RO e PR1 su SI_ALL, solo PR0 (prima della 0235), PR su uno slot, BIOS Lock, store non sano o rovinato, senza FMAP, --expect-ro, senza root, nessun controller)"
 	else
 		bad "tools/update.py: protection non legge i registri finti come deve"
 	fi
@@ -1528,8 +1545,8 @@ def store(options):
     return bytes(img)
 
 
-def fixture(prs=((0, 0x8bff0b60),), bios_cntl=0x09, hsfs=0x0000e008, rcba=0xfed1c001, options=None, config=256,
-            device=0x8c4f):
+def fixture(prs=((0, 0x8bff0b60), (1, 0x84ff0000)), bios_cntl=0x09, hsfs=0x0000e008, rcba=0xfed1c001,
+            options=None, config=256, device=0x8c4f):
     cfg = bytearray(256)
     cfg[0:4] = struct.pack("<HH", 0x8086, device)
     cfg[0xdc] = bios_cntl
@@ -1552,30 +1569,46 @@ def fixture(prs=((0, 0x8bff0b60),), bios_cntl=0x09, hsfs=0x0000e008, rcba=0xfed1
 
 
 dm = (mem, phys)
-# (a) i default di una release: PR0 su WP_RO, BIOS Lock spento, SMMSTORE vuota
+# (a) i default di una release: PR0 su WP_RO, PR1 su SI_ALL (patch 0235),
+# BIOS Lock spento, SMMSTORE vuota
 fixture()
 p = update.spi_protection(dm)
 assert (p["ctrl"], p["device"], p["rcba"], p["bar"]) == ("lpt", 0x8c4f, 0xfed1c000, 0xfed1f800), p
 assert p["bios"] == (0x500000, 0xbfffff) and p["window"] == WIN and p["fmap"] == "quella nel flash (0x0b60000)"
 assert p["gcs"] & update.GCS_BILD and not p["buc"] & update.BUC_TS
 v = update.spi_verdict(p)
-assert v["ro"] == "ok" and v["prs"][0]["areas"] == ["WP_RO"] and v["flockdn"] and v["desc_writable"], v
+assert v["ro"] == "ok" and v["prs"][0]["areas"] == ["WP_RO"] and v["flockdn"], v
+assert v["si"] == "ok" and v["prs"][1]["areas"] == ["SI_ALL"] and v["si_range"] == (0, 0x4fffff), v
+assert v["desc_host"] and not v["desc_writable"], v
 assert update.option_text(p, "bootmedia_lock") == "1 (default: SMMSTORE vuota)"
 assert update.protection_lines(dm) == [
-    ("WP_RO", "protetta fino al prossimo reset o ripresa da S3 (PR0); ma il descrittore e' scrivibile dalla CPU "
-              "(UNLOCK_FLASH_REGIONS): si puo' aggirare"),
+    ("WP_RO", "protetta fino al prossimo reset o ripresa da S3 (PR0)"),
+    ("SI_ALL", "protetta fino al prossimo reset o ripresa da S3 (PR1)"),
     ("BIOS Lock", "spento: il sistema puo' scrivere il flash"),
     ("slot RW", "scrivibili con la capsula e con flashrom")], update.protection_lines(dm)
+# (a2) un firmware prima della 0235: solo PR0, il descrittore resta scrivibile
+fixture(prs=((0, 0x8bff0b60),))
+p = update.spi_protection(dm)
+v = update.spi_verdict(p)
+assert v["ro"] == "ok" and v["si"] == "off" and v["desc_writable"], v
+assert update.protection_lines(dm)[1] == (
+    "SI_ALL", "NON protetta: descrittore, GbE e ME scrivibili dalla CPU (UNLOCK_FLASH_REGIONS); firmware senza la "
+              "protezione di SI_ALL (prima della v1.6.1), o lock fallito: sudo cbmem -1 | grep -E "
+              "\"BM-LOCKDOWN|FPR\""), update.protection_lines(dm)
 # (b) Firmware protection spenta nel setup, nessun PR; me_disable da SMMSTORE
 fixture(prs=(), options=(("bootmedia_lock", 0), ("bios_lock", 0), ("me_disable", 0)))
 p = update.spi_protection(dm)
 assert p["options"] == {"bootmedia_lock": 0, "bios_lock": 0} and p["board_options"] == {"me_disable": 0}, p
-assert update.ro_text(p, update.spi_verdict(p)) == "NON protetta (Firmware protection spenta, anche nel setup)"
+v = update.spi_verdict(p)
+assert update.ro_text(p, v) == "NON protetta (Firmware protection spenta, anche nel setup)"
+assert update.si_text(p, v) == ("NON protetta: descrittore, GbE e ME scrivibili dalla CPU (UNLOCK_FLASH_REGIONS) "
+                                "(Firmware protection spenta, anche nel setup)")
 # (c) FLOCKDN spento: i PR si possono togliere
 fixture(hsfs=0x00006008)
 p = update.spi_protection(dm)
 v = update.spi_verdict(p)
 assert v["ro"] == "unlocked" and "ma FLOCKDN e' spento" in update.ro_text(p, v), v
+assert v["si"] == "unlocked" and "ma FLOCKDN e' spento" in update.si_text(p, v), v
 # (d) un PR su RW_SECTION_A: la capsula non lo scrive
 fixture(prs=((0, 0x8bff0b60), (1, 0x888f05c0)))
 p = update.spi_protection(dm)
@@ -1628,8 +1661,16 @@ for s in ("controller:  00:1f.0 (LPC), 8086:8c4f (Lynx Point QM87), RCBA 0xfed1c
           "regioni:     descrittore 0x0000000-0x0000fff, BIOS 0x0500000-0x0bfffff, ME 0x0003000-0x04fffff, "
           "GbE 0x0001000-0x0002fff",
           "FRAP:        0x0000ffff: la CPU legge descrittore, BIOS, ME, GbE; scrive descrittore, BIOS, ME, GbE",
-          "PR0:         0x8bff0b60: 0x0b60000-0x0bfffff scrittura = WP_RO"):
+          "PR0:         0x8bff0b60: 0x0b60000-0x0bfffff scrittura = WP_RO",
+          "PR1:         0x84ff0000: 0x0000000-0x04fffff scrittura = SI_ALL",
+          "WP_RO:       protetta fino al prossimo reset o ripresa da S3 (PR0)",
+          "descrittore: dato in scrittura alla CPU (FRAP), ma sotto un PR fino al prossimo reset o ripresa da S3",
+          "SI_ALL:      protetta fino al prossimo reset o ripresa da S3 (PR1) [0x0000000-0x04fffff]"):
     assert s in out.splitlines(), (s, out)
+fixture(prs=((0, 0x8bff0b60),))
+out = protection(None)[1]
+assert "descrittore: scrivibile dalla CPU (FRAP, nessun PR su 0x0-0xfff): con WP_RO protetta, si aggira al " \
+    "prossimo reset; il BIOS Lock non lo copre" in out.splitlines(), out
 assert rc == 0 and not any(w in out for w in ("DLOCK", "EISS", "GPR0", "PRR34", "WRSDIS", "FRACC")), out
 assert [protection(e)[0] for e in ("on", "off")] == [0, 1]
 fixture(prs=())
@@ -1638,7 +1679,7 @@ assert rc == 1 and "PR0-PR4:     tutti vuoti" in out, out
 assert protection("off")[0] == 0
 # status: le stesse tre righe del M920x
 fixture()
-assert [l for l, _ in update.protection_lines()] == ["WP_RO", "BIOS Lock", "slot RW"]
+assert [l for l, _ in update.protection_lines()] == ["WP_RO", "SI_ALL", "BIOS Lock", "slot RW"]
 update.spi_protection = spi_protection
 # (g) RCBA spento, o fuori dalla riserva di ACPI: la pagina non si mappa;
 # BIOS_CNTL viene dallo spazio PCI, il BIOS Lock si sa lo stesso
@@ -1758,9 +1799,11 @@ fw.log = ["[INFO ]  spi_flash_protect: FPR 0 is enabled for range 0x00b60000-0x0
 rep = hw.Report()
 hw.check_flash(fw, rep)
 c = rep.checks[0]
-assert (c["status"], c["summary"]) == ("PASS", "WP_RO protetto (PR0), registri bloccati"), c
+assert (c["status"], c["summary"]) == ("PASS", "WP_RO protetto (PR0) e SI_ALL (PR1), registri bloccati"), c
 assert "Lynx Point 00:1f.0: BIOS_CNTL 0x09 (BIOSWE 1, BLE 0, SMM_BWP 0), GCS 0x00000001 (BILD 1), FLOCKDN si'" \
     in c["details"], c["details"]
+assert "SI_ALL: protetta fino al prossimo reset o ripresa da S3 (PR1)" in c["details"], c["details"]
+assert c["data"]["si_all_protected"], c["data"]
 
 
 def report(check, log, probe):
@@ -1779,7 +1822,14 @@ fixture(hsfs=0x00006008)
 c = report(hw.check_flash, fw.log, lambda: spi_protection(dm))
 assert (c["status"], c["summary"]) == ("WARN", "WP_RO in PR0, ma il PR non e' bloccato (FLOCKDN spento): si puo' "
                                                "togliere"), c
-assert not c["data"]["wp_ro_protected"], c
+assert not c["data"]["wp_ro_protected"] and not c["data"]["si_all_protected"], c
+# un firmware senza la 0235: WP_RO protetta, SI_ALL no, WARN
+fixture(prs=((0, 0x8bff0b60),))
+c = report(hw.check_flash, fw.log, lambda: spi_protection(dm))
+assert (c["status"], c["summary"]) == ("WARN", "WP_RO protetto (PR0), registri bloccati; SI_ALL (descrittore, GbE, "
+                                               "ME) scrivibile dalla CPU: firmware senza la protezione di SI_ALL "
+                                               "(dalla v1.6.1)"), c
+assert c["data"]["wp_ro_protected"] and not c["data"]["si_all_protected"], c
 # ME-01 con la sonda vera: pagina rifiutata, SMMSTORE letta senza me_disable
 # e l'HECI visibile: il default si sa, WARN; con SMMSTORE non letta, INFO
 os.makedirs(update.HECI_PCI)
@@ -1794,7 +1844,7 @@ assert c["status"] == "INFO" and c["summary"].endswith("non letto (default acces
 shutil.rmtree(root)
 EOF
 	then
-		ok "tools/update.py: protection sul W541 (Lynx Point: PR0 su WP_RO, FLOCKDN, PR su uno slot, BIOS_CNTL, RCBA, /dev/mem rifiutata con le opzioni lette lo stesso, senza root, altri LPC, --expect-ro anche senza registri, other-slot; FLASH-01 e ME-01)"
+		ok "tools/update.py: protection sul W541 (Lynx Point: PR0 su WP_RO e PR1 su SI_ALL, solo PR0, FLOCKDN, PR su uno slot, BIOS_CNTL, RCBA, /dev/mem rifiutata con le opzioni lette lo stesso, senza root, altri LPC, --expect-ro anche senza registri, other-slot; FLASH-01 e ME-01)"
 	else
 		bad "tools/update.py: protection non legge i registri finti di Lynx Point come deve"
 	fi
