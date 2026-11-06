@@ -37,8 +37,8 @@ is here. None of it is a promise of a date.
 | [Clearing the memory on every core](#clearing-the-memory-on-every-core) | both | measured on both: on the W541 one core already fills the memory, on the M920x the clear is bound by its unequal DIMMs; the loop is `rep stosl` already | decided on 2026-11-06: not made; a test build only for a machine with two equal DIMMs |
 | [The UEFI Shell in the payload](#the-uefi-shell-in-the-payload) | both | done in v1.6.0 (`edk2/0053`, patch 0227): the boards' payload leaves the Shell out, and the smoke test writes its variables with `tools/efi/setvar.c` from a disk image | none planned |
 | [The DPLL of i915 at boot on the M920x](#the-dpll-of-i915-at-boot-on-the-m920x) | M920x | i915's own wait for the PLL, not the firmware's | a report to i915 with the numbers |
-| [A USB 3.0 drive after a warm reset on the W541](#a-usb-30-drive-after-a-warm-reset-on-the-w541) | W541 | settled (2026-11-06): the SuperSpeed side of the right SS connector of that W541 trains badly (3 links in about 8 plugs, the left one 6 in 6, the same drive); a warm reset carries a stuck port over; not the firmware | the sides of the connectors in patch 0071; a longer limit (or `WRC`) in `warm_reset_usb3_ports()` |
-| [TSC ADJUST after a resume on the W541](#tsc-adjust-after-a-resume-on-the-w541) | W541 | not coreboot (measured 2026-11-06): the register is 0 up to the jump to the wake vector, and the TSC of before the suspend is written back after it | the Linux side, with a debug kernel rather than MSR tracepoints across a suspend |
+| [A USB 3.0 drive after a warm reset on the W541](#a-usb-30-drive-after-a-warm-reset-on-the-w541) | W541 | settled (2026-11-06): the SuperSpeed side of the right SS connector of that W541 trains badly (3 links in about 8 plugs, the left one 6 in 6, the same drive); a warm reset carries a stuck port over; not the firmware. The sides of the connectors (patch 0232) and the limit of `warm_reset_usb3_ports()` (patch 0231, 200 ms) done the same day | another USB 3.0 device in that connector, and the connector cleaned; the T440p's connectors measured the same way |
+| [TSC ADJUST after a resume on the W541](#tsc-adjust-after-a-resume-on-the-w541) | W541 | not coreboot (measured 2026-11-06): the register is 0 up to the jump to the wake vector, and the TSC of before the suspend is written back after it, before Linux's check in `__restore_processor_state()`; no code of that window writes the TSC | optional: a test build that waits before the jump and repeats the MSR writes of Linux's early resume, to see what moves the register; or a debug kernel |
 
 ## Firmware watchdog
 
@@ -912,6 +912,16 @@ no early USB init, so it tells the two apart.
   marginal on this W541: not the firmware. Left for the docs: the
   sides in patch 0071 (the *Always On* connector is the USB 2.0 port 3),
   and the 100 ms limit of `warm_reset_usb3_ports()`.
+- **Done on 2026-11-06**: `warm_reset_usb3_ports()` waits up to 200 ms
+  for the port reset bit (patch 0231): the warm reset LFPS burst alone
+  is 80 to 120 ms by the USB 3.0 specification, so a port with a
+  device could never clear the bit within the 100 ms of before, and
+  the error line of every resume goes; an empty port clears it at
+  once. The W541's `_PLD` buffers put the four connectors where the
+  measurement found them, one row on each side (patch 0232); the
+  T440p keeps the OEM ones until measured. The help of *USB always on*
+  is the H8 code's, shared by every Lenovo board, and names no
+  connector; the yellow mark on the machine does.
 
 ## TSC ADJUST after a resume on the W541
 
@@ -946,3 +956,25 @@ on the W541 only; on the M920x it has not been seen.
   `tsc_resume()`, or an SMI it causes. Kernel tracepoints on MSR
   accesses across the suspend reset the machine right after the jump
   (one try): a debug kernel is the way.
+- **The window, from the kernel's sources** (`arch/x86/power/cpu.c`,
+  `arch/x86/realmode/rm/wakeup_asm.S`, `arch/x86/kernel/head_64.S`,
+  mainline): Linux checks the register in `__restore_processor_state()`
+  (`tsc_verify_tsc_adjust(true)`), before `microcode_bsp_resume()` and
+  the MSRs it restores, and before the clocksource's `tsc_resume()`.
+  Between coreboot's jump and that check the only MSR writes are
+  `IA32_MISC_ENABLE` in the real-mode trampoline (the value saved at
+  the suspend), `EFER`, `GS_BASE` and `IA32_APICBASE` (when the kernel
+  runs in x2APIC mode) in `head_64.S`, then `IA32_MISC_ENABLE`, `EFER`, `GS_BASE`, the
+  `STAR`/`LSTAR`/`CSTAR`/`SYSCALL_MASK` and `SYSENTER` registers of
+  `syscall_init()`, XCR0 and `FS_BASE`/`KERNEL_GS_BASE`: none of them
+  is the TSC or `IA32_TSC_ADJUST`, and no SMI is raised there. Either
+  the processor moves the register on one of those writes, putting
+  back a TSC it kept across the suspend (the kernel saves no TSC
+  value), or the kernel on the machine differs from the mainline code
+  read here. A test build that waits two seconds before
+  the jump, reading the register, then repeats those writes with the
+  values in place (`IA32_MISC_ENABLE` first) and reads it after each,
+  tells which, from coreboot alone; a debug kernel tells from the
+  other side. The message is harmless either way: Linux zeroes the
+  register and its TSC is the count since the reset, as on the other
+  processors.

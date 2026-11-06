@@ -1,0 +1,122 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 6 Nov 2026 13:00:00 +0100
+Subject: [PATCH] mb/lenovo/haswell: Put the W541's USB connectors on their
+ sides
+
+The _PLD of the four USB connectors come from the OEM tables, which the
+T440p and the W541 share. Plugging a USB 3.0 drive into each connector
+of a W541 with PORTSC watched puts three of them on another panel than
+those buffers say, and the Always On connector on another port: port 1
+(HS01/SS01) is the connector on the left side farthest from the screen,
+marked SS, not on the right; port 2 (HS02/SS02) is the connector on the
+right side farthest from the screen, marked SS, not on the left; port 3
+(HS03) is the connector on the left side nearest the screen, the Always
+On one, not on the back; port 6 (HS06) is the connector on the right
+side nearest the screen, as said. The OS shows the position to the
+user only (Windows's port names, Linux's physical_location), so nothing
+else changes.
+
+Give the W541 buffers with the measured panels: left for ports 1 and 3,
+right for ports 2 and 6, one row on each side, the horizontal position
+telling the two apart as seen facing that side (the screen is on the
+left when facing the left side, on the right when facing the right
+one). The shape is a USB-A connector's, the group positions and the
+rest of the bytes stay the OEM's. The T440p keeps the OEM buffers until
+someone measures it.
+
+TEST=iasl -tc -w3: the buffers compile and disassemble to LEFT/CENTER/
+RIGHT (port 1), RIGHT/CENTER/LEFT (port 2), LEFT/CENTER/LEFT (port 3)
+and RIGHT/CENTER/RIGHT (port 6) on the W541, the OEM values on the
+T440p.
+---
+ src/mainboard/lenovo/haswell/acpi/usb.asl | 50 +++++++++++++++++++----
+ 1 file changed, 43 insertions(+), 7 deletions(-)
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/usb.asl b/src/mainboard/lenovo/haswell/acpi/usb.asl
+index 1531df4b..4977255c 100644
+--- a/src/mainboard/lenovo/haswell/acpi/usb.asl
++++ b/src/mainboard/lenovo/haswell/acpi/usb.asl
+@@ -14,7 +14,7 @@
+  * 2 left, 3 right, 4 front, 5 back) and VerticalPosition (6-7); byte 9 has
+  * HorizontalPosition (bits 0-1) and Shape (2-5).
+  *
+- *  xHCI port  USB 3.0  OEM     connector
++ *  xHCI port  USB 3.0  OEM     connector, as the OEM tables say
+  *  1          16       UPC0    USB 3.0, right (the Always On one)
+  *  2          17       UPC1    USB 3.0, left
+  *  3          -        UPC2    USB 2.0, back
+@@ -25,6 +25,16 @@
+  *  12         -        -       inside: the camera
+  *  4, 5, 7, 8, 13, 14, 15, USB 3.0 18, 19, 21: nothing
+  *
++ * On the W541 the four connectors are not where those buffers put them,
++ * measured by plugging a drive into each with PORTSC watched: port 1 is
++ * the connector on the left side farthest from the screen, the one marked
++ * SS; port 2 is the connector on the right side farthest from the screen,
++ * also marked SS; port 3 is the connector on the left side nearest the
++ * screen, the Always On one (not port 1 as the OEM tables say); port 6 is
++ * the connector on the right side nearest the screen. The W541 gets
++ * buffers with those panels and positions, the T440p keeps the OEM ones
++ * until someone measures it.
++ *
+  * The OEM firmware marks the ports of the devices inside as not
+  * connectable (what _UPC means by "nothing can ever be plugged there");
+  * here they are connectable, with the OEM connector type, and not visible:
+@@ -56,12 +66,38 @@
+ #define PLD_EXPRESSCARD	0x81, 0, 0, 0, 0, 0, 0, 0, 0x48, 0x1D, 0x00, 0x00, 0x00, 0, 0, 0
+ #define PLD_INSIDE	0x81, 0, 0, 0, 0, 0, 0, 0, 0x30, 0x1C, 0x00, 0x00, 0x00, 0, 0, 0
+ 
+-USB_PORT(HS01, USB_YES, USB_3_A, PLD_USB3_RIGHT)
+-USB_PORT(HS02, USB_YES, USB_3_A, PLD_USB3_LEFT)
+-USB_PORT(HS03, USB_YES, USB_2_A, PLD_USB2_BACK)
++#if CONFIG(BOARD_LENOVO_THINKPAD_W541)
++/*
++ * The W541's connectors where they are, two on each side, one row. Byte 8:
++ * visible, the panel, the vertical position (center); byte 9: the
++ * horizontal position as seen facing that side (the screen is on the left
++ * when facing the left side, on the right when facing the right one), and
++ * the shape of a USB-A connector (4, a horizontal rectangle); bytes 10-11
++ * the OEM group positions of the two USB 3.0 ports; byte 12 as in the OEM
++ * buffers.
++ */
++/* Port 1: left side, farthest from the screen (SS) */
++#define PLD_PORT1	0x81, 0, 0, 0, 0, 0, 0, 0, 0x51, 0x12, 0x80, 0x00, 0x03, 0, 0, 0
++/* Port 2: right side, farthest from the screen (SS) */
++#define PLD_PORT2	0x81, 0, 0, 0, 0, 0, 0, 0, 0x59, 0x10, 0x00, 0x01, 0x03, 0, 0, 0
++/* Port 3: left side, nearest the screen, the Always On one */
++#define PLD_PORT3	0x81, 0, 0, 0, 0, 0, 0, 0, 0x51, 0x10, 0x00, 0x00, 0x03, 0, 0, 0
++/* Port 6: right side, nearest the screen */
++#define PLD_PORT6	0x81, 0, 0, 0, 0, 0, 0, 0, 0x59, 0x12, 0x00, 0x00, 0x03, 0, 0, 0
++#else
++/* The T440p: the OEM buffers, until someone measures its connectors */
++#define PLD_PORT1	PLD_USB3_RIGHT
++#define PLD_PORT2	PLD_USB3_LEFT
++#define PLD_PORT3	PLD_USB2_BACK
++#define PLD_PORT6	PLD_USB2_RIGHT
++#endif
++
++USB_PORT(HS01, USB_YES, USB_3_A, PLD_PORT1)
++USB_PORT(HS02, USB_YES, USB_3_A, PLD_PORT2)
++USB_PORT(HS03, USB_YES, USB_2_A, PLD_PORT3)
+ USB_PORT(HS04, USB_NO, USB_OEM, PLD_INSIDE)
+ USB_PORT(HS05, USB_NO, USB_OEM, PLD_INSIDE)
+-USB_PORT(HS06, USB_YES, USB_2_A, PLD_USB2_RIGHT)
++USB_PORT(HS06, USB_YES, USB_2_A, PLD_PORT6)
+ USB_PORT(HS07, USB_NO, USB_OEM, PLD_INSIDE)
+ USB_PORT(HS08, USB_NO, USB_OEM, PLD_INSIDE)
+ USB_PORT(HS09, USB_YES, USB_OEM, PLD_DOCK)
+@@ -71,8 +107,8 @@ USB_PORT(HS12, USB_YES, USB_OEM, PLD_INSIDE)
+ USB_PORT(HS13, USB_NO, USB_OEM, PLD_INSIDE)
+ USB_PORT(HS14, USB_NO, USB_OEM, PLD_INSIDE)
+ USB_PORT(HS15, USB_NO, USB_OEM, PLD_INSIDE)
+-USB_PORT(SS01, USB_YES, USB_3_A, PLD_USB3_RIGHT)
+-USB_PORT(SS02, USB_YES, USB_3_A, PLD_USB3_LEFT)
++USB_PORT(SS01, USB_YES, USB_3_A, PLD_PORT1)
++USB_PORT(SS02, USB_YES, USB_3_A, PLD_PORT2)
+ USB_PORT(SS03, USB_NO, USB_OEM, PLD_INSIDE)
+ USB_PORT(SS04, USB_NO, USB_OEM, PLD_INSIDE)
+ USB_PORT(SS05, USB_YES, USB_OEM, PLD_DOCK)
+-- 
+2.43.0
+
