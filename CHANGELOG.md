@@ -291,6 +291,14 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   off in the setup first ([docs/flashing.md](docs/flashing.md)).
   `tools/update.py protection` and `status` report the default of the
   running version.
+- Two packages of the M920x's SSDT were declared longer than their
+  lists (iasl remark 2063 on CONF-02): the PIC branch of `_PRT` with the
+  45 entries of the APIC branch for its 34 (patch 0228, the pins without
+  a PIRQ are now counted out), and a constraint of PEPD's `_DSM` for the
+  GNA at `00:08.0`, which no ACPI node names, written without its device
+  (patch 0229, such a device is left out). An OS reading either found
+  uninitialized elements; Linux showed nothing, the tables are now what
+  they declare.
 - On the M920x the *Intel graphics* switch under *Hardware* is gone
   and the processor graphics stays on (patch 0224): off, the DisplayPort
   and HDMI ports went dark with the firmware screen and the setup

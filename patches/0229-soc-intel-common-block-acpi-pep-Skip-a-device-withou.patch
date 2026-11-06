@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 6 Nov 2026 10:00:00 +0100
+Subject: [PATCH] soc/intel/common/block/acpi/pep: Skip a device without an
+ ACPI path
+
+acpi_lpi_get_constraints() counts every enabled PCI device with a
+minimum sleep state and writes a three-element package for each, with
+acpi_device_path() as the first element. A device that no node of the
+DSDT or SSDT names has no path: acpi_device_path() returns NULL,
+acpigen_emit_namestring() writes nothing, and the package is declared
+three long with two elements. On a Lenovo ThinkCentre M920x that is
+the GNA at 00:08.0, which the tables do not describe; iasl reports
+"Initializer list shorter than declared package length" (remark 2063)
+on the _DSM of PEPD, and an OS reading the constraints finds an entry
+whose device is uninitialized.
+
+Leave such a device out, in the count and in the list, and say so at
+DEBUG.
+---
+ src/soc/intel/common/block/acpi/pep.c | 18 ++++++++++++++++--
+ 1 file changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/src/soc/intel/common/block/acpi/pep.c b/src/soc/intel/common/block/acpi/pep.c
+index f2df6fb55af..d4aa6be8801 100644
+--- a/src/soc/intel/common/block/acpi/pep.c
++++ b/src/soc/intel/common/block/acpi/pep.c
+@@ -173,8 +173,20 @@ static void acpi_lpi_get_constraints(void *unused)
+ 			if (!dev->enabled || dev->hidden)
+ 				continue;
+ 			if (get_min_sleep_state(dev, states_arr, size)
+-				!= ACPI_DEVICE_SLEEP_NONE)
+-				num_entries++;
++				== ACPI_DEVICE_SLEEP_NONE)
++				continue;
++			/*
++			 * A PCI device without an ACPI node (no device in the
++			 * DSDT or SSDT names it) has no path to constrain: left
++			 * out, or the package below would be declared one entry
++			 * longer than its list.
++			 */
++			if (dev->path.type == DEVICE_PATH_PCI && !acpi_device_path(dev)) {
++				printk(BIOS_DEBUG, "PEPD: no ACPI path for %s, no constraint\n",
++				       dev_path(dev));
++				continue;
++			}
++			num_entries++;
+ 		}
+ 	}
+ 	if (!num_entries) {
+@@ -190,6 +202,8 @@ static void acpi_lpi_get_constraints(void *unused)
+ 			min_sleep_state = get_min_sleep_state(dev, states_arr, size);
+ 			if (min_sleep_state == ACPI_DEVICE_SLEEP_NONE)
+ 				continue;
++			if (dev->path.type == DEVICE_PATH_PCI && !acpi_device_path(dev))
++				continue;
+ 
+ 			acpigen_write_package(3);
+ 			{
+-- 
+2.47.3
+
