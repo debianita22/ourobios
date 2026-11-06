@@ -414,6 +414,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 - README: the specifications the firmware is built against, as the pinned
   trees declare them, and the known limits of the two machines (Windows
   11 on the W541, DMA protection, WSMT and HSTI, the MOR lock, XMP).
+- Run on the machines before the release, with the records in
+  [docs/tests/v1.6.0/](docs/tests/v1.6.0/): the W541 `nri` behind the
+  read-only part of a CI build from before v1.5.0, and the M920x `fsp`
+  behind that of v1.5.0, from the first candidate to the last. The
+  `mrc` variant is built, booted in QEMU and updated A/B there by the
+  CI like the others, but no machine ran it for this release: the
+  W541's read-only part takes `nri` slots only.
 
 ## v1.5.0
 
