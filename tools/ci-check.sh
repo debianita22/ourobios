@@ -1442,6 +1442,9 @@ fixture(prs=((2, 0x91df0cc0),), with_fmap=False)
 p = spi_protection(dm)
 v = update.spi_verdict(p)
 assert v["ro"] is None and v["unmapped"] == ["PR2"] and not v["capsule_block"], v
+# SI_ALL dalle regioni del controller, WP_RO non nota
+assert v["si"] == "off" and v["si_range"] == (0, 0xbfffff), v
+assert update.si_text(p, v).endswith("; Firmware protection accesa: sudo cbmem -1 | grep -E \"BM-LOCKDOWN|FPR\"")
 assert update.slots_text(p, v) == \
     "non verificabili: PR2 attivi, FMAP non letta (update.py protection --flash FILE)"
 rc, out = protection("off")

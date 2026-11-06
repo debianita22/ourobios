@@ -2586,6 +2586,8 @@ def si_text(p, v):
         # WP_RO si', SI_ALL no: un firmware senza BOOTMEDIA_LOCK_SI_ALL
         return text + "; firmware senza la protezione di SI_ALL (prima della v1.6.1), o lock fallito: " \
             "sudo cbmem -1 | grep -E \"BM-LOCKDOWN|FPR\""
+    if v["ro"] is None:
+        return text + "; Firmware protection accesa: sudo cbmem -1 | grep -E \"BM-LOCKDOWN|FPR\""
     return text + "; Firmware protection accesa ma non applicata, come per WP_RO"
 
 
