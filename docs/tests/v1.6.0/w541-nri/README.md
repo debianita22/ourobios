@@ -14,8 +14,8 @@ the reports and logs of rc6.
 | | |
 |---|---|
 | Read-only part | `ouroBIOS-ci-205-d123865-nri`, a CI build from before v1.5.0, with patch 0199 (the TPM failure does not stop the boot): only `nri` slots can go behind it, and `update.py other-slot` refuses `mrc` |
-| Slot A | v1.6.0-rc6-nri, confirmed |
-| Slot B | v1.5.0-nri until 11-06, then the measurement build `ci-265-bd07465` ([diag.md](diag.md)); since 11-06 afternoon v1.6.0-rc7-nri, running, confirmed |
+| Slot A | v1.6.0-rc6-nri; since 11-06 evening the CI build `ci-270-0bc2b48` (rc7 with patches 0233-0234), running, confirmed |
+| Slot B | v1.5.0-nri until 11-06, then the measurement build `ci-265-bd07465` ([diag.md](diag.md)); since 11-06 afternoon v1.6.0-rc7-nri, confirmed |
 | Protections | *BIOS Lock* on; *Firmware protection* off (FLASH-01 WARN), to be turned on again at the end |
 | Settings | the 59 options saved in SMMSTORE, among them `me_disable=1`, `clear_dram_on_boot=2` (when the OS asks), `serial_console=0`, `debug_level=6` |
 | Event log | 321 events, 45 boots at the install; continued across the capsule |
@@ -110,7 +110,13 @@ The seven MEDIUM of CONF-03 on rc7:
   Windows; patches 0233 (the xHCI) and 0234 (the dGPU) remove every
   `Return` from the three: the DSDT of the W541 with them compiles with
   no error nor warning, and `acpiexec` returns no object from them,
-  where the DSDT of rc7 returns an Integer 0.
+  where the DSDT of rc7 returns an Integer 0. On the machine, with the
+  CI build `ci-270-0bc2b48` (rc7 and the two patches) in slot A
+  (2026-11-06): fwts *returned no values as expected* for the three, 622
+  passed and 5 MEDIUM: the HPET pair, the two Apple `_CID`, and the
+  ESRT's *FwVersion is 0* of a CI build (version 0, as on the M920x
+  with ci-244), which a release does not have
+  ([fwts-w541-nri-ci270.log](fwts-w541-nri-ci270.log)).
 
 Files: [hw-w541-nri-rc7-1.md](hw-w541-nri-rc7-1.md) (a reboot from
 Linux), [hw-w541-nri-rc7-cold.md](hw-w541-nri-rc7-cold.md) (a cold
