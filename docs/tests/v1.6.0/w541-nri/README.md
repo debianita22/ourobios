@@ -15,7 +15,7 @@ the reports and logs of rc6.
 |---|---|
 | Read-only part | `ouroBIOS-ci-205-d123865-nri`, a CI build from before v1.5.0, with patch 0199 (the TPM failure does not stop the boot): only `nri` slots can go behind it, and `update.py other-slot` refuses `mrc` |
 | Slot A | v1.6.0-rc6-nri, running, confirmed |
-| Slot B | v1.5.0-nri |
+| Slot B | v1.5.0-nri until 11-06; since then the measurement build `ci-265-bd07465` ([diag.md](diag.md)) |
 | Protections | *BIOS Lock* on; *Firmware protection* off (FLASH-01 WARN), to be turned on again at the end |
 | Settings | the 59 options saved in SMMSTORE, among them `me_disable=1`, `clear_dram_on_boot=2` (when the OS asks), `serial_console=0`, `debug_level=6` |
 | Event log | 321 events, 45 boots at the install; continued across the capsule |
@@ -78,23 +78,28 @@ and one of 11-06 after three reboots; `SMMSTORE`, `RW_ELOG` and
 
 ## Findings
 
-- **A USB 3.0 drive in the left port after a warm reset.** A SanDisk
-  Ultra Flair (`0781:5591`) left in the left USB 3.0 port (xHCI SS2,
-  port 17) links at 5 Gb/s after a cold boot, and survives a suspend
-  while linked. After every reboot from Linux its SuperSpeed link stays
-  in *Polling* with the port reset bit set (`PORTSC 0x2f0`), or in
-  *Compliance mode* (`0x340`), and Linux logs `usb4-port2: Cannot enable`
-  each time the xHCI comes out of runtime suspend, about every 4 s
-  (1623 to 4793 times per boot). The xHCI then wakes every 4 s, which
-  costs package C-states. Whether v1.5.0 did the same with this drive is
-  not known (no log of v1.5.0 with it plugged in), nor whether another
-  drive does: the next step is a reboot with another USB 3.0 device in
-  that port, then this one under v1.5.0 (slot B, `update.py rollback`).
-  The coreboot side: NRI's `warm_reset_usb3_ports()` times out (100 ms,
-  an ERROR in the log) on every S3 resume with a device in a USB 3.0 port,
-  and at a warm boot it takes 6 µs, which suggests it does not run the
-  reset at all there; the v1.3.10 entry of the CHANGELOG describes the
-  same compliance mode with runtime suspend.
+- **A USB 3.0 drive after a warm reset.** A SanDisk Ultra Flair
+  (`0781:5591`) in the lower port on the right (xHCI SS2, port 17; the
+  `_PLD` of the tables puts that port on the left, see below) stayed in
+  *Polling* with the port reset bit set (`PORTSC 0x2f0`) or in
+  *Compliance mode* (`0x340`) in the boots of 11-05 and 11-06 that came
+  from a warm reset, and Linux logged `usb4-port2: Cannot enable` about
+  every 4 s; a cold boot cleared it. Followed up the same day in
+  [diag.md](diag.md): not reproduced across warm resets, resumes, a
+  replug or the removal of the controller; a warm reset keeps the drive
+  in whatever state it was, and coreboot hands the port to the payload
+  without a link at every boot, so romstage is not what left it stuck.
+  The `warm_reset_usb3_ports: timed out` of every resume is a 100 ms
+  limit shorter than a warm reset with a device on the port: the port
+  is in U0 10 ms later.
+- **`TSC ADJUST differs` at every resume is not coreboot**: the register
+  is 0 at every point of the resume path up to the jump to the wake
+  vector, and Linux finds the TSC of before the suspend written back
+  after it ([diag.md](diag.md#tsc-adjust-not-coreboot)).
+- **The USB ports are described on the wrong side**: of the four
+  connectors, three are on another panel than the `_UPC`/`_PLD` of
+  patch 0071, taken from the OEM tables, say
+  ([diag.md](diag.md#the-usb-ports-are-described-on-the-wrong-side)).
 - **The SPDs of the four SO-DIMMs are identical, serial number
   included**, and the part number is that of a 4 GB module: the docs
   of the memory training across updates must not promise a retraining
@@ -108,8 +113,8 @@ and one of 11-06 after three reboots; `SMMSTORE`, `RW_ELOG` and
 
 - The rows of the table marked *not run*, with someone at the screen.
 - CONF-03 with `fwts`.
-- The USB 3.0 drive: another device in the left port across a reboot,
-  then v1.5.0.
+- The USB 3.0 drive: another USB 3.0 device in the lower right port
+  across a reboot (none was at hand).
 - At the end *Firmware protection* on, and `hw-report.py` with
   FLASH-01 PASS.
 
@@ -129,3 +134,8 @@ and one of 11-06 after three reboots; `SMMSTORE`, `RW_ELOG` and
   (the devices, the PCH registers, the codec pins, the SPDs, the FMAP),
   [ht-w541-nri.txt](ht-w541-nri.txt) (each step of the Hyper-Threading
   test and the scripts that ran it) and [memclr.c](memclr.c).
+- [diag.md](diag.md): the troubleshooting of `TSC ADJUST` and of the USB
+  3.0 drive, with the measurement build, and the map of the USB ports,
+  with [diag-tsc-linux.txt](diag-tsc-linux.txt),
+  [diag-usb-linux.txt](diag-usb-linux.txt) and
+  [diag-build-w541-nri.txt](diag-build-w541-nri.txt).

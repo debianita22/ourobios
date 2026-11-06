@@ -37,8 +37,8 @@ is here. None of it is a promise of a date.
 | [Clearing the memory on every core](#clearing-the-memory-on-every-core) | both | measured on both: on the W541 one core already fills the memory, on the M920x the clear is bound by its unequal DIMMs; the loop is `rep stosl` already | decided on 2026-11-06: not made; a test build only for a machine with two equal DIMMs |
 | [The UEFI Shell in the payload](#the-uefi-shell-in-the-payload) | both | done in v1.6.0 (`edk2/0053`, patch 0227): the boards' payload leaves the Shell out, and the smoke test writes its variables with `tools/efi/setvar.c` from a disk image | none planned |
 | [The DPLL of i915 at boot on the M920x](#the-dpll-of-i915-at-boot-on-the-m920x) | M920x | i915's own wait for the PLL, not the firmware's | a report to i915 with the numbers |
-| [A USB 3.0 drive after a warm reset on the W541](#a-usb-30-drive-after-a-warm-reset-on-the-w541) | W541 | seen once with one drive on `nri`, rc6: the SuperSpeed link stays in Polling or Compliance after a reboot, fine after a cold boot; the early USB init of `nri` times out on every resume | the same port with another drive across a reboot, then that drive under v1.5.0 and `mrc` |
-| [TSC ADJUST after a resume on the W541](#tsc-adjust-after-a-resume-on-the-w541) | W541 | at every S3 resume Linux finds `IA32_TSC_ADJUST` of CPU 0 non-zero and zeroes it, a known message of the report; coreboot writes neither the TSC nor that register | read the TSC and the register right after a resume, from coreboot and from Linux, to see who moves them |
+| [A USB 3.0 drive after a warm reset on the W541](#a-usb-30-drive-after-a-warm-reset-on-the-w541) | W541 | not reproduced (2026-11-06): a warm reset keeps the drive's state, and coreboot hands the port without a link at every boot; the resume's time-out is a 100 ms limit, the port in U0 10 ms later; the `_PLD` puts three of the four connectors on the wrong side | the same port with another USB 3.0 device across a reboot; a longer limit (or `WRC`) in `warm_reset_usb3_ports()`; the sides of patch 0071 |
+| [TSC ADJUST after a resume on the W541](#tsc-adjust-after-a-resume-on-the-w541) | W541 | not coreboot (measured 2026-11-06): the register is 0 up to the jump to the wake vector, and the TSC of before the suspend is written back after it | the Linux side, with a debug kernel rather than MSR tracepoints across a suspend |
 
 ## Firmware watchdog
 
@@ -853,8 +853,8 @@ a retry of the enable), to be reported upstream with these numbers;
 
 Found in the tests of v1.6.0-rc6 on the W541 with `nri`
 ([docs/tests/v1.6.0/w541-nri/README.md](tests/v1.6.0/w541-nri/README.md#findings),
-2026-11-06). A SanDisk Ultra Flair (`0781:5591`) left in the left USB
-3.0 port (xHCI SuperSpeed port SS2) links at 5 Gb/s after a cold boot
+2026-11-06). A SanDisk Ultra Flair (`0781:5591`) left in a USB
+3.0 port (xHCI SuperSpeed port SS2, the lower one on the right side) links at 5 Gb/s after a cold boot
 and keeps the link through a suspend; after every reboot from Linux
 its link stays in *Polling* with the port reset bit set (`PORTSC`
 `0x2f0`) or in *Compliance mode* (`0x340`), Linux logs `usb4-port2:
@@ -882,13 +882,27 @@ after a reboot, and whether it is this drive, is not known; `mrc` has
 no early USB init, so it tells the two apart.
 
 - **Next step**: on the W541, a reboot with another USB 3.0 device in
-  the left port, then this drive under v1.5.0 (slot B, `update.py
+  that port, then this drive under v1.5.0 (slot B, `update.py
   rollback`) and under `mrc`, which has no early USB init. If `nri`
   alone does it, the romstage reset is the place to look: a test build
   that prints `PORTSC` of each SuperSpeed port before and after the
   `WPR` write and at the end of romstage, on a warm boot and on a
   resume, says whether the reset engages and in which link state it
   leaves the port; if every variant does it, the drive.
+- **Measured on 2026-11-06** ([docs/tests/v1.6.0/w541-nri/diag.md](tests/v1.6.0/w541-nri/diag.md#the-usb-30-drive-not-reproduced-a-warm-reset-keeps-its-state)):
+  the drive is in the lower port on the right (the `_PLD` says left).
+  Not reproduced under rc6 across warm resets, three resumes, the xHCI
+  held in D0, its removal and rescan, and a replug; a warm reset keeps
+  the port powered, so the drive keeps its state, stuck or linked, and
+  only a cold boot cleared it on 11-05. The measurement build (patch
+  0230): at a boot, cold or warm, every SuperSpeed port reaches the
+  payload in Rx.Detect, no device connected yet when romstage's `WPR`
+  runs (5 µs, nothing to reset), so romstage cannot leave the link
+  stuck; at a resume the reset engages, times out at 100 ms in Polling
+  with `PR` set and is in U0 10 ms later. Another USB 3.0 device was not
+  at hand, nor was v1.5.0 run. The ports themselves:
+  [three of the four connectors](tests/v1.6.0/w541-nri/diag.md#the-usb-ports-are-described-on-the-wrong-side)
+  are on another panel than the `_PLD` of patch 0071.
 
 ## TSC ADJUST after a resume on the W541
 
@@ -912,3 +926,14 @@ on the W541 only; on the M920x it has not been seen.
   small after a reset, large if it kept counting), and a test build that
   prints both from the boot processor at the start of ramstage on the
   resume path, before anything else runs.
+- **Measured on 2026-11-06** ([docs/tests/v1.6.0/w541-nri/diag.md](tests/v1.6.0/w541-nri/diag.md#tsc-adjust-not-coreboot)):
+  N follows the TSC of before the suspend, not the time asleep (−0.5 s
+  from the last read before `rtcwake`, with 30 or 60 s asleep), on CPU 0
+  only. The measurement build reads `TSC_ADJUST` 0 at every point of the
+  resume path, the eight processors included, up to the last code
+  before the jump to the wake vector, 1.01 s after the reset: the TSC is
+  written after the jump, with a value saved late in the suspend.
+  Not coreboot; what is left is Linux between its wake vector and
+  `tsc_resume()`, or an SMI it causes. Kernel tracepoints on MSR
+  accesses across the suspend reset the machine right after the jump
+  (one try): a debug kernel is the way.

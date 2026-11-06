@@ -1,0 +1,23 @@
+# 1a 2026-11-06T11:03:21+01:00 boot_id=64bd2c90-1a04-4764-b00d-137ad4b1e272 uptime=5558.97
+## note: this boot (cold, power button, 09:30) already had one rtcwake -m mem at 09:33
+[    0.000000] tsc: Detected 2793.525 MHz processor
+[    1.290357] tsc: Refined TSC clocksource calibration: 2793.547 MHz
+[18446744062.971357] [Firmware Bug]: TSC ADJUST differs: CPU0 0 --> 385332319400. Restoring
+## rdmsr -a -u 0x3b
+0 0 0 0 0 0 0 0 
+## cycle -s 30
+before: TSC=15145494448943 uptime=5568.51 epoch=1793959410.728520495
+after:  TSC=4693229356 uptime=5600.46 epoch=1793959442.681083849
+TSC_ADJUST: 0 0 0 0 0 0 0 0 
+[    1.290370] clocksource: tsc: mask: 0xffffffffffffffff max_cycles: 0x284470c7412, max_idle_ns: 440795267506 ns
+[    1.290617] clocksource: Switched to clocksource tsc
+[18446744062.971357] [Firmware Bug]: TSC ADJUST differs: CPU0 0 --> 385332319400. Restoring
+[  127.199385] [Firmware Bug]: TSC ADJUST differs: CPU0 0 --> 15144001033268. Restoring
+## cycle -s 60
+before: TSC=18693831208 uptime=5605.47 epoch=1793959447.693771908
+after:  TSC=4707041612 uptime=5667.65 epoch=1793959512.610818873
+TSC_ADJUST: 0 0 0 0 0 0 0 0 
+[    1.290617] clocksource: Switched to clocksource tsc
+[18446744062.971357] [Firmware Bug]: TSC ADJUST differs: CPU0 0 --> 385332319400. Restoring
+[  127.199385] [Firmware Bug]: TSC ADJUST differs: CPU0 0 --> 15144001033268. Restoring
+[ 5548.261757] [Firmware Bug]: TSC ADJUST differs: CPU0 0 --> 17268100758. Restoring

@@ -1,0 +1,130 @@
+# W541 nri, 2026-11-06: Part 1b of the diag list (rc6, Linux only), the state of the left/right USB 3.0 port at each step
+
+# 1-cold-then-3xS3 2026-11-06T11:05:47+01:00 boot_id=64bd2c90-1a04-4764-b00d-137ad4b1e272 uptime=5702.56
+xhci power/control=on runtime_status=active
+port16 0x000002a0 Speed=0 Link=RxDetect PP 
+port17 0x00001203 Speed=4 Link=U0 CCS PP PED 
+port18 0x000002a0 Speed=0 Link=RxDetect PP 
+port19 0x000002a0 Speed=0 Link=RxDetect PP 
+port20 0x000002a0 Speed=0 Link=RxDetect PP 
+port21 0x000002a0 Speed=0 Link=RxDetect PP 
+port01 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+port02 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+port03 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+port06 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+/:  Bus 004.Port 001: Dev 001, Class=root_hub, Driver=xhci_hcd/6p, 5000M
+    |__ Port 002: Dev 002, If 0, Class=Mass Storage, Driver=usb-storage, 5000M
+Bus 004 Device 002: ID 0781:5591 SanDisk Corp. Ultra Flair
+Cannot enable: 0
+
+# 2-warm 2026-11-06T11:08:44+01:00 boot_id=852f6702-71d6-4bb3-9305-20db28f3406e uptime=59.26
+xhci power/control=auto runtime_status=active
+port16 0x000002a0 Speed=0 Link=RxDetect PP 
+port17 0x00001203 Speed=4 Link=U0 CCS PP PED 
+port18 0x000002a0 Speed=0 Link=RxDetect PP 
+port19 0x000002a0 Speed=0 Link=RxDetect PP 
+port20 0x000002a0 Speed=0 Link=RxDetect PP 
+port21 0x000002a0 Speed=0 Link=RxDetect PP 
+port01 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+port02 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+port03 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+port06 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+/:  Bus 004.Port 001: Dev 001, Class=root_hub, Driver=xhci_hcd/6p, 5000M
+    |__ Port 002: Dev 002, If 0, Class=Mass Storage, Driver=usb-storage, 5000M
+Bus 004 Device 002: ID 0781:5591 SanDisk Corp. Ultra Flair
+Cannot enable: 0
+
+# 3a-d0 2026-11-06T11:08:54+01:00 boot_id=852f6702-71d6-4bb3-9305-20db28f3406e uptime=69.31
+xhci power/control=on runtime_status=active
+port16 0x000002a0 Speed=0 Link=RxDetect PP 
+port17 0x00001203 Speed=4 Link=U0 CCS PP PED 
+port18 0x000002a0 Speed=0 Link=RxDetect PP 
+port19 0x000002a0 Speed=0 Link=RxDetect PP 
+port20 0x000002a0 Speed=0 Link=RxDetect PP 
+port21 0x000002a0 Speed=0 Link=RxDetect PP 
+port01 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+port02 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+port03 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+port06 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+/:  Bus 004.Port 001: Dev 001, Class=root_hub, Driver=xhci_hcd/6p, 5000M
+    |__ Port 002: Dev 002, If 0, Class=Mass Storage, Driver=usb-storage, 5000M
+Bus 004 Device 002: ID 0781:5591 SanDisk Corp. Ultra Flair
+Cannot enable: 0
+
+# 3b-remove-rescan 2026-11-06T11:09:13+01:00 boot_id=852f6702-71d6-4bb3-9305-20db28f3406e uptime=88.42
+xhci power/control=on runtime_status=active
+port16 0x000002a0 Speed=0 Link=RxDetect PP 
+port17 0x00001203 Speed=4 Link=U0 CCS PP PED 
+port18 0x000002a0 Speed=0 Link=RxDetect PP 
+port19 0x000002a0 Speed=0 Link=RxDetect PP 
+port20 0x000002a0 Speed=0 Link=RxDetect PP 
+port21 0x000002a0 Speed=0 Link=RxDetect PP 
+port01 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+port02 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+port03 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+port06 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+/:  Bus 004.Port 001: Dev 001, Class=root_hub, Driver=xhci_hcd/6p, 5000M
+    |__ Port 002: Dev 002, If 0, Class=Mass Storage, Driver=usb-storage, 5000M
+Bus 004 Device 002: ID 0781:5591 SanDisk Corp. Ultra Flair
+Cannot enable: 0
+
+# 3c-replug-after 2026-11-06T11:14:00+01:00 boot_id=852f6702-71d6-4bb3-9305-20db28f3406e uptime=374.97
+xhci power/control=auto runtime_status=active
+port16 0x000002a0 Speed=0 Link=RxDetect PP 
+port17 0x00001203 Speed=4 Link=U0 CCS PP PED 
+port18 0x000002a0 Speed=0 Link=RxDetect PP 
+port19 0x000002a0 Speed=0 Link=RxDetect PP 
+port20 0x000002a0 Speed=0 Link=RxDetect PP 
+port21 0x000002a0 Speed=0 Link=RxDetect PP 
+port01 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+port02 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+port03 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+port06 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+/:  Bus 004.Port 001: Dev 001, Class=root_hub, Driver=xhci_hcd/6p, 5000M
+    |__ Port 002: Dev 003, If 0, Class=Mass Storage, Driver=usb-storage, 5000M
+Bus 004 Device 003: ID 0781:5591 SanDisk Corp. Ultra Flair
+Cannot enable: 0
+
+## 3c: transitions of port17 and port02 while the drive was pulled and put back
+11:10:00.270 0x00001203 Speed=4 Link=U0 CCS PP PED 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+11:10:13.481 0x000002a0 Speed=0 Link=RxDetect PP 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+11:10:13.688 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 0x000002a0 Speed=0 Link=RxDetect PP 
+11:10:13.894 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+11:10:24.465 0x00001203 Speed=4 Link=U0 CCS PP PED 0x0a0002a0 Speed=0 Link=RxDetect PP WCE WOE 
+
+## 5: the port map (the drive moved through the four connectors, see diag.md)
+11:15:03  port11=0x0c000663 port12=0x0c000e63 port17=0x00001203
+11:15:39  port11=0x0c000663 port12=0x0c000e63
+11:15:42  port06=0x00000e03 port11=0x00000663 port12=0x00000e63
+11:16:01  port11=0x00000663 port12=0x00000e63
+11:16:02  port11=0x0c000663 port12=0x0c000e63
+11:16:07  port03=0x00000e03 port11=0x00000663 port12=0x00000e63
+11:16:28  port11=0x0c000663 port12=0x0c000e63
+11:16:32  port11=0x0c000663 port12=0x0c000e63 port16=0x00001203
+11:16:51  port11=0x00000663 port12=0x00000e63
+11:16:51  port11=0x0c000663 port12=0x0c000e63
+11:16:56  port11=0x0c000663 port12=0x0c000e63 port17=0x00001203
+nov 06 11:15:39 Wurtz kernel: usb 4-2: USB disconnect, device number 3
+nov 06 11:15:42 Wurtz kernel: usb 2-6: new high-speed USB device number 4 using xhci_hcd
+nov 06 11:16:01 Wurtz kernel: usb 2-6: USB disconnect, device number 4
+nov 06 11:16:07 Wurtz kernel: usb 2-3: new high-speed USB device number 5 using xhci_hcd
+nov 06 11:16:28 Wurtz kernel: usb 2-3: USB disconnect, device number 5
+nov 06 11:16:32 Wurtz kernel: usb 4-1: new SuperSpeed USB device number 4 using xhci_hcd
+nov 06 11:16:51 Wurtz kernel: usb 4-1: USB disconnect, device number 4
+nov 06 11:16:56 Wurtz kernel: usb 4-2: new SuperSpeed USB device number 5 using xhci_hcd
+
+## dmesg after step 2
+[    0.356590] xhci_hcd 0000:00:14.0: xHCI Host Controller
+[    0.356597] xhci_hcd 0000:00:14.0: new USB bus registered, assigned bus number 2
+[    0.357722] xhci_hcd 0000:00:14.0: hcc params 0x200077c1 hci version 0x100 quirks 0x0000000000009810
+[    0.357999] xhci_hcd 0000:00:14.0: xHCI Host Controller
+[    0.358002] xhci_hcd 0000:00:14.0: new USB bus registered, assigned bus number 4
+[    0.358004] xhci_hcd 0000:00:14.0: Host supports USB 3.0 SuperSpeed
+[    0.594369] usb 2-11: new full-speed USB device number 2 using xhci_hcd
+[    0.829539] usb 4-2: new SuperSpeed USB device number 2 using xhci_hcd
+[    0.840985] usb 4-2: New USB device found, idVendor=0781, idProduct=5591, bcdDevice= 1.00
+[    0.841687] usb 4-2: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[    0.841689] usb 4-2: Product:  SanDisk 3.2Gen1
+[    0.841691] usb 4-2: Manufacturer:  USB
+[    0.841692] usb 4-2: SerialNumber: 0101a099bb9e72db64400ee8ffc48bb083b8a20a3513c143dbdc7b66e58feab8ab8a00000000000000000000c523d1b6ff9d4f0091558107a5acbb8a
+[    0.952348] usb 2-12: new high-speed USB device number 3 using xhci_hcd
