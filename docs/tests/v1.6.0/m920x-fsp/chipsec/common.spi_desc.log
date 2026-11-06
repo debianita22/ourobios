@@ -1,0 +1,54 @@
+
+################################################################
+##                                                            ##
+##  CHIPSEC: Platform Hardware Security Assessment Framework  ##
+##                                                            ##
+################################################################
+[CHIPSEC] Version  : 1.13.16
+[CHIPSEC] Arguments: --helper linuxnativehelper -m common.spi_desc -l /root/ourobios-test-v1.6.0/m920x-fsp/rc6/chipsec/common.spi_desc.log
+
+
+[CHIPSEC] OS      : Linux 7.0.14-15-pve #1 SMP PREEMPT_DYNAMIC PMX 7.0.14-15 (2026-08-26T14:21Z) x86_64
+[CHIPSEC] Python  : 3.13.5 (64-bit) - Enabled GIL
+[CHIPSEC] Helper  : LinuxNativeHelper 
+[CHIPSEC] Platform: Desktop 8th Generation Core Processor (Coffeelake S 4 Cores)
+[CHIPSEC]    CPUID: 906EB
+[CHIPSEC]      VID: 8086
+[CHIPSEC]      DID: 3E1F
+[CHIPSEC]      RID: 08
+[CHIPSEC] PCH     : Intel Q370 (300 series) PCH
+[CHIPSEC]      VID: 8086
+[CHIPSEC]      DID: A306
+[CHIPSEC]      RID: 10
+
+ 
+[+] loaded chipsec.modules.common.spi_desc
+[*] running loaded modules ..
+
+[*] Running module: chipsec.modules.common.spi_desc
+[*] Metadata tags: ['OPENSOURCE', 'IA', 'COMMON', 'SPI_DESC']
+[x][ =======================================================================
+[x][ Module: SPI Flash Region Access Control
+[x][ =======================================================================
+[*] FRAP = 0x0000FFFF << SPI Flash Regions Access Permissions Register (SPIBAR + 0x50)
+    [00] BRRA             = FF << BIOS Region Read Access 
+    [08] BRWA             = FF << BIOS Region Write Access 
+    [16] BMRAG            = 0 << BIOS Master Read Access Grant 
+    [24] BMWAG            = 0 << BIOS Master Write Access Grant 
+[*] Software access to SPI flash regions: read = 0xFF, write = 0xFF
+[-] Software has write access to SPI flash descriptor
+
+[-] FAILED: SPI flash permissions allow SW to write flash descriptor
+[!] System may be using alternative protection by including descriptor region in SPI Protected Range Registers
+
+[CHIPSEC] ***************************  SUMMARY  ***************************
+[CHIPSEC] Time elapsed            0.001
+[CHIPSEC] Modules failed to run   0:
+[CHIPSEC] Modules passed          0:
+[CHIPSEC] Modules information     0:
+[CHIPSEC] Modules failed          1:
+[-] FAILED: chipsec.modules.common.spi_desc
+[CHIPSEC] Modules with warnings   0:
+[CHIPSEC] Modules not applicable  0:
+[CHIPSEC] Modules total           1
+[CHIPSEC] *****************************************************************

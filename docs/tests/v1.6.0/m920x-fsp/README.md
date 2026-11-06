@@ -48,6 +48,7 @@ Run from the machine, without anyone at the monitor. `hw-report.py` of
 | CONF-01 | PASS | WSMT revision 1, flags 7 |
 | CONF-02 | PASS | DSDT 0 errors, 17 warnings (all 4089 of the disassembler), 27 remarks (23 of 2173, 4 of 2184); SSDT 0 errors, 5 warnings 4089, remarks 2 of 2184 and 2 of 2063 (*Initializer list shorter than declared package length*, two packages of the processor objects) |
 | CONF-03 | PASS | `fwts --acpitests --uefitests wsmt mcfg`: 468-469 pass, 0 failed, 5 warnings, no *MCFGMMIONotReserved* ([fwts-m920x-fsp.log](fwts-m920x-fsp.log)); on ci-244 one MEDIUM, the firmware version 0 of a CI build |
+| CONF-04 | PASS, `spi_desc` FAILED by design | chipsec 1.13 with the native Linux helper (no kernel driver) on rc6, the logs in [chipsec/](chipsec/): `bios_wp` PASSED (BC `0xAA`, writes restricted to SMM, PR0 over `WP_RO`), `spi_lock` PASSED (HSFS `0x230AF801`, FLOCKDN), `smm` PASSED (SMRAMC `0x1A`, D_LCK), `smrr` PASSED (base `0x76000000`, mask `0xFF800000`, WB, the same on every thread), `bios_ts` PASSED (BILD 1, Top Swap off); `spi_desc` FAILED: the descriptor is writable by the CPU, as the README's known limits say (`UNLOCK_FLASH_REGIONS`, which the HAP bit option needs); `uefi.access_uefispec` did not run, the native helper has no UEFI variable enumeration, it needs the chipsec kernel driver |
 | CONF-07 | PASS | the ECAM window reserved; the WARN of ci-244 was the report reading `pnp` resources named `PNP0C02:00` by Linux 7.0, fixed in the report |
 | MEM-01 | PASS or INFO | 0.22-0.25 s with the cache valid or on a resume; 5.22-5.24 s on the boots and resumes where the ME answers the DRAM Init Done message late (below) |
 | MEM-09 | PASS | on ci-244, the steps run by the owner: the lock taken, ordinary writes with it held, the request of the OS not clearable, the clear at the next boot |
@@ -159,6 +160,7 @@ change as expected.
   `cbmem -T` of that boot, whole.
 - [fwts-m920x-fsp.log](fwts-m920x-fsp.log): fwts on rc6.
 - [dpll.md](dpll.md): the i915 DPLL measurements.
+- [chipsec/](chipsec/): the logs of the seven chipsec modules of CONF-04 on rc6.
 - [development.md](development.md): what the machine gives the next
   items of the roadmap (the memory clear on every core, the device
   switches, Hyper-Threading, the firmware watchdog), with

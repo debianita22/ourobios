@@ -1,0 +1,48 @@
+
+################################################################
+##                                                            ##
+##  CHIPSEC: Platform Hardware Security Assessment Framework  ##
+##                                                            ##
+################################################################
+[CHIPSEC] Version  : 1.13.16
+[CHIPSEC] Arguments: --helper linuxnativehelper -m common.bios_ts -l /root/ourobios-test-v1.6.0/m920x-fsp/rc6/chipsec/common.bios_ts.log
+
+
+[CHIPSEC] OS      : Linux 7.0.14-15-pve #1 SMP PREEMPT_DYNAMIC PMX 7.0.14-15 (2026-08-26T14:21Z) x86_64
+[CHIPSEC] Python  : 3.13.5 (64-bit) - Enabled GIL
+[CHIPSEC] Helper  : LinuxNativeHelper 
+[CHIPSEC] Platform: Desktop 8th Generation Core Processor (Coffeelake S 4 Cores)
+[CHIPSEC]    CPUID: 906EB
+[CHIPSEC]      VID: 8086
+[CHIPSEC]      DID: 3E1F
+[CHIPSEC]      RID: 08
+[CHIPSEC] PCH     : Intel Q370 (300 series) PCH
+[CHIPSEC]      VID: 8086
+[CHIPSEC]      DID: A306
+[CHIPSEC]      RID: 10
+
+ 
+[+] loaded chipsec.modules.common.bios_ts
+[*] running loaded modules ..
+
+[*] Running module: chipsec.modules.common.bios_ts
+[*] Metadata tags: ['OPENSOURCE', 'IA', 'COMMON', 'BIOS_TS']
+[x][ =======================================================================
+[x][ Module: BIOS Interface Lock (including Top Swap Mode)
+[x][ =======================================================================
+[*] BiosInterfaceLockDown (BILD) control = 1
+[*] BIOS Top Swap mode is disabled (TSS = 0)
+[*] RTC Top Swap control (TS): cannot determine status.
+[+] PASSED: BIOS Interface is locked (including Top Swap Mode)
+
+[CHIPSEC] ***************************  SUMMARY  ***************************
+[CHIPSEC] Time elapsed            0.001
+[CHIPSEC] Modules failed to run   0:
+[CHIPSEC] Modules passed          1:
+[+] PASSED: chipsec.modules.common.bios_ts
+[CHIPSEC] Modules information     0:
+[CHIPSEC] Modules failed          0:
+[CHIPSEC] Modules with warnings   0:
+[CHIPSEC] Modules not applicable  0:
+[CHIPSEC] Modules total           1
+[CHIPSEC] *****************************************************************
