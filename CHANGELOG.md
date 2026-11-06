@@ -5,6 +5,32 @@ GitHub include its section; release candidates take the section of the
 version they lead to. For the releases before v1.3.0, see their notes on
 the [releases page](https://github.com/debianita22/ourobios/releases).
 
+## v1.6.1
+
+- **The descriptor, the GbE and the ME regions under *Firmware
+  protection***: the images leave the descriptor unlocked
+  (`CONFIG_UNLOCK_FLASH_REGIONS`, so that flashrom can rewrite the
+  read-only part, the ME or the descriptor from the OS), which also let any
+  root process write them at any time, while the lock covered `WP_RO` only
+  and *BIOS Lock* the BIOS region only (chipsec's `spi_desc`). With
+  *Firmware protection* on, both boards now set a second Protected Range
+  of the SPI controller over `SI_ALL` (the descriptor, the GbE and the ME:
+  W541 `0x0-0x4fffff`, M920x `0x0-0xbfffff`), write-only, locked with the
+  first until the next reset or S3 resume, where coreboot sets them again
+  (`BOOTMEDIA_LOCK_SI_ALL`, patch 0235). They stay readable, the firmware
+  still writes them before the lock (the HAP bit of *Intel ME*), the ME
+  and the GbE use their own masters, and the option that lifts the lock of
+  `WP_RO` lifts this one too: a flashrom write of those regions needs
+  *Firmware protection* off, as the read-only part does. The permissions in
+  the descriptor do not change, so `spi_desc` keeps reporting them: the
+  protected range is what refuses the write (FLASH-05 of
+  [docs/testing.md](docs/testing.md)). `update.py protection` and `status`
+  print an `SI_ALL:` line next to `WP_RO:`, with *firmware senza la
+  protezione di SI_ALL* on a firmware before this one, and hw-report's
+  FLASH-01 reports it (`WARN` when `WP_RO` is protected and `SI_ALL` is
+  not). Not yet run on a machine: the expected values are what the code
+  predicts, as for the first `WP_RO` lock.
+
 ## v1.6.0
 
 - **WSMT**: both boards publish the Windows SMM Security Mitigations

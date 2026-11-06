@@ -183,7 +183,10 @@ From v1.3.0, update with the capsule ([docs/update.md](update.md)); this
 is for the cases a capsule does not cover. On a laptop that runs v1.3.0 or
 later, turn off *Firmware protection* first (*Security* → *Flash
 protection*), save and reboot: otherwise flashrom cannot write `WP_RO`, and
-stops with an error at its first block. Turn it on again afterwards.
+stops with an error at its first block; from v1.6.1 the same holds for the
+descriptor, the GbE and the ME regions (`--ifd -i fd`, `-i gbe`, `-i me`:
+[docs/update.md](update.md#flash-protection)). Turn it on again
+afterwards.
 Before the write, `tools/update.py` of v1.4.0 or later tells whether
 the protection is off in this boot, from the registers of the SPI
 controller, without writing anything

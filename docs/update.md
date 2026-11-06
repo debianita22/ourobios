@@ -174,10 +174,15 @@ blocchi:     FLOCKDN 1, PR bloccati PR0, PR1, PR2, PR3, PR4 (DLOCK 0x00001f00), 
 PR, GPR0:    tutti vuoti
 opzioni:     Firmware protection 0, BIOS Lock 0 (in SMMSTORE: valgono dal prossimo avvio o ripresa da S3)
 WP_RO:       NON protetta (Firmware protection spenta, anche nel setup)
+descrittore: scrivibile dalla CPU (FRACC, nessun PR su 0x0-0xfff): con WP_RO protetta, si aggira al prossimo reset; il BIOS Lock non lo copre
+SI_ALL:      NON protetta: descrittore, GbE e ME scrivibili dalla CPU (UNLOCK_FLASH_REGIONS) (Firmware protection spenta, anche nel setup) [0x0000000-0x0bfffff]
 BIOS Lock:   spento: il sistema puo' scrivere il flash
 capsula:     si': nessun PR sugli slot, RW_NVRAM e SMMSTORE
 flashrom:    si' sugli slot (BIOS Lock spento, nessun PR)
 ```
+
+(the `descrittore:` and `SI_ALL:` lines as the `update.py` of v1.6.1
+prints them for that state.)
 
 With *Firmware protection* on, `WP_RO` (`0x1700000-0x17FFFFF`) must be in
 a locked Protected Range with writes off: then flashrom cannot write the
@@ -188,7 +193,18 @@ when `WP_RO` is as expected, 1 when not, 2 when it cannot tell (no
 `WP_RO` in the map, registers that cannot be read, no root). The
 Protected Ranges hold only for the CPU: the other masters of the flash
 (ME, GbE) follow the descriptor, which the release images leave writable
-by everyone. `status` prints the short form of the same: the `WP_RO:`,
+by everyone. From v1.6.1 *Firmware protection* sets a second PR over
+`SI_ALL`, the descriptor with the GbE and the ME regions (M920x
+`0x0-0xBFFFFF`; patch 0235): with it on the CPU cannot write them either,
+flashrom included (`--ifd -i fd`, `-i gbe`, `-i me` need the option off,
+like `WP_RO`), they stay readable, and the permissions in the descriptor
+do not change (chipsec's `spi_desc` keeps reading them as unlocked). The
+`descrittore:` line says which of the two holds: writable by the CPU and
+under no PR, writable by the descriptor but under a PR until the next
+reset or S3 resume, or not given to the CPU at all; the `SI_ALL:` line
+reads like `WP_RO:`, with *firmware senza la protezione di SI_ALL* when
+`WP_RO` is protected and `SI_ALL` is not (a firmware before v1.6.1).
+`status` prints the short form of the same: the `WP_RO:`, `SI_ALL:`,
 `BIOS Lock:` and `slot RW:` lines.
 
 On the W541 (from the `update.py` of v1.4.0) the controller is behind
@@ -200,7 +216,8 @@ or opcode registers. *BIOS Lock* counts as on with SMM_BWP set, or with BLE
 set and BIOSWE clear (setting BIOSWE then raises an SMI, which clears it
 again). With *Firmware protection* on, PR0 should read `0x8bff0b60`:
 `0xb60000-0xbfffff`, `WP_RO`, protected until the next reset or S3 resume,
-where coreboot sets it again. Many distribution kernels are built with
+where coreboot sets it again; from v1.6.1 PR1 `0x84ff0000`: `0x0-0x4fffff`,
+`SI_ALL`, the same way. Many distribution kernels are built with
 `IO_STRICT_DEVMEM`, and the page is also held by `intel-spi` and `iTCO_wdt`:
 the registers are then refused, and `protection` says why, still shows *BIOS
 Lock* (from PCI configuration space) and the saved options (from the BIOS

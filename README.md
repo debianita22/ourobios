@@ -78,7 +78,7 @@ The W541 flash is two chips seen as one 12 MiB space. The layout is
 
 | Range | Chip | Contents |
 |---|---|---|
-| `0x000000-0x000FFF` | 8 MiB | Intel flash descriptor (IFD), all regions unlocked |
+| `0x000000-0x000FFF` | 8 MiB | Intel flash descriptor (IFD), all regions unlocked (from v1.6.1 the controller write-protects the descriptor, the GbE and the ME regions while *Firmware protection* is on) |
 | `0x001000-0x002FFF` | 8 MiB | GbE, with the MAC address of the machine the blobs come from |
 | `0x003000-0x4FFFFF` | 8 MiB | Intel ME 9.1, reduced with `me_cleaner -S` (ROMP and BUP only, AltMeDisable set) |
 | `0x500000-0x597FFF` | 8 MiB | regions coreboot writes at runtime, empty in the image: `RW_MRC_CACHE` (RAM training), `SMMSTORE` (UEFI variables and settings), `RO_VPD`, `RW_ELOG` (event log) |
@@ -134,7 +134,7 @@ Inside coreboot:
   |---|---|
   | *General* | *About this ThinkPad*: model, machine type, serial number and UUID (from the VPD), processor, memory, firmware and EC versions, the state of the Intel ME (from v1.4.0, also in SMBIOS); *Boot*: the iPXE and CSMWrap boot entries, and from v1.4.0 the USB drives in the boot order and the boot menu prompt; *Sound*: beeps (from v1.4.0 the keyboard beep too) and volume; links to the time and date, firmware update, boot splash and UI pages |
   | *Energy Saver* | battery charge thresholds (OS controlled, 100%, 80%, 60%), Intel SpeedStep, Turbo Boost, C-states, CPU PL1/PL2 limits, cooling policy (active or passive), TCC activation offset (from v1.6.0, on processors that have one), USB always on (from v1.4.0 *AC and battery* charges on battery too), power-on with AC attached (from v1.4.0), power-on after power failure |
-  | *Security* | *Flash protection*: BIOS Lock (flash writable only by the firmware, on by default from v1.6.0, off before) and Firmware protection (the read-only part locked at every boot, on by default); memory cleared at power-on, Intel VT-x, VT-d (from v1.4.0 with the ExpressCard and Thunderbolt ports untrusted for the OS, off by default), the Intel ME interface, Secure Boot, supervisor password (asked for before the setup menu opens) |
+  | *Security* | *Flash protection*: BIOS Lock (flash writable only by the firmware, on by default from v1.6.0, off before) and Firmware protection (the read-only part, and from v1.6.1 the descriptor, the GbE and the ME regions, write-protected by the SPI controller at every boot, on by default); memory cleared at power-on, Intel VT-x, VT-d (from v1.4.0 with the ExpressCard and Thunderbolt ports untrusted for the OS, off by default), the Intel ME interface, Secure Boot, supervisor password (asked for before the setup menu opens) |
   | *Keyboard* | Fn/Ctrl swap, F1-F12 or special keys, sticky Fn, keyboard backlight, TrackPoint, touchpad |
   | *Hardware* | *NVIDIA graphics*: the GPU and the tuning of its PCIe link; *Intel graphics*: graphics stolen memory (native RAM init only, 32 MiB by default from v1.6.0 as `mrc.bin`, which reserves a fixed 32 MiB; the GTT is 2 MiB on both), aperture and the firmware screen resolution; *Storage*: the SATA ports besides the drive bay; *Expansion ports*: ExpressCard and Thunderbolt; *Wireless*: Wi-Fi, Bluetooth, WWAN |
   | *Compatibility* | *macOS*: the options that take the place of parts of an OpenCore configuration (ACPI processor objects as *Processor*, the C-state configuration lock, the NVIDIA GPU off under macOS, the panel, the display audio, the device properties; [docs/macos.md](docs/macos.md)); *Advanced*: NMI |
@@ -257,6 +257,18 @@ Known limits, by hardware or by design, not open bugs:
 - **The lock of TCG MOR** needs *BIOS Lock* on, which from v1.6.0 is the
   default; with it off the OS can write the flash without SMM and the lock
   is not offered.
+- **The flash descriptor stays unlocked** (`CONFIG_UNLOCK_FLASH_REGIONS`,
+  all regions readable and writable by the host): it is what lets flashrom
+  rewrite the read-only part, the ME or the descriptor itself from the OS,
+  without the external programmer. From v1.6.1 *Firmware protection* also
+  sets a protected range of the SPI controller over the descriptor, the GbE
+  and the ME regions (`SI_ALL`, patch 0235), so that the OS cannot write
+  them while it is on, as for `WP_RO`; they stay readable, and the other
+  masters of the flash (ME, GbE) are not affected. The permissions in the
+  descriptor do not change: chipsec's `spi_desc` reads them, and keeps
+  reporting them (FAILED by design). Locking the descriptor itself (a
+  `FLMSTR` that denies the host) is one-way on these machines (no recovery
+  without the FDSO strap or the external programmer) and is not done.
 - **XMP profiles**: the memory runs at its JEDEC timings.
 - **macOS**: supported through OpenCore, with the firmware options of
   [docs/macos.md](docs/macos.md), on the same ACPI tables as Linux and
