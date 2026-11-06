@@ -1,0 +1,91 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 6 Nov 2026 21:30:00 +0100
+Subject: [PATCH] security/lockdown: Write-protect SI_ALL with the controller
+ as an option
+
+An image built with UNLOCK_FLASH_REGIONS has a descriptor that lets the
+host write every region, so that flashrom can rewrite the read-only
+part, the ME or the descriptor itself from the OS. The price is that
+the OS can also write them at any time: a root process can change the
+straps and the permissions of the descriptor, replace or re-enable the
+Management Engine, or brick the machine, while the boot media lock
+covers WP_RO only and the BIOS lock covers the BIOS region only.
+
+Add BOOTMEDIA_LOCK_SI_ALL: with the controller lock on WP_RO (or the
+Top Swap regions), set a second protected range over the SI_ALL FMAP
+region, the descriptor with the GbE and the ME regions, write-only, so
+they stay readable. The firmware writes them before the lock when an
+option asks (the HAP bit, for instance), the ME and the GbE use their
+own masters and are not affected, the RW regions stay out of it. With
+BOOTMEDIA_LOCK_RUNTIME_OPTION the option that lifts the lock of WP_RO
+lifts this one too, for a flashrom update from the OS.
+
+The descriptor's own permissions do not change: chipsec's spi_desc,
+which reads them (FRAP.BRWA), still reports them; the protected range
+is what refuses the write.
+
+TEST=ThinkPad W541 and ThinkCentre M920x: to be run; expected a second
+"FPR n is enabled for range 0x00000000-0x004fffff" (W541) in the log
+and flashrom refusing writes to the descriptor, the GbE and the ME
+regions while Firmware protection is on.
+---
+ src/security/lockdown/Kconfig    | 16 ++++++++++++++++
+ src/security/lockdown/lockdown.c | 14 ++++++++++++++
+ 2 files changed, 30 insertions(+)
+
+diff --git a/src/security/lockdown/Kconfig b/src/security/lockdown/Kconfig
+index 49ac2741..cdaf647c 100644
+--- a/src/security/lockdown/Kconfig
++++ b/src/security/lockdown/Kconfig
+@@ -96,6 +96,22 @@ config BOOTMEDIA_LOCK_IN_VERSTAGE
+ 	  ramstage, like the MRC cache for example.
+ 	  Use this option if you don't trust code running after verstage.
+ 
++config BOOTMEDIA_LOCK_SI_ALL
++	bool "Also write-protect the flash descriptor, the GbE and the ME regions"
++	depends on BOOTMEDIA_LOCK_CONTROLLER
++	depends on BOOTMEDIA_LOCK_WPRO_VBOOT_RO || BOOTMEDIA_LOCK_TOPSWAP
++	depends on HAVE_IFD_BIN
++	help
++	  Select this to set a protected range of the controller over the
++	  SI_ALL FMAP region, the flash descriptor with the GbE and the ME
++	  regions, whenever the boot media lock is applied. On an image whose
++	  descriptor leaves those regions writable to the host (for instance
++	  with UNLOCK_FLASH_REGIONS, so that flashrom can write them from the
++	  OS), this keeps the OS from writing them until the next reset; they
++	  stay readable, and the firmware itself can still write them before
++	  the lock is applied. With BOOTMEDIA_LOCK_RUNTIME_OPTION the same
++	  option that lifts the lock of the read-only part lifts this one.
++
+ config BOOTMEDIA_LOCK_RUNTIME_OPTION
+ 	bool "Read whether to lock the boot media from an option"
+ 	depends on !BOOTMEDIA_LOCK_NONE
+diff --git a/src/security/lockdown/lockdown.c b/src/security/lockdown/lockdown.c
+index e672dfde..25e93cbf 100644
+--- a/src/security/lockdown/lockdown.c
++++ b/src/security/lockdown/lockdown.c
+@@ -69,6 +69,20 @@ void boot_device_security_lockdown(void)
+ 	else
+ 		printk(BIOS_ERR, "BM-LOCKDOWN: Failed to enable bootmedia protection\n");
+ 
++	if (CONFIG(BOOTMEDIA_LOCK_SI_ALL)) {
++		/*
++		 * The descriptor, the GbE and the ME regions: when the descriptor
++		 * lets the host write them, only a protected range of the
++		 * controller keeps the OS from doing so. They stay readable.
++		 */
++		if (fmap_locate_area_as_rdev("SI_ALL", &dev) < 0)
++			printk(BIOS_ERR, "BM-LOCKDOWN: Could not find region 'SI_ALL'\n");
++		else if (boot_device_wp_region(&dev, lock_type) >= 0)
++			printk(BIOS_INFO, "BM-LOCKDOWN: Enabled bootmedia protection for SI_ALL\n");
++		else
++			printk(BIOS_ERR, "BM-LOCKDOWN: Failed to enable bootmedia protection for SI_ALL\n");
++	}
++
+ 	if (CONFIG(BOOTMEDIA_LOCK_TOPSWAP)) {
+ 		/*
+ 		 * Additionally set a protected range for the BOOTBLOCK region
+-- 
+2.43.0
+

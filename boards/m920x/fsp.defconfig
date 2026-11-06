@@ -132,6 +132,12 @@ CONFIG_SOC_INTEL_COMMON_PCH_LOCKDOWN_SMM_BWP_LATE=y
 CONFIG_BOOTMEDIA_LOCK_CONTROLLER=y
 CONFIG_BOOTMEDIA_LOCK_WPRO_VBOOT_RO=y
 CONFIG_BOOTMEDIA_LOCK_RUNTIME_OPTION=y
+# Con la stessa opzione un secondo Protected Range su SI_ALL (descrittore,
+# GbE, ME; patch 0235, dalla v1.6.1): con UNLOCK_FLASH_REGIONS il
+# descrittore le da' in scrittura alla CPU, e il BIOS Lock copre solo la
+# regione BIOS. Restano leggibili; flashrom le scrive solo con la Firmware
+# protection spenta, come la RO.
+CONFIG_BOOTMEDIA_LOCK_SI_ALL=y
 
 # Le opzioni del setup tornano ai default quando la RTC perde
 # l'alimentazione (pila scarica, jumper della CMOS), come col BIOS Lenovo:

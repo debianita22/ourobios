@@ -227,3 +227,4 @@
 0232-mb-lenovo-haswell-Put-the-W541-s-USB-connectors-on-t.patch
 0233-sb-intel-lynxpoint-Return-nothing-from-the-xHCI-_PS0.patch
 0234-mb-lenovo-haswell-Return-nothing-from-the-dGPU-power.patch
+0235-security-lockdown-Write-protect-SI_ALL-with-the-cont.patch
