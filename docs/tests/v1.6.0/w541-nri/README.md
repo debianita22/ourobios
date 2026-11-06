@@ -83,14 +83,39 @@ back.
 | `efibootmgr -t 3` | PASS | `Timeout: 3 seconds` kept across the capsules |
 | ME-01, EC-01, FLASH-01 | WARN, known | as for rc6 |
 | CONF-02 | M920x only | |
+| CONF-03 | PASS: no CRITICAL nor HIGH | fwts V26.09.00 built from its sources into `/opt/fwts` (not in Arch nor the AUR), `--acpitests --uefitests wsmt mcfg` ([fwts-w541-nri-rc7.log](fwts-w541-nri-rc7.log)): 620 passed, 7 failed, all MEDIUM, 14 warnings; no *MCFGMMIONotReserved*. The UEFI runtime tests need `efi_test`, which the CachyOS kernel leaves out (`CONFIG_EFI_TEST` not set): built from `drivers/firmware/efi/test/` of Linux v7.3 with `LLVM=1`, loaded for them and removed after ([fwts-uefirt-w541-nri-rc7.log](fwts-uefirt-w541-nri-rc7.log)): `uefirtvariable`, `uefirttime`, `uefirtmisc`, `uefirtauthvar` 80 passed, 0 failed, 15 skipped (the tests of services the firmware does not offer, and `QueryCapsuleCapabilities`, which it does not offer at runtime: capsules go through the disk). The seven MEDIUM, each with its reason below the table |
 | CONF-04 | PASS, `spi_desc` FAILED by design | chipsec 1.13.16 on rc7, the logs in [chipsec/](chipsec/): `bios_wp` PASSED (BC `0x2A`: BLE and SMM_BWP set, writes restricted to SMM; no PR over the BIOS region, as *Firmware protection* is off on this machine, FLASH-01), `spi_lock` PASSED (HSFS `0xE009`, FLOCKDN), `smm` PASSED (SMRAMC `0x1A`, D_LCK), `smrr` PASSED (base `0x7F800000`, mask `0xFF800000`, WB, the same on every thread), `bios_ts` PASSED (BILD 1, Top Swap off), `spi_desc` FAILED (FRAP `0xFFFF`: the descriptor writable by the CPU, the README's known limit); the six with the native Linux helper. `uefi.access_uefispec` PASSED with the chipsec kernel driver: every variable checked protected according to the spec, KEK, db, dbx and `certdb` time-based authenticated, no PK (the machine is in Setup Mode). The driver of 1.13.16 does not build against Linux 7.3 of CachyOS as it is: built with `make LLVM=1` (the kernel is built with clang), `rdmsr_on_cpu()`/`wrmsr_on_cpu()` mapped onto `rdmsrq_on_cpu()`/`wrmsrq_on_cpu()` (the only ones Linux 7 exports), and `init_module`/`cleanup_module` given to `module_init()`/`module_exit()` (objtool refuses the magic names); loaded by chipsec for the test, unloaded after |
+
+The seven MEDIUM of CONF-03 on rc7:
+
+- `HPETVendorId` and `HPETClockPeriod` (test 4 of `hpet`): fwts reads the
+  whole HPET window, 0x400 bytes, then the capabilities register, and
+  finds all ones. On this Lynx Point a read of the reserved offset
+  `0x3f8` makes the next read of the window return all ones, once; the
+  read after it is right again and the counter never stops (checked
+  from `/dev/mem`: `0x0429b17f8086a701`, vendor 8086, 69841279 fs).
+  The hardware, not the firmware, which does not configure the window
+  beyond its address; Linux reads no reserved register and uses the
+  HPET. The M920x's PCH passes the same test;
+- `MethodCIDInvalidString` for `\_SB.PCI0.GFX0.PNLF` (`BACKLIGHT`) and
+  `\_SB.ALS0` (`SMC-ALS`): the compatible IDs of Apple's backlight and
+  light sensor devices, which macOS matches (patch 0124 and the macOS
+  options): kept;
+- `MethodShouldReturnNothing` for `\_SB.PCI0.PEGP.PGPR._OFF` (patch 0002:
+  `Return (Zero)` when the dGPU is already off, as on this machine) and
+  for `\_SB.PCI0.XHCI._PS0` and `_PS3` (coreboot's
+  `southbridge/intel/lynxpoint/acpi/xhci.asl`, which ends both with
+  `Return ()`, compiled as a return of 0): a power resource's `_OFF`
+  and a `_PSx` return nothing by the spec. Harmless to Linux and
+  Windows; a small change to the ASL (the early returns into `If`
+  blocks, no `Return` at the end) would clear the three.
 
 Files: [hw-w541-nri-rc7-1.md](hw-w541-nri-rc7-1.md) (a reboot from
 Linux), [hw-w541-nri-rc7-cold.md](hw-w541-nri-rc7-cold.md) (a cold
 boot), [hw-w541-nri-rc7-after-s3.md](hw-w541-nri-rc7-after-s3.md)
 (after the five suspends), [s3-w541-nri-rc7.txt](s3-w541-nri-rc7.txt)
 (each resume), [cbmem-w541-nri-rc7.txt](cbmem-w541-nri-rc7.txt)
-(`cbmem -1` of the cold boot) and [chipsec/](chipsec/) (CONF-04).
+(`cbmem -1` of the cold boot), [chipsec/](chipsec/) (CONF-04) and the two fwts logs (CONF-03).
 
 ## Numbers
 
