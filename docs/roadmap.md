@@ -34,10 +34,11 @@ is here. None of it is a promise of a date.
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
 | [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
 | [Openness score](#openness-score) | both | already in `tools/sbom.py`; compared with Dasharo's tool after rc5: the descriptor, GbE and VBT are data there too now, the ME region is counted whole by Dasharo and by its bytes here | none planned |
-| [Clearing the memory on every core](#clearing-the-memory-on-every-core) | both | the clear runs on the boot processor only, 2.0 s for 40 GB on the M920x (about 21 GB/s); what the memory controller gives to four cores is not measured | on the W541 one core already fills the memory (measured); a test build on the M920x with two equal DIMMs, and `rep stosb` on one core |
+| [Clearing the memory on every core](#clearing-the-memory-on-every-core) | both | measured on both: on the W541 one core already fills the memory, on the M920x the clear is bound by its unequal DIMMs; the loop is `rep stosl` already | decided on 2026-11-06: not made; a test build only for a machine with two equal DIMMs |
 | [The UEFI Shell in the payload](#the-uefi-shell-in-the-payload) | both | done in v1.6.0 (`edk2/0053`, patch 0227): the boards' payload leaves the Shell out, and the smoke test writes its variables with `tools/efi/setvar.c` from a disk image | none planned |
 | [The DPLL of i915 at boot on the M920x](#the-dpll-of-i915-at-boot-on-the-m920x) | M920x | i915's own wait for the PLL, not the firmware's | a report to i915 with the numbers |
 | [A USB 3.0 drive after a warm reset on the W541](#a-usb-30-drive-after-a-warm-reset-on-the-w541) | W541 | seen once with one drive on `nri`, rc6: the SuperSpeed link stays in Polling or Compliance after a reboot, fine after a cold boot; the early USB init of `nri` times out on every resume | the same port with another drive across a reboot, then that drive under v1.5.0 and `mrc` |
+| [TSC ADJUST after a resume on the W541](#tsc-adjust-after-a-resume-on-the-w541) | W541 | at every S3 resume Linux finds `IA32_TSC_ADJUST` of CPU 0 non-zero and zeroes it, a known message of the report; coreboot writes neither the TSC nor that register | read the TSC and the register right after a resume, from coreboot and from Linux, to see who moves them |
 
 ## Firmware watchdog
 
@@ -755,6 +756,25 @@ of its own. On the W541 (2026-11-06,
 no gain from the other processors there, at most 0.26 s from a faster
 loop on one.
 
+What the loop is, in the code of the pin (2026-11-06): `memset` of the
+32-bit ramstage is glibc's i386 one, `rep stosl` after the alignment
+(`arch/x86/memset.c`), and `memset_pae()` maps one 2 MiB window at a
+time (a PDE write and a TLB flush each, some 16,000 windows for 32 GB,
+milliseconds in all) and calls that `memset` on it: the clear already
+runs a string store on one processor, and the headroom the two records
+measure is what `rep stosb` (ERMS, both processors have it) does
+against `rep stosl`: in Linux +11% on the W541 (24.3 against 21.8 GB/s
+for `memset`) and -17% on the M920x (29.3 against 35.3), where the
+memory is the bound anyway.
+
+- **Decided (2026-11-06)**: not made. On the W541 more processors give
+  nothing and the loop at most 0.26 s; on the M920x the clear is bound by
+  its 32 + 8 GB and `rep stosb` is slower there. The test build with
+  one, two and four processors stays optional, for a machine with two
+  equal DIMMs where four cores could take the clear from 21 to 35-38
+  GB/s; `mp_run_on_all_cpus()` with a PAE window per processor would be
+  the shape of it.
+
 ## The UEFI Shell in the payload
 
 The payload carries the UEFI Shell (`EDK2_HAVE_EFI_SHELL`, coreboot's
@@ -845,19 +865,50 @@ a different setting (the EHCI controllers hidden, dropped in rc2).
 
 What the firmware does with the SuperSpeed ports on `nri`, in the code
 of the pin: in romstage `early_usb_native.c` (built for `nri` and for
-Broadwell's MRC, not for `mrc`) warm-resets every USB 3.0 port and
-polls the port reset bit for up to 100 ms (`warm_reset_usb3_ports()`),
-on a warm boot after the USB 2 reset and on every S3 resume; in the log
-of rc6 it times out (`BIOS_ERR`) on every resume with a device in a
-USB 3.0 port, and takes 6 µs at a warm boot. In ramstage
-`usb_xhci.c` resets the disconnected or polling ports once more, on an
-S3 resume only (`usb_xhci_reset_usb3()`). Which of the two leaves the
-link in Polling after a reboot, and whether it is this drive, is not
-known.
+Broadwell's MRC, not for `mrc`) warm-resets every USB 3.0 port, with
+`WPR` written into each `PORTSC`, and polls the port reset bit `PR` for
+up to 100 ms (`warm_reset_usb3_ports()`). With the ports routed to the
+xHCI it does so whenever `is_mem_sr()` says the memory is in self
+refresh (`GEN_PMCON_2` bit 5), which is true on an S3 resume and on a
+warm reboot alike, so the reset runs at every reboot from the OS too,
+right after the controller's own reset. In the log of rc6 it times out
+(`BIOS_ERR`) on every resume with a device in a USB 3.0 port, and takes
+6 µs at a warm boot: too short for a warm reset to have happened at
+all, which suggests the ports were not yet in a state that takes a
+`WPR` then. In ramstage `usb_xhci.c` resets the disconnected or polling
+ports once more, on an S3 resume only (`usb_xhci_reset_usb3()`, which
+waits for `WRC` instead). Which of the two leaves the link in Polling
+after a reboot, and whether it is this drive, is not known; `mrc` has
+no early USB init, so it tells the two apart.
 
 - **Next step**: on the W541, a reboot with another USB 3.0 device in
   the left port, then this drive under v1.5.0 (slot B, `update.py
   rollback`) and under `mrc`, which has no early USB init. If `nri`
-  alone does it, the romstage reset is the place to look (the BWG's
-  sequence against what `early_usb_native.c` does for a port with a
-  device attached); if every variant does it, the drive.
+  alone does it, the romstage reset is the place to look: a test build
+  that prints `PORTSC` of each SuperSpeed port before and after the
+  `WPR` write and at the end of romstage, on a warm boot and on a
+  resume, says whether the reset engages and in which link state it
+  leaves the port; if every variant does it, the drive.
+
+## TSC ADJUST after a resume on the W541
+
+At every resume from S3 the W541 logs `[Firmware Bug]: TSC ADJUST
+differs: CPU0 0 --> 238168774730. Restoring` (rc6 and v1.5.0 alike;
+[docs/tests/v1.6.0/w541-nri/README.md](tests/v1.6.0/w541-nri/README.md#results)):
+Linux expects `IA32_TSC_ADJUST` of the boot processor at 0, reads a
+value in the 10^11 range and writes 0 back, so the TSC stays coherent
+and nothing else follows. The register is zero after a reset and
+changes only when software writes it or writes the TSC itself (the SDM:
+a write to `IA32_TIME_STAMP_COUNTER` moves `IA32_TSC_ADJUST` by the
+same amount), and coreboot writes neither, in no stage and not in SMM;
+the payload does not run on a resume. So either the value survives the
+suspend in that processor or something between the wake and Linux's
+check writes the TSC. `tools/hw-report.py` knows the message (BOOT-04)
+on the W541 only; on the M920x it has not been seen.
+
+- **Next step**: on the W541, right after a resume, `sudo rdmsr -p0
+  0x3b`, `sudo rdmsr -p0 0x10` and `cat /proc/uptime` (Linux has zeroed
+  the register by then, the TSC tells whether it was written: it is
+  small after a reset, large if it kept counting), and a test build that
+  prints both from the boot processor at the start of ramstage on the
+  resume path, before anything else runs.

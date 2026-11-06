@@ -668,6 +668,9 @@ for msg in ("ACPI Warning: SystemIO range 0x0000000000000480-0x00000000000004AF 
             "0x0000000000000480-0x00000000000004EB (\\_SB.PCI0.GPLV) (20240827/utaddress-204)",
             "ACPI: \\: failed to evaluate _DSM bf0212f2-788f-c64d-a5b3-1f738e285ade (0x1001)"):
     assert hw.known(msg, hw.KNOWN_KERNEL, "w541") is None, msg
+# TSC ADJUST al resume: noto sul W541, non sul M920x
+msg = "[Firmware Bug]: TSC ADJUST differs: CPU0 0 --> 238168774730. Restoring"
+assert hw.known(msg, hw.KNOWN_KERNEL, "w541") is not None and hw.known(msg, hw.KNOWN_KERNEL, "m920x") is None
 
 # FLASH-01 senza i registri (kernel con IO_STRICT_DEVMEM): il PR dal log
 # confrontato con WP_RO della FMAP di CBMEM, INFO e non PASS (FLOCKDN non noto)

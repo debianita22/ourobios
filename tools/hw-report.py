@@ -192,6 +192,10 @@ KNOWN_KERNEL = (
     (r"i915 .*DPLL [0-9]+ not locked", None,
      "intermittente all'avvio con un monitor HDMI collegato (M920x: 2 avvii su 6 di ci-244, anche su ci-209, "
      "ci-211 e v1.5.x): i915 e l'init del display del firmware, da capire a parte (docs/roadmap.md)"),
+    (r"TSC ADJUST differs: CPU0 0 --> [0-9]+\. Restoring", "w541",
+     "a ogni resume da S3 il kernel trova IA32_TSC_ADJUST del processore 0 diverso da zero e lo rimette a "
+     "zero da solo (il TSC resta coerente); coreboot non scrive ne' il TSC ne' quel registro, chi lo "
+     "cambia e' da trovare (docs/roadmap.md); c'era anche con la v1.5.0"),
     # Sul W541 non piu' noti: GPLV ("SystemIO range ... conflicts with
     # OpRegion") e "failed to evaluate _DSM" di iwlwifi li tolgono le patch
     # 0068 e 0069; se tornano e' una regressione
