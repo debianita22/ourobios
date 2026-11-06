@@ -1,0 +1,35 @@
+== resume 1 14:56:34
+      3 [DEBUG]  S3 Resume
+      1 [DEBUG]  warm_reset_usb3_ports: took 104025 usecs
+      1 [INFO ]  TPM: Handle S3 resume.
+      1 [INFO ]  TPM: setup succeeded
+[18446744058.846162] [Firmware Bug]: TSC ADJUST differs: CPU0 0 --> 751423137264. Restoring
+network: up
+== resume 2 14:57:07
+      3 [DEBUG]  S3 Resume
+      1 [DEBUG]  warm_reset_usb3_ports: took 104025 usecs
+      1 [INFO ]  TPM: Handle S3 resume.
+      1 [INFO ]  TPM: setup succeeded
+[  254.118916] [Firmware Bug]: TSC ADJUST differs: CPU0 0 --> 20123519122. Restoring
+network: up
+== resume 3 14:57:40
+      3 [DEBUG]  S3 Resume
+      1 [DEBUG]  warm_reset_usb3_ports: took 104883 usecs
+      1 [INFO ]  TPM: Handle S3 resume.
+      1 [INFO ]  TPM: setup succeeded
+[  261.324373] [Firmware Bug]: TSC ADJUST differs: CPU0 0 --> 20040732432. Restoring
+network: up
+== resume 4 14:58:13
+      3 [DEBUG]  S3 Resume
+      1 [DEBUG]  warm_reset_usb3_ports: took 104869 usecs
+      1 [INFO ]  TPM: Handle S3 resume.
+      1 [INFO ]  TPM: setup succeeded
+[  268.500119] [Firmware Bug]: TSC ADJUST differs: CPU0 0 --> 20103710020. Restoring
+network: up
+== resume 5 14:58:48
+      3 [DEBUG]  S3 Resume
+      1 [DEBUG]  warm_reset_usb3_ports: took 104444 usecs
+      1 [INFO ]  TPM: Handle S3 resume.
+      1 [INFO ]  TPM: setup succeeded
+[  275.695920] [Firmware Bug]: TSC ADJUST differs: CPU0 0 --> 20049379344. Restoring
+network: up

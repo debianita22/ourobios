@@ -14,8 +14,8 @@ the reports and logs of rc6.
 | | |
 |---|---|
 | Read-only part | `ouroBIOS-ci-205-d123865-nri`, a CI build from before v1.5.0, with patch 0199 (the TPM failure does not stop the boot): only `nri` slots can go behind it, and `update.py other-slot` refuses `mrc` |
-| Slot A | v1.6.0-rc6-nri, running, confirmed |
-| Slot B | v1.5.0-nri until 11-06; since then the measurement build `ci-265-bd07465` ([diag.md](diag.md)) |
+| Slot A | v1.6.0-rc6-nri, confirmed |
+| Slot B | v1.5.0-nri until 11-06, then the measurement build `ci-265-bd07465` ([diag.md](diag.md)); since 11-06 afternoon v1.6.0-rc7-nri, running, confirmed |
 | Protections | *BIOS Lock* on; *Firmware protection* off (FLASH-01 WARN), to be turned on again at the end |
 | Settings | the 59 options saved in SMMSTORE, among them `me_disable=1`, `clear_dram_on_boot=2` (when the OS asks), `serial_console=0`, `debug_level=6` |
 | Event log | 321 events, 45 boots at the install; continued across the capsule |
@@ -57,6 +57,39 @@ kept off the machine.
 | FLASH-01 | WARN, known | *Firmware protection* off |
 | IDLE-01 | PASS or INFO | PC6 70% with the panel off, PC2 with the 3K panel on (known) |
 | OPT-02, MEM-09, UPD-05, USB-06, DISP-05, BOOT-05, BOOT-06, NET-05, S3-02 and S3-03 with the lid and Fn, the dGPU on and off, macOS, Secure Boot with shim, CSMWrap | not run | someone at the setup, the boot menu or the lid; MEM-09 and UPD-05 too |
+
+## v1.6.0-rc7
+
+On 2026-11-06 in the afternoon, the candidate of [docs/test-v1.6.0.md](../../../test-v1.6.0.md)
+at `518a892`: from rc6 (slot A), *BIOS Lock* on, the rc7 capsule
+(`SHA256SUMS`, the signature and the jcat checked) staged with
+`update.py stage`: the update screen, then rc7 from slot B, where the
+measurement build was. Then the reports, five suspends, the rollback and
+back.
+
+| ID | Result | Notes |
+|---|---|---|
+| UPD-02 | PASS | the payload of rc6 wrote the rc7 capsule; `update.py status`: *v1.6.0-rc7, riuscito* |
+| BOOT-01 | PASS | `v1.6.0-rc7-nri` |
+| BOOT-02 | PASS | 2.19 s with the training (1.36 s without it), then 1.45 s from the cache, at a warm and at a cold boot |
+| MEM-01 | INFO, then PASS | 0.83 s at the first boot (the capsule empties `RW_MRC_CACHE`), 0.11 s after |
+| BOOT-03 (new) | PASS | five `rtcwake -m mem -s 25` with a USB 3.0 drive in the left SS connector: `warm_reset_usb3_ports: took` 104025 to 104883 µs at DEBUG, no `timed out` (patch 0231); the drive at 5000M after them; the report: no error nor warning in coreboot's log |
+| USB-07 (new) | PASS | the `_PLD` as Linux reads it: ports 1 and 3 `left`, 2 and 6 `right`, horizontal `right`, `left`, `left`, `right` (patch 0232), the connectors of [diag.md](diag.md#the-usb-ports-are-described-on-the-wrong-side) |
+| BOOT-04 | PASS | the five `TSC ADJUST differs` known to the report, 0 unknown messages |
+| S3-01 | PASS | five suspends, the network up after each |
+| TPM-03 after S3 | PASS | after the five suspends; the bootblock of the read-only part `ci-205` still logs three digests per resume in cbmem's log, none extended (known, as on the M920x) |
+| VB-01, VB-02 | PASS | slot B, confirmed |
+| UPD-05 | PASS | `update.py rollback` with the rc6 capsule: *slot A equal to the release, only the slot changes*; rc6 from slot A with the training; then `update.py stage` of rc7: the update screen, rc7 from slot B again, confirmed |
+| `efibootmgr -t 3` | PASS | `Timeout: 3 seconds` kept across the capsules |
+| ME-01, EC-01, FLASH-01 | WARN, known | as for rc6 |
+| CONF-02 | M920x only | |
+
+Files: [hw-w541-nri-rc7-1.md](hw-w541-nri-rc7-1.md) (a reboot from
+Linux), [hw-w541-nri-rc7-cold.md](hw-w541-nri-rc7-cold.md) (a cold
+boot), [hw-w541-nri-rc7-after-s3.md](hw-w541-nri-rc7-after-s3.md)
+(after the five suspends), [s3-w541-nri-rc7.txt](s3-w541-nri-rc7.txt)
+(each resume) and [cbmem-w541-nri-rc7.txt](cbmem-w541-nri-rc7.txt)
+(`cbmem -1` of the cold boot).
 
 ## Numbers
 
