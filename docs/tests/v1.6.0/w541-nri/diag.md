@@ -174,6 +174,35 @@ cleaned; nothing to change in the firmware for it, but the CHANGELOG's
 note of v1.3.10 (a drive in Compliance mode with `nri`) may well be the
 same connector.
 
+### Against the Lenovo firmware
+
+The question was whether the right SS port gets different PHY settings
+from the stock firmware, which `nri` would miss: each SuperSpeed lane
+has its own transmitter and receiver settings in the PCH (IOBP/HSIO
+registers), and a connector farther from the chip could want others.
+Compared with GNET94WW (Lenovo's `gnuj39us.iso`, BIOS 2.42, the PEI
+module `fd236ae7-0791-48c4-b29e-29bdeee1a838`, PchInit):
+
+- the module carries two sets of HSIO tables for SATA and the xHCI. A
+  function reads the LPC device ID (`8c4f`, Lynx Point-H, is in its
+  list) and the revision, and returns the revision as is; the tables
+  are picked from it: 2 gets set B, 3 to 5 get set A;
+- this PCH is revision `05`, so the stock firmware writes set A: the
+  xHCI table (20 rows for the lanes shared with PCIe, 36 for the four
+  dedicated USB 3.0 lanes) and the SATA one, row for row the values of
+  `hsio/lpt_h_cx.c` that `nri` writes;
+- set B (other values for the same USB 3.0 lanes, such as `0x1401` in
+  `0xe90031cc` instead of `0x1407`) is for revision 2 only.
+
+So the stock firmware programs the SuperSpeed lanes of this machine as
+`nri` does, with no setting per connector. What the comparison does not
+cover: the board's own lines (a redriver or its enable, through GPIOs or
+the EC, which the W541's GPIO table of coreboot takes from the stock
+firmware) and the xHCI's MMIO settings beyond the HSIO. With the same
+code and the same values the left SS connector links 6 times in 6, the
+right one 3 in about 8: the connector, or the path to it, stays the
+likely cause.
+
 ## Files
 
 - [diag-tsc-linux.txt](diag-tsc-linux.txt): part 1a.
