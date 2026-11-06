@@ -1,7 +1,7 @@
 # v1.6.0 on the M920x: the test record
 
 The tests of [docs/test-v1.6.0.md](../../../test-v1.6.0.md) on the
-ThinkCentre M920x of the port (i5, 38 GB, NVMe, a monitor on HDMI, TPM
+ThinkCentre M920x of the port (i3-8100, 32 + 8 GB, NVMe, a monitor on HDMI, TPM
 2.0 SLB9670, the ME in soft temporary disable from the setup), from
 2026-11-03 to 11-05, from the CI build ci-244 to v1.6.0-rc6. What each
 candidate carried, what every test gave, the numbers the next
@@ -46,7 +46,7 @@ Run from the machine, without anyone at the monitor. `hw-report.py` of
 | BOOT-09 | not observable here | `serial_console=1` is saved from before rc6, so the serial console stays on and the SPCR table is there; the new default shows only without a saved value |
 | BOOT-10 | PASS | the first boot of rc6 deleted the *UEFI Shell* entry; `efibootmgr` lists Setup, NVMe, iPXE, CSMWrap, the OS |
 | CONF-01 | PASS | WSMT revision 1, flags 7 |
-| CONF-02 | PASS | DSDT 0 errors, 17 warnings (all 4089 of the disassembler), 27 remarks (23 of 2173, 4 of 2184); SSDT 0 errors, 5 warnings 4089, remarks 2 of 2184 and 2 of 2063 (*Initializer list shorter than declared package length*, two packages of the processor objects) |
+| CONF-02 | PASS | DSDT 0 errors, 17 warnings (all 4089 of the disassembler), 27 remarks (23 of 2173, 4 of 2184); SSDT 0 errors, 5 warnings 4089, remarks 2 of 2184 and 2 of 2063 (*Initializer list shorter than declared package length*: the PIC branch of `_PRT`, and the PEPD constraint of the PCH thermal controller `00:12.0`, which has no ACPI name; patches 0228 and 0229, after rc6) |
 | CONF-03 | PASS | `fwts --acpitests --uefitests wsmt mcfg`: 468-469 pass, 0 failed, 5 warnings, no *MCFGMMIONotReserved* ([fwts-m920x-fsp.log](fwts-m920x-fsp.log)); on ci-244 one MEDIUM, the firmware version 0 of a CI build |
 | CONF-04 | PASS, `spi_desc` FAILED by design | chipsec 1.13 with the native Linux helper (no kernel driver) on rc6, the logs in [chipsec/](chipsec/): `bios_wp` PASSED (BC `0xAA`, writes restricted to SMM, PR0 over `WP_RO`), `spi_lock` PASSED (HSFS `0x230AF801`, FLOCKDN), `smm` PASSED (SMRAMC `0x1A`, D_LCK), `smrr` PASSED (base `0x76000000`, mask `0xFF800000`, WB, the same on every thread), `bios_ts` PASSED (BILD 1, Top Swap off); `spi_desc` FAILED: the descriptor is writable by the CPU, as the README's known limits say (`UNLOCK_FLASH_REGIONS`, which the HAP bit option needs); `uefi.access_uefispec` did not run, the native helper has no UEFI variable enumeration, it needs the chipsec kernel driver |
 | CONF-07 | PASS | the ECAM window reserved; the WARN of ci-244 was the report reading `pnp` resources named `PNP0C02:00` by Linux 7.0, fixed in the report |
@@ -96,7 +96,7 @@ not others (patch 0191 explains it): measured as 5.22-5.24 s or
 of 11, resumes from S3 12 slow of 20 (rc1 5 of 5, rc2 3 of 5, rc5 2 of
 5, rc6 1 of 5, ci-244 0 of the 2 read), cold boots from S5 0 of 1. It
 does not follow the slot, the candidate, a capsule just written, the
-MOR clear (which coreboot does in ramstage, 2.0 s for 38 GB), the
+MOR clear (which coreboot does in ramstage, 2.0 s for 42.7 GB), the
 training (no *Memory cache update* in the event log since 10-31), the
 options, the PM registers or `HFSTS1` before FSP-M. ME-05 (the HAP bit)
 is the setting that removes it.
@@ -132,7 +132,7 @@ change as expected.
   corrected); MEM-01 and BOOT-02 of the report know it.
 - The bootblock in the read-only part: CHANGELOG, docs/vboot.md.
 - The elog of v1.5.0 with *BIOS Lock* on and off: CHANGELOG; the report
-  knows the messages up to v1.5.1.
+  knows the messages up to v1.5.0.
 - The i915 DPLL: docs/roadmap.md, a known message of the report.
 - `hw-report.py`: CONF-07 on Linux 7.0, the known messages by release,
   MEM-01 and BOOT-02 with the ME's wait; `update.py vboot` names a CI

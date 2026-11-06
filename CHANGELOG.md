@@ -295,8 +295,8 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   lists (iasl remark 2063 on CONF-02): the PIC branch of `_PRT` with the
   45 entries of the APIC branch for its 34 (patch 0228, the pins without
   a PIRQ are now counted out), and a constraint of PEPD's `_DSM` for the
-  GNA at `00:08.0`, which no ACPI node names, written without its device
-  (patch 0229, such a device is left out). An OS reading either found
+  PCH thermal controller at `00:12.0`, which no ACPI node names, written
+  without its device (patch 0229, such a device is left out). An OS reading either found
   uninitialized elements; Linux showed nothing, the tables are now what
   they declare.
 - On the M920x the *Intel graphics* switch under *Hardware* is gone

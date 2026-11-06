@@ -9,11 +9,12 @@ minimum sleep state and writes a three-element package for each, with
 acpi_device_path() as the first element. A device that no node of the
 DSDT or SSDT names has no path: acpi_device_path() returns NULL,
 acpigen_emit_namestring() writes nothing, and the package is declared
-three long with two elements. On a Lenovo ThinkCentre M920x that is
-the GNA at 00:08.0, which the tables do not describe; iasl reports
-"Initializer list shorter than declared package length" (remark 2063)
-on the _DSM of PEPD, and an OS reading the constraints finds an entry
-whose device is uninitialized.
+three long with two elements. On a Lenovo ThinkCentre M920x (Cannon
+Point-H) that is the PCH thermal controller at 00:12.0, enabled and in
+the SoC's list of minimum sleep states, which soc_acpi_name() of
+Cannon Lake does not name; iasl reports "Initializer list shorter than
+declared package length" (remark 2063) on the _DSM of PEPD, and an OS
+reading the constraints finds an entry whose device is uninitialized.
 
 Leave such a device out, in the count and in the list, and say so at
 DEBUG.
