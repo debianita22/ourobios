@@ -195,13 +195,44 @@ module `fd236ae7-0791-48c4-b29e-29bdeee1a838`, PchInit):
   `0xe90031cc` instead of `0x1407`) is for revision 2 only.
 
 So the stock firmware programs the SuperSpeed lanes of this machine as
-`nri` does, with no setting per connector. What the comparison does not
-cover: the board's own lines (a redriver or its enable, through GPIOs or
-the EC, which the W541's GPIO table of coreboot takes from the stock
-firmware) and the xHCI's MMIO settings beyond the HSIO. With the same
-code and the same values the left SS connector links 6 times in 6, the
-right one 3 in about 8: the connector, or the path to it, stays the
-likely cause.
+`nri` does, with no setting per connector.
+
+The board's own lines, the GPIOs: GNET94WW's PEI modules
+`233df097-…`, `caee5bbb-…` and `ed52984e-…` carry the GPIO tables as
+pairs (register offset, value), in variants; the second and third have
+the `GP_IO_SEL`, `GP_IO_SEL2` and `GP_IO_SEL3` of this W541 under
+coreboot. Against the registers read under rc6 (GPIO base `0x480` here,
+`0x800` on the stock firmware), pin by pin, with the levels compared
+for outputs only:
+
+| GPIO | coreboot | GNET94WW | What it is |
+|---|---|---|---|
+| 22 | output, 0 | output, 1 | `GLIS` in the stock DSDT, read by `BDIS`/`BPON` with `CSON` and `ODDF`: the bay / optical drive, not USB |
+| 31 | GPIO, input | native | not used by the stock DSDT |
+| every other | the same | | |
+
+The inversion register is `0x2003` on both; its bit 6 (`XHPD` in the
+stock DSDT) is declared and never used. No GPIO of the USB ports, no
+redriver line, differs.
+
+The xHCI in ACPI: the stock `_PS0`/`_PS3` set and clear `0x8154[31]`
+around D3 and do nothing else; coreboot's (`acpi/xhci.asl`) do the same
+and, on Lynx Point-H too, also clear `0x40[11]` and `0x44[13:12]` on D0
+and set them on D3, which the stock DSDT declares (`SWAI`, `SAIP`) and
+never writes. A difference, but in the D3 transitions only: the stuck
+hotplug of 12:17 happened with the controller held in D0. The init of
+the controller at boot (the stock DXE module `de23acee-…`) uses the
+constants of the BWG that coreboot uses, such as `0x07886e9f` in
+`0x50`, which is also what the controller reads under rc6.
+
+With the same lane settings, the same GPIOs and the same controller init
+as the stock firmware, the left SS connector links 6 times in 6 and the
+right one 3 in about 8: the connector, or the path to it on the board,
+stays the likely cause. The image: `gnuj39us.iso` from
+`download.lenovo.com/pccbbs/mobiles/`, SHA-256
+`8e8a86dfeba381cc28b4523b226422c69edd2c2c88c4d1ef52b3059ddbdf92a6`,
+`FLASH/GNET94WW/$01E2000.FL1`, extracted with `uefi-firmware-parser`;
+nothing of it was run.
 
 ## Files
 
