@@ -223,3 +223,4 @@
 0227-mb-lenovo-Drop-the-UEFI-Shell-from-the-USB-boot-help.patch
 0228-sb-intel-common-acpi_pirq_gen-Declare-the-PIC-_PRT-w.patch
 0229-soc-intel-common-block-acpi-pep-Skip-a-device-withou.patch
+0230-mb-lenovo-haswell-Print-the-TSC-and-the-xHCI-ports-a.patch

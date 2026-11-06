@@ -1,0 +1,536 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 6 Nov 2026 12:00:00 +0100
+Subject: [PATCH] mb/lenovo/haswell: Print the TSC and the xHCI ports along the
+ boot
+
+Test builds of the W541 only, not for a release: prints, no change of
+behaviour, for two open items of docs/roadmap.md.
+
+Linux logs "[Firmware Bug]: TSC ADJUST differs: CPU0 0 --> N" at every
+resume from S3, with N near the TSC of the suspend. Nothing in coreboot
+writes the TSC or IA32_TSC_ADJUST, so the prints say where the value
+appears: the TSC and TSC_ADJUST of the boot processor at the start and
+at the end of romstage, at BS_PRE_DEVICE, around BS_DEV_INIT (the MP
+init and the SMM relocation), at BS_POST_DEVICE, at BS_OS_RESUME, in
+mainboard_suspend_resume() right before the jump to the wake vector, at
+BS_PAYLOAD_BOOT on the boot path, and of every processor at the start
+of cpu_core_init(), before and after the MP init on the boot one.
+
+A USB 3.0 drive in a SuperSpeed port links at a cold boot and across a
+suspend, and stays in Polling with the reset bit set, or in Compliance
+mode, after every warm reset on the nri variant. The prints follow the
+ports: PORTSC of the SuperSpeed ports and the routing registers
+(USB2PR, USB3PR, their masks, USB3FUS, the port disable registers,
+PMIR) at the start of romstage, at the entry of the switching flow of
+the early USB init, before and after the WPR of warm_reset_usb3_ports()
+and at its end, with the routing set, at the exit of early_usb_init()
+and 10 ms later, then in ramstage at the entry and exit of
+usb_xhci_init(), in usb_xhci_reset_usb3() (the ports as found, which
+ones get the warm reset, whether WRC came and when) and at the boot
+states above. PM1_STS, PM1_CNT, GEN_PMCON_2 and GEN_PMCON_3 go with
+them, to tell a resume from a warm reset in the log.
+
+All at BIOS_NOTICE, so that the Info level of the setup shows them.
+The one delay added is the 10 ms at the exit of early_usb_init(). The
+T440p shares the mainboard and the processor code; the M920x is not
+touched.
+---
+ src/cpu/intel/haswell/haswell_init.c          | 10 ++
+ src/include/cpu/x86/diag_tsc.h                | 45 +++++++++
+ src/mainboard/lenovo/haswell/Makefile.mk      |  2 +
+ src/mainboard/lenovo/haswell/diag.c           | 47 ++++++++++
+ src/mainboard/lenovo/haswell/romstage.c       |  9 ++
+ src/southbridge/intel/lynxpoint/diag_usb.h    | 92 +++++++++++++++++++
+ .../intel/lynxpoint/early_usb_native.c        | 28 ++++++
+ src/southbridge/intel/lynxpoint/usb_xhci.c    | 41 ++++++++-
+ 8 files changed, 272 insertions(+), 2 deletions(-)
+ create mode 100644 src/include/cpu/x86/diag_tsc.h
+ create mode 100644 src/mainboard/lenovo/haswell/diag.c
+ create mode 100644 src/southbridge/intel/lynxpoint/diag_usb.h
+
+diff --git a/src/cpu/intel/haswell/haswell_init.c b/src/cpu/intel/haswell/haswell_init.c
+index 1c33eddb..ed955d87 100644
+--- a/src/cpu/intel/haswell/haswell_init.c
++++ b/src/cpu/intel/haswell/haswell_init.c
+@@ -6,6 +6,7 @@
+ #include <cpu/cpu.h>
+ #include <cpu/x86/mtrr.h>
+ #include <cpu/x86/msr.h>
++#include <cpu/x86/diag_tsc.h>
+ #include <cpu/x86/mp.h>
+ #include <cpu/intel/microcode.h>
+ #include <cpu/intel/smm_reloc.h>
+@@ -562,6 +563,9 @@ static void configure_mca(void)
+ /* All CPUs including BSP will run the following function. */
+ static void cpu_core_init(struct device *cpu)
+ {
++	/* DIAG: every processor, the boot one first, before anything is set */
++	diag_print_tsc("cpu_core_init");
++
+ 	/* Clear out pending MCEs */
+ 	configure_mca();
+ 
+@@ -598,6 +602,9 @@ static void cpu_core_init(struct device *cpu)
+ /* MP initialization support. */
+ static void pre_mp_init(void)
+ {
++	/* DIAG: the boot processor before the APs are started */
++	diag_print_tsc("pre_mp_init");
++
+ 	/* Before the APs start: they only use the cached values */
+ 	read_cpu_options();
+ 
+@@ -651,6 +658,9 @@ static void per_cpu_smm_trigger(void)
+ 
+ static void post_mp_init(void)
+ {
++	/* DIAG: the boot processor after the APs and the SMM relocation */
++	diag_print_tsc("post_mp_init");
++
+ 	/* Set Max Ratio */
+ 	set_max_ratio();
+ 
+diff --git a/src/include/cpu/x86/diag_tsc.h b/src/include/cpu/x86/diag_tsc.h
+new file mode 100644
+index 00000000..63d5d1d7
+--- /dev/null
++++ b/src/include/cpu/x86/diag_tsc.h
+@@ -0,0 +1,45 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * DIAG: prints of the TSC and of IA32_TSC_ADJUST along the boot, for one
++ * test build of the W541, never for a release. Linux finds TSC_ADJUST of
++ * the boot processor at a value near the TSC of the suspend at every
++ * resume from S3; the prints bracket the stage that sets it.
++ */
++
++#ifndef CPU_X86_DIAG_TSC_H
++#define CPU_X86_DIAG_TSC_H
++
++#include <arch/cpuid.h>
++#include <console/console.h>
++#include <cpu/x86/lapic.h>
++#include <cpu/x86/msr.h>
++#include <cpu/x86/tsc.h>
++#include <types.h>
++
++#define DIAG_MSR_IA32_TSC_ADJUST	0x3b
++
++/* CPUID.(EAX=7,ECX=0):EBX[1] */
++static inline bool diag_has_tsc_adjust(void)
++{
++	return cpuid_ext(7, 0).ebx & BIT(1);
++}
++
++static inline void diag_print_tsc(const char *tag)
++{
++	const uint64_t tsc = rdtscll();
++
++	if (!diag_has_tsc_adjust()) {
++		printk(BIOS_NOTICE, "DIAG tsc %s: lapic %u TSC=%llu, no TSC_ADJUST\n",
++		       tag, initial_lapicid(), tsc);
++		return;
++	}
++
++	const msr_t adj = rdmsr(DIAG_MSR_IA32_TSC_ADJUST);
++	const int64_t adjust = (int64_t)(((uint64_t)adj.hi << 32) | adj.lo);
++
++	printk(BIOS_NOTICE, "DIAG tsc %s: lapic %u TSC=%llu TSC_ADJUST=%lld\n",
++	       tag, initial_lapicid(), tsc, adjust);
++}
++
++#endif /* CPU_X86_DIAG_TSC_H */
+diff --git a/src/mainboard/lenovo/haswell/Makefile.mk b/src/mainboard/lenovo/haswell/Makefile.mk
+index 4334b652..0e50cdc3 100644
+--- a/src/mainboard/lenovo/haswell/Makefile.mk
++++ b/src/mainboard/lenovo/haswell/Makefile.mk
+@@ -5,6 +5,8 @@ romstage-y += variants/$(VARIANT_DIR)/romstage.c
+ 
+ ramstage-y += mainboard.c
+ ramstage-y += me_status.c
++# DIAG: the prints of the test build, never for a release
++ramstage-y += diag.c
+ ramstage-$(CONFIG_DRIVERS_OPTION_CFR) += cfr.c
+ 
+ ramstage-$(CONFIG_MAINBOARD_USE_LIBGFXINIT) += variants/$(VARIANT_DIR)/gma-mainboard.ads
+diff --git a/src/mainboard/lenovo/haswell/diag.c b/src/mainboard/lenovo/haswell/diag.c
+new file mode 100644
+index 00000000..e3a5ae8e
+--- /dev/null
++++ b/src/mainboard/lenovo/haswell/diag.c
+@@ -0,0 +1,47 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * DIAG: the TSC, IA32_TSC_ADJUST and the xHCI SuperSpeed ports at the boot
++ * states of ramstage, for one test build of the W541, never for a release.
++ * Two open items of docs/roadmap.md: Linux finds TSC_ADJUST of the boot
++ * processor near the TSC of the suspend at every resume from S3, and a
++ * USB 3.0 drive stays in Polling or Compliance mode after a warm reset.
++ */
++
++#include <acpi/acpi.h>
++#include <bootstate.h>
++#include <console/console.h>
++#include <cpu/x86/diag_tsc.h>
++#include <southbridge/intel/lynxpoint/diag_usb.h>
++
++static void diag_state(const char *tag)
++{
++	printk(BIOS_NOTICE, "DIAG state %s: S3 resume %d\n", tag, acpi_is_wakeup_s3());
++	diag_print_tsc(tag);
++	diag_print_usb_route(tag);
++	diag_print_ss_ports(tag, diag_xhci_bar(), diag_ss_port_count());
++}
++
++#define DIAG_STATE(func_, state_, when_, tag_)				\
++	static void func_(void *unused)					\
++	{								\
++		diag_state(tag_);					\
++	}								\
++	BOOT_STATE_INIT_ENTRY(state_, when_, func_, NULL)
++
++/* The first state of ramstage, before any device and before the MP init */
++DIAG_STATE(diag_pre_device, BS_PRE_DEVICE, BS_ON_ENTRY, "BS_PRE_DEVICE entry");
++/* Around the device init, where the MP init and the SMM relocation run */
++DIAG_STATE(diag_dev_init_entry, BS_DEV_INIT, BS_ON_ENTRY, "BS_DEV_INIT entry");
++DIAG_STATE(diag_dev_init_exit, BS_DEV_INIT, BS_ON_EXIT, "BS_DEV_INIT exit");
++DIAG_STATE(diag_post_device, BS_POST_DEVICE, BS_ON_ENTRY, "BS_POST_DEVICE entry");
++/* The resume path: the finalize SMI runs at this state too */
++DIAG_STATE(diag_os_resume, BS_OS_RESUME, BS_ON_ENTRY, "BS_OS_RESUME entry");
++/* The boot path: the last state before the payload */
++DIAG_STATE(diag_payload_boot, BS_PAYLOAD_BOOT, BS_ON_ENTRY, "BS_PAYLOAD_BOOT entry");
++
++/* Called by acpi_resume() after the GNVS SMI, right before the jump to the wake vector */
++void mainboard_suspend_resume(void)
++{
++	diag_state("before the wake vector");
++}
+diff --git a/src/mainboard/lenovo/haswell/romstage.c b/src/mainboard/lenovo/haswell/romstage.c
+index f786f68b..ca625cb0 100644
+--- a/src/mainboard/lenovo/haswell/romstage.c
++++ b/src/mainboard/lenovo/haswell/romstage.c
+@@ -1,7 +1,9 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
+ #include <stdint.h>
++#include <cpu/x86/diag_tsc.h>
+ #include <northbridge/intel/haswell/haswell.h>
++#include <southbridge/intel/lynxpoint/diag_usb.h>
+ #include <southbridge/intel/lynxpoint/pch.h>
+ #include <option.h>
+ #include <ec/lenovo/pmh7/pmh7.h>
+@@ -10,6 +12,10 @@
+ 
+ void mainboard_config_rcba(void)
+ {
++	/* DIAG: the first print of romstage, before the S3 check and the raminit */
++	diag_print_tsc("romstage start");
++	diag_print_usb_route("romstage start");
++
+ 	RCBA16(D31IR) = DIR_ROUTE(PIRQA, PIRQD, PIRQC, PIRQA);
+ 	RCBA16(D29IR) = DIR_ROUTE(PIRQH, PIRQD, PIRQA, PIRQC);
+ 	RCBA16(D28IR) = DIR_ROUTE(PIRQA, PIRQB, PIRQC, PIRQD);
+@@ -22,6 +28,9 @@ void mainboard_config_rcba(void)
+ 
+ void mb_late_romstage_setup(void)
+ {
++	/* DIAG: after the raminit, the last print of romstage */
++	diag_print_tsc(romstage_handoff_is_resume() ? "romstage end, S3 resume" : "romstage end");
++
+ 	u8 enable_peg = get_uint_option("enable_dual_graphics", 0);
+ 
+ 	/*
+diff --git a/src/southbridge/intel/lynxpoint/diag_usb.h b/src/southbridge/intel/lynxpoint/diag_usb.h
+new file mode 100644
+index 00000000..095abbb5
+--- /dev/null
++++ b/src/southbridge/intel/lynxpoint/diag_usb.h
+@@ -0,0 +1,92 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * DIAG: prints of the xHCI SuperSpeed ports and of the registers that route
++ * them, for one test build of the W541, never for a release. A USB 3.0
++ * drive in a SuperSpeed port stays in Polling or in Compliance mode after
++ * a warm reset on the W541 (nri); the prints follow the ports from the
++ * early USB init of romstage to the jump to the payload or to the OS.
++ */
++
++#ifndef SOUTHBRIDGE_INTEL_LYNXPOINT_DIAG_USB_H
++#define SOUTHBRIDGE_INTEL_LYNXPOINT_DIAG_USB_H
++
++#include <arch/io.h>
++#include <console/console.h>
++#include <device/mmio.h>
++#include <device/pci_def.h>
++#include <device/pci_ops.h>
++#include <southbridge/intel/lynxpoint/pch.h>
++#include <types.h>
++
++#define DIAG_XHCI_USB2PDO	0xe4
++
++/* The PCH registers that decide where the ports go and what boot this is */
++static inline void diag_print_usb_route(const char *tag)
++{
++	const u16 pmbase = get_pmbase();
++
++	printk(BIOS_NOTICE,
++	       "DIAG usb %s: PM1_STS=%04x PM1_CNT=%08x GEN_PMCON_2=%04x GEN_PMCON_3=%04x PMIR=%08x\n",
++	       tag, inw(pmbase + PM1_STS), inl(pmbase + PM1_CNT),
++	       pci_s_read_config16(PCH_LPC_DEV, GEN_PMCON_2),
++	       pci_s_read_config16(PCH_LPC_DEV, GEN_PMCON_3),
++	       pci_s_read_config32(PCH_LPC_DEV, PMIR));
++	printk(BIOS_NOTICE,
++	       "DIAG usb %s: xHCI PWR_CTL_STS=%04x USB2PR=%08x USB2PRM=%08x USB3PR=%08x USB3PRM=%08x USB3FUS=%08x USB2PDO=%08x USB3PDO=%08x\n",
++	       tag, pci_s_read_config16(PCH_XHCI_DEV, XHCI_PWR_CTL_STS),
++	       pci_s_read_config32(PCH_XHCI_DEV, XHCI_USB2PR),
++	       pci_s_read_config32(PCH_XHCI_DEV, XHCI_USB2PRM),
++	       pci_s_read_config32(PCH_XHCI_DEV, XHCI_USB3PR),
++	       pci_s_read_config32(PCH_XHCI_DEV, XHCI_USB3PRM),
++	       pci_s_read_config32(PCH_XHCI_DEV, XHCI_USB3FUS),
++	       pci_s_read_config32(PCH_XHCI_DEV, DIAG_XHCI_USB2PDO),
++	       pci_s_read_config32(PCH_XHCI_DEV, XHCI_USB3PDO));
++}
++
++/* The SuperSpeed ports the PCH has, from the fuses (as early_usb_native.c reads them) */
++static inline unsigned int diag_ss_port_count(void)
++{
++	if (CONFIG(INTEL_LYNXPOINT_LP))
++		return 4;
++
++	switch ((pci_s_read_config32(PCH_XHCI_DEV, XHCI_USB3FUS) >> XHCI_USB3FUS_SS_SHIFT) &
++		XHCI_USB3FUS_SS_MASK) {
++	case 3:
++		return 0;
++	case 2:
++		return 2;
++	case 1:
++		return 4;
++	default:
++		return 6;
++	}
++}
++
++/* The BAR of the xHCI as ramstage assigned it, NULL if it is not decoding memory */
++static inline const u8 *diag_xhci_bar(void)
++{
++	const u32 bar = pci_s_read_config32(PCH_XHCI_DEV, PCI_BASE_ADDRESS_0);
++	const u16 cmd = pci_s_read_config16(PCH_XHCI_DEV, PCI_COMMAND);
++
++	if (bar == 0 || bar == 0xffffffff || !(cmd & PCI_COMMAND_MEMORY))
++		return NULL;
++
++	return (const u8 *)(uintptr_t)(bar & ~0xf);
++}
++
++/* PORTSC of the first `count` SuperSpeed ports, with the BAR of the xHCI open */
++static inline void diag_print_ss_ports(const char *tag, const u8 *bar, unsigned int count)
++{
++	if (!bar) {
++		printk(BIOS_NOTICE, "DIAG usb %s: no xHCI BAR\n", tag);
++		return;
++	}
++
++	printk(BIOS_NOTICE, "DIAG usb %s: USBCMD=%08x SS PORTSC", tag, read32(bar + XHCI_USBCMD));
++	for (unsigned int port = 0; port < count; port++)
++		printk(BIOS_NOTICE, " %u=%08x", port, read32(bar + XHCI_USB3_PORTSC(port)));
++	printk(BIOS_NOTICE, "\n");
++}
++
++#endif /* SOUTHBRIDGE_INTEL_LYNXPOINT_DIAG_USB_H */
+diff --git a/src/southbridge/intel/lynxpoint/early_usb_native.c b/src/southbridge/intel/lynxpoint/early_usb_native.c
+index ff167fa1..e5e8b18b 100644
+--- a/src/southbridge/intel/lynxpoint/early_usb_native.c
++++ b/src/southbridge/intel/lynxpoint/early_usb_native.c
+@@ -12,6 +12,8 @@
+ #include <timer.h>
+ #include <types.h>
+ 
++#include "diag_usb.h"
++
+ static unsigned int is_usbr_enabled(void)
+ {
+ 	return !!(pci_read_config32(PCH_XHCI_DEV, XHCI_USB3FUS) & BIT(5));
+@@ -251,6 +253,9 @@ static bool reset_usb2_ports(const unsigned int ehci_ports)
+ /* Returns whether warm reset was successful */
+ static bool warm_reset_usb3_ports(const unsigned int xhci_ports)
+ {
++	/* DIAG: the ports before the warm reset is asked, and right after */
++	diag_print_ss_ports("warm reset, before WPR", (const u8 *)xhci_bar, xhci_ports);
++
+ 	for (unsigned int port = 0; port < xhci_ports; port++) {
+ 		/* Initiate warm reset for all USB3 ports */
+ 		clrsetbits32(
+@@ -258,6 +263,9 @@ static bool warm_reset_usb3_ports(const unsigned int xhci_ports)
+ 			XHCI_USB3_PORTSC_PED,
+ 			XHCI_USB3_PORTSC_WPR);
+ 	}
++
++	diag_print_ss_ports("warm reset, after WPR", (const u8 *)xhci_bar, xhci_ports);
++
+ 	/* Poll for port reset bit to be cleared or time out at 100ms */
+ 	struct stopwatch timer;
+ 	stopwatch_init_msecs_expire(&timer, 100);
+@@ -271,12 +279,14 @@ static bool warm_reset_usb3_ports(const unsigned int xhci_ports)
+ 		if (!reg32) {
+ 			const long elapsed_time = stopwatch_duration_usecs(&timer);
+ 			printk(BIOS_DEBUG, "%s: took %lu usecs\n", __func__, elapsed_time);
++			diag_print_ss_ports("warm reset, done", (const u8 *)xhci_bar, xhci_ports);
+ 			return true;
+ 		}
+ 		/* Reference code has a 10 ms delay here, but a smaller delay works too */
+ 		udelay(100);
+ 	} while (!stopwatch_expired(&timer));
+ 	printk(BIOS_ERR, "%s: timed out\n", __func__);
++	diag_print_ss_ports("warm reset, timed out", (const u8 *)xhci_bar, xhci_ports);
+ 	return !reg32;
+ }
+ 
+@@ -290,6 +300,10 @@ static void perform_xhci_ehci_switching_flow(const enum usb_port_route usb_route
+ 	const uint32_t ehci_mask = BIT(ehci_ports) - 1;
+ 	const uint32_t xhci_mask = BIT(xhci_ports) - 1;
+ 
++	/* DIAG: what the ports look like as romstage finds them */
++	diag_print_usb_route("switching flow, entry");
++	diag_print_ss_ports("switching flow, entry", (const u8 *)xhci_bar, xhci_ports);
++
+ 	/** TODO: Handle USBr port? How, though? **/
+ 	pci_update_config32(dev, XHCI_USB2PRM, ~XHCI_USB2PR_HCSEL, ehci_mask);
+ 	pci_update_config32(dev, XHCI_USB3PRM, ~XHCI_USB3PR_SSEN,  xhci_mask);
+@@ -345,6 +359,10 @@ static void perform_xhci_ehci_switching_flow(const enum usb_port_route usb_route
+ 
+ 	/* Route to xHCI if xHCI enabled */
+ 	if (usb_route == ROUTE_TO_XHCI) {
++		/* DIAG: MEM_SR is set on an S3 resume and after a warm reset alike */
++		printk(BIOS_NOTICE, "DIAG usb switching flow: MEM_SR=%d, warm reset %s\n",
++		       is_mem_sr(), is_mem_sr() ? "asked" : "skipped");
++
+ 		if (is_mem_sr()) {
+ 			if (!warm_reset_usb3_ports(xhci_ports))
+ 				printk(BIOS_ERR, "USB3 warm reset timed out\n");
+@@ -355,6 +373,10 @@ static void perform_xhci_ehci_switching_flow(const enum usb_port_route usb_route
+ 
+ 		const uint32_t ehci_port_mask = pci_read_config32(dev, XHCI_USB2PRM) & 0x7fff;
+ 		pci_update_config32(dev, XHCI_USB2PR, ~XHCI_USB2PR_HCSEL, ehci_port_mask);
++
++		/* DIAG: the ports with the routing set */
++		diag_print_usb_route("switching flow, routed");
++		diag_print_ss_ports("switching flow, routed", (const u8 *)xhci_bar, xhci_ports);
+ 	}
+ }
+ 
+@@ -579,6 +601,12 @@ void early_usb_init(void)
+ 	usb_overcurrent_mapping();
+ 	program_ehci_port_length();
+ 	/** FIXME: USB per port control is missing, is it needed? **/
++
++	/* DIAG: the ports as romstage leaves them, 10 ms later too */
++	diag_print_ss_ports("early_usb_init exit", (const u8 *)xhci_bar, ss_port_count());
++	mdelay(10);
++	diag_print_ss_ports("early_usb_init exit +10 ms", (const u8 *)xhci_bar, ss_port_count());
++
+ 	xhci_close_memory_space();
+ 	/** TODO: Close EHCI memory space? **/
+ }
+diff --git a/src/southbridge/intel/lynxpoint/usb_xhci.c b/src/southbridge/intel/lynxpoint/usb_xhci.c
+index 72b53a2d..021ce378 100644
+--- a/src/southbridge/intel/lynxpoint/usb_xhci.c
++++ b/src/southbridge/intel/lynxpoint/usb_xhci.c
+@@ -11,6 +11,10 @@
+ #include "iobp.h"
+ #include "pch.h"
+ 
++#ifndef __SIMPLE_DEVICE__
++#include "diag_usb.h"
++#endif
++
+ #ifdef __SIMPLE_DEVICE__
+ static u8 *usb_xhci_mem_base(pci_devfn_t dev)
+ #else
+@@ -95,6 +99,13 @@ static void usb_xhci_reset_usb3(struct device *dev, int all)
+ 	/* Get mask of disabled ports */
+ 	port_disabled = pci_read_config32(dev, XHCI_USB3PDO);
+ 
++	/* DIAG: the ports as found, and which of them this call resets */
++	printk(BIOS_NOTICE, "DIAG usb xhci reset (all=%d, USB3PDO=%08x) entry: SS PORTSC",
++	       all, port_disabled);
++	for (port = 0; port < port_count; port++)
++		printk(BIOS_NOTICE, " %d=%08x", port, read32(mem_base + XHCI_USB3_PORTSC(port)));
++	printk(BIOS_NOTICE, "\n");
++
+ 	/* Wait until all enabled ports are done polling */
+ 	for (timeout = XHCI_RESET_TIMEOUT; timeout; timeout--) {
+ 		int complete = 1;
+@@ -114,6 +125,10 @@ static void usb_xhci_reset_usb3(struct device *dev, int all)
+ 		udelay(XHCI_RESET_DELAY_US);
+ 	}
+ 
++	/* DIAG: how long the polling took to end, if it did */
++	printk(BIOS_NOTICE, "DIAG usb xhci reset: polling %s after %d ms\n",
++	       timeout ? "over" : "still on", XHCI_RESET_TIMEOUT - timeout);
++
+ 	/* Reset all requested ports */
+ 	for (port = 0; port < port_count; port++) {
+ 		u8 *portsc = mem_base + XHCI_USB3_PORTSC(port);
+@@ -123,10 +138,15 @@ static void usb_xhci_reset_usb3(struct device *dev, int all)
+ 		status = read32(portsc) & XHCI_USB3_PORTSC_PLS;
+ 		/* Reset all or only disconnected ports */
+ 		if (all || (status == XHCI_PLSR_RXDETECT ||
+-			    status == XHCI_PLSR_POLLING))
++			    status == XHCI_PLSR_POLLING)) {
++			printk(BIOS_NOTICE, "DIAG usb xhci reset: WPR to port %d (PLS %u)\n",
++			       port, status >> 5);
+ 			usb_xhci_reset_port_usb3(mem_base, port);
+-		else
++		} else {
++			printk(BIOS_NOTICE, "DIAG usb xhci reset: port %d left alone (PLS %u)\n",
++			       port, status >> 5);
+ 			port_disabled |= 1 << port;
++		}
+ 	}
+ 
+ 	/* Wait for warm reset complete on all reset ports */
+@@ -147,6 +167,13 @@ static void usb_xhci_reset_usb3(struct device *dev, int all)
+ 		udelay(XHCI_RESET_DELAY_US);
+ 	}
+ 
++	/* DIAG: the warm reset, complete or not, and the ports before the clear */
++	printk(BIOS_NOTICE, "DIAG usb xhci reset: WRC %s after %d ms: SS PORTSC",
++	       timeout ? "set" : "not set", XHCI_RESET_TIMEOUT - timeout);
++	for (port = 0; port < port_count; port++)
++		printk(BIOS_NOTICE, " %d=%08x", port, read32(mem_base + XHCI_USB3_PORTSC(port)));
++	printk(BIOS_NOTICE, "\n");
++
+ 	/* Clear port change status bits */
+ 	for (port = 0; port < port_count; port++)
+ 		usb_xhci_reset_status_usb3(mem_base, port);
+@@ -277,6 +304,12 @@ static void usb_xhci_init(struct device *dev)
+ 	u8 *mem_base = usb_xhci_mem_base(dev);
+ 	const pch_config_t *config = dev->chip_info;
+ 
++	/* DIAG: the ports as ramstage finds them, before the controller is set up */
++	printk(BIOS_NOTICE, "DIAG usb xhci init: S3 resume %d, xhci_default %d\n",
++	       acpi_is_wakeup_s3(), config ? config->xhci_default : -1);
++	diag_print_usb_route("xhci init entry");
++	diag_print_ss_ports("xhci init entry", mem_base, usb_xhci_port_count_usb3(mem_base));
++
+ 	/* D20:F0:74h[1:0] = 00b (set D0 state) */
+ 	pci_update_config16(dev, XHCI_PWR_CTL_STS, ~PWR_CTL_SET_MASK, PWR_CTL_SET_D0);
+ 
+@@ -331,6 +364,10 @@ static void usb_xhci_init(struct device *dev)
+ 		/* Route all ports to XHCI */
+ 		apm_control(APM_CNT_ROUTE_ALL_XHCI);
+ 	}
++
++	/* DIAG: the ports as ramstage leaves them */
++	diag_print_usb_route("xhci init exit");
++	diag_print_ss_ports("xhci init exit", mem_base, usb_xhci_port_count_usb3(mem_base));
+ }
+ 
+ static struct device_operations usb_xhci_ops = {
+-- 
+2.43.0
+
