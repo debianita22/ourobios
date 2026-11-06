@@ -29,6 +29,7 @@ this one are the reports and logs of rc6.
 | rc3 | `0b05bb3` | documents and tools only (MEM-01 known with the ME off, `update.py vboot`) | capsule from rc2, slot A |
 | rc4 | `2d05c5c` | patch 0224 (the processor graphics always on, no *Intel graphics* switch) | capsule from rc3, slot B |
 | rc5 | `cafc6b2` | `hw-report.py` BOOT-02 net of the ME's wait; the firmware of rc4 | capsule from rc4, slot A |
+| rc7 | `9cf91a1` | patches 0228 and 0229 (the two ACPI packages), the records of the W541 and 0231-0232 | capsule from rc6, slot A |
 | rc6 | `65e0068` | patches 0225 (the measurement log at DEBUG), 0226 (*Disabled (HAP bit)* for the ME), 0227 and `edk2/0053` (no UEFI Shell), `edk2/0054-0055` (two SDHCI drivers out), the serial console off by default | capsule from rc5, slot B: the first capsule written by the payload of v1.6.0 itself |
 
 ## Results

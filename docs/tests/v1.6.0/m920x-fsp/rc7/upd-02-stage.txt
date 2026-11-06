@@ -1,0 +1,15 @@
+capsula:   /root/rel160rc7/m920x-coreboot-v1.6.0-rc7-fsp.cap
+firmware:  ouroBIOS, variante m920x-fsp (ceef6456-ca3b-4cf3-a784-4895efaf1bde)
+versione:  v1.6.0-rc7, minima v1.3.9
+regioni:   RW_SECTION_A RW_SECTION_B
+firmata:   O=w541-coreboot-env, CN=W541 coreboot capsule signing
+           SHA-256 BE:A3:E5:65:60:43:87:F6:61:07:82:33:4B:90:BB:7E:97:35:AF:16:08:16:AB:CA:78:8F:3F:C1:24:9C:6A:B5
+firma:     valida
+
+pronta: m920x-fsp v1.6.0-rc6 -> v1.6.0-rc7, si applica al prossimo riavvio.
+Il firmware la verifica e la scrive in circa un minuto, con una barra sotto il
+logo: non spegnere. Poi riparte da solo con il firmware nuovo.
+Il training della RAM resta: lo slot nuovo lo rifa' solo se non vale per lui (un altro
+FSP-M, processore o Hyper-Threading). Se lo slot nuovo non partisse due volte di fila,
+vboot torna a quello di adesso: allora update.py other-slot --retrain.
+  sudo systemctl reboot

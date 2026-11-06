@@ -1,0 +1,63 @@
+0	15223	0	1st timestamp
+11	22967	7744	start of bootblock
+12	53679	30711	end of bootblock
+5	53728	49	start of verified boot
+503	54057	328	starting to initialize TPM
+504	83766	29708	finished TPM initialization
+505	110059	26293	starting to verify keyblock/preamble (RSA)
+506	199014	88954	finished verifying keyblock/preamble (RSA)
+507	201383	2369	starting to verify body (load+SHA2+RSA) 
+508	433098	231714	finished loading body
+509	470418	37320	finished calculating body hash (SHA2)
+510	495084	24666	finished verifying body signature (RSA)
+511	505470	10385	starting TPM PCR extend
+512	636463	130993	finished TPM PCR extend
+513	636463	0	starting locking TPM
+514	636463	0	finished locking TPM
+6	639801	3337	end of verified boot
+13	647896	8095	starting to load romstage
+14	698747	50850	finished loading romstage
+1	698756	8	start of romstage
+970	762313	63557	loading FSP-M
+2	848588	86274	before RAM initialization
+950	887175	38586	calling FspMemoryInit
+951	1121048	233873	returning from FspMemoryInit
+550	1133373	12324	starting to load ChromeOS VPD
+551	1144186	10812	finished loading ChromeOS VPD (RO)
+3	1189580	45394	after RAM initialization
+4	1316342	126761	end of romstage
+100	1323870	7528	start of postcar
+101	1323870	0	end of postcar
+8	1323941	70	starting to load ramstage
+15	1342211	18269	starting LZMA decompress (ignore for x86)
+16	1356069	13858	finished LZMA decompress (ignore for x86)
+9	1356161	91	finished loading ramstage
+10	1381975	25814	start of ramstage
+971	1532240	150265	loading FSP-S
+15	1609061	76820	starting LZMA decompress (ignore for x86)
+16	1622934	13873	finished LZMA decompress (ignore for x86)
+30	2205094	582159	device enumeration
+954	2665328	460234	calling FspSiliconInit
+955	2725460	60131	returning from FspSiliconInit
+31	2912182	186722	<unknown>
+40	3528696	616513	device configuration
+956	4773799	1245102	calling FspNotify(AfterPciEnumeration)
+957	4774199	400	returning from FspNotify(AfterPciEnumeration)
+50	5391235	617036	device enable
+60	5580052	188817	device initialization
+15	5683248	103196	starting LZMA decompress (ignore for x86)
+16	5683340	91	finished LZMA decompress (ignore for x86)
+114	8311907	2628567	started elog init
+115	8341191	29283	finished elog init
+70	8385749	44558	device setup done
+75	8392879	7129	cbmem post
+80	8523715	130836	write tables
+85	9394211	870495	finalize chips
+90	9401667	7456	starting to load payload
+15	9775738	374070	starting LZMA decompress (ignore for x86)
+16	9922179	146441	finished LZMA decompress (ignore for x86)
+958	9939548	17368	calling FspNotify(ReadyToBoot)
+959	9939997	449	returning from FspNotify(ReadyToBoot)
+960	9940127	129	calling FspNotify(EndOfFirmware)
+961	9940655	528	returning from FspNotify(EndOfFirmware)
+99	10502383	561728	selfboot jump
