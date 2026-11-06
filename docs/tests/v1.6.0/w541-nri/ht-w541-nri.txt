@@ -1,0 +1,256 @@
+# Hyper-Threading through SOFT_RESET_DATA bit 0 on the W541, 2026-11-06
+# rcba.py and ouro-exp.sh are below; each step's summary as written on the machine
+
+## A: bit set from Linux (python3 rcba.py 38f8=1 38f4=1), then rtcwake -m mem -s 25
+== before S3
+0x38f0=0x00000000 0x38f4=0x00000001 0x38f8=0x00000001
+      8 40008
+8
+ven 6 nov 2026, 09:20:24, CET
+== after S3
+ven 6 nov 2026, 09:21:36, CET
+0x38f0=0x00000000 0x38f4=0x00000001 0x38f8=0x00000001
+online: 0-3 offline: 4-7
+cpu0 MSR35=40004
+cpu1 MSR35=40004
+cpu2 MSR35=40004
+cpu3 MSR35=40004
+cpu4 MSR35=rdmsr: open: No such file or directory
+cpu5 MSR35=rdmsr: open: No such file or directory
+cpu6 MSR35=rdmsr: open: No such file or directory
+cpu7 MSR35=rdmsr: open: No such file or directory
+CPU(s):                                  8
+On-line CPU(s) list:                     0-3
+Model name:                              Intel(R) Core(TM) i7-4810MQ CPU @ 2.80GHz
+Thread(s) per core:                      1
+Core(s) per socket:                      4
+CPU(s) scaling MHz:                      76%
+nov 06 09:21:31 Wurtz kernel: smpboot: CPU 7 is now offline
+nov 06 09:21:31 Wurtz kernel: smpboot: CPU 6 is now offline
+nov 06 09:21:31 Wurtz kernel: smpboot: CPU 5 is now offline
+nov 06 09:21:31 Wurtz kernel: smpboot: CPU 4 is now offline
+nov 06 09:21:31 Wurtz kernel: smpboot: CPU 3 is now offline
+nov 06 09:21:31 Wurtz kernel: smpboot: CPU 2 is now offline
+nov 06 09:21:31 Wurtz kernel: smpboot: CPU 1 is now offline
+nov 06 09:21:31 Wurtz kernel: [Firmware Bug]: TSC ADJUST differs: CPU0 0 --> 238168774730. Restoring
+nov 06 09:21:31 Wurtz kernel: smpboot: Booting Node 0 Processor 1 APIC 0x2
+nov 06 09:21:31 Wurtz kernel: CPU1 is up
+nov 06 09:21:31 Wurtz kernel: smpboot: Booting Node 0 Processor 2 APIC 0x4
+nov 06 09:21:31 Wurtz kernel: CPU2 is up
+nov 06 09:21:31 Wurtz kernel: smpboot: Booting Node 0 Processor 3 APIC 0x6
+nov 06 09:21:31 Wurtz kernel: CPU3 is up
+nov 06 09:21:31 Wurtz kernel: smpboot: Booting Node 0 Processor 4 APIC 0x1
+nov 06 09:21:31 Wurtz kernel: CPU4 failed to report alive state
+nov 06 09:21:31 Wurtz kernel: Error taking CPU4 up: -5
+nov 06 09:21:31 Wurtz kernel: smpboot: Booting Node 0 Processor 5 APIC 0x3
+nov 06 09:21:31 Wurtz kernel: CPU5 failed to report alive state
+nov 06 09:21:31 Wurtz kernel: Error taking CPU5 up: -5
+[INFO ]  TPM: Handle S3 resume.
+[DEBUG]  S3 Resume
+[DEBUG]  S3 Resume
+[DEBUG]  S3 Resume
+[DEBUG]  CPU has 4 cores, 4 threads enabled.
+[DEBUG]  Attempting to start 3 APs
+[DEBUG]  S3 resume: PM1 and GPE0 status left to the OS
+[INFO ]  S3 resume: display left to the OS
+[INFO ]  Disabled capsule update SMI handler
+
+## B-reboot-ht-off
+# B-reboot-ht-off  2026-11-06T09:27:09+01:00  boot_id=ddf148d8-7be1-40e4-a9ee-76769034df1e
+## SOFT_RESET (RCBA 0x38f0 lock, 0x38f4 ctrl, 0x38f8 data)
+0x38f0=0x00000000 0x38f4=0x00000001 0x38f8=0x00000001
+## CPUs
+online=0-3 offline= present=0-3
+cpu0 MSR_CORE_THREAD_COUNT(0x35)=40004
+cpu1 MSR_CORE_THREAD_COUNT(0x35)=40004
+cpu2 MSR_CORE_THREAD_COUNT(0x35)=40004
+cpu3 MSR_CORE_THREAD_COUNT(0x35)=40004
+cpu4 MSR_CORE_THREAD_COUNT(0x35)=rdmsr: open: No such file or directory
+cpu5 MSR_CORE_THREAD_COUNT(0x35)=rdmsr: open: No such file or directory
+cpu6 MSR_CORE_THREAD_COUNT(0x35)=rdmsr: open: No such file or directory
+cpu7 MSR_CORE_THREAD_COUNT(0x35)=rdmsr: open: No such file or directory
+CPU(s):                                  4
+On-line CPU(s) list:                     0-3
+Model name:                              Intel(R) Core(TM) i7-4810MQ CPU @ 2.80GHz
+Thread(s) per core:                      1
+Core(s) per socket:                      4
+CPU(s) scaling MHz:                      75%
+## MOR
+ 07 00 00 00 00
+## kernel: CPU bring-up and USB SS2
+nov 06 09:26:12 cachyos kernel: APIC: Static calls initialized
+nov 06 09:26:12 cachyos kernel: ACPI: APIC 0x000000007F5A6000 000072 (v03 COREv4 COREBOOT 00000000 CORE 20251212)
+nov 06 09:26:12 cachyos kernel: ACPI: Reserving APIC table memory at [mem 0x7f5a6000-0x7f5a6071]
+nov 06 09:26:12 cachyos kernel: ACPI: LAPIC_NMI (acpi_id[0xff] high edge lint[0x1])
+nov 06 09:26:12 cachyos kernel: IOAPIC[0]: apic_id 0, version 32, address 0xfec00000, GSI 0-23
+nov 06 09:26:12 cachyos kernel: CPU topo: Allowing 4 present CPUs plus 0 hotplug CPUs
+nov 06 09:26:12 cachyos kernel: APIC: Switch to symmetric I/O mode setup
+nov 06 09:26:12 cachyos kernel: DMAR-IR: IOAPIC id 0 under DRHD base  0xfed91000 IOMMU 1
+nov 06 09:26:12 cachyos kernel: APIC: Switched APIC routing to: cluster x2apic
+nov 06 09:26:12 cachyos kernel: smpboot: CPU0: Intel(R) Core(TM) i7-4810MQ CPU @ 2.80GHz (family: 0x6, model: 0x3c, stepping: 0x3)
+nov 06 09:26:12 cachyos kernel: smpboot: x86: Booting SMP configuration:
+nov 06 09:26:12 cachyos kernel: smpboot: Total of 4 processors activated (22348.72 BogoMIPS)
+nov 06 09:26:12 cachyos kernel: ACPI: Using IOAPIC for interrupt routing
+usb4-port2 Cannot enable: 11, first: nov 06 09:26:28
+0x38f0=0x00000000 0x38f4=0x00000001 0x38f8=0x00000000
+MOR set:  07 00 00 00 01
+cbmem: [INFO ]  TPM: setup succeeded
+cbmem: [INFO ]  Using cached memory parameters
+cbmem: [DEBUG]  CPU has 4 cores, 4 threads enabled.
+cbmem: [DEBUG]  Attempting to start 3 APs
+cbmem: [INFO ]  DRAM clear: option when the OS asks, request of the OS no: not clearing
+
+## C-reboot-ht-on-mor
+# C-reboot-ht-on-mor  2026-11-06T09:29:26+01:00  boot_id=cce20d23-4bb2-45db-80a3-22827019f346
+## SOFT_RESET (RCBA 0x38f0 lock, 0x38f4 ctrl, 0x38f8 data)
+0x38f0=0x00000000 0x38f4=0x00000001 0x38f8=0x00000000
+## CPUs
+online=0-7 offline= present=0-7
+cpu0 MSR_CORE_THREAD_COUNT(0x35)=40008
+cpu1 MSR_CORE_THREAD_COUNT(0x35)=40008
+cpu2 MSR_CORE_THREAD_COUNT(0x35)=40008
+cpu3 MSR_CORE_THREAD_COUNT(0x35)=40008
+cpu4 MSR_CORE_THREAD_COUNT(0x35)=40008
+cpu5 MSR_CORE_THREAD_COUNT(0x35)=40008
+cpu6 MSR_CORE_THREAD_COUNT(0x35)=40008
+cpu7 MSR_CORE_THREAD_COUNT(0x35)=40008
+CPU(s):                                  8
+On-line CPU(s) list:                     0-7
+Model name:                              Intel(R) Core(TM) i7-4810MQ CPU @ 2.80GHz
+Thread(s) per core:                      2
+Core(s) per socket:                      4
+CPU(s) scaling MHz:                      70%
+## MOR
+ 07 00 00 00 00
+## kernel: CPU bring-up and USB SS2
+nov 06 09:28:07 cachyos kernel: APIC: Static calls initialized
+nov 06 09:28:07 cachyos kernel: ACPI: APIC 0x000000007F5A5000 000092 (v03 COREv4 COREBOOT 00000000 CORE 20251212)
+nov 06 09:28:07 cachyos kernel: ACPI: Reserving APIC table memory at [mem 0x7f5a5000-0x7f5a5091]
+nov 06 09:28:07 cachyos kernel: ACPI: LAPIC_NMI (acpi_id[0xff] high edge lint[0x1])
+nov 06 09:28:07 cachyos kernel: IOAPIC[0]: apic_id 0, version 32, address 0xfec00000, GSI 0-23
+nov 06 09:28:07 cachyos kernel: CPU topo: Allowing 8 present CPUs plus 0 hotplug CPUs
+nov 06 09:28:07 cachyos kernel: APIC: Switch to symmetric I/O mode setup
+nov 06 09:28:07 cachyos kernel: DMAR-IR: IOAPIC id 0 under DRHD base  0xfed91000 IOMMU 1
+nov 06 09:28:07 cachyos kernel: APIC: Switched APIC routing to: cluster x2apic
+nov 06 09:28:07 cachyos kernel: smpboot: CPU0: Intel(R) Core(TM) i7-4810MQ CPU @ 2.80GHz (family: 0x6, model: 0x3c, stepping: 0x3)
+nov 06 09:28:07 cachyos kernel: smpboot: x86: Booting SMP configuration:
+nov 06 09:28:07 cachyos kernel: smpboot: Total of 8 processors activated (44695.55 BogoMIPS)
+nov 06 09:28:07 cachyos kernel: ACPI: Using IOAPIC for interrupt routing
+usb4-port2 Cannot enable: 19, first: nov 06 09:28:11
+0x38f0=0x00000000 0x38f4=0x00000001 0x38f8=0x00000001
+cbmem: [INFO ]  TPM: setup succeeded
+cbmem: [INFO ]  Using cached memory parameters
+cbmem: [DEBUG]  CPU has 4 cores, 8 threads enabled.
+cbmem: [DEBUG]  Attempting to start 7 APs
+cbmem: [INFO ]  DRAM clear: option when the OS asks, request of the OS yes: clearing
+cbmem: [DEBUG]  BS: BS_DEV_INIT exit times (exec / console): 1647 / 0 ms
+
+## D-cold-boot
+# D-cold-boot  2026-11-06T09:31:40+01:00  boot_id=64bd2c90-1a04-4764-b00d-137ad4b1e272
+## SOFT_RESET (RCBA 0x38f0 lock, 0x38f4 ctrl, 0x38f8 data)
+0x38f0=0x00000000 0x38f4=0x00000000 0x38f8=0x00000000
+## CPUs
+online=0-7 offline= present=0-7
+cpu0 MSR_CORE_THREAD_COUNT(0x35)=40008
+cpu1 MSR_CORE_THREAD_COUNT(0x35)=40008
+cpu2 MSR_CORE_THREAD_COUNT(0x35)=40008
+cpu3 MSR_CORE_THREAD_COUNT(0x35)=40008
+cpu4 MSR_CORE_THREAD_COUNT(0x35)=40008
+cpu5 MSR_CORE_THREAD_COUNT(0x35)=40008
+cpu6 MSR_CORE_THREAD_COUNT(0x35)=40008
+cpu7 MSR_CORE_THREAD_COUNT(0x35)=40008
+CPU(s):                                  8
+On-line CPU(s) list:                     0-7
+Model name:                              Intel(R) Core(TM) i7-4810MQ CPU @ 2.80GHz
+Thread(s) per core:                      2
+Core(s) per socket:                      4
+CPU(s) scaling MHz:                      63%
+## MOR
+ 07 00 00 00 00
+## kernel: CPU bring-up and USB SS2
+nov 06 09:30:43 cachyos kernel: APIC: Static calls initialized
+nov 06 09:30:43 cachyos kernel: ACPI: APIC 0x000000007F5A5000 000092 (v03 COREv4 COREBOOT 00000000 CORE 20251212)
+nov 06 09:30:43 cachyos kernel: ACPI: Reserving APIC table memory at [mem 0x7f5a5000-0x7f5a5091]
+nov 06 09:30:43 cachyos kernel: ACPI: LAPIC_NMI (acpi_id[0xff] high edge lint[0x1])
+nov 06 09:30:43 cachyos kernel: IOAPIC[0]: apic_id 0, version 32, address 0xfec00000, GSI 0-23
+nov 06 09:30:43 cachyos kernel: CPU topo: Allowing 8 present CPUs plus 0 hotplug CPUs
+nov 06 09:30:43 cachyos kernel: APIC: Switch to symmetric I/O mode setup
+nov 06 09:30:43 cachyos kernel: DMAR-IR: IOAPIC id 0 under DRHD base  0xfed91000 IOMMU 1
+nov 06 09:30:43 cachyos kernel: APIC: Switched APIC routing to: cluster x2apic
+nov 06 09:30:43 cachyos kernel: smpboot: CPU0: Intel(R) Core(TM) i7-4810MQ CPU @ 2.80GHz (family: 0x6, model: 0x3c, stepping: 0x3)
+nov 06 09:30:43 cachyos kernel: smpboot: x86: Booting SMP configuration:
+nov 06 09:30:43 cachyos kernel: smpboot: Total of 8 processors activated (44696.40 BogoMIPS)
+nov 06 09:30:43 cachyos kernel: ACPI: Using IOAPIC for interrupt routing
+usb4-port2 Cannot enable: 0, first: 
+0x38f0=0x00000000 0x38f4=0x00000000 0x38f8=0x00000000
+cbmem: [INFO ]  TPM: setup succeeded
+cbmem: [INFO ]  Using cached memory parameters
+cbmem: [DEBUG]  CPU has 4 cores, 8 threads enabled.
+cbmem: [DEBUG]  Attempting to start 7 APs
+cbmem: [INFO ]  DRAM clear: option when the OS asks, request of the OS no: not clearing
+
+## rcba.py
+import mmap, os, struct, sys
+# usage: rcba.py [OFF=VAL ...]  (prints 0x38f0/0x38f4/0x38f8 after the writes)
+fd=os.open("/dev/mem",os.O_RDWR|os.O_SYNC); m=mmap.mmap(fd,0x1000,mmap.MAP_SHARED,mmap.PROT_READ|mmap.PROT_WRITE,offset=0xfed1f000)
+for a in sys.argv[1:]:
+    o,v=a.split("="); o=int(o,16); v=int(v,16); struct.pack_into("<I",m,o-0x3000,v)
+print(" ".join(f"0x{o:04x}=0x{struct.unpack_from('<I',m,o-0x3000)[0]:08x}" for o in (0x38f0,0x38f4,0x38f8)))
+
+## ouro-exp.sh (the reboot chain, run once per boot by a oneshot service)
+#!/bin/bash
+# Reboot chain for the W541 roadmap data (Hyper-Threading via SOFT_RESET_DATA,
+# DRAM clear on MOR, cold boot). Run once per boot by ouro-exp.service.
+OUT=/home/domenico/ourobios-test-v1.6.0/w541-nri/dev
+REPO=/home/domenico/ourobios-next
+ST=/var/lib/ouro-exp/step
+MORV=/sys/firmware/efi/efivars/MemoryOverwriteRequestControl-e20939be-32d4-41be-a150-897f85d49829
+step=$(cat $ST 2>/dev/null || echo none)
+sleep 45
+modprobe msr
+collect() {  # $1 = name
+  local d=$OUT/$1; mkdir -p $d
+  {
+    echo "# $1  $(date -Is)  boot_id=$(cat /proc/sys/kernel/random/boot_id)"
+    echo "## SOFT_RESET (RCBA 0x38f0 lock, 0x38f4 ctrl, 0x38f8 data)"; python3 -I /usr/local/sbin/ouro-rcba.py
+    echo "## CPUs"; echo "online=$(cat /sys/devices/system/cpu/online) offline=$(cat /sys/devices/system/cpu/offline) present=$(cat /sys/devices/system/cpu/present)"
+    for c in $(seq 0 7); do echo "cpu$c MSR_CORE_THREAD_COUNT(0x35)=$(rdmsr -p$c 0x35 2>&1)"; done
+    lscpu | grep -E "^CPU\(s\)|On-line|Off-line|Thread|Core"
+    echo "## MOR"; od -An -tx1 $MORV
+    echo "## kernel: CPU bring-up and USB SS2"; journalctl -k -b --no-pager | grep -E "smpboot|failed to report|Error taking|TSC ADJUST|Allowing|APIC" | head -30
+    echo "usb4-port2 Cannot enable: $(journalctl -k -b --no-pager | grep -c 'usb4-port2: Cannot enable'), first: $(journalctl -k -b --no-pager | grep -m1 'Cannot enable' | cut -c1-15)"
+  } > $d/summary.txt 2>&1
+  echo on > /sys/bus/pci/devices/0000:00:14.0/power/control; mount | grep -q debugfs || mount -t debugfs none /sys/kernel/debug
+  sleep 1; for p in /sys/kernel/debug/usb/xhci/0000:00:14.0/ports/port*; do echo "$(basename $p) $(cat $p/portsc)"; done > $d/xhci-portsc.txt
+  echo auto > /sys/bus/pci/devices/0000:00:14.0/power/control
+  cbmem -1 > $d/cbmem-1.txt 2>&1; cbmem -t > $d/cbmem-t.txt 2>&1
+  python3 -I /usr/local/sbin/ouro-pchregs.py > $d/pchregs.txt 2>&1
+  python3 -I $REPO/tools/hw-report.py --markdown $d/hw-report.md > $d/hw-report.txt 2>&1
+  python3 -I $REPO/tools/elog.py > $d/elog.txt 2>&1
+  journalctl -k -b --no-pager > $d/dmesg.txt 2>&1
+  chown -R domenico:domenico $OUT
+}
+case $step in
+  B)  # after an ACPI reset (CF9=6) with SOFT_RESET_CTRL=1, DATA=1
+      collect B-reboot-ht-off
+      # back on through the same path: DATA=0, CTRL stays 1; and a MOR request for the DRAM clear timing
+      python3 -I /usr/local/sbin/ouro-rcba.py 38f8=0 38f4=1 >> $OUT/B-reboot-ht-off/summary.txt
+      chattr -i $MORV 2>/dev/null; printf '\x07\x00\x00\x00\x01' > $MORV; echo "MOR set: $(od -An -tx1 $MORV)" >> $OUT/B-reboot-ht-off/summary.txt
+      echo C > $ST; sync; systemctl reboot ;;
+  C)  collect C-reboot-ht-on-mor
+      # does the bit survive S5? set it again, then a cold boot by the RTC
+      python3 -I /usr/local/sbin/ouro-rcba.py 38f8=1 38f4=1 >> $OUT/C-reboot-ht-on-mor/summary.txt
+      echo D > $ST; sync
+      rtcwake -m off -s 120 ;;
+  D)  collect D-cold-boot
+      if [ "$(cat /sys/devices/system/cpu/online)" != "0-7" ]; then
+        python3 -I /usr/local/sbin/ouro-rcba.py 38f8=0 38f4=1 >> $OUT/D-cold-boot/summary.txt
+        echo E > $ST; sync; systemctl reboot
+      else
+        python3 -I /usr/local/sbin/ouro-rcba.py 38f4=0 38f8=0 >> $OUT/D-cold-boot/summary.txt
+        echo done > $ST; systemctl disable ouro-exp.service
+      fi ;;
+  E)  collect E-reboot-ht-restored
+      python3 -I /usr/local/sbin/ouro-rcba.py 38f4=0 38f8=0 >> $OUT/E-reboot-ht-restored/summary.txt
+      echo done > $ST; systemctl disable ouro-exp.service ;;
+esac

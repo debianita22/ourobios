@@ -1,0 +1,266 @@
+# W541 (20EGS24J00), v1.6.0-rc6-nri, Linux 7.3.0-4-cachyos, 2026-11-06
+# Collected from the running machine, nothing written but the SOFT_RESET registers of the Hyper-Threading test.
+
+## lspci -nn
+00:00.0 Host bridge [0600]: Intel Corporation Xeon E3-1200 v3/4th Gen Core Processor DRAM Controller [8086:0c04] (rev 06)
+00:02.0 VGA compatible controller [0300]: Intel Corporation 4th Gen Core Processor Integrated Graphics Controller [8086:0416] (rev 06)
+00:03.0 Audio device [0403]: Intel Corporation Xeon E3-1200 v3/4th Gen Core Processor HD Audio Controller [8086:0c0c] (rev 06)
+00:04.0 Signal processing controller [1180]: Intel Corporation Device [8086:0c03] (rev 06)
+00:14.0 USB controller [0c03]: Intel Corporation 8 Series/C220 Series Chipset Family USB xHCI [8086:8c31] (rev 05)
+00:19.0 Ethernet controller [0200]: Intel Corporation Ethernet Connection I217-LM [8086:153a] (rev 05)
+00:1a.0 USB controller [0c03]: Intel Corporation 8 Series/C220 Series Chipset Family USB EHCI #2 [8086:8c2d] (rev 05)
+00:1b.0 Audio device [0403]: Intel Corporation 8 Series/C220/C740 Series Chipset High Definition Audio Controller [8086:8c20] (rev 05)
+00:1c.0 PCI bridge [0604]: Intel Corporation 8 Series/C220 Series Chipset Family PCI Express Root Port #1 [8086:8c10] (rev d5)
+00:1c.1 PCI bridge [0604]: Intel Corporation 8 Series/C220 Series Chipset Family PCI Express Root Port #2 [8086:8c12] (rev d5)
+00:1c.2 PCI bridge [0604]: Intel Corporation 8 Series/C220 Series Chipset Family PCI Express Root Port #3 [8086:8c14] (rev d5)
+00:1c.4 PCI bridge [0604]: Intel Corporation 8 Series/C220 Series Chipset Family PCI Express Root Port #5 [8086:8c18] (rev d5)
+00:1d.0 USB controller [0c03]: Intel Corporation 8 Series/C220 Series Chipset Family USB EHCI #1 [8086:8c26] (rev 05)
+00:1f.0 ISA bridge [0601]: Intel Corporation QM87 Express LPC Controller [8086:8c4f] (rev 05)
+00:1f.2 SATA controller [0106]: Intel Corporation 8 Series/C220 Series Chipset Family 6-port SATA Controller 1 [AHCI mode] [8086:8c03] (rev 05)
+00:1f.3 SMBus [0c05]: Intel Corporation 8 Series/C220 Series Chipset Family SMBus Controller [8086:8c22] (rev 05)
+01:00.0 SD Host controller [0805]: O2 Micro, Inc. OZ777 SD/MMC Card Reader Controller [1217:8520] (rev 01)
+02:00.0 Network controller [0280]: Intel Corporation Wi-Fi 5(802.11ac) Wireless-AC 9x6x [Thunder Peak] [8086:2526] (rev 29)
+
+## lspci -tv
+-[0000:00]-+-00.0  Intel Corporation Xeon E3-1200 v3/4th Gen Core Processor DRAM Controller
+           +-02.0  Intel Corporation 4th Gen Core Processor Integrated Graphics Controller
+           +-03.0  Intel Corporation Xeon E3-1200 v3/4th Gen Core Processor HD Audio Controller
+           +-04.0  Intel Corporation Device 0c03
+           +-14.0  Intel Corporation 8 Series/C220 Series Chipset Family USB xHCI
+           +-19.0  Intel Corporation Ethernet Connection I217-LM
+           +-1a.0  Intel Corporation 8 Series/C220 Series Chipset Family USB EHCI #2
+           +-1b.0  Intel Corporation 8 Series/C220/C740 Series Chipset High Definition Audio Controller
+           +-1c.0-[01]----00.0  O2 Micro, Inc. OZ777 SD/MMC Card Reader Controller
+           +-1c.1-[02]----00.0  Intel Corporation Wi-Fi 5(802.11ac) Wireless-AC 9x6x [Thunder Peak]
+           +-1c.2-[03]--
+           +-1c.4-[04]--
+           +-1d.0  Intel Corporation 8 Series/C220 Series Chipset Family USB EHCI #1
+           +-1f.0  Intel Corporation QM87 Express LPC Controller
+           +-1f.2  Intel Corporation 8 Series/C220 Series Chipset Family 6-port SATA Controller 1 [AHCI mode]
+           \-1f.3  Intel Corporation 8 Series/C220 Series Chipset Family SMBus Controller
+
+## lsusb
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 002: ID 8087:8008 Intel Corp. Integrated Rate Matching Hub
+Bus 002 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 002 Device 002: ID 8087:0025 Intel Corp. Wireless-AC 9260 Bluetooth Adapter
+Bus 002 Device 003: ID 5986:0366 Bison Electronics Inc. Integrated Camera
+Bus 003 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 003 Device 002: ID 8087:8000 Intel Corp. Integrated Rate Matching Hub
+Bus 004 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+
+## lsusb -t
+/:  Bus 001.Port 001: Dev 001, Class=root_hub, Driver=ehci-pci/2p, 480M
+    |__ Port 001: Dev 002, If 0, Class=Hub, Driver=hub/6p, 480M
+/:  Bus 002.Port 001: Dev 001, Class=root_hub, Driver=xhci_hcd/15p, 480M
+    |__ Port 011: Dev 002, If 0, Class=Wireless, Driver=btusb, 12M
+    |__ Port 011: Dev 002, If 1, Class=Wireless, Driver=btusb, 12M
+    |__ Port 012: Dev 003, If 0, Class=Video, Driver=uvcvideo, 480M
+    |__ Port 012: Dev 003, If 1, Class=Video, Driver=uvcvideo, 480M
+/:  Bus 003.Port 001: Dev 001, Class=root_hub, Driver=ehci-pci/2p, 480M
+    |__ Port 001: Dev 002, If 0, Class=Hub, Driver=hub/8p, 480M
+/:  Bus 004.Port 001: Dev 001, Class=root_hub, Driver=xhci_hcd/6p, 5000M
+
+## lscpu
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           39 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  8
+On-line CPU(s) list:                     0-7
+Vendor ID:                               GenuineIntel
+Model name:                              Intel(R) Core(TM) i7-4810MQ CPU @ 2.80GHz
+CPU family:                              6
+Model:                                   60
+Thread(s) per core:                      2
+Core(s) per socket:                      4
+Socket(s):                               1
+Stepping:                                3
+Microcode version:                       0x28
+CPU(s) scaling MHz:                      66%
+CPU max MHz:                             3800,0000
+CPU min MHz:                             800,0000
+BogoMIPS:                                5587,10
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm cpuid_fault epb pti ssbd ibrs ibpb stibp tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid xsaveopt dtherm ida arat pln pts vnmi md_clear flush_l1d
+Virtualization:                          VT-x
+L1d cache:                               128 KiB (4 instances)
+L1i cache:                               128 KiB (4 instances)
+L2 cache:                                1 MiB (4 instances)
+L3 cache:                                6 MiB (1 instance)
+NUMA node(s):                            1
+NUMA node0 CPU(s):                       0-7
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Ghostwrite:                Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             KVM: Mitigation: Split huge pages
+Vulnerability L1tf:                      Mitigation; PTE Inversion; VMX conditional cache flushes, SMT vulnerable
+Vulnerability Mds:                       Mitigation; Clear CPU buffers; SMT vulnerable
+Vulnerability Meltdown:                  Mitigation; PTI
+Vulnerability Mmio stale data:           Not affected
+Vulnerability Old microcode:             Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Not affected
+Vulnerability Spec rstack overflow:      Not affected
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; Retpolines; IBPB conditional; IBRS_FW; STIBP conditional; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected
+Vulnerability Srbds:                     Mitigation; Microcode
+Vulnerability Tsa:                       Not affected
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Mitigation; IBPB before exit to userspace
+
+## MSR 0x35 CORE_THREAD_COUNT
+40008
+## MSR 0xCE PLATFORM_INFO
+80838f3011c00
+## MSR 0x3A FEATURE_CONTROL
+7
+
+## dmidecode -t 17 (short)
+	Size: 8 GiB
+	Locator: Channel-0-DIMM-0
+	Bank Locator: BANK 0
+	Speed: 1600 MT/s
+	Manufacturer: Samsung
+	Part Number: M471B5273DH0-CK0
+	Rank: 2
+	Configured Memory Speed: 1600 MT/s
+	Configured Voltage: Unknown
+	Size: 8 GiB
+	Locator: Channel-0-DIMM-1
+	Bank Locator: BANK 0
+	Speed: 1600 MT/s
+	Manufacturer: Samsung
+	Part Number: M471B5273DH0-CK0
+	Rank: 2
+	Configured Memory Speed: 1600 MT/s
+	Configured Voltage: Unknown
+	Size: 8 GiB
+	Locator: Channel-1-DIMM-0
+	Bank Locator: BANK 2
+	Speed: 1600 MT/s
+	Manufacturer: Samsung
+	Part Number: M471B5273DH0-CK0
+	Rank: 2
+	Configured Memory Speed: 1600 MT/s
+	Configured Voltage: Unknown
+	Size: 8 GiB
+	Locator: Channel-1-DIMM-1
+	Bank Locator: BANK 2
+	Speed: 1600 MT/s
+	Manufacturer: Samsung
+	Part Number: M471B5273DH0-CK0
+	Rank: 2
+	Configured Memory Speed: 1600 MT/s
+	Configured Voltage: Unknown
+
+## The PCH registers (RCBA, PMBASE, TCO, xHCI), read from /dev/mem and /dev/port
+RCBA      0xfed1c000  (LPC 0xF0 = 0xfed1c001)
+PMBASE    0x0500   ACPI_CNTL(0x44)=0x80
+RCBA+0x3410 GCS              0x00000c21
+RCBA+0x3414 BUC              0x00000000
+RCBA+0x3418 FD               0x03080001
+RCBA+0x341c CG               0x98410000
+RCBA+0x3420 FDSW             0x00000080
+RCBA+0x3424 DISPBDF          0x00060010
+RCBA+0x3428 FD2              0x0000000f
+RCBA+0x38f4 SOFT_RESET_CTRL  0x00000000
+RCBA+0x38f8 SOFT_RESET_DATA  0x00000000
+RCBA+0x3310 PRSTS            0x05050100
+RCBA+0x3318 PM_CFG           0x0dcf0020
+RCBA+0x3400 RC(0x3400)       0x00000004
+GEN_PMCON_1 0x5a14  GEN_PMCON_2 0xa0  GEN_PMCON_3 0x1808  GEN_PMCON_LOCK 0x06
+PMBASE+0x00 PM1_STS              0x0001
+PMBASE+0x04 PM1_CNT              0x00000001
+PMBASE+0x08 PM1_TMR              0x00757afd
+PMBASE+0x20 GPE0_STS(0x20)       0x4ec00000
+PMBASE+0x30 SMI_EN               0x00002033
+PMBASE+0x34 SMI_STS              0x00004900
+PMBASE+0x54 C3_RES/OC_WDT(0x54)  0x00002000
+PMBASE+0x60 TCO_RLD              0x0003
+PMBASE+0x62 TCO_DAT_IN           0x00
+PMBASE+0x64 TCO1_STS             0x0000
+PMBASE+0x66 TCO2_STS             0x0000
+PMBASE+0x68 TCO1_CNT             0x1800
+PMBASE+0x6a TCO2_CNT             0x0008
+PMBASE+0x6c TCO_MESSAGE          0x0000
+PMBASE+0x6e TCO_WDCNT            0x00
+PMBASE+0x72 TCO_TMR              0x0004
+xHCI XUSB2PR      0x00003fff
+xHCI XUSB2PRM     0x00003fff
+xHCI USB3_PSSEN   0x0000003f
+xHCI USB3PRM      0x0000003f
+xHCI USB2PDO      0x00000000
+xHCI USB3PDO      0x00000000
+xHCI XHCC1(0x40)  0x803601fd
+xHCI XHCC2(0x44)  0x800fc689
+xHCI 0x50         0x07886e9f
+xHCI PWR(0x74)    0x00000008
+xHCI 0xb0         0x0000008f
+EHCI 00:1d.0 EHCIIR1(0x64)? PDO(0x64)=0x00 0x78=0x0000014f
+EHCI 00:1a.0 EHCIIR1(0x64)? PDO(0x64)=0x00 0x78=0x0000014f
+
+## The pins of the codecs (/proc/asound/card*/codec#0)
+== /proc/asound/card0/codec#0
+Codec: Intel Haswell HDMI
+Address: 0
+AFG Function Id: 0x1 (unsol 0)
+Node 0x05 [Pin Complex] wcaps 0x40778d: 8-Channels Digital Amp-Out CP |   Pin Default 0x18560010: [Jack] Digital Out at Int HDMI
+Node 0x06 [Pin Complex] wcaps 0x40778d: 8-Channels Digital Amp-Out CP |   Pin Default 0x18560020: [Jack] Digital Out at Int HDMI
+Node 0x07 [Pin Complex] wcaps 0x40778d: 8-Channels Digital Amp-Out CP |   Pin Default 0x18560030: [Jack] Digital Out at Int HDMI
+== /proc/asound/card1/codec#0
+Codec: Realtek ALC3232
+Address: 0
+AFG Function Id: 0x1 (unsol 1)
+Node 0x12 [Pin Complex] wcaps 0x40040b: Stereo Amp-In |   Pin Default 0x90a60130: [Fixed] Mic at Int N/A
+Node 0x13 [Pin Complex] wcaps 0x40040b: Stereo Amp-In |   Pin Default 0x40000000: [N/A] Line Out at Ext N/A
+Node 0x14 [Pin Complex] wcaps 0x40058d: Stereo Amp-Out |   Pin Default 0x90170110: [Fixed] Speaker at Int N/A
+Node 0x15 [Pin Complex] wcaps 0x40058d: Stereo Amp-Out |   Pin Default 0x0321101f: [Jack] HP Out at Ext Left
+Node 0x16 [Pin Complex] wcaps 0x40058d: Stereo Amp-Out |   Pin Default 0x411111f0: [N/A] Speaker at Ext Rear
+Node 0x18 [Pin Complex] wcaps 0x40058f: Stereo Amp-In Amp-Out |   Pin Default 0x411111f0: [N/A] Speaker at Ext Rear
+Node 0x19 [Pin Complex] wcaps 0x40048b: Stereo Amp-In |   Pin Default 0x411111f0: [N/A] Speaker at Ext Rear
+Node 0x1a [Pin Complex] wcaps 0x40048b: Stereo Amp-In |   Pin Default 0x03a11020: [Jack] Mic at Ext Left
+Node 0x1b [Pin Complex] wcaps 0x40058f: Stereo Amp-In Amp-Out |   Pin Default 0x411111f0: [N/A] Speaker at Ext Rear
+Node 0x1d [Pin Complex] wcaps 0x400400: Mono |   Pin Default 0x40738105: [N/A] Modem Hand at Ext N/A
+Node 0x1e [Pin Complex] wcaps 0x400781: Stereo Digital |   Pin Default 0x411111f0: [N/A] Speaker at Ext Rear
+
+## SPD of the four DIMMs (at24 7-0050..0053, bytes 0-255)
+7-0050 type=0x0b size=8192 MiB ranks=2 x8 part=M471B5273DH0-CK0 serial=de8215a0 crc=0x69e7 byte6=0x02 (1.35 V) sha256(0-127)=662bf2a837471075
+7-0051 type=0x0b size=8192 MiB ranks=2 x8 part=M471B5273DH0-CK0 serial=de8215a0 crc=0x69e7 byte6=0x02 (1.35 V) sha256(0-127)=662bf2a837471075
+7-0052 type=0x0b size=8192 MiB ranks=2 x8 part=M471B5273DH0-CK0 serial=de8215a0 crc=0x69e7 byte6=0x02 (1.35 V) sha256(0-127)=662bf2a837471075
+7-0053 type=0x0b size=8192 MiB ranks=2 x8 part=M471B5273DH0-CK0 serial=de8215a0 crc=0x69e7 byte6=0x02 (1.35 V) sha256(0-127)=662bf2a837471075
+
+## FMAP of the flash
+FMAP at 0xb60000 FLASH 26 areas
+  SI_ALL                   0x0000000 0x0500000
+  SI_DESC                  0x0000000 0x0001000
+  SI_GBE                   0x0001000 0x0002000
+  SI_ME                    0x0003000 0x04fd000
+  SI_BIOS                  0x0500000 0x0700000
+  RW_MRC_CACHE             0x0500000 0x0010000
+  SMMSTORE                 0x0510000 0x0080000
+  RO_VPD                   0x0590000 0x0004000
+  RW_ELOG                  0x0594000 0x0004000
+  RW_UNUSED                0x0598000 0x0008000
+  RW_NVRAM                 0x05a0000 0x0010000
+  RECOVERY_MRC_CACHE       0x05b0000 0x0010000
+  RW_SECTION_A             0x05c0000 0x02d0000
+  VBLOCK_A                 0x05c0000 0x0010000
+  FW_MAIN_A                0x05d0000 0x02bffc0
+  RW_FWID_A                0x088ffc0 0x0000040
+  RW_SECTION_B             0x0890000 0x02d0000
+  VBLOCK_B                 0x0890000 0x0010000
+  FW_MAIN_B                0x08a0000 0x02bffc0
+  RW_FWID_B                0x0b5ffc0 0x0000040
+  WP_RO                    0x0b60000 0x00a0000
+  FMAP                     0x0b60000 0x0000800
+  RO_FRID                  0x0b60800 0x0000040
+  RO_PADDING               0x0b60840 0x00007c0
+  GBB                      0x0b61000 0x001f000
+  COREBOOT                 0x0b80000 0x0080000
+
+## RW_MRC_CACHE, first 64 bytes (region_file header, then mrc_metadata: 'MRCd', size, data xxh32, header xxh32, version)
+00000000: 0200 0401 ffff ffff ffff ffff ffff ffff  ................
+00000010: ffff ffff ffff ffff ffff ffff ffff ffff  ................
+00000020: 4d52 4364 0c10 0000 c586 0857 676a 6a37  MRCd.......Wgjj7
+00000030: 0300 0000 e63c e0fd e63a d001 f83c e0fd  .....<...:...<..

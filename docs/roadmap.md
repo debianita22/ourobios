@@ -20,7 +20,7 @@ is here. None of it is a promise of a date.
 | [Memory training across updates on the W541](#memory-training-across-updates-on-the-w541) | W541 | safe for `mrc`, not for `nri`, whose cache version is a number bumped by hand | a variant tag and a key from the code, `mrc` first |
 | [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | done in v1.6.0 (patch 0222): a Kconfig for the version, and `tools/fspm-settings.sh` stops CI when the files of those settings change | the first bump, with the release that changes them |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
-| [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | the bit is documented for Sandy Bridge only; S3 and a reset loop unknown | a test build that reads the bit and the threads after S3 |
+| [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | the reset before the RAM init makes NRI discard its cache at every cold boot; `mrc` not measured | the bit works on Haswell, survives S3 and warm resets, not S5 (measured on a W541); the option, with NRI knowing its own reset |
 | [Device switches on the W541](#device-switches-on-the-w541) | W541 | the Ethernet bit is sticky and needs a full reset; the others are soft switches | Ethernet the Sandy Bridge way, then card reader and microphone |
 | [Wake on LAN after a shutdown on the W541](#wake-on-lan-after-a-shutdown-on-the-w541) | W541 | nothing for it in coreboot's Lynx Point code; the EC side unknown | what the Lenovo firmware programs |
 | [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot | none planned |
@@ -34,7 +34,7 @@ is here. None of it is a promise of a date.
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
 | [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
 | [Openness score](#openness-score) | both | already in `tools/sbom.py`; compared with Dasharo's tool after rc5: the descriptor, GbE and VBT are data there too now, the ME region is counted whole by Dasharo and by its bytes here | none planned |
-| [Clearing the memory on every core](#clearing-the-memory-on-every-core) | both | the clear runs on the boot processor only, 2.0 s for 40 GB on the M920x (about 21 GB/s); what the memory controller gives to four cores is not measured | a test build that times the clear with one, two and four cores |
+| [Clearing the memory on every core](#clearing-the-memory-on-every-core) | both | the clear runs on the boot processor only, 2.0 s for 40 GB on the M920x (about 21 GB/s); what the memory controller gives to four cores is not measured | on the W541 one core already fills the memory (measured); a test build on the M920x with two equal DIMMs, and `rep stosb` on one core |
 | [The UEFI Shell in the payload](#the-uefi-shell-in-the-payload) | both | done in v1.6.0 (`edk2/0053`, patch 0227): the boards' payload leaves the Shell out, and the smoke test writes its variables with `tools/efi/setvar.c` from a disk image | none planned |
 | [The DPLL of i915 at boot on the M920x](#the-dpll-of-i915-at-boot-on-the-m920x) | M920x | i915's own wait for the PLL, not the firmware's | a report to i915 with the numbers |
 
@@ -74,7 +74,11 @@ coreboot only names `C3_RES`), and the Lenovo firmware drives it
 (`WdtPeim`) with the bit layout of coreboot's `oc_wdt`; the TCO timer
 could serve too while *BIOS Lock* is off. Later there as well: the W541
 is a laptop that someone sits at, and the questions of the M920x (what it
-resets, whether its enable bit survives the reset) are the same.
+resets, whether its enable bit survives the reset) are the same. Read on
+the W541 under rc6 (2026-11-06): the overclocking watchdog `0x00002000`,
+as on the M920x; the TCO timer halted and locked, and `NO_REBOOT` set by
+the bootblock at every boot, so the TCO is out on two counts; no `WDAT`
+([docs/tests/v1.6.0/w541-nri/development.md](tests/v1.6.0/w541-nri/development.md#the-firmware-watchdog)).
 
 ## Firmware update mode
 
@@ -298,6 +302,13 @@ rank fix (patch 0186).
   and give the way out without an OS: a SO-DIMM taken out or swapped makes
   both RAM inits train again. The T440p shares the code and would train
   once.
+- **Measured on the W541** (2026-11-05, `nri`, rc6;
+  [docs/tests/v1.6.0/w541-nri/development.md](tests/v1.6.0/w541-nri/development.md#memory-training-across-updates-on-the-w541)):
+  the training 0.83 s, the cache 0.11 s, so 0.7 s once per update; the
+  cache does not get rewritten on fast boots. Its four SO-DIMMs carry the
+  same SPD, serial number included: neither RAM init can see a swap among
+  such modules, so the way out without an OS is a module taken out, or
+  replaced by one of another type, not any swap.
 
 ## Cache version for coreboot's memory settings
 
@@ -369,6 +380,14 @@ which coreboot sets for Sandy Bridge and Ivy Bridge (`model_206ax`).
   too) and the MADT. The M920x of the port cannot help: its i3-8100 has
   one thread per core
   ([docs/tests/v1.6.0/m920x-fsp/development.md](tests/v1.6.0/m920x-fsp/development.md#hyper-threading)).
+- **Measured on the W541** (2026-11-06, the registers written from
+  Linux under rc6; [docs/tests/v1.6.0/w541-nri/development.md](tests/v1.6.0/w541-nri/development.md#hyper-threading-on-the-w541)):
+  the bit does it on Haswell (4 cores, 4 threads after the next reset);
+  the register is not locked, survives S3 and applies at the resume,
+  survives a warm reset, not S5; the reset with the control bit resets
+  the TPM too. For the option: at the cold boot NRI would see the reset
+  with `SSKPD` at 0 and retrain at every boot, unless it knows its own
+  reset.
 
 ## Device switches on the W541
 
@@ -398,6 +417,11 @@ have a switch.
 - **From the M920x** (2026-11-05): how each switch looks on a Cannon
   Point PCH, the devices and the codec pins of the Tiny, in
   [docs/tests/v1.6.0/m920x-fsp/development.md](tests/v1.6.0/m920x-fsp/development.md#device-switches).
+- **From the W541** (2026-11-06): `BUC` 0 (LAN on, not locked), the
+  card reader behind `00:1c.0`, the camera on xHCI USB2 port 12, no
+  fingerprint reader on that unit, the internal microphone on node
+  `0x12` of the ALC3232, in
+  [docs/tests/v1.6.0/w541-nri/development.md](tests/v1.6.0/w541-nri/development.md#device-switches-on-the-w541).
 
 ## Wake on LAN after a shutdown on the W541
 
@@ -723,7 +747,12 @@ Measured on the M920x of the port on 2026-11-05
 four at about 45 together, but that machine has 32 + 8 GB, dual-channel
 over 16 GB only, so the clear is bound by the memory there; the test
 build wants two equal DIMMs, and the single-processor loop has headroom
-of its own.
+of its own. On the W541 (2026-11-06,
+[docs/tests/v1.6.0/w541-nri/development.md](tests/v1.6.0/w541-nri/development.md#clearing-the-memory-on-every-core)):
+33.8 GB in 1.65 s, 20.5 GB/s; one core in Linux does 24.3 GB/s of the
+25.6 of DDR3L-1600 in two channels, and two, four or eight do no more:
+no gain from the other processors there, at most 0.26 s from a faster
+loop on one.
 
 ## The UEFI Shell in the payload
 

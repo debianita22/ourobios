@@ -191,7 +191,12 @@ in rc6, the rows of section 4 not run there yet, and the items below.
 
 The M920x's are in [docs/tests/v1.6.0/m920x-fsp/](tests/v1.6.0/m920x-fsp/README.md):
 the record of ci-244 to rc6, the reports and logs of rc6 and the i915
-DPLL measurements. For each board and variant, in its folder:
+DPLL measurements. The W541's `nri` ones are in
+[docs/tests/v1.6.0/w541-nri/](tests/v1.6.0/w541-nri/README.md): the
+install from v1.5.0, the reports of the training boot and of a cold
+boot, `cbmem -t` with the training and from the cache, and what the
+machine gives the roadmap items; the rows with someone at the screen
+are still to do there. For each board and variant, in its folder:
 - the two reports;
 - a table of the IDs of the manual tests with their results;
 - `sudo cbmem -1 > cbmem-BOARD-VARIANT.txt` of the second boot, whole;
