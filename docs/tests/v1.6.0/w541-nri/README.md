@@ -83,13 +83,14 @@ back.
 | `efibootmgr -t 3` | PASS | `Timeout: 3 seconds` kept across the capsules |
 | ME-01, EC-01, FLASH-01 | WARN, known | as for rc6 |
 | CONF-02 | M920x only | |
+| CONF-04 | PASS, `spi_desc` FAILED by design | chipsec 1.13.16 on rc7, the logs in [chipsec/](chipsec/): `bios_wp` PASSED (BC `0x2A`: BLE and SMM_BWP set, writes restricted to SMM; no PR over the BIOS region, as *Firmware protection* is off on this machine, FLASH-01), `spi_lock` PASSED (HSFS `0xE009`, FLOCKDN), `smm` PASSED (SMRAMC `0x1A`, D_LCK), `smrr` PASSED (base `0x7F800000`, mask `0xFF800000`, WB, the same on every thread), `bios_ts` PASSED (BILD 1, Top Swap off), `spi_desc` FAILED (FRAP `0xFFFF`: the descriptor writable by the CPU, the README's known limit); the six with the native Linux helper. `uefi.access_uefispec` PASSED with the chipsec kernel driver: every variable checked protected according to the spec, KEK, db, dbx and `certdb` time-based authenticated, no PK (the machine is in Setup Mode). The driver of 1.13.16 does not build against Linux 7.3 of CachyOS as it is: built with `make LLVM=1` (the kernel is built with clang), `rdmsr_on_cpu()`/`wrmsr_on_cpu()` mapped onto `rdmsrq_on_cpu()`/`wrmsrq_on_cpu()` (the only ones Linux 7 exports), and `init_module`/`cleanup_module` given to `module_init()`/`module_exit()` (objtool refuses the magic names); loaded by chipsec for the test, unloaded after |
 
 Files: [hw-w541-nri-rc7-1.md](hw-w541-nri-rc7-1.md) (a reboot from
 Linux), [hw-w541-nri-rc7-cold.md](hw-w541-nri-rc7-cold.md) (a cold
 boot), [hw-w541-nri-rc7-after-s3.md](hw-w541-nri-rc7-after-s3.md)
 (after the five suspends), [s3-w541-nri-rc7.txt](s3-w541-nri-rc7.txt)
-(each resume) and [cbmem-w541-nri-rc7.txt](cbmem-w541-nri-rc7.txt)
-(`cbmem -1` of the cold boot).
+(each resume), [cbmem-w541-nri-rc7.txt](cbmem-w541-nri-rc7.txt)
+(`cbmem -1` of the cold boot) and [chipsec/](chipsec/) (CONF-04).
 
 ## Numbers
 
