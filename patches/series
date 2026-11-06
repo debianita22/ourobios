@@ -225,3 +225,5 @@
 0229-soc-intel-common-block-acpi-pep-Skip-a-device-withou.patch
 0231-sb-intel-lynxpoint-Give-the-warm-reset-of-the-SuperS.patch
 0232-mb-lenovo-haswell-Put-the-W541-s-USB-connectors-on-t.patch
+0233-sb-intel-lynxpoint-Return-nothing-from-the-xHCI-_PS0.patch
+0234-mb-lenovo-haswell-Return-nothing-from-the-dGPU-power.patch

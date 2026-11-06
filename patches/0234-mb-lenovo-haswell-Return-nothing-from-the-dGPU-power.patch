@@ -1,0 +1,67 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 6 Nov 2026 16:31:00 +0100
+Subject: [PATCH] mb/lenovo/haswell: Return nothing from the dGPU power
+ resource's _OFF
+
+A power resource's _OFF returns nothing (ACPI 7.2.3). The _OFF of the
+W541's PGPR returns Zero, at the end and when the dGPU is already off;
+fwts flags it as MethodShouldReturnNothing (MEDIUM) on a W541 with
+the dGPU off.
+
+Do the power-down inside If (DGPS ()) with no Return.
+
+TEST=ThinkPad W541 with the NVIDIA GPU off: fwts method on the DSDT
+of v1.6.0-rc7 reports MethodShouldReturnNothing for
+\_SB.PCI0.PEGP.PGPR._OFF, an Integer 0 returned.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: I5a9f7fb5a532c88f5a3ccefd0e7c698ca9fea88b
+---
+ src/mainboard/lenovo/haswell/acpi/dgpu.asl | 28 ++++++++++------------
+ 1 file changed, 13 insertions(+), 15 deletions(-)
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/dgpu.asl b/src/mainboard/lenovo/haswell/acpi/dgpu.asl
+index 90120499be..5a9380fd7b 100644
+--- a/src/mainboard/lenovo/haswell/acpi/dgpu.asl
++++ b/src/mainboard/lenovo/haswell/acpi/dgpu.asl
+@@ -186,26 +186,24 @@ Scope (\_SB.PCI0.PEGP)
+ 			\_SB.PCI0.PEGP.DEV0.RSID ()
+ 		}
+ 
++		/* _OFF returns nothing (ACPI 7.2.3): nothing to do when already off */
+ 		Method (_OFF, 0, Serialized)
+ 		{
+-			If (!DGPS ()) {
+-				Return (Zero)
+-			}
++			If (DGPS ()) {
++				/* Take the link down before removing power */
++				LNKD = 1
++				Local0 = 100
++				While (LNKS && Local0) {
++					Sleep (1)
++					Local0--
++				}
+ 
+-			/* Take the link down before removing power */
+-			LNKD = 1
+-			Local0 = 100
+-			While (LNKS && Local0) {
++				DGSB (DGPU_RST_N_BIT, 0)
+ 				Sleep (1)
+-				Local0--
++				DGSB (DGPU_PWR_BIT, 0)
++				/* Let the rails discharge before a subsequent _ON */
++				Sleep (100)
+ 			}
+-
+-			DGSB (DGPU_RST_N_BIT, 0)
+-			Sleep (1)
+-			DGSB (DGPU_PWR_BIT, 0)
+-			/* Let the rails discharge before a subsequent _ON */
+-			Sleep (100)
+-			Return (Zero)
+ 		}
+ 	}
+ 

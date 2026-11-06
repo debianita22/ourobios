@@ -107,8 +107,10 @@ The seven MEDIUM of CONF-03 on rc7:
   `southbridge/intel/lynxpoint/acpi/xhci.asl`, which ends both with
   `Return ()`, compiled as a return of 0): a power resource's `_OFF`
   and a `_PSx` return nothing by the spec. Harmless to Linux and
-  Windows; a small change to the ASL (the early returns into `If`
-  blocks, no `Return` at the end) would clear the three.
+  Windows; patches 0233 (the xHCI) and 0234 (the dGPU) remove every
+  `Return` from the three: the DSDT of the W541 with them compiles with
+  no error nor warning, and `acpiexec` returns no object from them,
+  where the DSDT of rc7 returns an Integer 0.
 
 Files: [hw-w541-nri-rc7-1.md](hw-w541-nri-rc7-1.md) (a reboot from
 Linux), [hw-w541-nri-rc7-cold.md](hw-w541-nri-rc7-cold.md) (a cold

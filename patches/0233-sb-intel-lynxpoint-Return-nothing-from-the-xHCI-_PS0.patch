@@ -1,0 +1,108 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 6 Nov 2026 16:30:00 +0100
+Subject: [PATCH] sb/intel/lynxpoint: Return nothing from the xHCI _PS0
+ and _PS3
+
+ACPI 7.3 has _PS0 and _PS3 return nothing. Both end with Return (),
+and leave early with Return () when the device is not there or its BAR
+is not set; iasl compiles every Return without an operand as
+Return (Zero), so the methods return 0. fwts flags it as
+MethodShouldReturnNothing (MEDIUM) for both.
+
+Move the work into XPS0 and XPS3, which take the BAR, and call them
+from _PS0 and _PS3 only with the device present and the BAR set: no
+Return is left, and nothing else changes.
+
+TEST=ThinkPad W541: fwts method on the DSDT of v1.6.0-rc7 reports
+MethodShouldReturnNothing for \_SB.PCI0.XHCI._PS0 and _PS3, with an
+Integer 0 returned; the structure, compiled with iasl and evaluated
+with acpiexec, returns no object.
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: I4f1bb00962b9e3b7b777f83f98a6f63c457f84f2
+---
+ src/southbridge/intel/lynxpoint/acpi/xhci.asl | 46 +++++++++++--------
+ 1 file changed, 28 insertions(+), 18 deletions(-)
+
+diff --git a/src/southbridge/intel/lynxpoint/acpi/xhci.asl b/src/southbridge/intel/lynxpoint/acpi/xhci.asl
+index 9bd2e50d12..fa2705f722 100644
+--- a/src/southbridge/intel/lynxpoint/acpi/xhci.asl
++++ b/src/southbridge/intel/lynxpoint/acpi/xhci.asl
+@@ -201,17 +201,24 @@ Device (XHCI)
+ 		Return (^D0D3)
+ 	}
+ 
++	/*
++	 * _PS0 returns nothing (ACPI 7.3): the work is in XPS0 (Arg0: the
++	 * BAR), called only with the device present and its BAR set. An
++	 * early Return () would compile as Return (Zero).
++	 */
+ 	Method (_PS0, 0, Serialized)
+ 	{
+-		If (^DVID == 0xFFFF) {
+-			Return ()
+-		}
+-		Local1 = ^XMMB ()
+-		If (Local1 == 0) {
+-			Return ()
++		If (^DVID != 0xFFFF) {
++			Local1 = ^XMMB ()
++			If (Local1 != 0) {
++				XPS0 (Local1)
++			}
+ 		}
++	}
+ 
+-		OperationRegion (XREG, SystemMemory, Local1 + 0x8000, 0x200)
++	Method (XPS0, 1, Serialized)
++	{
++		OperationRegion (XREG, SystemMemory, Arg0 + 0x8000, 0x200)
+ 		Field (XREG, DWordAcc, Lock, Preserve)
+ 		{
+ 			Offset (0x0e0), // AUX Reset Control 1
+@@ -268,21 +275,26 @@ Device (XHCI)
+ 		// Clear PCI CFG offset 0x44[13:12]
+ 		^SAIP = 0
+ #endif
+-
+-		Return ()
+ 	}
+ 
++	/*
++	 * _PS3 returns nothing (ACPI 7.3): the work is in XPS3 (Arg0: the
++	 * BAR), called only with the device present and its BAR set. An
++	 * early Return () would compile as Return (Zero).
++	 */
+ 	Method (_PS3, 0, Serialized)
+ 	{
+-		If (^DVID == 0xFFFF) {
+-			Return ()
+-		}
+-		Local1 = ^XMMB ()
+-		If (Local1 == 0) {
+-			Return ()
++		If (^DVID != 0xFFFF) {
++			Local1 = ^XMMB ()
++			If (Local1 != 0) {
++				XPS3 (Local1)
++			}
+ 		}
++	}
+ 
+-		OperationRegion (XREG, SystemMemory, Local1 + 0x8000, 0x200)
++	Method (XPS3, 1, Serialized)
++	{
++		OperationRegion (XREG, SystemMemory, Arg0 + 0x8000, 0x200)
+ 		Field (XREG, DWordAcc, Lock, Preserve)
+ 		{
+ 			Offset (0x0e0), // AUX Reset Control 1
+@@ -342,8 +354,6 @@ Device (XHCI)
+ 
+ 		// Put device in D3
+ 		^D0D3 = 3
+-
+-		Return ()
+ 	}
+ 
+ 	PCH_PRW (DEFAULT_PRW_VALUE, 3)
