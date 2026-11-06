@@ -13,8 +13,8 @@ this one are the reports and logs of rc6.
 | | |
 |---|---|
 | Read-only part | `ouroBIOS-ci-203-045bf06` (26.09-438, measured boot generation 2): written with flashrom on 2026-11-01, never since; a capsule does not touch it |
-| Slot A | v1.6.0-rc5 |
-| Slot B | v1.6.0-rc6, running, confirmed |
+| Slot A | v1.6.0-rc7, running, confirmed |
+| Slot B | v1.6.0-rc6 |
 | Protections | *BIOS Lock* and *Firmware protection* on through every update from rc1 on: all of them came in as capsules, written by the payload through SMM |
 | Settings | the 35 options saved in SMMSTORE, among them `me_state=1` (soft disable), `clear_dram_on_boot=2` (when the OS asks), `serial_console=1`, `debug_level=7`, `igd_enabled=1`, `bios_lock=1` |
 | Event log | 258 events, 99 boots, 2903 of 16384 bytes on 2026-11-05 |
@@ -47,7 +47,7 @@ Run from the machine, without anyone at the monitor. `hw-report.py` of
 | BOOT-09 | not observable here | `serial_console=1` is saved from before rc6, so the serial console stays on and the SPCR table is there; the new default shows only without a saved value |
 | BOOT-10 | PASS | the first boot of rc6 deleted the *UEFI Shell* entry; `efibootmgr` lists Setup, NVMe, iPXE, CSMWrap, the OS |
 | CONF-01 | PASS | WSMT revision 1, flags 7 |
-| CONF-02 | PASS | DSDT 0 errors, 17 warnings (all 4089 of the disassembler), 27 remarks (23 of 2173, 4 of 2184); SSDT 0 errors, 5 warnings 4089, remarks 2 of 2184 and 2 of 2063 (*Initializer list shorter than declared package length*: the PIC branch of `_PRT`, and the PEPD constraint of the PCH thermal controller `00:12.0`, which has no ACPI name; patches 0228 and 0229, after rc6) |
+| CONF-02 | PASS | DSDT 0 errors, 17 warnings (all 4089 of the disassembler), 27 remarks (23 of 2173, 4 of 2184); SSDT 0 errors, 5 warnings 4089, remarks 2 of 2184; up to rc6 also 2 of 2063 (*Initializer list shorter than declared package length*: the PIC `_PRT` and a PEPD constraint), gone on rc7 with patches 0228 and 0229 |
 | CONF-03 | PASS | `fwts --acpitests --uefitests wsmt mcfg`: 468-469 pass, 0 failed, 5 warnings, no *MCFGMMIONotReserved* ([fwts-m920x-fsp.log](fwts-m920x-fsp.log)); on ci-244 one MEDIUM, the firmware version 0 of a CI build |
 | CONF-04 | PASS, `spi_desc` FAILED by design | chipsec 1.13 with the native Linux helper (no kernel driver) on rc6, the logs in [chipsec/](chipsec/): `bios_wp` PASSED (BC `0xAA`, writes restricted to SMM, PR0 over `WP_RO`), `spi_lock` PASSED (HSFS `0x230AF801`, FLOCKDN), `smm` PASSED (SMRAMC `0x1A`, D_LCK), `smrr` PASSED (base `0x76000000`, mask `0xFF800000`, WB, the same on every thread), `bios_ts` PASSED (BILD 1, Top Swap off); `spi_desc` FAILED: the descriptor is writable by the CPU, as the README's known limits say (`UNLOCK_FLASH_REGIONS`, which the HAP bit option needs); `uefi.access_uefispec` PASSED with the chipsec kernel driver (built from the 1.13.16 sources against the headers of the running kernel, loaded by chipsec for the test and unloaded after): every variable checked, PK, KEK, db, dbx and `certdb` time-based authenticated, the rest NV+BS+RT, protected according to the spec |
 | CONF-07 | PASS | the ECAM window reserved; the WARN of ci-244 was the report reading `pnp` resources named `PNP0C02:00` by Linux 7.0, fixed in the report |
@@ -63,7 +63,7 @@ Run from the machine, without anyone at the monitor. `hw-report.py` of
 | PCI-02 | PASS | the PEG port off without a card on the riser |
 | PCI-09 | INFO | BAR 0 of the SPI controller `00:1f.5` outside the payload's aperture, no driver of the payload uses it: by choice |
 | UPD-01 | PASS | the ESRT of each candidate, *riuscito*; on a CI build a WARN by design (version 0) |
-| UPD-02 | PASS | from ci-244 the capsule of v1.5.0, from v1.5.0 that of rc5 (both written by the payload that ran); from rc5 that of rc6: the payload of v1.6.0 writing a capsule for the first time on a machine |
+| UPD-02 | PASS | from ci-244 the capsule of v1.5.0, from v1.5.0 that of rc5 (both written by the payload that ran); from rc5 that of rc6: the payload of v1.6.0 writing a capsule for the first time on a machine; from rc6 that of rc7 ([rc7/upd-02-stage.txt](rc7/upd-02-stage.txt)) |
 | UPD-05 | PASS | `update.py rollback` from rc6: the payload took the capsule of rc5, found slot A equal and switched; `stage` of rc6 brought it back |
 | UPD-06 | PASS | the capsule of the W541 refused before the reboot |
 | ME-01 | PASS | soft temporary disable as asked, HECI hidden; with rc6 `HAP: clear in the flash descriptor, as me_state asks` (the descriptor not written) |
@@ -76,15 +76,18 @@ Run from the machine, without anyone at the monitor. `hw-report.py` of
 **Boot time** (`cbmem -T`, the report's BOOT-02), rc5 and rc6, the
 saved level Debug, the serial console on, the memory cleared:
 
-| Step | rc5 | rc6 |
-|---|---|---|
-| to romstage (bootblock, verstage) | 0.92 s | 0.89 s |
-| romstage, FSP-M inside | 0.63 s, 0.25 s | 0.63 s, 0.25 s |
-| postcar and the load of ramstage | 0.13 s | 0.07 s |
-| ramstage (2.0 s of memory clear, FSP-S 0.06 s) | 7.99 s | 7.99 s |
-| the payload read, measured and decompressed | 0.58 s | 0.52 s |
-| the payload loaded to the jump | 0.62 s | 0.62 s |
-| total | 10.70 s | 10.71 s |
+| Step | rc5 | rc6 | rc7, a reboot | rc7, cold |
+|---|---|---|---|---|
+| to romstage (bootblock, verstage) | 0.92 s | 0.89 s | 0.70 s | 0.92 s |
+| romstage, FSP-M inside | 0.63 s, 0.25 s | 0.63 s, 0.25 s | 0.62 s, 0.23 s | 0.63 s, 0.25 s |
+| postcar and the load of ramstage | 0.13 s | 0.07 s | 0.07 s | 0.07 s |
+| ramstage (2.0 s of memory clear, FSP-S 0.06 s) | 7.99 s | 7.99 s | 8.02 s | 8.02 s |
+| the payload read, measured and decompressed | 0.58 s | 0.52 s | 0.52 s | 0.52 s |
+| the payload loaded to the jump | 0.62 s | 0.62 s | 0.58 s | 0.58 s |
+| total | 10.70 s | 10.71 s | 10.50 s | 10.74 s |
+
+The rc7 reports, a reboot from Linux and a cold boot from S5 by RTC
+alarm, are in [rc7/](rc7/) with their `cbmem -T`.
 
 With the serial console off and the level at Info, the report's estimate
 says the boot loses most of the 6.1 s the serial takes at Debug: not
