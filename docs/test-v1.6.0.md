@@ -1,7 +1,7 @@
 # Hardware tests of the v1.6.0 candidate
 
 The tests before the tag of v1.6.0, on the W541 (`mrc` and `nri`) and the
-M920x (`fsp`), with the candidate v1.6.0-rc6. The IDs are those of
+M920x (`fsp`), with the candidate v1.6.0-rc7. The IDs are those of
 [docs/testing.md](testing.md). Whoever runs them, a person or an agent
 such as Claude Code on the machine, follows the rules below; the results
 stay on the machine, in `~/ourobios-test-v1.6.0/`, one folder per board
@@ -11,23 +11,24 @@ test a release candidate*, step 5).
 ## The build
 
 - **Candidate**: the pre-releases
-  [v1.6.0-rc6-mrc](https://github.com/debianita22/ourobios/releases/tag/v1.6.0-rc6-mrc),
-  [v1.6.0-rc6-nri](https://github.com/debianita22/ourobios/releases/tag/v1.6.0-rc6-nri) and
-  [v1.6.0-rc6-m920x-fsp](https://github.com/debianita22/ourobios/releases/tag/v1.6.0-rc6-m920x-fsp),
-  built by the Release workflow from `next` at `65e0068` or later: for each
-  variant the ROM, the capsule (`.cap`, version v1.6.0-rc6, so it installs
+  [v1.6.0-rc7-mrc](https://github.com/debianita22/ourobios/releases/tag/v1.6.0-rc7-mrc),
+  [v1.6.0-rc7-nri](https://github.com/debianita22/ourobios/releases/tag/v1.6.0-rc7-nri) and
+  [v1.6.0-rc7-m920x-fsp](https://github.com/debianita22/ourobios/releases/tag/v1.6.0-rc7-m920x-fsp),
+  built by the Release workflow from `next` at `518a892` or later: for each
+  variant the ROM, the capsule (`.cap`, version v1.6.0-rc7, so it installs
   and goes back as a release does) and `SHA256SUMS`.
-- **After rc5** (tested on the M920x from rc1 to rc5; the W541 may still
-  be on v1.5.0): patch 0225 (the measurement log of coreboot at DEBUG,
-  off the serial port of the M920x at INFO), the serial port counted by
-  `hw-report.py` (BOOT-01), the serial console of the M920x off by
-  default, *Disabled (HAP bit)* for its ME (patch 0226), the payload
-  without the UEFI Shell (`edk2/0053`, patch 0227) and without the two
-  SDHCI drivers for controllers these boards do not have (`edk2/0054`,
-  `edk2/0055`): the rows at the end of section 3. The CI of each change
-  passed (the smoke test in QEMU, the A/B update, the reproducible build,
-  `edk2-parity`); none of it has run on a machine yet.
-- **Tools**: from a clone at `next`, `65e0068` or later. On the machine:
+- **After rc6** (tested on both machines on 2026-11-05 and 11-06, the
+  records in [docs/tests/v1.6.0/](tests/v1.6.0/)): the two packages of
+  the M920x's SSDT declared longer than their lists (patches 0228 and
+  0229, CONF-02), the warm reset of the SuperSpeed ports at a resume on
+  `nri` with 200 ms instead of 100 (patch 0231, BOOT-03), the `_PLD` of
+  the W541's USB connectors on the sides they are on (patch 0232), and
+  `hw-report.py` knowing `TSC ADJUST differs` as not the firmware's: the
+  rows at the end of section 3. The CI of each change passed (the smoke
+  test in QEMU, the A/B update, the reproducible build); none of it has
+  run on a machine yet. The rows of rc6 not yet run (BOOT-09, ME-05, and
+  on the W541 whatever needs someone at the screen) stay.
+- **Tools**: from a clone at `next`, `518a892` or later. On the machine:
   `python3`, flashrom 1.2 or later, `cbmem` (coreboot's `util/cbmem`),
   `dmidecode`, `fwts` (CONF-03), `mokutil`, `efibootmgr`, and `gh` to
   download the candidate.
@@ -36,7 +37,7 @@ test a release candidate*, step 5).
 git -C CLONE fetch origin && git -C CLONE checkout next && git -C CLONE pull --ff-only
 mkdir -p ~/ourobios-test-v1.6.0 && cd ~/ourobios-test-v1.6.0
 for v in mrc nri m920x-fsp; do
-  gh release download v1.6.0-rc6-$v -R debianita22/ourobios -D rom/$v -p '*.rom' -p '*.cap' -p SHA256SUMS
+  gh release download v1.6.0-rc7-$v -R debianita22/ourobios -D rom/$v -p '*.rom' -p '*.cap' -p SHA256SUMS
   ( cd rom/$v && sha256sum -c SHA256SUMS --ignore-missing )
 done
 ```
@@ -64,26 +65,26 @@ done
 
 ## 1. Install
 
-As a user updates (UPD-02): the capsule of rc6 of the variant that runs,
-on v1.5.0 or on rc5, with *BIOS Lock* on (the payload writes the slot
-through SMM). The read-only part stays the one of v1.5.0. From rc5 the
-capsule is written by the payload of v1.6.0 itself (`edk2/0045`,
-`edk2/0046`), which no machine has done yet; from v1.5.0 by the payload
-of v1.5.0, as rc5 was installed on the M920x.
+As a user updates (UPD-02): the capsule of rc7 of the variant that runs,
+on rc6, with *BIOS Lock* on (the payload of v1.6.0 writes the slot
+through SMM, `edk2/0045`, `edk2/0046`, as both machines did for rc6).
+The read-only part stays the one of v1.5.0. The capsule writes the slot
+that does not run: on the W541 that is slot B, which holds the
+measurement build `ci-265-bd07465` since 2026-11-06 and loses it; slot A
+keeps rc6 for UPD-05.
 
 ```sh
 # as a user with sudo; the copy of the flash first (rule 1)
 sudo modprobe -r spi_intel_platform spi_intel || true    # M920x: spi_intel_pci spi_intel
 sudo flashrom -p internal -r flash-before.bin && stat -c %s flash-before.bin
-sudo python3 CLONE/tools/update.py stage rom/mrc/w541-coreboot-v1.6.0-rc6-mrc.cap   # or nri, m920x-fsp
+sudo python3 CLONE/tools/update.py stage rom/mrc/w541-coreboot-v1.6.0-rc7-mrc.cap   # or nri, m920x-fsp
 sudo systemctl reboot
 ```
 
-The update screen, then rc6 from the other slot: `update.py status` says
+The update screen, then rc7 from the other slot: `update.py status` says
 it. The W541 trains the memory at that boot (a few seconds of black
 screen); the M920x does not, the version of its cache is the same (patch
-0222 at 0). At that first boot the boot manager deletes the *UEFI Shell*
-entry that the older firmware left (BOOT-10). The other variant on the W541 goes in with `other-slot`, as
+0222 at 0). The other variant on the W541 goes in with `other-slot`, as
 in the rules, and only behind the read-only part of `mrc`; behind the one
 of `nri`, `nri` only (`other-slot` refuses a slot that cannot start):
 *BIOS Lock* off for that write (*Security* → *Flash protection*; on the
@@ -92,7 +93,7 @@ on again after the first boot.
 
 ```sh
 sudo flashrom -p internal -r flash-now.bin       # the copy of this boot
-python3 CLONE/tools/update.py other-slot flash-now.bin rom/nri/w541-coreboot-v1.6.0-rc6-nri.rom
+python3 CLONE/tools/update.py other-slot flash-now.bin rom/nri/w541-coreboot-v1.6.0-rc7-nri.rom
 # the flashrom command that other-slot prints, after the yes, then:
 sudo systemctl reboot
 ```
@@ -106,7 +107,7 @@ and on).
 | Check | Expected |
 |---|---|
 | all | PASS, but those known below |
-| BOOT-01 | the stages with `26.09-517` and the version `v1.6.0-rc6-VARIANT`; on the M920x the serial port line (the level of the boot, and at Info, Notice, Error) and *Serial Console* off |
+| BOOT-01 | the stages with `26.09-517` and the version `v1.6.0-rc7-VARIANT`; on the M920x the serial port line (the level of the boot, and at Info, Notice, Error) and *Serial Console* off |
 | CONF-01 | the WSMT, revision 1, flags 7 |
 | CONF-07 | the ECAM window reserved in the memory map and among the `pnp` resources |
 | PCI-09 | PASS, or INFO for a BAR of a device no driver of the payload uses (on the M920x the SPI controller, `00:1f.5`): every other BAR of bus 0 inside the aperture of the payload |
@@ -124,14 +125,22 @@ on (it stays in PC2 then); FLASH-01 WARN only while a protection is off.
 | OPT-02 | an option with a visible effect changed in the setup, *Save*, two reboots (SMMSTORE with the fixed com buffer: 0211-0215, `edk2/0044`) | the effect at every boot, OPT-01 with the value |
 | — | `sudo efibootmgr -t 3`, a reboot, `efibootmgr \| head -3` (variables written by the OS) | `Timeout: 3 seconds` |
 | MEM-09 | as in docs/testing.md, with *BIOS Lock* on | the lock reads `07 00 00 00 01`; writing `00` is refused; *request of the OS yes: clearing* after the reboot |
-| UPD-02 | the install of step 1: from rc5 (the M920x) the payload of v1.6.0 writes the rc6 capsule (`edk2/0045`, `edk2/0046`, the arguments in the com buffer), the first time on a machine; from v1.5.0 the payload of v1.5.0 writes it | the update screen; the other slot holds the new version and boots; settings, VPD and event log stay |
+| UPD-02 | the install of step 1: the payload of rc6 writes the rc7 capsule (`edk2/0045`, `edk2/0046`, the arguments in the com buffer), as it did on both machines for rc6 | the update screen; the other slot holds the new version and boots; settings, VPD and event log stay |
 | UPD-06 | `update.py stage` with the v1.5.0 capsule of the other board and of the other W541 variant | refused before the reboot |
-| UPD-05 | from rc6, `update.py rollback` (or the setup's *Go back to*): the payload of rc6 takes the capsule of the other slot (v1.5.0 or rc5), finds the slot written and switches; then `update.py stage` of the rc6 capsule again | the other release boots (the W541 trains again: `RW_MRC_CACHE` is cleared), then rc6; settings stay |
+| UPD-05 | from rc7, `update.py rollback` (or the setup's *Go back to*): the payload of rc7 takes the capsule of the other slot (rc6), finds the slot written and switches; then `update.py stage` of the rc7 capsule again | rc6 boots (the W541 trains again: `RW_MRC_CACHE` is cleared), then rc7; settings stay |
 | USB-06 | a USB 3 drive behind a USB 2 hub and a keyboard behind a USB 3 hub, plugged in before power-on | the Esc menu, the setup and the boot from the drive work |
 | DISP-05 | the setup at every *UI Scale* (W541 at 2880x1620, M920x on a monitor), a reboot for each; the list below | every screen drawn whole |
 | CPU-05 | the TCC offset of the W541 | passed on 2026-11-03 |
 
-New in rc6, not in rc5:
+New in rc7, not in rc6:
+
+| ID | Test | Expected |
+|---|---|---|
+| CONF-02 | M920x: the SSDT disassembled and compiled again, as in docs/testing.md | no remark 2063 (*Initializer list shorter than declared package length*): the PIC `_PRT` with 34 entries, the PEPD constraints all three elements long (patches 0228, 0229) |
+| BOOT-03 | `nri`: a resume from S3 with a USB 3.0 drive in a SuperSpeed port, then `sudo cbmem -1 \| grep warm_reset_usb3_ports` | `took N usecs` with N about 100000 to 120000 and no `timed out`, no `USB3 warm reset timed out` (patch 0231); the drive at 5000M after the resume |
+| USB-07 | W541: the sides of the four USB connectors as Linux reads them from the `_PLD` (patch 0232), as in docs/testing.md | ports 1 and 3 `left`, 2 and 6 `right`; horizontal `right`, `left`, `left`, `right` |
+
+New in rc6, not in rc5 (BOOT-09 and ME-05 still to run, BOOT-10 passed):
 
 | ID | Test | Expected |
 |---|---|---|
