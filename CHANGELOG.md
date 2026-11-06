@@ -299,6 +299,25 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   without its device (patch 0229, such a device is left out). An OS reading either found
   uninitialized elements; Linux showed nothing, the tables are now what
   they declare.
+- The warm reset of the SuperSpeed ports at an S3 resume on `nri` waits
+  up to 200 ms for the port reset bit (patch 0231): with a device on a
+  port the reset lasts longer than the 100 ms of before by design (an
+  LFPS burst of 80 to 120 ms, then detection, handshake and training),
+  and the log of every resume of the W541 with a drive plugged in had
+  `warm_reset_usb3_ports: timed out` for a reset that completed about
+  10 ms later, the port in U0. An empty port clears the bit at once, so
+  the limit costs nothing there
+  ([docs/tests/v1.6.0/w541-nri/diag.md](docs/tests/v1.6.0/w541-nri/diag.md)).
+- The `_PLD` of the W541's four USB connectors put them on the panels
+  they are on (patch 0232), measured by moving a drive through them with
+  `PORTSC` watched: port 1 (HS01/SS01, the Always On one by the OEM
+  tables) is the second connector on the left side from the screen, port
+  2 (HS02/SS02) the lower one on the right, port 3 (HS03) the first on
+  the left, port 6 (HS06) the upper on the right; the OEM buffers of
+  patch 0071 had three of them on another panel. Only the positions the
+  OS shows change (Windows's port names, Linux's `physical_location`); no
+  device path or name changes. The T440p keeps the OEM buffers until
+  someone measures its connectors.
 - On the M920x the *Intel graphics* switch under *Hardware* is gone
   and the processor graphics stays on (patch 0224): off, the DisplayPort
   and HDMI ports went dark with the firmware screen and the setup
