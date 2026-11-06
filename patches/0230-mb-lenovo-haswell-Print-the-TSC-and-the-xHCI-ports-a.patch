@@ -36,15 +36,15 @@ The one delay added is the 10 ms at the exit of early_usb_init(). The
 T440p shares the mainboard and the processor code; the M920x is not
 touched.
 ---
- src/cpu/intel/haswell/haswell_init.c          | 10 ++
- src/include/cpu/x86/diag_tsc.h                | 45 +++++++++
+ src/cpu/intel/haswell/haswell_init.c          | 10 +++
+ src/include/cpu/x86/diag_tsc.h                | 45 ++++++++++
  src/mainboard/lenovo/haswell/Makefile.mk      |  2 +
  src/mainboard/lenovo/haswell/diag.c           | 47 ++++++++++
  src/mainboard/lenovo/haswell/romstage.c       |  9 ++
- src/southbridge/intel/lynxpoint/diag_usb.h    | 92 +++++++++++++++++++
+ src/southbridge/intel/lynxpoint/diag_usb.h    | 90 +++++++++++++++++++
  .../intel/lynxpoint/early_usb_native.c        | 28 ++++++
  src/southbridge/intel/lynxpoint/usb_xhci.c    | 41 ++++++++-
- 8 files changed, 272 insertions(+), 2 deletions(-)
+ 8 files changed, 270 insertions(+), 2 deletions(-)
  create mode 100644 src/include/cpu/x86/diag_tsc.h
  create mode 100644 src/mainboard/lenovo/haswell/diag.c
  create mode 100644 src/southbridge/intel/lynxpoint/diag_usb.h
@@ -245,10 +245,10 @@ index f786f68b..ca625cb0 100644
  	/*
 diff --git a/src/southbridge/intel/lynxpoint/diag_usb.h b/src/southbridge/intel/lynxpoint/diag_usb.h
 new file mode 100644
-index 00000000..095abbb5
+index 00000000..6430f921
 --- /dev/null
 +++ b/src/southbridge/intel/lynxpoint/diag_usb.h
-@@ -0,0 +1,92 @@
+@@ -0,0 +1,90 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +/*
@@ -262,11 +262,11 @@ index 00000000..095abbb5
 +#ifndef SOUTHBRIDGE_INTEL_LYNXPOINT_DIAG_USB_H
 +#define SOUTHBRIDGE_INTEL_LYNXPOINT_DIAG_USB_H
 +
-+#include <arch/io.h>
 +#include <console/console.h>
 +#include <device/mmio.h>
 +#include <device/pci_def.h>
 +#include <device/pci_ops.h>
++#include <southbridge/intel/common/pmbase.h>
 +#include <southbridge/intel/lynxpoint/pch.h>
 +#include <types.h>
 +
@@ -275,11 +275,9 @@ index 00000000..095abbb5
 +/* The PCH registers that decide where the ports go and what boot this is */
 +static inline void diag_print_usb_route(const char *tag)
 +{
-+	const u16 pmbase = get_pmbase();
-+
 +	printk(BIOS_NOTICE,
 +	       "DIAG usb %s: PM1_STS=%04x PM1_CNT=%08x GEN_PMCON_2=%04x GEN_PMCON_3=%04x PMIR=%08x\n",
-+	       tag, inw(pmbase + PM1_STS), inl(pmbase + PM1_CNT),
++	       tag, read_pmbase16(PM1_STS), read_pmbase32(PM1_CNT),
 +	       pci_s_read_config16(PCH_LPC_DEV, GEN_PMCON_2),
 +	       pci_s_read_config16(PCH_LPC_DEV, GEN_PMCON_3),
 +	       pci_s_read_config32(PCH_LPC_DEV, PMIR));
