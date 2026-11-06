@@ -215,6 +215,34 @@ The inversion register is `0x2003` on both; its bit 6 (`XHPD` in the
 stock DSDT) is declared and never used. No GPIO of the USB ports, no
 redriver line, differs.
 
+Whether to follow the stock table on the two pins, looked at further:
+
+- the values of coreboot are not a guess: the W541 port (upstream
+  `2d2d61c7e1`, 2021, on the T440p's, which autoport generated from the
+  registers read under the stock firmware) has GPIO22 low and GPIO31 a
+  GPIO input, and lists the SATA DVD drive in the bay as working. The
+  stock PEI table is the state at power-on, before the stock firmware's
+  bay logic runs: the EC's `CSON` and the SMI behind `UBIS` (`SMI (0x15,
+  …)`), called on a bay insert, power-on and eject, with `GLIS`
+  (GPIO22) read to decide; the state the port was taken from is what
+  that logic leaves with a drive in the bay;
+- GPIO22 belongs to the Ultrabay, SATA port 5, which `ouroBIOS` does
+  not drive (no bay device in our DSDT, the bay's EC events left out:
+  docs/roadmap.md); setting it high at boot as the PEI table does,
+  without the SMI that undoes it, risks the drive in the bay that works
+  today. On this machine the port is off anyway (`sata_port5=0`,
+  `libata.force=5.00:disable`);
+- GPIO31 is `ACPRESENT` in its native function, an input that matters
+  to the PCH for Deep Sx, which coreboot does not enable on this board;
+  as a GPIO input it reads the adapter (1 on AC here) and nothing in
+  the firmware or the DSDT reads it.
+
+So neither pin is changed: GPIO22 would need the bay's logic (a device
+in the DSDT, the EC events, the SMI) to follow the stock firmware, and
+GPIO31 changes nothing while Deep Sx is off. A test with a drive in the
+Ultrabay (port 5 on in the setup, without `libata.force`) and GPIO22
+flipped from Linux would say which level isolates the bay.
+
 The xHCI in ACPI: the stock `_PS0`/`_PS3` set and clear `0x8154[31]`
 around D3 and do nothing else; coreboot's (`acpi/xhci.asl`) do the same
 and, on Lynx Point-H too, also clear `0x40[11]` and `0x44[13:12]` on D0
