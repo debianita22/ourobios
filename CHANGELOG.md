@@ -7,6 +7,11 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.6.1
 
+- **Internal microphone switch on the W541** (patch 0243): *General* →
+  *Sound* → *Internal microphone*, on by default. Off, the firmware tells
+  the OS that the lid's microphone is not connected, so it is not offered
+  as an input; a soft switch, as its help says (the audio chip stays
+  powered). The headset jack is not affected. Not yet run on a W541.
 - **Ethernet switch on the W541** (patches 0241-0242): *Hardware* →
   *Expansion ports* → *Ethernet*, on by default, the *Ethernet LAN* of
   the Lenovo setup. Off, the chipset turns the I217-LM controller off for
