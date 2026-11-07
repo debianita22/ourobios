@@ -1804,8 +1804,8 @@ def check_flash(fw, rep):
     lock = [m.group(0) for m in fw.grep(r"^BM-LOCKDOWN: (Enabled bootmedia protection.*|Boot media protection off.*|"
                                         r"Failed to enable.*|Could not find region.*)")] if fw.log is not None else []
     details.extend("log: " + l for l in lock)
-    # SMMSTORE_OPTION_LOCK (dalla v1.6.1): il payload lo arma a ReadyToBoot, la
-    # printk SMM arriva nella CBMEM console
+    # SMMSTORE_OPTION_LOCK (dalla v1.6.1): il payload lo arma a ReadyToBoot; la
+    # printk SMM arriva nella CBMEM console solo con DEBUG_SMI (le release no)
     if fw.log is not None and fw.grep(r"^Option lock: armed"):
         details.append("option lock: bios_lock e bootmedia_lock di sola lettura per l'OS (armato a ReadyToBoot)")
     covered, locked, flockdn, err, from_log, si, si_by = None, None, None, None, None, None, ""
