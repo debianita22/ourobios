@@ -36,7 +36,7 @@ is here. None of it is a promise of a date.
 | [Openness score](#openness-score) | both | already in `tools/sbom.py`; compared with Dasharo's tool after rc5: the descriptor, GbE and VBT are data there too now, the ME region is counted whole by Dasharo and by its bytes here | none planned |
 | [Clearing the memory on every core](#clearing-the-memory-on-every-core) | both | measured on both: on the W541 one core already fills the memory, on the M920x the clear is bound by its unequal DIMMs; the loop is `rep stosl` already | decided on 2026-11-06: not made; a test build only for a machine with two equal DIMMs |
 | [The UEFI Shell in the payload](#the-uefi-shell-in-the-payload) | both | done in v1.6.0 (`edk2/0053`, patch 0227): the boards' payload leaves the Shell out, and the smoke test writes its variables with `tools/efi/setvar.c` from a disk image | none planned |
-| [The DPLL of i915 at boot on the M920x](#the-dpll-of-i915-at-boot-on-the-m920x) | M920x | i915's own wait for the PLL, not the firmware's | a report to i915 with the numbers |
+| [The DPLL of i915 at boot on the M920x](#the-dpll-of-i915-at-boot-on-the-m920x) | M920x | i915's own wait for the PLL, not the firmware's | the report is written ([docs/upstream/i915-dpll-not-locked.md](upstream/i915-dpll-not-locked.md)): to be filed by the owner |
 | [A USB 3.0 drive after a warm reset on the W541](#a-usb-30-drive-after-a-warm-reset-on-the-w541) | W541 | settled (2026-11-06): the SuperSpeed side of the right SS connector of that W541 trains badly (3 links in about 8 plugs, the left one 6 in 6, the same drive); a warm reset carries a stuck port over; not the firmware. The sides of the connectors (patch 0232) and the limit of `warm_reset_usb3_ports()` (patch 0231, 200 ms) done the same day | another USB 3.0 device in that connector, and the connector cleaned; the T440p's connectors measured the same way |
 | [TSC ADJUST after a resume on the W541](#tsc-adjust-after-a-resume-on-the-w541) | W541 | not coreboot (measured 2026-11-06): the register is 0 up to the jump to the wake vector, and the TSC of before the suspend is written back after it, before Linux's check in `__restore_processor_state()`; no code of that window writes the TSC | optional: a test build that waits before the jump and repeats the MSR writes of Linux's early resume, to see what moves the register; or a debug kernel |
 
@@ -242,11 +242,14 @@ Protected Ranges really stop writes.
   (set on the M920x). The registers are read today
   (`tools/update.py protection`), but the protection has not been seen on
   yet on the M920x of the port (*Firmware protection* is off there).
-- **Next step**: FLASH-04 of [docs/testing.md](testing.md) with
-  *Firmware protection* on (PR0 over `WP_RO`, `--expect-ro on` exits 0),
-  and a write of one block of `WP_RO` with flashrom that must fail, the
-  backup and the programmer at hand. Top Swap with the next change of the
-  read-only part, if one comes.
+- **Next step**: the read side of FLASH-04 passed on the M920x with
+  v1.6.1-rc2 (2026-11-08): `--expect-ro on` exits 0 (PR0 over `WP_RO`,
+  PR1 over `SI_ALL`, FLOCKDN, *BIOS Lock* on), `--expect-ro off` exits 1,
+  and again after a resume from S3. Left: a write of one block of `WP_RO`
+  with flashrom that must fail, the backup and the programmer at hand
+  (the owner's call: if the range did not hold, the block would be
+  rewritten). Top Swap with the next change of the read-only part, if one
+  comes.
 
 ## Settings reset on the W541
 
