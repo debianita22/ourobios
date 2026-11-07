@@ -1465,6 +1465,30 @@ def need_whole_flash(path, data, areas):
                     "deve venire di %d MiB" % (path, len(data) >> 20, board, module, whole))
 
 
+def kernel_holds_spi(sysfs="/sys/class/mtd"):
+    """Il driver spi-intel del kernel tiene il controller SPI: c'e' una partizione
+    MTD che si chiama "BIOS" (cosi' la chiama lui). flashrom dalla 1.5 passa da
+    li' senza dirlo in modo evidente: niente PR ne' descrittore, e sul W541 solo
+    il primo chip. Il nome del device (mtd0) o None."""
+    try:
+        for name in sorted(os.listdir(sysfs)):
+            try:
+                with open(os.path.join(sysfs, name, "name")) as f:
+                    if f.read().strip() == "BIOS":
+                        return name
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return None
+
+
+def spi_module(size):
+    """Il modulo del kernel che prende il controller sulla board con un flash di
+    size byte (W541 12 MiB, M920x 24 MiB): da togliere prima di flashrom."""
+    return "spi_intel_pci" if size >= 24 << 20 else "spi_intel_platform"
+
+
 def flash_image(path):
     """L'immagine del flash di una release: il .rom, o quella in una capsula (.cap, .cab)."""
     with open(path, "rb") as f:
@@ -1800,6 +1824,10 @@ def cmd_other_slot(args):
     print("\nscritta %s: come il flash di ora, con lo slot %s della release, %s e"
           % (args.out, other, "RW_MRC_CACHE vuota" if retrain else "il training della RAM di adesso"))
     print("un record in RW_NVRAM che chiede a vboot lo slot %s con due tentativi. Da scrivere con:" % other)
+    mtd = kernel_holds_spi()
+    if mtd:
+        print("\n  sudo modprobe -r %s spi_intel    # il kernel tiene il controller (/dev/%s)"
+              % (spi_module(len(out)), mtd))
     print("\n  sudo flashrom -p internal --fmap %s -w %s" % (" ".join("-i " + r for r in regions), args.out))
     print("\nSolo quelle %s regioni: parte RO, settings (SMMSTORE), VPD%s restano come sono."
           % ("tre" if retrain else "due", " e registro" if retrain else ", registro e training della RAM"))
@@ -2789,6 +2817,12 @@ def cmd_protection(args):
         fr.append("il descrittore non da' alla CPU la regione BIOS")
     print("flashrom:    %s" % ("NO: %s" % ", ".join(fr) if fr else unmapped if v["unmapped"] else
                                "si' sugli slot (BIOS Lock spento, nessun PR)"))
+    mtd = kernel_holds_spi()
+    if mtd:
+        print("nota:        il kernel tiene il controller (spi-intel, /dev/%s): flashrom passerebbe dal driver, "
+              "senza PR ne' descrittore%s. Prima: sudo modprobe -r %s spi_intel"
+              % (mtd, " e con il primo chip soltanto" if lpt else "",
+                 "spi_intel_platform" if lpt else "spi_intel_pci"))
     print("Solo la CPU: i PR non fermano gli altri master del flash (ME, GbE).")
     if args.expect_ro:
         # 2: niente da confrontare (WP_RO non nella FMAP, o FMAP non letta)

@@ -1788,12 +1788,13 @@ def flash_spi(p, details):
 
 def logged_fpr(fw):
     """I Protected Range che coreboot dice di aver scritto in questo avvio,
-    e WP_RO della FMAP di CBMEM: ([(n, inizio, fine)], WP_RO o None)."""
+    e WP_RO e SI_ALL della FMAP di CBMEM: ([(n, inizio, fine)], WP_RO o
+    None, SI_ALL o None)."""
     prs = [(int(m.group(1)), int(m.group(2), 16), int(m.group(3), 16)) for m in fw.grep(FPR_LOG)] \
         if fw.log is not None else []
     fmap = fw.raw(CBMEM_ID_FMAP)
     areas = update.fmap_areas(fmap) if fmap else None
-    return prs, (areas or {}).get("WP_RO")
+    return prs, (areas or {}).get("WP_RO"), (areas or {}).get("SI_ALL")
 
 
 def check_flash(fw, rep):
@@ -1813,13 +1814,20 @@ def check_flash(fw, rep):
         details.append("registri SPI non letti: %s" % err)
         # senza i registri, il PR che coreboot ha scritto: dice cosa e' successo
         # all'avvio, non FLOCKDN ne' un PR cambiato dopo
-        prs, wp = logged_fpr(fw)
+        prs, wp, si_area = logged_fpr(fw)
+        si_log = None
         for n, lo, hi in prs:
             details.append("log: PR%d 0x%07x-0x%07x" % (n, lo, hi))
             if wp and lo <= wp[0] and hi >= wp[0] + wp[1] - 1:
                 from_log = "PR%d" % n
+            if si_area and lo <= si_area[0] and hi >= si_area[0] + si_area[1] - 1:
+                si_log = "PR%d" % n
         if prs and not wp:
             details.append("WP_RO non confrontata: FMAP di CBMEM non letta (cbmem -r %x)" % CBMEM_ID_FMAP)
+        if from_log and si_area:
+            details.append("SI_ALL (descrittore, GbE, ME) %s" % (
+                "in %s secondo il log" % si_log if si_log else
+                "senza PR nel log: firmware senza la protezione di SI_ALL (dalla v1.6.1)"))
     if flockdn is False:
         status = "WARN"
         details.append("FLOCKDN spento: i Protected Range si possono ancora cambiare")

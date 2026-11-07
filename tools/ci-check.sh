@@ -1589,6 +1589,17 @@ assert update.protection_lines(dm) == [
     ("SI_ALL", "protetta fino al prossimo reset o ripresa da S3 (PR1)"),
     ("BIOS Lock", "spento: il sistema puo' scrivere il flash"),
     ("slot RW", "scrivibili con la capsula e con flashrom")], update.protection_lines(dm)
+# il driver spi-intel del kernel: la partizione MTD "BIOS"
+with tempfile.TemporaryDirectory() as td:
+    assert update.kernel_holds_spi(td) is None
+    os.makedirs(os.path.join(td, "mtd0"))
+    open(os.path.join(td, "mtd0", "name"), "w").write("spi-nor\n")
+    assert update.kernel_holds_spi(td) is None
+    os.makedirs(os.path.join(td, "mtd1"))
+    open(os.path.join(td, "mtd1", "name"), "w").write("BIOS\n")
+    assert update.kernel_holds_spi(td) == "mtd1"
+assert update.kernel_holds_spi(os.path.join(tempfile.gettempdir(), "non-c-e")) is None
+assert update.spi_module(12 << 20) == "spi_intel_platform" and update.spi_module(24 << 20) == "spi_intel_pci"
 # (a2) un firmware prima della 0235: solo PR0, il descrittore resta scrivibile
 fixture(prs=((0, 0x8bff0b60),))
 p = update.spi_protection(dm)
