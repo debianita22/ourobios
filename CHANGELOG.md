@@ -7,6 +7,14 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.6.1
 
+- **The setup's lock-at-boot works** (edk2 0058): a CFR option marked
+  `CFR_OPTFLAG_LOCK_AT_BOOT` was meant to be writable from the setup and
+  write-locked from ReadyToBoot, but the payload registered its Variable
+  Policy rule at ReadyToBoot, after EndOfDxe had closed Variable Policy to
+  new rules, so the registration failed and nothing was locked. The rules
+  are now registered when the setup driver starts and take effect when a
+  trigger variable is set at ReadyToBoot. No option of these boards uses
+  the flag yet, so nothing changes on the machines today.
 - **The security options write-locked in SMM**: coreboot reads `bios_lock`
   and `bootmedia_lock` from the variable store (`SMMSTORE`) to decide the
   flash protections. They are BootService-only, so the OS cannot change

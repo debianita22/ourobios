@@ -23,17 +23,26 @@
 #include <Guid/CfrSetupMenuGuid.h>
 #include <Guid/VariableFormat.h>
 
-typedef struct _CFR_LOCK_AT_BOOT_ENTRY {
-  struct _CFR_LOCK_AT_BOOT_ENTRY  *Next;
-  CHAR16                          *Name;
-} CFR_LOCK_AT_BOOT_ENTRY;
+//
+// CFR_OPTFLAG_LOCK_AT_BOOT: the setup may still write the option in this
+// boot, nothing after ReadyToBoot may. A Variable Policy rule cannot be added
+// at ReadyToBoot: the variable driver closes Variable Policy to new rules at
+// EndOfDxe (LockVariablePolicy()), which BDS signals first, and a rule
+// registered later is refused with EFI_WRITE_PROTECTED. So each option gets a
+// LOCK_ON_VAR_STATE rule while the driver starts, before EndOfDxe, that locks
+// it once the volatile trigger CfrLockAtBoot holds 1, and the trigger is
+// written at ReadyToBoot. The trigger itself is lock-on-create, so it cannot
+// be cleared or pre-created by anything that runs after it.
+//
+#define CFR_LOCK_AT_BOOT_TRIGGER  L"CfrLockAtBoot"
 
-STATIC CFR_LOCK_AT_BOOT_ENTRY  *mLockAtBootList  = NULL;
-STATIC EFI_EVENT               mLockAtBootEvent = NULL;
-STATIC BOOLEAN                 mLockAtBootApplied = FALSE;
+STATIC EFI_EVENT  mLockAtBootEvent      = NULL;
+STATIC BOOLEAN    mLockAtBootRegistered = FALSE;
+STATIC BOOLEAN    mLockAtBootApplied    = FALSE;
 
 /**
-  Queue a CFR option variable to be write-locked at ReadyToBoot.
+  Register, before EndOfDxe, the rule that write-locks a CFR option variable
+  once the trigger is set at ReadyToBoot.
 
 **/
 STATIC
@@ -43,33 +52,55 @@ CfrQueueLockAtBoot (
   IN CONST CHAR16  *VariableName
   )
 {
-  CFR_LOCK_AT_BOOT_ENTRY  *Entry;
-  UINTN                   NameSize;
+  EFI_STATUS  Status;
 
   if ((VariableName == NULL) || (VariableName[0] == L'\0')) {
     return;
   }
 
-  Entry = AllocateZeroPool (sizeof (*Entry));
-  if (Entry == NULL) {
-    DEBUG ((DEBUG_WARN, "CFR: Failed to queue lock-at-boot for \"%s\"!\n", VariableName));
+  if (mVariablePolicy == NULL) {
+    DEBUG ((DEBUG_WARN, "CFR: No Variable Policy; no lock-at-boot for \"%s\"!\n", VariableName));
     return;
   }
 
-  NameSize   = StrSize (VariableName);
-  Entry->Name = AllocateCopyPool (NameSize, VariableName);
-  if (Entry->Name == NULL) {
-    FreePool (Entry);
-    DEBUG ((DEBUG_WARN, "CFR: Failed to queue lock-at-boot for \"%s\"!\n", VariableName));
-    return;
+  if (!mLockAtBootRegistered) {
+    Status = RegisterBasicVariablePolicy (
+               mVariablePolicy,
+               &gEficorebootNvDataGuid,
+               CFR_LOCK_AT_BOOT_TRIGGER,
+               sizeof (UINT8),
+               sizeof (UINT8),
+               VARIABLE_POLICY_NO_MUST_ATTR,
+               EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_RUNTIME_ACCESS,
+               VARIABLE_POLICY_TYPE_LOCK_ON_CREATE
+               );
+    if (EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_WARN, "CFR: No rule for the lock-at-boot trigger: %r\n", Status));
+      return;
+    }
+
+    mLockAtBootRegistered = TRUE;
   }
 
-  Entry->Next      = mLockAtBootList;
-  mLockAtBootList  = Entry;
+  Status = RegisterVarStateVariablePolicy (
+             mVariablePolicy,
+             &gEficorebootNvDataGuid,
+             VariableName,
+             VARIABLE_POLICY_NO_MIN_SIZE,
+             VARIABLE_POLICY_NO_MAX_SIZE,
+             VARIABLE_POLICY_NO_MUST_ATTR,
+             VARIABLE_POLICY_NO_CANT_ATTR,
+             &gEficorebootNvDataGuid,
+             CFR_LOCK_AT_BOOT_TRIGGER,
+             1
+             );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "CFR: Failed to lock-at-boot variable \"%s\": %r\n", VariableName, Status));
+  }
 }
 
 /**
-  Apply deferred Variable Policy locks for CFR_OPTFLAG_LOCK_AT_BOOT options.
+  At ReadyToBoot, set the trigger that the lock-at-boot rules wait for.
 
 **/
 STATIC
@@ -80,34 +111,24 @@ CfrApplyLockAtBoot (
   IN VOID       *Context
   )
 {
-  CFR_LOCK_AT_BOOT_ENTRY  *Entry;
-  EFI_STATUS              Status;
+  EFI_STATUS  Status;
+  UINT8       On;
 
   if (mLockAtBootApplied) {
     return;
   }
 
   mLockAtBootApplied = TRUE;
-
-  if (mVariablePolicy == NULL) {
-    DEBUG ((DEBUG_WARN, "CFR: No Variable Policy; skipping lock-at-boot!\n"));
-    return;
-  }
-
-  for (Entry = mLockAtBootList; Entry != NULL; Entry = Entry->Next) {
-    Status = RegisterBasicVariablePolicy (
-               mVariablePolicy,
-               &gEficorebootNvDataGuid,
-               Entry->Name,
-               VARIABLE_POLICY_NO_MIN_SIZE,
-               VARIABLE_POLICY_NO_MAX_SIZE,
-               VARIABLE_POLICY_NO_MUST_ATTR,
-               VARIABLE_POLICY_NO_CANT_ATTR,
-               VARIABLE_POLICY_TYPE_LOCK_NOW
-               );
-    if (EFI_ERROR (Status)) {
-      DEBUG ((DEBUG_WARN, "CFR: Failed to lock-at-boot variable \"%s\"!\n", Entry->Name));
-    }
+  On                 = 1;
+  Status             = gRT->SetVariable (
+                              CFR_LOCK_AT_BOOT_TRIGGER,
+                              &gEficorebootNvDataGuid,
+                              EFI_VARIABLE_BOOTSERVICE_ACCESS,
+                              sizeof (On),
+                              &On
+                              );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "CFR: Failed to set the lock-at-boot trigger: %r\n", Status));
   }
 }
 
@@ -124,7 +145,7 @@ CfrRegisterLockAtBootEvent (
 {
   EFI_STATUS  Status;
 
-  if ((mLockAtBootList == NULL) || (mLockAtBootEvent != NULL)) {
+  if (!mLockAtBootRegistered || (mLockAtBootEvent != NULL)) {
     return EFI_SUCCESS;
   }
 
@@ -151,24 +172,15 @@ CfrCleanupLockAtBoot (
   VOID
   )
 {
-  CFR_LOCK_AT_BOOT_ENTRY  *Entry;
-  CFR_LOCK_AT_BOOT_ENTRY  *Next;
-
+  //
+  // The rules stay registered: Variable Policy has no way to remove one, and
+  // without the event the trigger is never set, so they never lock.
+  //
   if (mLockAtBootEvent != NULL) {
     gBS->CloseEvent (mLockAtBootEvent);
     mLockAtBootEvent = NULL;
   }
 
-  for (Entry = mLockAtBootList; Entry != NULL; Entry = Next) {
-    Next = Entry->Next;
-    if (Entry->Name != NULL) {
-      FreePool (Entry->Name);
-    }
-
-    FreePool (Entry);
-  }
-
-  mLockAtBootList    = NULL;
   mLockAtBootApplied = FALSE;
 }
 
