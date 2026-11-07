@@ -7,6 +7,18 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.6.1
 
+- **Firmware watchdog on the M920x** (patches 0238-0240), off by default:
+  *General* → *Boot* → *Firmware watchdog* (5 or 10 minutes) arms the
+  overclocking watchdog of the chipset before the memory init and stops it
+  when the payload confirms the firmware slot, so that a boot that hangs
+  before the logo resets by itself, and a new slot that hangs twice falls
+  back to the other one with nobody at the power button. Not armed on a
+  wake from S3; the setup and the boot menu are not watched. With the
+  option off, the firmware clears the watchdog at every boot.
+  `hw-report.py` WDT-01 checks that it is off once the OS runs. The armed
+  path is not tested on a machine yet: the first armed boot is the
+  owner's call (RISCHIO: should the stop fail, the machine resets after
+  the timeout until the option is turned off in the setup).
 - **The setup's lock-at-boot works** (edk2 0058): a CFR option marked
   `CFR_OPTFLAG_LOCK_AT_BOOT` was meant to be writable from the setup and
   write-locked from ReadyToBoot, but the payload registered its Variable

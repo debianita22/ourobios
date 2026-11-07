@@ -1,0 +1,74 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 8 Nov 2026 12:00:00 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Offer the firmware watchdog on the
+ M920x
+
+Select SOC_INTEL_CANNONLAKE_FIRMWARE_WATCHDOG on the M920x and add the
+option "firmware_watchdog" under General > Boot: Off (the default),
+5 minutes or 10 minutes. The M720q and the M920q, which share cfr.c,
+do not select it and the option stays hidden there, as nobody has
+looked at their watchdog.
+---
+ src/mainboard/lenovo/m720q_m920q/Kconfig |  1 +
+ src/mainboard/lenovo/m720q_m920q/cfr.c   | 25 ++++++++++++++++++++++++
+ 2 files changed, 26 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/Kconfig b/src/mainboard/lenovo/m720q_m920q/Kconfig
+index 5efe3599e7b..070d6861c94 100644
+--- a/src/mainboard/lenovo/m720q_m920q/Kconfig
++++ b/src/mainboard/lenovo/m720q_m920q/Kconfig
+@@ -11,6 +11,7 @@ config BOARD_SPECIFIC_OPTIONS
+ 	select DRIVERS_UART_8250IO
+ 	select FSP_PLATFORM_MEMORY_SETTINGS_VERSIONS
+ 	select HAVE_ACPI_RESUME
++	select SOC_INTEL_CANNONLAKE_FIRMWARE_WATCHDOG if BOARD_LENOVO_M920X
+ 	select SOC_INTEL_CANNONLAKE_IGD_ALWAYS_ON
+ 	select HAVE_ACPI_TABLES
+ 	select HAVE_CMOS_DEFAULT
+diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
+index b2e2a482190..d01ef1693ce 100644
+--- a/src/mainboard/lenovo/m720q_m920q/cfr.c
++++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
+@@ -281,6 +281,30 @@ static const struct sm_object boot_menu_prompt = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ });
+ 
++/*
++ * Read by soc/intel/cannonlake/firmware_watchdog.c; shown only on the M920x,
++ * the one of the three it was looked at on
++ */
++static const struct sm_object firmware_watchdog = SM_DECLARE_ENUM({
++	.flags		= CONFIG(SOC_INTEL_CANNONLAKE_FIRMWARE_WATCHDOG) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "firmware_watchdog",
++	.ui_name	= "Firmware watchdog",
++	.ui_helptext	= "A timer of the chipset that resets the machine when the\n"
++			  "firmware hangs before the logo, so that a new firmware\n"
++			  "slot that hangs twice falls back to the other one with\n"
++			  "nobody at the power button. Armed at every boot before the\n"
++			  "memory init, stopped once the firmware has started; not\n"
++			  "armed on a wake from sleep. The setup and the boot menu are\n"
++			  "not watched.\n"
++			  "Default: off.",
++	.default_value	= 0,
++	.values		= (const struct sm_enum_value[]) {
++				{ "Off",	0	},
++				{ "5 minutes",	300	},
++				{ "10 minutes",	600	},
++				SM_ENUM_VALUE_END	},
++});
++
+ /* Always shown: usb_boot and boot_menu_prompt are in every EDK2 build */
+ static const struct sm_object general_boot = SM_DECLARE_FORM({
+ 	.ui_name	= "Boot",
+@@ -290,6 +314,7 @@ static const struct sm_object general_boot = SM_DECLARE_FORM({
+ 		&option_roms,
+ 		&usb_boot,
+ 		&boot_menu_prompt,
++		&firmware_watchdog,
+ 		NULL
+ 	},
+ });
+-- 
+2.47.3
+

@@ -1833,6 +1833,53 @@ def logged_fpr(fw):
     return prs, (areas or {}).get("WP_RO"), (areas or {}).get("SI_ALL")
 
 
+OC_WDT_CTL_PORT = 0x1854      # ACPI_BASE_ADDRESS (0x1800) + 0x54, Cannon Point
+
+
+def check_watchdog(fw, rep):
+    """WDT-01: il firmware watchdog del M920x (dalla v1.6.1, patch 0239):
+    armato in romstage se l'opzione firmware_watchdog lo chiede, fermato
+    in SMM quando il payload conferma lo slot; all'OS deve essere spento."""
+    if fw.board != "m920x":
+        rep.add("WDT-01", "Firmware watchdog", "SKIP", "solo sul M920x")
+        return
+    armed = fw.grep(r"^Firmware watchdog: armed, (\d+) s") if fw.log is not None else []
+    off = fw.grep(r"^Firmware watchdog: off") if fw.log is not None else []
+    last = fw.grep(r"^Firmware watchdog: the last reset came from the watchdog") if fw.log is not None else []
+    details = []
+    try:
+        with open("/dev/port", "rb") as f:
+            f.seek(OC_WDT_CTL_PORT)
+            ctl = int.from_bytes(f.read(4), "little")
+    except OSError as e:
+        ctl = None
+        details.append("OC_WDT_CTL non letto (/dev/port): %s" % e)
+    if ctl is not None:
+        details.append("OC_WDT_CTL 0x%08x: enable %d, timeout %d s, stato di reset %d" % (
+            ctl, (ctl >> 14) & 1, (ctl & 0x3ff) + 1, (ctl >> 24) & 3))
+    if last:
+        details.append("log: l'ultimo reset l'ha fatto il watchdog")
+    if not armed and not off:
+        rep.add("WDT-01", "Firmware watchdog", "SKIP" if ctl is None else "INFO",
+                "firmware senza il watchdog (nessuna riga 'Firmware watchdog:' nel log)"
+                + ("" if ctl is None else ", OC_WDT_CTL 0x%08x" % ctl), details)
+        return
+    running = ctl is not None and (ctl >> 14) & 1
+    if armed:
+        t = int(armed[-1].group(1))
+        status = "FAIL" if running else ("PASS" if ctl is not None else "INFO")
+        summary = ("armato a %d s e ancora acceso all'OS: il payload non l'ha fermato, la macchina si "
+                   "resettera'" % t) if running else "armato a %d s all'avvio, fermato alla conferma dello " \
+            "slot%s" % (t, "" if ctl is not None else " (registro non letto)")
+    else:
+        status = "WARN" if running else "PASS"
+        summary = "acceso all'OS con l'opzione spenta" if running else "spento (opzione firmware_watchdog Off)"
+    if last:
+        status = "WARN" if status == "PASS" else status
+        summary += "; l'ultimo reset l'ha fatto il watchdog"
+    rep.add("WDT-01", "Firmware watchdog", status, summary, details,
+            {"ctl": ctl, "armed": bool(armed), "last_reset_wdt": bool(last)})
+
 def check_flash(fw, rep):
     """FLASH-01: Firmware protection (WP_RO e, dalla v1.6.1, SI_ALL in un
     Protected Range) e BIOS Lock."""
@@ -2403,6 +2450,7 @@ def main():
     guard(check_vboot, "VB-01", "vboot", fw, rep)
     guard(check_update, "UPD-01", "Aggiornamenti", fw, rep)
     guard(check_flash, "FLASH-01", "Protezione del flash", fw, rep)
+    guard(check_watchdog, "WDT-01", "Firmware watchdog", fw, rep)
     guard(check_dump, "ELOG-01", "Registro degli eventi", fw, rep, args.dump)
     guard(check_smbios, "ID-01", "SMBIOS e VPD", fw, rep)
     guard(check_acpi, "ID-02", "Tabelle ACPI", fw, rep)

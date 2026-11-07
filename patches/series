@@ -230,3 +230,6 @@
 0235-security-lockdown-Write-protect-SI_ALL-with-the-cont.patch
 0236-cpu-x86-smm-Reserve-an-SMRAM-subregion-for-the-SMMST.patch
 0237-drivers-smmstore-Write-lock-the-security-options-in-.patch
+0238-soc-intel-common-block-oc_wdt-Keep-the-status-bits-a.patch
+0239-soc-intel-cannonlake-A-firmware-watchdog-from-the-op.patch
+0240-mb-lenovo-m720q_m920q-Offer-the-firmware-watchdog-on.patch

@@ -10,7 +10,7 @@ is here. None of it is a promise of a date.
 
 | Item | Boards | Why not now | Next step |
 |---|---|---|---|
-| [Firmware watchdog](#firmware-watchdog) | both | never used on Cannon Point upstream; testing it means resetting the machine on purpose; the W541 is a laptop someone sits at | a read-only check of the timer on hardware, then a build with the option off |
+| [Firmware watchdog](#firmware-watchdog) | both | built for the M920x in v1.6.1 (patches 0238-0240), off by default; the armed path not run on a machine | one armed boot on the M920x with the stop checked (WDT-01), then a hang test with a long timeout; the W541 later |
 | [Firmware update mode](#firmware-update-mode) | both | decided on 2026-11-05: not made; capsules need none of it, and a one-shot of the protections and Secure Boot is security code that can fail open | none planned; `update.py other-slot` reminds to turn *BIOS Lock* on again |
 | [DMA protection](#dma-protection) | M920x | no pre-boot DMA protection to report; the FSP-M has no PMR data | reword the help of *Intel VT-d*; find the slot of the Thunderbolt card |
 | [Capsule regions in the payload](#capsule-regions-in-the-payload) | both | done in v1.6.0 (`edk2/0045`): the payload writes only the two slots and `RW_MRC_CACHE`, and on a flash with both slots only an update of one slot at a time | a new region in `PcdFmpDeviceSmmAllowedRegions` one release before any capsule that writes it |
@@ -61,7 +61,16 @@ second timeout never resets once SMIs run.
   programs it). If it survived a reset into a slot without the feature,
   the OS of that slot would be reset every N minutes. Each check is a
   deliberate reset of the machine.
-- **Next step**: a build with the option, off, in the slot that boots, so
+- **Done for the M920x in v1.6.1** (patches 0238-0240): the option
+  *General* → *Boot* → *Firmware watchdog* (Off, 5 or 10 minutes); romstage
+  arms the watchdog before FSP-M or, off and on S3 resume, stops it;
+  ramstage reloads it at the payload and logs `OC_WDT_CTL`; the SMI
+  handler stops it at `SMMSTORE_CMD_VBOOT_SLOT_GOOD`, which the payload
+  sends once its console is up, before the setup or a boot option; the
+  status bits of a watchdog reset are kept and logged. WDT-01 of
+  `hw-report.py` reads the register at the OS. Left: one armed boot (the
+  stop seen in WDT-01), then a hang test with the timeout of 5 minutes.
+- **The step before** was: a build with the option, off, in the slot that boots, so
   that romstage clears the enable bit at every boot; then one armed test
   with a long timeout (300 s or more) and the stop ready. In the code: a
   second read-back at `BS_PAYLOAD_BOOT`, the status bits kept as they are

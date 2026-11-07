@@ -1,0 +1,233 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 8 Nov 2026 12:00:00 +0100
+Subject: [PATCH] soc/intel/cannonlake: A firmware watchdog from the option
+ firmware_watchdog
+
+SOC_INTEL_CANNONLAKE_FIRMWARE_WATCHDOG, for a board to select: romstage
+arms the overclocking watchdog of the PCH before the memory init, with
+the timeout of the option "firmware_watchdog" (seconds, 0 for off,
+never below 180), ramstage reloads it at the payload and logs what is
+left of OC_WDT_CTL after FSP-S, and the SMI handler stops it when the
+payload confirms the RW slot (SMMSTORE_CMD_VBOOT_SLOT_GOOD, through a
+weak smmstore_firmware_confirmed()). A boot that hangs in between is
+reset by the PCH, so that a new slot on trial falls back after two
+hangs without anyone at the power button. Off, and on S3 resume, where
+the payload does not run, romstage stops the watchdog whatever a
+previous firmware left, and it logs a reset that came from it.
+
+Read on a Lenovo ThinkCentre M920x (Cannon Point-H) under the Coffee
+Lake FSP 7.0.74.20: OC_WDT_CTL 0x00002000 at the OS, the watchdog there
+and off, left alone by FSP-M and FSP-S. The armed path is not tested
+on a machine yet.
+---
+ src/drivers/smmstore/smi.c                    |  8 +++
+ src/include/smmstore.h                        |  3 +
+ src/soc/intel/cannonlake/Kconfig              | 12 ++++
+ src/soc/intel/cannonlake/Makefile.mk          |  3 +
+ src/soc/intel/cannonlake/firmware_watchdog.c  | 68 +++++++++++++++++++
+ .../include/soc/firmware_watchdog.h           | 14 ++++
+ src/soc/intel/cannonlake/romstage/romstage.c  |  2 +
+ 7 files changed, 110 insertions(+)
+ create mode 100644 src/soc/intel/cannonlake/firmware_watchdog.c
+ create mode 100644 src/soc/intel/cannonlake/include/soc/firmware_watchdog.h
+
+diff --git a/src/drivers/smmstore/smi.c b/src/drivers/smmstore/smi.c
+index 6b99d7b5517..c48a16ae242 100644
+--- a/src/drivers/smmstore/smi.c
++++ b/src/drivers/smmstore/smi.c
+@@ -12,6 +12,7 @@
+ #include <stddef.h>
+ #include <stdint.h>
+ #include <string.h>
++#include <types.h>
+ #include <version.h>
+ 
+ /*
+@@ -282,6 +283,12 @@ static uint32_t vboot_try_other(void)
+ 	return SMMSTORE_RET_SUCCESS;
+ }
+ 
++/*
++ * The payload confirmed the RW slot (SMMSTORE_CMD_VBOOT_SLOT_GOOD): the
++ * firmware booted. A platform with a firmware watchdog stops it here.
++ */
++__weak void smmstore_firmware_confirmed(void) {}
++
+ uint32_t smmstore_exec(uint8_t command, void *param)
+ {
+ 	uint32_t ret = SMMSTORE_RET_FAILURE;
+@@ -353,6 +360,7 @@ uint32_t smmstore_exec(uint8_t command, void *param)
+ 			break;
+ 		}
+ 		vbnv_mark_tried_slot_good();
++		smmstore_firmware_confirmed();
+ 		ret = SMMSTORE_RET_SUCCESS;
+ 		break;
+ 	case SMMSTORE_CMD_VBOOT_TRY_OTHER:
+diff --git a/src/include/smmstore.h b/src/include/smmstore.h
+index a10ca44cbcb..563533ae180 100644
+--- a/src/include/smmstore.h
++++ b/src/include/smmstore.h
+@@ -219,4 +219,7 @@ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size
+ struct lb_header;
+ void lb_smmstorev2(struct lb_header *header);
+ 
++/* Called by the SMI handler when the payload confirms the RW slot (weak) */
++void smmstore_firmware_confirmed(void);
++
+ #endif
+diff --git a/src/soc/intel/cannonlake/Kconfig b/src/soc/intel/cannonlake/Kconfig
+index 0abf1995c56..09593dfc810 100644
+--- a/src/soc/intel/cannonlake/Kconfig
++++ b/src/soc/intel/cannonlake/Kconfig
+@@ -131,6 +131,18 @@ config SOC_INTEL_COMETLAKE_V
+ 	bool
+ 	select SOC_INTEL_COMETLAKE
+ 
++config SOC_INTEL_CANNONLAKE_FIRMWARE_WATCHDOG
++	bool
++	select SOC_INTEL_COMMON_BLOCK_OC_WDT
++	help
++	  Arm the overclocking watchdog of the PCH in romstage, before the
++	  memory init, with the timeout the option "firmware_watchdog" gives
++	  (seconds, 0 for off, never below 180), and stop it in SMM when the
++	  payload confirms the RW slot (SMMSTORE_CMD_VBOOT_SLOT_GOOD). A boot
++	  that hangs in between is reset by the PCH, so that a new slot on
++	  trial falls back after two hangs. Off, and on S3 resume, romstage
++	  stops the watchdog, whatever a previous firmware left.
++
+ config SOC_INTEL_CANNONLAKE_IGD_ALWAYS_ON
+ 	bool
+ 	help
+diff --git a/src/soc/intel/cannonlake/Makefile.mk b/src/soc/intel/cannonlake/Makefile.mk
+index f869176ca77..7c8d89eba56 100644
+--- a/src/soc/intel/cannonlake/Makefile.mk
++++ b/src/soc/intel/cannonlake/Makefile.mk
+@@ -15,6 +15,9 @@ bootblock-y += lpc.c
+ bootblock-y += p2sb.c
+ 
+ romstage-y += cnl_memcfg_init.c
++romstage-$(CONFIG_SOC_INTEL_CANNONLAKE_FIRMWARE_WATCHDOG) += firmware_watchdog.c
++ramstage-$(CONFIG_SOC_INTEL_CANNONLAKE_FIRMWARE_WATCHDOG) += firmware_watchdog.c
++smm-$(CONFIG_SOC_INTEL_CANNONLAKE_FIRMWARE_WATCHDOG) += firmware_watchdog.c
+ romstage-y += lpc.c
+ romstage-y += pcie_rp.c
+ romstage-y += pmutil.c
+diff --git a/src/soc/intel/cannonlake/firmware_watchdog.c b/src/soc/intel/cannonlake/firmware_watchdog.c
+new file mode 100644
+index 00000000000..6f8496f2f16
+--- /dev/null
++++ b/src/soc/intel/cannonlake/firmware_watchdog.c
+@@ -0,0 +1,68 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * The firmware watchdog (SOC_INTEL_CANNONLAKE_FIRMWARE_WATCHDOG): the
++ * overclocking watchdog of the PCH, armed by romstage before the memory
++ * init when the option "firmware_watchdog" gives a timeout, and stopped by
++ * SMM when the payload confirms the RW slot (SMMSTORE_CMD_VBOOT_SLOT_GOOD).
++ * A boot that hangs in between is reset by the PCH; with a new slot on
++ * trial, two such resets make vboot fall back to the other slot. Off, or on
++ * a resume from S3, where the payload does not run, romstage stops it.
++ */
++
++#include <bootstate.h>
++#include <commonlib/helpers.h>
++#include <console/console.h>
++#include <intelblocks/oc_wdt.h>
++#include <option.h>
++#include <soc/firmware_watchdog.h>
++#include <types.h>
++
++/* Never shorter: a boot that trains the memory takes about 40 s */
++#define FIRMWARE_WATCHDOG_MIN_SECONDS	180
++
++#if ENV_ROMSTAGE
++static unsigned int firmware_watchdog_timeout(void)
++{
++	unsigned int t = get_uint_option("firmware_watchdog", 0);
++
++	if (!t)
++		return 0;
++	return MAX(t, FIRMWARE_WATCHDOG_MIN_SECONDS);
++}
++
++void firmware_watchdog_romstage(bool s3wake)
++{
++	const unsigned int t = firmware_watchdog_timeout();
++
++	if (oc_wdt_caused_reset())
++		printk(BIOS_WARNING, "Firmware watchdog: the last reset came from the watchdog\n");
++
++	if (t && !s3wake) {
++		oc_wdt_arm(t);
++		printk(BIOS_INFO, "Firmware watchdog: armed, %u s (OC_WDT_CTL 0x%08x)\n", t,
++		       oc_wdt_read());
++	} else {
++		oc_wdt_stop();
++		printk(BIOS_DEBUG, "Firmware watchdog: off (OC_WDT_CTL 0x%08x)\n", oc_wdt_read());
++	}
++}
++#endif
++
++#if ENV_RAMSTAGE
++/* A full window for the payload, and what FSP-S left of the register */
++static void firmware_watchdog_payload(void *unused)
++{
++	oc_wdt_reload();
++	printk(BIOS_INFO, "Firmware watchdog: at the payload, OC_WDT_CTL 0x%08x\n", oc_wdt_read());
++}
++BOOT_STATE_INIT_ENTRY(BS_PAYLOAD_BOOT, BS_ON_ENTRY, firmware_watchdog_payload, NULL);
++#endif
++
++#if ENV_SMM
++/* The payload confirmed the slot: the firmware booted, stop the watchdog */
++void smmstore_firmware_confirmed(void)
++{
++	oc_wdt_stop();
++}
++#endif
+diff --git a/src/soc/intel/cannonlake/include/soc/firmware_watchdog.h b/src/soc/intel/cannonlake/include/soc/firmware_watchdog.h
+new file mode 100644
+index 00000000000..8ec9cc610b3
+--- /dev/null
++++ b/src/soc/intel/cannonlake/include/soc/firmware_watchdog.h
+@@ -0,0 +1,14 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _SOC_CANNONLAKE_FIRMWARE_WATCHDOG_H_
++#define _SOC_CANNONLAKE_FIRMWARE_WATCHDOG_H_
++
++#include <types.h>
++
++#if CONFIG(SOC_INTEL_CANNONLAKE_FIRMWARE_WATCHDOG)
++void firmware_watchdog_romstage(bool s3wake);
++#else
++static inline void firmware_watchdog_romstage(bool s3wake) {}
++#endif
++
++#endif
+diff --git a/src/soc/intel/cannonlake/romstage/romstage.c b/src/soc/intel/cannonlake/romstage/romstage.c
+index b88d83507b7..f6aeda71eda 100644
+--- a/src/soc/intel/cannonlake/romstage/romstage.c
++++ b/src/soc/intel/cannonlake/romstage/romstage.c
+@@ -14,6 +14,7 @@
+ #include <soc/iomap.h>
+ #include <soc/pci_devs.h>
+ #include <soc/pm.h>
++#include <soc/firmware_watchdog.h>
+ #include <soc/romstage.h>
+ #include <string.h>
+ 
+@@ -146,6 +147,7 @@ void mainboard_romstage_entry(void)
+ 	s3wake = pmc_fill_power_state(ps) == ACPI_S3;
+ 	/* Before fsp_memory_init(), whose CBMEM hook copies ps for ramstage */
+ 	ps->options_reset = !s3wake && reset_options_on_rtc_failure(ps);
++	firmware_watchdog_romstage(s3wake);
+ 	fsp_memory_init(s3wake);
+ 	pmc_set_disb();
+ 	if (!s3wake) {
+-- 
+2.47.3
+
