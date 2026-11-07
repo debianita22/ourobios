@@ -137,6 +137,11 @@ CONFIG_BOOTMEDIA_LOCK_RUNTIME_OPTION=y
 # regione BIOS. Restano leggibili; flashrom le scrive solo con la Firmware
 # protection spenta, come la RO.
 CONFIG_BOOTMEDIA_LOCK_SI_ALL=y
+# Scrittura delle opzioni di sicurezza bloccata in SMM dopo ReadyToBoot
+# (patch 0236/0237 + edk2 0056): l'OS non puo' piu' spegnere bios_lock o
+# bootmedia_lock con la SMI raw di SMMSTORE e ripartire senza protezioni.
+# Il setup le cambia ancora, prima dell'arm. Richiede BIOS Lock.
+CONFIG_SMMSTORE_OPTION_LOCK=y
 
 # Le opzioni del setup ai default quando la RTC perde l'alimentazione, come
 # sul M920x: romstage le cancella da SMMSTORE prima di leggerle. Il codice

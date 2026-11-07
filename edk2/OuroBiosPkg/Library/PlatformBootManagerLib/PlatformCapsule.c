@@ -507,6 +507,14 @@ PlatformLockFirmwareSlots (
   Status               = SmmStoreLibVbootLockSlots ();
   mFirmwareSlotsLocked = !EFI_ERROR (Status);
   DEBUG ((DEBUG_INFO, "Capsules: switch to the other firmware slot locked: %r\n", Status));
+
+  //
+  // The setup could have changed the security options (bios_lock,
+  // bootmedia_lock) in this boot; from here, before a boot option or an OS
+  // runs, coreboot keeps the OS from turning them off.
+  //
+  Status = SmmStoreLibOptionLock ();
+  DEBUG ((DEBUG_INFO, "Capsules: security options write-locked: %r\n", Status));
 }
 
 /**

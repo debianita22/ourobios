@@ -53,3 +53,4 @@
 0053-UefiPayloadPkg-PlatformBootManagerLib-No-UEFI-Shell-.patch
 0054-UefiPayloadPkg-Leave-SdMmcPciGliDxe-out-of-the-paylo.patch
 0055-UefiPayloadPkg-Leave-SdhciNonPciDxe-out-of-the-paylo.patch
+0056-UefiPayloadPkg-Arm-coreboot-s-lock-of-the-security-o.patch

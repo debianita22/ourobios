@@ -228,3 +228,5 @@
 0233-sb-intel-lynxpoint-Return-nothing-from-the-xHCI-_PS0.patch
 0234-mb-lenovo-haswell-Return-nothing-from-the-dGPU-power.patch
 0235-security-lockdown-Write-protect-SI_ALL-with-the-cont.patch
+0236-cpu-x86-smm-Reserve-an-SMRAM-subregion-for-the-SMMST.patch
+0237-drivers-smmstore-Write-lock-the-security-options-in-.patch
