@@ -1,0 +1,66 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 8 Nov 2026 14:00:00 +0100
+Subject: [PATCH] mb/lenovo/haswell: The Ethernet switch on the W541
+
+Select SOUTHBRIDGE_INTEL_LYNXPOINT_GBE_OPTION on the W541 and offer
+"onboard_ethernet" under Hardware > Expansion ports, on by default,
+the I/O Port Access > Ethernet LAN of the Lenovo setup. The help says
+that a change costs one extra restart, which the firmware does, and
+that the setting stays in the chipset under a firmware without the
+option.
+---
+ src/mainboard/lenovo/haswell/Kconfig |  1 +
+ src/mainboard/lenovo/haswell/cfr.c   | 17 +++++++++++++++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
+index fafe04a4d4a..2b311b02bec 100644
+--- a/src/mainboard/lenovo/haswell/Kconfig
++++ b/src/mainboard/lenovo/haswell/Kconfig
+@@ -37,6 +37,7 @@ config BOARD_LENOVO_THINKPAD_T440P
+ 
+ config BOARD_LENOVO_THINKPAD_W541
+ 	select BOARD_LENOVO_HASWELL_COMMON
++	select SOUTHBRIDGE_INTEL_LYNXPOINT_GBE_OPTION
+ 
+ if BOARD_LENOVO_HASWELL_COMMON
+ 
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 7b96c01b73a..a9f4e7242c4 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -664,6 +664,22 @@ static const struct sm_object thunderbolt = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ });
+ 
++/* Read by southbridge/intel/lynxpoint/early_pch.c, pch_apply_gbe_option() */
++static const struct sm_object onboard_ethernet = SM_DECLARE_BOOL({
++	.flags		= CONFIG(SOUTHBRIDGE_INTEL_LYNXPOINT_GBE_OPTION) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "onboard_ethernet",
++	.ui_name	= "Ethernet",
++	.ui_helptext	= "The Gigabit Ethernet controller (Intel I217-LM).\n"
++			  "Default: on. Off: the controller is turned off in the\n"
++			  "chipset, for every OS and for network boot. A change takes\n"
++			  "effect with one extra restart, done by the firmware at the\n"
++			  "next boot (the memory may be trained again then). The\n"
++			  "setting is kept in the chipset: a firmware version without\n"
++			  "this option leaves the Ethernet as it was until it is\n"
++			  "turned on here again or the CMOS battery is removed.",
++	.default_value	= true,
++});
++
+ /* The HD Audio controller for the digital display ports of the iGPU, 0:3.0 */
+ static const struct sm_object minihd_audio = SM_DECLARE_BOOL({
+ 	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
+@@ -745,6 +761,7 @@ static const struct sm_object hardware_ports = SM_DECLARE_FORM({
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&expresscard,
+ 		&thunderbolt,
++		&onboard_ethernet,
+ 		NULL
+ 	},
+ });
+-- 
+2.47.3
+

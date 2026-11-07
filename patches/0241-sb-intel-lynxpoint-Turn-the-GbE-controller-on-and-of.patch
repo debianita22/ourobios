@@ -1,0 +1,128 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 8 Nov 2026 14:00:00 +0100
+Subject: [PATCH] sb/intel/lynxpoint: Turn the GbE controller on and off from
+ an option
+
+SOUTHBRIDGE_INTEL_LYNXPOINT_GBE_OPTION, for a board to select: the
+option "onboard_ethernet" sets or clears the LAN disable bit of BUC,
+as Sandy Bridge does in pch_enable_gbe(). The bit lives in the RTC
+well and takes effect at the next full reset, so when it changes the
+romstage reads it back and resets once. pch_apply_gbe_option() runs in
+the RW romstage, after reset_options_on_rtc_failure() (before it the
+options of a CMOS clear are stale), never in the bootblock, which on a
+board with vboot may be in the read-only part and could not change the
+setting later, and never on an S3 resume, where the reset would end it.
+---
+ src/northbridge/intel/haswell/romstage.c    |  3 ++
+ src/southbridge/intel/lynxpoint/Kconfig     |  7 ++++
+ src/southbridge/intel/lynxpoint/early_pch.c | 39 +++++++++++++++++++++
+ src/southbridge/intel/lynxpoint/pch.h       |  1 +
+ 4 files changed, 50 insertions(+)
+
+diff --git a/src/northbridge/intel/haswell/romstage.c b/src/northbridge/intel/haswell/romstage.c
+index f56aeddae19..129ce3d0ad1 100644
+--- a/src/northbridge/intel/haswell/romstage.c
++++ b/src/northbridge/intel/haswell/romstage.c
+@@ -106,6 +106,9 @@ void mainboard_romstage_entry(void)
+ 	/* Before the first option read after the console */
+ 	reset_options_on_rtc_failure();
+ 
++	/* "onboard_ethernet": may reset once, before the RAM init */
++	pch_apply_gbe_option();
++
+ 	/* Perform some early chipset initialization required
+ 	 * before RAM initialization can work
+ 	 */
+diff --git a/src/southbridge/intel/lynxpoint/Kconfig b/src/southbridge/intel/lynxpoint/Kconfig
+index a844d7cd60c..c3a574ef078 100644
+--- a/src/southbridge/intel/lynxpoint/Kconfig
++++ b/src/southbridge/intel/lynxpoint/Kconfig
+@@ -96,4 +96,11 @@ config DISABLE_ME_PCI
+ 	  This will prevent the OS (and userspace apps) from interacting with
+ 	  the ME via the PCI interface after boot.
+ 
++config SOUTHBRIDGE_INTEL_LYNXPOINT_GBE_OPTION
++	bool
++	help
++	  The option "onboard_ethernet" turns the Gigabit Ethernet controller
++	  off (and on again) with the LAN disable bit of BUC, in RW romstage,
++	  with one full reset when the bit changes.
++
+ endif
+diff --git a/src/southbridge/intel/lynxpoint/early_pch.c b/src/southbridge/intel/lynxpoint/early_pch.c
+index a83a6b68bed..f18813f1633 100644
+--- a/src/southbridge/intel/lynxpoint/early_pch.c
++++ b/src/southbridge/intel/lynxpoint/early_pch.c
+@@ -1,10 +1,13 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <bootmode.h>
++#include <cf9_reset.h>
+ #include <console/console.h>
+ #include <device/pci_ops.h>
+ #include <device/device.h>
+ #include <device/pci_def.h>
+ #include <device/smbus_host.h>
++#include <option.h>
+ #include <southbridge/intel/common/lpc_def.h>
+ #include <southbridge/intel/common/pmbase.h>
+ 
+@@ -90,6 +93,42 @@ void __weak mainboard_config_rcba(void)
+ {
+ }
+ 
++/*
++ * SOUTHBRIDGE_INTEL_LYNXPOINT_GBE_OPTION: the option "onboard_ethernet" turns
++ * the Gigabit Ethernet controller off with the LAN disable bit of BUC, as
++ * Sandy Bridge does (pch_enable_gbe() of bd82x6x). The bit is in the RTC
++ * well and takes effect at the next full reset; it stays as written until
++ * written again or the RTC loses power. Done here, in the RW romstage and
++ * after reset_options_on_rtc_failure(), never in the bootblock of the
++ * read-only part, and never on an S3 resume, where a reset would end it.
++ */
++#if ENV_SEPARATE_ROMSTAGE
++void pch_apply_gbe_option(void)
++{
++	const struct device *const gbe = pcidev_on_root(0x19, 0);
++	uint32_t buc, want;
++	bool on;
++
++	if (!CONFIG(SOUTHBRIDGE_INTEL_LYNXPOINT_GBE_OPTION) || platform_is_resuming())
++		return;
++
++	on = get_uint_option("onboard_ethernet", 1) && gbe && gbe->enabled;
++	buc = RCBA32(BUC);
++	want = on ? buc & ~PCH_DISABLE_GBE : buc | PCH_DISABLE_GBE;
++	if (buc == want)
++		return;
++
++	RCBA32(BUC) = want;
++	/* Be sure not to reset for naught: the bit may be locked */
++	if (RCBA32(BUC) != want) {
++		printk(BIOS_WARNING, "GbE: BUC 0x%08x does not take the change\n", RCBA32(BUC));
++		return;
++	}
++	printk(BIOS_INFO, "GbE: turned %s, full reset for it to take effect\n", on ? "on" : "off");
++	full_reset();
++}
++#endif
++
+ void early_pch_init(void)
+ {
+ 	pch_enable_bars();
+diff --git a/src/southbridge/intel/lynxpoint/pch.h b/src/southbridge/intel/lynxpoint/pch.h
+index 2a622374bee..0001b4a53f8 100644
+--- a/src/southbridge/intel/lynxpoint/pch.h
++++ b/src/southbridge/intel/lynxpoint/pch.h
+@@ -100,6 +100,7 @@ void pch_log_state(void);
+ void acpi_create_serialio_ssdt(acpi_header_t *ssdt);
+ 
+ void enable_usb_bar(void);
++void pch_apply_gbe_option(void);
+ void early_pch_init(void);
+ void pch_enable_lpc(void);
+ void uart_bootblock_init(void);
+-- 
+2.47.3
+

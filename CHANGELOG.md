@@ -7,6 +7,15 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.6.1
 
+- **Ethernet switch on the W541** (patches 0241-0242): *Hardware* →
+  *Expansion ports* → *Ethernet*, on by default, the *Ethernet LAN* of
+  the Lenovo setup. Off, the chipset turns the I217-LM controller off for
+  every OS and for network boot. The bit lives in the chipset's RTC well
+  and takes effect at a full reset, so a change costs one extra restart,
+  which the firmware does at the next boot (NRI may train the memory
+  again then); a firmware without the option, after a fallback or
+  *Go back to*, leaves the Ethernet as it was until it is turned on here
+  again or the CMOS battery is removed. Not yet run on a W541.
 - **Firmware watchdog on the M920x** (patches 0238-0240), off by default:
   *General* → *Boot* → *Firmware watchdog* (5 or 10 minutes) arms the
   overclocking watchdog of the chipset before the memory init and stops it

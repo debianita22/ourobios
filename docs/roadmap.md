@@ -21,7 +21,7 @@ is here. None of it is a promise of a date.
 | [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | done in v1.6.0 (patch 0222): a Kconfig for the version, and `tools/fspm-settings.sh` stops CI when the files of those settings change | the first bump, with the release that changes them |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
 | [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | the reset before the RAM init makes NRI discard its cache at every cold boot; `mrc` not measured | the bit works on Haswell, survives S3 and warm resets, not S5 (measured on a W541); the option, with NRI knowing its own reset |
-| [Device switches on the W541](#device-switches-on-the-w541) | W541 | the Ethernet bit is sticky and needs a full reset; the others are soft switches | Ethernet the Sandy Bridge way, then card reader and microphone |
+| [Device switches on the W541](#device-switches-on-the-w541) | W541 | the Ethernet switch built in v1.6.1 (patches 0241-0242), not run on a W541; the others are soft switches | DEV-W01 on the W541 (off, on, a rollback while off); then the camera (USB2 port 12) and the microphone (node `0x12`) |
 | [Wake on LAN after a shutdown on the W541](#wake-on-lan-after-a-shutdown-on-the-w541) | W541 | nothing for it in coreboot's Lynx Point code; the EC side unknown | what the Lenovo firmware programs |
 | [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot | none planned |
 | [NVIDIA power steering and the EC's CPU limits](#nvidia-power-steering-and-the-ecs-cpu-limits) | W541 | little use under Linux; a `_PPC` policy and adapter tests | count the EC's CPU limit events |
@@ -422,9 +422,13 @@ have a switch.
   cut from its link after coreboot has enumerated it, so its port stays
   powered (a soft switch), and the microphone only through the pin
   configuration of the codec.
-- **Next step**: the Ethernet switch the Sandy Bridge way, named
-  `onboard_ethernet` as on the M920x, tested with a rollback to an older
-  slot while it is off; the card reader (link disable) and the
+- **Built in v1.6.1** (patches 0241-0242): the Ethernet switch the
+  Sandy Bridge way, `onboard_ethernet` as on the M920x, under *Hardware*
+  → *Expansion ports*: RW romstage writes `BUC` after the options are
+  known, reads it back and does one full reset when it changes; never on
+  S3 resume. To run on the W541 (DEV-W01 of docs/testing.md), with a
+  rollback to an older slot while it is off.
+- **Next step** after it: the card reader (link disable) and the
   microphone (pin configuration), with help texts that call them soft
   switches; the camera and the fingerprint reader through their USB
   ports.
