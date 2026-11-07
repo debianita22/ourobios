@@ -30,6 +30,16 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   FLASH-01 reports it (`WARN` when `WP_RO` is protected and `SI_ALL` is
   not). Not yet run on a machine: the expected values are what the code
   predicts, as for the first `WP_RO` lock.
+- **Tools**: `update.py protection` and `other-slot` say when the kernel's
+  `spi-intel` driver holds the SPI controller (a `BIOS` MTD partition):
+  flashrom 1.5 and later go through it without the Protected Ranges, the
+  descriptor regions or, on the W541, the second chip, and the `modprobe
+  -r` line to run first. hw-report's FLASH-01 rates `SI_ALL` from the log
+  too when the kernel refuses the registers.
+- **README**: two known limits written down, the descriptor left unlocked
+  (above) and the variable store (`SMMSTORE`) that code at ring 0 can
+  rewrite through the same SMI the payload uses, without the variable
+  driver that authenticates it.
 
 ## v1.6.0
 
