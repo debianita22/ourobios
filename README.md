@@ -269,22 +269,30 @@ Known limits, by hardware or by design, not open bugs:
   reporting them (FAILED by design). Locking the descriptor itself (a
   `FLMSTR` that denies the host) is one-way on these machines (no recovery
   without the FDSO strap or the external programmer) and is not done.
-- **The variable store is not protected from the kernel.** The UEFI
-  variables (Secure Boot's PK, KEK, db and dbx, the setup options, the
-  supervisor password, the boot entries) live in `SMMSTORE`, a block store
-  that coreboot's SMI handler reads and writes on behalf of the payload;
-  the driver that enforces their authentication (`VariableRuntimeDxe`)
-  runs outside SMM, because a payload has no SMM of its own on coreboot.
-  Code at ring 0 can call the same SMI with blocks of its own and rewrite
-  the store without that driver: enroll a key in db, clear the PK, turn
-  *Firmware protection* and *BIOS Lock* off for the next boot (coreboot
-  reads the options from the same store), reset the password. Secure Boot
-  therefore stops an unsigned boot loader, not a kernel that already runs
-  and wants to persist; the RW slots stay covered by vboot's signature,
-  the TPM measurements of the Secure Boot variables (PCR 7) record the
-  change, and the setup re-enrolls the defaults. EDK II's reference design
-  keeps the variable services in SMM, which coreboot's model does not
-  offer: a limit of the platform, not a bug of this firmware.
+- **The authenticated variables are not protected from the kernel.** The
+  UEFI variables (Secure Boot's PK, KEK, db and dbx, the setup options,
+  the supervisor password, the boot entries) live in `SMMSTORE`, a block
+  store that coreboot's SMI handler reads and writes on behalf of the
+  payload; the driver that enforces their authentication
+  (`VariableRuntimeDxe`) runs outside SMM, because a payload has no SMM of
+  its own on coreboot. Code at ring 0 can call the same SMI with blocks of
+  its own and rewrite the store without that driver. From v1.6.1 the
+  **flash-protection options are covered**: coreboot write-locks
+  `bios_lock` and `bootmedia_lock` in SMM once the payload arms them at
+  ReadyToBoot (`SMMSTORE_OPTION_LOCK`, the model of the TCG MOR lock), so
+  the OS can no longer turn *Firmware protection* or *BIOS Lock* off for
+  the next boot; the setup still changes them, before the arm. What stays
+  exposed are the **authenticated Secure Boot variables** (enroll a key in
+  db, clear the PK) and the supervisor password: covering those in MM would
+  need the signature check in SMM, a large attack surface and a fork of the
+  core EDK II variable driver, so they keep EDK II's design where the check
+  is in DXE. Secure Boot therefore stops an unsigned boot loader, not a
+  kernel that already runs and wants to persist; the RW slots stay covered
+  by vboot's signature, the TPM measurements of the Secure Boot variables
+  (PCR 7) record the change, the setup re-enrolls the defaults, and with
+  the flash options locked the forgery no longer grants a flash write. A
+  limit of the platform (no MM variable services on coreboot), not a bug of
+  this firmware.
 - **XMP profiles**: the memory runs at its JEDEC timings.
 - **macOS**: supported through OpenCore, with the firmware options of
   [docs/macos.md](docs/macos.md), on the same ACPI tables as Linux and

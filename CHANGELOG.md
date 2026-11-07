@@ -7,6 +7,23 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.6.1
 
+- **The security options write-locked in SMM**: coreboot reads `bios_lock`
+  and `bootmedia_lock` from the variable store (`SMMSTORE`) to decide the
+  flash protections. They are BootService-only, so the OS cannot change
+  them with `SetVariable`, but it could write the variable store with the
+  raw `SMMSTORE` SMI, turn them off and, at the next boot, start the
+  firmware without its protections. Now, the way the TCG MOR lock already
+  works, the payload arms `SMMSTORE_CMD_OPTION_LOCK` at ReadyToBoot and,
+  while armed, coreboot refuses the writes of the variable store that
+  would turn a protected option off (`SMMSTORE_OPTION_LOCK`, patches
+  0236-0237, edk2 0056; the UEFI VariablePolicy model applied in MM). The
+  setup still changes the options, before the lock is armed, so the
+  flashing workflow is unchanged; capsules and `other-slot` are
+  unaffected. Only meaningful with *BIOS Lock* on, which the lock requires.
+  The authenticated Secure Boot variables are not covered: that would need
+  the signature check in SMM (a known limit in the README). Not yet run on
+  a machine: RISCHIO BRICK, recoverable from the other slot.
+
 - **The descriptor, the GbE and the ME regions under *Firmware
   protection***: the images leave the descriptor unlocked
   (`CONFIG_UNLOCK_FLASH_REGIONS`, so that flashrom can rewrite the
