@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 8 Nov 2026 16:00:00 +0100
+Subject: [PATCH] sb/intel/lynxpoint: Let a board turn USB2 ports of the xHCI
+ off
+
+A weak mainboard_usb2_port_disable_mask() gives the USB2 ports a board
+wants off at runtime, from a setup option for instance; usb_xhci_init()
+ORs it into USB2PDO (D20:F0:E4h, bit n for port n + 1) at every boot
+and S3 resume, before the Access Control bit makes the register
+read-only. The default is no port.
+---
+ src/southbridge/intel/lynxpoint/pch.h      |  2 ++
+ src/southbridge/intel/lynxpoint/usb_xhci.c | 16 ++++++++++++++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/src/southbridge/intel/lynxpoint/pch.h b/src/southbridge/intel/lynxpoint/pch.h
+index 0001b4a53f8..bfd7eb8e366 100644
+--- a/src/southbridge/intel/lynxpoint/pch.h
++++ b/src/southbridge/intel/lynxpoint/pch.h
+@@ -100,6 +100,7 @@ void pch_log_state(void);
+ void acpi_create_serialio_ssdt(acpi_header_t *ssdt);
+ 
+ void enable_usb_bar(void);
++u32 mainboard_usb2_port_disable_mask(void);
+ void pch_apply_gbe_option(void);
+ void early_pch_init(void);
+ void pch_enable_lpc(void);
+@@ -252,6 +253,7 @@ void mainboard_config_rcba(void);
+ #define XHCI_USB3FUS		0xe0
+ #define  XHCI_USB3FUS_SS_MASK	3
+ #define  XHCI_USB3FUS_SS_SHIFT	3
++#define XHCI_USB2PDO		0xe4
+ #define XHCI_USB3PDO		0xe8
+ 
+ /* XHCI Memory Registers */
+diff --git a/src/southbridge/intel/lynxpoint/usb_xhci.c b/src/southbridge/intel/lynxpoint/usb_xhci.c
+index 72b53a2d821..206e3403323 100644
+--- a/src/southbridge/intel/lynxpoint/usb_xhci.c
++++ b/src/southbridge/intel/lynxpoint/usb_xhci.c
+@@ -7,6 +7,7 @@
+ #include <device/pci_ids.h>
+ #include <device/mmio.h>
+ #include <device/pci_ops.h>
++#include <types.h>
+ #include "chip.h"
+ #include "iobp.h"
+ #include "pch.h"
+@@ -271,6 +272,16 @@ static void usb_xhci_clock_gating(struct device *dev)
+ 	pci_and_config32(dev, 0xa4, ~(1 << 13));
+ }
+ 
++/*
++ * USB2 ports of the xHCI that the board turns off at runtime (a setup option),
++ * as a mask of USB2PDO: bit n for port n + 1. Applied at every boot and S3
++ * resume, before the Access Control bit, which makes the register read-only.
++ */
++__weak u32 mainboard_usb2_port_disable_mask(void)
++{
++	return 0;
++}
++
+ static void usb_xhci_init(struct device *dev)
+ {
+ 	u32 reg32;
+@@ -317,6 +328,11 @@ static void usb_xhci_init(struct device *dev)
+ 	}
+ 	pci_write_config32(dev, 0x50, reg32);
+ 
++	/* Ports turned off by the board, before the Access Control Bit locks it */
++	reg32 = mainboard_usb2_port_disable_mask() & XHCI_USB2PR_HCSEL;
++	if (reg32)
++		pci_or_config32(dev, XHCI_USB2PDO, reg32);
++
+ 	/* D20:F0:44h[31] = 1 (Access Control Bit) */
+ 	pci_or_config32(dev, 0x44, 1 << 31);
+ 
+-- 
+2.47.3
+

@@ -7,6 +7,11 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.6.1
 
+- **Camera switch on the W541** (patches 0244-0245): *Hardware* →
+  *Expansion ports* → *Integrated camera*, on by default. Off, its USB
+  port (xHCI USB2 port 12) is disabled at every start and wake, so no OS
+  sees the camera; an OS that routes the port to the USB 2.0 controller
+  instead would still find it, as the help says. Not yet run on a W541.
 - **Internal microphone switch on the W541** (patch 0243): *General* →
   *Sound* → *Internal microphone*, on by default. Off, the firmware tells
   the OS that the lid's microphone is not connected, so it is not offered
