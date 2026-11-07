@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
-Date: Sat, 7 Nov 2026 17:40:00 +0100
+Date: Sat, 7 Nov 2026 18:15:00 +0100
 Subject: [PATCH] drivers/smmstore: Write-lock the security options in SMM
 
 coreboot reads bios_lock and bootmedia_lock from the variable store
@@ -26,11 +26,11 @@ Behind SMMSTORE_OPTION_LOCK, off by default.
 ---
  src/drivers/smmstore/Kconfig        |  17 ++
  src/drivers/smmstore/Makefile.mk    |   1 +
- src/drivers/smmstore/options_lock.c | 237 ++++++++++++++++++++++++++++
+ src/drivers/smmstore/options_lock.c | 262 ++++++++++++++++++++++++++++
  src/drivers/smmstore/smi.c          |   7 +
  src/drivers/smmstore/store.c        |  49 ++++++
- src/include/smmstore.h              |  19 +++
- 6 files changed, 330 insertions(+)
+ src/include/smmstore.h              |  19 ++
+ 6 files changed, 355 insertions(+)
  create mode 100644 src/drivers/smmstore/options_lock.c
 
 diff --git a/src/drivers/smmstore/Kconfig b/src/drivers/smmstore/Kconfig
@@ -72,10 +72,10 @@ index 403466d6..d85b9d6c 100644
 +smm-$(CONFIG_SMMSTORE_OPTION_LOCK) += options_lock.c
 diff --git a/src/drivers/smmstore/options_lock.c b/src/drivers/smmstore/options_lock.c
 new file mode 100644
-index 00000000..e4c43b5f
+index 00000000..06c86429
 --- /dev/null
 +++ b/src/drivers/smmstore/options_lock.c
-@@ -0,0 +1,237 @@
+@@ -0,0 +1,262 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +/*
@@ -124,11 +124,20 @@ index 00000000..e4c43b5f
 +	{ "bootmedia_lock", 1 },
 +};
 +
++/*
++ * The value of each option latched at arm. Once armed an option cannot change
++ * (that is the lock), so the per-write check uses this as the "before" and does
++ * not read the store for it; an option that was off is never refused. Room for
++ * a few options, guarded by a static assert.
++ */
 +struct option_lock_state {
 +	uint32_t signature;
 +	uint8_t armed;
++	uint8_t on[4];
 +	uint8_t reserved[3];
 +} __packed;
++
++_Static_assert(ARRAY_SIZE(protected_options) <= 4, "option_lock_state.on is too small");
 +
 +/* In the SMRAM region kept across S3, zeroed on every other boot */
 +static struct option_lock_state *option_state(void)
@@ -242,10 +251,11 @@ index 00000000..e4c43b5f
 +
 +bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size)
 +{
++	const struct option_lock_state *state = option_state();
 +	struct region_device store, overlay_root, overlay;
 +	struct after_write aw;
 +
-+	if (!smmstore_options_protecting())
++	if (!state || !state->armed)
 +		return true;
 +
 +	if (variable_store(&store)) {
@@ -273,8 +283,12 @@ index 00000000..e4c43b5f
 +	}
 +
 +	for (size_t i = 0; i < ARRAY_SIZE(protected_options); i++) {
-+		uint32_t before = option_value(&store, i);
 +		uint32_t after;
++
++		/* Latched at arm; an option that was off is never refused, so the
++		 * store is not read for it. bios_lock is always on (the guard). */
++		if (!state->on[i])
++			continue;
 +
 +		after_write_ctx = &aw;
 +		aw.read_error = false;
@@ -286,8 +300,8 @@ index 00000000..e4c43b5f
 +			printk(BIOS_ERR, "Option lock: variable store unreadable, write refused\n");
 +			return false;
 +		}
-+		/* The downgrade to guard: an effective on becoming off */
-+		if (before && !after) {
++		/* The downgrade to guard: a latched-on option becoming off */
++		if (!after) {
 +			printk(BIOS_WARNING, "Option lock: refused a %s that turns '%s' off\n",
 +			       data ? "write" : "erase", protected_options[i].name);
 +			return false;
@@ -300,6 +314,8 @@ index 00000000..e4c43b5f
 +uint32_t smmstore_options_lock(void)
 +{
 +	struct option_lock_state *state = option_state();
++	struct region_device store;
++	bool have_store;
 +
 +	if (!state)
 +		return SMMSTORE_RET_UNSUPPORTED;
@@ -308,6 +324,15 @@ index 00000000..e4c43b5f
 +		return SMMSTORE_RET_UNSUPPORTED;
 +
 +	if (!state->armed) {
++		/*
++		 * Latch each option's value now, so the per-write check does not
++		 * read the store for the "before": once armed it cannot change. A
++		 * store that cannot be read latches the secure fallback.
++		 */
++		have_store = variable_store(&store) == 0;
++		for (size_t i = 0; i < ARRAY_SIZE(protected_options); i++)
++			state->on[i] = (have_store ? option_value(&store, i)
++						   : protected_options[i].fallback) ? 1 : 0;
 +		state->armed = 1;
 +		printk(BIOS_INFO, "Option lock: armed, the security options are read-only to the OS\n");
 +	}
