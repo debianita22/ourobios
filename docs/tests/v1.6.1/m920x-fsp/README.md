@@ -24,3 +24,15 @@ in SMMSTORE that `hw-report.py` can query from the OS, the arm's result
 left in CBMEM by ramstage-visible memory (a word in the SMMSTORE com
 buffer or a CBMEM entry the SMI handler writes), or `DEBUG_SMI` on in a
 test build.
+
+## v1.6.1-rc2
+
+rc2 (`c7eda40`, with edk2 0057) as a capsule from rc1, slot B,
+2026-11-07, both protections on. FLASH-06 is now observable:
+`OptionLockStatus` is in efivarfs, 12 bytes `06 00 00 00` (BS+RT, volatile)
+then eight zeros, EFI_SUCCESS: the option lock armed; efivarfs marks it
+immutable as for any variable, and `hw-report.py` FLASH-01 says
+*option lock: armato*. The variable keeps its value across two resumes
+from S3, variable writes from the OS still go through (`efibootmgr -t`),
+and PR0 and PR1 are set again after the resumes. Report: 21 PASS, 2 INFO,
+1 SKIP.
