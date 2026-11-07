@@ -25,10 +25,10 @@ on a machine yet.
  src/include/smmstore.h                        |  3 +
  src/soc/intel/cannonlake/Kconfig              | 12 ++++
  src/soc/intel/cannonlake/Makefile.mk          |  3 +
- src/soc/intel/cannonlake/firmware_watchdog.c  | 68 +++++++++++++++++++
+ src/soc/intel/cannonlake/firmware_watchdog.c  | 69 +++++++++++++++++++
  .../include/soc/firmware_watchdog.h           | 14 ++++
  src/soc/intel/cannonlake/romstage/romstage.c  |  2 +
- 7 files changed, 110 insertions(+)
+ 7 files changed, 111 insertions(+)
  create mode 100644 src/soc/intel/cannonlake/firmware_watchdog.c
  create mode 100644 src/soc/intel/cannonlake/include/soc/firmware_watchdog.h
 
@@ -116,10 +116,10 @@ index f869176ca77..7c8d89eba56 100644
  romstage-y += pmutil.c
 diff --git a/src/soc/intel/cannonlake/firmware_watchdog.c b/src/soc/intel/cannonlake/firmware_watchdog.c
 new file mode 100644
-index 00000000000..6f8496f2f16
+index 00000000000..21879fac675
 --- /dev/null
 +++ b/src/soc/intel/cannonlake/firmware_watchdog.c
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,69 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +/*
@@ -137,13 +137,14 @@ index 00000000000..6f8496f2f16
 +#include <console/console.h>
 +#include <intelblocks/oc_wdt.h>
 +#include <option.h>
++#include <smmstore.h>
 +#include <soc/firmware_watchdog.h>
 +#include <types.h>
 +
 +/* Never shorter: a boot that trains the memory takes about 40 s */
 +#define FIRMWARE_WATCHDOG_MIN_SECONDS	180
 +
-+#if ENV_ROMSTAGE
++#if ENV_SEPARATE_ROMSTAGE
 +static unsigned int firmware_watchdog_timeout(void)
 +{
 +	unsigned int t = get_uint_option("firmware_watchdog", 0);
