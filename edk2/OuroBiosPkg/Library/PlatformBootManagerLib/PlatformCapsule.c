@@ -27,6 +27,8 @@
 #include <Guid/FileInfo.h>
 #include <Guid/Gpt.h>
 #include <Library/SmmStoreLib.h>
+#include <Library/VariablePolicyHelperLib.h>
+#include <Protocol/VariablePolicy.h>
 #include <Protocol/BatteryStatus.h>
 #include <Protocol/SimpleFileSystem.h>
 
@@ -484,6 +486,78 @@ CapsuleApply (
 }
 
 STATIC BOOLEAN  mFirmwareSlotsLocked;
+STATIC BOOLEAN  mOptionLockReported;
+
+/**
+  Before EndOfDxe, which closes Variable Policy to new rules: OptionLockStatus
+  becomes read-only as soon as it exists (lock on create), so only the first
+  write, PlatformReportOptionLock() at ReadyToBoot, goes in.
+**/
+VOID
+PlatformRegisterOptionLockPolicy (
+  VOID
+  )
+{
+  EFI_STATUS                      Status;
+  EDKII_VARIABLE_POLICY_PROTOCOL  *VariablePolicy;
+
+  Status = gBS->LocateProtocol (&gEdkiiVariablePolicyProtocolGuid, NULL, (VOID **)&VariablePolicy);
+  if (!EFI_ERROR (Status)) {
+    Status = RegisterBasicVariablePolicy (
+               VariablePolicy,
+               &gEficorebootNvDataGuid,
+               L"OptionLockStatus",
+               VARIABLE_POLICY_NO_MIN_SIZE,
+               VARIABLE_POLICY_NO_MAX_SIZE,
+               VARIABLE_POLICY_NO_MUST_ATTR,
+               EFI_VARIABLE_NON_VOLATILE,
+               VARIABLE_POLICY_TYPE_LOCK_ON_CREATE
+               );
+  }
+
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "Capsules: no Variable Policy for OptionLockStatus: %r\n", Status));
+  }
+}
+
+/**
+  Tell the OS what coreboot answered to the arm of the option lock: the
+  EFI_STATUS of SmmStoreLibOptionLock() (EFI_SUCCESS armed, EFI_UNSUPPORTED
+  with no option lock or BIOS Lock off) as a UINT64 in the volatile variable
+  OptionLockStatus of the coreboot options GUID, readable from efivarfs
+  (tools/hw-report.py, FLASH-06). PlatformRegisterOptionLockPolicy() made it
+  lock-on-create before EndOfDxe, so once written here the OS can read it but
+  not change it, nor create it first. It is the
+  payload's report of the answer of SMM, not a reading of the state there:
+  coreboot's SMM console is compiled out in the release builds (DEBUG_SMI).
+**/
+STATIC
+VOID
+PlatformReportOptionLock (
+  IN EFI_STATUS  LockStatus
+  )
+{
+  EFI_STATUS  Status;
+  UINT64      Value;
+
+  if (mOptionLockReported) {
+    return;
+  }
+
+  mOptionLockReported = TRUE;
+  Value               = (UINT64)LockStatus;
+  Status              = gRT->SetVariable (
+                               L"OptionLockStatus",
+                               &gEficorebootNvDataGuid,
+                               EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
+                               sizeof (Value),
+                               &Value
+                               );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "Capsules: OptionLockStatus not written: %r\n", Status));
+    return;
+  }
+}
 
 /**
   A boot option or an OS is about to start: from now on, only an update
@@ -515,6 +589,7 @@ PlatformLockFirmwareSlots (
   //
   Status = SmmStoreLibOptionLock ();
   DEBUG ((DEBUG_INFO, "Capsules: security options write-locked: %r\n", Status));
+  PlatformReportOptionLock (Status);
 }
 
 /**

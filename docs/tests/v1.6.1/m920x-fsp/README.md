@@ -16,7 +16,10 @@ stays in slot B.
 
 The report of the first boot: [hw-m920x-fsp-rc1.txt](hw-m920x-fsp-rc1.txt).
 
-To make FLASH-06 observable, one of: a status command of the option lock
+Done for rc2: the payload writes what coreboot answered to the arm into
+the volatile variable `OptionLockStatus` (edk2 0057, read-only to the OS
+by a lock-on-create Variable Policy registered before EndOfDxe), which
+`hw-report.py` reads. The options considered were: a status command of the option lock
 in SMMSTORE that `hw-report.py` can query from the OS, the arm's result
 left in CBMEM by ramstage-visible memory (a word in the SMMSTORE com
 buffer or a CBMEM entry the SMI handler writes), or `DEBUG_SMI` on in a

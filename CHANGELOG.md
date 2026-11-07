@@ -21,8 +21,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   flashing workflow is unchanged; capsules and `other-slot` are
   unaffected. Only meaningful with *BIOS Lock* on, which the lock requires.
   The authenticated Secure Boot variables are not covered: that would need
-  the signature check in SMM (a known limit in the README). Not yet run on
-  a machine: RISCHIO BRICK, recoverable from the other slot.
+  the signature check in SMM (a known limit in the README). Run on the
+  M920x with v1.6.1-rc1: the regressions pass, but the arm left no trace
+  (SMM's console is compiled out without `DEBUG_SMI`); from rc2 the payload
+  reports what coreboot answered in the volatile variable
+  `OptionLockStatus` of the coreboot options GUID, read-only to the OS by
+  a lock-on-create Variable Policy (edk2 0057), and `hw-report.py` reads
+  it (FLASH-01, FLASH-06).
 
 - **The descriptor, the GbE and the ME regions under *Firmware
   protection***: the images leave the descriptor unlocked

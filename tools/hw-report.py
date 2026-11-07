@@ -429,6 +429,26 @@ def known(text, table, board, release=None):
 
 # --- i controlli ---------------------------------------------------------------
 
+OPTION_LOCK_VAR = "/sys/firmware/efi/efivars/OptionLockStatus-ceae4c1d-335b-4685-a4a0-fc4a94eea085"
+
+
+def option_lock_status():
+    """La risposta di SMM all'armamento del blocco delle opzioni come la riporta
+    il payload (edk2/0057): None senza la variabile (firmware di prima, o
+    senza vboot)."""
+    try:
+        raw = open(OPTION_LOCK_VAR, "rb").read()
+    except OSError:
+        return None
+    if len(raw) != 12:
+        return "variabile di %d byte, attesi 4 di attributi e 8 di valore" % len(raw)
+    v = int.from_bytes(raw[4:], "little")
+    if v == 0:
+        return "armato: bios_lock e bootmedia_lock di sola lettura per l'OS"
+    if v == 0x8000000000000003:
+        return "non armato: EFI_UNSUPPORTED (BIOS Lock spento o firmware senza il blocco)"
+    return "non armato: EFI_STATUS %#x" % v
+
 def check_firmware(fw, rep):
     """BOOT-01: quale firmware gira, e se le parti dicono la stessa versione."""
     details, status = [], "PASS"
@@ -1808,6 +1828,11 @@ def check_flash(fw, rep):
     # printk SMM arriva nella CBMEM console solo con DEBUG_SMI (le release no)
     if fw.log is not None and fw.grep(r"^Option lock: armed"):
         details.append("option lock: bios_lock e bootmedia_lock di sola lettura per l'OS (armato a ReadyToBoot)")
+    # dalla v1.6.1 il payload lascia la risposta di SMM all'armamento nella
+    # variabile volatile OptionLockStatus (edk2/0057): l'EFI_STATUS in 8 byte
+    olk = option_lock_status()
+    if olk is not None:
+        details.append("option lock: %s (OptionLockStatus del payload)" % olk)
     covered, locked, flockdn, err, from_log, si, si_by = None, None, None, None, None, None, ""
     p = spi_probe(fw)
     if p is not None:

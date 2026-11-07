@@ -57,6 +57,7 @@
   TcgPhysicalPresenceLib
   Tcg2PhysicalPresenceLib
   UpdateScreenLib
+  VariablePolicyHelperLib
 
 [Guids]
   gEfiEndOfDxeEventGroupGuid
@@ -67,7 +68,7 @@
   gEfiCapsuleReportGuid           ## CONSUMES ## Variable:L"CapsuleLast"
   gEfiFileInfoGuid                ## CONSUMES
   gEfiPartTypeSystemPartGuid      ## CONSUMES
-  gEficorebootNvDataGuid          ## CONSUMES ## Variable:L"ipxe_boot" L"csmwrap_boot" L"usb_boot" L"boot_menu_prompt"
+  gEficorebootNvDataGuid          ## CONSUMES ## Variable:L"ipxe_boot" L"csmwrap_boot" L"usb_boot" L"boot_menu_prompt"; PRODUCES ## Variable:L"OptionLockStatus"
   gEfiGlobalVariableGuid          ## CONSUMES ## Variable:L"SecureBoot"
 
 [Protocols]
@@ -83,6 +84,7 @@
   gEfiPciRootBridgeIoProtocolGuid
   gEfiBatteryStatusProtocolGuid   ## SOMETIMES_CONSUMES
   gEdkiiPlatformBootManagerProtocolGuid ## SOMETIMES_PRODUCES
+  gEdkiiVariablePolicyProtocolGuid ## SOMETIMES_CONSUMES
 
 [Pcd]
   gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut

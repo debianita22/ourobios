@@ -54,3 +54,4 @@
 0054-UefiPayloadPkg-Leave-SdMmcPciGliDxe-out-of-the-paylo.patch
 0055-UefiPayloadPkg-Leave-SdhciNonPciDxe-out-of-the-paylo.patch
 0056-UefiPayloadPkg-Arm-coreboot-s-lock-of-the-security-o.patch
+0057-UefiPayloadPkg-Report-the-option-lock-to-the-OS-in-a-v.patch
