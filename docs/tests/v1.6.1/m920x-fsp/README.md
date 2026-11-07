@@ -36,3 +36,20 @@ immutable as for any variable, and `hw-report.py` FLASH-01 says
 from S3, variable writes from the OS still go through (`efibootmgr -t`),
 and PR0 and PR1 are set again after the resumes. Report: 21 PASS, 2 INFO,
 1 SKIP.
+
+### rc2, the checklist round (2026-11-07 and 08)
+
+| ID | Result | Notes |
+|---|---|---|
+| reports | PASS | a reboot ([rc2/hw-m920x-fsp-1.md](rc2/hw-m920x-fsp-1.md)) and a cold boot from S5 ([rc2/hw-m920x-fsp-2.md](rc2/hw-m920x-fsp-2.md): 10.67 s, FSP-M 0.25 s): 21 PASS, 2 INFO, 1 SKIP; with the copy of the flash 23 PASS, the event log 297 events, VB-02 slot B confirmed and A confirmed, OPT-01 35 options |
+| CONF-02 | PASS | DSDT and SSDT 0 errors, no remark 2063 |
+| CONF-03 | PASS | fwts: 465 pass, 0 failed, 5 warnings ([rc2/fwts-m920x-fsp.log](rc2/fwts-m920x-fsp.log)) |
+| CONF-04 | PASS, `spi_desc` FAILED by design | the six modules PASSED with the kernel driver for `access_uefispec`; `spi_desc` reads FRAP, the write is refused by PR1 ([rc2/chipsec/](rc2/chipsec/)) |
+| UPD-05 | PASS | `update.py rollback` from rc2: slot A already rc1, the payload of rc2 only switched slots; rc1 booted, without `OptionLockStatus` (it comes with 0057); the capsule of rc2 staged again brought rc2 back from B, the lock armed ([rc2/upd-05.txt](rc2/upd-05.txt)) |
+| FLASH-06 | PASS | `OptionLockStatus` armed at every boot of rc2, cold or warm, and kept across resumes |
+
+`hw-report.py` changed from this round: ME-01 falls back on the OEM
+strings of SMBIOS after a resume from S3, when the CBMEM console has
+started again without the `ME:` lines (INFO instead of SKIP), and
+FLASH-01 turns WARN when the payload reports the option lock not armed
+while the protections are on.

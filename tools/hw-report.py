@@ -1556,6 +1556,22 @@ def check_me(fw, rep):
                 {"me_state": 2, "hap": hap_set, "heci": heci})
         return
     if com is None:
+        # dopo una ripresa da S3 la console di CBMEM ricomincia e le righe
+        # 'ME:' dell'avvio non ci sono piu'; le stringhe OEM di SMBIOS, scritte
+        # all'avvio, dicono ancora lo stato
+        try:
+            oem = update.me_status(fw.board)
+        except (OSError, update.Error):
+            oem = None
+        if oem:
+            disabled = oem.startswith("disattivata")
+            want = int(opt.group(1)) if opt else None
+            st = "INFO" if want is None else ("PASS" if (want != 0) == disabled else "WARN")
+            rep.add("ME-01", "Intel ME", st, "%s (dalle stringhe OEM di SMBIOS: nel log niente righe 'ME:', "
+                    "dopo una ripresa da S3 la console ricomincia)" % oem,
+                    ["opzione me_state: %s" % (want if want is not None else "non nel log")],
+                    {"oem": oem, "me_state": want})
+            return
         hint = debug_hint(fw, "le righe 'ME:'")
         rep.add("ME-01", "Intel ME", "SKIP", "nessuna riga 'ME: Current Operation Mode' nel log",
                 [hint] if hint else [])
@@ -1892,6 +1908,11 @@ def check_flash(fw, rep):
             if flockdn is not None else "protezione accesa secondo il log (registri non letti)"
     else:
         status, summary = "INFO", "nessuna riga BM-LOCKDOWN nel log"
+    # il payload riporta che il blocco delle opzioni non si e' armato mentre
+    # le protezioni sono accese: l'OS potrebbe spegnerle per il prossimo avvio
+    if olk is not None and not olk.startswith("armato") and status == "PASS" and covered is not None:
+        status = "WARN"
+        summary += "; blocco delle opzioni non armato (OptionLockStatus): %s" % olk
     rep.add("FLASH-01", "Protezione del flash", status, summary, details,
             {"wp_ro_protected": covered is not None and bool(locked), "wp_ro_from_log": from_log,
              "option_off": off, "si_all_protected": si == "ok"})

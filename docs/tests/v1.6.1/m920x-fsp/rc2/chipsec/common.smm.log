@@ -1,0 +1,52 @@
+
+################################################################
+##                                                            ##
+##  CHIPSEC: Platform Hardware Security Assessment Framework  ##
+##                                                            ##
+################################################################
+[CHIPSEC] Version  : 1.13.16
+[CHIPSEC] Arguments: -m common.smm -l /root/ourobios-test-v1.6.0/m920x-fsp/v161rc2/chipsec/common.smm.log
+
+
+[CHIPSEC] OS      : Linux 7.0.14-15-pve #1 SMP PREEMPT_DYNAMIC PMX 7.0.14-15 (2026-08-26T14:21Z) x86_64
+[CHIPSEC] Python  : 3.13.5 (64-bit) - Enabled GIL
+[CHIPSEC] Helper  : LinuxHelper (/root/chipsec-venv/lib/python3.13/site-packages/chipsec/helper/linux/chipsec.ko)
+[CHIPSEC] Platform: Desktop 8th Generation Core Processor (Coffeelake S 4 Cores)
+[CHIPSEC]    CPUID: 906EB
+[CHIPSEC]      VID: 8086
+[CHIPSEC]      DID: 3E1F
+[CHIPSEC]      RID: 08
+[CHIPSEC] PCH     : Intel Q370 (300 series) PCH
+[CHIPSEC]      VID: 8086
+[CHIPSEC]      DID: A306
+[CHIPSEC]      RID: 10
+
+ 
+[+] loaded chipsec.modules.common.smm
+[*] running loaded modules ..
+
+[*] Running module: chipsec.modules.common.smm
+[*] Metadata tags: ['OPENSOURCE', 'IA', 'COMMON', 'SMM']
+[x][ =======================================================================
+[x][ Module: Compatible SMM memory (SMRAM) Protection
+[x][ =======================================================================
+[*] PCI0.0.0_SMRAMC = 0x1A << System Management RAM Control (b:d.f 00:00.0 + 0x88)
+    [00] C_BASE_SEG       = 2 << SMRAM Base Segment = 010b 
+    [03] G_SMRAME         = 1 << SMRAM Enabled 
+    [04] D_LCK            = 1 << SMRAM Locked 
+    [05] D_CLS            = 0 << SMRAM Closed 
+    [06] D_OPEN           = 0 << SMRAM Open 
+[*] Compatible SMRAM is enabled
+[+] PASSED: Compatible SMRAM is locked down
+
+[CHIPSEC] ***************************  SUMMARY  ***************************
+[CHIPSEC] Time elapsed            0.001
+[CHIPSEC] Modules failed to run   0:
+[CHIPSEC] Modules passed          1:
+[+] PASSED: chipsec.modules.common.smm
+[CHIPSEC] Modules information     0:
+[CHIPSEC] Modules failed          0:
+[CHIPSEC] Modules with warnings   0:
+[CHIPSEC] Modules not applicable  0:
+[CHIPSEC] Modules total           1
+[CHIPSEC] *****************************************************************
