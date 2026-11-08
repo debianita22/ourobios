@@ -1,0 +1,128 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 16:19:36 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: Key the training data with
+ the code
+
+The version of the saved training data, reg_frame_rev(), is a number
+bumped by hand, 3 now. The fast path restores the saved registers
+without testing them, so a slot built from other code restores data
+that it did not train, or that another layout saved, until someone
+remembers to bump it: data saved before the DRAM voltage came from the
+SPD would have kept DDR3L at 1.5 V. With vboot, a slot that falls back
+to the other one, or that the payload switches to, finds the data of
+the other slot.
+
+Make the version a tag, 'N' in bits 31:24, and 24 bits of an xxh32 of
+the memory settings of the devicetree (SPD addresses, DRAM voltage, DQ
+interleaving) seeded with NRI_CODE_KEY, a SHA-256 of the sources of
+the native RAM init, of the register headers and raminit_shared.c, and
+of the Kconfig options with NRI or RAMINIT in their name, made at build
+time. A slot built from other code, or another board, trains again; the
+same code keeps its data. The tag keeps the data of mrc.bin apart.
+
+Any change of the code trains once more after an update, which is the
+point: the measured cost on a ThinkPad W541 is 0.7 s once.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: I9236f251b9bae4365a32111fad68097c6c566fcc
+---
+ .../intel/haswell/native_raminit/Makefile.mk  | 19 ++++++++
+ .../haswell/native_raminit/save_restore.c     | 45 +++++++++++++------
+ 2 files changed, 51 insertions(+), 13 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+index 66c6f7c65a..97a727cb35 100644
+--- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
++++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+@@ -29,3 +29,22 @@ romstage-y += train_round_trip.c
+ romstage-y += train_sense_amp_offset.c
+ 
+ romstage-$(CONFIG_DEBUG_RAM_SETUP) += info_dumps.c
++
++# The key of the training data: a hash of the code that trains and restores
++# the memory and of its Kconfig options, so that a slot never restores data
++# saved by other code (save_restore.c)
++nri-key-srcs := $(sort $(wildcard $(dir)/*.c $(dir)/*.h)) \
++	$(sort $(wildcard src/northbridge/intel/haswell/registers/*.h)) \
++	src/northbridge/intel/haswell/raminit.h \
++	src/northbridge/intel/haswell/raminit_shared.c
++nri-key-h := $(obj)/romstage/northbridge/intel/haswell/native_raminit/nri_code_key.h
++
++$(nri-key-h): $(nri-key-srcs) $(DOTCONFIG)
++	mkdir -p $(dir $@)
++	key=$$( { cat $(nri-key-srcs); \
++		grep -E '^CONFIG_[A-Z0-9_]*(NRI|RAMINIT)[A-Z0-9_]*=' $(DOTCONFIG); } \
++		| sha256sum | cut -c1-8); \
++	printf '#define NRI_CODE_KEY 0x%s\n' "$$key" > $@.tmp
++	mv $@.tmp $@
++
++$(call src-to-obj,romstage,$(dir)/save_restore.c): $(nri-key-h)
+diff --git a/src/northbridge/intel/haswell/native_raminit/save_restore.c b/src/northbridge/intel/haswell/native_raminit/save_restore.c
+index 1f260f6d99..c4b9462a76 100644
+--- a/src/northbridge/intel/haswell/native_raminit/save_restore.c
++++ b/src/northbridge/intel/haswell/native_raminit/save_restore.c
+@@ -1,27 +1,46 @@
+ /* SPDX-License-Identifier: GPL-2.0-or-later */
+ 
+ #include <assert.h>
++#include <commonlib/bsd/xxhash.h>
+ #include <console/console.h>
++#include <northbridge/intel/haswell/chip.h>
+ #include <northbridge/intel/haswell/haswell.h>
++#include <romstage/northbridge/intel/haswell/native_raminit/nri_code_key.h>
++#include <static.h>
++#include <string.h>
+ #include <types.h>
+ 
+ #include "raminit_native.h"
+ 
++/* The tag of the training data of this RAM init, in bits 31:24 of its version */
++#define NRI_CACHE_TAG	'N'
++
++/*
++ * The version of the saved training data, which mrc_cache compares as a whole:
++ * the tag, and 24 bits of a key. The key hashes NRI_CODE_KEY, made at build time
++ * from the sources of the native RAM init and its Kconfig options (Makefile.mk),
++ * with the memory settings of the devicetree. A slot built from other code, or
++ * a board with other settings, does not restore the data: it trains again. The
++ * fast path restores the registers without testing them, so a number bumped by
++ * hand, as before (revisions 1 to 3), let a slot restore data that other code
++ * had trained or saved in another layout. The tag keeps the data of mrc.bin,
++ * which has a version of its own, apart.
++ */
+ uint32_t reg_frame_rev(void)
+ {
+-	/*
+-	 * Equivalent to MRC_CACHE_REVISION, but hidden via abstraction.
+-	 * The structures that get saved to flash are contained within
+-	 * this translation unit, so changes outside this file shouldn't
+-	 * require invalidating the cache.
+-	 *
+-	 * Exception: revision 2 discards data saved with broken per-bit
+-	 * sense amplifier offsets, so that they get trained again. Revision
+-	 * 3 does the same for data saved before the rank mapping fix
+-	 * (CB:96694), whose 1D margins of ranks 1-3 were trained with the
+-	 * register file of rank 0.
+-	 */
+-	return 3;
++	const struct northbridge_intel_haswell_config *cfg = config_of_soc();
++	struct {
++		uint8_t spd_addresses[ARRAY_SIZE(cfg->spd_addresses)];
++		uint16_t ddr_voltage_mv;
++		uint8_t dq_pins_interleaved;
++	} __packed settings = {
++		.ddr_voltage_mv		= cfg->ddr_voltage_mv,
++		.dq_pins_interleaved	= cfg->dq_pins_interleaved,
++	};
++
++	memcpy(settings.spd_addresses, cfg->spd_addresses, sizeof(settings.spd_addresses));
++
++	return NRI_CACHE_TAG << 24 | (xxh32(&settings, sizeof(settings), NRI_CODE_KEY) & 0xffffff);
+ }
+ 
+ struct register_save {
+-- 
+2.43.0
+

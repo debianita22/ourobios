@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 16:19:36 +0100
+Subject: [PATCH] mb/lenovo/haswell: Keep the training cache on a switch of
+ vboot slots
+
+The version of the training cache of both RAM inits now tells whether a
+slot can use it: the native RAM init keys it with its code, mrc.bin
+with its inputs. Select SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE, so that
+the switch to the other slot from the payload keeps the cache, as on
+the ThinkCentre M920x: the other slot trains only if the cache is not
+its own.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: I469b2facb971110c57e9a0560dd5c8e799942413
+---
+ src/drivers/smmstore/Kconfig         | 3 ++-
+ src/mainboard/lenovo/haswell/Kconfig | 1 +
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/drivers/smmstore/Kconfig b/src/drivers/smmstore/Kconfig
+index 434e7ef397..3bab14e177 100644
+--- a/src/drivers/smmstore/Kconfig
++++ b/src/drivers/smmstore/Kconfig
+@@ -90,5 +90,6 @@ config SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE
+ 	  instead of erasing it. Select it only where the version of the
+ 	  cache tells each slot whether it can use it: the FSP-M of the
+ 	  slot, and the board's memory settings with
+-	  FSP_PLATFORM_MEMORY_SETTINGS_VERSIONS. A slot that cannot use it
++	  FSP_PLATFORM_MEMORY_SETTINGS_VERSIONS; on Haswell, the code of the
++	  native RAM init or the inputs of mrc.bin. A slot that cannot use it
+ 	  trains the memory itself, one that can skips the training.
+diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
+index 2b311b02be..d1347e6994 100644
+--- a/src/mainboard/lenovo/haswell/Kconfig
++++ b/src/mainboard/lenovo/haswell/Kconfig
+@@ -28,6 +28,7 @@ config BOARD_LENOVO_HASWELL_COMMON
+ 	select NORTHBRIDGE_INTEL_HASWELL
+ 	select NO_UART_ON_SUPERIO
+ 	select SERIRQ_CONTINUOUS_MODE
++	select SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE if SMMSTORE
+ 	select SOUTHBRIDGE_INTEL_LYNXPOINT
+ 	select SYSTEM_TYPE_LAPTOP
+ 
+-- 
+2.43.0
+

@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 16:30:15 +0100
+Subject: [PATCH] mb/lenovo/haswell: Offer the firmware watchdog on the W541
+
+Select the Lynx Point firmware watchdog on the W541 with SMMSTORE, and
+add General -> Boot -> Firmware watchdog: Off (default), 5 or 10
+minutes, as on the ThinkCentre M920x. Hidden on the T440p, where it
+was not looked at.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: I3581c1da54a3f561ab683810dfe333dc01855e6c
+---
+ src/mainboard/lenovo/haswell/Kconfig |  1 +
+ src/mainboard/lenovo/haswell/cfr.c   | 20 ++++++++++++++++++++
+ 2 files changed, 21 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
+index d1347e6994..b75af9e035 100644
+--- a/src/mainboard/lenovo/haswell/Kconfig
++++ b/src/mainboard/lenovo/haswell/Kconfig
+@@ -29,6 +29,7 @@ config BOARD_LENOVO_HASWELL_COMMON
+ 	select NO_UART_ON_SUPERIO
+ 	select SERIRQ_CONTINUOUS_MODE
+ 	select SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE if SMMSTORE
++	select SOUTHBRIDGE_INTEL_LYNXPOINT_FIRMWARE_WATCHDOG if BOARD_LENOVO_THINKPAD_W541 && SMMSTORE
+ 	select SOUTHBRIDGE_INTEL_LYNXPOINT
+ 	select SYSTEM_TYPE_LAPTOP
+ 
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 40ea1a465a..917416fd41 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -284,6 +284,25 @@ static const struct sm_object boot_menu_prompt = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ });
+ 
++/* Read by southbridge/intel/lynxpoint/firmware_watchdog.c */
++static const struct sm_object firmware_watchdog = SM_DECLARE_ENUM({
++	.flags		= CONFIG(SOUTHBRIDGE_INTEL_LYNXPOINT_FIRMWARE_WATCHDOG) ? 0
++			  : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "firmware_watchdog",
++	.ui_name	= "Firmware watchdog",
++	.ui_helptext	= "Resets the machine when the firmware hangs before the\n"
++			  "logo, so that a new firmware slot that hangs twice falls\n"
++			  "back to the other one by itself. Stopped once the firmware\n"
++			  "has started, not armed on a wake from sleep.\n"
++			  "Default: off.",
++	.default_value	= 0,
++	.values		= (const struct sm_enum_value[]) {
++				{ "Off",	0	},
++				{ "5 minutes",	300	},
++				{ "10 minutes",	600	},
++				SM_ENUM_VALUE_END	},
++});
++
+ /* Always shown on the W541: usb_boot and boot_menu_prompt are in every EDK2 build */
+ static const struct sm_object general_boot = SM_DECLARE_FORM({
+ 	.flags		= (CONFIG(BOARD_LENOVO_THINKPAD_W541) || CONFIG(EDK2_ENABLE_IPXE) ||
+@@ -294,6 +313,7 @@ static const struct sm_object general_boot = SM_DECLARE_FORM({
+ 		&csmwrap_boot,
+ 		&usb_boot,
+ 		&boot_menu_prompt,
++		&firmware_watchdog,
+ 		NULL
+ 	},
+ });
+-- 
+2.43.0
+
