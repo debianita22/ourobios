@@ -23,7 +23,7 @@ is here. None of it is a promise of a date.
 | [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | built for v1.6.1 (patches 0246-0249): one warm reset from romstage, which the native RAM init knows as its own and keeps its cache; not yet run on a machine | CPU-06 on a W541, `nri` and `mrc` |
 | [Device switches on the W541](#device-switches-on-the-w541) | W541 | built in v1.6.1: the Ethernet (patches 0241-0242), the microphone (0243), the camera (0244-0245) and the card reader (0257); not run on a W541 | DEV-W01 on the W541; no fingerprint reader on the unit of the port |
 | [Wake on LAN after a shutdown on the W541](#wake-on-lan-after-a-shutdown-on-the-w541) | W541 | built for v1.6.1 (patch 0259), as the Lenovo firmware does it; not run on a machine | NET-02 from power-off on AC and on battery, with each setting |
-| [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot; the Lenovo design read (2026-11-08): the password in SMRAM, unlocked by an SMI handler at resume | a design: the payload hands the block to coreboot's SMM, coreboot unlocks over AHCI on resume, then freezes |
+| [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot (no PEI, no LockBox, no boot script); the stock design read and a coreboot design written (2026-11-08), unbuilt: new secret-handling code in both, untestable without a locked drive | a decision whether to build it, with the caveats |
 | [NVIDIA power steering and the EC's CPU limits](#nvidia-power-steering-and-the-ecs-cpu-limits) | W541 | little use under Linux; a `_PPC` policy and adapter tests | count the EC's CPU limit events |
 | [EC events left out](#ec-events-left-out) | W541 | the HKEY queue built for v1.6.1 (patch 0260); the beep mask is the Lenovo one; 0x48, 0x49 and 0x5B still out | count the CPU-limit events with and without the acknowledgements |
 | [Card reader of the W541](#card-reader-of-the-w541) | W541 | the premise was wrong: the reader is an O2 Micro OZ777, which the payload drives already | none planned |
@@ -557,28 +557,68 @@ The Lenovo setup has a power-on password and hard disk passwords;
 ouroBIOS has the supervisor password, asked for before the setup and the
 boot menu (`edk2/0003`).
 
-- **Why later**: EDK2's hard disk password driver cannot unlock a drive
-  after S3 here: it needs a PEI phase on the resume path, which coreboot's
-  S3 resume does not have, so a locked drive would stay locked after a
-  suspend. A power-on password would be asked at every boot, unattended
-  ones included, and is a payload change of its own.
-- **Next step**: none planned.
-- **Read in the Lenovo firmware** (2026-11-08,
-  [docs/tests/v1.6.1/w541-nri/stock-gnet94ww.md](tests/v1.6.1/w541-nri/stock-gnet94ww.md#8-hard-disk-password-at-s3-resume)):
-  not EDK2's HddPassword nor Opal. At boot a DXE driver unlocks, sets and
-  freezes the drives and leaves the 32-byte ATA password of each (up to
-  four, with the SATA port) in SMRAM; at resume an SMI handler (software
-  SMI, raised by the PEI resume path) enables the AHCI port, sends
-  IDENTIFY and, if the drive reports itself locked, SECURITY UNLOCK. It
-  sends no FREEZE LOCK at resume, and the password stays in SMRAM in
-  clear.
-- **What it would take here**: the payload hands the password block and
-  the port of each drive to coreboot's SMM at boot (an SMMSTORE-like
-  command, before the lock at ReadyToBoot); on S3 resume coreboot unlocks
-  each drive over AHCI before the OS waking vector (ramstage, or an SMI it
-  raises), then sends FREEZE LOCK, which the Lenovo firmware omits; the
-  payload needs a hard disk password driver of its own. Not planned yet:
-  new code in both, and code that holds a secret.
+- **The power-on password** is a payload change of its own: asked at
+  every boot, unattended ones included, where the supervisor password is
+  asked only to open the setup and the boot menu. Not planned.
+- **Why the hard disk password is hard here**: a drive with an ATA
+  password set comes back locked from S3 (the drive lost power), and a
+  locked drive stays locked until something sends `SECURITY UNLOCK`
+  (0xF2) with the password. The two ready-made ways do not fit this
+  platform:
+  - **EDK2 `SecurityPkg/HddPassword`** (read 2026-11-08 at
+    `edk2-stable202608`): the resume unlock is `HddPasswordPei`, a PEIM
+    with a `BOOT_ON_S3_RESUME` depex that restores the password from a
+    LockBox (`LOCK_BOX_ATTRIBUTE_RESTORE_IN_S3_ONLY`) and drives a PEI
+    AHCI stack (`AhciPei`). coreboot's S3 resume has no PEI phase, the
+    payload builds with `LOCKBOX_SUPPORT = FALSE` and a null
+    `S3BootScriptLib`, and FSP, which the LockBox and the PEI storage
+    stack lean on, is not on this board. So the DXE half could set and
+    freeze a password at boot, but nothing would unlock after a suspend.
+  - **The Lenovo firmware** (`LenovoHdpManagerDxe`/`Smm`,
+    [docs/tests/v1.6.1/w541-nri/stock-gnet94ww.md](tests/v1.6.1/w541-nri/stock-gnet94ww.md#8-hard-disk-password-at-s3-resume)):
+    the DXE driver unlocks, sets and freezes the drives at boot and
+    leaves the 32-byte ATA password of each (up to four, with the SATA
+    port and the device path) in locked SMRAM; on resume an SMM handler,
+    raised by a software SMI from the PEI resume path, re-enables the
+    AHCI port, sends `IDENTIFY` (0xEC), and on the "locked" bit (word 128
+    bit 2) sends `SECURITY UNLOCK`. It sends no `FREEZE LOCK` afterwards,
+    and the password sits in SMRAM in clear across every S3.
+- **The design that fits coreboot**: follow the Lenovo split, since
+  coreboot's SMM is the one thing that does persist across S3, with the
+  caveats fixed.
+  1. **The secret into SMM at boot.** The payload keeps or adds a hard
+     disk password driver (the EDK2 `HddPassword` DXE half, or a small
+     one of our own) that prompts, unlocks, sets and freezes at boot over
+     `EFI_ATA_PASS_THRU`, and hands coreboot's SMM, for each drive, the
+     AHCI port/PMPort and the 32-byte unlock block, through a new
+     `SMMSTORE_CMD_HDP_*` SMI (the SMMSTORE SMI already crosses from the
+     payload to coreboot's TSEG handler). The handler stores them in a
+     TSEG table like the one of the MOR and option locks, and a
+     `..._HDP_LOCK` command, armed at ReadyToBoot like the option lock
+     (patch 0237), refuses further writes until reset.
+  2. **Unlock on resume, in coreboot.** On the S3 resume path, before the
+     OS waking vector, coreboot re-programs the AHCI controller directly
+     (a temporary ABAR, COMRESET, wait-ready, `IDENTIFY`, check the locked
+     bit, `SECURITY UNLOCK` PIO-out) for each stored drive. No EFI pass
+     through exists at wake, so this AHCI code is coreboot's; the SMM
+     handler is the natural home (it has the table and runs in the
+     resume SMI), with the ramstage resume path as the fallback. It is
+     the same code the `nri` memory test already almost has for the REUT,
+     but for AHCI.
+  3. **Freeze after unlock.** Send `SECURITY FREEZE LOCK` (0xF5) once the
+     drive is unlocked, which the Lenovo firmware omits: the OS then
+     cannot be tricked into changing the password, and a warm reboot that
+     keeps the drive powered leaves it frozen.
+- **Caveats to weigh first** (why it stays unplanned until someone wants
+  it): the password lives in clear in SMRAM across every suspend, and
+  crosses the SATA link in clear on each resume, as on the stock
+  firmware; it is new secret-handling code in both coreboot and the
+  payload; and it cannot be tested without a drive with an ATA password
+  set (DISK-02 would need one). A key derived from the passphrase, as the
+  Lenovo `LenovoCryptService` hints at, only hides it from a casual SMRAM
+  read, not from the SATA link. The simpler honest option stays what the
+  docs say now: do not offer a hard disk password, so no drive is left
+  locked after a suspend.
 
 ## NVIDIA power steering and the EC's CPU limits
 
