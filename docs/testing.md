@@ -249,6 +249,7 @@ or *manual*.
 | CPU-03 | both | another PL1/PL2 in the setup, reboot | MSR 0x610 follows (CPU-01 details) | partial |
 | CPU-04 | both | SpeedStep: `cpupower frequency-set -g powersave` at idle | the frequency drops (HWP) | manual |
 | CPU-05 | both | M920x: *Hardware* → *Cooling* → *TCC activation offset* 10, reboot: `sudo rdmsr -f 29:24 0x1a2`, the `TCC Offset` device in `/sys/class/thermal/cooling_device*/`, `stress-ng --cpu 0 -t 5m` with `turbostat`; again after S3; then 0 ([docs/m920x.md](m920x.md#fan)). W541, from v1.6.0 (patches 0220-0221): *Energy Saver* → *Thermal* → *TCC activation offset* 15, reboot: `sudo rdmsr -a -f 27:24 0x1a2`, `stress-ng --cpu 0 -t 5m` with `turbostat --show PkgTmp,Bzy_MHz,PkgWatt`; again after S3; then 0. Up to v1.5.x, no option: `sudo rdmsr -f 30:30 0xce` and the TCC line of CPU-01 | M920x: 10 in bits 29:24, also after S3, and the cooling device at 10; under load the package levels near 90 °C instead of 94-95; at 0 the field reads 0. W541: 15 in bits 27:24 on every core, also after S3; under load the package levels near 85 °C, below the 90 °C at which the OS throttles it (*Cooling policy*); at 0 the field reads 0; the option not listed on a processor without bit 30 of `PLATFORM_INFO` (an i7-4810MQ has it: 5 written from Linux read back on every core on 2026-11-03, [docs/roadmap.md](roadmap.md#tcc-offset-on-the-w541)); passed on a W541 with an i7-4810MQ on 2026-11-03 | manual (W541: CPU-01 details) |
+| CPU-06 | W541 | from v1.6.1 (patches 0236-0239): `lscpu`, `sudo rdmsr 0x35`, `sudo cbmem -1 \| grep -E 'Hyper-Threading\|GEN_PMCON_2\|cached memory\|Warm reset'`, `sudo cbmem -t`, `python3 tools/elog.py` on a flash dump. *Energy Saver* → *Processor* → *Hyper-Threading* off, save (the payload restarts); a power-off and a cold boot; a reboot; `rtcwake -m mem -s 30`; then on again and a cold boot. Each with `lscpu`, the MADT (`dmesg \| grep -c 'ACPI: LAPIC'` or `acpidump`), the processor objects (`ls /sys/bus/acpi/devices \| grep -c -e ACPI0007 -e LNXCPU`, both *ACPI processor objects* settings) and `stress-ng --cpu 0 -t 1m` | off: 4 CPUs, 1 thread per core, `0x40004`; the log of the boot that changed it with *Hyper-Threading: warm reset to turn it off*, and the boot after it with *Using cached memory parameters* (and *Warm reset of the Hyper-Threading option, a cold boot* when `GEN_PMCON_2` has bits 7 and 5 set), no training at the cold boots; the reboot without that reset; after S3 still 4 CPUs, none failing to come up; no *last POST code* event in the event log; the MADT and the processor objects with 4 entries. On again: 8 CPUs, `0x40008`, one reset. With a CPU without Hyper-Threading the option not listed (none on a W541) | manual |
 
 ### Idle and package C-states (IDLE)
 
@@ -494,7 +495,7 @@ kernel headers for its module).
 |---|---|---|---|
 | BOOT | 01-04 | 07 | 05, 06, 08 |
 | MEM | 01, 02 | 03, 05, 06 | 04, 07, 08, 09 |
-| CPU | 01 | 03 | 02, 04, 05 |
+| CPU | 01 | 03 | 02, 04, 05, 06 |
 | IDLE | 01 | 02 | |
 | S3 | 01 | 02 | 03 |
 | USB | | | 01-06 |

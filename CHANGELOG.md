@@ -7,6 +7,19 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.6.1
 
+- **Hyper-Threading on the W541** (patches 0236-0239): *Energy Saver* →
+  *Processor* → *Hyper-Threading*, on by default as in the Lenovo setup,
+  turns the second thread of each core off (4 threads on a quad-core
+  i7). On Haswell the PCH applies it from the next reset (bit 0 of
+  `SOFT_RESET_DATA`, measured on a W541 with rc6), so romstage does one
+  warm reset when the option and the bit differ: with the option off,
+  at every power-on. The bit survives S3, so a resume keeps the threads
+  the OS suspended with, and the option applies at the next boot. The
+  reset leaves a POST code of its own (`0xfc`) that the event log does
+  not take for a hang, and the native RAM init knows it and keeps its
+  training cache instead of training again. Not yet run on a machine
+  with the option (CPU-06 of [docs/testing.md](docs/testing.md)); the
+  `mrc` variant has the option too, not measured.
 - **The descriptor, the GbE and the ME regions under *Firmware
   protection***: the images leave the descriptor unlocked
   (`CONFIG_UNLOCK_FLASH_REGIONS`, so that flashrom can rewrite the

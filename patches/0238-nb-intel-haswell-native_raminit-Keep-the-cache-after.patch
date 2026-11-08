@@ -1,0 +1,84 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 15:55:33 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: Keep the cache after the
+ Hyper-Threading reset
+
+A boot that starts with DISB and MEM_SR set in GEN_PMCON_2 is a warm
+reset, and with SSKPD still 0 it happened before raminit was done: the
+native RAM init then discards the training data and trains again, as
+after a reset during training.
+
+The warm reset of the Hyper-Threading option comes before any memory
+init, at a cold boot, and with the option off it comes at every one.
+When CMOS_POST says that the last boot ended with that reset, take the
+boot as the cold boot it goes on with: the cached training data, the
+CPU replacement check of the ME, DISB cleared. A reset during the
+training that follows is not that reset, and still discards the data.
+
+Log GEN_PMCON_2, which tells whether the bits were set.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: I0790abb7032fe051440a3967dc68b590acd23d8e
+---
+ .../haswell/native_raminit/raminit_native.c   | 26 ++++++++++++++++---
+ 1 file changed, 23 insertions(+), 3 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.c b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
+index 06aef201af..5928c07b55 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
+@@ -5,6 +5,7 @@
+ #include <cbmem.h>
+ #include <cf9_reset.h>
+ #include <console/console.h>
++#include <cpu/intel/haswell/haswell.h>
+ #include <cpu/x86/msr.h>
+ #include <device/pci_ops.h>
+ #include <mrc_cache.h>
+@@ -33,11 +34,30 @@ static void wait_txt_clear(void)
+ 	do {} while (!(read8p(0xfed40000) & (1 << 7)));
+ }
+ 
+-static enum raminit_boot_mode get_boot_mode(void)
++static enum raminit_boot_mode get_boot_mode(const bool s3resume)
+ {
+ 	const uint16_t pmcon_2 = pci_read_config16(PCH_LPC_DEV, GEN_PMCON_2);
+ 	const uint16_t bitmask = GEN_PMCON_2_DISB | GEN_PMCON_2_MEM_SR;
+-	return (pmcon_2 & bitmask) == bitmask ? BOOTMODE_WARM : BOOTMODE_COLD;
++
++	printk(BIOS_DEBUG, "GEN_PMCON_2: 0x%04x\n", pmcon_2);
++
++	if ((pmcon_2 & bitmask) != bitmask)
++		return BOOTMODE_COLD;
++
++	/*
++	 * The warm reset of the Hyper-Threading option (cpu/intel/haswell) comes
++	 * before any memory init: this boot goes on with the cold boot that did
++	 * it. Otherwise a warm reset with SSKPD still 0 discards the training
++	 * data, as after a reset during training, and with the option off every
++	 * cold boot would train again.
++	 */
++	if (!s3resume && mchbar_read32(SSKPD) == 0 && mchbar_read32(SSKPD + 4) == 0 &&
++	    haswell_ht_reset_was_last()) {
++		printk(BIOS_INFO, "Warm reset of the Hyper-Threading option, a cold boot\n");
++		return BOOTMODE_COLD;
++	}
++
++	return BOOTMODE_WARM;
+ }
+ 
+ static bool early_init_native(enum raminit_boot_mode bootmode)
+@@ -170,7 +190,7 @@ void perform_raminit(const bool s3resume)
+ 	 * See, this function's name is a lie. There are more things to
+ 	 * do that memory initialisation, but they are relatively easy.
+ 	 */
+-	const enum raminit_boot_mode orig_bootmode = get_boot_mode();
++	const enum raminit_boot_mode orig_bootmode = get_boot_mode(s3resume);
+ 
+ 	if (CONFIG(DEBUG_RAM_SETUP)) {
+ 		/* Log CAPID values before dynamic fusing takes place */
+-- 
+2.43.0
+

@@ -228,3 +228,7 @@
 0233-sb-intel-lynxpoint-Return-nothing-from-the-xHCI-_PS0.patch
 0234-mb-lenovo-haswell-Return-nothing-from-the-dGPU-power.patch
 0235-security-lockdown-Write-protect-SI_ALL-with-the-cont.patch
+0236-drivers-pc80-rtc-A-POST-code-for-a-reset-the-firmwar.patch
+0237-cpu-intel-haswell-Add-an-option-for-Hyper-Threading.patch
+0238-nb-intel-haswell-native_raminit-Keep-the-cache-after.patch
+0239-mb-lenovo-haswell-Put-Hyper-Threading-in-the-setup-m.patch
