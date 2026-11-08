@@ -254,3 +254,5 @@
 0259-mb-lenovo-haswell-Wake-on-LAN-from-off-on-the-W541-a.patch
 0260-ec-lenovo-h8-One-pending-HKEY-event-per-class-as-the.patch
 0261-mb-lenovo-haswell-cpu-intel-haswell-Shorter-help-tex.patch
+0262-sb-intel-lynxpoint-Full-reset-to-clear-the-FDSW-lock.patch
+0263-mb-lenovo-haswell-Say-that-re-enabling-Ethernet-need.patch

@@ -87,6 +87,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   one more condition: the OS can set the RTC power loss bit of Lynx Point
   (checked on a W541), so the options are reset only when the CMOS lost
   its contents too. Not yet run on a machine (OPT-05).
+- **The Ethernet switch, fixed and run on the W541** (patches 0262,
+  0263): the toggle now applies by itself, with a full reset to clear the
+  chipset lockdown that a warm reset keeps, instead of only after the
+  next full power cycle. Turning it back on still needs a full power-down
+  (the LAN disable is in the always-on part of the chipset), which the
+  help text now says. The microphone, camera and card reader switches
+  passed on a W541 ([docs/tests/v1.6.1/w541-nri/README.md](docs/tests/v1.6.1/w541-nri/README.md)).
 - **Card reader switch on the W541** (patch 0257): *Hardware* →
   *Expansion ports* → *Card reader*, a soft switch: off, the link of its
   PCIe port is disabled at every start and wake.

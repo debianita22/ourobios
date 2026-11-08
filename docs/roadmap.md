@@ -21,7 +21,7 @@ is here. None of it is a promise of a date.
 | [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | done in v1.6.0 (patch 0222): a Kconfig for the version, and `tools/fspm-settings.sh` stops CI when the files of those settings change | the first bump, with the release that changes them |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
 | [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | built for v1.6.1 (patches 0246-0249): one warm reset from romstage, which the native RAM init knows as its own and keeps its cache; not yet run on a machine | CPU-06 on a W541, `nri` and `mrc` |
-| [Device switches on the W541](#device-switches-on-the-w541) | W541 | built in v1.6.1: the Ethernet (patches 0241-0242), the microphone (0243), the camera (0244-0245) and the card reader (0257); not run on a W541 | DEV-W01 on the W541; no fingerprint reader on the unit of the port |
+| [Device switches on the W541](#device-switches-on-the-w541) | W541 | the microphone, the camera and the card reader built and passed in v1.6.1; the Ethernet disables but re-enabling needs a full power-down (measured 2026-11-08) | re-enable the GbE within one boot, or keep the power-down caveat; the fingerprint switch on a unit that has it |
 | [Wake on LAN after a shutdown on the W541](#wake-on-lan-after-a-shutdown-on-the-w541) | W541 | built for v1.6.1 (patch 0259), as the Lenovo firmware does it; not run on a machine | NET-02 from power-off on AC and on battery, with each setting |
 | [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot (no PEI, no LockBox, no boot script); the stock design read and a coreboot design written (2026-11-08), unbuilt: new secret-handling code in both, untestable without a locked drive | a decision whether to build it, with the caveats |
 | [NVIDIA power steering and the EC's CPU limits](#nvidia-power-steering-and-the-ecs-cpu-limits) | W541 | little use under Linux; a `_PPC` policy and adapter tests | count the EC's CPU limit events |
@@ -515,6 +515,17 @@ have a switch.
   Link Disable in the Link Control of root port 1 before the bus behind
   it is scanned, at every boot and S3 resume; the port stays visible, as
   hiding function 0 would make the PCH renumber the others.
+- **Run on a W541** (2026-11-08,
+  [docs/tests/v1.6.1/w541-nri/README.md](tests/v1.6.1/w541-nri/README.md#the-ethernet-switch)):
+  the microphone, the camera and the card reader pass. The Ethernet
+  disables, but only after a full power cycle (patch 0262 clears the
+  `FDSW` lockdown so the firmware does it by itself), and **re-enabling
+  needs a full power-down**: a cold boot clears `BUC` bit 5 but the GbE
+  stays absent (`PCI: Static device PCI: 00:00:19.0 not found`), as the
+  LAN disable is in the SUS well, which the CF9 0x0E full reset and S5
+  both keep. Open: clear `BUC` and re-enable the GbE clock early enough
+  to bring it back in one boot, or keep the power-down caveat (patch
+  0263's help text).
 - **Read in the Lenovo firmware** (2026-11-08,
   [docs/tests/v1.6.1/w541-nri/stock-gnet94ww.md](tests/v1.6.1/w541-nri/stock-gnet94ww.md#2-io-port-access)): the
   Ethernet as 0241 (`BUC` bit 5, a global reset); the microphone by a
