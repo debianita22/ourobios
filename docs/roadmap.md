@@ -20,7 +20,7 @@ is here. None of it is a promise of a date.
 | [Memory training across updates on the W541](#memory-training-across-updates-on-the-w541) | W541 | safe for `mrc`, not for `nri`, whose cache version is a number bumped by hand | a variant tag and a key from the code, `mrc` first |
 | [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | done in v1.6.0 (patch 0222): a Kconfig for the version, and `tools/fspm-settings.sh` stops CI when the files of those settings change | the first bump, with the release that changes them |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
-| [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | built for v1.6.1 (patches 0236-0239): one warm reset from romstage, which the native RAM init knows as its own and keeps its cache; not yet run on a machine | CPU-06 on a W541, `nri` and `mrc` |
+| [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | the reset before the RAM init makes NRI discard its cache at every cold boot; `mrc` not measured | the bit works on Haswell, survives S3 and warm resets, not S5 (measured on a W541); the option, with NRI knowing its own reset |
 | [Device switches on the W541](#device-switches-on-the-w541) | W541 | the Ethernet bit is sticky and needs a full reset; the others are soft switches | Ethernet the Sandy Bridge way, then card reader and microphone |
 | [Wake on LAN after a shutdown on the W541](#wake-on-lan-after-a-shutdown-on-the-w541) | W541 | nothing for it in coreboot's Lynx Point code; the EC side unknown | what the Lenovo firmware programs |
 | [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot | none planned |
@@ -361,8 +361,7 @@ From the same list of Dasharo options:
 ## Hyper-Threading on the W541
 
 The Lenovo setup has *Intel Hyper-Threading Technology*, on by default;
-the M920x has the option from v1.4.0 (patch 0171), the W541 from v1.6.1
-(below). On Haswell
+the M920x has the option from v1.4.0 (patch 0171), the W541 not. On Haswell
 it would be the bit of the PCH that keeps the second thread of each core
 off from the next CPU-only reset (`SOFT_RESET_DATA`, RCBA + 0x38F8),
 which coreboot sets for Sandy Bridge and Ivy Bridge (`model_206ax`).
@@ -391,26 +390,6 @@ which coreboot sets for Sandy Bridge and Ivy Bridge (`model_206ax`).
   the TPM too. For the option: at the cold boot NRI would see the reset
   with `SSKPD` at 0 and retrain at every boot, unless it knows its own
   reset.
-- **Built for v1.6.1** (patches 0236-0239, not yet run on a machine):
-  *Energy Saver* → *Processor* → *Hyper-Threading*, on by default,
-  listed when CPUID reports two threads per core or when the option
-  turned them off. Romstage reads it before the RAM init, not on an S3
-  resume, and when `SOFT_RESET_DATA` bit 0 (with the control bit)
-  differs from it, writes the bit, reads it back and does one warm
-  reset. The reset leaves POST code `0xfc` (*reset requested*, new) with
-  `HT` in the extra field of `CMOS_POST`, so that the next boot logs no
-  hang, does not reset again if the bit did not stick, and the native
-  RAM init takes it as the cold boot it goes on with: with `DISB` and
-  `MEM_SR` set and `SSKPD` at 0 it would otherwise take a reset during
-  training and train again at every power-on. It logs `GEN_PMCON_2`,
-  which tells whether the case arises at all (under Linux `DISB` reads
-  1, set after the memory init, not by coreboot).
-- **What is left**: CPU-06 of [docs/testing.md](testing.md) on a W541
-  (`nri` here, `mrc` not measured: `mrc.bin` decides its own boot mode).
-  With the option off and the bit not set yet (an update from v1.6.0 or
-  older, which left the threads on, or a restart through S5), the first
-  boot of the new slot ends with that reset, which takes one of the two
-  tries that vboot gives it; the second one boots with the bit kept.
 
 ## Device switches on the W541
 
