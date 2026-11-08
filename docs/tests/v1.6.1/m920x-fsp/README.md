@@ -53,3 +53,15 @@ strings of SMBIOS after a resume from S3, when the CBMEM console has
 started again without the `ME:` lines (INFO instead of SKIP), and
 FLASH-01 turns WARN when the payload reports the option lock not armed
 while the protections are on.
+
+## v1.6.1-rc3
+
+rc3 (`593fb16`) as a capsule from rc2, slot A, 2026-11-08, both
+protections on. WDT-01 with *Firmware watchdog* Off: coreboot logs
+`Firmware watchdog: off (OC_WDT_CTL 0x00002000)` in romstage and
+`at the payload, OC_WDT_CTL 0x00002000` in ramstage, and the register
+reads `0x00002000` at the OS (enable 0): PASS. After two resumes from S3
+romstage logs *off* again (not armed on a resume). The option lock armed
+(`OptionLockStatus` all zero), FLASH-01 PASS with PR0 and PR1, TPM-03
+PASS; report 21 PASS, 3 INFO, 1 SKIP. The armed watchdog (5 minutes) is
+the owner's call; the W541 switches (DEV-W01) are run on the W541.
