@@ -1,0 +1,95 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 23:11:26 +0100
+Subject: [PATCH] sb/intel/lynxpoint: A global reset for the GbE switch, to
+ re-enable it
+
+The Ethernet switch reset with a plain host reset (CF9 0x0E), which
+disables the GbE but does not bring it back: on a ThinkPad W541, turning
+the option off then on cleared BUC bit 5 but the controller stayed
+absent ("PCI: Static device PCI: 00:00:19.0 not found"), because the
+LAN disable lives in a well that the host reset keeps.
+
+Do a global reset instead (set CF9GR, PMIR/ETR3 bit 20, before CF9
+0x0E), as the Lenovo firmware of the W541 does for this option: it
+re-initialises the GbE. CF9GR is clear and unlocked in romstage
+(early_pch_init_native() clears it later, lpc.c locks it with CF9LOCK in
+ramstage), so setting it here takes; if it is locked for any reason, the
+host reset still applies a disable, with a warning. The reset happens at
+most once per toggle (BUC already holds the wanted value afterward, so
+the early return skips it), so there is no loop.
+
+TEST=Build of the ThinkPad W541 with the native RAM init; on the machine
+pending (does the global reset re-enable the GbE with the ME disabled).
+
+Change-Id: Ic4a4e18f6cc2e3069d96e4b4e02cad8948b97643
+---
+ src/southbridge/intel/lynxpoint/early_pch.c | 36 +++++++++++++++------
+ 1 file changed, 27 insertions(+), 9 deletions(-)
+
+diff --git a/src/southbridge/intel/lynxpoint/early_pch.c b/src/southbridge/intel/lynxpoint/early_pch.c
+index 1a3a045bc0..fabd580c11 100644
+--- a/src/southbridge/intel/lynxpoint/early_pch.c
++++ b/src/southbridge/intel/lynxpoint/early_pch.c
+@@ -104,6 +104,28 @@ void __weak mainboard_config_rcba(void)
+  * read-only part, and never on an S3 resume, where a reset would end it.
+  */
+ #if ENV_SEPARATE_ROMSTAGE
++/*
++ * The reset that applies a change of the LAN disable bit. A plain host reset
++ * (CF9 0x0E) disables the GbE but does not bring it back: the bit is in a well
++ * that the host reset keeps. A global reset (CF9GR set first, then CF9 0x0E)
++ * re-initialises it, as the Lenovo firmware of the W541 does for this option.
++ * CF9GR is clear and unlocked in romstage (early_pch_init_native() clears it
++ * later, lpc.c locks it in ramstage), so set it here. If it is locked for any
++ * reason, fall back to the host reset, which at least applies a disable.
++ */
++static void gbe_reset(void)
++{
++	if (CONFIG(CMOS_POST)) {
++		cmos_post_extra(0x47624500);	/* "GbE" */
++		cmos_post_code(POSTCODE_RESET_REQUESTED);
++	}
++	if (!(pci_read_config32(PCH_LPC_DEV, PMIR) & PMIR_CF9LOCK))
++		pci_or_config32(PCH_LPC_DEV, PMIR, PMIR_CF9GR);
++	else
++		printk(BIOS_WARNING, "GbE: CF9GR locked, a host reset may not re-enable it\n");
++	full_reset();
++}
++
+ void pch_apply_gbe_option(void)
+ {
+ 	const struct device *const gbe = pcidev_on_root(0x19, 0);
+@@ -124,9 +146,9 @@ void pch_apply_gbe_option(void)
+ 	 * The LAN disable bit of BUC lives in the SUS well, which the Function
+ 	 * Disable lockdown (FDSW bit 7) freezes: a reset after the option is
+ 	 * toggled still runs with the lockdown set, so the write does not stick.
+-	 * Clear the lockdown with a full reset (CF9 0x0E power cycle, which the
+-	 * next boot's romstage then precedes before the lockdown is set again),
+-	 * as the Lenovo firmware of the W541 does; the write takes on that boot.
++	 * Clear the lockdown with the reset below (which also clears it), so the
++	 * next boot's romstage writes BUC before the lockdown is set again, as
++	 * the Lenovo firmware of the W541 does; the write takes on that boot.
+ 	 */
+ 	if (RCBA32(BUC) != want) {
+ 		if (RCBA32(FDSW) & FDSW_LOCK) {
+@@ -137,14 +159,10 @@ void pch_apply_gbe_option(void)
+ 			return;
+ 		}
+ 	} else {
+-		printk(BIOS_INFO, "GbE: turned %s, full reset for it to take effect\n",
++		printk(BIOS_INFO, "GbE: turned %s, global reset for it to take effect\n",
+ 		       on ? "on" : "off");
+ 	}
+-	if (CONFIG(CMOS_POST)) {
+-		cmos_post_extra(0x47624500);	/* "GbE" */
+-		cmos_post_code(POSTCODE_RESET_REQUESTED);
+-	}
+-	full_reset();
++	gbe_reset();
+ }
+ #endif
+ 
+-- 
+2.43.0
+
