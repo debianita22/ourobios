@@ -19,20 +19,28 @@ POSTCODE_OS_BOOT). The boot after a deletion that was interrupted by a
 reset before ramstage clears the bit, the hang the code already skips
 or the reset of an option, finds a code there and does not delete again.
 
+Clear a bit set without a lost CMOS in romstage: sb_rtc_init() would
+take it for a power loss and zero the CMOS, CMOS_POST included
+(cmos_init() without USE_OPTION_TABLE), so that the next boot would find
+the CMOS lost, and a bit set once more would reset the options. A real
+loss loses the bank mark too, and keeps the bit for sb_rtc_init().
+
 Software that also rewrites the CMOS bytes of CMOS_POST can still do
 it, and a power loss that leaves a valid bank mark by chance keeps the
 options (the next one resets them): the check is against a stray bit,
 not against root.
 
-TEST=Build of the ThinkPad W541 with DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE.
+TEST=On a ThinkPad W541, before the clear of a stray bit: the bit set
+from Linux alone and a reboot reset nothing; with the CMOS_POST bytes
+also cleared, the 66 options were reset. The clear built only.
 
 Change-Id: I7741bf77b808abfb59702b3f75940ff72efa70dd
 ---
- src/northbridge/intel/haswell/romstage.c | 22 ++++++++++++++++++++--
- 1 file changed, 20 insertions(+), 2 deletions(-)
+ src/northbridge/intel/haswell/romstage.c | 32 ++++++++++++++++++++++--
+ 1 file changed, 30 insertions(+), 2 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/romstage.c b/src/northbridge/intel/haswell/romstage.c
-index 30e54bb985..9e501be7d7 100644
+index 30e54bb985..bb63ab86e4 100644
 --- a/src/northbridge/intel/haswell/romstage.c
 +++ b/src/northbridge/intel/haswell/romstage.c
 @@ -28,6 +28,7 @@ static enum {
@@ -62,7 +70,7 @@ index 30e54bb985..9e501be7d7 100644
   */
  static void reset_options_on_rtc_failure(void)
  {
-@@ -66,6 +75,12 @@ static void reset_options_on_rtc_failure(void)
+@@ -66,6 +75,22 @@ static void reset_options_on_rtc_failure(void)
  			options_reset = OPTIONS_RESET_SKIPPED;
  			return;
  		}
@@ -70,12 +78,22 @@ index 30e54bb985..9e501be7d7 100644
 +			printk(BIOS_WARNING, "Setup options: not reset, RTC power lost but the "
 +			       "CMOS kept the last boot (POST 0x%02x/0x%08x)\n", code, extra);
 +			options_reset = OPTIONS_RESET_NOT_CMOS;
++			/*
++			 * Clear the stray bit here: sb_rtc_init() would take it for a
++			 * power loss and zero the CMOS, CMOS_POST included, so that the
++			 * next boot finds the CMOS lost, and the bit set once more
++			 * resets the options. A real loss loses the bank mark too, and
++			 * keeps the bit. Bits 1, 9 and 14 are write-1-to-clear: 0 here.
++			 */
++			u16 pmcon3 = pci_read_config16(PCH_LPC_DEV, GEN_PMCON_3);
++			pmcon3 &= ~(RTC_BATTERY_DEAD | PWR_FLR | GEN_RST_STS | SUS_PWR_FLR);
++			pci_write_config16(PCH_LPC_DEV, GEN_PMCON_3, pmcon3);
 +			return;
 +		}
  	}
  
  	post_code(POST_OPTIONS_RESET);
-@@ -81,6 +96,9 @@ static void log_options_reset(void)
+@@ -81,6 +106,9 @@ static void log_options_reset(void)
  {
  	if (options_reset == OPTIONS_RESET)
  		printk(BIOS_INFO, "RTC power lost: setup options reset to defaults\n");

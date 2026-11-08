@@ -40,7 +40,7 @@ index e3d362f51c..d0554f63d3 100644
  bool haswell_ht_available(void);
  
 diff --git a/src/cpu/intel/haswell/hyperthreading.c b/src/cpu/intel/haswell/hyperthreading.c
-index b0703c1626..1281e7fdcf 100644
+index 730be3628a..b8a3913f21 100644
 --- a/src/cpu/intel/haswell/hyperthreading.c
 +++ b/src/cpu/intel/haswell/hyperthreading.c
 @@ -44,6 +44,18 @@ bool haswell_ht_reset_was_last(void)
@@ -61,12 +61,12 @@ index b0703c1626..1281e7fdcf 100644
 +
  bool haswell_ht_available(void)
  {
- 	return intel_ht_supported() || ht_off_by_soft_reset();
+ 	/* haswell_check_ht_option() needs CMOS_POST: without it, no option */
 diff --git a/src/northbridge/intel/haswell/romstage.c b/src/northbridge/intel/haswell/romstage.c
-index 9e501be7d7..53c16d05b8 100644
+index bb63ab86e4..0c4814d6c6 100644
 --- a/src/northbridge/intel/haswell/romstage.c
 +++ b/src/northbridge/intel/haswell/romstage.c
-@@ -148,6 +148,7 @@ void mainboard_romstage_entry(void)
+@@ -158,6 +158,7 @@ void mainboard_romstage_entry(void)
  		haswell_check_vmx_option();
  		haswell_check_ht_option();
  	}

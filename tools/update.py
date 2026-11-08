@@ -1747,7 +1747,7 @@ def cmd_other_slot(args):
     (anche dell'altra variante) e RW_NVRAM che chiede a vboot di provarlo: da
     scrivere con flashrom in quelle due regioni soltanto. RW_MRC_CACHE resta
     com'e', vuota solo con --retrain o dove la capsula della release la
-    svuota (W541, M920x prima della v1.4.0)."""
+    svuota (W541 fino alla v1.6.0, M920x prima della v1.4.0)."""
     with open(args.dump, "rb") as f:
         flash = f.read()
     areas = fmap_areas(flash)

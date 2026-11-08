@@ -1,0 +1,148 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 23:48:00 +0100
+Subject: [PATCH] sb/intel/lynxpoint: Apply the GbE switch as the Lenovo
+ firmware does
+
+pch_apply_gbe_option() wrote the LAN disable bit of BUC and gave up
+when the write did not take. On a ThinkPad W541 it never took at the
+boot after the setup save: the finalize sets the Function Disable SUS
+Well lockdown (FDSW, RCBA 0x3420 bit 7) at every boot, a warm reset
+keeps it, and while it is set the write of BUC is refused (the old
+value read at the OS a minute later). An S5 cleared it and the next
+boot wrote and reset: a disable then applied, an enable did not, the
+plain CF9 0x0E after the write leaving the controller absent ("PCI:
+Static device PCI: 00:00:19.0 not found").
+
+Follow the Lenovo firmware of the W541 (GNET94WW, PchInitPeim): with
+the lockdown set, reset first, which clears it, and write at the next
+boot; after the write, reset for it to take effect. Reset with a global
+reset (CF9GR set, then CF9 0x0E), the type that firmware uses with its
+ME on, as the plain one did not re-enable; CF9GR is clear and unlocked
+in romstage, and the reset is the plain one if it is not.
+
+Each reset leaves POSTCODE_RESET_REQUESTED with an extra of its own
+("GbL" for the lockdown, "GbE" for the change), and a boot that follows
+one of them does not do the same again: a lockdown still set, or a
+change that BUC did not keep, leaves the Ethernet as it is with an
+error, so the switch cannot reset in a loop. At most two resets per
+change.
+
+TEST=Build of the ThinkPad W541 with the native RAM init; on a W541
+the lockdown and the failed re-enable after a plain reset measured;
+the global reset on the machine pending.
+
+Change-Id: Iffacc1295669d9038833e7c65abf265fa810da84
+---
+ src/southbridge/intel/lynxpoint/early_pch.c | 69 ++++++++++++++++++---
+ src/southbridge/intel/lynxpoint/pch.h       |  2 +
+ 2 files changed, 64 insertions(+), 7 deletions(-)
+
+diff --git a/src/southbridge/intel/lynxpoint/early_pch.c b/src/southbridge/intel/lynxpoint/early_pch.c
+index 3610c3fc5f..7fd13cd6e3 100644
+--- a/src/southbridge/intel/lynxpoint/early_pch.c
++++ b/src/southbridge/intel/lynxpoint/early_pch.c
+@@ -104,6 +104,42 @@ void __weak mainboard_config_rcba(void)
+  * read-only part, and never on an S3 resume, where a reset would end it.
+  */
+ #if ENV_SEPARATE_ROMSTAGE
++/* In the extra field of CMOS_POST with POSTCODE_RESET_REQUESTED */
++#define GBE_RESET_APPLY		0x47624500	/* "GbE": applies a change of BUC */
++#define GBE_RESET_UNLOCK	0x47624c00	/* "GbL": clears the FDSW lockdown */
++
++/* Whether the boot before ended with the reset of this option marked so */
++static bool gbe_last_boot_reset(u32 extra)
++{
++	u8 code;
++	u32 last;
++
++	if (!CONFIG(CMOS_POST))
++		return false;
++	cmos_post_previous_boot(&code, &last);
++	return code == POSTCODE_RESET_REQUESTED && last == extra;
++}
++
++/*
++ * A global reset (CF9GR set, then CF9 0x0E), as the Lenovo firmware of the
++ * W541 resets this option with its ME on: a plain CF9 0x0E applied a disable
++ * there but left the controller absent after an enable. CF9GR is clear and
++ * unlocked in romstage (lpc.c sets CF9LOCK in ramstage); if it is locked for
++ * any reason, the reset is the plain one.
++ */
++static void gbe_reset(u32 extra)
++{
++	if (CONFIG(CMOS_POST)) {
++		cmos_post_extra(extra);
++		cmos_post_code(POSTCODE_RESET_REQUESTED);
++	}
++	if (!(pci_read_config32(PCH_LPC_DEV, PMIR) & PMIR_CF9LOCK))
++		pci_or_config32(PCH_LPC_DEV, PMIR, PMIR_CF9GR);
++	else
++		printk(BIOS_WARNING, "GbE: CF9GR locked, a plain reset\n");
++	full_reset();
++}
++
+ void pch_apply_gbe_option(void)
+ {
+ 	const struct device *const gbe = pcidev_on_root(0x19, 0);
+@@ -119,18 +155,37 @@ void pch_apply_gbe_option(void)
+ 	if (buc == want)
+ 		return;
+ 
++	/*
++	 * The Function Disable SUS Well lockdown (FDSW bit 7), which the finalize
++	 * sets at every boot and a warm reset keeps, refuses the write of BUC.
++	 * Reset first, which clears it, and write at the next boot, as the Lenovo
++	 * firmware does. Once: a lockdown still set after that reset stays so.
++	 */
++	if (RCBA8(FDSW) & FDSW_LOCK) {
++		if (gbe_last_boot_reset(GBE_RESET_UNLOCK)) {
++			printk(BIOS_ERR, "GbE: FDSW still locked after its reset, Ethernet left %s\n",
++			       on ? "off" : "on");
++			return;
++		}
++		printk(BIOS_INFO, "GbE: BUC locked by FDSW, reset to clear it\n");
++		gbe_reset(GBE_RESET_UNLOCK);
++	}
++
++	/* Written and reset at the boot before, yet not kept: do not loop */
++	if (gbe_last_boot_reset(GBE_RESET_APPLY)) {
++		printk(BIOS_ERR, "GbE: BUC 0x%08x did not keep the change, Ethernet left %s\n",
++		       buc, on ? "off" : "on");
++		return;
++	}
++
+ 	RCBA32(BUC) = want;
+-	/* Be sure not to reset for naught: the bit may be locked */
++	/* Be sure not to reset for naught */
+ 	if (RCBA32(BUC) != want) {
+ 		printk(BIOS_WARNING, "GbE: BUC 0x%08x does not take the change\n", RCBA32(BUC));
+ 		return;
+ 	}
+-	printk(BIOS_INFO, "GbE: turned %s, full reset for it to take effect\n", on ? "on" : "off");
+-	if (CONFIG(CMOS_POST)) {
+-		cmos_post_extra(0x47624500);	/* "GbE" */
+-		cmos_post_code(POSTCODE_RESET_REQUESTED);
+-	}
+-	full_reset();
++	printk(BIOS_INFO, "GbE: turned %s, reset for it to take effect\n", on ? "on" : "off");
++	gbe_reset(GBE_RESET_APPLY);
+ }
+ #endif
+ 
+diff --git a/src/southbridge/intel/lynxpoint/pch.h b/src/southbridge/intel/lynxpoint/pch.h
+index 0014a68e96..22d22883c8 100644
+--- a/src/southbridge/intel/lynxpoint/pch.h
++++ b/src/southbridge/intel/lynxpoint/pch.h
+@@ -518,6 +518,8 @@ void mainboard_config_rcba(void);
+ #define HPTC		0x3404	/* 32bit */
+ #define GCS		0x3410	/* 32bit */
+ #define BUC		0x3414	/* 32bit */
++#define FDSW		0x3420	/* Function Disable SUS Well lockdown */
++#define  FDSW_LOCK		(1 << 7)
+ #define PCH_DISABLE_GBE		(1 << 5)
+ #define FD		0x3418	/* 32bit */
+ #define DISPBDF		0x3424  /* 16bit */
+-- 
+2.43.0
+

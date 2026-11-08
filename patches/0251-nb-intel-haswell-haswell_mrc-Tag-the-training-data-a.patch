@@ -20,11 +20,11 @@ TEST=Build of the ThinkPad W541 with mrc.bin.
 
 Change-Id: I86c97092887131250a23cc8ac54a8ef66ea2ca4c
 ---
- .../intel/haswell/haswell_mrc/raminit.c       | 57 ++++++++++++++++++-
- 1 file changed, 54 insertions(+), 3 deletions(-)
+ .../intel/haswell/haswell_mrc/raminit.c       | 54 +++++++++++++++++--
+ 1 file changed, 51 insertions(+), 3 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/haswell_mrc/raminit.c b/src/northbridge/intel/haswell/haswell_mrc/raminit.c
-index 00140bf3e2..1a04175262 100644
+index 00140bf3e2..8e48c18150 100644
 --- a/src/northbridge/intel/haswell/haswell_mrc/raminit.c
 +++ b/src/northbridge/intel/haswell/haswell_mrc/raminit.c
 @@ -18,6 +18,7 @@
@@ -48,7 +48,7 @@ index 00140bf3e2..1a04175262 100644
  
  /*
   * mrc.bin posts its POST codes to port 80h only. With CMOS_POST, keep the
-@@ -45,10 +50,55 @@ static void mrc_tx_byte(unsigned char byte)
+@@ -45,10 +50,52 @@ static void mrc_tx_byte(unsigned char byte)
  		cmos_post_extra(MRC_POST_EXTRA | ++lines);
  }
  
@@ -88,10 +88,7 @@ index 00140bf3e2..1a04175262 100644
 +		.dq_pins_interleaved	= pei_data->dq_pins_interleaved,
 +		.max_ddr3_freq		= pei_data->max_ddr3_freq,
 +	};
-+	size_t blob_size = 0;
-+
-+	if (cbfs_ro_map("mrc.bin", &blob_size))
-+		inputs.blob_size = blob_size;
++	inputs.blob_size = cbfs_ro_get_size("mrc.bin");
 +	memcpy(inputs.spd_addresses, pei_data->spd_addresses, sizeof(inputs.spd_addresses));
 +
 +	return MRC_CACHE_TAG << 24 | (xxh32(&inputs, sizeof(inputs), 0) & 0xffffff);
@@ -105,7 +102,7 @@ index 00140bf3e2..1a04175262 100644
  			     pei_data->mrc_output_len);
  }
  
-@@ -60,9 +110,10 @@ static void prepare_mrc_cache(struct pei_data *pei_data)
+@@ -60,9 +107,10 @@ static void prepare_mrc_cache(struct pei_data *pei_data)
  	pei_data->mrc_input = NULL;
  	pei_data->mrc_input_len = 0;
  

@@ -16,7 +16,7 @@ and the watchdog at 5 minutes, then all back on and the watchdog off.
 | DEV-W01 camera | PASS | *Integrated camera* off: `USB2PDO` (xHCI 0xE4) bit 11 set (`0x00000800`), gone from `lsusb` and `/dev/video*`; on again: back (patches 0244-0245) |
 | DEV-W01 card reader | PASS | *Card reader* off: `Card reader: disabling the link of PCI: 00:00:1c.0`, the O2 Micro OZ777 gone from `lspci`, root port 1 Link Control bit 4 set (`0x0c13`); on again: back (patch 0257) |
 | DEV-W01 microphone | PASS | *Internal microphone* off: the ALC3232 card stays in `arecord -l` (the codec is there), the internal array not offered (patch 0243, the pin as not connected) |
-| DEV-W01 Ethernet | partial | *Ethernet* off works, but only after a full power cycle, and re-enabling needs a full power-down. See below |
+| DEV-W01 Ethernet | partial | *Ethernet* off works (after the lockdown is cleared, see below); on again did not bring the controller back after the plain reset; a global reset (patch 0262) to be tried |
 | OPT-05 | PASS | the setup options reset only when the CMOS was lost too (patch 0256): `RTC_PWR_STS` set from Linux alone (`setpci 1f.0 a4.w=0004:0004`) and a reboot -> *Setup options: not reset, RTC power lost but the CMOS kept the last boot (POST 0xf8/0x00000000)*; the bit set and the `CMOS_POST` bytes 0x70-0x7a cleared -> *Setup options: 66 reset to defaults (RTC power lost)*, the setup back at its defaults, `RTC: failed = 0x1` |
 | FLASH-01 | PASS | after the OPT-05 reset the defaults turn *BIOS Lock* and *Firmware protection* back on: PR0 over `WP_RO`, PR1 over `SI_ALL`, FLOCKDN, flashrom refused. Clean protected end state |
 
@@ -25,30 +25,47 @@ the fingerprint switch; FAN-10's CPU-limit count.
 
 ## The Ethernet switch
 
-`onboard_ethernet` sets the LAN disable bit of `BUC` (RCBA 0x3414 bit 5),
-in the SUS well, which `FDSW` (0x3420 bit 7) freezes with a lockdown.
+`onboard_ethernet` sets the LAN disable bit of `BUC` (RCBA 0x3414 bit 5,
+in the RTC well) in romstage. coreboot's finalize sets the Function
+Disable SUS Well lockdown (`FDSW`, 0x3420 bit 7) at every boot
+(`southbridge/intel/common/finalize.c`).
 
-- **Off** works. At the first boot after the setup save `BUC` stayed
-  `0x00000000` and the controller was still there (`GbE: BUC 0x00000000
-  does not take the change`): the lockdown was set from the boot before,
-  which a warm reset keeps. After a full power cycle (the owner's
-  power-on), `BUC` read `0x00000020` and the controller was gone. Patch
-  0262 fixes the auto path: a full reset to clear the lockdown when the
-  write does not take, so the next boot's romstage writes it before the
-  lockdown is set again. ci-295 does not have 0262; the manual power
-  cycle stood in for it.
-- **On again does not work within a reset or S5.** With the option back
-  on, a cold boot from `rtcwake -m off` cleared `BUC` bit 5 (`0x00000000`)
-  and `full_reset()`ed, but the controller stayed absent: `PCI: Static
-  device PCI: 00:00:19.0 not found, disabling it`. The LAN disable lives
-  in the SUS well, which survives both the CF9 0x0E full reset (by design,
-  which is why `BUC` is sticky) and S5 (the SUS well stays powered for the
-  RTC and Wake on LAN). Clearing the bit does not re-power or re-clock the
-  GbE; only a G3 (the AC adapter and the battery removed, or RTCRST) resets
-  the SUS well and brings it back.
-- **Open**: re-enable the GbE within one boot (clear `BUC` very early and
-  re-enable its clock), or say in the help text that turning Ethernet back
-  on needs a full power-down. The disable is useful as it is; the re-enable
-  caveat is the one to fix or document.
+| Step | `BUC` at the OS | GbE | coreboot |
+|---|---|---|---|
+| b1, defaults | `0x00` | present | |
+| b2, after the setup save (off) | `0x00` | present | *GbE: BUC 0x00000000 does not take the change* |
+| b3, after an S5 | `0x20` | gone | (the first boot wrote and reset; its log is lost with the reset) |
+| b4, reboot | `0x20` | gone | |
+| b5, after the setup save (on) | `0x20` | gone | *GbE: BUC 0x00000020 does not take the change* |
+| b6, after an S5 | `0x00` | gone | *PCI: Static device PCI: 00:00:19.0 not found* |
+| b7, b8, reboots | `0x00` | gone | the same |
+
+- **The lockdown blocks the write.** At b2 and b5 the value read at the
+  OS, a minute after romstage, was still the old one: the write did not
+  take, and the code (patch 0241) gave up without a reset. The lockdown
+  survives a warm reset and is cleared across an S5: at the first boot of
+  b3 and b6 the write took, and the code reset (`full_reset()`, CF9 0x0E).
+  Patch 0262 resets first when the lockdown is set, so the write takes at
+  the next boot without an S5, as the Lenovo firmware does.
+- **Off works** after that reset. **On did not**: at b6 the bit was
+  cleared with the lockdown clear and CF9 0x0E followed, the sequence the
+  datasheet asks for, and the controller stayed absent through the next
+  boots.
+- **The Lenovo firmware** (GNET94WW, PchInitPeim 0x243e, PchResetPeim;
+  [stock-gnet94ww.md](stock-gnet94ww.md#2-io-port-access)): `BUC` already
+  as wanted, nothing; `FDSW` locked, a global reset (CF9GR, then CF9 0x0E)
+  before any write; otherwise the write, a read-back, and for an enable
+  a reset whose type depends on `FD2` bit 1 (the HECI hidden): with it, a
+  plain CF9 0x0E (`PowerCycleReset`), without it, as on a Lenovo setup
+  with its ME on, a global reset. ouroBIOS hides the HECI, so the plain
+  reset is what the stock would do here, and that is the one that failed.
+- **Being tried**: patch 0262 resets with a global reset instead
+  (CF9GR is unlocked in romstage), the stock's reset with its ME on.
+  Open: whether a global reset re-enables the controller with the ME
+  disabled, and whether a full power-down (G3) does, which is assumed,
+  not yet seen. If neither the global reset nor anything short of a
+  power-down brings it back, the switch keeps its disable and the help
+  keeps saying that turning it back on needs a full power-down (patch
+  0263).
 
 Files: `ht/` on the test machine (`b1`-`b8`, `gbe-reenable-finding.txt`).

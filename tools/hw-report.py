@@ -175,6 +175,12 @@ EVENT_FW_LOG = (
     (r"Setup options: \d+ reset to defaults \(RTC power lost\)", None,
      "la RTC ha perso l'alimentazione (pila, jumper della CMOS): le opzioni del setup sono ai default, "
      "Firmware protection compresa"),
+    # W541 dalla v1.6.1 (patch 0256): il bit RTC_PWR_STS acceso senza la CMOS
+    # persa, che il sistema operativo puo' fare da solo: le opzioni restano
+    (r"Setup options: not reset, RTC power lost but the CMOS kept the last boot|"
+     r"RTC power lost: setup options not reset, the CMOS kept its contents", "w541",
+     "il bit RTC_PWR_STS era acceso ma la CMOS no (il sistema operativo puo' accenderlo, o la RTC ha perso "
+     "l'alimentazione lasciando il segno dei banchi valido): le opzioni del setup restano come erano"),
 )
 
 # Il kernel: messaggi che riguardano il firmware (tabelle ACPI, PCI, VT-d,

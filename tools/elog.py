@@ -57,6 +57,8 @@ POST_CODES = {
     0x32: "romstage: dopo haswell_early_initialization()",
     0x33: "romstage: avvio normale riconosciuto",
     0x35: "romstage: ripresa da S3 riconosciuta",
+    0x37: "romstage: cancellazione delle opzioni del setup (RTC persa) in corso",
+    0x38: "romstage: cancellazione delle opzioni del setup finita",
     0x3a: "romstage: prima della RAM init (mrc.bin o NRI)",
     0x3b: "romstage: mrc.bin finito, prima del recupero di CBMEM",
     0x3c: "romstage: RAM init finita (CBMEM recuperato se S3)",

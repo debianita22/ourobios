@@ -10,18 +10,18 @@ is here. None of it is a promise of a date.
 
 | Item | Boards | Why not now | Next step |
 |---|---|---|---|
-| [Firmware watchdog](#firmware-watchdog) | both | built in v1.6.1 for the M920x (patches 0238-0240) and the W541 (patches 0254-0255), off by default; the armed path not run on a machine | WDT-01 armed on each board with the stop checked, then a hang test with a long timeout |
+| [Firmware watchdog](#firmware-watchdog) | both | built in v1.6.1 for the M920x (patches 0238-0240) and the W541 (patches 0254-0255), off by default; on a W541 armed at 300 s and stopped at the slot confirmation (WDT-01, 2026-11-08) | the armed path on the M920x; a real hang with a long timeout on either |
 | [Firmware update mode](#firmware-update-mode) | both | decided on 2026-11-05: not made; capsules need none of it, and a one-shot of the protections and Secure Boot is security code that can fail open | none planned; `update.py other-slot` reminds to turn *BIOS Lock* on again |
 | [DMA protection](#dma-protection) | M920x | no pre-boot DMA protection to report; the FSP-M has no PMR data | reword the help of *Intel VT-d*; find the slot of the Thunderbolt card |
 | [Capsule regions in the payload](#capsule-regions-in-the-payload) | both | done in v1.6.0 (`edk2/0045`): the payload writes only the two slots and `RW_MRC_CACHE`, and on a flash with both slots only an update of one slot at a time | a new region in `PcdFmpDeviceSmmAllowedRegions` one release before any capsule that writes it |
 | [Variable store robustness](#variable-store-robustness) | both | looked at for v1.6.0: coreboot's all-or-nothing reader is upstream's choice, and the corner case of the reset is not one | none planned |
 | [Top Swap and the Protected Range test](#top-swap-and-the-protected-range-test) | M920x | the read-only part is never written by an update | FLASH-04 with the protection on; a map with room for a second bootblock |
-| [Settings reset on the W541](#settings-reset-on-the-w541) | W541 | on from v1.6.1: the OS can set the RTC power loss bit (checked on a W541 on 2026-11-08), so the reset also needs the CMOS to have lost its contents (patch 0256); not run on a machine | OPT-05 on the W541 |
-| [Memory training across updates on the W541](#memory-training-across-updates-on-the-w541) | W541 | built for v1.6.1 (patches 0250-0252): the version of the cache is a tag and a key from the code (`nri`) or from the inputs of `mrc.bin`; the capsules and *Go back to* keep the cache | MEM-03 on a W541 with a capsule, and a fallback to an older slot |
+| [Settings reset on the W541](#settings-reset-on-the-w541) | W541 | on from v1.6.1: the OS can set the RTC power loss bit (checked on a W541), so the reset also needs the CMOS to have lost its contents (patch 0256); OPT-05 passed on a W541 with a simulated loss (2026-11-08) | a real loss (the coin cell out) when convenient |
+| [Memory training across updates on the W541](#memory-training-across-updates-on-the-w541) | W541 | built for v1.6.1 (patches 0250-0252): the version of the cache is a tag and a key from the code (`nri`) or from the inputs of `mrc.bin`; the capsules and *Go back to* keep the cache; MEM-03 passed on a W541 (2026-11-08) | a capsule update and a fallback to an older slot on a W541; `mrc` |
 | [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | done in v1.6.0 (patch 0222): a Kconfig for the version, and `tools/fspm-settings.sh` stops CI when the files of those settings change | the first bump, with the release that changes them |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
-| [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | built for v1.6.1 (patches 0246-0249): one warm reset from romstage, which the native RAM init knows as its own and keeps its cache; not yet run on a machine | CPU-06 on a W541, `nri` and `mrc` |
-| [Device switches on the W541](#device-switches-on-the-w541) | W541 | the microphone, the camera and the card reader built and passed in v1.6.1; the Ethernet disables but re-enabling needs a full power-down (measured 2026-11-08) | re-enable the GbE within one boot, or keep the power-down caveat; the fingerprint switch on a unit that has it |
+| [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | built for v1.6.1 (patches 0247-0249, 0258); CPU-06 passed on a W541 (2026-11-08): off, locked, kept across S3, the training cache kept | `mrc` (this machine boots only `nri` slots) |
+| [Device switches on the W541](#device-switches-on-the-w541) | W541 | the microphone, the camera and the card reader passed in v1.6.1; the Ethernet disables, its re-enable failed with a plain reset and is being tried with a global reset (patch 0262) | the global reset on the W541; the fingerprint switch on a unit that has it |
 | [Wake on LAN after a shutdown on the W541](#wake-on-lan-after-a-shutdown-on-the-w541) | W541 | built for v1.6.1 (patch 0259), as the Lenovo firmware does it; not run on a machine | NET-02 from power-off on AC and on battery, with each setting |
 | [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot (no PEI, no LockBox, no boot script); the stock design read and a coreboot design written (2026-11-08), unbuilt: new secret-handling code in both, untestable without a locked drive | a decision whether to build it, with the caveats |
 | [NVIDIA power steering and the EC's CPU limits](#nvidia-power-steering-and-the-ecs-cpu-limits) | W541 | little use under Linux; a `_PPC` policy and adapter tests | count the EC's CPU limit events |
@@ -272,26 +272,21 @@ option is read, when the RTC failure bit is set and the boot is not an S3
 resume, with POST codes 0x37 and 0x38 around it, so that a boot that
 follows one that hung there skips it (on Haswell the option needs
 `CMOS_POST`); `sb_rtc_init()` in ramstage clears the bit and logs the
-event as before. It is off: `CONFIG_DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE`
-is not set in `configs/w541-*.defconfig`, so the W541 keeps its options
-through a CMOS clear.
+event as before. Off up to v1.6.0; on from v1.6.1
+(`CONFIG_DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE=y` in
+`configs/w541-*.defconfig`), with the check of patch 0256 below.
 
-- **Why later**: the shared deletion has not run on a machine yet (OPT-05
-  on the M920x). On the W541 software clears the RTC power loss bit (bit
-  2 of `GEN_PMCON_3`, `00:1f.0` 0xa4) by writing it: if the OS can also
-  set it, a reboot would put *BIOS Lock* back to its default, off. A laptop also
-  loses the RTC power more easily: with a dead coin cell, a battery taken
-  out or run down without AC is enough. The mark of a deletion that hung
-  is in the CMOS as well, so the test notes must give the way out: the
-  power button held 4 s with the AC adapter or a battery still attached;
-  removing every supply would repeat the deletion.
-- **Next step**: OPT-05 on the M920x; on the W541 the bit test (write it,
-  read it back, reboot), then OPT-05 on a test build with the option on,
-  with the AC adapter, the batteries and the coin cell out. Before the
-  line goes on in the defconfigs: `tools/elog.py` names for POST codes
-  0x37 and 0x38, `tools/hw-report.py` taking *RTC power lost: setup
-  options reset to defaults* (the outcome printed again once CBMEM is up)
-  as an event, and release notes that say it.
+- **Why it waited**: the OS might set the RTC power loss bit (bit 2 of
+  `GEN_PMCON_3`, `00:1f.0` 0xa4) and reset every option at the next boot;
+  a laptop also loses the RTC power more easily (a dead coin cell, a
+  battery taken out or run down without AC). The mark of a deletion that
+  hung is in the CMOS as well, so the way out of a hang at POST 0x37 is
+  the power button held 4 s with the AC adapter or a battery still
+  attached; removing every supply would repeat the deletion.
+- **Done before turning it on** (v1.6.1): `tools/elog.py` names POST
+  codes 0x37 and 0x38; `tools/hw-report.py` takes *Setup options: N reset
+  to defaults* and the two *not reset, the CMOS kept* lines of patch 0256
+  as events; the release notes (CHANGELOG) say it.
 - **Checked on the W541** (2026-11-08, Linux under ci-273): bit 2 of
   `GEN_PMCON_3` is read-write: writing 1 read back `0x180c`, writing 0
   `0x1808` again
@@ -459,8 +454,19 @@ which coreboot sets for Sandy Bridge and Ivy Bridge (`model_206ax`).
   training and train again at every power-on. It logs `GEN_PMCON_2`,
   which tells whether the case arises at all (under Linux `DISB` reads
   1, set after the memory init, not by coreboot).
-- **What is left**: CPU-06 of [docs/testing.md](testing.md) on a W541
-  (`nri` here, `mrc` not measured: `mrc.bin` decides its own boot mode).
+- **Run on a W541** (2026-11-08,
+  [docs/tests/v1.6.1/w541-nri/README.md](tests/v1.6.1/w541-nri/README.md)):
+  CPU-06 passes: off, 4 threads, `SOFT_RESET_DATA`/`CTRL`/`LOCK` all set
+  (patch 0258 locks the straps, as the Lenovo firmware does), kept across
+  S3, re-applied with one reset at every power-on with the cache kept;
+  on again, 8 threads. The case of a warm reset during training does
+  not arise: at the boot after the reset `DISB` or `MEM_SR` is clear (`GEN_PMCON_2`
+  `0x2024` and `0x2080` at the two cold boots), so the native RAM init
+  takes it as a cold boot and uses its cache anyway; in 8 boots the
+  special case built for it never ran, so patch 0248 keeps only the log of
+  `GEN_PMCON_2`.
+- **What is left**: `mrc`, not measured (`mrc.bin` decides its own boot
+  mode, and this machine boots only `nri` slots).
   With the option off and the bit not set yet (an update from v1.6.0 or
   older, which left the threads on, or a restart through S5), the first
   boot of the new slot ends with that reset, which takes one of the two
@@ -517,15 +523,16 @@ have a switch.
   hiding function 0 would make the PCH renumber the others.
 - **Run on a W541** (2026-11-08,
   [docs/tests/v1.6.1/w541-nri/README.md](tests/v1.6.1/w541-nri/README.md#the-ethernet-switch)):
-  the microphone, the camera and the card reader pass. The Ethernet
-  disables, but only after a full power cycle (patch 0262 clears the
-  `FDSW` lockdown so the firmware does it by itself), and **re-enabling
-  needs a full power-down**: a cold boot clears `BUC` bit 5 but the GbE
-  stays absent (`PCI: Static device PCI: 00:00:19.0 not found`), as the
-  LAN disable is in the SUS well, which the CF9 0x0E full reset and S5
-  both keep. Open: clear `BUC` and re-enable the GbE clock early enough
-  to bring it back in one boot, or keep the power-down caveat (patch
-  0263's help text).
+  the microphone, the camera and the card reader pass. The Ethernet: the
+  lockdown that coreboot's finalize sets at every boot (`FDSW` bit 7),
+  kept by a warm reset and cleared across an S5, blocks the write of
+  `BUC` (patch 0262 now resets first, as the Lenovo firmware does); off
+  then applies, but on did not: the bit cleared and a plain CF9 0x0E did
+  not bring the controller back. The Lenovo firmware resets an enable with
+  a global reset when its ME is on, and with the plain one only with the
+  HECI hidden, as here; patch 0262 now resets with the global one. Open: whether
+  it, or only a full power-down, re-enables the controller with the ME
+  disabled.
 - **Read in the Lenovo firmware** (2026-11-08,
   [docs/tests/v1.6.1/w541-nri/stock-gnet94ww.md](tests/v1.6.1/w541-nri/stock-gnet94ww.md#2-io-port-access)): the
   Ethernet as 0241 (`BUC` bit 5, a global reset); the microphone by a

@@ -240,7 +240,7 @@
 0245-mb-lenovo-haswell-The-camera-switch-on-the-W541.patch
 0246-drivers-pc80-rtc-A-POST-code-for-a-reset-the-firmwar.patch
 0247-cpu-intel-haswell-Add-an-option-for-Hyper-Threading.patch
-0248-nb-intel-haswell-native_raminit-Keep-the-cache-after.patch
+0248-nb-intel-haswell-native_raminit-Log-GEN_PMCON_2-with.patch
 0249-mb-lenovo-haswell-Put-Hyper-Threading-in-the-setup-m.patch
 0250-nb-intel-haswell-native_raminit-Key-the-training-dat.patch
 0251-nb-intel-haswell-haswell_mrc-Tag-the-training-data-a.patch
@@ -254,6 +254,5 @@
 0259-mb-lenovo-haswell-Wake-on-LAN-from-off-on-the-W541-a.patch
 0260-ec-lenovo-h8-One-pending-HKEY-event-per-class-as-the.patch
 0261-mb-lenovo-haswell-cpu-intel-haswell-Shorter-help-tex.patch
-0262-sb-intel-lynxpoint-Full-reset-to-clear-the-FDSW-lock.patch
+0262-sb-intel-lynxpoint-Apply-the-GbE-switch-as-the-Lenov.patch
 0263-mb-lenovo-haswell-Say-that-re-enabling-Ethernet-need.patch
-0264-sb-intel-lynxpoint-A-global-reset-for-the-GbE-switch.patch

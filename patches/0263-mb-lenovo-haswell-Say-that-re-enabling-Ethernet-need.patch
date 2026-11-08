@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Il tuo nome <tu@esempio.com>
-Date: Sun, 8 Nov 2026 23:02:15 +0100
+Date: Sun, 8 Nov 2026 23:48:00 +0100
 Subject: [PATCH] mb/lenovo/haswell: Say that re-enabling Ethernet needs a full
  power-down
 

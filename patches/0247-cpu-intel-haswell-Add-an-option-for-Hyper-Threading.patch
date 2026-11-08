@@ -25,9 +25,10 @@ it may be in a read-only part that does not know the option.
 
 A cold boot with the option off then has one more reset, so it leaves
 POSTCODE_RESET_REQUESTED in CMOS_POST, with "HT" in the extra field:
-the next boot does not log a hang, at most one reset is done per boot
-if the bit did not stick, and haswell_ht_reset_was_last() tells raminit
-that the warm reset came before any memory init.
+the next boot does not log a hang, and at most one reset is done per
+boot if the bit did not stick (haswell_ht_reset_was_last()). That loop
+breaker needs CMOS_POST: without it the option is neither offered nor
+applied.
 
 The CFR object lists the option when the processor reports more than
 one thread per core, or when the bits turned them off.
@@ -39,9 +40,9 @@ Change-Id: I63587b280589b3b3292521c7fe15badb451263bb
  src/cpu/intel/haswell/Makefile.mk        |   3 +
  src/cpu/intel/haswell/cfr.h              |  18 ++++
  src/cpu/intel/haswell/haswell.h          |   7 ++
- src/cpu/intel/haswell/hyperthreading.c   | 104 +++++++++++++++++++++++
+ src/cpu/intel/haswell/hyperthreading.c   | 112 +++++++++++++++++++++++
  src/northbridge/intel/haswell/romstage.c |   9 +-
- 5 files changed, 139 insertions(+), 2 deletions(-)
+ 5 files changed, 147 insertions(+), 2 deletions(-)
  create mode 100644 src/cpu/intel/haswell/hyperthreading.c
 
 diff --git a/src/cpu/intel/haswell/Makefile.mk b/src/cpu/intel/haswell/Makefile.mk
@@ -114,10 +115,10 @@ index 885def47e2..e3d362f51c 100644
  u32 pcode_mailbox_read(u32 command);
 diff --git a/src/cpu/intel/haswell/hyperthreading.c b/src/cpu/intel/haswell/hyperthreading.c
 new file mode 100644
-index 0000000000..b0703c1626
+index 0000000000..730be3628a
 --- /dev/null
 +++ b/src/cpu/intel/haswell/hyperthreading.c
-@@ -0,0 +1,104 @@
+@@ -0,0 +1,112 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +#include <cf9_reset.h>
@@ -166,7 +167,8 @@ index 0000000000..b0703c1626
 +
 +bool haswell_ht_available(void)
 +{
-+	return intel_ht_supported() || ht_off_by_soft_reset();
++	/* haswell_check_ht_option() needs CMOS_POST: without it, no option */
++	return CONFIG(CMOS_POST) && (intel_ht_supported() || ht_off_by_soft_reset());
 +}
 +
 +/*
@@ -178,6 +180,13 @@ index 0000000000..b0703c1626
 +void haswell_check_ht_option(void)
 +{
 +	const bool off = ht_off_by_soft_reset();
++
++	/*
++	 * The loop breaker below is the POST code of the reset in CMOS_POST:
++	 * without it, a strap that does not stick would reset at every boot.
++	 */
++	if (!CONFIG(CMOS_POST))
++		return;
 +
 +	/* No second thread to turn off */
 +	if (!off && !intel_ht_supported())

@@ -21,8 +21,8 @@ battery itself. The MAC and PHY wake is left to the OS (e1000e).
 Do the same: Energy Saver -> Power -> Wake on LAN on the W541, default
 AC only; WOL_EN_OVRD in mainboard_final(), so that a power-off without
 the sleep SMI (the power button held) wakes too, and the sleep steps in
-mainboard_smi_sleep(), before the southbridge clears the GPEs. Bit 1 of
-GEN_PMCON_3, write-1-to-clear, is written as 0.
+mainboard_smi_sleep(), before the southbridge clears the GPEs. Bits 1,
+9 and 14 of GEN_PMCON_3, write-1-to-clear, are written as 0.
 
 TEST=Build of the ThinkPad W541 with the native RAM init.
 
@@ -71,7 +71,7 @@ index a929a8e2b7..3a817240be 100644
  	},
  });
 diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
-index 570f49d5cf..93b65480fd 100644
+index 570f49d5cf..b77f62233f 100644
 --- a/src/mainboard/lenovo/haswell/mainboard.c
 +++ b/src/mainboard/lenovo/haswell/mainboard.c
 @@ -319,9 +319,30 @@ static void set_battery_charge_limit(void)
@@ -90,8 +90,8 @@ index 570f49d5cf..93b65480fd 100644
 +			get_uint_option("wake_on_lan", WAKE_ON_LAN_AC) != WAKE_ON_LAN_OFF;
 +	u16 pmcon3 = pci_s_read_config16(PCH_LPC_DEV, GEN_PMCON_3);
 +
-+	/* Bit 1 (PWR_FLR) is write-1-to-clear: written as 0, it stays */
-+	pmcon3 &= ~(WOL_EN_OVRD | RTC_POWER_FAILED);
++	/* Bits 1, 9 and 14 are write-1-to-clear: written as 0, they stay */
++	pmcon3 &= ~(WOL_EN_OVRD | PWR_FLR | GEN_RST_STS | SUS_PWR_FLR);
 +	if (on)
 +		pmcon3 |= WOL_EN_OVRD;
 +	pci_s_write_config16(PCH_LPC_DEV, GEN_PMCON_3, pmcon3);
@@ -124,7 +124,7 @@ index c588dbea2b..e686006c2e 100644
  enum macos_panel {
  	MACOS_PANEL_EXTERNAL	= 0,	/* as a DisplayPort sink, no backlight */
 diff --git a/src/mainboard/lenovo/haswell/smihandler.c b/src/mainboard/lenovo/haswell/smihandler.c
-index de48240e88..b1d0179048 100644
+index de48240e88..0799f34fb1 100644
 --- a/src/mainboard/lenovo/haswell/smihandler.c
 +++ b/src/mainboard/lenovo/haswell/smihandler.c
 @@ -1,12 +1,18 @@
@@ -178,9 +178,9 @@ index de48240e88..b1d0179048 100644
 +	else if (slp_typ != ACPI_S5 && !(pci_read_config16(gbe, GBE_PMCSR) & GBE_PMCSR_PME_EN))
 +		wol = WAKE_ON_LAN_OFF;
 +
-+	/* Bit 1 (PWR_FLR) is write-1-to-clear: written as 0, it stays */
++	/* Bits 1, 9 and 14 are write-1-to-clear: written as 0, they stay */
 +	pmcon3 = pci_read_config16(PCH_LPC_DEV, GEN_PMCON_3);
-+	pmcon3 &= ~(WOL_EN_OVRD | SLP_LAN_DEFAULT | RTC_POWER_FAILED);
++	pmcon3 &= ~(WOL_EN_OVRD | SLP_LAN_DEFAULT | PWR_FLR | GEN_RST_STS | SUS_PWR_FLR);
 +	if (wol != WAKE_ON_LAN_OFF)
 +		pmcon3 |= WOL_EN_OVRD | SLP_LAN_DEFAULT;
 +	pci_write_config16(PCH_LPC_DEV, GEN_PMCON_3, pmcon3);

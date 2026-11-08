@@ -30,8 +30,8 @@ Change-Id: Ie15476a13f1792977f136739322775615f4228f2
  src/ec/lenovo/h8/acpi/thinkpad.asl            | 97 +++++++++++++++++++
  src/mainboard/lenovo/haswell/Kconfig          |  1 +
  src/mainboard/lenovo/haswell/acpi/ec.asl      |  5 +-
- .../lenovo/haswell/acpi/platform.asl          |  3 +
- 5 files changed, 113 insertions(+), 2 deletions(-)
+ .../lenovo/haswell/acpi/platform.asl          |  5 +
+ 5 files changed, 115 insertions(+), 2 deletions(-)
 
 diff --git a/src/ec/lenovo/h8/Kconfig b/src/ec/lenovo/h8/Kconfig
 index 49fad627d5..6c3c4b24b7 100644
@@ -238,15 +238,17 @@ index acd6f967c2..049b0856b4 100644
  
  	/* Hotkey 0x1009 (Fn+F9 in the thinkpad_acpi key map), if enabled */
 diff --git a/src/mainboard/lenovo/haswell/acpi/platform.asl b/src/mainboard/lenovo/haswell/acpi/platform.asl
-index 69bd489cef..1378742055 100644
+index 69bd489cef..fb20c1aa1b 100644
 --- a/src/mainboard/lenovo/haswell/acpi/platform.asl
 +++ b/src/mainboard/lenovo/haswell/acpi/platform.asl
-@@ -44,6 +44,9 @@ Method(_PTS,1)
+@@ -44,6 +44,11 @@ Method(_PTS,1)
  {
  	\_SB.PCI0.LPCB.EC.RADI(0)
  
++#if CONFIG(H8_HKEY_QUEUE)
 +	/* No HKEY event survives a sleep, as with the OEM firmware */
 +	\_SB.PCI0.LPCB.EC.HKEY.QCLR ()
++#endif
 +
  	/*
  	 * Under macOS, before S3: the sleep indicators (power button and logo
