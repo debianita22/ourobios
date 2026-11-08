@@ -250,3 +250,4 @@
 0255-mb-lenovo-haswell-Offer-the-firmware-watchdog-on-the.patch
 0256-nb-intel-haswell-Reset-the-setup-options-only-when-t.patch
 0257-mb-lenovo-haswell-A-soft-switch-for-the-W541-s-card-.patch
+0258-cpu-intel-haswell-Lock-the-soft-reset-straps-at-ever.patch
