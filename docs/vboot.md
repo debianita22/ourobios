@@ -59,11 +59,13 @@ A capsule ([docs/update.md](update.md)) carries both slots. The payload,
 in the boot that applies it:
 
 1. reads `RW_NVRAM` and finds the slot that is running;
-2. writes the other one, verifying every block; a W541 capsule also clears
-   `RW_MRC_CACHE`, so that the new code trains the memory again, while an
-   M920x one from v1.4.0 leaves it, and the new slot trains only if
-   the version of the cache does not match its FSP-M, processor and
-   Hyper-Threading setting ([docs/update.md](update.md#what-changes-and-what-stays));
+2. writes the other one, verifying every block; `RW_MRC_CACHE` stays, and
+   the new slot trains only if the version of the cache is not its own: on
+   the W541 from v1.6.1 the tag of the RAM init and a key of its code or
+   of the inputs of `mrc.bin`, on the M920x from v1.4.0 its FSP-M,
+   processor and Hyper-Threading setting
+   ([docs/update.md](update.md#what-changes-and-what-stays)); a W541
+   capsule up to v1.6.0 clears it;
 3. appends a record to `RW_NVRAM`: *try next* the new slot, two tries;
 4. restarts.
 
@@ -76,9 +78,10 @@ alternate. Until then the old slot keeps the release before:
 and so does, without an OS, *Go back to* on the *Firmware Update* page of the
 setup ([From the setup](update.md#from-the-setup)): the payload asks
 coreboot's SMMSTORE handler to try the other slot, with two tries, and to
-clear `RW_MRC_CACHE` (patch 0065; on the M920x from v1.4.0 the cache
-stays, `SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE`, patch 0179, and the
-version of the cache tells the other slot whether to train). The payload
+clear `RW_MRC_CACHE` (patch 0065; on the M920x from v1.4.0 and the W541
+from v1.6.1 the cache stays, `SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE`,
+patches 0179 and 0252, and the version of the cache tells the other slot
+whether to train). The payload
 locks that request before it
 starts a boot option and at `ExitBootServices()`, coreboot on S3 resume: an
 OS loader or an OS goes back only with a capsule. Before the lock, coreboot
@@ -90,7 +93,8 @@ version.
 
 The capsule never writes `WP_RO`, `SMMSTORE`, `RO_VPD` or `RW_ELOG`: the
 payload writes the regions that the manifest of the capsule names, and the
-manifests of the releases name the slots, and on the W541 `RW_MRC_CACHE`.
+manifests of the releases name the slots, and on the W541 up to v1.6.0
+`RW_MRC_CACHE`.
 From v1.6.0 the payload writes nothing else (`edk2/0045`): a manifest with
 another region, or one without both slots, is refused before a byte is
 written, *immagine non valida* (0x1800) in the ESRT. And a boot with

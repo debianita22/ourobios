@@ -1,0 +1,4 @@
+# 2026-11-08T16:12:50+01:00 GEN_PMCON_3 (00:1f.0 0xa4) RTC_PWR_STS bit 2, from Linux
+before: 1808
+after writing 1 to bit 2: 180c
+after writing 0 to bit 2: 1808

@@ -1833,15 +1833,19 @@ def logged_fpr(fw):
     return prs, (areas or {}).get("WP_RO"), (areas or {}).get("SI_ALL")
 
 
-OC_WDT_CTL_PORT = 0x1854      # ACPI_BASE_ADDRESS (0x1800) + 0x54, Cannon Point
+# OC_WDT_CTL, PMBASE + 0x54: Cannon Point (ACPI_BASE_ADDRESS 0x1800) e Lynx
+# Point-H (DEFAULT_PMBASE 0x500)
+OC_WDT_CTL_PORTS = {"m920x": 0x1854, "w541": 0x554}
 
 
 def check_watchdog(fw, rep):
-    """WDT-01: il firmware watchdog del M920x (dalla v1.6.1, patch 0239):
-    armato in romstage se l'opzione firmware_watchdog lo chiede, fermato
-    in SMM quando il payload conferma lo slot; all'OS deve essere spento."""
-    if fw.board != "m920x":
-        rep.add("WDT-01", "Firmware watchdog", "SKIP", "solo sul M920x")
+    """WDT-01: il firmware watchdog (dalla v1.6.1: M920x patch 0239, W541
+    patch 0254): armato in romstage se l'opzione firmware_watchdog lo
+    chiede, fermato in SMM quando il payload conferma lo slot; all'OS deve
+    essere spento."""
+    port = OC_WDT_CTL_PORTS.get(fw.board)
+    if port is None:
+        rep.add("WDT-01", "Firmware watchdog", "SKIP", "solo sul M920x e sul W541")
         return
     armed = fw.grep(r"^Firmware watchdog: armed, (\d+) s") if fw.log is not None else []
     off = fw.grep(r"^Firmware watchdog: off") if fw.log is not None else []
@@ -1849,7 +1853,7 @@ def check_watchdog(fw, rep):
     details = []
     try:
         with open("/dev/port", "rb") as f:
-            f.seek(OC_WDT_CTL_PORT)
+            f.seek(port)
             ctl = int.from_bytes(f.read(4), "little")
     except OSError as e:
         ctl = None

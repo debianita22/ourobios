@@ -68,6 +68,45 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   a lock-on-create Variable Policy (edk2 0057), and `hw-report.py` reads
   it (FLASH-01, FLASH-06).
 
+- **The memory training kept across updates on the W541** (patches
+  0250-0252): the version of the training cache is now a tag and a key
+  made from the code (`nri`: a hash of the native RAM init's sources and
+  Kconfig, with the memory settings of the board) or from the inputs of
+  `mrc.bin`, instead of a number bumped by hand, so no slot ever resumes
+  a training saved by other code. The capsules write the two slots only
+  and *Go back to* keeps the cache, as on the M920x: the new slot trains
+  once only when its RAM init changed (0.7 s with `nri`). `update.py`
+  still stages the capsules of before, which clear it.
+- **Firmware watchdog on the W541** (patches 0254-0255): *General* →
+  *Boot* → *Firmware watchdog* (Off, 5 or 10 minutes), the M920x's design
+  on the watchdog of Lynx Point: armed before the memory init, stopped
+  when the payload confirms the slot, so that a new slot that hangs twice
+  falls back by itself. Off by default; WDT-01 of `hw-report.py` reads it
+  on the W541 too.
+- **Settings reset on the W541** (patch 0256): on, as on the M920x, with
+  one more condition: the OS can set the RTC power loss bit of Lynx Point
+  (checked on a W541), so the options are reset only when the CMOS lost
+  its contents too. Not yet run on a machine (OPT-05).
+- **Card reader switch on the W541** (patch 0257): *Hardware* →
+  *Expansion ports* → *Card reader*, a soft switch: off, the link of its
+  PCIe port is disabled at every start and wake.
+- **No hang logged for the resets of the options** (patches 0246, 0253):
+  the resets that apply *Ethernet*, *Intel VT-x* and *Hyper-Threading*
+  leave POST code `0xfc`, which the event log does not report as the last
+  code of a hung boot.
+- **Hyper-Threading on the W541** (patches 0246-0249): *Energy Saver* →
+  *Processor* → *Hyper-Threading*, on by default as in the Lenovo setup,
+  turns the second thread of each core off (4 threads on a quad-core
+  i7). On Haswell the PCH applies it from the next reset (bit 0 of
+  `SOFT_RESET_DATA`, measured on a W541 with rc6), so romstage does one
+  warm reset when the option and the bit differ: with the option off,
+  at every power-on. The bit survives S3, so a resume keeps the threads
+  the OS suspended with, and the option applies at the next boot. The
+  reset leaves a POST code of its own (`0xfc`) that the event log does
+  not take for a hang, and the native RAM init knows it and keeps its
+  training cache instead of training again. Not yet run on a machine
+  with the option (CPU-06 of [docs/testing.md](docs/testing.md)); the
+  `mrc` variant has the option too, not measured.
 - **The descriptor, the GbE and the ME regions under *Firmware
   protection***: the images leave the descriptor unlocked
   (`CONFIG_UNLOCK_FLASH_REGIONS`, so that flashrom can rewrite the
