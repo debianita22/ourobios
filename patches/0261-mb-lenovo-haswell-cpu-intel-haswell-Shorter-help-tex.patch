@@ -1,0 +1,74 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 17:21:52 +0100
+Subject: [PATCH] mb/lenovo/haswell, cpu/intel/haswell: Shorter help texts of
+ four options
+
+The CFR record of the ThinkPad W541 reached 28.5 KiB with the options
+of v1.6.1, near the 32 KiB of the coreboot table that it shares with
+the other records. Shorten the help texts of Hyper-Threading, the
+internal microphone and the camera, which said more than the setup
+needs, to keep about half a KiB free.
+
+TEST=tools/cfr-dump.sh of ouroBIOS on the W541 build: 28132 bytes.
+
+Change-Id: I75c64faf74c6c56f056fe37e4c8a2ef5c1dd9d15
+---
+ src/cpu/intel/haswell/cfr.h        |  6 ++----
+ src/mainboard/lenovo/haswell/cfr.c | 16 ++++++----------
+ 2 files changed, 8 insertions(+), 14 deletions(-)
+
+diff --git a/src/cpu/intel/haswell/cfr.h b/src/cpu/intel/haswell/cfr.h
+index 09b2d331e5..b732b117e0 100644
+--- a/src/cpu/intel/haswell/cfr.h
++++ b/src/cpu/intel/haswell/cfr.h
+@@ -108,10 +108,8 @@ static void update_hyper_threading(struct sm_object *new)
+ static const struct sm_object hyper_threading = SM_DECLARE_BOOL({
+ 	.opt_name	= "hyper_threading",
+ 	.ui_name	= "Hyper-Threading",
+-	.ui_helptext	= "Two threads per core. A change applies through a reset,\n"
+-			  "which the firmware does by itself; while it is off, every\n"
+-			  "power-on has that reset too, the OS sees one thread per\n"
+-			  "core, and a resume from sleep keeps what the OS had.\n"
++	.ui_helptext	= "Two threads per core. A change applies through a reset the\n"
++			  "firmware does itself; while off, every power-on has it too.\n"
+ 			  "Default: on. Not listed on the processors without it.",
+ 	.default_value	= true,
+ }, WITH_CALLBACK(update_hyper_threading));
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 3a817240be..4756ebe2ea 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -324,11 +324,8 @@ static const struct sm_object internal_mic = SM_DECLARE_BOOL({
+ 	.opt_name	= "internal_mic",
+ 	.ui_name	= "Internal microphone",
+ 	.ui_helptext	= "The microphone array in the lid.\n"
+-			  "Default: on. Off: the firmware tells the operating system\n"
+-			  "that the microphone is not connected, so it is not offered\n"
+-			  "as an input. A soft switch: the audio chip itself stays\n"
+-			  "powered, and an OS that ignores the firmware's pin setup\n"
+-			  "could still use it. The headset jack is not affected.",
++			  "Default: on. Off: reported to the OS as not connected (a\n"
++			  "soft switch). The headset jack is not affected.",
+ 	.default_value	= true,
+ });
+ 
+@@ -734,11 +731,10 @@ static const struct sm_object camera = SM_DECLARE_BOOL({
+ 	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
+ 	.opt_name	= "camera",
+ 	.ui_name	= "Integrated camera",
+-	.ui_helptext	= "The camera above the display, a USB device of the chipset.\n"
+-			  "Default: on. Off: its USB port is disabled in the USB 3.0\n"
+-			  "controller at every start and wake, so no OS sees the\n"
+-			  "camera. An OS that routes the port to the USB 2.0\n"
+-			  "controller instead would still find it.",
++	.ui_helptext	= "The camera above the display.\n"
++			  "Default: on. Off: its USB port is disabled at every start\n"
++			  "and wake (an OS routing it to the USB 2.0 controller would\n"
++			  "still find it).",
+ 	.default_value	= true,
+ });
+ 
+-- 
+2.43.0
+

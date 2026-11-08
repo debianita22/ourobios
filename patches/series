@@ -251,3 +251,6 @@
 0256-nb-intel-haswell-Reset-the-setup-options-only-when-t.patch
 0257-mb-lenovo-haswell-A-soft-switch-for-the-W541-s-card-.patch
 0258-cpu-intel-haswell-Lock-the-soft-reset-straps-at-ever.patch
+0259-mb-lenovo-haswell-Wake-on-LAN-from-off-on-the-W541-a.patch
+0260-ec-lenovo-h8-One-pending-HKEY-event-per-class-as-the.patch
+0261-mb-lenovo-haswell-cpu-intel-haswell-Shorter-help-tex.patch

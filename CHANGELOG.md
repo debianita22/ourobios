@@ -90,6 +90,15 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 - **Card reader switch on the W541** (patch 0257): *Hardware* →
   *Expansion ports* → *Card reader*, a soft switch: off, the link of its
   PCIe port is disabled at every start and wake.
+- **Wake on LAN from off on the W541** (patch 0259): *Energy Saver* →
+  *Power* → *Wake on LAN* (Off, AC only - the default, as the Lenovo
+  setup -, AC and battery), programmed as the Lenovo firmware does at
+  every sleep and power-off: a magic packet turns the laptop on from off,
+  and from sleep when the OS armed the port. Not yet run on a machine
+  (NET-02).
+- **HKEY events no longer lost** (patch 0260): one pending event per
+  class, as the Lenovo firmware: a dock or thermal event right after a
+  hotkey no longer replaces it.
 - **No hang logged for the resets of the options** (patches 0246, 0253):
   the resets that apply *Ethernet*, *Intel VT-x* and *Hyper-Threading*
   leave POST code `0xfc`, which the event log does not report as the last

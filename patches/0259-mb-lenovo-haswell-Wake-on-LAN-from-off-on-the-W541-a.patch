@@ -1,0 +1,221 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 17:18:40 +0100
+Subject: [PATCH] mb/lenovo/haswell: Wake on LAN from off on the W541, as the
+ Lenovo firmware
+
+The Lenovo setup of the W541 has Wake On LAN (Disabled, AC Only - the
+default -, AC and Battery). The ACPI tables give the LAN's wake up to
+S4 (_PRW 0x0D, 4), so the OS does not arm it for S5, and coreboot's
+Lynx Point code has nothing for it.
+
+Read in the Lenovo firmware (GNET94WW): at boot, WOL_EN_OVRD (bit 13 of
+GEN_PMCON_3), which makes the PCH wake on the LAN's PME without
+PME_B0_EN; at S3, S4 and S5 entry, in SMM: the option applies whatever
+the OS did from S5, and from S3 and S4 only if the OS armed the
+controller (PME_En); GEN_PMCON_3 bits 13 and 8 set or cleared,
+PCIEXP_WAKE_DIS cleared when on, and PMH7 register 0x41 bit 1 set for
+"AC only" (register 0x26 bit 2 cleared): the PMH7 cuts the LAN on
+battery itself. The MAC and PHY wake is left to the OS (e1000e).
+
+Do the same: Energy Saver -> Power -> Wake on LAN on the W541, default
+AC only; WOL_EN_OVRD in mainboard_final(), so that a power-off without
+the sleep SMI (the power button held) wakes too, and the sleep steps in
+mainboard_smi_sleep(), before the southbridge clears the GPEs. Bit 1 of
+GEN_PMCON_3, write-1-to-clear, is written as 0.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: I3d53abd143f7c2a4a981d8e0bdad32bac738e41e
+---
+ src/mainboard/lenovo/haswell/cfr.c           | 18 +++++++
+ src/mainboard/lenovo/haswell/mainboard.c     | 21 ++++++++
+ src/mainboard/lenovo/haswell/setup_options.h |  7 +++
+ src/mainboard/lenovo/haswell/smihandler.c    | 54 ++++++++++++++++++++
+ src/southbridge/intel/lynxpoint/pch.h        |  2 +
+ 5 files changed, 102 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index a929a8e2b7..3a817240be 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -460,12 +460,30 @@ static const struct sm_object energy_thermal = SM_DECLARE_FORM({
+ 	},
+ });
+ 
++/* Read by mainboard.c and smihandler.c */
++static const struct sm_object wake_on_lan = SM_DECLARE_ENUM({
++	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "wake_on_lan",
++	.ui_name	= "Wake on LAN",
++	.ui_helptext	= "Turn on from off (and from sleep, if the OS armed it)\n"
++			  "when a Wake-on-LAN packet comes to the Ethernet port. The\n"
++			  "OS still arms the port (ethtool: Wake-on g).\n"
++			  "Default: AC only, as the ThinkPad setup.",
++	.default_value	= WAKE_ON_LAN_AC,
++	.values		= (const struct sm_enum_value[]) {
++				{ "Off",		WAKE_ON_LAN_OFF		},
++				{ "AC only",		WAKE_ON_LAN_AC		},
++				{ "AC and battery",	WAKE_ON_LAN_AC_BATTERY	},
++				SM_ENUM_VALUE_END				},
++});
++
+ static const struct sm_object energy_power = SM_DECLARE_FORM({
+ 	.ui_name	= "Power",
+ 	.obj_list	= (const struct sm_object *[]) {
+ 		&h8_cfr_usb_always_on,
+ 		&h8_cfr_power_on_ac,
+ 		&power_on_after_fail,
++		&wake_on_lan,
+ 		NULL
+ 	},
+ });
+diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
+index 570f49d5cf..93b65480fd 100644
+--- a/src/mainboard/lenovo/haswell/mainboard.c
++++ b/src/mainboard/lenovo/haswell/mainboard.c
+@@ -319,9 +319,30 @@ static void set_battery_charge_limit(void)
+ 	set_battery_thresholds(EC_BAT1_START_THRESHOLD, EC_BAT1_STOP_THRESHOLD, start, stop);
+ }
+ 
++/*
++ * W541: WOL_EN_OVRD at boot too, as the Lenovo firmware does, so that the LAN
++ * also wakes the laptop after a power-off that skips the sleep SMI (the power
++ * button held); smihandler.c sets it again at each S3, S4 and S5 entry.
++ */
++static void set_wake_on_lan(void)
++{
++	const struct device *gbe = pcidev_on_root(0x19, 0);
++	const bool on = gbe && gbe->enabled &&
++			get_uint_option("wake_on_lan", WAKE_ON_LAN_AC) != WAKE_ON_LAN_OFF;
++	u16 pmcon3 = pci_s_read_config16(PCH_LPC_DEV, GEN_PMCON_3);
++
++	/* Bit 1 (PWR_FLR) is write-1-to-clear: written as 0, it stays */
++	pmcon3 &= ~(WOL_EN_OVRD | RTC_POWER_FAILED);
++	if (on)
++		pmcon3 |= WOL_EN_OVRD;
++	pci_s_write_config16(PCH_LPC_DEV, GEN_PMCON_3, pmcon3);
++}
++
+ static void mainboard_final(void *chip_info)
+ {
+ 	set_battery_charge_limit();
++	if (CONFIG(BOARD_LENOVO_THINKPAD_W541))
++		set_wake_on_lan();
+ }
+ 
+ struct chip_operations mainboard_ops = {
+diff --git a/src/mainboard/lenovo/haswell/setup_options.h b/src/mainboard/lenovo/haswell/setup_options.h
+index c588dbea2b..e686006c2e 100644
+--- a/src/mainboard/lenovo/haswell/setup_options.h
++++ b/src/mainboard/lenovo/haswell/setup_options.h
+@@ -17,6 +17,13 @@ enum battery_charge_limit {
+ 	BATTERY_CHARGE_LIMIT_60		= 3,	/* start below 50%, stop at 60% */
+ };
+ 
++/* Values of the wake_on_lan option (W541), as Wake On LAN of the Lenovo setup */
++enum wake_on_lan {
++	WAKE_ON_LAN_OFF		= 0,
++	WAKE_ON_LAN_AC		= 1,	/* the default of the Lenovo setup */
++	WAKE_ON_LAN_AC_BATTERY	= 2,
++};
++
+ /* Values of the macos_panel option: how the framebuffer of macOS drives the panel */
+ enum macos_panel {
+ 	MACOS_PANEL_EXTERNAL	= 0,	/* as a DisplayPort sink, no backlight */
+diff --git a/src/mainboard/lenovo/haswell/smihandler.c b/src/mainboard/lenovo/haswell/smihandler.c
+index de48240e88..b1d0179048 100644
+--- a/src/mainboard/lenovo/haswell/smihandler.c
++++ b/src/mainboard/lenovo/haswell/smihandler.c
+@@ -1,12 +1,18 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
+ #include <arch/io.h>
++#include <device/pci_def.h>
+ #include <device/pci_ops.h>
+ #include <console/console.h>
+ #include <cpu/x86/smm.h>
+ #include <ec/acpi/ec.h>
+ #include <ec/lenovo/h8/h8.h>
++#include <ec/lenovo/pmh7/pmh7.h>
++#include <option.h>
+ #include <southbridge/intel/lynxpoint/pch.h>
++#include <types.h>
++
++#include "setup_options.h"
+ 
+ #define GPE_EC_SCI	1
+ #define GPE_EC_WAKE	13
+@@ -71,8 +77,56 @@ int mainboard_smi_apmc(u8 data)
+ 	return 0;
+ }
+ 
++/* GbE (00:19.0) PMCSR: PME_En, set by the OS when it arms the wake */
++#define GBE_PMCSR		0xcc
++#define  GBE_PMCSR_PME_EN	(1 << 8)
++
++/*
++ * W541: Wake On LAN of the Lenovo setup, as its firmware does it at S3, S4 and
++ * S5 entry (GNET94WW, SmmSleepEvent and BoardInfoSmm): from S5 the option
++ * applies whatever the OS did, as the ACPI tables give the LAN's wake up to S4
++ * only; from S3 and S4 only if the OS armed the controller. WOL_EN_OVRD makes
++ * the PCH wake on the LAN's PME without PME_B0_EN, which the S5 path of the
++ * southbridge clears; the OS programs the wake of the MAC and PHY itself
++ * (e1000e, ethtool Wake-on g). PMH7 register 0x41 bit 1 is what tells "AC
++ * only" from "AC and battery": the PMH7 cuts the LAN on battery itself.
++ */
++static void wake_on_lan_sleep(u8 slp_typ)
++{
++	const pci_devfn_t gbe = PCI_DEV(0, 0x19, 0);
++	unsigned int wol = get_uint_option("wake_on_lan", WAKE_ON_LAN_AC);
++	u16 pmcon3;
++
++	if (slp_typ < ACPI_S3)
++		return;
++
++	if (pci_read_config16(gbe, PCI_VENDOR_ID) == 0xffff)
++		wol = WAKE_ON_LAN_OFF;
++	else if (slp_typ != ACPI_S5 && !(pci_read_config16(gbe, GBE_PMCSR) & GBE_PMCSR_PME_EN))
++		wol = WAKE_ON_LAN_OFF;
++
++	/* Bit 1 (PWR_FLR) is write-1-to-clear: written as 0, it stays */
++	pmcon3 = pci_read_config16(PCH_LPC_DEV, GEN_PMCON_3);
++	pmcon3 &= ~(WOL_EN_OVRD | SLP_LAN_DEFAULT | RTC_POWER_FAILED);
++	if (wol != WAKE_ON_LAN_OFF)
++		pmcon3 |= WOL_EN_OVRD | SLP_LAN_DEFAULT;
++	pci_write_config16(PCH_LPC_DEV, GEN_PMCON_3, pmcon3);
++
++	if (wol != WAKE_ON_LAN_OFF)
++		outw(inw(get_pmbase() + PM1_EN) & ~PCIEXPWAK_DIS, get_pmbase() + PM1_EN);
++
++	if (wol == WAKE_ON_LAN_AC)
++		pmh7_register_set_bit(0x41, 1);
++	else
++		pmh7_register_clear_bit(0x41, 1);
++	pmh7_register_clear_bit(0x26, 2);
++}
++
+ void mainboard_smi_sleep(u8 slp_typ)
+ {
++	if (CONFIG(BOARD_LENOVO_THINKPAD_W541))
++		wake_on_lan_sleep(slp_typ);
++
+ 	if (slp_typ == 3) {
+ 		u8 ec_wake = ec_read(0x32);
+ 		/* If EC wake events are enabled,
+diff --git a/src/southbridge/intel/lynxpoint/pch.h b/src/southbridge/intel/lynxpoint/pch.h
+index 78df48cda9..0014a68e96 100644
+--- a/src/southbridge/intel/lynxpoint/pch.h
++++ b/src/southbridge/intel/lynxpoint/pch.h
+@@ -166,6 +166,8 @@ void mainboard_config_rcba(void);
+ #define  PMIR_XHCI_SMART_AUTO	(1 << 16) /* c.f. LPT BWG or WPT-LP BIOS spec */
+ 
+ /* GEN_PMCON_3 bits */
++#define WOL_EN_OVRD		(1 << 13)
++#define SLP_LAN_DEFAULT		(1 << 8)
+ #define RTC_BATTERY_DEAD	(1 << 2)
+ #define RTC_POWER_FAILED	(1 << 1)
+ #define SLEEP_AFTER_POWER_FAIL	(1 << 0)
+-- 
+2.43.0
+

@@ -337,6 +337,8 @@ sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("hw_report", "tools/hw-report.py")
 hw = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hw)
+# non la variabile della macchina che fa girare il controllo (OptionLockStatus)
+hw.OPTION_LOCK_VAR = "/nonexistent/OptionLockStatus"
 
 
 def firmware(board, log, ts):
@@ -580,6 +582,8 @@ sys.path.insert(0, "tools")
 spec = importlib.util.spec_from_file_location("hw_report", "tools/hw-report.py")
 hw = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hw)
+# non la variabile della macchina che fa girare il controllo (OptionLockStatus)
+hw.OPTION_LOCK_VAR = "/nonexistent/OptionLockStatus"
 update = hw.update
 MRC, NRI = "ouroBIOS-ci-150-ecbf45d-mrc", "ouroBIOS-v1.4.0-rc4-nri"
 
@@ -1815,6 +1819,8 @@ update.spi_protection = spi_protection
 spec = importlib.util.spec_from_file_location("hw_report", "tools/hw-report.py")
 hw = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hw)
+# non la variabile della macchina che fa girare il controllo (OptionLockStatus)
+hw.OPTION_LOCK_VAR = "/nonexistent/OptionLockStatus"
 assert hw.update is update
 fixture()
 update.spi_protection = lambda devmem=None: spi_protection(dm)

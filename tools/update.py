@@ -2933,7 +2933,7 @@ def main():
     p.add_argument("--force", action="store_true", help="anche l'altra variante, che dopo questa parte RO non parte")
     p.add_argument("--retrain", action="store_true",
                    help="svuota anche il training della RAM (RW_MRC_CACHE): lo slot lo rifa' al primo avvio "
-                        "(sul W541 e per le release del M920x prima della v1.4.0 lo si svuota sempre)")
+                        "(per le release del W541 fino alla v1.6.0 e del M920x prima della v1.4.0 lo si svuota sempre)")
     p.set_defaults(func=cmd_other_slot)
 
     p = sub.add_parser("rollback", help="torna alla release nell'altro slot, quella di prima dell'ultimo aggiornamento")

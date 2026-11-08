@@ -22,10 +22,10 @@ is here. None of it is a promise of a date.
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
 | [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | built for v1.6.1 (patches 0246-0249): one warm reset from romstage, which the native RAM init knows as its own and keeps its cache; not yet run on a machine | CPU-06 on a W541, `nri` and `mrc` |
 | [Device switches on the W541](#device-switches-on-the-w541) | W541 | built in v1.6.1: the Ethernet (patches 0241-0242), the microphone (0243), the camera (0244-0245) and the card reader (0257); not run on a W541 | DEV-W01 on the W541; no fingerprint reader on the unit of the port |
-| [Wake on LAN after a shutdown on the W541](#wake-on-lan-after-a-shutdown-on-the-w541) | W541 | nothing for it in coreboot's Lynx Point code; the EC side unknown | what the Lenovo firmware programs |
-| [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot | none planned |
+| [Wake on LAN after a shutdown on the W541](#wake-on-lan-after-a-shutdown-on-the-w541) | W541 | built for v1.6.1 (patch 0259), as the Lenovo firmware does it; not run on a machine | NET-02 from power-off on AC and on battery, with each setting |
+| [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot; the Lenovo design read (2026-11-08): the password in SMRAM, unlocked by an SMI handler at resume | a design: the payload hands the block to coreboot's SMM, coreboot unlocks over AHCI on resume, then freezes |
 | [NVIDIA power steering and the EC's CPU limits](#nvidia-power-steering-and-the-ecs-cpu-limits) | W541 | little use under Linux; a `_PPC` policy and adapter tests | count the EC's CPU limit events |
-| [EC events left out](#ec-events-left-out) | W541 | no radio switch to report (checked on a W541 on 2026-11-03); one HKEY slot | an HKEY queue |
+| [EC events left out](#ec-events-left-out) | W541 | the HKEY queue built for v1.6.1 (patch 0260); the beep mask is the Lenovo one; 0x48, 0x49 and 0x5B still out | count the CPU-limit events with and without the acknowledgements |
 | [Card reader of the W541](#card-reader-of-the-w541) | W541 | the premise was wrong: the reader is an O2 Micro OZ777, which the payload drives already | none planned |
 | [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | done in v1.6.0 (patches 0220-0221): CPU-05 passed on a W541 on 2026-11-03 | none planned |
 | [Upstream changes not taken](#upstream-changes-not-taken) | W541 | 96893 unreviewed and no gain here; 95880 not for the W541; 95912 at Code-Review -2 | the next coreboot pin |
@@ -515,6 +515,14 @@ have a switch.
   Link Disable in the Link Control of root port 1 before the bus behind
   it is scanned, at every boot and S3 resume; the port stays visible, as
   hiding function 0 would make the PCH renumber the others.
+- **Read in the Lenovo firmware** (2026-11-08,
+  [docs/tests/v1.6.1/w541-nri/stock-gnet94ww.md](tests/v1.6.1/w541-nri/stock-gnet94ww.md#2-io-port-access)): the
+  Ethernet as 0241 (`BUC` bit 5, a global reset); the microphone by a
+  coefficient of the codec (0x05 bits 13:12) rather than the pin; the
+  card reader of the Realtek units by its internal registers; the USB
+  devices with `USB2PDO`. The fingerprint port is left out: the USB port
+  numbers of that firmware do not map onto the xHCI ports of this unit,
+  which has no reader to measure.
 
 ## Wake on LAN after a shutdown on the W541
 
@@ -529,6 +537,19 @@ rc3 (patches 0154-0155).
 - **Next step**: find in the Lenovo firmware what it programs for the
   option (PCH, GbE, EC), then a magic packet from power-off on AC and on
   battery (NET-02 of [docs/testing.md](testing.md)).
+- **Read in the Lenovo firmware** (2026-11-08,
+  [docs/tests/v1.6.1/w541-nri/stock-gnet94ww.md](tests/v1.6.1/w541-nri/stock-gnet94ww.md#5-wake-on-lan)):
+  at boot `WOL_EN_OVRD` (`GEN_PMCON_3` bit 13); at S3, S4 and S5 entry,
+  in SMM, bits 13 and 8 of `GEN_PMCON_3`, `PCIEXP_WAKE_DIS` cleared, and
+  PMH7 register 0x41 bit 1 for *AC Only* (the only difference from *AC
+  and Battery*: the PMH7 cuts the LAN on battery), 0x26 bit 2 cleared;
+  from S5 the option applies whatever the OS did, from S3 and S4 only if
+  the OS armed the controller. No EC RAM bit, and the MAC and PHY wake is
+  left to the OS driver.
+- **Built for v1.6.1** (patch 0259): the same, *Energy Saver* → *Power* →
+  *Wake on LAN*, default *AC only* as the Lenovo setup; `WOL_EN_OVRD` set
+  at boot too, so that a power-off without the sleep SMI wakes as well.
+  To run: NET-02.
 
 ## Power-on and hard disk passwords
 
@@ -542,6 +563,22 @@ boot menu (`edk2/0003`).
   suspend. A power-on password would be asked at every boot, unattended
   ones included, and is a payload change of its own.
 - **Next step**: none planned.
+- **Read in the Lenovo firmware** (2026-11-08,
+  [docs/tests/v1.6.1/w541-nri/stock-gnet94ww.md](tests/v1.6.1/w541-nri/stock-gnet94ww.md#8-hard-disk-password-at-s3-resume)):
+  not EDK2's HddPassword nor Opal. At boot a DXE driver unlocks, sets and
+  freezes the drives and leaves the 32-byte ATA password of each (up to
+  four, with the SATA port) in SMRAM; at resume an SMI handler (software
+  SMI, raised by the PEI resume path) enables the AHCI port, sends
+  IDENTIFY and, if the drive reports itself locked, SECURITY UNLOCK. It
+  sends no FREEZE LOCK at resume, and the password stays in SMRAM in
+  clear.
+- **What it would take here**: the payload hands the password block and
+  the port of each drive to coreboot's SMM at boot (an SMMSTORE-like
+  command, before the lock at ReadyToBoot); on S3 resume coreboot unlocks
+  each drive over AHCI before the OS waking vector (ramstage, or an SMI it
+  raises), then sends FREEZE LOCK, which the Lenovo firmware omits; the
+  payload needs a hard disk password driver of its own. Not planned yet:
+  new code in both, and code that holds a secret.
 
 ## NVIDIA power steering and the EC's CPU limits
 
@@ -591,6 +628,18 @@ bits 5-6.
   for it to report: it stays out. 95880 is not for the W541 (below).
 - **Next step**: a queue in the shared `thinkpad.asl`, gated for the
   other ThinkPads, before the sticky Fn events.
+- **Read in the Lenovo firmware** (2026-11-08,
+  [docs/tests/v1.6.1/w541-nri/stock-gnet94ww.md](tests/v1.6.1/w541-nri/stock-gnet94ww.md#7-hkey-event-queue)): six
+  slots, one per class (0x1xxx and 0x5xxx together), popped by `MHKP` in
+  a fixed order. The beep mask is EC 0x04/0x05, 0x00/0x86 at the OS as
+  here; EC 0x86/0x87 are an EC mailbox flag word, not a mask. For 0x48
+  and 0x5B the Lenovo ASL writes `CALM` (EC 0x0D bit 4) and `FQ5B` (EC
+  0xFF bit 0); its `_PPC` changes nothing under Linux (the flags that
+  would make it notify the CPUs stay 0); whether the EC repeats the
+  events without the writes is EC firmware, not in the image.
+- **Built for v1.6.1** (patch 0260): the queue (`H8_HKEY_QUEUE`), checked
+  with `acpiexec`. The CPU-limit events stay out until FAN-10 counts
+  them.
 
 ## Card reader of the W541
 

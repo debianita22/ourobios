@@ -1850,6 +1850,9 @@ def check_watchdog(fw, rep):
     armed = fw.grep(r"^Firmware watchdog: armed, (\d+) s") if fw.log is not None else []
     off = fw.grep(r"^Firmware watchdog: off") if fw.log is not None else []
     last = fw.grep(r"^Firmware watchdog: the last reset came from the watchdog") if fw.log is not None else []
+    # la riga di romstage puo' mancare (un avvio con il training riempie la
+    # console prima di CBMEM): quella del ramstage dice che il codice c'e'
+    payload = fw.grep(r"^Firmware watchdog: at the payload") if fw.log is not None else []
     details = []
     try:
         with open("/dev/port", "rb") as f:
@@ -1863,6 +1866,13 @@ def check_watchdog(fw, rep):
             ctl, (ctl >> 14) & 1, (ctl & 0x3ff) + 1, (ctl >> 24) & 3))
     if last:
         details.append("log: l'ultimo reset l'ha fatto il watchdog")
+    if not armed and not off and payload:
+        running = ctl is not None and (ctl >> 14) & 1
+        rep.add("WDT-01", "Firmware watchdog", "FAIL" if running else "PASS",
+                "acceso all'OS: il payload non l'ha fermato" if running else
+                "spento all'OS (la riga di romstage non e' nel log, quella del payload si')", details,
+                {"ctl": ctl, "armed": None, "last_reset_wdt": bool(last)})
+        return
     if not armed and not off:
         rep.add("WDT-01", "Firmware watchdog", "SKIP" if ctl is None else "INFO",
                 "firmware senza il watchdog (nessuna riga 'Firmware watchdog:' nel log)"
