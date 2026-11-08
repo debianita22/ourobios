@@ -39,7 +39,16 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq shellcheck >/dev/null
-          pip install -q --break-system-packages actionlint-py
+          # actionlint-py scarica il binario dalle release di GitHub, che a
+          # volte rispondono 504: tre tentativi, poi senza (ci-check lo salta)
+          for i in 1 2 3; do
+            pip install -q --break-system-packages actionlint-py && break
+            if [ "$i" = 3 ]; then
+              echo "::warning title=actionlint::non installato (download delle release di GitHub fallito): ci-check salta i workflow"
+            else
+              sleep $((i * 20))
+            fi
+          done
           shellcheck --version | sed -n 2p
           actionlint -version | head -1
 
