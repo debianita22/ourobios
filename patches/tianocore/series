@@ -54,7 +54,6 @@
 0058-UefiPayloadPkg-Add-NVRAM-controlled-bootsplash-with-.patch
 0060-UefiPayloadPkg-Add-SdhciNonPciDxe-for-non-PCI-SDHCI.patch
 0061-MdeModulePkg-Usb-Warm-reset-downstream-SuperSpeed-po.patch
-0062-MdeModulePkg-SdMmcPciHcDxe-add-HS400-Enhanced-Strobe.patch
 0063-UefiPayloadPkg-CfrSetupMenuDxe-Add-support-for-LOCK_.patch
 0064-UefiPayloadPkg-Copy-custom-bootsplash-BMP-to-the-ESP.patch
 0065-MdeModulePkg-SdMmcPciHcDxe-Don-t-force-EmbeddedSlot-.patch

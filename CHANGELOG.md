@@ -12,6 +12,13 @@ fingerprint switch, an S3 resume, 2026-11-09,
 [docs/tests/v1.6.1/w541-nri](docs/tests/v1.6.1/w541-nri/README.md));
 the M920x still to run.
 
+- **One commit of MrChromebox less in the payload** (`edk2/0059`):
+  HS400 Enhanced Strobe, which he added to the eMMC side of
+  `SdMmcPciHcDxe` for the Intel eMMC of his Chromebooks, is reverted: no
+  board here has an eMMC. The SD reader of the W541 is driven by the same
+  driver's SD path, which does not change. `patches/tianocore` loses
+  `0062` (`REVERTED` of `tools/edk2-import.py`).
+
 - **coreboot 26.09-607** (2026-11-09, from 26.09-517 of 2026-11-03): the
   pin moved by 90 upstream commits. The native RAM init of Haswell got
   its first Broadwell support and a refactoring upstream (16 commits):

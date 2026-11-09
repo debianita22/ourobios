@@ -56,3 +56,4 @@
 0056-UefiPayloadPkg-Arm-coreboot-s-lock-of-the-security-o.patch
 0057-UefiPayloadPkg-Report-the-option-lock-to-the-OS-in-a-v.patch
 0058-UefiPayloadPkg-CfrSetupMenuDxe-Lock-at-boot-with-rule.patch
+0059-MdeModulePkg-SdMmcPciHcDxe-Leave-HS400-Enhanced-Strob.patch
