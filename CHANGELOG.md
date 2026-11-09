@@ -7,9 +7,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.6.1
 
-What ran on a machine for v1.6.1: the M920x with rc1 to rc3
+What ran on a machine for v1.6.1: the M920x with rc1 to rc4
 ([docs/tests/v1.6.1/m920x-fsp/README.md](docs/tests/v1.6.1/m920x-fsp/README.md)),
-a W541 with the `nri` CI builds of the W541 patches
+a W541 with the `nri` CI builds of the W541 patches and then rc4 as a
+capsule, with the Ethernet switch off and on and a resume from S3
 ([docs/tests/v1.6.1/w541-nri/README.md](docs/tests/v1.6.1/w541-nri/README.md)).
 Not run: the `mrc` variant of the W541 (its features below are shared
 with `nri`, but the test machine boots only `nri` slots), Wake on LAN
