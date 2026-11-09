@@ -7,7 +7,8 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.6.2
 
-Not released yet.
+What ran on a machine for v1.6.2: nothing yet at rc1; the W541 and the
+M920x with the release candidates, as for v1.6.1.
 
 - **coreboot 26.09-607** (2026-11-09, from 26.09-517 of 2026-11-03): the
   pin moved by 90 upstream commits. The native RAM init of Haswell got
