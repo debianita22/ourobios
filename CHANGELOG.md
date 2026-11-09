@@ -10,7 +10,8 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 What ran on a machine for v1.6.2: rc1 on the W541 (MEM-06, the
 fingerprint switch, an S3 resume, 2026-11-09,
 [docs/tests/v1.6.1/w541-nri](docs/tests/v1.6.1/w541-nri/README.md));
-the M920x still to run.
+the release on the M920x, as a capsule from v1.6.1 with both protections
+on (2026-11-09, [docs/tests/v1.6.2/m920x-fsp](docs/tests/v1.6.2/m920x-fsp/README.md)).
 
 - **Two commits of MrChromebox less in the payload** (`edk2/0059`,
   `edk2/0060`): HS400 Enhanced Strobe, which he added to the eMMC side of
