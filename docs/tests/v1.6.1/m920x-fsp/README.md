@@ -66,3 +66,14 @@ OS), the option lock armed, FLASH-01 with PR0 and PR1, TPM-03 before
 and after the resume; with the copy of the flash ELOG-01 and VB-02
 PASS (slot B confirmed). This boot paid the ME's 5 s wait (BOOT-02
 15.66 s, 10.42 s without it).
+
+## v1.6.1, the release
+
+v1.6.1 (`bb1eac2`) as a capsule from rc4, slot A, 2026-11-09, both
+protections on; rc4 stays in B as the fallback. Report 21 PASS
+([v1.6.1/hw-m920x-fsp-1.md](v1.6.1/hw-m920x-fsp-1.md)), 22 after two
+resumes from S3; with the copy of the flash 25 PASS: ELOG-01 334 events,
+VB-02 slot A confirmed and B confirmed, OPT-01 36 options (the
+watchdog's among them). WDT-01 off, the option lock armed, FLASH-01 PR0
+and PR1, TPM-03 before and after the resumes, fwts 0 failed, DSDT and
+SSDT 0 errors. The read-only part stays the one of `ci-203`.
