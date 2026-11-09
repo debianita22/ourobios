@@ -1,0 +1,198 @@
+dsdt.dsl     66:         OperationRegion (PCFG, SystemMemory, PCBA, PCLN)
+Warning  4089 -    Object is not referenced ^ 
+
+dsdt.dsl    165:     Method (TNOT, 0, NotSerialized)
+Warning  4089 -                ^ Object is not referenced
+
+dsdt.dsl    183:     Method (GOS, 0, NotSerialized)
+Warning  4089 -               ^ Object is not referenced
+
+dsdt.dsl    334:     Method (F0UT, 2, NotSerialized)
+Warning  4089 -                ^ Object is not referenced
+
+dsdt.dsl    341:     Method (F1UT, 2, NotSerialized)
+Warning  4089 -                ^ Object is not referenced
+
+dsdt.dsl    348:     Method (F2UT, 2, NotSerialized)
+Warning  4089 -                ^ Object is not referenced
+
+dsdt.dsl    355:     Method (F3UT, 2, NotSerialized)
+Warning  4089 -                ^ Object is not referenced
+
+dsdt.dsl    362:     Method (F4UT, 2, NotSerialized)
+Warning  4089 -                ^ Object is not referenced
+
+dsdt.dsl    369:     Method (TMPU, 1, NotSerialized)
+Warning  4089 -                ^ Object is not referenced
+
+dsdt.dsl    686:             Name (CTCU, 0x02)
+Warning  4089 -                      ^ Object is not referenced
+
+dsdt.dsl    756:             Method (STND, 0, Serialized)
+Warning  4089 -                        ^ Object is not referenced
+
+dsdt.dsl    781:             Method (STDN, 0, Serialized)
+Warning  4089 -                        ^ Object is not referenced
+
+dsdt.dsl    811:             Method (CTLE, 1, Serialized)
+Warning  4089 -                        ^ Object is not referenced
+
+dsdt.dsl    830:             Method (CTLD, 0, Serialized)
+Warning  4089 -                        ^ Object is not referenced
+
+dsdt.dsl    967:                 OperationRegion (GFRG, SystemMemory, (Local0 + 0x000C8254), 0x04)
+Remark   2173 -                                     ^ Creation of named objects within a method is highly inefficient, use globals or method local variables instead (\_SB.PCI0.GFX0.BCLV)
+
+dsdt.dsl    982:                     OperationRegion (GFRG, SystemMemory, (Local0 + 0x000C8254), 0x04)
+Remark   2173 -                                         ^ Creation of named objects within a method is highly inefficient, use globals or method local variables instead (\_SB.PCI0.GFX0.SBLV)
+
+dsdt.dsl   1001:                 OperationRegion (GFRG, SystemMemory, (Local0 + 0x000C8254), 0x04)
+Remark   2173 -                                     ^ Creation of named objects within a method is highly inefficient, use globals or method local variables instead (\_SB.PCI0.GFX0.BCLM)
+
+dsdt.dsl   1183:             Method (XBCL, 0, NotSerialized)
+Warning  4089 -                        ^ Object is not referenced
+
+dsdt.dsl   1351:             Name (ISWP, Zero)
+Warning  4089 -                      ^ Object is not referenced
+
+dsdt.dsl   2115:                 OperationRegion (XREG, SystemMemory, (Arg0 + 0x8000), 0x0200)
+Remark   2173 -                                     ^ Creation of named objects within a method is highly inefficient, use globals or method local variables instead (\_SB.PCI0.XHCI.XPS0)
+
+dsdt.dsl   2156:                 OperationRegion (XREG, SystemMemory, (Arg0 + 0x8000), 0x0200)
+Remark   2173 -                                     ^ Creation of named objects within a method is highly inefficient, use globals or method local variables instead (\_SB.PCI0.XHCI.XPS3)
+
+dsdt.dsl   2217:                 Method (GPLD, 1, Serialized)
+Warning  4089 -   Object is not referenced ^ 
+
+dsdt.dsl   2855:                     Name (ECMD, ResourceTemplate ()
+Remark   2173 -                              ^ Creation of named objects within a method is highly inefficient, use globals or method local variables instead (\_SB.PCI0.LPCB.EC._CRS)
+
+dsdt.dsl   2878:                 Method (LED, 2, NotSerialized)
+Warning  4089 -  Object is not referenced ^ 
+
+dsdt.dsl   2887:                 Method (MUTE, 1, NotSerialized)
+Warning  4089 -   Object is not referenced ^ 
+
+dsdt.dsl   2899:                 Method (USBP, 1, NotSerialized)
+Warning  4089 -   Object is not referenced ^ 
+
+dsdt.dsl   2904:                 Method (LGHT, 1, NotSerialized)
+Warning  4089 -   Object is not referenced ^ 
+
+dsdt.dsl   3226:                     Name (BUF, Buffer (0x10){})
+Remark   2173 -                             ^ Creation of named objects within a method is highly inefficient, use globals or method local variables instead (\_SB.PCI0.LPCB.EC.BIBF)
+
+dsdt.dsl   3382:                     Name (SERN, Buffer (0x06)
+Remark   2173 -                              ^ Creation of named objects within a method is highly inefficient, use globals or method local variables instead (\_SB.PCI0.LPCB.EC.BINX)
+
+dsdt.dsl   3397:                     Name (TYPE, Buffer (0x05)
+Remark   2173 -                              ^ Creation of named objects within a method is highly inefficient, use globals or method local variables instead (\_SB.PCI0.LPCB.EC.BINX)
+
+dsdt.dsl   3761:                 Method (BEEP, 1, NotSerialized)
+Warning  4089 -   Object is not referenced ^ 
+
+dsdt.dsl   3995:                     Method (MHKP, 0, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4059:                     Method (MHKC, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4076:                     Method (MHKM, 2, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4097:                     Method (MHKA, 0, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4102:                     Method (MHKG, 0, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4107:                     Method (SSMS, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4112:                     Method (MMTS, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4124:                     Method (MHKV, 0, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4129:                     Method (WLSW, 0, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4137:                     Method (GBDC, 0, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4157:                     Method (SBDC, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4190:                     Method (SWAN, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4201:                     Method (MLCG, 1, NotSerialized)
+Remark   2146 -  Method Argument is never used ^  (Arg0)
+
+dsdt.dsl   4201:                     Method (MLCG, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4218:                     Method (MLCS, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4226:                     Method (GUWB, 0, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4244:                     Method (SUWB, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4253:                     Method (WAKE, 1, NotSerialized)
+Remark   2146 -  Method Argument is never used ^  (Arg0)
+
+dsdt.dsl   4316:                     Method (BDSG, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4348:                     Method (BICS, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4389:                     Method (BICG, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4430:                     Method (BCSS, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4458:                     Method (BCCS, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4486:                     Method (BCSG, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4501:                     Method (BCTG, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4519:                     Method (BLTH, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4539:                     Method (WGSV, 1, NotSerialized)
+Warning  4089 -       Object is not referenced ^ 
+
+dsdt.dsl   4732:                 Method (SAUM, 1, NotSerialized)
+Warning  4089 -   Object is not referenced ^ 
+
+dsdt.dsl   5421:                     OperationRegion (PWMR, SystemMemory, (Local0 + 0x000C8254), 0x04)
+Remark   2173 -                                         ^ Creation of named objects within a method is highly inefficient, use globals or method local variables instead (\_SB.PCI0.GFX0.PNLF.PWMX)
+
+dsdt.dsl   5478:         If ((Arg0 != ToUUID ("a0b5b7c6-1318-441c-b0c9-fe695eaf949b") /* Unknown UUID */))
+Remark   2184 -                                               Unknown UUID string ^ 
+
+dsdt.dsl   6043:             If ((Arg0 == ToUUID ("a486d8f8-0bda-471b-a72b-6042a6b5bee0") /* Unknown UUID */))
+Remark   2184 -                                                   Unknown UUID string ^ 
+
+dsdt.dsl   6938:                 If ((Arg0 != ToUUID ("a0b5b7c6-1318-441c-b0c9-fe695eaf949b") /* Unknown UUID */))
+Remark   2184 -                                                       Unknown UUID string ^ 
+
+
+Intel ACPI Component Architecture
+ASL+ Optimizing Compiler/Disassembler version 20251212
+Copyright (c) 2000 - 2025 Intel Corporation
+
+ASL Input:     dsdt.dsl -  222027 bytes   2970 keywords      0 source lines
+AML Output:    /tmp/conf02-dsdt.aml -   22532 bytes   2126 opcodes     844 named objects
+
+Compilation successful. 0 Errors, 48 Warnings, 15 Remarks, 478 Optimizations

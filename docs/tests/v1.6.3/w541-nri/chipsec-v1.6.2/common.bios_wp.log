@@ -1,0 +1,66 @@
+
+################################################################
+##                                                            ##
+##  CHIPSEC: Platform Hardware Security Assessment Framework  ##
+##                                                            ##
+################################################################
+[CHIPSEC] Version  : 1.13.16
+[CHIPSEC] Arguments: -m common.bios_wp
+
+
+[CHIPSEC] OS      : Linux 7.3.0-4-cachyos #1 SMP PREEMPT_DYNAMIC Fri, 23 Oct 2026 15:03:58 +0000 x86_64
+[CHIPSEC] Python  : 3.14.8 (64-bit) - Enabled GIL
+[CHIPSEC] Helper  : LinuxHelper (/home/domenico/ourobios-test-v1.6.0/w541-nri/chipsec-src/chipsec-1.13.16/chipsec/helper/linux/chipsec.ko)
+[CHIPSEC] Platform: Mobile 4th Generation Core Processor (Haswell M/H / Lynx Point PCH)
+[CHIPSEC]    CPUID: 306C3
+[CHIPSEC]      VID: 8086
+[CHIPSEC]      DID: 0C04
+[CHIPSEC]      RID: 06
+[CHIPSEC] PCH     : Intel QM87 (8 series) PCH
+[CHIPSEC]      VID: 8086
+[CHIPSEC]      DID: 8C4F
+[CHIPSEC]      RID: 05
+
+ 
+[+] loaded chipsec.modules.common.bios_wp
+[*] running loaded modules ..
+
+[*] Running module: chipsec.modules.common.bios_wp
+[*] Metadata tags: ['OPENSOURCE', 'IA', 'COMMON', 'BIOS_WP']
+[x][ =======================================================================
+[x][ Module: BIOS Region Write Protection
+[x][ =======================================================================
+[*] BC = 0x2A << BIOS Control (b:d.f 00:31.0 + 0xDC)
+    [00] BIOSWE           = 0 << BIOS Write Enable 
+    [01] BLE              = 1 << BIOS Lock Enable 
+    [02] SRC              = 2 << SPI Read Configuration 
+    [04] TSS              = 0 << Top Swap Status 
+    [05] SMM_BWP          = 1 << SMM BIOS Write Protection 
+[+] BIOS region write protection is enabled (writes restricted to SMM)
+
+[*] BIOS Region: Base = 0x00500000, Limit = 0x00BFFFFF
+SPI Protected Ranges
+------------------------------------------------------------
+PRx (offset) | Value    | Base     | Limit    | WP? | RP?
+------------------------------------------------------------
+PR0 (74)     | 8BFF0B60 | 00B60000 | 00BFFFFF | 1   | 0 
+PR1 (78)     | 84FF0000 | 00000000 | 004FFFFF | 1   | 0 
+PR2 (7C)     | 00000000 | 00000000 | 00000000 | 0   | 0 
+PR3 (80)     | 00000000 | 00000000 | 00000000 | 0   | 0 
+PR4 (84)     | 00000000 | 00000000 | 00000000 | 0   | 0 
+
+[!] SPI protected ranges write-protect parts of BIOS region (other parts of BIOS can be modified)
+
+[+] PASSED: BIOS is write protected
+
+[CHIPSEC] ***************************  SUMMARY  ***************************
+[CHIPSEC] Time elapsed            0.003
+[CHIPSEC] Modules failed to run   0:
+[CHIPSEC] Modules passed          1:
+[+] PASSED: chipsec.modules.common.bios_wp
+[CHIPSEC] Modules information     0:
+[CHIPSEC] Modules failed          0:
+[CHIPSEC] Modules with warnings   0:
+[CHIPSEC] Modules not applicable  0:
+[CHIPSEC] Modules total           1
+[CHIPSEC] *****************************************************************

@@ -1,0 +1,55 @@
+
+################################################################
+##                                                            ##
+##  CHIPSEC: Platform Hardware Security Assessment Framework  ##
+##                                                            ##
+################################################################
+[CHIPSEC] Version  : 1.13.16
+[CHIPSEC] Arguments: -m common.spi_lock
+
+
+[CHIPSEC] OS      : Linux 7.3.0-4-cachyos #1 SMP PREEMPT_DYNAMIC Fri, 23 Oct 2026 15:03:58 +0000 x86_64
+[CHIPSEC] Python  : 3.14.8 (64-bit) - Enabled GIL
+[CHIPSEC] Helper  : LinuxHelper (/home/domenico/ourobios-test-v1.6.0/w541-nri/chipsec-src/chipsec-1.13.16/chipsec/helper/linux/chipsec.ko)
+[CHIPSEC] Platform: Mobile 4th Generation Core Processor (Haswell M/H / Lynx Point PCH)
+[CHIPSEC]    CPUID: 306C3
+[CHIPSEC]      VID: 8086
+[CHIPSEC]      DID: 0C04
+[CHIPSEC]      RID: 06
+[CHIPSEC] PCH     : Intel QM87 (8 series) PCH
+[CHIPSEC]      VID: 8086
+[CHIPSEC]      DID: 8C4F
+[CHIPSEC]      RID: 05
+
+ 
+[+] loaded chipsec.modules.common.spi_lock
+[*] running loaded modules ..
+
+[*] Running module: chipsec.modules.common.spi_lock
+[*] Metadata tags: ['OPENSOURCE', 'IA', 'COMMON', 'SPI_LOCK']
+[x][ =======================================================================
+[x][ Module: SPI Flash Controller Configuration Locks
+[x][ =======================================================================
+[*] HSFS = 0xE008 << Hardware Sequencing Flash Status Register (SPIBAR + 0x4)
+    [00] FDONE            = 0 << Flash Cycle Done 
+    [01] FCERR            = 0 << Flash Cycle Error 
+    [02] AEL              = 0 << Access Error Log 
+    [03] BERASE           = 1 << Block/Sector Erase Size 
+    [05] SCIP             = 0 << SPI cycle in progress 
+    [13] FDOPSS           = 1 << Flash Descriptor Override Pin-Strap Status 
+    [14] FDV              = 1 << Flash Descriptor Valid 
+    [15] FLOCKDN          = 1 << Flash Configuration Lock-Down 
+[+] SPI Flash Controller configuration is locked
+[+] PASSED: SPI Flash Controller locked correctly.
+
+[CHIPSEC] ***************************  SUMMARY  ***************************
+[CHIPSEC] Time elapsed            0.001
+[CHIPSEC] Modules failed to run   0:
+[CHIPSEC] Modules passed          1:
+[+] PASSED: chipsec.modules.common.spi_lock
+[CHIPSEC] Modules information     0:
+[CHIPSEC] Modules failed          0:
+[CHIPSEC] Modules with warnings   0:
+[CHIPSEC] Modules not applicable  0:
+[CHIPSEC] Modules total           1
+[CHIPSEC] *****************************************************************

@@ -1,0 +1,52 @@
+misura per 20 s, non toccare il portatile...
+ouroBIOS idle-report: firmware CBET4000 ouroBIOS-v1.6.3-rc1-nri, kernel 7.3.0-4-cachyos
+parametri del kernel: nowatchdog nvme_load=YES zswap.enabled=0 iomem=relaxed intel_iommu=on,igfx_off i915.enable_fbc=1 libata.force=1.00:lpm,5.00:disable
+alimentazione: alimentatore; BAT0 Full 100%
+== Stati C e consumo in 20 s
+package: PC2 2.9%  PC3 1.7%  PC6 0.3%  PC7 89.0%
+limite del package: PC7s (MSR 0xe2 = 0x9e000005); demozione: package no, core C3 si', core C1 si'
+latenze di risveglio: PC3 67 us, PC6 117 us, PC7 148 us; promozione C1E spenta
+potenza (RAPL): package 1.04 W, core 0.14 W, grafica 0.00 W, RAM 1.61 W
+traffico RAM (MB/s): letture 68.0, scritture 9.9; richieste dai core 77.6, dalla grafica 0.0, dall'I/O 0.2
+core   occupato    MHz     C3     C6     C7   (C1 e' il resto)
+   0       1.3    1812    0.2    0.1   97.2
+   1       1.4    1892    0.4    0.2   96.8
+   2       0.9    1794    0.1    0.1   97.8
+   3       0.7    1963    0.1    0.1   98.4
+grafica Intel: RC6 99.8%
+cpuidle (intel_idle, menu): C1 0.1% 48/s  C1E 0.2% 79/s  C3 0.1% 38/s  C6 0.1% 11/s  C7s 99.0% 519/s
+interrupt/s: Local timer interrupts 451, Function call interrupts 33, TLB shootdowns 19, ahci[0000:00:1f.2] 10, iwlwifi 9, acpi 7, IRQ work interrupts 6, Rescheduling interrupts 3
+processi (% di un core): 2.1.318 0.9, tailscaled 0.6, nordvpnd 0.6, claude 0.2, kworker 0.1
+== PCI (criterio ASPM del kernel: [default] performance powersave powersupersave)
+BDF      classe  id          driver          stato   runtime     ctl   ASPM sup/att  ClkPM  LTR   link
+00:00.0  0600    8086:0c04   -               D0      suspended   auto  
+00:02.0  0300    8086:0416   i915            D0      active      auto  
+00:03.0  0403    8086:0c0c   snd_hda_intel   D3hot   suspended   auto  integrato            -/-  
+00:04.0  1180    8086:0c03   -               D0      suspended   auto  
+00:14.0  0c03    8086:8c31   xhci_hcd        D3hot   suspended   auto  
+00:19.0  0200    8086:153a   e1000e          D3hot   suspended   auto  
+00:1a.0  0c03    8086:8c2d   ehci-pci        D3hot   suspended   auto  
+00:1b.0  0403    8086:8c20   snd_hda_intel   D0      active      auto  integrato            -/-  
+00:1c.0  0604    8086:8c10   pcieport        D0      active      auto  L0sL1 /-      -/-    +/+   2.5GT/s x1
+00:1c.1  0604    8086:8c12   pcieport        D0      active      auto  L0sL1 /L1     -/-    +/+   5GT/s x1
+00:1c.2  0604    8086:8c14   pcieport        D3hot   suspended   auto  L0sL1 /L0sL1  -/-    +/+   giu'
+00:1c.4  0604    8086:8c18   pcieport        D3hot   suspended   auto  L0sL1 /L0sL1  -/-    +/+   giu'
+00:1d.0  0c03    8086:8c26   ehci-pci        D3hot   suspended   auto  
+00:1f.0  0601    8086:8c4f   lpc_ich         D0      active      auto  
+00:1f.2  0106    8086:8c03   ahci            D0      active      auto  
+00:1f.3  0c05    8086:8c22   i801_smbus      D0      active      auto  
+01:00.0  0805    1217:8520   sdhci-pci       D0      active      auto  L0sL1 /L0sL1  +/+    +/+   2.5GT/s x1
+02:00.0  0280    8086:2526   iwlwifi         D0      active      auto  L1    /L1     +/+    +/+   5GT/s x1
+== SATA (link power management)
+host0  med_power_with_dipm      CT480BX500SSD1  [ALPE spento; disco: HIPM no, DIPM si', DevSleep si'; collegamento: slumber 91%, partial 9%]
+== USB (autosuspend)
+1-1      8087:8008  ?                                auto  suspended
+2-11     8087:0025  ?                                auto  suspended
+2-12     5986:0366  Integrated Camera                auto  suspended
+3-1      8087:8000  ?                                auto  suspended
+== Wi-Fi wlan0 (iwlwifi): power save on; power_scheme=2, power_save=N
+== Audio HDA: power_save 0 s (codec sempre accesi), controller Y
+== Grafica Intel self-refresh: self-refresh: enabled
+== Grafica Intel latenze WM: WM0 20 (2.0 usec) | WM1 4 (2.0 usec) | WM2 36 (18.0 usec) | WM3 90 (45.0 usec) | WM4 160 (80.0 usec)
+== Grafica Intel FBC: FBC disabled: update pending | [PLANE:36:primary A]: plane not visible
+== Grafica Intel PSR: ?

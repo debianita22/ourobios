@@ -1,0 +1,72 @@
+ssdt.dsl     92:         Name (MPBI, One)
+Warning  4089 -                  ^ Object is not referenced
+
+ssdt.dsl     97:         Name (PMWK, Zero)
+Warning  4089 -                  ^ Object is not referenced
+
+ssdt.dsl    102:         Name (DGOM, One)
+Warning  4089 -                  ^ Object is not referenced
+
+ssdt.dsl    107:         Name (DPRP, One)
+Warning  4089 -                  ^ Object is not referenced
+
+ssdt.dsl    110:     Processor (\_SB.CP00, 0x00, 0x00000000, 0x00)
+Warning  3168 -                        ^ Legacy Processor() keyword detected. Use Device() keyword instead.
+
+ssdt.dsl    450:             If ((Local0 == ToUUID ("a0b5b7c6-1318-441c-b0c9-fe695eaf949b") /* Unknown UUID */))
+Remark   2184 -                                                     Unknown UUID string ^ 
+
+ssdt.dsl    483:     Processor (\_SB.CP01, 0x01, 0x00000000, 0x00)
+Warning  3168 -                        ^ Legacy Processor() keyword detected. Use Device() keyword instead.
+
+ssdt.dsl    822:     Processor (\_SB.CP02, 0x02, 0x00000000, 0x00)
+Warning  3168 -                        ^ Legacy Processor() keyword detected. Use Device() keyword instead.
+
+ssdt.dsl   1161:     Processor (\_SB.CP03, 0x03, 0x00000000, 0x00)
+Warning  3168 -                        ^ Legacy Processor() keyword detected. Use Device() keyword instead.
+
+ssdt.dsl   1500:     Processor (\_SB.CP04, 0x04, 0x00000000, 0x00)
+Warning  3168 -                        ^ Legacy Processor() keyword detected. Use Device() keyword instead.
+
+ssdt.dsl   1839:     Processor (\_SB.CP05, 0x05, 0x00000000, 0x00)
+Warning  3168 -                        ^ Legacy Processor() keyword detected. Use Device() keyword instead.
+
+ssdt.dsl   2178:     Processor (\_SB.CP06, 0x06, 0x00000000, 0x00)
+Warning  3168 -                        ^ Legacy Processor() keyword detected. Use Device() keyword instead.
+
+ssdt.dsl   2517:     Processor (\_SB.CP07, 0x07, 0x00000000, 0x00)
+Warning  3168 -                        ^ Legacy Processor() keyword detected. Use Device() keyword instead.
+
+ssdt.dsl   2856:     Name (PPKG, Package (0x08)
+Warning  4089 -              ^ Object is not referenced
+
+ssdt.dsl   2867:     Method (\_SB.CNOT, 1, NotSerialized)
+Warning  4089 -                     ^ Object is not referenced
+
+ssdt.dsl   3188:         Name (HBDC, 0x01)
+Warning  4089 -                  ^ Object is not referenced
+
+ssdt.dsl   3189:         Name (HWAN, 0x01)
+Warning  4089 -                  ^ Object is not referenced
+
+ssdt.dsl   3190:         Name (HKLT, 0x00)
+Warning  4089 -                  ^ Object is not referenced
+
+ssdt.dsl   3191:         Name (HKBL, 0x00)
+Warning  4089 -                  ^ Object is not referenced
+
+ssdt.dsl   3192:         Name (HUWB, 0x00)
+Warning  4089 -                  ^ Object is not referenced
+
+ssdt.dsl   3377:             Method (FUNC, 1, Serialized)
+Warning  4089 -                        ^ Object is not referenced
+
+
+Intel ACPI Component Architecture
+ASL+ Optimizing Compiler/Disassembler version 20251212
+Copyright (c) 2000 - 2025 Intel Corporation
+
+ASL Input:     ssdt.dsl -  119993 bytes    893 keywords      0 source lines
+AML Output:    /tmp/c2-ssdt.aml -    9882 bytes    754 opcodes     139 named objects
+
+Compilation successful. 0 Errors, 20 Warnings, 1 Remarks, 376 Optimizations

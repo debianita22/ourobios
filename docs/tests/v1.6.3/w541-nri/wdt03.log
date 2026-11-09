@@ -1,0 +1,31 @@
+== 2026-11-09T22:45:03+01:00 step=w2 boot_id=cc3d7afc-c2b7-4dcc-a235-c7cdf7964195
+  OC_WDT_CTL 0x00002000  0x7e: 0xa0 0xa0 0xa0 
+  [DEBUG]  Firmware watchdog: off (OC_WDT_CTL 0x00002000)
+  [INFO ]  Firmware watchdog: at the payload, OC_WDT_CTL 0x00002000
+0x55
+  wrote 0x55, reads 0x55 0x55 0x55 
+  time: sys lun, 09 nov 2026 21:45:35 GMT net Mon, 09 Nov 2026 21:45:35 GMT rtc 2026-11-09 21:45:35 ntp=yes
+2026-11-09T22:45:36+01:00 w2 -> reboot for w3
+== 2026-11-09T22:47:00+01:00 step=w3 boot_id=cfc9e64d-a68c-4c53-9918-3b1e1a316609
+  OC_WDT_CTL 0x00002000  0x7e: 0xa0 0xa0 0xa0 
+  [DEBUG]  Firmware watchdog: off (OC_WDT_CTL 0x00002000)
+  [INFO ]  Firmware watchdog: at the payload, OC_WDT_CTL 0x00002000
+0xa3
+  wrote 0xa3, reads 0xa3 0xa3 0xa3 
+  time: sys lun, 09 nov 2026 21:47:05 GMT net Mon, 09 Nov 2026 21:47:05 GMT rtc 2026-11-09 21:47:05 ntp=yes
+2026-11-09T22:47:05+01:00 w3 -> reboot for w4
+== 2026-11-09T22:48:33+01:00 step=w4 boot_id=ef847d0a-1bf9-47b5-8e61-6b91bed62fc3
+  OC_WDT_CTL 0x00002000  0x7e: 0xa0 0xa0 0xa0 
+  [DEBUG]  Firmware watchdog: off (OC_WDT_CTL 0x00002000)
+  [INFO ]  Firmware watchdog: at the payload, OC_WDT_CTL 0x00002000
+2026-11-09T22:48:33+01:00 w4 -> reboot for w5
+== 2026-11-09T22:49:57+01:00 step=w5 boot_id=c0a7846d-a831-4c83-b72f-1e9ceaa3dd19
+  OC_WDT_CTL 0x00002000  0x7e: 0xa0 0xa0 0xa0 
+  [DEBUG]  Firmware watchdog: off (OC_WDT_CTL 0x00002000)
+  [INFO ]  Firmware watchdog: at the payload, OC_WDT_CTL 0x00002000
+2026-11-09T22:49:57+01:00 w5 -> reboot for w6
+== 2026-11-09T22:51:21+01:00 step=w6 boot_id=83ce25fc-1630-4903-95de-2be5abc16dde
+  OC_WDT_CTL 0x00002000  0x7e: 0xa0 0xa0 0xa0 
+  [DEBUG]  Firmware watchdog: off (OC_WDT_CTL 0x00002000)
+  [INFO ]  Firmware watchdog: at the payload, OC_WDT_CTL 0x00002000
+2026-11-09T22:51:21+01:00 chain done

@@ -1,0 +1,51 @@
+misura per 20 s, non toccare il portatile...
+ouroBIOS idle-report: firmware CBET4000 ouroBIOS-v1.6.3-rc1-nri, kernel 7.3.0-4-cachyos
+parametri del kernel: nowatchdog nvme_load=YES zswap.enabled=0 iomem=relaxed intel_iommu=on,igfx_off i915.enable_fbc=1 libata.force=1.00:lpm,5.00:disable
+alimentazione: alimentatore; BAT0 Full 100%
+== Stati C e consumo in 20 s
+package: PC2 13.1%  PC3 62.4%  PC6 0.0%  PC7 0.0%
+limite del package: PC7s (MSR 0xe2 = 0x9e000005); demozione: package no, core C3 si', core C1 si'
+latenze di risveglio: PC3 67 us, PC6 117 us, PC7 148 us; promozione C1E spenta
+potenza (RAPL): package 8.89 W, core 0.33 W, grafica 0.21 W, RAM 1.81 W
+traffico RAM (MB/s): letture 554.4, scritture 138.5; richieste dai core 155.7, dalla grafica 238.4, dall'I/O 298.2
+core   occupato    MHz     C3     C6     C7   (C1 e' il resto)
+   0       1.9    1413    0.4    0.2   95.8
+   1       1.9    1476    0.3    0.2   96.1
+   2       1.8    1511    0.3    0.1   96.1
+   3       1.6    1470    0.2    0.1   96.8
+grafica Intel: RC6 82.8%
+cpuidle (intel_idle, menu): C1 0.2% 164/s  C1E 0.2% 93/s  C3 0.2% 50/s  C6 0.1% 14/s  C7s 98.2% 733/s
+interrupt/s: Local timer interrupts 549, Function call interrupts 101, IRQ work interrupts 20, TLB shootdowns 19, i915 17, iwlwifi 12, ahci[0000:00:1f.2] 10, acpi 8, Rescheduling interrupts 3
+processi (% di un core): 2.1.318 4.6, nordvpnd 1.0, tailscaled 0.6, claude 0.3, plasma-login-gr 0.2, kworker 0.2, kwin_wayland 0.1, containerd 0.1
+== PCI (criterio ASPM del kernel: [default] performance powersave powersupersave)
+BDF      classe  id          driver          stato   runtime     ctl   ASPM sup/att  ClkPM  LTR   link
+00:00.0  0600    8086:0c04   -               D0      suspended   auto  
+00:02.0  0300    8086:0416   i915            D0      active      auto  
+00:03.0  0403    8086:0c0c   snd_hda_intel   D3hot   suspended   auto  integrato            -/-  
+00:04.0  1180    8086:0c03   -               D0      suspended   auto  
+00:14.0  0c03    8086:8c31   xhci_hcd        D3hot   suspended   auto  
+00:19.0  0200    8086:153a   e1000e          D3hot   suspended   auto  
+00:1a.0  0c03    8086:8c2d   ehci-pci        D3hot   suspended   auto  
+00:1b.0  0403    8086:8c20   snd_hda_intel   D0      active      auto  integrato            -/-  
+00:1c.0  0604    8086:8c10   pcieport        D3hot   suspended   auto  L0sL1 /-      -/-    +/+   2.5GT/s x1
+00:1c.1  0604    8086:8c12   pcieport        D0      active      auto  L0sL1 /L1     -/-    +/+   5GT/s x1
+00:1c.2  0604    8086:8c14   pcieport        D3hot   suspended   auto  L0sL1 /L0sL1  -/-    +/+   giu'
+00:1c.4  0604    8086:8c18   pcieport        D3hot   suspended   auto  L0sL1 /L0sL1  -/-    +/+   giu'
+00:1d.0  0c03    8086:8c26   ehci-pci        D3hot   suspended   auto  
+00:1f.0  0601    8086:8c4f   lpc_ich         D0      active      auto  
+00:1f.2  0106    8086:8c03   ahci            D0      active      auto  
+00:1f.3  0c05    8086:8c22   i801_smbus      D0      active      auto  
+02:00.0  0280    8086:2526   iwlwifi         D0      active      auto  L1    /L1     +/+    +/+   5GT/s x1
+== SATA (link power management)
+host0  med_power_with_dipm      CT480BX500SSD1  [ALPE spento; disco: HIPM no, DIPM si', DevSleep si'; collegamento: slumber 100%]
+== USB (autosuspend)
+1-1      8087:8008  ?                                auto  suspended
+2-11     8087:0025  ?                                auto  suspended
+2-12     5986:0366  Integrated Camera                auto  suspended
+3-1      8087:8000  ?                                auto  suspended
+== Wi-Fi wlan0 (iwlwifi): power save on; power_scheme=2, power_save=N
+== Audio HDA: power_save 0 s (codec sempre accesi), controller Y
+== Grafica Intel self-refresh: self-refresh: enabled
+== Grafica Intel latenze WM: WM0 20 (2.0 usec) | WM1 4 (2.0 usec) | WM2 36 (18.0 usec) | WM3 90 (45.0 usec) | WM4 160 (80.0 usec)
+== Grafica Intel FBC: FBC enabled | Compressing: yes | Using system cache: no
+== Grafica Intel PSR: ?
