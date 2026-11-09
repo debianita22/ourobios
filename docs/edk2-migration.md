@@ -228,10 +228,13 @@ The other *drop* ones, as looked at for v1.6.0:
   written against it. Done after v1.6.2-rc1: `d7597bb` (HS400 enhanced strobe, in the
   `SdMmcPciHcDxe` that drives the SD reader of the W541), reverted by
   `edk2/0059`, the commit and its revert out of `patches/tianocore`
-  together (`REVERTED`). Still to do: `b8d0242`
-  (in `UefiBootManagerLib` too); `1287861` (the Secure Boot pages of the
-  setup); `6cf55e1` (the MTRRs); `0a270f8` (the aperture of the PCI root
-  bridge, PCI-09 of `tools/hw-report.py`).
+  together (`REVERTED`). `b8d0242` stays, moved to
+  *upstream*: besides the UFS fix, which is not built, it guards
+  `BmEnumerateBootOptions()` against a block device without a device
+  path, which every board wants. Still to do, each a change the owner
+  sees and decides: `1287861` (the Secure Boot pages of the setup);
+  `6cf55e1` (the MTRRs); `0a270f8` (the aperture of the PCI root bridge,
+  PCI-09 of `tools/hw-report.py`).
 
 ## Setup menu and the other screens of the firmware
 
@@ -347,7 +350,7 @@ with the stable tag that takes the new OpenSSL.
 | `42865d9` | MdeModulePkg: Improve USB error handling for faulting devices | upstream |  | `tianocore/0023` |
 | `9174049` | UefiPayload: Add new SdMmcPciGli driver | drop | no such controller | left out (`edk2/0054`) |
 | `b26a387` | UefiPayloadPkg/UfsPlatformDxe: Add new UFS platform driver | drop | UFS_ENABLE=FALSE | package |
-| `b8d0242` | MdeModulePkg: UFS pass-through fix and boot enumeration filter | drop | UFS | `tianocore/0029` |
+| `b8d0242` | MdeModulePkg: UFS pass-through fix and boot enumeration filter | upstream | looked at after v1.6.2-rc1: the UFS half is not built (`UFS_ENABLE=FALSE`), but the `BmBoot.c` half also skips a block device without a device path in `BmEnumerateBootOptions()`, a guard against a NULL dereference that every board benefits from; not reverted, to be proposed upstream with the LUN filter | `tianocore/0029` |
 | `a79398a` | PcRtcEntry: Don't assert if RTC init fails | upstream |  | `tianocore/0037` |
 | `dde0798` | FatPkg: Fix FAT32 mount on small 4K-sector ESP partitions | upstream |  | `tianocore/0040` |
 | `97a12e8` | MdeModulePkg/ScsiDiskDxe: Don't fail media detection on FUA query error | merged | in master after the tag | `tianocore/0044` |
