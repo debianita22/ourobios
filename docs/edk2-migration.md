@@ -264,7 +264,10 @@ The other *drop* ones, as looked at for v1.6.0:
   (on the M920x the write-combining framebuffer at 0xc0000000 among them);
   without it they would be the payload's. `1287861` (the Secure Boot
   pages of the setup) stays, as *carry*, by the owner's choice. That ends
-  the commits left to the owner's decision.
+  the commits left to the owner's decision. Where each *upstream* commit
+  stands in TianoCore (none merged, four open pull requests of
+  MrChromebox's, half of `b8d0242` merged after the tag, four proposed by
+  Star Labs and closed): [docs/upstream/edk2-series.md](upstream/edk2-series.md).
 
 ## Setup menu and the other screens of the firmware
 
@@ -398,7 +401,7 @@ with the stable tag that takes the new OpenSSL.
 | Commit | Subject | Becomes | Note | Now |
 |---|---|---|---|---|
 | `214b236` | UefiPayloadPkg: Increase FD size | package | .fdf; or `-D FD_SIZE` and `NUM_BLOCKS` of the build, which win over the .fdf ([step (a)](#step-a-edk2-stable202608-in-qemu)) | package |
-| `6cf55e1` | UefiCpuPkg: Disable MTRR programming for UefiPayloadPkg | carry | checked after v1.6.2-rc1: upstream's `MtrrLib` no longer tramples coreboot's MTRRs (`c4fdec0a83d6` and the series before it, in the tag), but `CpuDxe` (`gDS->SetMemorySpaceAttributes()`) and `MpInitLib` (the copy to the APs) still write them; the PCD keeps coreboot's MTRRs as they are, and dropping it would change what the OS finds. For upstream, the `.uni` hunk needs fixing first: it gives the new PCD the prompt and help of `PcdCpuNumberOfReservedVariableMtrrs` and the other way round | `tianocore/0001`, package |
+| `6cf55e1` | UefiCpuPkg: Disable MTRR programming for UefiPayloadPkg | carry | checked after v1.6.2-rc1: upstream's `MtrrLib` no longer tramples coreboot's MTRRs (`c4fdec0a83d6` and the series before it, in the tag), but `CpuDxe` (`gDS->SetMemorySpaceAttributes()`) and `MpInitLib` (the copy to the APs) still write them; the PCD keeps coreboot's MTRRs as they are, and dropping it would change what the OS finds. Upstream refused this form ([#12227](https://github.com/tianocore/edk2/pull/12227), closed: the maintainer of `MtrrLib` wants the callers to skip the MTRRs, not a switch in the library). The `.uni` hunk is also wrong: it gives the new PCD the prompt and help of `PcdCpuNumberOfReservedVariableMtrrs` and the other way round | `tianocore/0001`, package |
 | `96303b7` | MdeModulePkg: Don't remove rejected PCI devices | carry |  | `tianocore/0002` |
 | `7f7b9c7` | UefiPayloadPkg: drop Platform override config | package |  | package |
 | `9701a6f` | MdeModulePkg/FaultTolerantWrite: Don't check for block alignment | carry | SMMSTORE blocks; in [step (a)](#step-a-edk2-stable202608-in-qemu) FTW sets up its work space on the 512 KiB SMMSTORE without it, a fault tolerant write (a reclaim of the store) is still to be seen | `tianocore/0017` |
