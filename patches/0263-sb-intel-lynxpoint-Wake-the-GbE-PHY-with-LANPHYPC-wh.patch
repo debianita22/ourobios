@@ -1,0 +1,147 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Mon, 9 Nov 2026 12:43:59 +0100
+Subject: [PATCH] sb/intel/lynxpoint: Wake the GbE PHY with LANPHYPC when the
+ MAC is absent
+
+The GbE MAC hides itself when it finds no PHY at reset, and the I217
+PHY leaves its low-power mode on LANPHYPC (GPIO12 on Lynx Point-H), a
+level that only the MAC drives. On a ThinkPad W541 the LAN disable of
+the Ethernet switch left the MAC hidden for good: with BUC bit 5
+cleared again, through resets and a power-down with the AC adapter and
+the battery out, 00:19.0 stayed absent, GPIO12 native and low, while
+every readable PCH register matched a boot where it was present. A
+hidden MAC never raises LANPHYPC, so the PHY never wakes, so the MAC
+stays hidden.
+
+Drive LANPHYPC as a GPIO, high, for the PHY's 50 ms power-up, and keep
+it so until the reset that follows, which gives the pin back to the
+MAC, as e1000e's toggle of LANPHYPC does through the MAC when the PHY
+does not answer. Do it when the switch turns the LAN on, before its
+reset, and once when the LAN is on but the MAC is absent, so that a
+board left in that state heals itself (marker "GbP" in CMOS_POST; a MAC
+still absent after it is left alone). The ThinkPad W541 selects the
+switch again.
+
+TEST=Build of the ThinkPad W541 with the native RAM init. On a W541
+whose MAC had stayed absent through resets and a power-down: one reset
+marked GbP, then 00:19.0 [8086/153a] enabled, GPIO12 high, the flag
+cleared.
+
+Change-Id: I6ef85e54c5ad38ff88759596b3f50f39d551953a
+---
+ src/southbridge/intel/lynxpoint/early_pch.c | 62 ++++++++++++++++++++-
+ 1 file changed, 61 insertions(+), 1 deletion(-)
+
+diff --git a/src/southbridge/intel/lynxpoint/early_pch.c b/src/southbridge/intel/lynxpoint/early_pch.c
+index 7fd13cd6e3..d9a34c66f5 100644
+--- a/src/southbridge/intel/lynxpoint/early_pch.c
++++ b/src/southbridge/intel/lynxpoint/early_pch.c
+@@ -1,13 +1,16 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <arch/io.h>
+ #include <bootmode.h>
+ #include <cf9_reset.h>
+ #include <console/console.h>
++#include <delay.h>
+ #include <device/pci_ops.h>
+ #include <device/device.h>
+ #include <device/pci_def.h>
+ #include <device/smbus_host.h>
+ #include <option.h>
++#include <pc80/mc146818rtc.h>
+ #include <post.h>
+ #include <southbridge/intel/common/lpc_def.h>
+ #include <southbridge/intel/common/pmbase.h>
+@@ -107,6 +110,19 @@ void __weak mainboard_config_rcba(void)
+ /* In the extra field of CMOS_POST with POSTCODE_RESET_REQUESTED */
+ #define GBE_RESET_APPLY		0x47624500	/* "GbE": applies a change of BUC */
+ #define GBE_RESET_UNLOCK	0x47624c00	/* "GbL": clears the FDSW lockdown */
++#define GBE_RESET_WAKE		0x47625000	/* "GbP": the PHY woken with LANPHYPC */
++
++/* GPIO12 is LANPHYPC on Lynx Point-H: the MAC's power control of the PHY */
++#define GPIO_LANPHYPC		12
++
++/*
++ * A CMOS byte that remembers a wake of the PHY for an absent MAC, so that a
++ * board whose MAC is absent for another reason does not reset at every other
++ * boot: set by the wake, cleared when the MAC is seen (and by a CMOS loss).
++ * Byte 0x7f is free on the Lenovo Haswell boards (CMOS_POST ends at 0x7a).
++ */
++#define CMOS_GBE_PHY_WOKEN	0x7f
++#define  GBE_PHY_WOKEN		0x50
+ 
+ /* Whether the boot before ended with the reset of this option marked so */
+ static bool gbe_last_boot_reset(u32 extra)
+@@ -140,6 +156,26 @@ static void gbe_reset(u32 extra)
+ 	full_reset();
+ }
+ 
++/*
++ * The MAC hides itself when it finds no PHY at reset, and the I217 PHY leaves
++ * its low-power mode on LANPHYPC, a level that only the MAC drives: a hidden
++ * MAC never raises it, so the PHY stays asleep and the MAC stays hidden at
++ * every boot, whatever BUC says, through resets and power cycles. Drive
++ * LANPHYPC as a GPIO, high, and keep it so until the reset that follows (the
++ * reset gives the pin back to the MAC, which then drives it itself), as
++ * e1000e's toggle of LANPHYPC does through the MAC when the PHY does not
++ * answer. The 50 ms are the PHY's power-up time the driver waits.
++ */
++static void gbe_wake_phy(void)
++{
++	const u16 gpiobase = DEFAULT_GPIOBASE;
++
++	outl(inl(gpiobase + 0x0c) | (1 << GPIO_LANPHYPC), gpiobase + 0x0c);	/* level: high */
++	outl(inl(gpiobase + 0x04) & ~(1 << GPIO_LANPHYPC), gpiobase + 0x04);	/* output */
++	outl(inl(gpiobase + 0x00) | (1 << GPIO_LANPHYPC), gpiobase + 0x00);	/* GPIO, not native */
++	mdelay(50);
++}
++
+ void pch_apply_gbe_option(void)
+ {
+ 	const struct device *const gbe = pcidev_on_root(0x19, 0);
+@@ -152,8 +188,29 @@ void pch_apply_gbe_option(void)
+ 	on = get_uint_option("onboard_ethernet", 1) && gbe && gbe->enabled;
+ 	buc = RCBA32(BUC);
+ 	want = on ? buc & ~PCH_DISABLE_GBE : buc | PCH_DISABLE_GBE;
+-	if (buc == want)
++	if (buc == want) {
++		/*
++		 * On, and the MAC not there: its PHY is asleep (above). Wake it
++		 * and reset, once until the MAC is seen again; a MAC still absent
++		 * after that (a board without one, a dead PHY) is left alone.
++		 */
++		if (!on)
++			return;
++		if (pci_read_config16(PCI_DEV(0, 0x19, 0), PCI_VENDOR_ID) != 0xffff) {
++			if (cmos_read(CMOS_GBE_PHY_WOKEN) == GBE_PHY_WOKEN)
++				cmos_write(0, CMOS_GBE_PHY_WOKEN);
++			return;
++		}
++		if (cmos_read(CMOS_GBE_PHY_WOKEN) == GBE_PHY_WOKEN) {
++			printk(BIOS_ERR, "GbE: MAC still absent after waking the PHY, left so\n");
++			return;
++		}
++		printk(BIOS_INFO, "GbE: MAC absent with the LAN enabled, waking the PHY\n");
++		cmos_write(GBE_PHY_WOKEN, CMOS_GBE_PHY_WOKEN);
++		gbe_wake_phy();
++		gbe_reset(GBE_RESET_WAKE);
+ 		return;
++	}
+ 
+ 	/*
+ 	 * The Function Disable SUS Well lockdown (FDSW bit 7), which the finalize
+@@ -185,6 +242,9 @@ void pch_apply_gbe_option(void)
+ 		return;
+ 	}
+ 	printk(BIOS_INFO, "GbE: turned %s, reset for it to take effect\n", on ? "on" : "off");
++	/* On: the PHY has been asleep since the disable; it must answer at the reset */
++	if (on)
++		gbe_wake_phy();
+ 	gbe_reset(GBE_RESET_APPLY);
+ }
+ #endif
+-- 
+2.43.0
+

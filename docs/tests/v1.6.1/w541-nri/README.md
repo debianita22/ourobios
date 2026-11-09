@@ -16,7 +16,7 @@ and the watchdog at 5 minutes, then all back on and the watchdog off.
 | DEV-W01 camera | PASS | *Integrated camera* off: `USB2PDO` (xHCI 0xE4) bit 11 set (`0x00000800`), gone from `lsusb` and `/dev/video*`; on again: back (patches 0244-0245) |
 | DEV-W01 card reader | PASS | *Card reader* off: `Card reader: disabling the link of PCI: 00:00:1c.0`, the O2 Micro OZ777 gone from `lspci`, root port 1 Link Control bit 4 set (`0x0c13`); on again: back (patch 0257) |
 | DEV-W01 microphone | PASS | *Internal microphone* off: the ALC3232 card stays in `arecord -l` (the codec is there), the internal array not offered (patch 0243, the pin as not connected) |
-| DEV-W01 Ethernet | partial | *Ethernet* off works (after the lockdown is cleared, see below); on again did not bring the controller back after the plain reset; left out of the build (patch 0264) |
+| DEV-W01 Ethernet | PASS, with two fixes | *Ethernet* off works once the lockdown is cleared (patch 0262); on again brought the controller back only with the PHY woken through LANPHYPC (patch 0263), which the self-heal of ci-302 did on 2026-11-09: boot 505, one reset marked `GbP`, `00:19.0 [8086/153a] enabled` at the next boot, GPIO12 driven high by the MAC. See below |
 | OPT-05 | PASS | the setup options reset only when the CMOS was lost too (patch 0256): `RTC_PWR_STS` set from Linux alone (`setpci 1f.0 a4.w=0004:0004`) and a reboot -> *Setup options: not reset, RTC power lost but the CMOS kept the last boot (POST 0xf8/0x00000000)*; the bit set and the `CMOS_POST` bytes 0x70-0x7a cleared -> *Setup options: 66 reset to defaults (RTC power lost)*, the setup back at its defaults, `RTC: failed = 0x1` |
 | FLASH-01 | PASS | after the OPT-05 reset the defaults turn *BIOS Lock* and *Firmware protection* back on: PR0 over `WP_RO`, PR1 over `SI_ALL`, FLOCKDN, flashrom refused. Clean protected end state |
 
@@ -62,12 +62,25 @@ Disable SUS Well lockdown (`FDSW`, 0x3420 bit 7) at every boot
 - **After the test** (2026-11-09): a power-down with the AC adapter
   and the battery out (the coin cell kept), then a warm reboot with PMH7
   register 0x26 bit 2 set (a "woken by LAN" flag, not the PHY power, as
-  the Lenovo firmware shows): the controller stays absent, `BUC` 0, and
-  every PCH register that `pchregs.py` reads matches b1, the boot where
-  it was present; the descriptor, GbE and ME regions are byte-identical.
-  The Lenovo firmware does nothing else for the LAN
-  ([stock-gnet94ww.md](stock-gnet94ww.md#2-io-port-access)). The state
-  is kept somewhere the host cannot read, likely by the ME in the RTC
-  well. Patch 0264 leaves the switch out; to try: the coin cell out.
+  the Lenovo firmware shows), then a 1-to-0 transition of `BUC` bit 5
+  with the lockdown clear and a CF9 0x0E (ci-299): the controller stayed
+  absent, `BUC` 0, every PCH register that `pchregs.py` reads as at b1,
+  the descriptor, GbE and ME regions byte-identical, the GbE lane of the
+  IOBP as coreboot programs it at every boot, the ME status lines the
+  same. The Lenovo firmware does nothing else for the LAN
+  ([stock-gnet94ww.md](stock-gnet94ww.md#2-io-port-access)).
+- **The cause** (2026-11-09): GPIO12, LANPHYPC, read native and low.
+  The MAC hides itself when it finds no PHY at reset, and the I217 PHY
+  leaves its low-power mode only on LANPHYPC, a level that only the MAC
+  drives: a hidden MAC never raises it, so the PHY stays asleep and the
+  MAC stays hidden, whatever `BUC` says, through resets and power
+  cycles (the PHY's low-power state does not need the RTC well: it is
+  simply never woken). Patch 0263 drives GPIO12 high as a GPIO for 50 ms
+  and resets. With ci-302 in slot B: `GbE: MAC absent with the LAN
+  enabled, waking the PHY`, one reset (event log: boot 505, *System
+  reset*, no hang event), and at the next boot `PCI: 00:00:19.0
+  [8086/153a] enabled`, `eno0` back, GPIO12 high, CMOS 0x7f cleared.
+  The Lenovo firmware never meets the case: its ME, which owns the PHY,
+  wakes it.
 
 Files: `ht/` on the test machine (`b1`-`b8`, `gbe-reenable-finding.txt`).
