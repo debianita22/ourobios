@@ -8,7 +8,12 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 ## v1.6.2
 
 What ran on a machine for v1.6.2: rc1 on the W541 (MEM-06, the
-fingerprint switch, an S3 resume, 2026-11-09,
+fingerprint switch, an S3 resume) and the release itself as a capsule
+from rc1 (UPD-01/02, an S3 resume, 2026-11-09,
+[docs/tests/v1.6.1/w541-nri](docs/tests/v1.6.1/w541-nri/README.md));
+What ran on a machine for v1.6.2: rc1 on the W541 (MEM-06, the
+fingerprint switch, an S3 resume) and the release itself as a capsule
+from rc1 (UPD-01/02, an S3 resume, 2026-11-09,
 [docs/tests/v1.6.1/w541-nri](docs/tests/v1.6.1/w541-nri/README.md));
 the release on the M920x, as a capsule from v1.6.1 with both protections
 on (2026-11-09, [docs/tests/v1.6.2/m920x-fsp](docs/tests/v1.6.2/m920x-fsp/README.md)).
@@ -19,8 +24,10 @@ on (2026-11-09, [docs/tests/v1.6.2/m920x-fsp](docs/tests/v1.6.2/m920x-fsp/README
   board here has an eMMC. The SD reader of the W541 is driven by the same
   driver's SD path, which does not change. His changes to the start of
   the UEFI Shell (no `startup.nsh`, no mapping table, a banner) are
-  reverted too: the boards' payload has no Shell, so their ROMs do not
-  change. `patches/tianocore` loses `0012` and `0062` (`REVERTED` of
+  reverted too: the boards' payload has no Shell. In the W541 `nri` ROM
+  of the release against rc1, `BdsDxe` (the same size, the code relinked)
+  and `SdMmcPciHcDxe` are the two payload modules that differ; the other
+  837 files of the volume are byte for byte the same. `patches/tianocore` loses `0012` and `0062` (`REVERTED` of
   `tools/edk2-import.py`).
 
 - **The package declares its own names** (`edk2/OuroBiosPkg`): the GUIDs,

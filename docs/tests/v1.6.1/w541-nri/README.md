@@ -153,3 +153,18 @@ Disable SUS Well lockdown (`FDSW`, 0x3420 bit 7) at every boot
   wakes it.
 
 Files: `ht/` on the test machine (`b1`-`b8`, `gbe-reenable-finding.txt`).
+
+## v1.6.2 on the W541
+
+v1.6.2 (`e952f0f`) as the capsule of the release, staged with
+`update.py stage --latest` from rc1 (slot B), 2026-11-09: written to slot
+A at the reboot, the ESRT *riuscito* (`fw_version` 0x01060200, status 0,
+UPD-01, UPD-02). The payload of the release is not that of rc1 (`BdsDxe`
+rebuilt by the package work, `SdMmcPciHcDxe` without HS400 Enhanced
+Strobe, `edk2/0059`): the update screen and the boot went as before. The
+training cache kept (*does not need update*, RAM init 0.11 s: the NRI
+code is that of rc1), hw-report 20 PASS with the known ME and EC
+warnings, camera, Bluetooth, Ethernet and the O2 Micro reader all there,
+`USB2PDO` 0. One `rtcwake -m mem -s 30`: resumed, every CPU back (S3-01).
+Not tried: an SD card seen by the payload (none at hand at the time).
+Files: `ht/v162/` on the test machine.

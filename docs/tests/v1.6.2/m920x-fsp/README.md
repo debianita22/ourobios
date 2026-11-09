@@ -25,6 +25,10 @@ the boot is the known *SGX disabled or unsupported by BIOS*. The
 read-only part stays the one of `ci-203`.
 
 What v1.6.2 changes on this board since v1.6.1 is in the payload: of
-the EDK II work after rc1, only `edk2/0059` (HS400 Enhanced Strobe out
-of `SdMmcPciHcDxe`) changes the binary, and the M920x has no SD or eMMC
-controller; the rest is the same payload (`edk2-parity`).
+the EDK II work after rc1, `edk2/0059` (HS400 Enhanced Strobe out of
+`SdMmcPciHcDxe`, and the M920x has no SD or eMMC controller) and
+`BdsDxe`, relinked by the package work and `edk2/0060` (the same size, the
+code differs: measured on the W541 `nri` ROM of the release against
+rc1); the other modules of the volume are byte for byte the same. The
+boot manager ran here as it did: the capsule, the boot and the resume
+above.
