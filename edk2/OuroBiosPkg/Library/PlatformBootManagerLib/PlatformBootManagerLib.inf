@@ -35,6 +35,7 @@
   UefiPayloadPkg/UefiPayloadPkg.dec
   ShellPkg/ShellPkg.dec
   SecurityPkg/SecurityPkg.dec
+  OuroBiosPkg/OuroBiosPkg.dec
 
 [LibraryClasses]
   BaseLib
@@ -98,7 +99,7 @@
   gEfiMdeModulePkgTokenSpaceGuid.PcdFollowBGRTSpecification
   gUefiPayloadPkgTokenSpaceGuid.PcdBootManagerEscape
   gEfiMdeModulePkgTokenSpaceGuid.PcdCapsuleOnDiskSupport
-  gUefiPayloadPkgTokenSpaceGuid.PcdSerialTerminalPrintEnabled
+  gOuroBiosPkgTokenSpaceGuid.PcdSerialTerminalPrintEnabled
   gUefiPayloadPkgTokenSpaceGuid.PcdiPXEFile
   gUefiPayloadPkgTokenSpaceGuid.PcdiPXEOptionName
   gUefiPayloadPkgTokenSpaceGuid.PcdCsmWrapFile

@@ -20,6 +20,7 @@
 [Packages]
   MdePkg/MdePkg.dec
   UefiPayloadPkg/UefiPayloadPkg.dec
+  OuroBiosPkg/OuroBiosPkg.dec
 
 [LibraryClasses]
   BaseLib

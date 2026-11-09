@@ -6,15 +6,10 @@ Subject: [PATCH] UefiPayloadPkg/MdeModulePkg: Add boot progress text support
 [ouroBIOS: commit 0c433f7db1c6 of MrChromebox's edk2, without the files
 that TianoCore's tree does not have (tools/edk2-import.py): 3 in
 edk2/OuroBiosPkg (2 in a directory of TianoCore's that the package
-carries whole)]
+carries whole), with the declarations that OuroBiosPkg.dec has left out]
 
 Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
 ---
- MdeModulePkg/Include/Library/BootLogoLib.h    | 13 +++++
- .../Library/BootLogoLib/BootLogoLib.c         | 53 +++++++++++++++++++
- UefiPayloadPkg/UefiPayloadPkg.dec             |  3 ++
- 3 files changed, 69 insertions(+)
-
 diff --git a/MdeModulePkg/Include/Library/BootLogoLib.h b/MdeModulePkg/Include/Library/BootLogoLib.h
 index 19894b27cbf848e3109fc32a6340cf12f0d79203..88094f4bf6dec505b7c4301c7224378b31bbdcd6 100644
 --- a/MdeModulePkg/Include/Library/BootLogoLib.h
@@ -97,17 +92,3 @@ index 5beb0e0aa547a188a0269598c122c6adb7b10933..cba6f1983f645d83ec8eed5a1c74d4de
 +
 +  return EFI_SUCCESS;
 +}
-diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
-index 2e135007299103099418cc42d8ace02eb74a9144..bba04554f801a7e87bbfc1b40abf2721e36552d6 100644
---- a/UefiPayloadPkg/UefiPayloadPkg.dec
-+++ b/UefiPayloadPkg/UefiPayloadPkg.dec
-@@ -90,6 +90,9 @@ gUefiPayloadPkgTokenSpaceGuid.PcdPcdDriverFile|{ 0x57, 0x72, 0xcf, 0x80, 0xab, 0
- # Boot Manager Key
- gUefiPayloadPkgTokenSpaceGuid.PcdBootManagerEscape|FALSE|BOOLEAN|0x00000020
- 
-+# Enable serial terminal print for boot menu prompt
-+gUefiPayloadPkgTokenSpaceGuid.PcdSerialTerminalPrintEnabled|FALSE|BOOLEAN|0x00000021
-+
- ## FFS filename to find the default variable initial data file.
- # @Prompt FFS Name of variable initial data file
-  gUefiPayloadPkgTokenSpaceGuid.PcdNvsDataFile |{ 0x1a, 0xf1, 0xb1, 0xae, 0x42, 0xcc, 0xcf, 0x4e, 0xac, 0x60, 0xdb, 0xab, 0xf6, 0xca, 0x69, 0xe6 }|VOID*|0x00000025

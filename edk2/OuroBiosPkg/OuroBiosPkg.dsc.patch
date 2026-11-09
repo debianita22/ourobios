@@ -477,8 +477,8 @@
 +  gEfiMdeModulePkgTokenSpaceGuid.PcdPrioritizeInternal|$(PRIORITIZE_INTERNAL)
 +
    gUefiPayloadPkgTokenSpaceGuid.PcdBootManagerEscape|$(BOOT_MANAGER_ESCAPE)
-+  gUefiPayloadPkgTokenSpaceGuid.PcdSerialTerminalPrintEnabled|!$(DISABLE_SERIAL_TERMINAL)
-+  gUefiPayloadPkgTokenSpaceGuid.PcdSecureBootDefaultEnable|$(SECURE_BOOT_DEFAULT_ENABLE)
++  gOuroBiosPkgTokenSpaceGuid.PcdSerialTerminalPrintEnabled|!$(DISABLE_SERIAL_TERMINAL)
++  gOuroBiosPkgTokenSpaceGuid.PcdSecureBootDefaultEnable|$(SECURE_BOOT_DEFAULT_ENABLE)
 +
 +  gEfiMdeModulePkgTokenSpaceGuid.PcdFollowBGRTSpecification|$(FOLLOW_BGRT_SPEC)
  
@@ -491,7 +491,7 @@
 +  ## The FMAP regions that an update capsule may write (FmpDeviceSmmLib): the
 +  #  two RW slots of vboot, of which only the one that is not running is
 +  #  written, and the memory training, which the new firmware redoes.
-+  gUefiPayloadPkgTokenSpaceGuid.PcdFmpDeviceSmmAllowedRegions|"RW_SECTION_A RW_SECTION_B RW_MRC_CACHE"
++  gOuroBiosPkgTokenSpaceGuid.PcdFmpDeviceSmmAllowedRegions|"RW_SECTION_A RW_SECTION_B RW_MRC_CACHE"
 +
 +!if $(VARIABLE_SUPPORT) == "EMU" || $(VARIABLE_SUPPORT) == "SMMSTORE" || $(VARIABLE_SUPPORT) == "SPI"
 +  ## User Authentication PCD
@@ -672,7 +672,7 @@
 +  OuroBiosPkg/BootSplashConfigDxe/BootSplashConfigDxe.inf
 +!endif
 +!endif
-+  MdeModulePkg/Universal/TimeDateSettingsDxe/TimeDateSettingsDxe.inf
++  OuroBiosPkg/TimeDateSettingsDxe/TimeDateSettingsDxe.inf
    MdeModulePkg/Universal/PlatformDriOverrideDxe/PlatformDriOverrideDxe.inf
 +!if $(EBC_ENABLE) == TRUE
    MdeModulePkg/Universal/EbcDxe/EbcDxe.inf

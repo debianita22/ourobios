@@ -39,14 +39,14 @@ since steps (b) and (c), made by `tools/edk2-import.py`: the patch of
 
 | | package | carry | upstream | drop | merged | total |
 |---|---|---|---|---|---|---|
-| Setup menu and the other screens of the firmware | 14 | 8 | 4 | 0 | 0 | 26 |
-| Boot manager and boot options | 3 | 3 | 0 | 2 | 0 | 8 |
-| Capsule updates and the ESRT | 6 | 1 | 1 | 0 | 0 | 8 |
+| Setup menu and the other screens of the firmware | 10 | 10 | 6 | 0 | 0 | 26 |
+| Boot manager and boot options | 1 | 5 | 0 | 2 | 0 | 8 |
+| Capsule updates and the ESRT | 3 | 3 | 2 | 0 | 0 | 8 |
 | Secure Boot, TPM and crypto | 9 | 1 | 1 | 0 | 0 | 11 |
 | Memory protection | 1 | 6 | 0 | 2 | 0 | 9 |
 | Drivers for storage, USB, graphics and the console | 2 | 3 | 7 | 9 | 1 | 22 |
-| Platform plumbing for coreboot | 4 | 6 | 5 | 0 | 1 | 16 |
-| **all** | 39 | 28 | 18 | 13 | 2 | 100 |
+| Platform plumbing for coreboot | 3 | 6 | 6 | 0 | 1 | 16 |
+| **all** | 29 | 34 | 22 | 13 | 2 | 100 |
 
 ## Step (a): `edk2-stable202608` in QEMU
 
@@ -121,6 +121,24 @@ MrChromebox's tree at the commit of the defconfigs:
   `patches/lvglpkg`, and LVGL in it at `LVGL_COMMIT` of `tools/build.sh`
   (v9.6 from v1.6.0) in both trees; the binary network drivers of Realtek and ASIX
   (`0ec988f`, only with `NETWORK_PXE_BOOT`) stay out.
+  After v1.6.2-rc1 the package also takes what only its modules use out
+  of TianoCore's packages: MrChromebox's `TimeDateSettingsDxe`, which his
+  tree has in `MdeModulePkg` (`OTHER_MOVED` of `edk2-import.py`); the
+  headers of its libraries, GUIDs and protocols (`PACKAGE_HEADERS`); and
+  their declarations, which leave `UefiPayloadPkg.dec` and
+  `MdeModulePkg.dec` in every patch of the series for `OuroBiosPkg.dec`
+  (`PACKAGE_DECLS`; `edk2-import.py` stops if a file outside the package
+  and its platform names one). The PCDs among them (the serial console
+  of the boot manager, Secure Boot by default, the categories of the
+  setup, the regions of the capsules) are in the package's token space,
+  `gOuroBiosPkgTokenSpaceGuid`: all FixedAtBuild, constants in the code,
+  so the payload does not change (`edk2-parity`). Those of iPXE and
+  CSMWrap stay in `UefiPayloadPkg.dec`: coreboot's Makefile sets the names
+  of their boot options by that name (`--pcd
+  gUefiPayloadPkgTokenSpaceGuid.PcdiPXEOptionName`). `patches/tianocore`
+  loses 11 patches that had nothing else: `0032`, `0047`, `0058`, `0064`,
+  `0068` and `0077` of MrChromebox, and `0081`, `0088`, `0097`, `0098` and
+  `0111` of `patches/edk2`.
 - **Build**: coreboot's `payloads/external/edk2/Makefile` with patch 0216
   (`EDK2_PLATFORM_DSC`, and `EDK2_PACKAGES_PATH`, relative to the
   coreboot tree) and 0217 (the options of MrChromebox's tree, the LVGL
@@ -258,23 +276,23 @@ The other *drop* ones, as looked at for v1.6.0:
 | `b6b0b66` | MdeModulePkg/UefiPayloadPkg: Improve Device Manager presentation | carry | DeviceManagerUiLib | `tianocore/0014`, package |
 | `565124c` | MdeModulePkg: Add Logo position PCD and BGRT support | upstream | logo position PCD, BGRT | `tianocore/0015`, package |
 | `4844b23` | MdeModulePkg: Be more verbose about SecureBoot and the reason why the boot failed | upstream | why a boot was refused by Secure Boot | `tianocore/0018` |
-| `fc55cf0` | UefiPayloadPkg: Implement CFR support | package | CfrSetupMenuDxe and the CFR parser: the setup menu of both boards | `tianocore/0025`, package |
+| `fc55cf0` | UefiPayloadPkg: Implement CFR support | upstream | checked after v1.6.2-rc1: CfrSetupMenuDxe and its helpers are the package's; what stays on the tag is the reader of coreboot's CFR records in `CbParseLib` and their format (`Coreboot.h`, `CfrSetupMenuGuid.h`), which belongs next to the rest of the coreboot tables | `tianocore/0025`, package |
 | `b795f86` | MdeModulePkg/DisplayEngineDxe: Change the delimiter for ONE_OF | carry |  | `tianocore/0026` |
 | `435706b` | UefiPayloadPkg/PlatformBootMgr: update progress message on menu entry | package | PlatformBootManagerLib of the package | package |
-| `c3aa08f` | MdeModulePkg/UefiPayloadPkg: Add Time/Date Settings driver | package | a driver of its own, plus a hook in UiApp | `tianocore/0032`, package |
+| `c3aa08f` | MdeModulePkg/UefiPayloadPkg: Add Time/Date Settings driver | package | a driver of its own, plus a hook in UiApp | package (`TimeDateSettingsDxe`, `OuroBiosPkg.dec`) |
 | `0c79020` | MdeModulePkg: Fix Frontpage banner layout | carry | as 83eb1e6 | `tianocore/0033` |
-| `c9d88a0` | MdeModulePkg/UefiPayloadPkg: Add Frontpage battery status support | package | EcAcpiBatteryStatusDxe, plus a hook in UiApp | `tianocore/0034`, package |
+| `c9d88a0` | MdeModulePkg/UefiPayloadPkg: Add Frontpage battery status support | carry | checked after v1.6.2-rc1: EcAcpiBatteryStatusDxe is the package's; the hook in UiApp stays with the UiApp of `83eb1e6` | `tianocore/0034`, package |
 | `b06ce7e` | UefiPayloadPkg: Add password protection for setup menu access | package | UserAuthPkg: the supervisor password | package |
 | `9b3274a` | MdeModulePkg/SetupBrowserDxe: Sync ordered lists before action callback | upstream | a fix of SetupBrowserDxe | `tianocore/0036` |
 | `1fb7d11` | UefiPayloadPkg/PlatformBootManager: Clear boot prompt on ENTER | package | as 435706b | package |
 | `f168fd0` | MdeModulePkg/SecurityPkg: Use HII popup for setup dialogs | carry | the HII popups the graphical setup draws (also edk2/0006) | `tianocore/0041` |
 | `1287861` | SecurityPkg/SecureBootConfigDxe: Overhaul Secure Boot setup UI | carry | kept by the owner after v1.6.2-rc1: the reworked Secure Boot pages stay instead of the standard SecureBootConfigDxe ones | `tianocore/0042` |
 | `ad284e9` | MdeModulePkg/FileExplorerLib: Add "Up one level" navigation | upstream |  | `tianocore/0043` |
-| `17671bf` | UefiPayloadPkg: Add LVGL display engine support | package | with LvglPkg: the *System Preferences* look | `tianocore/0046`, package, LvglPkg |
-| `dfb8d33` | UefiPayloadPkg: Add NVRAM-controlled bootsplash with Setup UI | package | BootSplashConfigDxe | `tianocore/0058`, package |
-| `240f748` | UefiPayloadPkg/CfrSetupMenuDxe: Add support for LOCK_AT_BOOT CFR flag | package |  | `tianocore/0063`, package |
+| `17671bf` | UefiPayloadPkg: Add LVGL display engine support | carry | checked after v1.6.2-rc1: LvglPkg on its own; the changes to `UsbMouseAbsolutePointerDxe` (the pointer of the LVGL setup) stay on the tag | `tianocore/0046`, package, LvglPkg |
+| `dfb8d33` | UefiPayloadPkg: Add NVRAM-controlled bootsplash with Setup UI | package | BootSplashConfigDxe | package (`OuroBiosPkg.dec`) |
+| `240f748` | UefiPayloadPkg/CfrSetupMenuDxe: Add support for LOCK_AT_BOOT CFR flag | upstream | checked after v1.6.2-rc1: the LOCK_AT_BOOT flag in `CfrSetupMenuGuid.h`, with the CFR format of `fc55cf0` | `tianocore/0063`, package |
 | `5764265` | UefiPayloadPkg/CfrSetupMenuDxe: grey out READONLY CFR options | package |  | package |
-| `afe0e87` | UefiPayloadPkg: Copy custom bootsplash BMP to the ESP | package |  | `tianocore/0064`, package |
+| `afe0e87` | UefiPayloadPkg: Copy custom bootsplash BMP to the ESP | package |  | package (`OuroBiosPkg.dec`) |
 | `5d4fdf6` | UefiPayloadPkg/BootSplashConfigDxe: Document BMP format requirements | package |  | package |
 | `b91131a` | UefiPayloadPkg/CfrSetupMenuDxe: Fix SubForm parsing | package |  | package |
 | `1817a2b` | UefiPayloadPkg: Unregister the setup hotkey before clearing the prompt | package | as 435706b | package |
@@ -286,10 +304,10 @@ The other *drop* ones, as looked at for v1.6.0:
 | `d8205d0` | MdeModulePkg/UefiPayloadPkg: Add PrioritizeInternal boot device support | carry | PRIORITIZE_INTERNAL | `tianocore/0005`, package |
 | `4a4c3a1` | MdeModulePkg: Improve boot descriptions and skip duplicate eMMC | carry |  | `tianocore/0009` |
 | `4373c47` | ShellPkg: disable startup script, mapping print; show welcome banner | drop | the boards' payload has no Shell (`SHELL_TYPE NONE` from v1.6.0), so nothing of it is in their ROMs; a build with the Shell starts as TianoCore's | left out (`edk2/0060`) |
-| `6676ad7` | UefiPayloadPkg/MdeModulePkg: Platform setup and boot defaults | package | PCD defaults of the package's .dsc | `tianocore/0016`, package |
+| `6676ad7` | UefiPayloadPkg/MdeModulePkg: Platform setup and boot defaults | carry | checked after v1.6.2-rc1: the PCD defaults are the package's; the changes to `BootManagerUiLib` and `BmBoot.c` stay with `8814b15` | `tianocore/0016`, package |
 | `0ec988f` | UefiPayloadPkg: Add network and PXE boot support | drop | the UEFI network stack: the boards boot from the network with iPXE's own driver, so NetworkPkg's PXE driver is not in the payload (not exposed to CVE-2026-97631, fixed on TianoCore's master by `560ed9b` on 2026-10-15, after `edk2-stable202608`) | package, binaries left out |
 | `9c5e2da` | PlatformBootManagerLib: Refactor BdsGetShellFvDevicePath | package |  | package |
-| `b581d3b` | UefiPayloadPkg: Add iPXE network boot option support | package | the iPXE entry of the firmware volume | `tianocore/0031`, package |
+| `b581d3b` | UefiPayloadPkg: Add iPXE network boot option support | carry | checked after v1.6.2-rc1: the iPXE entry is in the package's `PlatformBootManagerLib`; what stays on the tag are the two PCDs of `UefiPayloadPkg.dec` that coreboot's Makefile sets with `--pcd`, so they keep its token space | `tianocore/0031` |
 | `6c14abf` | MdeModulePkg: Add Auto Boot Fall-Through option | carry | the setting next to *Auto Boot Time-out* (v1.4.1) | `tianocore/0079` |
 
 ## Capsule updates and the ESRT
@@ -297,11 +315,11 @@ The other *drop* ones, as looked at for v1.6.0:
 | Commit | Subject | Becomes | Note | Now |
 |---|---|---|---|---|
 | `d6fbc7b` | UefiPayloadPkg: Add FMP_DEVICE_PKCS7_PCD_INC define | package |  | package |
-| `5a0c064` | UefiPayloadPkg/FmpDeviceSmmLib: Add FMAP-based scoped capsule flashing | package | FmpDeviceSmmLib of the package, which edk2/0008-0011 build on; `AppendRmapManifest.py` in the series | `tianocore/0050`, package |
+| `5a0c064` | UefiPayloadPkg/FmpDeviceSmmLib: Add FMAP-based scoped capsule flashing | carry | checked after v1.6.2-rc1: FmpDeviceSmmLib is the package's; `AppendRmapManifest.py` stays in `UefiPayloadPkg/Tools`, where `tools/build.sh` runs it in either tree | `tianocore/0050`, package |
 | `04272be` | UefiPayloadPkg: Configure capsule update build options | package |  | package |
 | `775376a` | UefiPayloadPkg: Add graphical capsule update progress | package | with edk2/0026, the update screen | package |
-| `6e839af` | UefiPayloadPkg/FmpDeviceSmmLib: Harden scoped capsule flashing | package |  | `tianocore/0052`, package |
-| `6c7b28d` | UefiPayloadPkg/Fmp: Keep capsule updates resilient through progress and reset | package |  | `tianocore/0053` |
+| `6e839af` | UefiPayloadPkg/FmpDeviceSmmLib: Harden scoped capsule flashing | carry | checked after v1.6.2-rc1: as `5a0c064`: `AppendRmapManifest.py` and `UefiPayloadPkg.ci.yaml` | `tianocore/0052`, package |
+| `6c7b28d` | UefiPayloadPkg/Fmp: Keep capsule updates resilient through progress and reset | upstream | checked after v1.6.2-rc1: in `FmpDxe`, `DxeCapsuleLib` and `ResetSystemLib` of TianoCore: nothing of it is the package's | `tianocore/0053` |
 | `cc69856` | MdeModulePkg/UefiPayloadPkg: Keep ESRT durable across hibernate and FMP sync | upstream | ESRT across hibernation | `tianocore/0054` |
 | `a447cf5` | MdeModulePkg/UefiPayloadPkg: Harden capsule progress UI and update cleanup | carry | MdeModulePkg part of the progress UI | `tianocore/0055`, package |
 
@@ -327,12 +345,12 @@ with the stable tag that takes the new OpenSSL.
 | `db6619a` | UefiPayloadPkg: Use OvmfPkg PlatformSecureLib when Secure Boot enabled | package | a library mapping of the .dsc | package |
 | `51d7f47` | SecureBoot: Update revocation DBX to version 20260402 | package | data | package |
 | `a8b5b11` | UefiPayloadPkg/EnrollDefaultKeys: Provision default key reference variables | package |  | package |
-| `77242a1` | UefiPayloadPkg: Add option to enable Secure Boot default after key enrollment | package |  | `tianocore/0047`, package |
+| `77242a1` | UefiPayloadPkg: Add option to enable Secure Boot default after key enrollment | package |  | package (`OuroBiosPkg.dec`) |
 | `5dc4840` | UefiPayloadPkg: Map Tpm2HelpLib for TPM-enabled builds | package |  | package |
 | `af5e96c` | SecureBoot: update DBX to version 20260707 | package | data | package |
 | `0d39245` | CryptoPkg/BaseCryptLib: Ignore foreign buffers in runtime free/realloc | upstream | CryptoPkg at runtime | `tianocore/0070` |
 | `acc37b2` | UefiPayloadPkg/EnrollDefaultKeys: Add Microsoft DBX baseline artifacts | package | the dbx files (upstream.sh dbx compares them) | package |
-| `f7cbaab` | UefiPayloadPkg: Append DBX updates to the retained baseline | package |  | `tianocore/0077`, package |
+| `f7cbaab` | UefiPayloadPkg: Append DBX updates to the retained baseline | package |  | package (`OuroBiosPkg.dec`) |
 
 ## Memory protection
 
@@ -371,7 +389,7 @@ with the stable tag that takes the new OpenSSL.
 | `acf9505` | MdeModulePkg/Usb: Warm reset downstream SuperSpeed ports | upstream |  | `tianocore/0061` |
 | `d7597bb` | MdeModulePkg/SdMmcPciHcDxe: add HS400 Enhanced Strobe for Intel eMMC | drop | no eMMC | left out from v1.6.2 (`edk2/0059`, its revert; `REVERTED` of `edk2-import.py`, `tianocore/0062` unused) |
 | `c205ceb` | MdeModulePkg/SdMmcPciHcDxe: Don't force EmbeddedSlot for Bayhub | carry | as a091558: Libreboot's fix for SD boot on the W541 | `tianocore/0065` |
-| `81c562f` | UefiPayloadPkg: Add CbfsLib to read files from coreboot's CBFS | package | if a module of the package reads CBFS | `tianocore/0068`, package |
+| `81c562f` | UefiPayloadPkg: Add CbfsLib to read files from coreboot's CBFS | package | if a module of the package reads CBFS | package (`OuroBiosPkg.dec`) |
 | `1f9ab46` | UefiPayloadPkg/PlatformGopPolicy: Load GOP driver and VBT from CBFS | drop | as 076933b | `tianocore/0069`, package |
 | `a3657a3` | UefiPayloadPkg: Conditionally use GraphicsDriverDxe in apriori dxe | drop | as 076933b | package |
 
@@ -394,4 +412,4 @@ with the stable tag that takes the new OpenSSL.
 | `e27ef54` | UefiPayloadPkg/ResetSystemLib: Select S5 sleep type from CPUID | upstream | ResetSystemLib | `tianocore/0049` |
 | `0453b7a` | UefiPayloadPkg/ResetSystemLib: Use full CF9 sequence for cold reset | upstream | ResetSystemLib | `tianocore/0056` |
 | `b061f7a` | MdeModulePkg: Use warm reset for setup-initiated resets | carry |  | `tianocore/0066` |
-| `94a2365` | UefiPayloadPkg: Pass coreboot boot media params to DXE | package | boot media parameters for the capsule code | `tianocore/0067` |
+| `94a2365` | UefiPayloadPkg: Pass coreboot boot media params to DXE | upstream | checked after v1.6.2-rc1: the boot media record of coreboot in `CbParseLib`, `SblParseLib` and `UefiPayloadEntry` | `tianocore/0067` |

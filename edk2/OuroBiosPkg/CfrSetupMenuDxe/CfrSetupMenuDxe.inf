@@ -26,6 +26,7 @@
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
   UefiPayloadPkg/UefiPayloadPkg.dec
+  OuroBiosPkg/OuroBiosPkg.dec
 
 [LibraryClasses]
   BaseLib
@@ -52,8 +53,8 @@
   gEfiEndOfDxeEventGroupGuid                    ## CONSUMES ## Event
 
 [Pcd]
-  gUefiPayloadPkgTokenSpaceGuid.PcdCfrSetupMenuPasswordCategory  ## CONSUMES
-  gUefiPayloadPkgTokenSpaceGuid.PcdCfrSetupMenuGeneralCategory   ## CONSUMES
+  gOuroBiosPkgTokenSpaceGuid.PcdCfrSetupMenuPasswordCategory  ## CONSUMES
+  gOuroBiosPkgTokenSpaceGuid.PcdCfrSetupMenuGeneralCategory   ## CONSUMES
 
 [Protocols]
   gEfiDevicePathProtocolGuid        ## PRODUCES

@@ -10,35 +10,6 @@ carries whole)]
 
 Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
 ---
- OvmfPkg/Include/Dsc/OvmfTpmLibs.dsc.inc       |  1 +
- .../Library/Tcg2PhysicalPresencePlatformLib.h | 29 +++++++
- .../DxeTcg2PhysicalPresenceLib.c              | 76 ++++++++-----------
- .../DxeTcg2PhysicalPresenceLib.inf            |  2 +-
- .../DxeTcg2PhysicalPresencePlatformLib.c      | 56 ++++++++++++++
- .../DxeTcg2PhysicalPresencePlatformLib.inf    | 36 +++++++++
- .../Include/Library/TcgPhysicalPresenceLib.h  | 27 ++++++-
- SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.c             | 16 ++++
- SecurityPkg/Tcg/Tcg2Dxe/Tcg2Dxe.inf           |  1 +
- SecurityPkg/Tcg/TcgConfigDxe/TcgConfigDxe.inf |  1 +
- SecurityPkg/Tcg/TcgConfigDxe/TcgConfigImpl.c  | 19 ++++-
- UefiPayloadPkg/BlSupportDxe/BlSupportDxe.c    | 23 ++++++
- UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf  |  4 +
- UefiPayloadPkg/Include/Coreboot.h             | 26 +++++++
- .../Include/Guid/TcgPhysicalPresenceGuid.h    | 30 ++++++++
- UefiPayloadPkg/Include/Library/BlParseLib.h   | 16 ++++
- .../Library/CbParseLib/CbParseLib.c           | 46 +++++++++++
- .../Library/SblParseLib/SblParseLib.c         | 15 ++++
- UefiPayloadPkg/UefiPayloadEntry/AcpiTable.c   | 13 ++++
- .../UefiPayloadEntry/UefiPayloadEntry.c       | 13 ++++
- .../UefiPayloadEntry/UefiPayloadEntry.h       |  1 +
- .../UefiPayloadEntry/UefiPayloadEntry.inf     |  1 +
- UefiPayloadPkg/UefiPayloadPkg.dec             |  2 +
- 23 files changed, 408 insertions(+), 46 deletions(-)
- create mode 100644 OvmfPkg/Include/Library/Tcg2PhysicalPresencePlatformLib.h
- create mode 100644 OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.c
- create mode 100644 OvmfPkg/Library/Tcg2PhysicalPresencePlatformLibQemu/DxeTcg2PhysicalPresencePlatformLib.inf
- create mode 100644 UefiPayloadPkg/Include/Guid/TcgPhysicalPresenceGuid.h
-
 diff --git a/OvmfPkg/Include/Dsc/OvmfTpmLibs.dsc.inc b/OvmfPkg/Include/Dsc/OvmfTpmLibs.dsc.inc
 index d664775718b328df3161e829a0fc36794ce860ed..04541f5d91ab81a1792212b041fafa10339500e1 100644
 --- a/OvmfPkg/Include/Dsc/OvmfTpmLibs.dsc.inc
@@ -863,7 +834,7 @@ index 56489cba88ada140cff5c430d18b844fe0ebc292..11198c0b138efc3029deab8ed95f90e6
  [FeaturePcd.IA32]
    gEfiMdeModulePkgTokenSpaceGuid.PcdDxeIplSwitchToLongMode      ## CONSUMES
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
-index 7b7a7cd3773f73220d9da0fc9d18d518d4b924dd..beca6d03b836a1919e029f4d237dd897cbd6c3bb 100644
+index 3dd57120096a59bf9f95c239980c112c607ca5ef..6a1d30fb94ac730d3c6935ace456e05ee56e2e1c 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dec
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dec
 @@ -56,6 +56,8 @@
@@ -872,6 +843,6 @@ index 7b7a7cd3773f73220d9da0fc9d18d518d4b924dd..beca6d03b836a1919e029f4d237dd897
  
 +  gEfiTcgPhysicalPresenceInfoHobGuid = { 0xf367be59, 0x5891, 0x40eb, { 0x21, 0x44, 0xed, 0x2e, 0xac, 0x57, 0xfd, 0x14 }}
 +
-   # Secure Boot keys and owners
-   gMicrosoftVendorGuid        = { 0x77fa9abd, 0x0359, 0x4d32, { 0xbd, 0x60, 0x28, 0xf4, 0xe7, 0x8f, 0x78, 0x4b } }
-   gMicrosoftDbxUpdateGuid     = { 0x4e52dd60, 0xd79e, 0x42c5, { 0x83, 0x37, 0x08, 0x92, 0x32, 0xea, 0x5c, 0x87 } }
+ [Ppis]
+   gEfiPayLoadHobBasePpiGuid = { 0xdbe23aa1, 0xa342, 0x4b97, {0x85, 0xb6, 0xb2, 0x26, 0xf1, 0x61, 0x73, 0x89} }
+ 

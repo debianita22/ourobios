@@ -10,7 +10,7 @@ it, it has the same sources, file for file, as MrChromebox's EDK II at
 
 | File | What it is |
 |---|---|
-| `OuroBiosPkg.dec` | the package; its modules keep the GUIDs, PCDs and library classes of `UefiPayloadPkg.dec`, which `patches/tianocore` extends as MrChromebox's tree does |
+| `OuroBiosPkg.dec`, `Include/` | the package: the GUIDs, protocols, library classes and PCDs that only its modules use, with their headers, out of TianoCore's `UefiPayloadPkg.dec` and `MdeModulePkg.dec` (`PACKAGE_DECLS` and `PACKAGE_HEADERS` of `tools/edk2-import.py`); the PCDs in its token space, `gOuroBiosPkgTokenSpaceGuid`. The modules take the rest from TianoCore's packages, which `patches/tianocore` extends as MrChromebox's tree does |
 | `OuroBiosPkg.dsc.patch` | the platform: `UefiPayloadPkg.dsc` of MrChromebox's tree with the project's patches, its own name and GUID, the modules of the package under `OuroBiosPkg/`, as a patch on `UefiPayloadPkg.dsc` of the TianoCore tree |
 | `OuroBiosPkg.fdf.patch` | the flash device, the same way |
 | `CfrSetupMenuDxe/`, `Library/CfrHelpersLib/` | the setup menu from coreboot's CFR options (MrChromebox's, with `edk2/0002`, `0003` and `0028`) |
@@ -22,6 +22,7 @@ it, it has the same sources, file for file, as MrChromebox's EDK II at
 | `Library/Tcg*PhysicalPresence*/` | the physical presence libraries of the TPM 1.2 and 2.0 (MrChromebox's `c111515`) |
 | `Library/CsmWrapSecureBootLib/` | CSMWrap refused while Secure Boot is on (`edk2/0025`) |
 | `EcAcpiBatteryStatusDxe/`, `Library/CbfsLib/` | the battery on the front page, files read from coreboot's CBFS |
+| `TimeDateSettingsDxe/` | the time and date page of the setup (MrChromebox's `c3aa08f`, in `MdeModulePkg` of his tree: `OTHER_MOVED`) |
 | `Library/PlatformBootManagerLib/` | the boot policy of the platform: consoles, boot options, the hotkeys, the splash, capsules on disk, iPXE and CSMWrap entries, the vboot slot calls. TianoCore's tag has the library, but nearly all of it is MrChromebox's commits and the project's patches, so the package carries it whole, as MrChromebox's tree with `patches/edk2` has it (`PACKAGE_MOVED` of `tools/edk2-import.py`), and the platform maps `PlatformBootManagerLib` to it |
 | `Library/FmpDeviceSmmLib/` | the capsules written into the flash through SMMSTORE: the FMAP regions of the manifest, only those of `PcdFmpDeviceSmmAllowedRegions` (`edk2/0045`), one vboot slot at a time (`edk2/0015`), the firmware GUID of coreboot's table (`edk2/0033`), and its host unit tests (`UnitTest/`). Carried whole for the same reason as `PlatformBootManagerLib` (`PACKAGE_MOVED`) |
 | `Test/` | `UefiPayloadPkgHostTest.dsc`, the platform of the host unit tests of `FmpDeviceSmmLib`: `tools/build.sh edk2-unit-test` builds and runs them, in `check.yml` and before the update test of `build.yml` |
@@ -34,8 +35,11 @@ the commit of the defconfigs and the patches of `patches/edk2`, each
 restricted to the files that TianoCore's tree has, go to
 `patches/tianocore`; the directories of `UefiPayloadPkg` that TianoCore
 does not have (but `Include/`, whose headers the modules take from
-`UefiPayloadPkg.dec`), those of `PACKAGE_MOVED` and `FSDrivers` go to the
-package, with their paths rewritten; MrChromebox's binary network drivers of Realtek and ASIX (only
+`UefiPayloadPkg.dec`), those of `PACKAGE_MOVED` and `OTHER_MOVED` and
+`FSDrivers` go to the package, with their paths rewritten, and the headers
+of `PACKAGE_HEADERS` to its `Include/`; the declarations of
+`PACKAGE_DECLS` leave the `.dec` files of TianoCore, in every patch of the
+series, for `OuroBiosPkg.dec`; MrChromebox's binary network drivers of Realtek and ASIX (only
 with `NETWORK_PXE_BOOT`) stay out, iPXE and CSMWrap are where coreboot's
 Makefile puts them (`UefiPayloadPkg/NetworkDrivers`, `UefiPayloadPkg/LegacyBoot`
 of the edk2 tree). Before it writes, it checks that the tag with the new

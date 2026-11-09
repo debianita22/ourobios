@@ -44,18 +44,6 @@ When compatibility mode is entered, the following occurs:
 Signed-off-by: Oliver Smith-Denny <osde@microsoft.com>
 (cherry picked from commit 3d6368bc5edca41efbf06ab9d19a34b11770c45d)
 ---
- MdeModulePkg/Core/Dxe/DxeMain.h               |   9 ++
- MdeModulePkg/Core/Dxe/DxeMain.inf             |  10 ++
- .../Core/Dxe/Misc/LegacyBiosMemoryProt.c      |  21 +++
- MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c | 108 +++++++++++++-
- .../Core/Dxe/Misc/X64/LegacyBiosMemoryProt.c  | 139 ++++++++++++++++++
- .../Guid/CompatibilityModeActivatedEvent.h    |  14 ++
- MdeModulePkg/MdeModulePkg.dec                 |   4 +
- 7 files changed, 299 insertions(+), 6 deletions(-)
- create mode 100644 MdeModulePkg/Core/Dxe/Misc/LegacyBiosMemoryProt.c
- create mode 100644 MdeModulePkg/Core/Dxe/Misc/X64/LegacyBiosMemoryProt.c
- create mode 100644 MdeModulePkg/Include/Guid/CompatibilityModeActivatedEvent.h
-
 diff --git a/MdeModulePkg/Core/Dxe/DxeMain.h b/MdeModulePkg/Core/Dxe/DxeMain.h
 index e6b2776325e7c49e74fcf3ea7afb5b04c5f7bd3f..5238126e10913f81afb9827ea6e6980ae8f07cf7 100644
 --- a/MdeModulePkg/Core/Dxe/DxeMain.h
@@ -455,10 +443,10 @@ index 0000000000000000000000000000000000000000..8dac12dd5f4499d986f61e19d6276d57
 +
 +extern EFI_GUID  gCompatibilityModeActivatedEventGuid;
 diff --git a/MdeModulePkg/MdeModulePkg.dec b/MdeModulePkg/MdeModulePkg.dec
-index b2f8c0bc5ab45618ed73cf045a102d3b80a3ee45..0bc18a4ac63ed862c4f72ef6d64736b6f75b7728 100644
+index 36ad3f7467e34e088ace015f1684f03906ffba9c..4d2051f53dd6c612342a2caec1b16c006403f4b1 100644
 --- a/MdeModulePkg/MdeModulePkg.dec
 +++ b/MdeModulePkg/MdeModulePkg.dec
-@@ -431,6 +431,10 @@
+@@ -428,6 +428,10 @@
    # {da383315-906b-486f-80db-847f268451e4}
    gNVMeEnableCompleteEventGroupGuid = { 0xda383315, 0x906b, 0x486f, { 0x80, 0xdb, 0x84, 0x7f, 0x26, 0x84, 0x51, 0xe4 } }
  
