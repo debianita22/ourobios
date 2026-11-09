@@ -17,7 +17,7 @@ or \EFI\BOOT\BOOTX64.EFI.
  2 files changed, 11 insertions(+), 11 deletions(-)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 7b96c01b..2f8dc41f 100644
+index 7b96c01b73..2f8dc41fe3 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -259,12 +259,12 @@ static const struct sm_object usb_boot = SM_DECLARE_BOOL({
@@ -40,7 +40,7 @@ index 7b96c01b..2f8dc41f 100644
  			  "start only signed programs, and the default keys accept\n"
  			  "those signed by Microsoft (Windows, shim).\n"
 diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
-index 9f288af2..fdf2c255 100644
+index 9f288af212..fdf2c25582 100644
 --- a/src/mainboard/lenovo/m720q_m920q/cfr.c
 +++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
 @@ -259,11 +259,11 @@ static const struct sm_object usb_boot = SM_DECLARE_BOOL({

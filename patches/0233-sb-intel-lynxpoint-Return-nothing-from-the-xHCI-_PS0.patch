@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Fri, 6 Nov 2026 16:30:00 +0100
-Subject: [PATCH] sb/intel/lynxpoint: Return nothing from the xHCI _PS0
- and _PS3
+Subject: [PATCH] sb/intel/lynxpoint: Return nothing from the xHCI _PS0 and
+ _PS3
 
 ACPI 7.3 has _PS0 and _PS3 return nothing. Both end with Return (),
 and leave early with Return () when the device is not there or its BAR
@@ -106,3 +106,6 @@ index 9bd2e50d12..fa2705f722 100644
  	}
  
  	PCH_PRW (DEFAULT_PRW_VALUE, 3)
+-- 
+2.43.0
+

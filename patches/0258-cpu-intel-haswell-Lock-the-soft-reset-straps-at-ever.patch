@@ -75,7 +75,7 @@ index bb63ab86e4..0c4814d6c6 100644
  	/* After the resets of the options, before the memory init */
  	firmware_watchdog_romstage(s3resume);
 diff --git a/src/southbridge/intel/lynxpoint/pch.h b/src/southbridge/intel/lynxpoint/pch.h
-index d27d3cafd6..78df48cda9 100644
+index 4dccc575f5..920bc3d947 100644
 --- a/src/southbridge/intel/lynxpoint/pch.h
 +++ b/src/southbridge/intel/lynxpoint/pch.h
 @@ -504,6 +504,7 @@ void mainboard_config_rcba(void);

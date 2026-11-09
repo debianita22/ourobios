@@ -157,5 +157,5 @@ index 2985d3a3b8..777df2d431 100644
  	#include <southbridge/intel/common/acpi/sleepstates.asl>
  }
 -- 
-2.47.3
+2.43.0
 

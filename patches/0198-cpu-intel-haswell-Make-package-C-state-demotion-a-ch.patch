@@ -65,5 +65,5 @@ index a376943321..e0e400dc7d 100644
  	msr.lo |= (1 << 27);	// C3 Auto Undemotion Enable
  	msr.lo |= (1 << 26);	// C1 Auto Demotion Enable
 -- 
-2.47.3
+2.43.0
 

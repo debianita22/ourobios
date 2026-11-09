@@ -36,6 +36,15 @@ coreboot 26.09-438-g206078d6d990
 # sul M920x le due opzioni sono accese e il codice resta quello di prima. Gli
 # indirizzi li controlla tools/verify-rom.sh su ogni build.
 rw-ok 26.09-517-geab226a1c3f7
+# 26.09-607 (v1.6.2), controllato a mano sulla parte RO 26.09-438: tra 26.09-517 e
+# 26.09-607 i submodule 3rdparty (vboot, libgfxinit, libhwbase, microcode) non si
+# muovono; src/security/tpm cambia un commento (tss_errors.h), src/security/vboot
+# solo ec_sync.c (l'EC di Chrome, non compilato) e un commento in secdata_tpm.c;
+# src/commonlib, src/arch/x86, src/cpu/x86, src/lib, src/console e src/include
+# cambiano in 18 file per due righe ciascuno (commenti, refusi, acpigen.h con
+# funzioni in piu'), nessuno della cache-as-RAM, di cbmem, della console prima
+# della RAM o dei timestamp. Gli indirizzi li controlla tools/verify-rom.sh.
+rw-ok 26.09-607-g524189e299
 
 mrc _car_region_start ff7c0000
 mrc _vboot2_work ff7c0000

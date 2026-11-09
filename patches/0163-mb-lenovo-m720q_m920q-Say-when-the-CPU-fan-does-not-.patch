@@ -76,5 +76,5 @@ index 30f5b4628c..1e7a953b14 100644
  
  BOOT_STATE_INIT_ENTRY(BS_DEV_INIT, BS_ON_EXIT, ec_report_platform, NULL);
 -- 
-2.47.3
+2.43.0
 

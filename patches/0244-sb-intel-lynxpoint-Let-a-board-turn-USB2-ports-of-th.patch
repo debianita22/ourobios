@@ -15,7 +15,7 @@ read-only. The default is no port.
  2 files changed, 18 insertions(+)
 
 diff --git a/src/southbridge/intel/lynxpoint/pch.h b/src/southbridge/intel/lynxpoint/pch.h
-index 0001b4a53f8..bfd7eb8e366 100644
+index f59fae6eec..547cd0ae91 100644
 --- a/src/southbridge/intel/lynxpoint/pch.h
 +++ b/src/southbridge/intel/lynxpoint/pch.h
 @@ -100,6 +100,7 @@ void pch_log_state(void);
@@ -35,7 +35,7 @@ index 0001b4a53f8..bfd7eb8e366 100644
  
  /* XHCI Memory Registers */
 diff --git a/src/southbridge/intel/lynxpoint/usb_xhci.c b/src/southbridge/intel/lynxpoint/usb_xhci.c
-index 72b53a2d821..206e3403323 100644
+index 72b53a2d82..206e340332 100644
 --- a/src/southbridge/intel/lynxpoint/usb_xhci.c
 +++ b/src/southbridge/intel/lynxpoint/usb_xhci.c
 @@ -7,6 +7,7 @@
@@ -76,5 +76,5 @@ index 72b53a2d821..206e3403323 100644
  	pci_or_config32(dev, 0x44, 1 << 31);
  
 -- 
-2.47.3
+2.43.0
 

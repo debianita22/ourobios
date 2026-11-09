@@ -23,7 +23,7 @@ timeout.
  3 files changed, 57 insertions(+), 2 deletions(-)
 
 diff --git a/src/soc/intel/common/block/include/intelblocks/oc_wdt.h b/src/soc/intel/common/block/include/intelblocks/oc_wdt.h
-index bc0f0b1a27a..7b40869df58 100644
+index bc0f0b1a27..7b40869df5 100644
 --- a/src/soc/intel/common/block/include/intelblocks/oc_wdt.h
 +++ b/src/soc/intel/common/block/include/intelblocks/oc_wdt.h
 @@ -4,6 +4,7 @@
@@ -46,7 +46,7 @@ index bc0f0b1a27a..7b40869df58 100644
 +
  #endif
 diff --git a/src/soc/intel/common/block/oc_wdt/Kconfig b/src/soc/intel/common/block/oc_wdt/Kconfig
-index f0966e0f383..71033822620 100644
+index f0966e0f38..7103382262 100644
 --- a/src/soc/intel/common/block/oc_wdt/Kconfig
 +++ b/src/soc/intel/common/block/oc_wdt/Kconfig
 @@ -28,6 +28,15 @@ config SOC_INTEL_COMMON_OC_WDT_TIMEOUT_SECONDS
@@ -66,7 +66,7 @@ index f0966e0f383..71033822620 100644
  	bool "Reload the overclocking watchdog using periodic SMI"
  	depends on SOC_INTEL_COMMON_OC_WDT_ENABLE
 diff --git a/src/soc/intel/common/block/oc_wdt/oc_wdt.c b/src/soc/intel/common/block/oc_wdt/oc_wdt.c
-index d0f054a074a..b1865f6e735 100644
+index 1c62735178..891bf8fc2d 100644
 --- a/src/soc/intel/common/block/oc_wdt/oc_wdt.c
 +++ b/src/soc/intel/common/block/oc_wdt/oc_wdt.c
 @@ -16,6 +16,9 @@
@@ -81,7 +81,7 @@ index d0f054a074a..b1865f6e735 100644
   * Starts and reloads the OC watchdog with given timeout.
 @@ -37,7 +40,7 @@ static void oc_wdt_start(unsigned int timeout)
  
- 	printk(BIOS_SPEW, "OC Watchdog: start and relaod timer (timeout %ds)\n", timeout);
+ 	printk(BIOS_SPEW, "OC Watchdog: start and reload timer (timeout %ds)\n", timeout);
  
 -	oc_wdt_ctrl = inl(PCH_OC_WDT_CTL);
 +	oc_wdt_ctrl = inl(PCH_OC_WDT_CTL) & ~PCH_OC_WDT_CTL_STS_MASK;
@@ -137,5 +137,5 @@ index d0f054a074a..b1865f6e735 100644
  unsigned int oc_wdt_get_current_timeout(void)
  {
 -- 
-2.47.3
+2.43.0
 

@@ -32,13 +32,15 @@ TEST=Built for T440p and W541. Not tested on hardware.
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
- src/mainboard/lenovo/haswell/Kconfig                          | 3 ++-
- src/mainboard/lenovo/haswell/Makefile.mk                      | 2 ++
- src/mainboard/lenovo/haswell/{variants/t440p => }/mainboard.c | 0
- src/mainboard/lenovo/haswell/variants/t440p/Makefile.mk       | 3 ---
- 4 files changed, 4 insertions(+), 4 deletions(-)
- rename src/mainboard/lenovo/haswell/{variants/t440p => }/mainboard.c (100%)
+ src/mainboard/lenovo/haswell/Kconfig          |  3 +-
+ src/mainboard/lenovo/haswell/Makefile.mk      |  2 ++
+ src/mainboard/lenovo/haswell/mainboard.c      | 28 +++++++++++++++++++
+ .../lenovo/haswell/variants/t440p/Makefile.mk |  3 --
+ .../lenovo/haswell/variants/t440p/mainboard.c | 28 -------------------
+ 5 files changed, 32 insertions(+), 32 deletions(-)
+ create mode 100644 src/mainboard/lenovo/haswell/mainboard.c
  delete mode 100644 src/mainboard/lenovo/haswell/variants/t440p/Makefile.mk
+ delete mode 100644 src/mainboard/lenovo/haswell/variants/t440p/mainboard.c
 
 diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
 index 23e51c6438..0b2e48bee8 100644
@@ -81,10 +83,40 @@ index 3861ea195d..7305e46e83 100644
  ramstage-$(CONFIG_MAINBOARD_USE_LIBGFXINIT) += variants/$(VARIANT_DIR)/gma-mainboard.ads
  
  subdirs-y += variants/$(VARIANT_DIR)
-diff --git a/src/mainboard/lenovo/haswell/variants/t440p/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
-similarity index 100%
-rename from src/mainboard/lenovo/haswell/variants/t440p/mainboard.c
-rename to src/mainboard/lenovo/haswell/mainboard.c
+diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
+new file mode 100644
+index 0000000000..eae723fd75
+--- /dev/null
++++ b/src/mainboard/lenovo/haswell/mainboard.c
+@@ -0,0 +1,28 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <build.h>
++#include <device/device.h>
++#include <drivers/intel/gma/int15.h>
++#include <ec/lenovo/h8/h8.h>
++#include <smbios.h>
++#include <string.h>
++
++const char *smbios_mainboard_bios_version(void)
++{
++	/* Satisfy thinkpad_acpi. */
++	if (strlen(CONFIG_LOCALVERSION))
++		return "CBET4000 " CONFIG_LOCALVERSION;
++
++	return "CBET4000 " COREBOOT_VERSION;
++}
++
++static void mainboard_enable(struct device *dev)
++{
++	install_intel_vga_int15_handler(GMA_INT15_ACTIVE_LFP_EDP,
++					GMA_INT15_PANEL_FIT_DEFAULT,
++					GMA_INT15_BOOT_DISPLAY_DEFAULT, 0);
++}
++
++struct chip_operations mainboard_ops = {
++	.enable_dev = mainboard_enable,
++};
 diff --git a/src/mainboard/lenovo/haswell/variants/t440p/Makefile.mk b/src/mainboard/lenovo/haswell/variants/t440p/Makefile.mk
 deleted file mode 100644
 index ffdfd17716..0000000000
@@ -94,6 +126,40 @@ index ffdfd17716..0000000000
 -## SPDX-License-Identifier: GPL-2.0-only
 -
 -ramstage-y += mainboard.c
+diff --git a/src/mainboard/lenovo/haswell/variants/t440p/mainboard.c b/src/mainboard/lenovo/haswell/variants/t440p/mainboard.c
+deleted file mode 100644
+index eae723fd75..0000000000
+--- a/src/mainboard/lenovo/haswell/variants/t440p/mainboard.c
++++ /dev/null
+@@ -1,28 +0,0 @@
+-/* SPDX-License-Identifier: GPL-2.0-or-later */
+-
+-#include <build.h>
+-#include <device/device.h>
+-#include <drivers/intel/gma/int15.h>
+-#include <ec/lenovo/h8/h8.h>
+-#include <smbios.h>
+-#include <string.h>
+-
+-const char *smbios_mainboard_bios_version(void)
+-{
+-	/* Satisfy thinkpad_acpi. */
+-	if (strlen(CONFIG_LOCALVERSION))
+-		return "CBET4000 " CONFIG_LOCALVERSION;
+-
+-	return "CBET4000 " COREBOOT_VERSION;
+-}
+-
+-static void mainboard_enable(struct device *dev)
+-{
+-	install_intel_vga_int15_handler(GMA_INT15_ACTIVE_LFP_EDP,
+-					GMA_INT15_PANEL_FIT_DEFAULT,
+-					GMA_INT15_BOOT_DISPLAY_DEFAULT, 0);
+-}
+-
+-struct chip_operations mainboard_ops = {
+-	.enable_dev = mainboard_enable,
+-};
 -- 
 2.43.0
 

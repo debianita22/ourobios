@@ -112,5 +112,5 @@ index fd3d03684a..90c3a6b1fe 100644
  enum cpu_perf_eff_type {
  	CPU_TYPE_EFF,
 -- 
-2.47.3
+2.43.0
 

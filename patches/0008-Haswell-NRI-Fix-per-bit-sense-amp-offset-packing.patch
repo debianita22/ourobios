@@ -25,15 +25,15 @@ that the packed value for per-bit codes 8,7,9,8,6,8,a,7 is 0x7a868978
 Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 ---
- src/northbridge/intel/haswell/native_raminit/save_restore.c  | 5 ++++-
- .../intel/haswell/native_raminit/train_sense_amp_offset.c    | 2 +-
- 2 files changed, 5 insertions(+), 2 deletions(-)
+ src/northbridge/intel/haswell/native_raminit/save_restore.c    | 3 +++
+ .../intel/haswell/native_raminit/train_sense_amp_offset.c      | 3 ++-
+ 2 files changed, 5 insertions(+), 1 deletion(-)
 
 diff --git a/src/northbridge/intel/haswell/native_raminit/save_restore.c b/src/northbridge/intel/haswell/native_raminit/save_restore.c
-index c7786606fd..90f36bcd0b 100644
+index 7dc5a2c910..aad87d9249 100644
 --- a/src/northbridge/intel/haswell/native_raminit/save_restore.c
 +++ b/src/northbridge/intel/haswell/native_raminit/save_restore.c
-@@ -14,8 +14,11 @@ uint32_t reg_frame_rev(void)
+@@ -14,6 +14,9 @@ uint32_t reg_frame_rev(void)
  	 * The structures that get saved to flash are contained within
  	 * this translation unit, so changes outside this file shouldn't
  	 * require invalidating the cache.
@@ -41,24 +41,22 @@ index c7786606fd..90f36bcd0b 100644
 +	 * Exception: revision 2 discards data saved with broken per-bit
 +	 * sense amplifier offsets, so that they get trained again.
  	 */
--	return 1;
-+	return 2;
+ 	return 2;
  }
- 
- struct register_save {
 diff --git a/src/northbridge/intel/haswell/native_raminit/train_sense_amp_offset.c b/src/northbridge/intel/haswell/native_raminit/train_sense_amp_offset.c
-index 8921710443..ebd5cba26f 100644
+index 248f7a2820..0bcdfb4253 100644
 --- a/src/northbridge/intel/haswell/native_raminit/train_sense_amp_offset.c
 +++ b/src/northbridge/intel/haswell/native_raminit/train_sense_amp_offset.c
-@@ -299,7 +299,7 @@ static void train_samp_offset(struct sysinfo *ctrl)
- 					vref = 0;
- 
+@@ -311,7 +311,8 @@ static void train_samp_offset(struct sysinfo *ctrl)
+ 					continue;
+ 				}
  				ctrl->rxdqvrefpb[channel][0][byte][bit].center = vref;
 -				rx_offset_vdq += vref & 0xf << (4 * bit);
 +				rx_offset_vdq |= (uint32_t)vref << (4 * bit);
- 				printk(BIOS_DEBUG, "%x", vref);
++				printk(BIOS_DEBUG, "%x", vref);
  			}
- 			mchbar_write32(RX_OFFSET_VDQ(channel, byte), rx_offset_vdq);
+ 			set_rx_offset_vdq(ctrl, channel, byte, rx_offset_vdq);
+ 			printk(BIOS_DEBUG, " ");
 -- 
 2.43.0
 

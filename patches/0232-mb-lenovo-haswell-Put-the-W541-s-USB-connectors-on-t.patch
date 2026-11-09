@@ -34,7 +34,7 @@ T440p.
  1 file changed, 43 insertions(+), 7 deletions(-)
 
 diff --git a/src/mainboard/lenovo/haswell/acpi/usb.asl b/src/mainboard/lenovo/haswell/acpi/usb.asl
-index 1531df4b..4977255c 100644
+index 1531df4b72..4977255c20 100644
 --- a/src/mainboard/lenovo/haswell/acpi/usb.asl
 +++ b/src/mainboard/lenovo/haswell/acpi/usb.asl
 @@ -14,7 +14,7 @@

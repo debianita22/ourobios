@@ -89,5 +89,5 @@ index ed211e011a..0c9bcaf05e 100644
  	 * CFG Lock, which locks bits 15:0 until the next reset: the "cfg_lock"
  	 * option, on by default. macOS writes this MSR, and with the lock it
 -- 
-2.47.3
+2.43.0
 

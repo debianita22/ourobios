@@ -87,5 +87,5 @@ index acd091ae6b..8e50403b1a 100644
 +		memupd->FspmConfig.PcieRpEnableMask &= ~(1 << 5);
  }
 -- 
-2.47.3
+2.43.0
 

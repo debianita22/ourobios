@@ -25,7 +25,7 @@ leaves the UART at log level INFO and below and stays there at DEBUG.
  3 files changed, 18 insertions(+), 18 deletions(-)
 
 diff --git a/src/security/tpm/tspi/log-tpm1.c b/src/security/tpm/tspi/log-tpm1.c
-index 14886ea8204..4846d59b9b4 100644
+index 14886ea820..4846d59b9b 100644
 --- a/src/security/tpm/tspi/log-tpm1.c
 +++ b/src/security/tpm/tspi/log-tpm1.c
 @@ -76,18 +76,18 @@ void tpm1_log_dump(void)
@@ -53,7 +53,7 @@ index 14886ea8204..4846d59b9b4 100644
  
  void tpm1_log_add_table_entry(const char *name, const uint32_t pcr,
 diff --git a/src/security/tpm/tspi/log-tpm2.c b/src/security/tpm/tspi/log-tpm2.c
-index 00c227be9e4..f6e38db98e9 100644
+index 00c227be9e..f6e38db98e 100644
 --- a/src/security/tpm/tspi/log-tpm2.c
 +++ b/src/security/tpm/tspi/log-tpm2.c
 @@ -106,24 +106,24 @@ void tpm2_log_dump(void)
@@ -90,7 +90,7 @@ index 00c227be9e4..f6e38db98e9 100644
  
  void tpm2_log_add_table_entry(const char *name, const uint32_t pcr,
 diff --git a/src/security/tpm/tspi/log.c b/src/security/tpm/tspi/log.c
-index ea4e9197a27..dc2d38ad3da 100644
+index ea4e9197a2..dc2d38ad3d 100644
 --- a/src/security/tpm/tspi/log.c
 +++ b/src/security/tpm/tspi/log.c
 @@ -39,20 +39,20 @@ void tpm_cb_log_dump(void)

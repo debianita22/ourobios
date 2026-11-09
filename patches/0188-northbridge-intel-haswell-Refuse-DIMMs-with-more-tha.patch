@@ -84,10 +84,10 @@ index af784fbc9d..019606ebad 100644
  	if (!s3resume)
  		save_mrc_data();
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index 3d6cd43ee5..af038c6021 100644
+index e2be7b3816..43898d59e3 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-@@ -617,6 +617,7 @@ void raminit_main(enum raminit_boot_mode bootmode);
+@@ -664,6 +664,7 @@ void raminit_main(enum raminit_boot_mode bootmode);
  void raminit_reset(void);
  
  enum nri_status collect_spd_info(struct sysinfo *ctrl);

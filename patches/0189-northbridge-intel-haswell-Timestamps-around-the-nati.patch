@@ -65,5 +65,5 @@ index 019606ebad..06aef201af 100644
  
  	if (intel_early_me_uma_size() > 0) {
 -- 
-2.47.3
+2.43.0
 

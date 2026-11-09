@@ -21,7 +21,7 @@ setting later, and never on an S3 resume, where the reset would end it.
  4 files changed, 50 insertions(+)
 
 diff --git a/src/northbridge/intel/haswell/romstage.c b/src/northbridge/intel/haswell/romstage.c
-index f56aeddae19..129ce3d0ad1 100644
+index f56aeddae1..129ce3d0ad 100644
 --- a/src/northbridge/intel/haswell/romstage.c
 +++ b/src/northbridge/intel/haswell/romstage.c
 @@ -106,6 +106,9 @@ void mainboard_romstage_entry(void)
@@ -35,7 +35,7 @@ index f56aeddae19..129ce3d0ad1 100644
  	 * before RAM initialization can work
  	 */
 diff --git a/src/southbridge/intel/lynxpoint/Kconfig b/src/southbridge/intel/lynxpoint/Kconfig
-index a844d7cd60c..c3a574ef078 100644
+index a844d7cd60..c3a574ef07 100644
 --- a/src/southbridge/intel/lynxpoint/Kconfig
 +++ b/src/southbridge/intel/lynxpoint/Kconfig
 @@ -96,4 +96,11 @@ config DISABLE_ME_PCI
@@ -51,7 +51,7 @@ index a844d7cd60c..c3a574ef078 100644
 +
  endif
 diff --git a/src/southbridge/intel/lynxpoint/early_pch.c b/src/southbridge/intel/lynxpoint/early_pch.c
-index a83a6b68bed..f18813f1633 100644
+index a83a6b68be..f18813f163 100644
 --- a/src/southbridge/intel/lynxpoint/early_pch.c
 +++ b/src/southbridge/intel/lynxpoint/early_pch.c
 @@ -1,10 +1,13 @@
@@ -112,7 +112,7 @@ index a83a6b68bed..f18813f1633 100644
  {
  	pch_enable_bars();
 diff --git a/src/southbridge/intel/lynxpoint/pch.h b/src/southbridge/intel/lynxpoint/pch.h
-index 2a622374bee..0001b4a53f8 100644
+index ca2a0c1040..f59fae6eec 100644
 --- a/src/southbridge/intel/lynxpoint/pch.h
 +++ b/src/southbridge/intel/lynxpoint/pch.h
 @@ -100,6 +100,7 @@ void pch_log_state(void);
@@ -124,5 +124,5 @@ index 2a622374bee..0001b4a53f8 100644
  void pch_enable_lpc(void);
  void uart_bootblock_init(void);
 -- 
-2.47.3
+2.43.0
 

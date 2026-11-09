@@ -44,7 +44,7 @@ write happens once per change of the setting, about 50 ms.
  create mode 100644 src/mainboard/lenovo/m720q_m920q/hap.c
 
 diff --git a/src/mainboard/lenovo/m720q_m920q/Makefile.mk b/src/mainboard/lenovo/m720q_m920q/Makefile.mk
-index 6bfa97378df..a09bb7922d2 100644
+index 6bfa97378d..a09bb7922d 100644
 --- a/src/mainboard/lenovo/m720q_m920q/Makefile.mk
 +++ b/src/mainboard/lenovo/m720q_m920q/Makefile.mk
 @@ -14,6 +14,7 @@ ramstage-$(CONFIG_DRIVERS_OPTION_CFR) += cfr.c
@@ -56,7 +56,7 @@ index 6bfa97378df..a09bb7922d2 100644
  ramstage-y += me_status.c
  ramstage-y += ramstage.c
 diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
-index b2e2a482190..9f288af2127 100644
+index b2e2a48219..9f288af212 100644
 --- a/src/mainboard/lenovo/m720q_m920q/cfr.c
 +++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
 @@ -697,12 +697,20 @@ static const struct sm_object me_state = SM_DECLARE_ENUM({
@@ -85,7 +85,7 @@ index b2e2a482190..9f288af2127 100644
  /* The resets the CSE driver counts while the ME changes state */
 diff --git a/src/mainboard/lenovo/m720q_m920q/hap.c b/src/mainboard/lenovo/m720q_m920q/hap.c
 new file mode 100644
-index 00000000000..3c7ed63c27e
+index 0000000000..3c7ed63c27
 --- /dev/null
 +++ b/src/mainboard/lenovo/m720q_m920q/hap.c
 @@ -0,0 +1,102 @@
@@ -192,7 +192,7 @@ index 00000000000..3c7ed63c27e
 +
 +BOOT_STATE_INIT_ENTRY(BS_PRE_DEVICE, BS_ON_ENTRY, sync_hap, NULL);
 diff --git a/src/mainboard/lenovo/m720q_m920q/include/mainboard/me.h b/src/mainboard/lenovo/m720q_m920q/include/mainboard/me.h
-index f3733d9f275..239125c3c1d 100644
+index f3733d9f27..239125c3c1 100644
 --- a/src/mainboard/lenovo/m720q_m920q/include/mainboard/me.h
 +++ b/src/mainboard/lenovo/m720q_m920q/include/mainboard/me.h
 @@ -29,4 +29,10 @@ const char *mainboard_me_summary(void);
@@ -207,7 +207,7 @@ index f3733d9f275..239125c3c1d 100644
 +
  #endif /* MAINBOARD_ME_H */
 diff --git a/src/mainboard/lenovo/m720q_m920q/me_status.c b/src/mainboard/lenovo/m720q_m920q/me_status.c
-index 34ca63c4c6a..76baa85c36a 100644
+index 34ca63c4c6..76baa85c36 100644
 --- a/src/mainboard/lenovo/m720q_m920q/me_status.c
 +++ b/src/mainboard/lenovo/m720q_m920q/me_status.c
 @@ -60,6 +60,10 @@ const char *mainboard_me_summary(void)
@@ -253,7 +253,7 @@ index 34ca63c4c6a..76baa85c36a 100644
  				 "Requested in Security > Management Engine: %s.\n",
  				 me->me_state ? "Disabled" : "Enabled");
 diff --git a/src/mainboard/lenovo/m720q_m920q/romstage.c b/src/mainboard/lenovo/m720q_m920q/romstage.c
-index 75aab61e7d0..b2ffa7193fe 100644
+index 75aab61e7d..b2ffa7193f 100644
 --- a/src/mainboard/lenovo/m720q_m920q/romstage.c
 +++ b/src/mainboard/lenovo/m720q_m920q/romstage.c
 @@ -144,7 +144,7 @@ void mainboard_memory_init_params(FSPM_UPD *memupd)
@@ -266,7 +266,7 @@ index 75aab61e7d0..b2ffa7193fe 100644
  		memupd->FspmTestConfig.SkipMbpHob = 1;
  		printk(BIOS_INFO, "ME disabled: no HECI retries or MBP read in FSP-M\n");
 diff --git a/src/soc/intel/common/block/cse/cse.c b/src/soc/intel/common/block/cse/cse.c
-index 8c48020b646..4fca563d0c0 100644
+index 324c44ff2b..b47b513fb9 100644
 --- a/src/soc/intel/common/block/cse/cse.c
 +++ b/src/soc/intel/common/block/cse/cse.c
 @@ -1419,6 +1419,26 @@ static void cse_set_state(struct device *dev)

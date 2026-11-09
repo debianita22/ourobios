@@ -16,10 +16,10 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 11 insertions(+), 7 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
-index 8c01f0dc95..59d334fad0 100644
+index 911efd646d..b333c8ccbc 100644
 --- a/src/northbridge/intel/haswell/early_init.c
 +++ b/src/northbridge/intel/haswell/early_init.c
-@@ -104,13 +104,17 @@ static unsigned int igd_aperture_mib(enum igd_aperture_size size)
+@@ -108,13 +108,17 @@ static unsigned int igd_aperture_mib(enum igd_aperture_size size)
  void haswell_igd_set_aperture(void)
  {
  	const pci_devfn_t igd = PCI_DEV(0, 2, 0);

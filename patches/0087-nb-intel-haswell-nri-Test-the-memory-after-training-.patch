@@ -60,11 +60,11 @@ index ff4531d40e..b426d2d35a 100644
  	depends on VBOOT
  	bool "Start verstage in bootblock"
 diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
-index 87fba9f4ec..e525b72814 100644
+index 128136f218..82594b2e53 100644
 --- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
 +++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
-@@ -10,6 +10,7 @@ romstage-y += init_mpll.c
- romstage-y += io_comp_control.c
+@@ -11,6 +11,7 @@ romstage-y += jedec_reset.c
+ romstage-y += lookup_timings.c
  romstage-y += memory_map.c
  romstage-y += memory_scrub.c
 +romstage-y += memory_test.c
@@ -252,7 +252,7 @@ index 0000000000..98557b9913
 +	return status;
 +}
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
-index ca8fccab48..1f814f20c4 100644
+index efd62060fe..48de0606b1 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 @@ -138,6 +138,7 @@ static const struct task_entry cold_boot[] = {
@@ -263,7 +263,7 @@ index ca8fccab48..1f814f20c4 100644
  	{ raminit_done,                                           true, "RAMINITEND", },
  };
  
-@@ -287,9 +288,17 @@ void raminit_main(const enum raminit_boot_mode bootmode)
+@@ -295,9 +296,17 @@ void raminit_main(const enum raminit_boot_mode bootmode)
  		}
  	}
  
@@ -286,10 +286,10 @@ index ca8fccab48..1f814f20c4 100644
 +	die("Memory initialization was met with utmost failure and misery\n");
  }
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index cb5b19de32..d18860abc6 100644
+index d8a59c1954..8ca875ea81 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-@@ -331,6 +331,7 @@ enum nri_status {
+@@ -323,6 +323,7 @@ enum nri_status {
  	NRI_STATUS_INVALID_CACHE,
  	NRI_STATUS_LCT_FAILURE,
  	NRI_STATUS_SCRUB_ERROR,
@@ -297,7 +297,7 @@ index cb5b19de32..d18860abc6 100644
  	NRI_STATUS_UNSPECIFIED_ERROR, /** TODO: Deprecated in favor of specific values **/
  };
  
-@@ -637,6 +638,7 @@ enum nri_status exit_selfrefresh(struct sysinfo *ctrl);
+@@ -684,6 +685,7 @@ enum nri_status exit_selfrefresh(struct sysinfo *ctrl);
  enum nri_status normal_state(struct sysinfo *ctrl);
  enum nri_status activate_mc(struct sysinfo *ctrl);
  enum nri_status ecc_scrub(struct sysinfo *ctrl);

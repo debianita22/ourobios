@@ -79,11 +79,11 @@ index b426d2d35a..4e71e49ec3 100644
  	depends on VBOOT
  	bool "Start verstage in bootblock"
 diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
-index e525b72814..66c6f7c65a 100644
+index 82594b2e53..d3c400bc00 100644
 --- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
 +++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
-@@ -25,6 +25,7 @@ romstage-y += train_late_command.c
- romstage-y += train_jedec_write_leveling.c
+@@ -26,6 +26,7 @@ romstage-y += train_jedec_write_leveling.c
+ romstage-y += train_late_command.c
  romstage-y += train_read_mpr.c
  romstage-y += train_receive_enable.c
 +romstage-y += train_round_trip.c
@@ -91,7 +91,7 @@ index e525b72814..66c6f7c65a 100644
  
  romstage-$(CONFIG_DEBUG_RAM_SETUP) += info_dumps.c
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
-index 1f814f20c4..922bf4d43c 100644
+index 48de0606b1..ac2afb96b6 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 @@ -133,6 +133,7 @@ static const struct task_entry cold_boot[] = {
@@ -102,7 +102,7 @@ index 1f814f20c4..922bf4d43c 100644
  	{ activate_mc,                                            true, "ACTIVATE",   },
  	{ save_training_values,                                   true, "SAVE_TRAIN", },
  	{ save_non_training,                                      true, "SAVE_NONT",  },
-@@ -294,6 +295,8 @@ void raminit_main(const enum raminit_boot_mode bootmode)
+@@ -302,6 +303,8 @@ void raminit_main(const enum raminit_boot_mode bootmode)
  			printk(BIOS_WARNING, "Memory training failed (%u), trying again\n",
  			       status);
  			initialize_ctrl(&mighty_ctrl);
@@ -112,10 +112,10 @@ index 1f814f20c4..922bf4d43c 100644
  		status = try_raminit(&mighty_ctrl, cold_boot, ARRAY_SIZE(cold_boot));
  		if (status == NRI_STATUS_SUCCESS)
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index d18860abc6..3d6cd43ee5 100644
+index 8ca875ea81..e2be7b3816 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-@@ -386,6 +386,7 @@ struct sysinfo {
+@@ -391,6 +391,7 @@ struct sysinfo {
  
  	bool dq_pins_interleaved;
  	bool restore_mrs;
@@ -123,7 +123,7 @@ index d18860abc6..3d6cd43ee5 100644
  
  	long wait_time_us;
  
-@@ -639,6 +640,7 @@ enum nri_status normal_state(struct sysinfo *ctrl);
+@@ -686,6 +687,7 @@ enum nri_status normal_state(struct sysinfo *ctrl);
  enum nri_status activate_mc(struct sysinfo *ctrl);
  enum nri_status ecc_scrub(struct sysinfo *ctrl);
  enum nri_status memory_test(struct sysinfo *ctrl);

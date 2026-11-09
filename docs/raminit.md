@@ -15,7 +15,7 @@ same machine.
 
 ## What runs
 
-At the coreboot pin of the releases (26.09-517 from v1.6.0; 26.09-438 up to v1.5.0, 26.09-280 up to v1.3.10-rc11), the NRI runs:
+At the coreboot pin of the releases (26.09-607 from v1.6.2; 26.09-517 for v1.6.0 and v1.6.1; 26.09-438 up to v1.5.0, 26.09-280 up to v1.3.10-rc11), the NRI runs:
 
 - SPD, memory clock, timings, controller and memory map, JEDEC init;
 - sense amplifier offsets, receive enable, read MPR, write leveling;
@@ -264,3 +264,17 @@ firmware.
   trains once (0.7 s on the W541), a slot never restores the data of
   other code, and the capsules leave `RW_MRC_CACHE` as it is. `mrc.bin`
   gets `M` and a key of its inputs (patch 0251).
+- The NRI changes between 26.09-517 and 26.09-607, the pin of v1.6.2 (16
+  commits: initial Broadwell support with a `bdw` field and a DDRIO
+  save/restore layout for it, the DDRIO register offsets refactored, a
+  per-channel sub-struct, the DDR3 mode registers and the sense amp test
+  unified, the rank mapping fix CB:96694 that was patch 0185 here, and
+  CB:96893, the initial round trip delta at 0 on this Haswell instead of
+  4, after which the step of patch 0088 may have nothing left to shorten:
+  to compare with `ddr-report.py`), change little of what the W541
+  programs on Haswell, but they do change the
+  sources that the version of the cache hashes: the first boot of a
+  v1.6.2 slot trains once (0.7 s), as designed. Patch 0008 stays: the
+  per-bit sense amp packing is still wrong upstream. Patches 0008 and
+  0086 were rebased onto the refactored code; the rest applied as they
+  were.

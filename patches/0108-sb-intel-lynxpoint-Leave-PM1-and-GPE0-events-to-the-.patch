@@ -38,7 +38,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  2 files changed, 23 insertions(+)
 
 diff --git a/src/southbridge/intel/lynxpoint/pch.h b/src/southbridge/intel/lynxpoint/pch.h
-index 57e1cef2fc..2a622374be 100644
+index 6b03867348..ca2a0c1040 100644
 --- a/src/southbridge/intel/lynxpoint/pch.h
 +++ b/src/southbridge/intel/lynxpoint/pch.h
 @@ -593,6 +593,8 @@ void mainboard_config_rcba(void);

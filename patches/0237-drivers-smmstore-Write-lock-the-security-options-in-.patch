@@ -34,7 +34,7 @@ Behind SMMSTORE_OPTION_LOCK, off by default.
  create mode 100644 src/drivers/smmstore/options_lock.c
 
 diff --git a/src/drivers/smmstore/Kconfig b/src/drivers/smmstore/Kconfig
-index f65af669..434e7ef3 100644
+index f65af66919..434e7ef397 100644
 --- a/src/drivers/smmstore/Kconfig
 +++ b/src/drivers/smmstore/Kconfig
 @@ -62,6 +62,23 @@ config SMMSTORE_MOR_LOCK_ANY_BIOS_LOCK
@@ -62,7 +62,7 @@ index f65af669..434e7ef3 100644
  
  # Outside "if SMMSTORE": a board selects it whatever its payload
 diff --git a/src/drivers/smmstore/Makefile.mk b/src/drivers/smmstore/Makefile.mk
-index 403466d6..d85b9d6c 100644
+index 403466d654..d85b9d6c4d 100644
 --- a/src/drivers/smmstore/Makefile.mk
 +++ b/src/drivers/smmstore/Makefile.mk
 @@ -6,3 +6,4 @@ ramstage-$(CONFIG_SMMSTORE) += ramstage.c
@@ -72,7 +72,7 @@ index 403466d6..d85b9d6c 100644
 +smm-$(CONFIG_SMMSTORE_OPTION_LOCK) += options_lock.c
 diff --git a/src/drivers/smmstore/options_lock.c b/src/drivers/smmstore/options_lock.c
 new file mode 100644
-index 00000000..06c86429
+index 0000000000..06c86429a2
 --- /dev/null
 +++ b/src/drivers/smmstore/options_lock.c
 @@ -0,0 +1,262 @@
@@ -339,7 +339,7 @@ index 00000000..06c86429
 +	return SMMSTORE_RET_SUCCESS;
 +}
 diff --git a/src/drivers/smmstore/smi.c b/src/drivers/smmstore/smi.c
-index ebfce2a3..6b99d7b5 100644
+index ebfce2a361..6b99d7b551 100644
 --- a/src/drivers/smmstore/smi.c
 +++ b/src/drivers/smmstore/smi.c
 @@ -371,6 +371,13 @@ uint32_t smmstore_exec(uint8_t command, void *param)
@@ -357,7 +357,7 @@ index ebfce2a3..6b99d7b5 100644
  		printk(BIOS_DEBUG, "Unknown SMM store command: 0x%02x\n", command);
  		ret = SMMSTORE_RET_UNSUPPORTED;
 diff --git a/src/drivers/smmstore/store.c b/src/drivers/smmstore/store.c
-index 95f3b7fd..d70e0a6e 100644
+index 95f3b7fd57..d70e0a6e5b 100644
 --- a/src/drivers/smmstore/store.c
 +++ b/src/drivers/smmstore/store.c
 @@ -58,6 +58,38 @@ static bool mor_lock_allows(size_t store_offset, const void *data, size_t size)
@@ -431,7 +431,7 @@ index 95f3b7fd..d70e0a6e 100644
  	ssize_t ret = rdev_eraseat(&store, block_id * SMM_BLOCK_SIZE, SMM_BLOCK_SIZE);
  	if (ret != SMM_BLOCK_SIZE) {
 diff --git a/src/include/smmstore.h b/src/include/smmstore.h
-index 97da694a..a10ca44c 100644
+index 97da694a86..a10ca44cbc 100644
 --- a/src/include/smmstore.h
 +++ b/src/include/smmstore.h
 @@ -90,6 +90,15 @@

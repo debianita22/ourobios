@@ -52,5 +52,5 @@ index 8aab48aa70..2bc9c1a97e 100644
  				device pnp 2e.2 off	end	# UARTA (USB debug port?)
  				device pnp 2e.3 on		# UARTB - COM1 header - optional sub-board
 -- 
-2.47.3
+2.43.0
 

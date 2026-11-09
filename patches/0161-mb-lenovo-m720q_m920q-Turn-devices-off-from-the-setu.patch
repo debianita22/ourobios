@@ -144,5 +144,5 @@ index e94ca02030..eab5773ed3 100644
  	.enable_dev = mainboard_enable,
  };
 -- 
-2.47.3
+2.43.0
 

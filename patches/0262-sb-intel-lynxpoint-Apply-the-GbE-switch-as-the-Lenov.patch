@@ -131,7 +131,7 @@ index 3610c3fc5f..7fd13cd6e3 100644
  #endif
  
 diff --git a/src/southbridge/intel/lynxpoint/pch.h b/src/southbridge/intel/lynxpoint/pch.h
-index 0014a68e96..22d22883c8 100644
+index c35efb38ce..23c6b7af02 100644
 --- a/src/southbridge/intel/lynxpoint/pch.h
 +++ b/src/southbridge/intel/lynxpoint/pch.h
 @@ -518,6 +518,8 @@ void mainboard_config_rcba(void);

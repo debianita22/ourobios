@@ -63,5 +63,5 @@ index 02f3f9c402..c4e8a95e33 100644
  
  static const struct sm_object security_flash = SM_DECLARE_FORM({
 -- 
-2.47.3
+2.43.0
 

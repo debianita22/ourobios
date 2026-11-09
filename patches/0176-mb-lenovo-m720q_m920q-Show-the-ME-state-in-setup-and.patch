@@ -349,5 +349,5 @@ index 222c4363e3..581d41b085 100644
  
  struct chip_operations mainboard_ops = {
 -- 
-2.47.3
+2.43.0
 

@@ -40,7 +40,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 5 insertions(+), 2 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/native_raminit/save_restore.c b/src/northbridge/intel/haswell/native_raminit/save_restore.c
-index 90f36bcd0b..1f260f6d99 100644
+index aad87d9249..850ed3ad14 100644
 --- a/src/northbridge/intel/haswell/native_raminit/save_restore.c
 +++ b/src/northbridge/intel/haswell/native_raminit/save_restore.c
 @@ -16,9 +16,12 @@ uint32_t reg_frame_rev(void)

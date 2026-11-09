@@ -39,5 +39,5 @@ index 8aed7b2c2c..bd2e808c33 100644
  	/* disable Legacy PME */
  	memset(s_cfg->PcieRpPmSci, 0, sizeof(s_cfg->PcieRpPmSci));
 -- 
-2.47.3
+2.43.0
 

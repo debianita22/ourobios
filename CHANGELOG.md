@@ -5,6 +5,27 @@ GitHub include its section; release candidates take the section of the
 version they lead to. For the releases before v1.3.0, see their notes on
 the [releases page](https://github.com/debianita22/ourobios/releases).
 
+## v1.6.2
+
+Not released yet.
+
+- **coreboot 26.09-607** (2026-11-09, from 26.09-517 of 2026-11-03): the
+  pin moved by 90 upstream commits. The native RAM init of Haswell got
+  its first Broadwell support and a refactoring upstream (16 commits):
+  patches 0008 and 0086 were rebased onto it, 0185 (the rank mapping
+  fix) is upstream and leaves the series, the other 257 apply as they
+  were; the initial round trip delta of the NRI is now 0 upstream
+  (CB:96893), so the round trip step of patch 0088 may have nothing left
+  to shorten on the W541 (to measure); the first boot of a v1.6.2 slot trains the memory once, as the
+  version of the training cache follows the NRI code. The read-only
+  interface was checked by hand: the vboot, TPM and cache-as-RAM code the
+  slots share with the read-only part did not change
+  ([configs/ro-interface.txt](configs/ro-interface.txt)).
+- **Fingerprint reader switch on the W541** (patch 0265): *Hardware* →
+  *Expansion ports* → *Fingerprint reader*, off disables its USB port at
+  every start and wake, as the camera switch. The port comes from the
+  Lenovo firmware's table; not tried, the W541 of the port has no reader.
+
 ## v1.6.1
 
 What ran on a machine for v1.6.1: the M920x with rc1 to rc4
@@ -109,10 +130,6 @@ hang caught by the watchdog on either board.
   its contents too. Passed on a W541 (OPT-05, with a simulated loss: the
   bit alone reset nothing, the bit with the CMOS cleared reset all 66
   options).
-- **Fingerprint reader switch on the W541** (patch 0265): *Hardware* →
-  *Expansion ports* → *Fingerprint reader*, off disables its USB port at
-  every start and wake, as the camera switch. The port comes from the
-  Lenovo firmware's table; not tried, the W541 of the port has no reader.
 - **Card reader switch on the W541** (patch 0257): *Hardware* →
   *Expansion ports* → *Card reader*, a soft switch: off, the link of its
   PCIe port is disabled at every start and wake. Passed on a W541

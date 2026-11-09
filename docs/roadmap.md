@@ -24,11 +24,11 @@ is here. None of it is a promise of a date.
 | [Device switches on the W541](#device-switches-on-the-w541) | W541 | the microphone, the camera, the card reader and the Ethernet built and passed in v1.6.1; the fingerprint switch built after it (patch 0265), from the port table of the Lenovo firmware | the fingerprint switch on a unit that has the reader |
 | [Wake on LAN after a shutdown on the W541](#wake-on-lan-after-a-shutdown-on-the-w541) | W541 | built for v1.6.1 (patch 0259), as the Lenovo firmware does it; not run on a machine | NET-02 from power-off on AC and on battery, with each setting |
 | [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot (no PEI, no LockBox, no boot script); the stock design read and a coreboot design written (2026-11-08), unbuilt: new secret-handling code in both, untestable without a locked drive | a decision whether to build it, with the caveats |
-| [NVIDIA power steering and the EC's CPU limits](#nvidia-power-steering-and-the-ecs-cpu-limits) | W541 | little use under Linux; a `_PPC` policy and adapter tests | count the EC's CPU limit events |
-| [EC events left out](#ec-events-left-out) | W541 | the HKEY queue built for v1.6.1 (patch 0260); the beep mask is the Lenovo one; 0x48, 0x49 and 0x5B still out | count the CPU-limit events with and without the acknowledgements |
+| [NVIDIA power steering and the EC's CPU limits](#nvidia-power-steering-and-the-ecs-cpu-limits) | W541 | little use under Linux; on AC under 13 minutes of full load the EC raised no CPU-limit event at all (2026-11-09) | the same on battery, then decide whether the events need handling |
+| [EC events left out](#ec-events-left-out) | W541 | the HKEY queue built in v1.6.1 (patch 0260); the beep mask is the Lenovo one; 0x48, 0x49 and 0x5B still out, and none came on AC under load (2026-11-09) | count them on battery |
 | [Card reader of the W541](#card-reader-of-the-w541) | W541 | the premise was wrong: the reader is an O2 Micro OZ777, which the payload drives already | none planned |
 | [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | done in v1.6.0 (patches 0220-0221): CPU-05 passed on a W541 on 2026-11-03 | none planned |
-| [Upstream changes not taken](#upstream-changes-not-taken) | W541 | 96893 unreviewed and no gain here; 95880 not for the W541; 95912 at Code-Review -2 | the next coreboot pin |
+| [Upstream changes not taken](#upstream-changes-not-taken) | W541 | the pin moved to 26.09-607 for v1.6.2: 0185 and 96893 upstream, 0008 and 0086 rebased; 95880 not for the W541; 95912 at Code-Review -2 | the round trip of 0088 on a W541 with v1.6.2 (MEM-06); the next pin |
 | [EDK II from TianoCore](#edk-ii-from-tianocore) | both | moved in v1.6.0: the payload of the ROMs is TianoCore's tag with the package [`edk2/OuroBiosPkg`](../edk2/README.md) and `patches/tianocore`, the same payload as MrChromebox's tree with `patches/edk2`; what is left is the carried series, 100 patches | the series shorter: the *drop* commits in the payload, each with its test, then the *package* ones into `OuroBiosPkg`, the *upstream* ones proposed; the *drop* ones already out of the payload when `patches/edk2` retires ([docs/edk2-migration.md](edk2-migration.md)) |
 | [LVGL v10](#lvgl-v10) | both | not out yet (v9.6, in the setup from v1.6.0, is the last of v9); LvglPkg calls the setters of v9.6 in place of the flag functions that v10 removes (`lvglpkg/0021`) | the pin |
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
@@ -704,6 +704,10 @@ bits 5-6.
   0xFF bit 0); its `_PPC` changes nothing under Linux (the flags that
   would make it notify the CPUs stay 0); whether the EC repeats the
   events without the writes is EC firmware, not in the image.
+- **Counted on a W541** (2026-11-09, v1.6.1,
+  [docs/tests/v1.6.1/w541-nri/README.md](tests/v1.6.1/w541-nri/README.md#fan-10-the-ecs-cpu-limit-events-after-v161-on-v161)):
+  on AC, 13 minutes of `stress-ng --cpu 0` with the EC driver's debug on,
+  no query from the EC at all, no thermal alarm; the battery leg is left.
 - **Built for v1.6.1** (patch 0260): the queue (`H8_HKEY_QUEUE`), checked
   with `acpiexec`. The CPU-limit events stay out until FAN-10 counts
   them.
@@ -757,12 +761,13 @@ The M920x has *TCC activation offset* from v1.4.0 (patch 0177).
 ## Upstream changes not taken
 
 - [96893](https://review.coreboot.org/c/coreboot/+/96893), the initial
-  round trip delta of the NRI at 0 on Haswell, after a decompiled
-  MemoryInit.efi: posted on 2026-10-30 with no review yet, it also changes
-  the ULT value, and on the W541 patch 0088 already ends at the 4 + 21 of
-  `mrc.bin` ([docs/raminit.md](raminit.md#limits)). Next step: once
-  merged, with the next coreboot pin, where the rt_iocomp step of 0088
-  becomes a no-op.
+  round trip delta of the NRI at 0 on Haswell (4 only on Crystal Well and
+  Haswell Trad A0), after a decompiled MemoryInit.efi: merged, in the pin
+  of v1.6.2 (26.09-607, commit 8859e389cf). On the W541 patch 0088
+  already ended at the 4 + 21 of `mrc.bin`
+  ([docs/raminit.md](raminit.md#limits)); with the delta at 0 its
+  rt_iocomp step may now have nothing to shorten. To check on a W541 with
+  v1.6.2: `tools/ddr-report.py --compare` against a v1.6.1 dump (MEM-06).
 - [95880](https://review.coreboot.org/c/coreboot/+/95880), no master
   wireless switch bit on newer H8 ECs (`no_wireless_switch`), and
   [95912](https://review.coreboot.org/c/coreboot/+/95912), the tablet
@@ -772,9 +777,13 @@ The M920x has *TCC activation offset* from v1.4.0 (patch 0177).
   same place, though its `WLSW` returns a constant). On a W541 (checked
   on 2026-11-03) `GSTS` reads 1 and `rfkill list` shows nothing
   hard-blocked: 95880 is not for the W541.
-- 0185 goes once 96694 is merged; `upstream.yml` reports it by its
-  subject. 96645-96647 (NRI cleanups, no-ops on the W541) and 96630
-  (acpigen) are in the pin of v1.6.0, 26.09-517.
+- 0185 went with 96694, merged and in the pin of v1.6.2 (26.09-607);
+  96645-96647 (NRI cleanups, no-ops on the W541) and 96630 (acpigen) are
+  in the pin of v1.6.0, 26.09-517. The move to 26.09-607 (90 commits,
+  2026-11-03 to 2026-11-09): 2 of 259 patches rebased (0008, 0086, both in
+  the NRI, refactored upstream for Broadwell), the read-only interface
+  checked by hand (`configs/ro-interface.txt`), and the training cache
+  retrains once by its key.
 
 ## Openness score
 

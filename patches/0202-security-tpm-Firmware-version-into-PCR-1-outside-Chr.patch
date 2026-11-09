@@ -1,8 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sun, 1 Nov 2026 19:40:10 +0100
-Subject: [PATCH 202/204] security/tpm: Firmware version into PCR 1 outside
- ChromeOS
+Subject: [PATCH] security/tpm: Firmware version into PCR 1 outside ChromeOS
 
 vboot extends the firmware version into PCR_FW_VER, which has no prompt
 and is 10 on every board. PCR 10 is where ChromeOS keeps it, but on
@@ -35,5 +34,5 @@ index c1d6797d3d..0e602bec15 100644
  # PCR for measuring data which changes during runtime
  # e.g. CMOS, NVRAM...
 -- 
-2.47.3
+2.43.0
 

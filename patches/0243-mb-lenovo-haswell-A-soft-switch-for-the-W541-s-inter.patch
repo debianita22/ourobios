@@ -17,7 +17,7 @@ could still use it, as the help says. Under General > Sound.
  2 files changed, 30 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index a9f4e7242c4..65c1d8a4708 100644
+index 4946f2ba75..c0370118ea 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -298,6 +298,20 @@ static const struct sm_object general_boot = SM_DECLARE_FORM({
@@ -50,7 +50,7 @@ index a9f4e7242c4..65c1d8a4708 100644
  	},
  });
 diff --git a/src/mainboard/lenovo/haswell/variants/w541/hda_verb.c b/src/mainboard/lenovo/haswell/variants/w541/hda_verb.c
-index f92731ca1ec..4d400178d94 100644
+index f92731ca1e..4d400178d9 100644
 --- a/src/mainboard/lenovo/haswell/variants/w541/hda_verb.c
 +++ b/src/mainboard/lenovo/haswell/variants/w541/hda_verb.c
 @@ -1,6 +1,7 @@
@@ -80,5 +80,5 @@ index f92731ca1ec..4d400178d94 100644
 +	azalia_program_verb_table(base, mic_off, ARRAY_SIZE(mic_off));
 +}
 -- 
-2.47.3
+2.43.0
 

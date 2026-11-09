@@ -58,5 +58,5 @@ index bd2e808c33..bbf69a2bd8 100644
  	memset(s_cfg->PcieRpPmSci, 0, sizeof(s_cfg->PcieRpPmSci));
  
 -- 
-2.47.3
+2.43.0
 

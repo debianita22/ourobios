@@ -50,13 +50,13 @@ index a4fec10ee7..2b12027c00 100644
  
  	struct i915_gpu_controller_info gfx;
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
-index 0672cee61e..ca8fccab48 100644
+index 0977b2b6cd..efd62060fe 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
-@@ -187,7 +187,8 @@ static void initialize_ctrl(struct sysinfo *ctrl)
- 
- 	ctrl->cpu = cpu_get_cpuid();
- 	ctrl->stepping = get_stepping(ctrl->cpu);
+@@ -195,7 +195,8 @@ static void initialize_ctrl(struct sysinfo *ctrl)
+ 	ctrl->cpu_model = cpu_family_model();
+ 	ctrl->bdw = cpu_is_broadwell();
+ 	ctrl->stepping = get_stepping();
 -	ctrl->vdd_mv = is_hsw_ult() ? 1350 : 1500; /** FIXME: Hardcoded, does it matter? **/
 +	ctrl->vdd_mv = is_hsw_ult() ? 1350 : 1500; /* Until the SPDs are read */
 +	ctrl->vdd_mv_cfg = cfg->ddr_voltage_mv;
@@ -64,10 +64,10 @@ index 0672cee61e..ca8fccab48 100644
  	ctrl->restore_mrs = false;
  	ctrl->bootmode = bootmode;
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index 2d2d4febd2..cb5b19de32 100644
+index 3b82c454f8..d8a59c1954 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-@@ -438,6 +438,7 @@ struct sysinfo {
+@@ -443,6 +443,7 @@ struct sysinfo {
  	uint32_t qclkps;		/* Quadrature clock period in picoseconds */
  
  	uint16_t vdd_mv;

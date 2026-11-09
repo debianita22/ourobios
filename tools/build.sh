@@ -160,8 +160,8 @@ O="$(cd "$(dirname "$0")/.." && pwd)"
 # coreboot: il commit pinnato e il suo git describe (l'albero di lavoro e' un
 # clone di quel commit solo, senza tag: la versione nelle ROM la diamo noi)
 COREBOOT_REPO="https://github.com/coreboot/coreboot.git"
-COREBOOT_COMMIT="eab226a1c3f7ee496afbd88882f1e55f8f60ae6d"
-COREBOOT_DESCRIBE="26.09-517-geab226a1c3f7"
+COREBOOT_COMMIT="524189e299509aaffa60395db64e61879228acf5"
+COREBOOT_DESCRIBE="26.09-607-g524189e299"
 
 # I submodule che servono a questa board, "nome percorso URL": gli URL di
 # .gitmodules sono review.coreboot.org, qui i mirror su GitHub. Gli altri non

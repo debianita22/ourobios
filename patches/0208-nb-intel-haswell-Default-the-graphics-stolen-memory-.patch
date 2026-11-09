@@ -40,7 +40,7 @@ index 4133f6acbb..4a1bbad2c4 100644
  				{ "32 MB",	IGD_UMA_SIZE_32MB	},
  				{ "64 MB",	IGD_UMA_SIZE_64MB	},
 diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
-index 59d334fad0..8dfda0ff24 100644
+index b333c8ccbc..2d6777fdc1 100644
 --- a/src/northbridge/intel/haswell/early_init.c
 +++ b/src/northbridge/intel/haswell/early_init.c
 @@ -42,7 +42,7 @@ u8 haswell_igd_gms(void)

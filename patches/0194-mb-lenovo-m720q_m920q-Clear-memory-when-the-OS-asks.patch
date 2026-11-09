@@ -64,5 +64,5 @@ index e0c3b0e0df..5685d0f196 100644
  
  /* Read by FSP-M parameters (soc/intel/cannonlake/romstage/fsp_params.c) */
 -- 
-2.47.3
+2.43.0
 

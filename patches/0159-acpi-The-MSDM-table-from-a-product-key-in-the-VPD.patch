@@ -124,5 +124,5 @@ index 155105b96d..5288b1364d 100644
  
  	printk(BIOS_INFO, "ACPI: Writing ACPI tables at %lx.\n", start);
 -- 
-2.47.3
+2.43.0
 

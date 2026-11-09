@@ -52,7 +52,7 @@ index abec3c97ca..83307abc52 100644
  void smm_get_opal_s3_scratch_buffer(uintptr_t *base, size_t *size)
  {
 diff --git a/src/cpu/x86/smm/smm_module_loader.c b/src/cpu/x86/smm/smm_module_loader.c
-index f0fd2246a6..472e5a67ce 100644
+index 49394e218c..dcf3415cf3 100644
 --- a/src/cpu/x86/smm/smm_module_loader.c
 +++ b/src/cpu/x86/smm/smm_module_loader.c
 @@ -378,6 +378,7 @@ static void setup_smihandler_params(struct smm_runtime *mod_params,

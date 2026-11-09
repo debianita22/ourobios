@@ -156,5 +156,5 @@ index 581d41b085..6c6ebc0478 100644
   * The ME state for the OS (dmidecode -t 11, tools/update.py status): with
   * the ME disabled the OS has no HECI to ask. At most 64 characters each.
 -- 
-2.47.3
+2.43.0
 

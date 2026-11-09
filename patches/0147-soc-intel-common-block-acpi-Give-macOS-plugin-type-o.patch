@@ -70,5 +70,5 @@ index 63adbd8a0d..2d3be28786 100644
  		acpigen_write_processor_end();
  	else
 -- 
-2.47.3
+2.43.0
 

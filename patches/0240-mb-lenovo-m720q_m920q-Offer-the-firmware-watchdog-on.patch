@@ -15,7 +15,7 @@ looked at their watchdog.
  2 files changed, 26 insertions(+)
 
 diff --git a/src/mainboard/lenovo/m720q_m920q/Kconfig b/src/mainboard/lenovo/m720q_m920q/Kconfig
-index 5efe3599e7b..070d6861c94 100644
+index 5efe3599e7..070d6861c9 100644
 --- a/src/mainboard/lenovo/m720q_m920q/Kconfig
 +++ b/src/mainboard/lenovo/m720q_m920q/Kconfig
 @@ -11,6 +11,7 @@ config BOARD_SPECIFIC_OPTIONS
@@ -27,7 +27,7 @@ index 5efe3599e7b..070d6861c94 100644
  	select HAVE_ACPI_TABLES
  	select HAVE_CMOS_DEFAULT
 diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
-index b2e2a482190..d01ef1693ce 100644
+index fdf2c25582..da9f045e45 100644
 --- a/src/mainboard/lenovo/m720q_m920q/cfr.c
 +++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
 @@ -281,6 +281,30 @@ static const struct sm_object boot_menu_prompt = SM_DECLARE_BOOL({
@@ -70,5 +70,5 @@ index b2e2a482190..d01ef1693ce 100644
  	},
  });
 -- 
-2.47.3
+2.43.0
 

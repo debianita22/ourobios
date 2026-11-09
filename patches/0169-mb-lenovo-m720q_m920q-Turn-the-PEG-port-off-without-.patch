@@ -146,5 +146,5 @@ index 8e50403b1a..feb0d46e4c 100644
 +	memupd->FspmConfig.Peg0Enable = peg_enable();
  }
 -- 
-2.47.3
+2.43.0
 

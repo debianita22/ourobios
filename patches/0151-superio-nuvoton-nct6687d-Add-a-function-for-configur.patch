@@ -60,7 +60,7 @@ index ef222644a4..60e8cab422 100644
 +
  #endif /* SUPERIO_NUVOTON_NCT6687D_CHIP_H */
 diff --git a/src/superio/nuvoton/nct6687d/nct6687d_hwm.c b/src/superio/nuvoton/nct6687d/nct6687d_hwm.c
-index 6001f38431..681b226572 100644
+index ca90da1928..2e1d731556 100644
 --- a/src/superio/nuvoton/nct6687d/nct6687d_hwm.c
 +++ b/src/superio/nuvoton/nct6687d/nct6687d_hwm.c
 @@ -959,3 +959,24 @@ void nct6687d_hwm_init(uint16_t hwm_base, const struct superio_nuvoton_nct6687d_
@@ -89,5 +89,5 @@ index 6001f38431..681b226572 100644
 +	return true;
 +}
 -- 
-2.47.3
+2.43.0
 

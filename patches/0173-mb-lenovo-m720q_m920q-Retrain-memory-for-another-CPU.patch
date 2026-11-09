@@ -105,5 +105,5 @@ index 51e7284034..d0ea9454c5 100644
  {
  	cannonlake_memcfg_init(&memupd->FspmConfig, &baseboard_mem_cfg);
 -- 
-2.47.3
+2.43.0
 

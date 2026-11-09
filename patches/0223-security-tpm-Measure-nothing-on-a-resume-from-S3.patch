@@ -46,7 +46,7 @@ entries more in the log of cbmem each time, none extended).
  6 files changed, 66 insertions(+), 1 deletion(-)
 
 diff --git a/src/lib/cbfs.c b/src/lib/cbfs.c
-index 79cc2d95141..a72fa9465d9 100644
+index 79cc2d9514..a72fa9465d 100644
 --- a/src/lib/cbfs.c
 +++ b/src/lib/cbfs.c
 @@ -11,6 +11,7 @@
@@ -68,7 +68,7 @@ index 79cc2d95141..a72fa9465d9 100644
  
  		/* No need to re-hash file if we already have it from verification. */
 diff --git a/src/security/tpm/tspi.h b/src/security/tpm/tspi.h
-index aa734bfc73b..e65b79ca4f4 100644
+index aa734bfc73..e65b79ca4f 100644
 --- a/src/security/tpm/tspi.h
 +++ b/src/security/tpm/tspi.h
 @@ -170,6 +170,14 @@ tpm_result_t tpm_setup(int s3flag);
@@ -87,7 +87,7 @@ index aa734bfc73b..e65b79ca4f4 100644
  				const char *rname);
  
 diff --git a/src/security/tpm/tspi/tspi.c b/src/security/tpm/tspi/tspi.c
-index fa4227b85e1..9ef9a5b3ffb 100644
+index fa4227b85e..9ef9a5b3ff 100644
 --- a/src/security/tpm/tspi/tspi.c
 +++ b/src/security/tpm/tspi/tspi.c
 @@ -1,5 +1,7 @@
@@ -144,7 +144,7 @@ index fa4227b85e1..9ef9a5b3ffb 100644
  		rc = tlcl_lib_init();
  		if (rc != TPM_SUCCESS) {
 diff --git a/src/southbridge/intel/common/pmbase.c b/src/southbridge/intel/common/pmbase.c
-index 5a339c91f79..c7f62ffe697 100644
+index 5a339c91f7..c7f62ffe69 100644
 --- a/src/southbridge/intel/common/pmbase.c
 +++ b/src/southbridge/intel/common/pmbase.c
 @@ -76,8 +76,22 @@ u8 read_pmbase8(const u8 addr)
@@ -171,7 +171,7 @@ index 5a339c91f79..c7f62ffe697 100644
  }
  
 diff --git a/src/southbridge/intel/common/pmbase.h b/src/southbridge/intel/common/pmbase.h
-index febcff21cfb..d01a603cb0c 100644
+index febcff21cf..d01a603cb0 100644
 --- a/src/southbridge/intel/common/pmbase.h
 +++ b/src/southbridge/intel/common/pmbase.h
 @@ -8,6 +8,11 @@ void write_pmbase32(const u8 addr, const u32 val);
@@ -187,7 +187,7 @@ index febcff21cfb..d01a603cb0c 100644
  u16 read_pmbase16(const u8 addr);
  u8 read_pmbase8(const u8 addr);
 diff --git a/src/southbridge/intel/common/pmclib.c b/src/southbridge/intel/common/pmclib.c
-index abfa2b77f50..3bfd6051495 100644
+index abfa2b77f5..3bfd605149 100644
 --- a/src/southbridge/intel/common/pmclib.c
 +++ b/src/southbridge/intel/common/pmclib.c
 @@ -30,15 +30,18 @@ int southbridge_detect_s3_resume(void)
@@ -210,5 +210,5 @@ index abfa2b77f50..3bfd6051495 100644
  	}
  
 -- 
-2.47.3
+2.43.0
 

@@ -70,7 +70,7 @@ index 0000000000..7548a45609
 +
 +#endif /* NB_INTEL_HASWELL_CFR_H */
 diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
-index 6a5ce53a40..02f26b348e 100644
+index c4412fd525..45fc31bd79 100644
 --- a/src/northbridge/intel/haswell/early_init.c
 +++ b/src/northbridge/intel/haswell/early_init.c
 @@ -5,6 +5,7 @@
@@ -81,7 +81,7 @@ index 6a5ce53a40..02f26b348e 100644
  #include <types.h>
  
  #include "haswell.h"
-@@ -59,8 +60,56 @@ static void haswell_setup_igd(void)
+@@ -63,8 +64,56 @@ static void haswell_setup_igd(void)
  		return;
  	}
  

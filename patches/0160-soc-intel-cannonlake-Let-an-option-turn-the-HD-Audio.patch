@@ -32,5 +32,5 @@ index 9a9677bf55..b5c1b14641 100644
  	m_cfg->SaIpuEnable = is_devfn_enabled(SA_DEVFN_IPU);
  
 -- 
-2.47.3
+2.43.0
 

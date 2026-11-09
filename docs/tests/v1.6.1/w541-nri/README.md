@@ -38,6 +38,19 @@ PASS.
 Then one `rtcwake -m mem -s 30`: resumed, every CPU back, the GbE and
 `eno0` there, RAM init 0.11 s on the resume path, S3-01 PASS.
 
+## FAN-10, the EC's CPU-limit events (after v1.6.1, on v1.6.1)
+
+On AC, 2026-11-09: `stress-ng --cpu 0` for 10 minutes, then 3 more with
+the ACPI EC driver's debug on (`file drivers/acpi/ec.c +p`): the EC
+raised **no query at all** (no `Query(0x..) scheduled`, `SCI_EVT` 0 in
+every transaction), so no 0x48, 0x49 or 0x5B; EC 0x88-0x8b (the thermal
+alarms) stayed 0, EC 0x0d and 0xff (the acknowledgement bits the Lenovo
+ASL writes) stayed 0; the package held its power limits (CPU-02). The
+GPE 0x11 counter grew by about 5 a second under load and at idle alike:
+not EC queries. The EC asks the OS for no CPU limit on AC with the 170 W
+adapter of this unit; the battery leg (the adapter unplugged under
+load), where the Lenovo `_PPC` lowers the limit, is still to run.
+
 Not run (no hardware on this unit): NET-02 (Wake on LAN, patch 0259) and
 the fingerprint switch; FAN-10's CPU-limit count.
 

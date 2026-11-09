@@ -20,7 +20,7 @@ feature selects it.
  5 files changed, 60 insertions(+), 1 deletion(-)
 
 diff --git a/src/cpu/x86/Kconfig b/src/cpu/x86/Kconfig
-index 23e27198..9fd6d649 100644
+index 23e27198ac..9fd6d64952 100644
 --- a/src/cpu/x86/Kconfig
 +++ b/src/cpu/x86/Kconfig
 @@ -228,6 +228,19 @@ config SMM_MOR_LOCK_STATE_SMRAM_SIZE
@@ -44,7 +44,7 @@ index 23e27198..9fd6d649 100644
  	bool
  	depends on HAVE_ACPI_RESUME
 diff --git a/src/cpu/x86/smm/smm_module_handler.c b/src/cpu/x86/smm/smm_module_handler.c
-index 83307abc..23f825f1 100644
+index 83307abc52..23f825f1ab 100644
 --- a/src/cpu/x86/smm/smm_module_handler.c
 +++ b/src/cpu/x86/smm/smm_module_handler.c
 @@ -105,6 +105,14 @@ void smm_get_mor_lock_state_buffer(uintptr_t *base, size_t *size)
@@ -63,7 +63,7 @@ index 83307abc..23f825f1 100644
  {
  	*buffer_out = smm_runtime.cbmemc;
 diff --git a/src/cpu/x86/smm/smm_module_loader.c b/src/cpu/x86/smm/smm_module_loader.c
-index 472e5a67..94d687a9 100644
+index dcf3415cf3..a6b84247c3 100644
 --- a/src/cpu/x86/smm/smm_module_loader.c
 +++ b/src/cpu/x86/smm/smm_module_loader.c
 @@ -434,6 +434,23 @@ static void setup_smihandler_params(struct smm_runtime *mod_params,
@@ -91,7 +91,7 @@ index 472e5a67..94d687a9 100644
  
  static void print_region(const char *name, const struct region region)
 diff --git a/src/cpu/x86/smm/tseg_region.c b/src/cpu/x86/smm/tseg_region.c
-index eadc7b2b..bb7e1a25 100644
+index eadc7b2b4e..bb7e1a256e 100644
 --- a/src/cpu/x86/smm/tseg_region.c
 +++ b/src/cpu/x86/smm/tseg_region.c
 @@ -31,6 +31,7 @@ int smm_subregion(int sub, uintptr_t *start, size_t *size)
@@ -129,7 +129,7 @@ index eadc7b2b..bb7e1a25 100644
  	case SMM_SUBREGION_MOR_LOCK_STATE:
  		if (!mor_state_size)
 diff --git a/src/include/cpu/x86/smm.h b/src/include/cpu/x86/smm.h
-index a68f0a6e..3d68395e 100644
+index a68f0a6e9f..3d68395ebc 100644
 --- a/src/include/cpu/x86/smm.h
 +++ b/src/include/cpu/x86/smm.h
 @@ -116,6 +116,10 @@ struct smm_runtime {

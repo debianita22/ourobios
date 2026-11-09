@@ -33,7 +33,7 @@ Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
  1 file changed, 8 insertions(+), 1 deletion(-)
 
 diff --git a/src/cpu/x86/smm/smm_module_loader.c b/src/cpu/x86/smm/smm_module_loader.c
-index cd5017ca6a..6ceca2816c 100644
+index cb01ffa770..00fa8508b1 100644
 --- a/src/cpu/x86/smm/smm_module_loader.c
 +++ b/src/cpu/x86/smm/smm_module_loader.c
 @@ -359,7 +359,14 @@ static void setup_smihandler_params(struct smm_runtime *mod_params,

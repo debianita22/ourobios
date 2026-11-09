@@ -28,7 +28,7 @@ case.
  4 files changed, 25 insertions(+), 21 deletions(-)
 
 diff --git a/src/mainboard/lenovo/m720q_m920q/Kconfig b/src/mainboard/lenovo/m720q_m920q/Kconfig
-index 4713cb6ceee..5efe3599e7b 100644
+index 4713cb6cee..5efe3599e7 100644
 --- a/src/mainboard/lenovo/m720q_m920q/Kconfig
 +++ b/src/mainboard/lenovo/m720q_m920q/Kconfig
 @@ -11,6 +11,7 @@ config BOARD_SPECIFIC_OPTIONS
@@ -40,7 +40,7 @@ index 4713cb6ceee..5efe3599e7b 100644
  	select HAVE_CMOS_DEFAULT
  	select HAVE_OPTION_TABLE
 diff --git a/src/mainboard/lenovo/m720q_m920q/cfr.c b/src/mainboard/lenovo/m720q_m920q/cfr.c
-index db7b6ea8d00..b2e2a482190 100644
+index db7b6ea8d0..b2e2a48219 100644
 --- a/src/mainboard/lenovo/m720q_m920q/cfr.c
 +++ b/src/mainboard/lenovo/m720q_m920q/cfr.c
 @@ -241,11 +241,11 @@ static const struct sm_object option_roms = SM_DECLARE_ENUM({
@@ -110,7 +110,7 @@ index db7b6ea8d00..b2e2a482190 100644
  		&igd_aperture,
  		NULL
 diff --git a/src/soc/intel/cannonlake/Kconfig b/src/soc/intel/cannonlake/Kconfig
-index df2af90ca69..0abf1995c56 100644
+index df2af90ca6..0abf1995c5 100644
 --- a/src/soc/intel/cannonlake/Kconfig
 +++ b/src/soc/intel/cannonlake/Kconfig
 @@ -131,6 +131,14 @@ config SOC_INTEL_COMETLAKE_V
@@ -129,7 +129,7 @@ index df2af90ca69..0abf1995c56 100644
  	bool
  
 diff --git a/src/soc/intel/cannonlake/romstage/fsp_params.c b/src/soc/intel/cannonlake/romstage/fsp_params.c
-index b5c1b146410..ca330758b62 100644
+index b5c1b14641..ca330758b6 100644
 --- a/src/soc/intel/cannonlake/romstage/fsp_params.c
 +++ b/src/soc/intel/cannonlake/romstage/fsp_params.c
 @@ -30,7 +30,8 @@ void platform_fsp_memory_init_params_cb(FSPM_UPD *mupd, uint32_t version)
@@ -143,5 +143,5 @@ index b5c1b146410..ca330758b62 100644
  
  	/* Probe for no IGD and disable InternalGfx and panel power to prevent a crash in FSP-M. */
 -- 
-2.47.3
+2.43.0
 

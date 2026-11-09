@@ -168,5 +168,5 @@ index 07ca0c028f..2eef831cca 100644
  	if (CONFIG(INTEL_TXT) && intel_txt_memory_has_secrets())
  		return true;
 -- 
-2.47.3
+2.43.0
 

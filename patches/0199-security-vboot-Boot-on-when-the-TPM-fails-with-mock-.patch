@@ -1,8 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sun, 1 Nov 2026 16:30:31 +0100
-Subject: [PATCH 199/204] security/vboot: Boot on when the TPM fails with mock
- secdata
+Subject: [PATCH] security/vboot: Boot on when the TPM fails with mock secdata
 
 With VBOOT_MOCK_SECDATA vboot keeps nothing in the TPM, yet a TPM that
 does not start makes verstage request recovery (RO_TPM_S_ERROR). On a
@@ -80,5 +79,5 @@ index 01d43a08cd..7b3bca678f 100644
  		timestamp_add_now(TS_TPMPCR_END);
  	}
 -- 
-2.47.3
+2.43.0
 

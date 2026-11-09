@@ -59,5 +59,5 @@ index 6e6d679e26..8601470ae3 100644
  	0x8086280b,	/* Codec Vendor / Device ID: Intel Kabylake HDMI */
  	0x80860101,	/* Subsystem ID */
 -- 
-2.47.3
+2.43.0
 

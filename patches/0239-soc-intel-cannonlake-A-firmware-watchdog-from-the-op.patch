@@ -33,7 +33,7 @@ on a machine yet.
  create mode 100644 src/soc/intel/cannonlake/include/soc/firmware_watchdog.h
 
 diff --git a/src/drivers/smmstore/smi.c b/src/drivers/smmstore/smi.c
-index 6b99d7b5517..c48a16ae242 100644
+index 6b99d7b551..c48a16ae24 100644
 --- a/src/drivers/smmstore/smi.c
 +++ b/src/drivers/smmstore/smi.c
 @@ -12,6 +12,7 @@
@@ -66,7 +66,7 @@ index 6b99d7b5517..c48a16ae242 100644
  		break;
  	case SMMSTORE_CMD_VBOOT_TRY_OTHER:
 diff --git a/src/include/smmstore.h b/src/include/smmstore.h
-index a10ca44cbcb..563533ae180 100644
+index a10ca44cbc..563533ae18 100644
 --- a/src/include/smmstore.h
 +++ b/src/include/smmstore.h
 @@ -219,4 +219,7 @@ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size
@@ -78,7 +78,7 @@ index a10ca44cbcb..563533ae180 100644
 +
  #endif
 diff --git a/src/soc/intel/cannonlake/Kconfig b/src/soc/intel/cannonlake/Kconfig
-index 0abf1995c56..09593dfc810 100644
+index 0abf1995c5..09593dfc81 100644
 --- a/src/soc/intel/cannonlake/Kconfig
 +++ b/src/soc/intel/cannonlake/Kconfig
 @@ -131,6 +131,18 @@ config SOC_INTEL_COMETLAKE_V
@@ -101,7 +101,7 @@ index 0abf1995c56..09593dfc810 100644
  	bool
  	help
 diff --git a/src/soc/intel/cannonlake/Makefile.mk b/src/soc/intel/cannonlake/Makefile.mk
-index f869176ca77..7c8d89eba56 100644
+index f869176ca7..7c8d89eba5 100644
 --- a/src/soc/intel/cannonlake/Makefile.mk
 +++ b/src/soc/intel/cannonlake/Makefile.mk
 @@ -15,6 +15,9 @@ bootblock-y += lpc.c
@@ -116,7 +116,7 @@ index f869176ca77..7c8d89eba56 100644
  romstage-y += pmutil.c
 diff --git a/src/soc/intel/cannonlake/firmware_watchdog.c b/src/soc/intel/cannonlake/firmware_watchdog.c
 new file mode 100644
-index 00000000000..21879fac675
+index 0000000000..21879fac67
 --- /dev/null
 +++ b/src/soc/intel/cannonlake/firmware_watchdog.c
 @@ -0,0 +1,69 @@
@@ -191,7 +191,7 @@ index 00000000000..21879fac675
 +#endif
 diff --git a/src/soc/intel/cannonlake/include/soc/firmware_watchdog.h b/src/soc/intel/cannonlake/include/soc/firmware_watchdog.h
 new file mode 100644
-index 00000000000..8ec9cc610b3
+index 0000000000..8ec9cc610b
 --- /dev/null
 +++ b/src/soc/intel/cannonlake/include/soc/firmware_watchdog.h
 @@ -0,0 +1,14 @@
@@ -210,7 +210,7 @@ index 00000000000..8ec9cc610b3
 +
 +#endif
 diff --git a/src/soc/intel/cannonlake/romstage/romstage.c b/src/soc/intel/cannonlake/romstage/romstage.c
-index b88d83507b7..f6aeda71eda 100644
+index b88d83507b..f6aeda71ed 100644
 --- a/src/soc/intel/cannonlake/romstage/romstage.c
 +++ b/src/soc/intel/cannonlake/romstage/romstage.c
 @@ -14,6 +14,7 @@
@@ -230,5 +230,5 @@ index b88d83507b7..f6aeda71eda 100644
  	pmc_set_disb();
  	if (!s3wake) {
 -- 
-2.47.3
+2.43.0
 

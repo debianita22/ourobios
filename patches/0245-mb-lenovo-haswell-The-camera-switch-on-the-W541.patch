@@ -14,7 +14,7 @@ which routes the port to EHCI instead would still find it.
  2 files changed, 27 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 65c1d8a4708..2a540d68479 100644
+index c0370118ea..826dff6c5b 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -679,6 +679,19 @@ static const struct sm_object thunderbolt = SM_DECLARE_BOOL({
@@ -46,7 +46,7 @@ index 65c1d8a4708..2a540d68479 100644
  	},
  });
 diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
-index 8dc1e834e1a..563ccaf7704 100644
+index 8dc1e834e1..563ccaf770 100644
 --- a/src/mainboard/lenovo/haswell/mainboard.c
 +++ b/src/mainboard/lenovo/haswell/mainboard.c
 @@ -14,7 +14,9 @@
@@ -75,5 +75,5 @@ index 8dc1e834e1a..563ccaf7704 100644
 +	return BIT(11);
 +}
 -- 
-2.47.3
+2.43.0
 

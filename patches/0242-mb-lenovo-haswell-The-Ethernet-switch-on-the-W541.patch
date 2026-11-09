@@ -15,7 +15,7 @@ option.
  2 files changed, 18 insertions(+)
 
 diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
-index fafe04a4d4a..2b311b02bec 100644
+index fafe04a4d4..2b311b02be 100644
 --- a/src/mainboard/lenovo/haswell/Kconfig
 +++ b/src/mainboard/lenovo/haswell/Kconfig
 @@ -37,6 +37,7 @@ config BOARD_LENOVO_THINKPAD_T440P
@@ -27,7 +27,7 @@ index fafe04a4d4a..2b311b02bec 100644
  if BOARD_LENOVO_HASWELL_COMMON
  
 diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
-index 7b96c01b73a..a9f4e7242c4 100644
+index 2f8dc41fe3..4946f2ba75 100644
 --- a/src/mainboard/lenovo/haswell/cfr.c
 +++ b/src/mainboard/lenovo/haswell/cfr.c
 @@ -664,6 +664,22 @@ static const struct sm_object thunderbolt = SM_DECLARE_BOOL({
@@ -62,5 +62,5 @@ index 7b96c01b73a..a9f4e7242c4 100644
  	},
  });
 -- 
-2.47.3
+2.43.0
 

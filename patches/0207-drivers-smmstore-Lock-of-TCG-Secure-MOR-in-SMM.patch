@@ -130,7 +130,7 @@ index 1833c0e70c..abec3c97ca 100644
  {
  	*buffer_out = smm_runtime.cbmemc;
 diff --git a/src/cpu/x86/smm/smm_module_loader.c b/src/cpu/x86/smm/smm_module_loader.c
-index 665b251cd0..f0fd2246a6 100644
+index e2a04a1973..49394e218c 100644
 --- a/src/cpu/x86/smm/smm_module_loader.c
 +++ b/src/cpu/x86/smm/smm_module_loader.c
 @@ -416,6 +416,23 @@ static void setup_smihandler_params(struct smm_runtime *mod_params,
@@ -820,5 +820,5 @@ index 7d5782a02c..80a1722392 100644
  
  config SOC_INTEL_CRASHLOG
 -- 
-2.47.3
+2.43.0
 

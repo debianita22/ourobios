@@ -35,7 +35,7 @@ regions while Firmware protection is on.
  2 files changed, 30 insertions(+)
 
 diff --git a/src/security/lockdown/Kconfig b/src/security/lockdown/Kconfig
-index 49ac2741..cdaf647c 100644
+index 49ac27415e..cdaf647ca8 100644
 --- a/src/security/lockdown/Kconfig
 +++ b/src/security/lockdown/Kconfig
 @@ -96,6 +96,22 @@ config BOOTMEDIA_LOCK_IN_VERSTAGE
@@ -62,7 +62,7 @@ index 49ac2741..cdaf647c 100644
  	bool "Read whether to lock the boot media from an option"
  	depends on !BOOTMEDIA_LOCK_NONE
 diff --git a/src/security/lockdown/lockdown.c b/src/security/lockdown/lockdown.c
-index e672dfde..25e93cbf 100644
+index e672dfde44..25e93cbfeb 100644
 --- a/src/security/lockdown/lockdown.c
 +++ b/src/security/lockdown/lockdown.c
 @@ -69,6 +69,20 @@ void boot_device_security_lockdown(void)

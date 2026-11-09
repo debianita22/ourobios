@@ -33,10 +33,10 @@ Change-Id: I9236f251b9bae4365a32111fad68097c6c566fcc
  2 files changed, 51 insertions(+), 13 deletions(-)
 
 diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
-index 66c6f7c65a..97a727cb35 100644
+index d3c400bc00..b2f404e529 100644
 --- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
 +++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
-@@ -29,3 +29,22 @@ romstage-y += train_round_trip.c
+@@ -30,3 +30,22 @@ romstage-y += train_round_trip.c
  romstage-y += train_sense_amp_offset.c
  
  romstage-$(CONFIG_DEBUG_RAM_SETUP) += info_dumps.c
@@ -60,7 +60,7 @@ index 66c6f7c65a..97a727cb35 100644
 +
 +$(call src-to-obj,romstage,$(dir)/save_restore.c): $(nri-key-h)
 diff --git a/src/northbridge/intel/haswell/native_raminit/save_restore.c b/src/northbridge/intel/haswell/native_raminit/save_restore.c
-index 1f260f6d99..c4b9462a76 100644
+index 850ed3ad14..074011bdab 100644
 --- a/src/northbridge/intel/haswell/native_raminit/save_restore.c
 +++ b/src/northbridge/intel/haswell/native_raminit/save_restore.c
 @@ -1,27 +1,46 @@

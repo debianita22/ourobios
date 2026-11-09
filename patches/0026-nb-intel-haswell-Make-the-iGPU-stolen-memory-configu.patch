@@ -69,7 +69,7 @@ index 7548a45609..3917ba1b73 100644
 +
  #endif /* NB_INTEL_HASWELL_CFR_H */
 diff --git a/src/northbridge/intel/haswell/early_init.c b/src/northbridge/intel/haswell/early_init.c
-index 02f26b348e..2430ebf54e 100644
+index 45fc31bd79..4a65e09727 100644
 --- a/src/northbridge/intel/haswell/early_init.c
 +++ b/src/northbridge/intel/haswell/early_init.c
 @@ -36,6 +36,27 @@ static void haswell_setup_bars(void)
@@ -100,7 +100,7 @@ index 02f26b348e..2430ebf54e 100644
  static void haswell_setup_igd(void)
  {
  	bool igd_enabled;
-@@ -48,7 +69,7 @@ static void haswell_setup_igd(void)
+@@ -52,7 +73,7 @@ static void haswell_setup_igd(void)
  	ggc = pci_read_config16(HOST_BRIDGE, GGC);
  	ggc &= ~0x3f8;
  	if (igd_enabled) {
@@ -137,12 +137,12 @@ index 316ee2341c..35d2f8dbc6 100644
  #define  DMAR_LCKDN	(1 << 31)
  #define  SPCAPCTRL	(1 << 25)
 diff --git a/src/northbridge/intel/haswell/native_raminit/memory_map.c b/src/northbridge/intel/haswell/native_raminit/memory_map.c
-index 5de6cca8c0..14aa988d3a 100644
+index 6a4bd0a705..9e6e426b1c 100644
 --- a/src/northbridge/intel/haswell/native_raminit/memory_map.c
 +++ b/src/northbridge/intel/haswell/native_raminit/memory_map.c
-@@ -169,11 +169,11 @@ enum nri_status configure_memory_map(struct sysinfo *ctrl)
- 		.tseg_size      = CONFIG_SMM_TSEG_SIZE >> 20,
+@@ -176,11 +176,11 @@ enum nri_status configure_memory_map(struct sysinfo *ctrl)
  		.me_stolen_size = intel_early_me_uma_size(),
+ 		.is_broadwell   = ctrl->bdw,
  	};
 -	/** FIXME: MRC hardcodes iGPU parameters, but we should not **/
 +	/* The GTT is fixed to 2 MiB, the stolen memory comes from the gfx_uma_size option */

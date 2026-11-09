@@ -36,7 +36,7 @@ index 44e28b6d19..ef222644a4 100644
  	enum nct6687d_peci_speed peci_speed;
  
 diff --git a/src/superio/nuvoton/nct6687d/nct6687d_hwm.c b/src/superio/nuvoton/nct6687d/nct6687d_hwm.c
-index e7d80f493d..6001f38431 100644
+index 73cfab3e6e..ca90da1928 100644
 --- a/src/superio/nuvoton/nct6687d/nct6687d_hwm.c
 +++ b/src/superio/nuvoton/nct6687d/nct6687d_hwm.c
 @@ -220,7 +220,8 @@ static void init_sensors(const struct superio_nuvoton_nct6687d_config *conf)
@@ -50,5 +50,5 @@ index e7d80f493d..6001f38431 100644
  		if (sensors[i] >= PECI_AGENT0_DOMAIN0 &&
  		    sensors[i] <= PECI_AGENT3_DOMAIN1) {
 -- 
-2.47.3
+2.43.0
 

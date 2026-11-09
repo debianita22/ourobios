@@ -57,5 +57,5 @@ index b2dda7fc90..8aed7b2c2c 100644
  	 * Legacy PM ACPI Timer (and TCO Timer)
  	 * This *must* be 1 in any case to keep FSP from
 -- 
-2.47.3
+2.43.0
 

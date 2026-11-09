@@ -94,7 +94,7 @@ index 4d2da01788..0c669c442c 100644
  unsigned long northbridge_write_acpi_tables(const struct device *device, unsigned long start,
  					    struct acpi_rsdp *rsdp);
 diff --git a/src/northbridge/intel/haswell/minihd.c b/src/northbridge/intel/haswell/minihd.c
-index 123a934f0d..e8c2d93bf6 100644
+index 998b24d408..157583a4ec 100644
 --- a/src/northbridge/intel/haswell/minihd.c
 +++ b/src/northbridge/intel/haswell/minihd.c
 @@ -7,6 +7,7 @@

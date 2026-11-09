@@ -215,7 +215,7 @@ index 0000000000..69705d20bb
 +}
 +#endif
 diff --git a/src/southbridge/intel/lynxpoint/pch.h b/src/southbridge/intel/lynxpoint/pch.h
-index bfd7eb8e36..d27d3cafd6 100644
+index 547cd0ae91..4dccc575f5 100644
 --- a/src/southbridge/intel/lynxpoint/pch.h
 +++ b/src/southbridge/intel/lynxpoint/pch.h
 @@ -102,6 +102,11 @@ void acpi_create_serialio_ssdt(acpi_header_t *ssdt);

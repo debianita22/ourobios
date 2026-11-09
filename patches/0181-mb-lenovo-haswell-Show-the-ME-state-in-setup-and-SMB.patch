@@ -405,5 +405,5 @@ index fef850cc1a..4131822694 100644
  	.default_value	= CONFIG(DISABLE_ME_PCI),
  	.values		= (const struct sm_enum_value[]) {
 -- 
-2.47.3
+2.43.0
 

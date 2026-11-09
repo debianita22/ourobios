@@ -30,7 +30,7 @@ PR in 5 us.
  1 file changed, 12 insertions(+), 2 deletions(-)
 
 diff --git a/src/southbridge/intel/lynxpoint/early_usb_native.c b/src/southbridge/intel/lynxpoint/early_usb_native.c
-index ff167fa1..7861c8b1 100644
+index ff167fa1ca..7861c8b100 100644
 --- a/src/southbridge/intel/lynxpoint/early_usb_native.c
 +++ b/src/southbridge/intel/lynxpoint/early_usb_native.c
 @@ -248,6 +248,16 @@ static bool reset_usb2_ports(const unsigned int ehci_ports)
