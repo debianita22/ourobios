@@ -12,7 +12,7 @@ is here. None of it is a promise of a date.
 |---|---|---|---|
 | [Firmware watchdog](#firmware-watchdog) | both | built in v1.6.1 for the M920x (patches 0238-0240) and the W541 (patches 0254-0255), off by default; on a W541 armed at 300 s and stopped at the slot confirmation (WDT-01, 2026-11-08) | the armed path on the M920x; a real hang with a long timeout on either |
 | [Firmware update mode](#firmware-update-mode) | both | decided on 2026-11-05: not made; capsules need none of it, and a one-shot of the protections and Secure Boot is security code that can fail open | none planned; `update.py other-slot` reminds to turn *BIOS Lock* on again |
-| [DMA protection](#dma-protection) | M920x | no pre-boot DMA protection to report; the FSP-M has no PMR data | reword the help of *Intel VT-d*; find the slot of the Thunderbolt card |
+| [DMA protection](#dma-protection) | M920x | no pre-boot DMA protection to report; the FSP-M has no PMR data; the help of *Intel VT-d* reworded in v1.5.0 (patch 0206) | the slot of the Thunderbolt card, on an M920x that has one, for its `ExternalFacingPort` |
 | [Capsule regions in the payload](#capsule-regions-in-the-payload) | both | done in v1.6.0 (`edk2/0045`): the payload writes only the two slots and `RW_MRC_CACHE`, and on a flash with both slots only an update of one slot at a time | a new region in `PcdFmpDeviceSmmAllowedRegions` one release before any capsule that writes it |
 | [Variable store robustness](#variable-store-robustness) | both | looked at for v1.6.0: coreboot's all-or-nothing reader is upstream's choice, and the corner case of the reset is not one | none planned |
 | [Top Swap and the Protected Range test](#top-swap-and-the-protected-range-test) | M920x | the read-only part is never written by an update | FLASH-04 with the protection on; a map with room for a second bootblock |
@@ -21,7 +21,7 @@ is here. None of it is a promise of a date.
 | [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | done in v1.6.0 (patch 0222): a Kconfig for the version, and `tools/fspm-settings.sh` stops CI when the files of those settings change | the first bump, with the release that changes them |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
 | [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | built for v1.6.1 (patches 0247-0249, 0258); CPU-06 passed on a W541 (2026-11-08): off, locked, kept across S3, the training cache kept | `mrc` (this machine boots only `nri` slots) |
-| [Device switches on the W541](#device-switches-on-the-w541) | W541 | the microphone, the camera, the card reader and the Ethernet built and passed in v1.6.1; the Ethernet needed the PHY woken with LANPHYPC (patch 0263), found on the W541 of the port | the off-then-on round of DEV-W01 on the final build; the fingerprint switch on a unit that has it |
+| [Device switches on the W541](#device-switches-on-the-w541) | W541 | the microphone, the camera, the card reader and the Ethernet built and passed in v1.6.1; the fingerprint switch built after it (patch 0265), from the port table of the Lenovo firmware | the fingerprint switch on a unit that has the reader |
 | [Wake on LAN after a shutdown on the W541](#wake-on-lan-after-a-shutdown-on-the-w541) | W541 | built for v1.6.1 (patch 0259), as the Lenovo firmware does it; not run on a machine | NET-02 from power-off on AC and on battery, with each setting |
 | [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot (no PEI, no LockBox, no boot script); the stock design read and a coreboot design written (2026-11-08), unbuilt: new secret-handling code in both, untestable without a locked drive | a decision whether to build it, with the caveats |
 | [NVIDIA power steering and the EC's CPU limits](#nvidia-power-steering-and-the-ecs-cpu-limits) | W541 | little use under Linux; a `_PPC` policy and adapter tests | count the EC's CPU limit events |
@@ -538,6 +538,10 @@ have a switch.
   on but the MAC is absent: the W541 of the port got its controller back
   at the next boot. The Lenovo firmware never meets the case: its ME,
   which owns the PHY, is on.
+- **Built after v1.6.1** (patch 0265): the fingerprint reader, on xHCI
+  USB2 port 9 by the Lenovo firmware's table (its numbers are this
+  W541's plus 2, checked on the camera and the Bluetooth module),
+  disabled with `USB2PDO` as the camera; no reader here to try it.
 - **Read in the Lenovo firmware** (2026-11-08,
   [docs/tests/v1.6.1/w541-nri/stock-gnet94ww.md](tests/v1.6.1/w541-nri/stock-gnet94ww.md#2-io-port-access)): the
   Ethernet as 0241 (`BUC` bit 5, a global reset); the microphone by a

@@ -257,3 +257,4 @@
 0262-sb-intel-lynxpoint-Apply-the-GbE-switch-as-the-Lenov.patch
 0263-sb-intel-lynxpoint-Wake-the-GbE-PHY-with-LANPHYPC-wh.patch
 0264-mb-lenovo-haswell-The-Ethernet-help-text-with-the-re.patch
+0265-mb-lenovo-haswell-A-switch-for-the-W541-s-fingerprin.patch

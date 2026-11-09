@@ -109,6 +109,10 @@ hang caught by the watchdog on either board.
   its contents too. Passed on a W541 (OPT-05, with a simulated loss: the
   bit alone reset nothing, the bit with the CMOS cleared reset all 66
   options).
+- **Fingerprint reader switch on the W541** (patch 0265): *Hardware* →
+  *Expansion ports* → *Fingerprint reader*, off disables its USB port at
+  every start and wake, as the camera switch. The port comes from the
+  Lenovo firmware's table; not tried, the W541 of the port has no reader.
 - **Card reader switch on the W541** (patch 0257): *Hardware* →
   *Expansion ports* → *Card reader*, a soft switch: off, the link of its
   PCIe port is disabled at every start and wake. Passed on a W541

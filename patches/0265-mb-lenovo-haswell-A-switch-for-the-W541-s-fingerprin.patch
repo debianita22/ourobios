@@ -1,0 +1,85 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Mon, 9 Nov 2026 16:22:21 +0100
+Subject: [PATCH] mb/lenovo/haswell: A switch for the W541's fingerprint reader
+
+The Lenovo setup of the W541 can turn the fingerprint reader off (I/O
+Port Access). It is a USB device of the chipset, on xHCI USB2 port 9
+by the port table of the Lenovo firmware (GNET94WW), whose numbers are
+those seen on the W541 of the port plus 2 for the camera (13 there, 11)
+and the Bluetooth module (12, 10).
+
+Add Hardware -> Expansion ports -> Fingerprint reader, on by default:
+off, the port goes into mainboard_usb2_port_disable_mask() with the
+camera's, so the xHCI disables it at every boot and S3 resume. The W541
+of the port has no reader: the port number is derived, not seen, which
+the help text says.
+
+TEST=Build of the ThinkPad W541 with the native RAM init; the menu
+within its limit (28204 bytes).
+
+Change-Id: I3c04415510ed3f3d365db517a95dea23c9436293
+---
+ src/mainboard/lenovo/haswell/cfr.c       | 12 ++++++++++++
+ src/mainboard/lenovo/haswell/mainboard.c | 16 ++++++++++++++--
+ 2 files changed, 26 insertions(+), 2 deletions(-)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 607218757e..e2f3ca96f6 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -738,6 +738,17 @@ static const struct sm_object camera = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ });
+ 
++/* Read by mainboard.c, mainboard_usb2_port_disable_mask() */
++static const struct sm_object fingerprint_reader = SM_DECLARE_BOOL({
++	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "fingerprint_reader",
++	.ui_name	= "Fingerprint reader",
++	.ui_helptext	= "The reader next to the touchpad, a USB device.\n"
++			  "Default: on. Off: its USB port is disabled at every start\n"
++			  "and wake. Not yet tried on a W541 with a reader.",
++	.default_value	= true,
++});
++
+ /* Read by southbridge/intel/lynxpoint/early_pch.c, pch_apply_gbe_option() */
+ static const struct sm_object onboard_ethernet = SM_DECLARE_BOOL({
+ 	.flags		= CONFIG(SOUTHBRIDGE_INTEL_LYNXPOINT_GBE_OPTION) ? 0 : CFR_OPTFLAG_SUPPRESS,
+@@ -835,6 +846,7 @@ static const struct sm_object hardware_ports = SM_DECLARE_FORM({
+ 		&onboard_ethernet,
+ 		&card_reader,
+ 		&camera,
++		&fingerprint_reader,
+ 		NULL
+ 	},
+ });
+diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
+index b77f62233f..265c805226 100644
+--- a/src/mainboard/lenovo/haswell/mainboard.c
++++ b/src/mainboard/lenovo/haswell/mainboard.c
+@@ -356,7 +356,19 @@ struct chip_operations mainboard_ops = {
+  */
+ u32 mainboard_usb2_port_disable_mask(void)
+ {
+-	if (!CONFIG(BOARD_LENOVO_THINKPAD_W541) || get_uint_option("camera", 1))
++	u32 mask = 0;
++
++	if (!CONFIG(BOARD_LENOVO_THINKPAD_W541))
+ 		return 0;
+-	return BIT(11);
++	if (!get_uint_option("camera", 1))
++		mask |= BIT(11);
++	/*
++	 * The fingerprint reader: xHCI USB2 port 9 by the port table of the
++	 * Lenovo firmware (GNET94WW), whose numbers are those of the W541 of the
++	 * port plus 2 for the camera and the Bluetooth module; that unit has no
++	 * reader to confirm it.
++	 */
++	if (!get_uint_option("fingerprint_reader", 1))
++		mask |= BIT(8);
++	return mask;
+ }
+-- 
+2.43.0
+
