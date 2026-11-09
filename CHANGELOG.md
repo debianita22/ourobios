@@ -7,6 +7,139 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.6.1
 
+What ran on a machine for v1.6.1: the M920x with rc1 to rc3
+([docs/tests/v1.6.1/m920x-fsp/README.md](docs/tests/v1.6.1/m920x-fsp/README.md)),
+a W541 with the `nri` CI builds of the W541 patches
+([docs/tests/v1.6.1/w541-nri/README.md](docs/tests/v1.6.1/w541-nri/README.md)).
+Not run: the `mrc` variant of the W541 (its features below are shared
+with `nri`, but the test machine boots only `nri` slots), Wake on LAN
+from off (NET-02), the armed firmware watchdog on the M920x, and a real
+hang caught by the watchdog on either board.
+
+- **Camera switch on the W541** (patches 0244-0245): *Hardware* →
+  *Expansion ports* → *Integrated camera*, on by default. Off, its USB
+  port (xHCI USB2 port 12) is disabled at every start and wake, so no OS
+  sees the camera; an OS that routes the port to the USB 2.0 controller
+  instead would still find it, as the help says. Passed on a W541
+  (DEV-W01, [docs/tests/v1.6.1/w541-nri/README.md](docs/tests/v1.6.1/w541-nri/README.md)).
+- **Internal microphone switch on the W541** (patch 0243): *General* →
+  *Sound* → *Internal microphone*, on by default. Off, the firmware tells
+  the OS that the lid's microphone is not connected, so it is not offered
+  as an input; a soft switch, as its help says (the audio chip stays
+  powered). The headset jack is not affected. Passed on a W541
+  (DEV-W01).
+- **Ethernet switch on the W541** (patches 0241-0242, 0262-0264):
+  *Hardware* → *Expansion ports* → *Ethernet*, on by default, the
+  *Ethernet LAN* of the Lenovo setup. Off, the chipset turns the I217-LM
+  controller off for every OS and for network boot (the LAN disable bit
+  of `BUC`, kept across updates and fallbacks until it is turned on here
+  again). Measured on a W541 and fixed in two places: the chipset
+  lockdown that coreboot sets at every boot blocked the write, so the
+  firmware now resets first, as the Lenovo firmware does (patch 0262);
+  and the controller did not come back when turned on again, not even
+  after a power-down, because its PHY wakes only on a pin that the hidden
+  controller never drives: the firmware now drives it itself before the
+  reset, and once by itself when the controller is missing with the
+  option on, which brought the W541 of the port back (patch 0263). A
+  change takes up to three restarts, done by the firmware.
+- **Firmware watchdog on the M920x** (patches 0238-0240), off by default:
+  *General* → *Boot* → *Firmware watchdog* (5 or 10 minutes) arms the
+  overclocking watchdog of the chipset before the memory init and stops it
+  when the payload confirms the firmware slot, so that a boot that hangs
+  before the logo resets by itself, and a new slot that hangs twice falls
+  back to the other one with nobody at the power button. Not armed on a
+  wake from S3; the setup and the boot menu are not watched. With the
+  option off, the firmware clears the watchdog at every boot.
+  `hw-report.py` WDT-01 checks that it is off once the OS runs. The armed
+  path is not tested on a machine yet: the first armed boot is the
+  owner's call (RISCHIO: should the stop fail, the machine resets after
+  the timeout until the option is turned off in the setup).
+- **The setup's lock-at-boot works** (edk2 0058): a CFR option marked
+  `CFR_OPTFLAG_LOCK_AT_BOOT` was meant to be writable from the setup and
+  write-locked from ReadyToBoot, but the payload registered its Variable
+  Policy rule at ReadyToBoot, after EndOfDxe had closed Variable Policy to
+  new rules, so the registration failed and nothing was locked. The rules
+  are now registered when the setup driver starts and take effect when a
+  trigger variable is set at ReadyToBoot. No option of these boards uses
+  the flag yet, so nothing changes on the machines today.
+- **The security options write-locked in SMM**: coreboot reads `bios_lock`
+  and `bootmedia_lock` from the variable store (`SMMSTORE`) to decide the
+  flash protections. They are BootService-only, so the OS cannot change
+  them with `SetVariable`, but it could write the variable store with the
+  raw `SMMSTORE` SMI, turn them off and, at the next boot, start the
+  firmware without its protections. Now, the way the TCG MOR lock already
+  works, the payload arms `SMMSTORE_CMD_OPTION_LOCK` at ReadyToBoot and,
+  while armed, coreboot refuses the writes of the variable store that
+  would turn a protected option off (`SMMSTORE_OPTION_LOCK`, patches
+  0236-0237, edk2 0056; the UEFI VariablePolicy model applied in MM). The
+  setup still changes the options, before the lock is armed, so the
+  flashing workflow is unchanged; capsules and `other-slot` are
+  unaffected. Only meaningful with *BIOS Lock* on, which the lock requires.
+  The authenticated Secure Boot variables are not covered: that would need
+  the signature check in SMM (a known limit in the README). Run on the
+  M920x with v1.6.1-rc1: the regressions pass, but the arm left no trace
+  (SMM's console is compiled out without `DEBUG_SMI`); from rc2 the payload
+  reports what coreboot answered in the volatile variable
+  `OptionLockStatus` of the coreboot options GUID, read-only to the OS by
+  a lock-on-create Variable Policy (edk2 0057), and `hw-report.py` reads
+  it (FLASH-01, FLASH-06).
+
+- **The memory training kept across updates on the W541** (patches
+  0250-0252): the version of the training cache is now a tag and a key
+  made from the code (`nri`: a hash of the native RAM init's sources and
+  Kconfig, with the memory settings of the board) or from the inputs of
+  `mrc.bin`, instead of a number bumped by hand, so no slot ever resumes
+  a training saved by other code. The capsules write the two slots only
+  and *Go back to* keeps the cache, as on the M920x: the new slot trains
+  once only when its RAM init changed (0.7 s with `nri`). `update.py`
+  still stages the capsules of before, which clear it. Passed on a W541
+  (MEM-03: a new slot with the same NRI code kept the cache).
+- **Firmware watchdog on the W541** (patches 0254-0255): *General* →
+  *Boot* → *Firmware watchdog* (Off, 5 or 10 minutes), the M920x's design
+  on the watchdog of Lynx Point: armed before the memory init, stopped
+  when the payload confirms the slot, so that a new slot that hangs twice
+  falls back by itself. Off by default; WDT-01 of `hw-report.py` reads it
+  on the W541 too. Passed on a W541 (WDT-01: armed at 300 s, stopped at
+  the slot confirmation, the laptop up past 7 minutes); a real hang not
+  tried.
+- **Settings reset on the W541** (patch 0256): on, as on the M920x, with
+  one more condition: the OS can set the RTC power loss bit of Lynx Point
+  (checked on a W541), so the options are reset only when the CMOS lost
+  its contents too. Passed on a W541 (OPT-05, with a simulated loss: the
+  bit alone reset nothing, the bit with the CMOS cleared reset all 66
+  options).
+- **Card reader switch on the W541** (patch 0257): *Hardware* →
+  *Expansion ports* → *Card reader*, a soft switch: off, the link of its
+  PCIe port is disabled at every start and wake. Passed on a W541
+  (DEV-W01).
+- **Wake on LAN from off on the W541** (patch 0259): *Energy Saver* →
+  *Power* → *Wake on LAN* (Off, AC only - the default, as the Lenovo
+  setup -, AC and battery), programmed as the Lenovo firmware does at
+  every sleep and power-off: a magic packet turns the laptop on from off,
+  and from sleep when the OS armed the port. Not yet run on a machine
+  (NET-02).
+- **HKEY events no longer lost** (patch 0260): one pending event per
+  class, as the Lenovo firmware: a dock or thermal event right after a
+  hotkey no longer replaces it.
+- **No hang logged for the resets of the options** (patches 0246, 0253):
+  the resets that apply *Ethernet*, *Intel VT-x* and *Hyper-Threading*
+  leave POST code `0xfc`, which the event log does not report as the last
+  code of a hung boot.
+- **Hyper-Threading on the W541** (patches 0247-0249): *Energy Saver* →
+  *Processor* → *Hyper-Threading*, on by default as in the Lenovo setup,
+  turns the second thread of each core off (4 threads on a quad-core
+  i7). On Haswell the PCH applies it from the next reset (bit 0 of
+  `SOFT_RESET_DATA`, measured on a W541 with rc6), so romstage does one
+  warm reset when the option and the bit differ: with the option off,
+  at every power-on. The bit survives S3, so a resume keeps the threads
+  the OS suspended with, and the option applies at the next boot. The
+  reset leaves a POST code of its own (`0xfc`) that the event log does
+  not take for a hang, and the native RAM init keeps its training cache
+  across it (the boot after the reset is a cold one for it). From patch
+  0258 the straps are locked until the next reset, as the Lenovo
+  firmware does. Passed on a W541 (CPU-06): 4 threads with the option
+  off, locked, kept across S3, the cache kept; 8 with it on. The `mrc`
+  variant has the option too, not measured.
 - **The descriptor, the GbE and the ME regions under *Firmware
   protection***: the images leave the descriptor unlocked
   (`CONFIG_UNLOCK_FLASH_REGIONS`, so that flashrom can rewrite the
@@ -28,8 +161,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   print an `SI_ALL:` line next to `WP_RO:`, with *firmware senza la
   protezione di SI_ALL* on a firmware before this one, and hw-report's
   FLASH-01 reports it (`WARN` when `WP_RO` is protected and `SI_ALL` is
-  not). Not yet run on a machine: the expected values are what the code
-  predicts, as for the first `WP_RO` lock.
+  not). Passed on both boards: on the M920x with v1.6.1-rc1 (FLASH-01,
+  FLASH-05), on a W541 with the CI build of 2026-11-08 (FLASH-01: PR1
+  `0x0000000-0x04fffff` over `SI_ALL`, *Enabled bootmedia protection for
+  SI_ALL*); no write was tried.
 - **Tools**: `update.py protection` and `other-slot` say when the kernel's
   `spi-intel` driver holds the SPI controller (a `BIOS` MTD partition):
   flashrom 1.5 and later go through it without the Protected Ranges, the

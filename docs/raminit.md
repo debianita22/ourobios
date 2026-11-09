@@ -256,3 +256,11 @@ firmware.
   v1.4.0-v1.5.0 stays valid (revision 3, no bump): after a vboot fallback
   between a v1.5.x and a v1.6.0 slot either one boots on it (a capsule
   empties `RW_MRC_CACHE` anyway).
+- From v1.6.1 (patch 0250) the version is no longer bumped by hand: it is
+  `N` in bits 31:24 and 24 bits of an xxh32 of the memory settings of the
+  devicetree, seeded with a SHA-256 of the NRI sources, the register
+  headers, `raminit_shared.c` and the Kconfig options with `NRI` or
+  `RAMINIT` in their name, made at build time. Any change of that code
+  trains once (0.7 s on the W541), a slot never restores the data of
+  other code, and the capsules leave `RW_MRC_CACHE` as it is. `mrc.bin`
+  gets `M` and a key of its inputs (patch 0251).

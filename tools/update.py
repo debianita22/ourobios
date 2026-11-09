@@ -93,26 +93,35 @@ LEGACY_VARIANTS = {
 # nuovo rifa' al primo avvio
 REGIONS = ["RW_MRC_CACHE", "RW_SECTION_A", "RW_SECTION_B"]
 # Quelle delle capsule di oggi, per variante (BOARD_CAPSULE_REGIONS di
-# boards/<board>/board.sh): sul M920x dalla v1.4.0 il training resta, la
-# sua versione dice se vale ancora (FSP-M, processore, Hyper-Threading; non
-# le UPD di FSP-M che mette coreboot: il perche' in board.sh). Le controlla
-# info, quindi anche tools/build.sh dopo ogni capsula
+# boards/<board>/board.sh): il training resta, la sua versione dice se vale
+# ancora. Sul M920x dalla v1.4.0 (FSP-M, processore, Hyper-Threading; non
+# le UPD di FSP-M che mette coreboot: il perche' in board.sh), sul W541
+# dalla v1.6.1 (la NRI dal suo codice, mrc.bin dai suoi dati: patch
+# 0250-0251). Le controlla info, quindi anche tools/build.sh dopo ogni
+# capsula
+SLOT_REGIONS = ["RW_SECTION_A", "RW_SECTION_B"]
 CURRENT_REGIONS = {
-    "mrc": REGIONS,
-    "nri": REGIONS,
-    "m920x-fsp": ["RW_SECTION_A", "RW_SECTION_B"],
+    "mrc": SLOT_REGIONS,
+    "nri": SLOT_REGIONS,
+    "m920x-fsp": SLOT_REGIONS,
 }
-# E quelle che stage e rollback accettano ancora: le capsule del M920x dalla
-# v1.4.0-rc1 alla rc3 scrivono anche RW_MRC_CACHE (si torna indietro con quelle)
+# E quelle che stage e rollback accettano ancora: le capsule di prima
+# scrivono anche RW_MRC_CACHE (W541 fino alla v1.6.0, M920x dalla v1.4.0-rc1
+# alla rc3): si torna indietro con quelle
 ACCEPTED_REGIONS = {
-    "mrc": [REGIONS],
-    "nri": [REGIONS],
-    "m920x-fsp": [CURRENT_REGIONS["m920x-fsp"], REGIONS],
+    "mrc": [SLOT_REGIONS, REGIONS],
+    "nri": [SLOT_REGIONS, REGIONS],
+    "m920x-fsp": [SLOT_REGIONS, REGIONS],
 }
 LEGACY_REGIONS = ["RW_MRC_CACHE", "COREBOOT"]
-# la prima release del M920x che lascia il training: gli slot di prima non
-# hanno la versione con processore e Hyper-Threading (patch 0173)
-KEEP_CACHE_SINCE = (1, 4, 0, 4)
+# la prima release che lascia il training, per variante: gli slot di prima
+# non hanno la versione che lo dice (M920x: processore e Hyper-Threading,
+# patch 0173; W541: l'etichetta e la chiave, patch 0250-0251)
+KEEP_CACHE_SINCE = {
+    "mrc": (1, 6, 1, 0),
+    "nri": (1, 6, 1, 0),
+    "m920x-fsp": (1, 4, 0, 4),
+}
 MIGRATION = "docs/flashing.md, \"From v1.2.x to v1.3.0\""
 RO_MIGRATION = "docs/flashing.md, \"From v1.3.x to v1.3.9\""
 MB_MIGRATION = "docs/flashing.md, \"Measured boot: the read-only part\""
@@ -1283,8 +1292,9 @@ def print_training(cap):
         print("La capsula svuota anche il training della RAM: il primo avvio lo rifa' e dura di piu'.")
     else:
         print("Il training della RAM resta: lo slot nuovo lo rifa' solo se non vale per lui (un altro")
-        print("FSP-M, processore o Hyper-Threading). Se lo slot nuovo non partisse due volte di fila,")
-        print("vboot torna a quello di adesso: allora update.py other-slot --retrain.")
+        print("codice della RAM init, FSP-M, processore o Hyper-Threading). Se lo slot nuovo non")
+        print("partisse due volte di fila, vboot torna a quello di adesso: allora update.py other-slot")
+        print("--retrain.")
 
 
 def cmd_cancel(args):
@@ -1737,7 +1747,7 @@ def cmd_other_slot(args):
     (anche dell'altra variante) e RW_NVRAM che chiede a vboot di provarlo: da
     scrivere con flashrom in quelle due regioni soltanto. RW_MRC_CACHE resta
     com'e', vuota solo con --retrain o dove la capsula della release la
-    svuota (W541, M920x prima della v1.4.0)."""
+    svuota (W541 fino alla v1.6.0, M920x prima della v1.4.0)."""
     with open(args.dump, "rb") as f:
         flash = f.read()
     areas = fmap_areas(flash)
@@ -1801,11 +1811,11 @@ def cmd_other_slot(args):
                            "e due" if ro_common else "fino alla v1.3.8 ogni parte RO parte solo la sua "
                            "variante"))
     # il training della RAM come lo tratta la capsula di quella release: sul
-    # M920x dalla v1.4.0 resta (la sua versione dice allo slot se vale);
-    # sul W541 e nelle release del M920x di prima si svuota
+    # M920x dalla v1.4.0 e sul W541 dalla v1.6.1 resta (la sua versione dice
+    # allo slot se vale); nelle release di prima si svuota
     flavour = build_flavour(names[0], len(image))
     retrain = args.retrain or "RW_MRC_CACHE" in CURRENT_REGIONS.get(flavour, REGIONS) \
-        or (build_key_or_ci(names[0]) or (0,)) < KEEP_CACHE_SINCE
+        or (build_key_or_ci(names[0]) or (0,)) < KEEP_CACHE_SINCE.get(flavour, (1 << 31,))
     regions = ["RW_SECTION_" + other] + (["RW_MRC_CACHE"] if retrain else []) + ["RW_NVRAM"]
     check_flash_writable(areas, regions)
     print("gira:      slot %s, %s" % (current, " + ".join(in_cur) or "?"))
@@ -2923,7 +2933,7 @@ def main():
     p.add_argument("--force", action="store_true", help="anche l'altra variante, che dopo questa parte RO non parte")
     p.add_argument("--retrain", action="store_true",
                    help="svuota anche il training della RAM (RW_MRC_CACHE): lo slot lo rifa' al primo avvio "
-                        "(sul W541 e per le release del M920x prima della v1.4.0 lo si svuota sempre)")
+                        "(per le release del W541 fino alla v1.6.0 e del M920x prima della v1.4.0 lo si svuota sempre)")
     p.set_defaults(func=cmd_other_slot)
 
     p = sub.add_parser("rollback", help="torna alla release nell'altro slot, quella di prima dell'ultimo aggiornamento")

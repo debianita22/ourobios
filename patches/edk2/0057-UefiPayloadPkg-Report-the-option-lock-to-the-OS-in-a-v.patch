@@ -1,0 +1,190 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sat, 7 Nov 2026 20:30:00 +0100
+Subject: [PATCH] UefiPayloadPkg: Report the option lock to the OS in a
+ volatile variable
+
+The arm of coreboot's option lock (SMMSTORE_CMD_OPTION_LOCK, edk2/0056)
+left no trace the OS could read: coreboot's SMM console is compiled out
+without DEBUG_SMI, as in release builds, and the payload's DEBUG lines are
+not in a release build either. PlatformLockFirmwareSlots() now writes the
+EFI_STATUS that SmmStoreLibOptionLock() returned, as a UINT64, to the
+volatile variable OptionLockStatus of the coreboot options GUID
+(BS+RT): EFI_SUCCESS armed, EFI_UNSUPPORTED with no option lock or
+BIOS Lock off. It is the payload's report of the answer of SMM, not a
+reading of the state there.
+
+So that the OS can read it and not fake it, PlatformBootManagerBeforeConsole()
+registers a lock-on-create Variable Policy for the name before EndOfDxe,
+which closes Variable Policy to new rules: the first write, at
+ReadyToBoot, goes in, any write after it is refused, and a non-volatile
+variable of that name cannot be created.
+---
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+index 5250259..13a43b5 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+@@ -699,6 +699,12 @@ PlatformBootManagerBeforeConsole (
+   //
+   PlatformRegisterBootManagerEntryNotifyCallback ();
+ 
++  //
++  // Before EndOfDxe closes Variable Policy: the report of the option lock
++  // stays read-only to the OS (PlatformCapsule.c).
++  //
++  PlatformRegisterOptionLockPolicy ();
++
+   //
+   // Install ready to lock.
+   // This needs to be done before option rom dispatched.
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
+index 81d38e7..d91e984 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
+@@ -171,6 +171,14 @@ PlatformProcessCapsules (
+   that it is trying; lock the switch to the other slot before a boot option
+   starts and at ExitBootServices().
+ **/
++/**
++  Make OptionLockStatus read-only once it exists; before EndOfDxe.
++**/
++VOID
++PlatformRegisterOptionLockPolicy (
++  VOID
++  );
++
+ VOID
+ PlatformMarkFirmwareGood (
+   VOID
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+index cedb933..b4cd161 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+@@ -57,6 +57,7 @@
+   TcgPhysicalPresenceLib
+   Tcg2PhysicalPresenceLib
+   UpdateScreenLib
++  VariablePolicyHelperLib
+ 
+ [Guids]
+   gEfiEndOfDxeEventGroupGuid
+@@ -67,7 +68,7 @@
+   gEfiCapsuleReportGuid           ## CONSUMES ## Variable:L"CapsuleLast"
+   gEfiFileInfoGuid                ## CONSUMES
+   gEfiPartTypeSystemPartGuid      ## CONSUMES
+-  gEficorebootNvDataGuid          ## CONSUMES ## Variable:L"ipxe_boot" L"csmwrap_boot" L"usb_boot" L"boot_menu_prompt"
++  gEficorebootNvDataGuid          ## CONSUMES ## Variable:L"ipxe_boot" L"csmwrap_boot" L"usb_boot" L"boot_menu_prompt"; PRODUCES ## Variable:L"OptionLockStatus"
+   gEfiGlobalVariableGuid          ## CONSUMES ## Variable:L"SecureBoot"
+ 
+ [Protocols]
+@@ -83,6 +84,7 @@
+   gEfiPciRootBridgeIoProtocolGuid
+   gEfiBatteryStatusProtocolGuid   ## SOMETIMES_CONSUMES
+   gEdkiiPlatformBootManagerProtocolGuid ## SOMETIMES_PRODUCES
++  gEdkiiVariablePolicyProtocolGuid ## SOMETIMES_CONSUMES
+ 
+ [Pcd]
+   gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
+index a01d9fb..2afe010 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
+@@ -27,6 +27,8 @@
+ #include <Guid/FileInfo.h>
+ #include <Guid/Gpt.h>
+ #include <Library/SmmStoreLib.h>
++#include <Library/VariablePolicyHelperLib.h>
++#include <Protocol/VariablePolicy.h>
+ #include <Protocol/BatteryStatus.h>
+ #include <Protocol/SimpleFileSystem.h>
+ 
+@@ -484,6 +486,78 @@ CapsuleApply (
+ }
+ 
+ STATIC BOOLEAN  mFirmwareSlotsLocked;
++STATIC BOOLEAN  mOptionLockReported;
++
++/**
++  Before EndOfDxe, which closes Variable Policy to new rules: OptionLockStatus
++  becomes read-only as soon as it exists (lock on create), so only the first
++  write, PlatformReportOptionLock() at ReadyToBoot, goes in.
++**/
++VOID
++PlatformRegisterOptionLockPolicy (
++  VOID
++  )
++{
++  EFI_STATUS                      Status;
++  EDKII_VARIABLE_POLICY_PROTOCOL  *VariablePolicy;
++
++  Status = gBS->LocateProtocol (&gEdkiiVariablePolicyProtocolGuid, NULL, (VOID **)&VariablePolicy);
++  if (!EFI_ERROR (Status)) {
++    Status = RegisterBasicVariablePolicy (
++               VariablePolicy,
++               &gEficorebootNvDataGuid,
++               L"OptionLockStatus",
++               VARIABLE_POLICY_NO_MIN_SIZE,
++               VARIABLE_POLICY_NO_MAX_SIZE,
++               VARIABLE_POLICY_NO_MUST_ATTR,
++               EFI_VARIABLE_NON_VOLATILE,
++               VARIABLE_POLICY_TYPE_LOCK_ON_CREATE
++               );
++  }
++
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_WARN, "Capsules: no Variable Policy for OptionLockStatus: %r\n", Status));
++  }
++}
++
++/**
++  Tell the OS what coreboot answered to the arm of the option lock: the
++  EFI_STATUS of SmmStoreLibOptionLock() (EFI_SUCCESS armed, EFI_UNSUPPORTED
++  with no option lock or BIOS Lock off) as a UINT64 in the volatile variable
++  OptionLockStatus of the coreboot options GUID, readable from efivarfs
++  (tools/hw-report.py, FLASH-06). PlatformRegisterOptionLockPolicy() made it
++  lock-on-create before EndOfDxe, so once written here the OS can read it but
++  not change it, nor create it first. It is the
++  payload's report of the answer of SMM, not a reading of the state there:
++  coreboot's SMM console is compiled out in the release builds (DEBUG_SMI).
++**/
++STATIC
++VOID
++PlatformReportOptionLock (
++  IN EFI_STATUS  LockStatus
++  )
++{
++  EFI_STATUS  Status;
++  UINT64      Value;
++
++  if (mOptionLockReported) {
++    return;
++  }
++
++  mOptionLockReported = TRUE;
++  Value               = (UINT64)LockStatus;
++  Status              = gRT->SetVariable (
++                               L"OptionLockStatus",
++                               &gEficorebootNvDataGuid,
++                               EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
++                               sizeof (Value),
++                               &Value
++                               );
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_WARN, "Capsules: OptionLockStatus not written: %r\n", Status));
++    return;
++  }
++}
+ 
+ /**
+   A boot option or an OS is about to start: from now on, only an update
+@@ -515,6 +589,7 @@ PlatformLockFirmwareSlots (
+   //
+   Status = SmmStoreLibOptionLock ();
+   DEBUG ((DEBUG_INFO, "Capsules: security options write-locked: %r\n", Status));
++  PlatformReportOptionLock (Status);
+ }
+ 
+ /**
+-- 
+2.47.3
+

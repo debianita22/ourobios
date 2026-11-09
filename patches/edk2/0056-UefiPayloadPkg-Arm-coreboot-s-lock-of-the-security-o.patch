@@ -1,0 +1,134 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sat, 7 Nov 2026 17:30:00 +0100
+Subject: [PATCH] UefiPayloadPkg: Arm coreboot's lock of the security options
+ at ReadyToBoot
+
+coreboot can write-lock the security options bios_lock and bootmedia_lock
+in SMM (its SMMSTORE_OPTION_LOCK): once armed, it refuses the writes of
+the variable store that would turn one off, so the OS cannot clear the
+firmware's own flash protections for the next boot. The payload arms it
+once the setup could have changed them, before a boot option or an OS
+runs.
+
+- SmmStoreLib: SmmStoreLibOptionLock() issues SMMSTORE_CMD_OPTION_LOCK
+  (no parameter), the twin of SmmStoreLibVbootLockSlots().
+- PlatformBootManagerLib: PlatformLockFirmwareSlots(), already a
+  ReadyToBoot and ExitBootServices handler that locks the vboot slots,
+  arms the option lock too. It runs on the boards with vboot that reach
+  PlatformMarkFirmwareGood(), which is all of ours.
+
+coreboot without the option lock, or with BIOS Lock off, reports it as
+unsupported, as before.
+---
+ UefiPayloadPkg/Include/Library/SmmStoreLib.h  | 19 ++++++++++++++
+ .../PlatformBootManagerLib/PlatformCapsule.c  |  8 ++++++
+ UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c | 25 +++++++++++++++++++
+ UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h |  6 +++++
+ 4 files changed, 58 insertions(+)
+
+diff --git a/UefiPayloadPkg/Include/Library/SmmStoreLib.h b/UefiPayloadPkg/Include/Library/SmmStoreLib.h
+index eece414..021444a 100644
+--- a/UefiPayloadPkg/Include/Library/SmmStoreLib.h
++++ b/UefiPayloadPkg/Include/Library/SmmStoreLib.h
+@@ -213,6 +213,25 @@ SmmStoreLibVbootLockSlots (
+   VOID
+   );
+ 
++/**
++  Arm the write-lock of the security options (bios_lock, bootmedia_lock) that
++  coreboot keeps in SMM (SMMSTORE_CMD_OPTION_LOCK): from now on, until the next
++  boot, coreboot refuses the writes of the variable store that would turn one
++  of them off.  To be called before a boot option or an OS starts, once the
++  setup could have changed them.  Allocates nothing: it can be called from
++  ExitBootServices().
++
++  @retval EFI_SUCCESS       Armed (or already armed).
++  @retval EFI_NO_MEDIA      SmmStore is not initialized.
++  @retval EFI_UNSUPPORTED   coreboot has no option lock, or BIOS Lock off.
++  @retval others            The handler failed.
++
++**/
++EFI_STATUS
++SmmStoreLibOptionLock (
++  VOID
++  );
++
+ /**
+   Function to update a pointer on virtual address change.  Matches the signature
+   and operation of EfiConvertPointer.
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
+index f82b146..a01d9fb 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
+@@ -507,6 +507,14 @@ PlatformLockFirmwareSlots (
+   Status               = SmmStoreLibVbootLockSlots ();
+   mFirmwareSlotsLocked = !EFI_ERROR (Status);
+   DEBUG ((DEBUG_INFO, "Capsules: switch to the other firmware slot locked: %r\n", Status));
++
++  //
++  // The setup could have changed the security options (bios_lock,
++  // bootmedia_lock) in this boot; from here, before a boot option or an OS
++  // runs, coreboot keeps the OS from turning them off.
++  //
++  Status = SmmStoreLibOptionLock ();
++  DEBUG ((DEBUG_INFO, "Capsules: security options write-locked: %r\n", Status));
+ }
+ 
+ /**
+diff --git a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+index a0c546f..5b502e7 100644
+--- a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
++++ b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+@@ -484,6 +484,31 @@ SmmStoreLibVbootLockSlots (
+   return CallSmm (mSmmStoreInfo->ApmCmd, SMMSTORE_CMD_VBOOT_LOCK, mArgComBufPhys);
+ }
+ 
++/**
++  Arm the write-lock of the security options (bios_lock, bootmedia_lock) that
++  coreboot keeps in SMM (SMMSTORE_CMD_OPTION_LOCK): from now on, until the next
++  boot, coreboot refuses the writes of the variable store that would turn one
++  of them off.  To be called before a boot option or an OS starts.  Allocates
++  nothing: it can be called from ExitBootServices().
++
++  @retval EFI_SUCCESS       Armed (or already armed).
++  @retval EFI_NO_MEDIA      SmmStore is not initialized.
++  @retval EFI_UNSUPPORTED   coreboot has no option lock, or BIOS Lock off.
++  @retval others            The handler failed.
++
++**/
++EFI_STATUS
++SmmStoreLibOptionLock (
++  VOID
++  )
++{
++  if (mSmmStoreInfo == NULL) {
++    return EFI_NO_MEDIA;
++  }
++
++  return CallSmm (mSmmStoreInfo->ApmCmd, SMMSTORE_CMD_OPTION_LOCK, mArgComBufPhys);
++}
++
+ /**
+   The lock of TCG Secure MOR that coreboot keeps in SMM
+   (SMMSTORE_CMD_MOR_LOCK): while it holds, coreboot refuses the writes of the
+diff --git a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h
+index a835d20..8d8dd5d 100644
+--- a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h
++++ b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h
+@@ -36,6 +36,12 @@
+ //
+ #define SMMSTORE_CMD_MOR_LOCK  11
+ 
++//
++// coreboot with SMMSTORE_OPTION_LOCK: arm the write-lock of the security
++// options, kept in SMM. No parameter.
++//
++#define SMMSTORE_CMD_OPTION_LOCK  12
++
+ /* Used by capsule updates as a standalone command or modifier to v2 commands */
+ #define SMMSTORE_CMD_USE_FULL_FLASH  0x80
+ 
+-- 
+2.43.0
+

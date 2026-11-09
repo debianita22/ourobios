@@ -1,0 +1,141 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 8 Nov 2026 12:00:00 +0100
+Subject: [PATCH] soc/intel/common/block/oc_wdt: Keep the status bits, and arm
+ from a runtime option
+
+ICCSURV_STS and NO_ICCSURV_STS of OC_WDT_CTL are write-1-to-clear and
+say that the last reset came from the watchdog. oc_wdt_reload() masks
+them before it writes, oc_wdt_start() and oc_wdt_disable() wrote them
+back as read and so cleared them, before anyone could log them. Mask
+them in every write.
+
+A board that arms the watchdog from a setup option cannot use
+SOC_INTEL_COMMON_OC_WDT_ENABLE, which fixes it at build time and makes
+setup_oc_wdt() disable it otherwise. Add oc_wdt_arm(timeout),
+oc_wdt_stop(), oc_wdt_read() and oc_wdt_caused_reset() for that case,
+with SOC_INTEL_COMMON_OC_WDT_TIMEOUT_SECONDS_RUNTIME as the fallback
+timeout.
+---
+ .../common/block/include/intelblocks/oc_wdt.h |  7 +++
+ src/soc/intel/common/block/oc_wdt/Kconfig     |  9 ++++
+ src/soc/intel/common/block/oc_wdt/oc_wdt.c    | 43 ++++++++++++++++++-
+ 3 files changed, 57 insertions(+), 2 deletions(-)
+
+diff --git a/src/soc/intel/common/block/include/intelblocks/oc_wdt.h b/src/soc/intel/common/block/include/intelblocks/oc_wdt.h
+index bc0f0b1a27a..7b40869df58 100644
+--- a/src/soc/intel/common/block/include/intelblocks/oc_wdt.h
++++ b/src/soc/intel/common/block/include/intelblocks/oc_wdt.h
+@@ -4,6 +4,7 @@
+ #define SOC_INTEL_COMMON_OC_WDT_H
+ 
+ #include <stdbool.h>
++#include <stdint.h>
+ 
+ /* Starts and reloads the OC watchdog if enabled in Kconfig */
+ void setup_oc_wdt(void);
+@@ -14,4 +15,10 @@ void oc_wdt_reload(void);
+ /* Returns currently programmed OC watchdog timeout in seconds */
+ unsigned int oc_wdt_get_current_timeout(void);
+ 
++/* Driven from a runtime option, without SOC_INTEL_COMMON_OC_WDT_ENABLE */
++void oc_wdt_arm(unsigned int timeout);
++void oc_wdt_stop(void);
++uint32_t oc_wdt_read(void);
++bool oc_wdt_caused_reset(void);
++
+ #endif
+diff --git a/src/soc/intel/common/block/oc_wdt/Kconfig b/src/soc/intel/common/block/oc_wdt/Kconfig
+index f0966e0f383..71033822620 100644
+--- a/src/soc/intel/common/block/oc_wdt/Kconfig
++++ b/src/soc/intel/common/block/oc_wdt/Kconfig
+@@ -28,6 +28,15 @@ config SOC_INTEL_COMMON_OC_WDT_TIMEOUT_SECONDS
+ 	  will have a chance to perform full memory training and boot. Default
+ 	  is 10 minutes. Boards and SoCs may override this value.
+ 
++config SOC_INTEL_COMMON_OC_WDT_TIMEOUT_SECONDS_RUNTIME
++	int
++	depends on SOC_INTEL_COMMON_BLOCK_OC_WDT
++	range 70 1024
++	default 600
++	help
++	  The timeout oc_wdt_arm() falls back to when it is given one out of
++	  range.
++
+ config SOC_INTEL_COMMON_OC_WDT_RELOAD_IN_PERIODIC_SMI
+ 	bool "Reload the overclocking watchdog using periodic SMI"
+ 	depends on SOC_INTEL_COMMON_OC_WDT_ENABLE
+diff --git a/src/soc/intel/common/block/oc_wdt/oc_wdt.c b/src/soc/intel/common/block/oc_wdt/oc_wdt.c
+index d0f054a074a..b1865f6e735 100644
+--- a/src/soc/intel/common/block/oc_wdt/oc_wdt.c
++++ b/src/soc/intel/common/block/oc_wdt/oc_wdt.c
+@@ -16,6 +16,9 @@
+ #define   PCH_OC_WDT_CTL_ICCSURV		BIT(13)
+ #define   PCH_OC_WDT_CTL_LCK			BIT(12)
+ #define   PCH_OC_WDT_CTL_TOV_MASK		0x3FF
++/* Write-1-to-clear: a write that keeps them as read would clear them */
++#define   PCH_OC_WDT_CTL_STS_MASK		(PCH_OC_WDT_CTL_ICCSURV_STS | \
++						 PCH_OC_WDT_CTL_NO_ICCSURV_STS)
+ 
+ /*
+  * Starts and reloads the OC watchdog with given timeout.
+@@ -37,7 +40,7 @@ static void oc_wdt_start(unsigned int timeout)
+ 
+ 	printk(BIOS_SPEW, "OC Watchdog: start and relaod timer (timeout %ds)\n", timeout);
+ 
+-	oc_wdt_ctrl = inl(PCH_OC_WDT_CTL);
++	oc_wdt_ctrl = inl(PCH_OC_WDT_CTL) & ~PCH_OC_WDT_CTL_STS_MASK;
+ 	oc_wdt_ctrl |= (PCH_OC_WDT_CTL_EN | PCH_OC_WDT_CTL_FORCE_ALL | PCH_OC_WDT_CTL_ICCSURV);
+ 
+ 
+@@ -78,10 +81,46 @@ static void oc_wdt_disable(void)
+ 	printk(BIOS_INFO, "OC Watchdog: disabling watchdog timer\n");
+ 
+ 	oc_wdt_ctrl = inl(PCH_OC_WDT_CTL);
+-	oc_wdt_ctrl &= ~(PCH_OC_WDT_CTL_EN | PCH_OC_WDT_CTL_FORCE_ALL);
++	oc_wdt_ctrl &= ~(PCH_OC_WDT_CTL_EN | PCH_OC_WDT_CTL_FORCE_ALL | PCH_OC_WDT_CTL_STS_MASK);
++	outl(oc_wdt_ctrl, PCH_OC_WDT_CTL);
++}
++
++/*
++ * The same watchdog for a board that arms it from a runtime option instead of
++ * SOC_INTEL_COMMON_OC_WDT_ENABLE: start it with @timeout seconds (70-1024).
++ */
++void oc_wdt_arm(unsigned int timeout)
++{
++	uint32_t oc_wdt_ctrl;
++
++	if (timeout < 70 || timeout > PCH_OC_WDT_CTL_TOV_MASK + 1)
++		timeout = CONFIG_SOC_INTEL_COMMON_OC_WDT_TIMEOUT_SECONDS_RUNTIME;
++
++	oc_wdt_ctrl = inl(PCH_OC_WDT_CTL) & ~(PCH_OC_WDT_CTL_STS_MASK | PCH_OC_WDT_CTL_TOV_MASK);
++	oc_wdt_ctrl |= PCH_OC_WDT_CTL_EN | PCH_OC_WDT_CTL_FORCE_ALL | PCH_OC_WDT_CTL_ICCSURV;
++	oc_wdt_ctrl |= (timeout - 1) | PCH_OC_WDT_CTL_RLD;
+ 	outl(oc_wdt_ctrl, PCH_OC_WDT_CTL);
+ }
+ 
++/* Stop the watchdog, armed or not, keeping its status bits */
++void oc_wdt_stop(void)
++{
++	if (is_oc_wdt_enabled())
++		oc_wdt_disable();
++}
++
++/* The control register as it reads, the status bits included */
++uint32_t oc_wdt_read(void)
++{
++	return inl(PCH_OC_WDT_CTL);
++}
++
++/* Whether the last reset came from the watchdog, read before any write clears it */
++bool oc_wdt_caused_reset(void)
++{
++	return inl(PCH_OC_WDT_CTL) & PCH_OC_WDT_CTL_STS_MASK;
++}
++
+ /* Returns currently programmed OC watchdog timeout in seconds */
+ unsigned int oc_wdt_get_current_timeout(void)
+ {
+-- 
+2.47.3
+

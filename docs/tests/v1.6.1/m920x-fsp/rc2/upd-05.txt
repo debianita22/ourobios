@@ -1,0 +1,19 @@
+gira:      slot B, ouroBIOS-v1.6.1-rc2-m920x-fsp
+indietro:  slot A, ouroBIOS-v1.6.1-rc1-m920x-fsp
+release v1.6.1-rc1-m920x-fsp: scarico m920x-coreboot-v1.6.1-rc1-fsp.cap
+slot A:    uguale alla release: il firmware non riscrive niente, cambia solo slot
+capsula:   /tmp/tmpl5ec0osq/m920x-coreboot-v1.6.1-rc1-fsp.cap
+firmware:  ouroBIOS, variante m920x-fsp (ceef6456-ca3b-4cf3-a784-4895efaf1bde)
+versione:  v1.6.1-rc1, minima v1.3.9
+regioni:   RW_SECTION_A RW_SECTION_B
+firmata:   O=w541-coreboot-env, CN=W541 coreboot capsule signing
+           SHA-256 BE:A3:E5:65:60:43:87:F6:61:07:82:33:4B:90:BB:7E:97:35:AF:16:08:16:AB:CA:78:8F:3F:C1:24:9C:6A:B5
+firma:     valida
+
+pronta: al prossimo riavvio ouroBIOS-v1.6.1-rc2-m920x-fsp -> ouroBIOS-v1.6.1-rc1-m920x-fsp (slot A).
+Il firmware verifica la capsula e chiede a vboot lo slot A, con due tentativi.
+Se lo slot A non partisse, vboot tornerebbe allo slot B.
+Il training della RAM resta: lo slot nuovo lo rifa' solo se non vale per lui (un altro
+FSP-M, processore o Hyper-Threading). Se lo slot nuovo non partisse due volte di fila,
+vboot torna a quello di adesso: allora update.py other-slot --retrain.
+  sudo systemctl reboot

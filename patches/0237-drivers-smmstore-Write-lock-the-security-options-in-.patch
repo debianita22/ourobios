@@ -1,0 +1,472 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sat, 7 Nov 2026 18:15:00 +0100
+Subject: [PATCH] drivers/smmstore: Write-lock the security options in SMM
+
+coreboot reads bios_lock and bootmedia_lock from the variable store
+(drivers/efi/option.c) to decide the flash protections. They are
+BootService-only options, so the OS cannot change them with SetVariable,
+but it can write the variable store with the raw SMMSTORE SMI, set them
+to off and, at the next boot, start the firmware without its protections,
+then rewrite the read-only part or the descriptor.
+
+Close it the way the TCG MOR lock is closed (mor_lock.c), the UEFI
+VariablePolicy model applied in MM: at ReadyToBoot the payload arms
+SMMSTORE_CMD_OPTION_LOCK; while armed, the handler reads each write of
+the variable store on an after-write overlay and refuses the ones that
+would turn a protected option from on to off (options_lock.c). The setup
+still changes the options, before the lock is armed.
+
+Only meaningful with the flash written by SMM alone (BIOS Lock), which
+the lock requires; bios_lock is itself a protected option, so once armed
+the lock stays effective. The authenticated Secure Boot variables are
+not covered: that needs the signature check in SMM, out of scope here.
+
+Behind SMMSTORE_OPTION_LOCK, off by default.
+---
+ src/drivers/smmstore/Kconfig        |  17 ++
+ src/drivers/smmstore/Makefile.mk    |   1 +
+ src/drivers/smmstore/options_lock.c | 262 ++++++++++++++++++++++++++++
+ src/drivers/smmstore/smi.c          |   7 +
+ src/drivers/smmstore/store.c        |  49 ++++++
+ src/include/smmstore.h              |  19 ++
+ 6 files changed, 355 insertions(+)
+ create mode 100644 src/drivers/smmstore/options_lock.c
+
+diff --git a/src/drivers/smmstore/Kconfig b/src/drivers/smmstore/Kconfig
+index f65af669..434e7ef3 100644
+--- a/src/drivers/smmstore/Kconfig
++++ b/src/drivers/smmstore/Kconfig
+@@ -62,6 +62,23 @@ config SMMSTORE_MOR_LOCK_ANY_BIOS_LOCK
+ 	  QEMU, where the flash has no such protection: the lock can be
+ 	  bypassed there, by writing the flash directly.
+ 
++config SMMSTORE_OPTION_LOCK
++	bool "Write-lock the security options in SMM"
++	depends on DRIVERS_OPTION_CFR && DRIVERS_EFI_VARIABLE_STORE
++	depends on BOOTMEDIA_SMM_BWP
++	select SMM_OPTION_LOCK_STATE_SMRAM
++	help
++	  SMMSTORE_CMD_OPTION_LOCK: at ReadyToBoot the payload arms a write-lock
++	  of the security options "bios_lock" and "bootmedia_lock" (the twin of
++	  the MOR lock). coreboot reads them from the variable store to decide
++	  the flash protections, and they are BootService-only so the OS cannot
++	  change them with SetVariable; while armed, the handler also refuses the
++	  writes of the variable store with the raw SMI that would turn one off.
++	  So a program of the OS cannot clear the firmware's own protections for
++	  the next boot. Only meaningful with the flash written by SMM alone
++	  (BIOS Lock), which is why "bios_lock" is one of the protected options.
++	  The setup still changes them (before the lock is armed).
++
+ endif
+ 
+ # Outside "if SMMSTORE": a board selects it whatever its payload
+diff --git a/src/drivers/smmstore/Makefile.mk b/src/drivers/smmstore/Makefile.mk
+index 403466d6..d85b9d6c 100644
+--- a/src/drivers/smmstore/Makefile.mk
++++ b/src/drivers/smmstore/Makefile.mk
+@@ -6,3 +6,4 @@ ramstage-$(CONFIG_SMMSTORE) += ramstage.c
+ 
+ smm-$(CONFIG_SMMSTORE) += store.c smi.c
+ smm-$(CONFIG_SMMSTORE_MOR_LOCK) += mor_lock.c
++smm-$(CONFIG_SMMSTORE_OPTION_LOCK) += options_lock.c
+diff --git a/src/drivers/smmstore/options_lock.c b/src/drivers/smmstore/options_lock.c
+new file mode 100644
+index 00000000..06c86429
+--- /dev/null
++++ b/src/drivers/smmstore/options_lock.c
+@@ -0,0 +1,262 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * VariablePolicy-style LOCK of the security options (SMMSTORE_CMD_OPTION_LOCK,
++ * smmstore.h), applied in SMM: the twin of mor_lock.c for "bios_lock" and
++ * "bootmedia_lock". coreboot reads those options from the variable store
++ * (drivers/efi/option.c) to decide the flash protections; they are
++ * BootService-only, so the OS cannot change them with SetVariable, but it
++ * could write the variable store with the raw SMMSTORE SMI. Once the payload
++ * arms the lock at ReadyToBoot, the handler refuses any write of the store
++ * that would turn a protected option from on (secure) to off.
++ *
++ * It only means anything with the flash written by SMM alone (BIOS Lock):
++ * without it the OS writes the flash directly. "bios_lock" is itself a
++ * protected option, so once armed the lock stays effective.
++ */
++
++#include <boot_device.h>
++#include <commonlib/helpers.h>
++#include <commonlib/region.h>
++#include <console/console.h>
++#include <cpu/x86/smm.h>
++#include <drivers/efi/efivars.h>
++#include <fmap.h>
++#include <security/lockdown/lockdown.h>
++#include <smmstore.h>
++#include <string.h>
++#include <types.h>
++
++#define OPTION_LOCK_SIGNATURE 0x4b4c504f /* "OPLK" */
++
++/* The same GUID as drivers/efi/option.c: the coreboot setup options. */
++static const EFI_GUID EficorebootNvDataGuid = {
++	0xceae4c1d, 0x335b, 0x4685, { 0xa4, 0xa0, 0xfc, 0x4a, 0x94, 0xee, 0xa0, 0x85 } };
++
++/*
++ * The options the OS must not turn off once it runs, with the secure value
++ * coreboot falls back to when the option is missing (so a deleted store does
++ * not count as a downgrade): both are "on".
++ */
++static const struct {
++	const char *name;
++	uint32_t fallback;
++} protected_options[] = {
++	{ "bios_lock", CONFIG(BOOTMEDIA_SMM_BWP) },
++	{ "bootmedia_lock", 1 },
++};
++
++/*
++ * The value of each option latched at arm. Once armed an option cannot change
++ * (that is the lock), so the per-write check uses this as the "before" and does
++ * not read the store for it; an option that was off is never refused. Room for
++ * a few options, guarded by a static assert.
++ */
++struct option_lock_state {
++	uint32_t signature;
++	uint8_t armed;
++	uint8_t on[4];
++	uint8_t reserved[3];
++} __packed;
++
++_Static_assert(ARRAY_SIZE(protected_options) <= 4, "option_lock_state.on is too small");
++
++/* In the SMRAM region kept across S3, zeroed on every other boot */
++static struct option_lock_state *option_state(void)
++{
++	struct option_lock_state *state;
++	uintptr_t base;
++	size_t size;
++
++	smm_get_option_lock_state_buffer(&base, &size);
++	if (!base || size < sizeof(*state))
++		return NULL;
++
++	state = (struct option_lock_state *)base;
++	if (state->signature != OPTION_LOCK_SIGNATURE) {
++		memset(state, 0, sizeof(*state));
++		state->signature = OPTION_LOCK_SIGNATURE;
++	}
++	return state;
++}
++
++/*
++ * The variable store itself, not smmstore_lookup_region(): that one keeps the
++ * region of its first call, the whole flash when capsules came first.
++ */
++static int variable_store(struct region_device *rdev)
++{
++	struct region region;
++
++	if (fmap_locate_area(SMMSTORE_REGION, &region))
++		return -1;
++	return boot_device_ro_subregion(&region, rdev);
++}
++
++/* The effective value of a protected option (its fallback when it is missing) */
++static uint32_t option_value(const struct region_device *store, size_t which)
++{
++	uint32_t value;
++	uint32_t size = sizeof(value);
++
++	if (efi_fv_get_option(store, &EficorebootNvDataGuid, protected_options[which].name,
++			      &value, &size) != CB_SUCCESS || size != sizeof(value))
++		return protected_options[which].fallback;
++	return value;
++}
++
++/*
++ * The variable store as the flash would be after a write (@data, programmed
++ * over what is there: only bits that are set can be cleared) or an erase
++ * (@data NULL) of [@offset, @offset + @size).
++ *
++ * The context is a file-static pointer, not container_of() on the rdev:
++ * efi_fv_get_option() copies the rdev by value, so the rdev the readat
++ * callback is given is not the one embedded here. An SMI is handled by one
++ * CPU at a time with the others held, so one static context is enough.
++ */
++struct after_write {
++	const struct region_device *store;
++	size_t offset;
++	size_t size;
++	const uint8_t *data;
++	bool read_error;
++};
++
++static struct after_write *after_write_ctx;
++
++static ssize_t after_write_readat(const struct region_device *rd, void *b, size_t offset,
++				  size_t size)
++{
++	struct after_write *aw = after_write_ctx;
++	size_t start, end;
++	uint8_t *buf = b;
++
++	if (aw == NULL)
++		return -1;
++
++	if (rdev_readat(aw->store, b, offset, size) != size) {
++		aw->read_error = true;
++		return -1;
++	}
++
++	start = MAX(offset, aw->offset);
++	end = MIN(offset + size, aw->offset + aw->size);
++	for (size_t i = start; i < end; i++)
++		buf[i - offset] = aw->data ? buf[i - offset] & aw->data[i - aw->offset] : 0xff;
++
++	return size;
++}
++
++static void *after_write_mmap(const struct region_device *rd, size_t offset, size_t size)
++{
++	return NULL;
++}
++
++static int after_write_munmap(const struct region_device *rd, void *mapping)
++{
++	return 0;
++}
++
++static const struct region_device_ops after_write_ops = {
++	.mmap = after_write_mmap,
++	.munmap = after_write_munmap,
++	.readat = after_write_readat,
++};
++
++bool smmstore_options_protecting(void)
++{
++	const struct option_lock_state *state = option_state();
++
++	return state && state->armed;
++}
++
++bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size)
++{
++	const struct option_lock_state *state = option_state();
++	struct region_device store, overlay_root, overlay;
++	struct after_write aw;
++
++	if (!state || !state->armed)
++		return true;
++
++	if (variable_store(&store)) {
++		printk(BIOS_ERR, "Option lock: no variable store, write refused\n");
++		return false;
++	}
++
++	aw = (struct after_write){
++		.store = &store,
++		.offset = offset,
++		.size = size,
++		.data = data,
++	};
++	/*
++	 * The reader gets a child of the overlay, never the root itself:
++	 * efi_fv_get_option() copies the rdev it is given and chains that copy
++	 * to itself, and rdev_chain() on a root device makes the copy its own
++	 * root with no ops, so the next read calls through NULL. A child keeps
++	 * the real root. overlay_root outlives the call.
++	 */
++	region_device_init(&overlay_root, &after_write_ops, 0, region_device_sz(&store));
++	if (rdev_chain(&overlay, &overlay_root, 0, region_device_sz(&store))) {
++		printk(BIOS_ERR, "Option lock: overlay of the variable store failed, write refused\n");
++		return false;
++	}
++
++	for (size_t i = 0; i < ARRAY_SIZE(protected_options); i++) {
++		uint32_t after;
++
++		/* Latched at arm; an option that was off is never refused, so the
++		 * store is not read for it. bios_lock is always on (the guard). */
++		if (!state->on[i])
++			continue;
++
++		after_write_ctx = &aw;
++		aw.read_error = false;
++		after = option_value(&overlay, i);
++		after_write_ctx = NULL;
++
++		if (aw.read_error) {
++			/* Not the content: the flash could not be read, the check failed */
++			printk(BIOS_ERR, "Option lock: variable store unreadable, write refused\n");
++			return false;
++		}
++		/* The downgrade to guard: a latched-on option becoming off */
++		if (!after) {
++			printk(BIOS_WARNING, "Option lock: refused a %s that turns '%s' off\n",
++			       data ? "write" : "erase", protected_options[i].name);
++			return false;
++		}
++	}
++
++	return true;
++}
++
++uint32_t smmstore_options_lock(void)
++{
++	struct option_lock_state *state = option_state();
++	struct region_device store;
++	bool have_store;
++
++	if (!state)
++		return SMMSTORE_RET_UNSUPPORTED;
++	/* Without SMM-only flash writes the OS gets around any lock */
++	if (!enable_smm_bios_protection())
++		return SMMSTORE_RET_UNSUPPORTED;
++
++	if (!state->armed) {
++		/*
++		 * Latch each option's value now, so the per-write check does not
++		 * read the store for the "before": once armed it cannot change. A
++		 * store that cannot be read latches the secure fallback.
++		 */
++		have_store = variable_store(&store) == 0;
++		for (size_t i = 0; i < ARRAY_SIZE(protected_options); i++)
++			state->on[i] = (have_store ? option_value(&store, i)
++						   : protected_options[i].fallback) ? 1 : 0;
++		state->armed = 1;
++		printk(BIOS_INFO, "Option lock: armed, the security options are read-only to the OS\n");
++	}
++	return SMMSTORE_RET_SUCCESS;
++}
+diff --git a/src/drivers/smmstore/smi.c b/src/drivers/smmstore/smi.c
+index ebfce2a3..6b99d7b5 100644
+--- a/src/drivers/smmstore/smi.c
++++ b/src/drivers/smmstore/smi.c
+@@ -371,6 +371,13 @@ uint32_t smmstore_exec(uint8_t command, void *param)
+ 		ret = smmstore_mor_lock(params);
+ 		break;
+ 	}
++	case SMMSTORE_CMD_OPTION_LOCK:
++		if (!CONFIG(SMMSTORE_OPTION_LOCK)) {
++			ret = SMMSTORE_RET_UNSUPPORTED;
++			break;
++		}
++		ret = smmstore_options_lock();
++		break;
+ 	default:
+ 		printk(BIOS_DEBUG, "Unknown SMM store command: 0x%02x\n", command);
+ 		ret = SMMSTORE_RET_UNSUPPORTED;
+diff --git a/src/drivers/smmstore/store.c b/src/drivers/smmstore/store.c
+index 95f3b7fd..d70e0a6e 100644
+--- a/src/drivers/smmstore/store.c
++++ b/src/drivers/smmstore/store.c
+@@ -58,6 +58,38 @@ static bool mor_lock_allows(size_t store_offset, const void *data, size_t size)
+ /* A write checked for the MOR lock is checked and written from here, in SMRAM */
+ static uint8_t mor_lock_copy[SMM_BLOCK_SIZE];
+ #endif
++
++#if ENV_SMM && CONFIG(SMMSTORE_OPTION_LOCK)
++/*
++ * For SMMSTORE_OPTION_LOCK: the part of a write (or, @data NULL, an erase) at
++ * @store_offset that falls in the SMMSTORE region, the variable store. The
++ * twin of mor_lock_allows() for the security options.
++ */
++static bool options_lock_allows(size_t store_offset, const void *data, size_t size)
++{
++	struct region store, vars;
++	size_t start, end;
++
++	if (!smmstore_options_protecting())
++		return true;
++	if (lookup_store_region(&store) != CB_SUCCESS ||
++	    fmap_locate_area(SMMSTORE_REGION, &vars))
++		return false;
++
++	start = MAX(region_offset(&store) + store_offset, region_offset(&vars));
++	end = MIN(region_offset(&store) + store_offset + size,
++		  region_offset(&vars) + region_sz(&vars));
++	if (start >= end)
++		return true;
++
++	return smmstore_options_write_allowed(start - region_offset(&vars),
++		data ? (const uint8_t *)data + (start - region_offset(&store) - store_offset) : NULL,
++		end - start);
++}
++
++/* A write checked for the option lock is checked and written from here, in SMRAM */
++static uint8_t options_lock_copy[SMM_BLOCK_SIZE];
++#endif
+ static int has_capsules = -1;
+ 
+ int smmstore_preprocess_cmd(uint8_t *cmd, void *param)
+@@ -370,6 +402,19 @@ int smmstore_rawwrite_region(uint32_t block_id, uint32_t offset, uint32_t bufsiz
+ 		}
+ 	}
+ #endif
++#if ENV_SMM && CONFIG(SMMSTORE_OPTION_LOCK)
++	if (smmstore_options_protecting()) {
++		/* The OS cannot change it between the check and the write */
++		if (data == ptr) {
++			memcpy(options_lock_copy, ptr, bufsize);
++			data = options_lock_copy;
++		}
++		if (!options_lock_allows((size_t)block_id * SMM_BLOCK_SIZE + offset, data, bufsize)) {
++			rdev_munmap(&com_buf, ptr);
++			return -1;
++		}
++	}
++#endif
+ 
+ 	ssize_t ret = rdev_writeat(&store, data, 0, bufsize);
+ 	rdev_munmap(&com_buf, ptr);
+@@ -397,6 +442,10 @@ int smmstore_rawclear_region(uint32_t block_id)
+ 	if (!mor_lock_allows((size_t)block_id * SMM_BLOCK_SIZE, NULL, SMM_BLOCK_SIZE))
+ 		return -1;
+ #endif
++#if ENV_SMM && CONFIG(SMMSTORE_OPTION_LOCK)
++	if (!options_lock_allows((size_t)block_id * SMM_BLOCK_SIZE, NULL, SMM_BLOCK_SIZE))
++		return -1;
++#endif
+ 
+ 	ssize_t ret = rdev_eraseat(&store, block_id * SMM_BLOCK_SIZE, SMM_BLOCK_SIZE);
+ 	if (ret != SMM_BLOCK_SIZE) {
+diff --git a/src/include/smmstore.h b/src/include/smmstore.h
+index 97da694a..a10ca44c 100644
+--- a/src/include/smmstore.h
++++ b/src/include/smmstore.h
+@@ -90,6 +90,15 @@
+ #define SMMSTORE_MOR_UNLOCK_WITH_KEY		3
+ #define SMMSTORE_MOR_LOCK_KEY_SIZE		8
+ 
++/*
++ * The payload arms the write-lock of the security options (SMMSTORE_OPTION_LOCK)
++ * at ReadyToBoot, once the setup could have changed them: until the next boot
++ * the handler refuses a write of the variable store that turns a protected
++ * option off. Takes no parameter. SMMSTORE_RET_SUCCESS when armed (or already),
++ * SMMSTORE_RET_UNSUPPORTED without the feature or without BIOS Lock.
++ */
++#define SMMSTORE_CMD_OPTION_LOCK 12
++
+ /*
+  * Used by capsule updates as a standalone command or modifier to v2 commands.
+  *
+@@ -196,6 +205,16 @@ bool smmstore_mor_protecting(void);
+  */
+ bool smmstore_mor_write_allowed(size_t offset, const void *data, size_t size);
+ 
++/* SMMSTORE_CMD_OPTION_LOCK (options_lock.c) */
++uint32_t smmstore_options_lock(void);
++/* Whether the option lock is armed: writes of the variable store are checked */
++bool smmstore_options_protecting(void);
++/*
++ * Whether a write (@data, @size bytes) or, with @data NULL, an erase at
++ * @offset of the SMMSTORE region keeps the protected security options on.
++ */
++bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size);
++
+ /* Advertise SMMSTORE support */
+ struct lb_header;
+ void lb_smmstorev2(struct lb_header *header);
+-- 
+2.43.0
+

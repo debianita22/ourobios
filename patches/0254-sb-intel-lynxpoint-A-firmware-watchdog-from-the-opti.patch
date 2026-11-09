@@ -1,0 +1,235 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 16:30:15 +0100
+Subject: [PATCH] sb/intel/lynxpoint: A firmware watchdog from the option
+ firmware_watchdog
+
+SOUTHBRIDGE_INTEL_LYNXPOINT_FIRMWARE_WATCHDOG, for a board to select,
+as SOC_INTEL_CANNONLAKE_FIRMWARE_WATCHDOG on Cannon Lake: romstage arms
+the overclocking watchdog of the PCH (PMBASE + 0x54) before the memory
+init, after the resets of the options, with the timeout of the option
+"firmware_watchdog" (seconds, 0 for off, 180 to 1024), ramstage reloads
+it at the payload and logs OC_WDT_CTL, and the SMI handler stops it
+when the payload confirms the RW slot (smmstore_firmware_confirmed()).
+A boot that hangs in between is reset by the PCH, so that a new slot on
+trial falls back after two hangs without anyone at the power button.
+Off, and on S3 resume, romstage stops the watchdog whatever a previous
+firmware left; it logs and clears the status bits of a reset that came
+from it, and leaves a locked register as it is.
+
+The register has the layout of soc/intel/common/block/oc_wdt, which is
+not built for this southbridge: the few accesses are local, with the
+write-1-to-clear status bits masked in every write but the clear. The
+Lenovo firmware of the ThinkPad W541 drives the same register. Read on
+a W541 under coreboot: 0x00002000, the watchdog there and off.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: I8f3bf538d06b880fa3ee96fae30b0b23c01e8111
+---
+ src/northbridge/intel/haswell/romstage.c      |   3 +
+ src/southbridge/intel/lynxpoint/Kconfig       |  12 ++
+ src/southbridge/intel/lynxpoint/Makefile.mk   |   5 +
+ .../intel/lynxpoint/firmware_watchdog.c       | 120 ++++++++++++++++++
+ src/southbridge/intel/lynxpoint/pch.h         |   5 +
+ 5 files changed, 145 insertions(+)
+ create mode 100644 src/southbridge/intel/lynxpoint/firmware_watchdog.c
+
+diff --git a/src/northbridge/intel/haswell/romstage.c b/src/northbridge/intel/haswell/romstage.c
+index fe8f727941..30e54bb985 100644
+--- a/src/northbridge/intel/haswell/romstage.c
++++ b/src/northbridge/intel/haswell/romstage.c
+@@ -131,6 +131,9 @@ void mainboard_romstage_entry(void)
+ 		haswell_check_ht_option();
+ 	}
+ 
++	/* After the resets of the options, before the memory init */
++	firmware_watchdog_romstage(s3resume);
++
+ 	elog_boot_notify(s3resume);
+ 
+ 	/* Prepare USB controller early in S3 resume */
+diff --git a/src/southbridge/intel/lynxpoint/Kconfig b/src/southbridge/intel/lynxpoint/Kconfig
+index c3a574ef07..9cd297f505 100644
+--- a/src/southbridge/intel/lynxpoint/Kconfig
++++ b/src/southbridge/intel/lynxpoint/Kconfig
+@@ -96,6 +96,18 @@ config DISABLE_ME_PCI
+ 	  This will prevent the OS (and userspace apps) from interacting with
+ 	  the ME via the PCI interface after boot.
+ 
++config SOUTHBRIDGE_INTEL_LYNXPOINT_FIRMWARE_WATCHDOG
++	bool
++	depends on SMMSTORE
++	help
++	  Arm the overclocking watchdog of the PCH in romstage, before the
++	  memory init, with the timeout the option "firmware_watchdog" gives
++	  (seconds, 0 for off, never below 180), and stop it in SMM when the
++	  payload confirms the RW slot (SMMSTORE_CMD_VBOOT_SLOT_GOOD). A boot
++	  that hangs in between is reset by the PCH, so that a new slot on
++	  trial falls back after two hangs. Off, and on S3 resume, romstage
++	  stops the watchdog, whatever a previous firmware left.
++
+ config SOUTHBRIDGE_INTEL_LYNXPOINT_GBE_OPTION
+ 	bool
+ 	help
+diff --git a/src/southbridge/intel/lynxpoint/Makefile.mk b/src/southbridge/intel/lynxpoint/Makefile.mk
+index 5088d8bb2d..9194ab3ebd 100644
+--- a/src/southbridge/intel/lynxpoint/Makefile.mk
++++ b/src/southbridge/intel/lynxpoint/Makefile.mk
+@@ -5,6 +5,11 @@ ifeq ($(CONFIG_SOUTHBRIDGE_INTEL_LYNXPOINT),y)
+ bootblock-y += bootblock.c
+ 
+ ramstage-y += pch.c
++
++romstage-$(CONFIG_SOUTHBRIDGE_INTEL_LYNXPOINT_FIRMWARE_WATCHDOG) += firmware_watchdog.c
++ramstage-$(CONFIG_SOUTHBRIDGE_INTEL_LYNXPOINT_FIRMWARE_WATCHDOG) += firmware_watchdog.c
++smm-$(CONFIG_SOUTHBRIDGE_INTEL_LYNXPOINT_FIRMWARE_WATCHDOG) += firmware_watchdog.c
++
+ ramstage-y += iobp.c
+ ramstage-y += azalia.c
+ ramstage-y += fadt.c
+diff --git a/src/southbridge/intel/lynxpoint/firmware_watchdog.c b/src/southbridge/intel/lynxpoint/firmware_watchdog.c
+new file mode 100644
+index 0000000000..69705d20bb
+--- /dev/null
++++ b/src/southbridge/intel/lynxpoint/firmware_watchdog.c
+@@ -0,0 +1,120 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * The firmware watchdog (SOUTHBRIDGE_INTEL_LYNXPOINT_FIRMWARE_WATCHDOG): the
++ * overclocking watchdog of Lynx Point (PMBASE + 0x54, which the code of this
++ * PCH otherwise only names C3_RES), armed by romstage before the memory init
++ * when the option "firmware_watchdog" gives a timeout, and stopped by SMM when
++ * the payload confirms the RW slot (SMMSTORE_CMD_VBOOT_SLOT_GOOD). A boot that
++ * hangs in between is reset by the PCH; with a new slot on trial, two such
++ * resets make vboot fall back to the other slot. Off, or on a resume from S3,
++ * where the payload does not run, romstage stops it. The layout of the
++ * register is that of soc/intel/common/block/oc_wdt, which the Lenovo firmware
++ * of the ThinkPad W541 uses on this PCH too.
++ */
++
++#include <arch/io.h>
++#include <bootstate.h>
++#include <commonlib/helpers.h>
++#include <console/console.h>
++#include <option.h>
++#include <smmstore.h>
++#include <types.h>
++
++#include "pch.h"
++
++#define OC_WDT_CTL		0x54
++#define  OC_WDT_CTL_RLD		BIT(31)
++#define  OC_WDT_CTL_ICCSURV_STS	BIT(25)
++#define  OC_WDT_CTL_NO_ICCSURV_STS BIT(24)
++#define  OC_WDT_CTL_FORCE_ALL	BIT(15)
++#define  OC_WDT_CTL_EN		BIT(14)
++#define  OC_WDT_CTL_ICCSURV	BIT(13)
++#define  OC_WDT_CTL_LCK		BIT(12)
++#define  OC_WDT_CTL_TOV_MASK	0x3ff
++/* Write-1-to-clear: a write that keeps them as read would clear them */
++#define  OC_WDT_CTL_STS_MASK	(OC_WDT_CTL_ICCSURV_STS | OC_WDT_CTL_NO_ICCSURV_STS)
++
++/* Never shorter: a boot that trains the memory takes some seconds, and the
++   setup is reached before the slot is confirmed only if the payload hangs */
++#define FIRMWARE_WATCHDOG_MIN_SECONDS	180
++
++static u32 oc_wdt_read(void)
++{
++	return inl(DEFAULT_PMBASE + OC_WDT_CTL);
++}
++
++/* The status bits written as 0, so that they stay as they are */
++static void oc_wdt_write(u32 value)
++{
++	outl(value & ~OC_WDT_CTL_STS_MASK, DEFAULT_PMBASE + OC_WDT_CTL);
++}
++
++static __maybe_unused void oc_wdt_stop(void)
++{
++	oc_wdt_write(oc_wdt_read() & ~(OC_WDT_CTL_EN | OC_WDT_CTL_FORCE_ALL));
++}
++
++#if ENV_SEPARATE_ROMSTAGE
++static unsigned int firmware_watchdog_timeout(void)
++{
++	unsigned int t = get_uint_option("firmware_watchdog", 0);
++
++	if (!t)
++		return 0;
++	return MIN(MAX(t, FIRMWARE_WATCHDOG_MIN_SECONDS), OC_WDT_CTL_TOV_MASK + 1);
++}
++
++void firmware_watchdog_romstage(bool s3wake)
++{
++	const unsigned int t = firmware_watchdog_timeout();
++	const u32 ctl = oc_wdt_read();
++
++	if (ctl & OC_WDT_CTL_STS_MASK) {
++		printk(BIOS_WARNING, "Firmware watchdog: the last reset came from the watchdog "
++		       "(OC_WDT_CTL 0x%08x)\n", ctl);
++		/* Clear them, so that the next boot does not report it again */
++		outl(ctl & ~OC_WDT_CTL_RLD, DEFAULT_PMBASE + OC_WDT_CTL);
++	}
++
++	if (ctl & OC_WDT_CTL_LCK) {
++		printk(BIOS_WARNING, "Firmware watchdog: OC_WDT_CTL locked (0x%08x), left so\n",
++		       ctl);
++		return;
++	}
++
++	if (t && !s3wake) {
++		u32 v = oc_wdt_read() & ~OC_WDT_CTL_TOV_MASK;
++
++		v |= OC_WDT_CTL_EN | OC_WDT_CTL_FORCE_ALL | OC_WDT_CTL_ICCSURV;
++		v |= (t - 1) | OC_WDT_CTL_RLD;
++		oc_wdt_write(v);
++		printk(BIOS_INFO, "Firmware watchdog: armed, %u s (OC_WDT_CTL 0x%08x)\n", t,
++		       oc_wdt_read());
++	} else {
++		oc_wdt_stop();
++		printk(BIOS_DEBUG, "Firmware watchdog: off (OC_WDT_CTL 0x%08x)\n", oc_wdt_read());
++	}
++}
++#endif
++
++#if ENV_RAMSTAGE
++/* A full window for the payload, from the timeout it was armed with */
++static void firmware_watchdog_payload(void *unused)
++{
++	const u32 ctl = oc_wdt_read();
++
++	if (ctl & OC_WDT_CTL_EN)
++		oc_wdt_write(ctl | OC_WDT_CTL_RLD);
++	printk(BIOS_INFO, "Firmware watchdog: at the payload, OC_WDT_CTL 0x%08x\n", oc_wdt_read());
++}
++BOOT_STATE_INIT_ENTRY(BS_PAYLOAD_BOOT, BS_ON_ENTRY, firmware_watchdog_payload, NULL);
++#endif
++
++#if ENV_SMM
++/* The payload confirmed the slot: the firmware booted, stop the watchdog */
++void smmstore_firmware_confirmed(void)
++{
++	oc_wdt_stop();
++}
++#endif
+diff --git a/src/southbridge/intel/lynxpoint/pch.h b/src/southbridge/intel/lynxpoint/pch.h
+index bfd7eb8e36..d27d3cafd6 100644
+--- a/src/southbridge/intel/lynxpoint/pch.h
++++ b/src/southbridge/intel/lynxpoint/pch.h
+@@ -102,6 +102,11 @@ void acpi_create_serialio_ssdt(acpi_header_t *ssdt);
+ void enable_usb_bar(void);
+ u32 mainboard_usb2_port_disable_mask(void);
+ void pch_apply_gbe_option(void);
++#if CONFIG(SOUTHBRIDGE_INTEL_LYNXPOINT_FIRMWARE_WATCHDOG)
++void firmware_watchdog_romstage(bool s3wake);
++#else
++static inline void firmware_watchdog_romstage(bool s3wake) {}
++#endif
+ void early_pch_init(void);
+ void pch_enable_lpc(void);
+ void uart_bootblock_init(void);
+-- 
+2.43.0
+

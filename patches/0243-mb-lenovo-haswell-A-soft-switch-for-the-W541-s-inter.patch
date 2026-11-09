@@ -1,0 +1,84 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 8 Nov 2026 15:00:00 +0100
+Subject: [PATCH] mb/lenovo/haswell: A soft switch for the W541's internal
+ microphone
+
+The Lenovo setup's I/O Port Access has Microphone. The W541's codec
+(Realtek ALC3232, reported as ALC292) has the microphone array of the
+lid on pin 0x12; "internal_mic" off rewrites its pin configuration as
+not connected from mainboard_azalia_program_runtime_verbs(), after the
+verb table, so that no OS offers it as an input. A soft switch: the
+pin stays powered, and an OS that ignores the default configuration
+could still use it, as the help says. Under General > Sound.
+---
+ src/mainboard/lenovo/haswell/cfr.c                | 15 +++++++++++++++
+ .../lenovo/haswell/variants/w541/hda_verb.c       | 15 +++++++++++++++
+ 2 files changed, 30 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index a9f4e7242c4..65c1d8a4708 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -298,6 +298,20 @@ static const struct sm_object general_boot = SM_DECLARE_FORM({
+ 	},
+ });
+ 
++/* Read by variants/w541/hda_verb.c, mainboard_azalia_program_runtime_verbs() */
++static const struct sm_object internal_mic = SM_DECLARE_BOOL({
++	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "internal_mic",
++	.ui_name	= "Internal microphone",
++	.ui_helptext	= "The microphone array in the lid.\n"
++			  "Default: on. Off: the firmware tells the operating system\n"
++			  "that the microphone is not connected, so it is not offered\n"
++			  "as an input. A soft switch: the audio chip itself stays\n"
++			  "powered, and an OS that ignores the firmware's pin setup\n"
++			  "could still use it. The headset jack is not affected.",
++	.default_value	= true,
++});
++
+ static const struct sm_object general_sound = SM_DECLARE_FORM({
+ 	.ui_name	= "Sound",
+ 	.obj_list	= (const struct sm_object *[]) {
+@@ -305,6 +319,7 @@ static const struct sm_object general_sound = SM_DECLARE_FORM({
+ 		&h8_cfr_battery_beep,
+ 		&h8_cfr_keyboard_beep,
+ 		&h8_cfr_volume,
++		&internal_mic,
+ 		NULL
+ 	},
+ });
+diff --git a/src/mainboard/lenovo/haswell/variants/w541/hda_verb.c b/src/mainboard/lenovo/haswell/variants/w541/hda_verb.c
+index f92731ca1ec..4d400178d94 100644
+--- a/src/mainboard/lenovo/haswell/variants/w541/hda_verb.c
++++ b/src/mainboard/lenovo/haswell/variants/w541/hda_verb.c
+@@ -1,6 +1,7 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
+ #include <device/azalia_device.h>
++#include <option.h>
+ 
+ const u32 cim_verb_data[] = {
+ 	0x10ec0292,	/* Codec Vendor / Device ID: Realtek ALC292 */
+@@ -44,3 +45,17 @@ const u32 cim_verb_data[] = {
+ const u32 pc_beep_verbs[0] = {};
+ 
+ AZALIA_ARRAY_SIZES;
++
++/*
++ * "internal_mic" off: the internal microphone (pin 0x12, the array of the
++ * lid) declared not connected, so that no OS offers it; a soft switch, the
++ * codec keeps the pin powered.
++ */
++void mainboard_azalia_program_runtime_verbs(u8 *base, u32 viddid)
++{
++	const u32 mic_off[] = { AZALIA_PIN_CFG(0, 0x12, AZALIA_PIN_CFG_NC(0)) };
++
++	if (viddid != 0x10ec0292 || get_uint_option("internal_mic", 1))
++		return;
++	azalia_program_verb_table(base, mic_off, ARRAY_SIZE(mic_off));
++}
+-- 
+2.47.3
+

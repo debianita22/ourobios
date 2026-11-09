@@ -1,0 +1,69 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 16:27:36 +0100
+Subject: [PATCH] sb/intel/lynxpoint, cpu/intel/haswell: Mark the resets of the
+ options as requested
+
+The full resets that apply the Ethernet and VT-x options end a boot
+before the payload, so with CMOS_POST the next boot logs the last POST
+code of that boot as a hang (0x31 or 0x33), at every change.
+
+Leave POSTCODE_RESET_REQUESTED right before them, with "GbE" or "VT-x"
+in the extra field, as the Hyper-Threading reset does.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: I137ec894d39e28d35f4cd21606d117637dffbe2c
+---
+ src/cpu/intel/haswell/romstage.c            | 5 +++++
+ src/southbridge/intel/lynxpoint/early_pch.c | 5 +++++
+ 2 files changed, 10 insertions(+)
+
+diff --git a/src/cpu/intel/haswell/romstage.c b/src/cpu/intel/haswell/romstage.c
+index 30e63f7d81..d20be9b8d2 100644
+--- a/src/cpu/intel/haswell/romstage.c
++++ b/src/cpu/intel/haswell/romstage.c
+@@ -6,6 +6,7 @@
+ #include <cpu/intel/haswell/haswell.h>
+ #include <cpu/x86/msr.h>
+ #include <option.h>
++#include <post.h>
+ #include <types.h>
+ 
+ void set_max_freq(void)
+@@ -58,5 +59,9 @@ void haswell_check_vmx_option(void)
+ 	printk(BIOS_INFO, "VT-x: IA32_FEATURE_CONTROL locked with VMX %s, "
+ 	       "full reset to %s it\n",
+ 	       enabled ? "on" : "off", wanted ? "enable" : "disable");
++	if (CONFIG(CMOS_POST)) {
++		cmos_post_extra(0x56542d78);	/* "VT-x" */
++		cmos_post_code(POSTCODE_RESET_REQUESTED);
++	}
+ 	full_reset();
+ }
+diff --git a/src/southbridge/intel/lynxpoint/early_pch.c b/src/southbridge/intel/lynxpoint/early_pch.c
+index f18813f163..3610c3fc5f 100644
+--- a/src/southbridge/intel/lynxpoint/early_pch.c
++++ b/src/southbridge/intel/lynxpoint/early_pch.c
+@@ -8,6 +8,7 @@
+ #include <device/pci_def.h>
+ #include <device/smbus_host.h>
+ #include <option.h>
++#include <post.h>
+ #include <southbridge/intel/common/lpc_def.h>
+ #include <southbridge/intel/common/pmbase.h>
+ 
+@@ -125,6 +126,10 @@ void pch_apply_gbe_option(void)
+ 		return;
+ 	}
+ 	printk(BIOS_INFO, "GbE: turned %s, full reset for it to take effect\n", on ? "on" : "off");
++	if (CONFIG(CMOS_POST)) {
++		cmos_post_extra(0x47624500);	/* "GbE" */
++		cmos_post_code(POSTCODE_RESET_REQUESTED);
++	}
+ 	full_reset();
+ }
+ #endif
+-- 
+2.43.0
+

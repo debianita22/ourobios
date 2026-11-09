@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 15:55:33 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: Log GEN_PMCON_2 with the
+ boot mode
+
+The boot mode of the native RAM init comes from DISB and MEM_SR in
+GEN_PMCON_2: both set make a warm boot, which keeps the memory and takes
+the fast path. A reset that romstage does before raminit for an option
+(Hyper-Threading, the Ethernet switch, VT-x) could look like a warm
+reset during training, which discards the training data.
+
+Log the register, so that the case can be told from the log. On a
+ThinkPad W541 it does not arise: at the boot after such a reset DISB or
+MEM_SR is clear (0x2024 and 0x2080 at two cold boots with the
+Hyper-Threading reset), so the RAM init takes the boot as a cold one
+and uses its cache.
+
+TEST=On a ThinkPad W541 with the native RAM init, the Hyper-Threading
+option off and on: GEN_PMCON_2 logged at every boot, the cache used at
+all 8 boots of the test.
+
+Change-Id: I0790abb7032fe051440a3967dc68b590acd23d8e
+---
+ src/northbridge/intel/haswell/native_raminit/raminit_native.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.c b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
+index 06aef201af..9d38c42bb4 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
+@@ -37,6 +37,10 @@ static enum raminit_boot_mode get_boot_mode(void)
+ {
+ 	const uint16_t pmcon_2 = pci_read_config16(PCH_LPC_DEV, GEN_PMCON_2);
+ 	const uint16_t bitmask = GEN_PMCON_2_DISB | GEN_PMCON_2_MEM_SR;
++
++	/* DISB and MEM_SR together make a warm boot, which may keep the memory */
++	printk(BIOS_DEBUG, "GEN_PMCON_2: 0x%04x\n", pmcon_2);
++
+ 	return (pmcon_2 & bitmask) == bitmask ? BOOTMODE_WARM : BOOTMODE_COLD;
+ }
+ 
+-- 
+2.43.0
+

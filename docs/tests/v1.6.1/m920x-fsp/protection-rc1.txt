@@ -1,0 +1,18 @@
+controller:  00:1f.5, 8086:a324 (Cannon Point-H), SPIBAR 0xfe010000
+BIOS_CNTL:   0xaa: BIOSWE 0, BLE 1, EISS 1, BILD 1
+BIOS:        regione 0x0c00000-0x17fffff (12 MiB), sotto i 4 GiB da 0xff400000
+FMAP:        quella dell'avvio (cbmem), uguale a quella nel flash
+blocchi:     FLOCKDN 1, PR bloccati PR0, PR1, PR2, PR3, PR4 (DLOCK 0x00001f00), PRR34_LOCKDN 1, WRSDIS 1, descrittore attivo
+regioni:     descrittore 0x0000000-0x0000fff, BIOS 0x0c00000-0x17fffff, ME 0x0003000-0x0bfffff, GbE 0x0001000-0x0002fff
+FRACC:       0x0000ffff: la CPU legge descrittore, BIOS, ME, GbE; scrive descrittore, BIOS, ME, GbE
+PR0:         0x97ff1700: 0x1700000-0x17fffff scrittura = WP_RO
+PR1:         0x8bff0000: 0x0000000-0x0bfffff scrittura = SI_ALL
+opzioni:     Firmware protection 1, BIOS Lock 1 (in SMMSTORE: valgono dal prossimo avvio o ripresa da S3)
+WP_RO:       protetta fino al prossimo reset o ripresa da S3 (PR0)
+descrittore: dato in scrittura alla CPU (FRACC), ma sotto un PR fino al prossimo reset o ripresa da S3
+SI_ALL:      protetta fino al prossimo reset o ripresa da S3 (PR1) [0x0000000-0x0bfffff]
+BIOS Lock:   acceso: scrive solo il firmware in SMM
+capsula:     si': nessun PR sugli slot, RW_NVRAM e SMMSTORE
+flashrom:    NO: BIOS Lock
+nota:        il kernel tiene il controller (spi-intel, /dev/mtd0): flashrom passerebbe dal driver, senza PR ne' descrittore. Prima: sudo modprobe -r spi_intel_pci spi_intel
+Solo la CPU: i PR non fermano gli altri master del flash (ME, GbE).

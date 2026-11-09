@@ -1,0 +1,42 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Mon, 9 Nov 2026 13:17:46 +0100
+Subject: [PATCH] mb/lenovo/haswell: The Ethernet help text, with the restarts
+ of a change
+
+The help said that turning Ethernet back on needs a full power-down: it
+was the measurement of a build that did not wake the PHY, and the wake
+of LANPHYPC brings the controller back by itself. Say what a change
+costs instead: up to three restarts at the next boot (one to clear the
+lockdown, one to apply the bit, one if the MAC is still absent), done by
+the firmware.
+
+TEST=tools/cfr-dump.sh of ouroBIOS on the W541 build: the record
+within the limit.
+
+Change-Id: I6d9079deb8ac22f799b6d04a6031e32384f03424
+---
+ src/mainboard/lenovo/haswell/cfr.c | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 4756ebe2ea..607218757e 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -746,11 +746,8 @@ static const struct sm_object onboard_ethernet = SM_DECLARE_BOOL({
+ 	.ui_helptext	= "The Gigabit Ethernet controller (Intel I217-LM).\n"
+ 			  "Default: on. Off: the controller is turned off in the\n"
+ 			  "chipset, for every OS and for network boot. A change takes\n"
+-			  "effect with one extra restart, done by the firmware at the\n"
+-			  "next boot (the memory may be trained again then). The\n"
+-			  "setting is kept in the chipset: a firmware version without\n"
+-			  "this option leaves the Ethernet as it was until it is\n"
+-			  "turned on here again or the CMOS battery is removed.",
++			  "up to three restarts, which the firmware does by itself at\n"
++			  "the next boot.",
+ 	.default_value	= true,
+ });
+ 
+-- 
+2.43.0
+

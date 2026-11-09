@@ -1,0 +1,166 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sat, 7 Nov 2026 17:40:00 +0100
+Subject: [PATCH] cpu/x86/smm: Reserve an SMRAM subregion for the SMMSTORE
+ option lock
+
+A persistent SMRAM subregion for the state of the SMMSTORE option lock
+(SMMSTORE_OPTION_LOCK), like the one of the TCG MOR lock: the armed state
+must survive the reload of the SMM handler on S3 resume, and is cleared
+on every other boot, where the lock starts over. It sits below the MOR
+lock state, so the MOR region does not move, and the handler region
+shrinks by its size. SMM_OPTION_LOCK_STATE_SMRAM, 4 KiB, off unless a
+feature selects it.
+---
+ src/cpu/x86/Kconfig                  | 13 +++++++++++++
+ src/cpu/x86/smm/smm_module_handler.c |  8 ++++++++
+ src/cpu/x86/smm/smm_module_loader.c  | 17 +++++++++++++++++
+ src/cpu/x86/smm/tseg_region.c        | 13 ++++++++++++-
+ src/include/cpu/x86/smm.h            | 10 ++++++++++
+ 5 files changed, 60 insertions(+), 1 deletion(-)
+
+diff --git a/src/cpu/x86/Kconfig b/src/cpu/x86/Kconfig
+index 23e27198..9fd6d649 100644
+--- a/src/cpu/x86/Kconfig
++++ b/src/cpu/x86/Kconfig
+@@ -228,6 +228,19 @@ config SMM_MOR_LOCK_STATE_SMRAM_SIZE
+ 	default 0x1000 if SMM_MOR_LOCK_STATE_SMRAM
+ 	default 0x0
+ 
++config SMM_OPTION_LOCK_STATE_SMRAM
++	bool
++	help
++	  Reserve a small persistent region in SMRAM for the state of the
++	  SMMSTORE option lock (SMMSTORE_OPTION_LOCK), so that the lock the
++	  payload armed survives the reload of the SMM handler on S3 resume. It
++	  is cleared on every other boot, where the lock starts over.
++
++config SMM_OPTION_LOCK_STATE_SMRAM_SIZE
++	hex
++	default 0x1000 if SMM_OPTION_LOCK_STATE_SMRAM
++	default 0x0
++
+ config SMM_OPAL_S3_SCRATCH_CBMEM
+ 	bool
+ 	depends on HAVE_ACPI_RESUME
+diff --git a/src/cpu/x86/smm/smm_module_handler.c b/src/cpu/x86/smm/smm_module_handler.c
+index 83307abc..23f825f1 100644
+--- a/src/cpu/x86/smm/smm_module_handler.c
++++ b/src/cpu/x86/smm/smm_module_handler.c
+@@ -105,6 +105,14 @@ void smm_get_mor_lock_state_buffer(uintptr_t *base, size_t *size)
+ }
+ #endif
+ 
++#if CONFIG(SMM_OPTION_LOCK_STATE_SMRAM)
++void smm_get_option_lock_state_buffer(uintptr_t *base, size_t *size)
++{
++	*base = smm_runtime.option_lock_state_base;
++	*size = smm_runtime.option_lock_state_size;
++}
++#endif
++
+ void smm_get_cbmemc_buffer(void **buffer_out, size_t *size_out)
+ {
+ 	*buffer_out = smm_runtime.cbmemc;
+diff --git a/src/cpu/x86/smm/smm_module_loader.c b/src/cpu/x86/smm/smm_module_loader.c
+index 472e5a67..94d687a9 100644
+--- a/src/cpu/x86/smm/smm_module_loader.c
++++ b/src/cpu/x86/smm/smm_module_loader.c
+@@ -434,6 +434,23 @@ static void setup_smihandler_params(struct smm_runtime *mod_params,
+ 			memset((void *)mor_base, 0, mor_size);
+ 	}
+ #endif
++
++#if CONFIG(SMM_OPTION_LOCK_STATE_SMRAM)
++	uintptr_t option_base = 0;
++	size_t option_size = 0;
++	if (smm_subregion(SMM_SUBREGION_OPTION_LOCK_STATE, &option_base, &option_size)) {
++		printk(BIOS_ERR, "SMM: Failed to locate option lock state SMRAM region\n");
++		mod_params->option_lock_state_base = 0;
++		mod_params->option_lock_state_size = 0;
++	} else {
++		mod_params->option_lock_state_base = option_base;
++		mod_params->option_lock_state_size = option_size;
++
++		/* Armed until the next boot: kept across S3 only. */
++		if (!acpi_is_wakeup_s3())
++			memset((void *)option_base, 0, option_size);
++	}
++#endif
+ }
+ 
+ static void print_region(const char *name, const struct region region)
+diff --git a/src/cpu/x86/smm/tseg_region.c b/src/cpu/x86/smm/tseg_region.c
+index eadc7b2b..bb7e1a25 100644
+--- a/src/cpu/x86/smm/tseg_region.c
++++ b/src/cpu/x86/smm/tseg_region.c
+@@ -31,6 +31,7 @@ int smm_subregion(int sub, uintptr_t *start, size_t *size)
+ 	const size_t cache_size = CONFIG_SMM_RESERVED_SIZE;
+ 	const size_t opal_state_size = CONFIG_SMM_OPAL_S3_STATE_SMRAM_SIZE;
+ 	const size_t mor_state_size = CONFIG_SMM_MOR_LOCK_STATE_SMRAM_SIZE;
++	const size_t option_state_size = CONFIG_SMM_OPTION_LOCK_STATE_SMRAM_SIZE;
+ 
+ 	if (CONFIG(SMM_TSEG))
+ 		smm_region(&sub_base, &sub_size);
+@@ -40,7 +41,8 @@ int smm_subregion(int sub, uintptr_t *start, size_t *size)
+ 		return -1;
+ 
+ 	ASSERT(IS_ALIGNED(sub_base, sub_size));
+-	ASSERT(sub_size > (cache_size + ied_size + opal_state_size + mor_state_size));
++	ASSERT(sub_size > (cache_size + ied_size + opal_state_size + mor_state_size +
++			   option_state_size));
+ 
+ 	switch (sub) {
+ 	case SMM_SUBREGION_HANDLER:
+@@ -49,6 +51,15 @@ int smm_subregion(int sub, uintptr_t *start, size_t *size)
+ 		sub_size -= cache_size;
+ 		sub_size -= opal_state_size;
+ 		sub_size -= mor_state_size;
++		sub_size -= option_state_size;
++		break;
++	case SMM_SUBREGION_OPTION_LOCK_STATE:
++		if (!option_state_size)
++			return -1;
++		/* Persistent option lock state lives below the MOR lock state. */
++		sub_base += sub_size - (ied_size + cache_size + opal_state_size + mor_state_size +
++					option_state_size);
++		sub_size = option_state_size;
+ 		break;
+ 	case SMM_SUBREGION_MOR_LOCK_STATE:
+ 		if (!mor_state_size)
+diff --git a/src/include/cpu/x86/smm.h b/src/include/cpu/x86/smm.h
+index a68f0a6e..3d68395e 100644
+--- a/src/include/cpu/x86/smm.h
++++ b/src/include/cpu/x86/smm.h
+@@ -116,6 +116,10 @@ struct smm_runtime {
+ 	uintptr_t mor_lock_state_base;
+ 	size_t mor_lock_state_size;
+ #endif
++#if CONFIG(SMM_OPTION_LOCK_STATE_SMRAM)
++	uintptr_t option_lock_state_base;
++	size_t option_lock_state_size;
++#endif
+ } __packed;
+ 
+ struct smm_module_params {
+@@ -226,6 +230,8 @@ enum {
+ 	SMM_SUBREGION_OPAL_S3_STATE,
+ 	/* Persistent TCG MOR lock state area. */
+ 	SMM_SUBREGION_MOR_LOCK_STATE,
++	/* Persistent SMMSTORE option lock state area. */
++	SMM_SUBREGION_OPTION_LOCK_STATE,
+ 	/* SMM cache region. */
+ 	SMM_SUBREGION_CACHE,
+ 	/* Chipset specific area. */
+@@ -273,4 +279,8 @@ void smm_get_opal_s3_state_buffer(uintptr_t *base, size_t *size);
+ void smm_get_mor_lock_state_buffer(uintptr_t *base, size_t *size);
+ #endif
+ 
++#if CONFIG(SMM_OPTION_LOCK_STATE_SMRAM)
++void smm_get_option_lock_state_buffer(uintptr_t *base, size_t *size);
++#endif
++
+ #endif /* CPU_X86_SMM_H */
+-- 
+2.43.0
+

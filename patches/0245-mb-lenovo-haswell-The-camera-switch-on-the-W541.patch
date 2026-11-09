@@ -1,0 +1,79 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Sun, 8 Nov 2026 16:00:00 +0100
+Subject: [PATCH] mb/lenovo/haswell: The camera switch on the W541
+
+The integrated camera of the W541 is a USB device on xHCI USB2 port
+12. "camera" off returns bit 11 from mainboard_usb2_port_disable_mask(),
+so the port is disabled in the xHCI at every boot and resume. Under
+Hardware > Expansion ports, on by default; the help says that an OS
+which routes the port to EHCI instead would still find it.
+---
+ src/mainboard/lenovo/haswell/cfr.c       | 14 ++++++++++++++
+ src/mainboard/lenovo/haswell/mainboard.c | 13 +++++++++++++
+ 2 files changed, 27 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 65c1d8a4708..2a540d68479 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -679,6 +679,19 @@ static const struct sm_object thunderbolt = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ });
+ 
++/* Read by mainboard.c, mainboard_usb2_port_disable_mask() */
++static const struct sm_object camera = SM_DECLARE_BOOL({
++	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "camera",
++	.ui_name	= "Integrated camera",
++	.ui_helptext	= "The camera above the display, a USB device of the chipset.\n"
++			  "Default: on. Off: its USB port is disabled in the USB 3.0\n"
++			  "controller at every start and wake, so no OS sees the\n"
++			  "camera. An OS that routes the port to the USB 2.0\n"
++			  "controller instead would still find it.",
++	.default_value	= true,
++});
++
+ /* Read by southbridge/intel/lynxpoint/early_pch.c, pch_apply_gbe_option() */
+ static const struct sm_object onboard_ethernet = SM_DECLARE_BOOL({
+ 	.flags		= CONFIG(SOUTHBRIDGE_INTEL_LYNXPOINT_GBE_OPTION) ? 0 : CFR_OPTFLAG_SUPPRESS,
+@@ -777,6 +790,7 @@ static const struct sm_object hardware_ports = SM_DECLARE_FORM({
+ 		&expresscard,
+ 		&thunderbolt,
+ 		&onboard_ethernet,
++		&camera,
+ 		NULL
+ 	},
+ });
+diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
+index 8dc1e834e1a..563ccaf7704 100644
+--- a/src/mainboard/lenovo/haswell/mainboard.c
++++ b/src/mainboard/lenovo/haswell/mainboard.c
+@@ -14,7 +14,9 @@
+ #include <option.h>
+ #include <smbios.h>
+ #include <southbridge/intel/lynxpoint/chip.h>
++#include <southbridge/intel/lynxpoint/pch.h>
+ #include <stdio.h>
++#include <types.h>
+ #include <string.h>
+ 
+ #include "me_status.h"
+@@ -295,3 +297,14 @@ struct chip_operations mainboard_ops = {
+ 	.enable_dev = mainboard_enable,
+ 	.final = mainboard_final,
+ };
++
++/*
++ * "camera" off on the W541: the integrated camera, a USB device on xHCI
++ * USB2 port 12 (lsusb -t on a W541, 2026-11-06), turned off with USB2PDO.
++ */
++u32 mainboard_usb2_port_disable_mask(void)
++{
++	if (!CONFIG(BOARD_LENOVO_THINKPAD_W541) || get_uint_option("camera", 1))
++		return 0;
++	return BIT(11);
++}
+-- 
+2.47.3
+

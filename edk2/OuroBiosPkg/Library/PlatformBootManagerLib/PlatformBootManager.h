@@ -171,6 +171,14 @@ PlatformProcessCapsules (
   that it is trying; lock the switch to the other slot before a boot option
   starts and at ExitBootServices().
 **/
+/**
+  Make OptionLockStatus read-only once it exists; before EndOfDxe.
+**/
+VOID
+PlatformRegisterOptionLockPolicy (
+  VOID
+  );
+
 VOID
 PlatformMarkFirmwareGood (
   VOID

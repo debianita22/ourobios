@@ -1,0 +1,114 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 16:32:44 +0100
+Subject: [PATCH] mb/lenovo/haswell: A soft switch for the W541's card reader
+
+The Lenovo setup of the W541 can turn the card reader off (I/O Port
+Access). The reader, an O2 Micro OZ777, sits behind PCIe root port 1,
+whose function 0 must stay: hiding it would make the PCH renumber the
+other ports.
+
+Add Hardware -> Expansion ports -> Card reader, on by default: off sets
+Link Disable in the root port's Link Control before the bus behind it
+is scanned, at every boot and S3 resume (the root port loses it in S3),
+so that neither coreboot nor the OS enumerates the reader. A soft
+switch: the reader stays powered, and an OS that trains the link again
+would find it, which the help text says.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: I16689d64801b119fd262bb1aeb3d893787f4dc19
+---
+ src/mainboard/lenovo/haswell/cfr.c       | 12 +++++++++
+ src/mainboard/lenovo/haswell/mainboard.c | 31 ++++++++++++++++++++++++
+ 2 files changed, 43 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index 917416fd41..a929a8e2b7 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -700,6 +700,17 @@ static const struct sm_object thunderbolt = SM_DECLARE_BOOL({
+ 	.default_value	= true,
+ });
+ 
++/* Read by mainboard.c, mainboard_enable() */
++static const struct sm_object card_reader = SM_DECLARE_BOOL({
++	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "card_reader",
++	.ui_name	= "Card reader",
++	.ui_helptext	= "The SD card reader, on PCIe root port 1.\n"
++			  "Default: on. Off: its link is disabled at every start and\n"
++			  "wake. A soft switch: an OS that retrains it finds it.",
++	.default_value	= true,
++});
++
+ /* Read by mainboard.c, mainboard_usb2_port_disable_mask() */
+ static const struct sm_object camera = SM_DECLARE_BOOL({
+ 	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
+@@ -811,6 +822,7 @@ static const struct sm_object hardware_ports = SM_DECLARE_FORM({
+ 		&expresscard,
+ 		&thunderbolt,
+ 		&onboard_ethernet,
++		&card_reader,
+ 		&camera,
+ 		NULL
+ 	},
+diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
+index 563ccaf770..570f49d5cf 100644
+--- a/src/mainboard/lenovo/haswell/mainboard.c
++++ b/src/mainboard/lenovo/haswell/mainboard.c
+@@ -5,6 +5,8 @@
+ #include <build.h>
+ #include <console/console.h>
+ #include <device/device.h>
++#include <device/pci.h>
++#include <device/pci_def.h>
+ #include <device/pci_ops.h>
+ #include <drivers/intel/gma/int15.h>
+ #include <drivers/vpd/vpd.h>
+@@ -71,6 +73,26 @@ static void disable_root_port(unsigned int func, const char *what)
+ 	rp->enabled = 0;
+ }
+ 
++/*
++ * Before the bus behind it is scanned: a soft switch for the device there. The
++ * port stays visible and powered, and an OS can train the link again.
++ */
++static void disable_root_port_link(unsigned int func, const char *what)
++{
++	struct device *rp = pcidev_on_root(0x1c, func);
++	unsigned int cap;
++
++	if (!rp || !rp->enabled)
++		return;
++
++	cap = pci_find_capability(rp, PCI_CAP_ID_PCIE);
++	if (!cap)
++		return;
++
++	printk(BIOS_INFO, "%s: disabling the link of %s\n", what, dev_path(rp));
++	pci_or_config16(rp, cap + PCI_EXP_LNKCTL, PCI_EXP_LNKCTL_LD);
++}
++
+ /*
+  * Whether the DMAR table has the remapping engine of the PCIe devices, as
+  * northbridge_write_acpi_tables() and acpi_fill_dmar() decide it: VT-d in the
+@@ -222,6 +244,15 @@ static void mainboard_enable(struct device *dev)
+ 		if (!get_uint_option("thunderbolt", 1))
+ 			disable_root_port(4, "Thunderbolt");
+ 
++		/*
++		 * The card reader, an O2 Micro OZ777 behind root port 1. Hiding
++		 * that port would make the PCH renumber the others (function
++		 * 0 must stay), so only its link goes down, at every boot and
++		 * S3 resume (the root port loses it in S3).
++		 */
++		if (!get_uint_option("card_reader", 1))
++			disable_root_port_link(0, "Card reader");
++
+ 		/*
+ 		 * The Intel display audio controller, 0:3.0: the audio over the
+ 		 * mini DisplayPort and a port of the dock, the DP++ ports of the
+-- 
+2.43.0
+

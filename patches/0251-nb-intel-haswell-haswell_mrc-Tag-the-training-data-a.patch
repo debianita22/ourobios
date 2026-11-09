@@ -1,0 +1,119 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 16:19:36 +0100
+Subject: [PATCH] nb/intel/haswell/haswell_mrc: Tag the training data and key
+ it with its inputs
+
+The version of the data that mrc.bin saves is a constant, 1. mrc.bin
+checks the data it gets (its own version, the processor, a CRC of the
+SPD of each DIMM) and trains again when it does not match, but the data
+of the native RAM init uses the same region and could carry the same
+version, and coreboot's own inputs to mrc.bin can change from a slot to
+the other.
+
+Make the version a tag, 'M' in bits 31:24, and 24 bits of an xxh32 of
+the inputs of mrc.bin about the memory (PEI version, system type, TSEG,
+SPD addresses, EC, GbE, disabled DIMMs, 2x refresh, DQ interleaving,
+maximum frequency) and of the size of the blob.
+
+TEST=Build of the ThinkPad W541 with mrc.bin.
+
+Change-Id: I86c97092887131250a23cc8ac54a8ef66ea2ca4c
+---
+ .../intel/haswell/haswell_mrc/raminit.c       | 54 +++++++++++++++++--
+ 1 file changed, 51 insertions(+), 3 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/haswell_mrc/raminit.c b/src/northbridge/intel/haswell/haswell_mrc/raminit.c
+index 00140bf3e2..8e48c18150 100644
+--- a/src/northbridge/intel/haswell/haswell_mrc/raminit.c
++++ b/src/northbridge/intel/haswell/haswell_mrc/raminit.c
+@@ -18,6 +18,7 @@
+ #include <spd.h>
+ #include <static.h>
+ #include <security/vboot/vboot_common.h>
++#include <commonlib/bsd/xxhash.h>
+ #include <commonlib/region.h>
+ #include <southbridge/intel/lynxpoint/me.h>
+ #include <southbridge/intel/lynxpoint/pch.h>
+@@ -26,7 +27,11 @@
+ 
+ #include "pei_data.h"
+ 
+-#define MRC_CACHE_VERSION 1
++/* The tag of the training data of mrc.bin, in bits 31:24 of its version */
++#define MRC_CACHE_TAG	'M'
++
++/* The version of the saved data, from prepare_mrc_cache() */
++static uint32_t mrc_cache_version;
+ 
+ /*
+  * mrc.bin posts its POST codes to port 80h only. With CMOS_POST, keep the
+@@ -45,10 +50,52 @@ static void mrc_tx_byte(unsigned char byte)
+ 		cmos_post_extra(MRC_POST_EXTRA | ++lines);
+ }
+ 
++/*
++ * The version of the saved data, which mrc_cache compares as a whole: the tag,
++ * and 24 bits of a hash of what coreboot gives mrc.bin about the memory and of
++ * the size of the blob. mrc.bin checks the data itself (its own version, the
++ * processor, the SPD of each DIMM) and trains again when they do not match;
++ * this version also tells the data of the native RAM init, which has another
++ * tag, and a change of the settings of the board, apart. It is the same in
++ * every slot, as mrc.bin is in the read-only part.
++ */
++static uint32_t mrc_version(const struct pei_data *pei_data)
++{
++	struct {
++		uint32_t pei_version;
++		uint32_t blob_size;
++		uint32_t system_type;
++		uint32_t tseg_size;
++		uint8_t spd_addresses[ARRAY_SIZE(pei_data->spd_addresses)];
++		int ec_present;
++		int gbe_enable;
++		int dimm_channel0_disabled;
++		int dimm_channel1_disabled;
++		int ddr_refresh_2x;
++		int dq_pins_interleaved;
++		uint32_t max_ddr3_freq;
++	} __packed inputs = {
++		.pei_version		= pei_data->pei_version,
++		.system_type		= pei_data->system_type,
++		.tseg_size		= pei_data->tseg_size,
++		.ec_present		= pei_data->ec_present,
++		.gbe_enable		= pei_data->gbe_enable,
++		.dimm_channel0_disabled	= pei_data->dimm_channel0_disabled,
++		.dimm_channel1_disabled	= pei_data->dimm_channel1_disabled,
++		.ddr_refresh_2x		= pei_data->ddr_refresh_2x,
++		.dq_pins_interleaved	= pei_data->dq_pins_interleaved,
++		.max_ddr3_freq		= pei_data->max_ddr3_freq,
++	};
++	inputs.blob_size = cbfs_ro_get_size("mrc.bin");
++	memcpy(inputs.spd_addresses, pei_data->spd_addresses, sizeof(inputs.spd_addresses));
++
++	return MRC_CACHE_TAG << 24 | (xxh32(&inputs, sizeof(inputs), 0) & 0xffffff);
++}
++
+ static void save_mrc_data(struct pei_data *pei_data)
+ {
+ 	/* Save the MRC S3 restore data to cbmem */
+-	mrc_cache_stash_data(MRC_TRAINING_DATA, MRC_CACHE_VERSION, pei_data->mrc_output,
++	mrc_cache_stash_data(MRC_TRAINING_DATA, mrc_cache_version, pei_data->mrc_output,
+ 			     pei_data->mrc_output_len);
+ }
+ 
+@@ -60,9 +107,10 @@ static void prepare_mrc_cache(struct pei_data *pei_data)
+ 	pei_data->mrc_input = NULL;
+ 	pei_data->mrc_input_len = 0;
+ 
++	mrc_cache_version = mrc_version(pei_data);
+ 	pei_data->mrc_input =
+ 		mrc_cache_current_mmap_leak(MRC_TRAINING_DATA,
+-					    MRC_CACHE_VERSION,
++					    mrc_cache_version,
+ 					    &mrc_size);
+ 	if (!pei_data->mrc_input)
+ 		/* Error message printed in find_current_mrc_cache */
+-- 
+2.43.0
+

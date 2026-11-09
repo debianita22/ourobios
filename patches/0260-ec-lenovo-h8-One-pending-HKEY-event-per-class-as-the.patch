@@ -1,0 +1,258 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 17:20:29 +0100
+Subject: [PATCH] ec/lenovo/h8: One pending HKEY event per class, as the OEM
+ firmware
+
+HKEY keeps one pending event (BTN, and BTAB for the tablet): an event
+that comes before the OS has read the one before replaces it, so a dock
+or thermal event right after a hotkey loses the hotkey, or the other
+way round.
+
+The OEM firmware of the Haswell ThinkPads (W541, GNET94WW) keeps one
+slot per class: 0x1xxx and 0x5xxx share one, then 0x2xxx, 0x3xxx,
+0x4xxx, 0x6xxx and 0x7xxx, under a mutex; MHKP pops them in a fixed
+order (0x7xxx, 0x2xxx, 0x4xxx, 0x3xxx, 0x6xxx, then the hotkeys), and
+thinkpad_acpi calls it until it returns 0; _PTS and _WAK drop them.
+
+Add H8_HKEY_QUEUE for a board to select: RHK, RHKX and RTAB queue the
+event in the slot of its class (QEVT), MHKP pops in the OEM order, and
+WAKE drops the pending events (QCLR, which a board can call from _PTS
+too). The Haswell ThinkPads select it and call QCLR from _PTS. The
+other boards keep BTN and BTAB.
+
+TEST=acpiexec on the DSDT of the ThinkPad W541: 0x1005, 0x6022, 0x4010
+and 0x1007 queued, MHKP returns 0x4010, 0x6022, 0x1007, then 0.
+
+Change-Id: Ie15476a13f1792977f136739322775615f4228f2
+---
+ src/ec/lenovo/h8/Kconfig                      |  9 ++
+ src/ec/lenovo/h8/acpi/thinkpad.asl            | 97 +++++++++++++++++++
+ src/mainboard/lenovo/haswell/Kconfig          |  1 +
+ src/mainboard/lenovo/haswell/acpi/ec.asl      |  5 +-
+ .../lenovo/haswell/acpi/platform.asl          |  5 +
+ 5 files changed, 115 insertions(+), 2 deletions(-)
+
+diff --git a/src/ec/lenovo/h8/Kconfig b/src/ec/lenovo/h8/Kconfig
+index 49fad627d5..6c3c4b24b7 100644
+--- a/src/ec/lenovo/h8/Kconfig
++++ b/src/ec/lenovo/h8/Kconfig
+@@ -96,6 +96,15 @@ config H8_HAS_2ND_THERMAL_ZONE
+ 	bool
+ 	default n
+ 
++config H8_HKEY_QUEUE
++	bool
++	help
++	  Keep one pending HKEY event per class (0x1xxx and 0x5xxx, 0x2xxx,
++	  0x3xxx, 0x4xxx, 0x6xxx, 0x7xxx), as the OEM firmware of the Haswell
++	  ThinkPads does, instead of one in all: an event that comes before
++	  the OS has read the one before no longer replaces it, unless it is
++	  of the same class. MHKP returns them in the OEM order.
++
+ config H8_CFR_MAINBOARD_FORMS
+ 	bool
+ 	default n
+diff --git a/src/ec/lenovo/h8/acpi/thinkpad.asl b/src/ec/lenovo/h8/acpi/thinkpad.asl
+index 497666c6aa..7faabbd613 100644
+--- a/src/ec/lenovo/h8/acpi/thinkpad.asl
++++ b/src/ec/lenovo/h8/acpi/thinkpad.asl
+@@ -11,9 +11,62 @@ Device (HKEY)
+ 
+ 	Name (_HID, EisaId (CONFIG_THINKPADEC_HKEY_EISAID))
+ 
++#if CONFIG(H8_HKEY_QUEUE)
++	/*
++	 * One pending event per class, as the OEM firmware of the Haswell
++	 * ThinkPads (GNET94WW: DHKH, DHKW, DHKS, DHKD, DHKT, DHWW): a newer
++	 * event replaces only the one of its own class. The tablet events
++	 * (0x5xxx) share the slot of the hotkeys, as there.
++	 */
++	Name (QHKY, 0)	/* 0x1xxx and 0x5xxx */
++	Name (QWAK, 0)	/* 0x2xxx */
++	Name (QSTA, 0)	/* 0x3xxx */
++	Name (QDCK, 0)	/* 0x4xxx */
++	Name (QTHM, 0)	/* 0x6xxx */
++	Name (QRAD, 0)	/* 0x7xxx */
++	Mutex (QMTX, 7)
++
++	/* Queue an event in the slot of its class, and tell the OS */
++	Method (QEVT, 1, NotSerialized)
++	{
++		Acquire (QMTX, 0xFFFF)
++		If (Arg0 < 0x1000) {
++		} ElseIf (Arg0 < 0x2000) {
++			QHKY = Arg0
++		} ElseIf (Arg0 < 0x3000) {
++			QWAK = Arg0
++		} ElseIf (Arg0 < 0x4000) {
++			QSTA = Arg0
++		} ElseIf (Arg0 < 0x5000) {
++			QDCK = Arg0
++		} ElseIf (Arg0 < 0x6000) {
++			QHKY = Arg0
++		} ElseIf (Arg0 < 0x7000) {
++			QTHM = Arg0
++		} ElseIf (Arg0 < 0x8000) {
++			QRAD = Arg0
++		}
++		Release (QMTX)
++		Notify (HKEY, 0x80)
++	}
++
++	/* Drop the pending events: at sleep and wake, as the OEM MHKE */
++	Method (QCLR, 0, NotSerialized)
++	{
++		Acquire (QMTX, 0xFFFF)
++		QHKY = 0
++		QWAK = 0
++		QSTA = 0
++		QDCK = 0
++		QTHM = 0
++		QRAD = 0
++		Release (QMTX)
++	}
++#else
+ 	Name (BTN, 0)
+ 
+ 	Name (BTAB, 0)
++#endif
+ 
+ 	/* MASK */
+ 	Name (DHKN, 0x080C)
+@@ -36,6 +89,34 @@ Device (HKEY)
+ 	}
+ 
+ 	/* Retrieve event. */
++#if CONFIG(H8_HKEY_QUEUE)
++	/* In the OEM order; thinkpad_acpi calls it until it returns 0 */
++	Method (MHKP, 0, NotSerialized)
++	{
++		Acquire (QMTX, 0xFFFF)
++		If (QRAD) {
++			Local0 = QRAD
++			QRAD = 0
++		} ElseIf (QWAK) {
++			Local0 = QWAK
++			QWAK = 0
++		} ElseIf (QDCK) {
++			Local0 = QDCK
++			QDCK = 0
++		} ElseIf (QSTA) {
++			Local0 = QSTA
++			QSTA = 0
++		} ElseIf (QTHM) {
++			Local0 = QTHM
++			QTHM = 0
++		} Else {
++			Local0 = QHKY
++			QHKY = 0
++		}
++		Release (QMTX)
++		Return (Local0)
++	}
++#else
+ 	Method (MHKP, 0, NotSerialized)
+ 	{
+ 		Local0 = BTN
+@@ -51,21 +132,30 @@ Device (HKEY)
+ 		}
+ 		Return (0)
+ 	}
++#endif
+ 
+ 	/* Report legacy HKEY event. */
+ 	Method (RHK, 1, NotSerialized) {
+ 		Local0 = 1 << (Arg0 - 1)
+ 		If (EMSK & Local0) {
++#if CONFIG(H8_HKEY_QUEUE)
++			QEVT (0x1000 + Arg0)
++#else
+ 			BTN = 0x1000 + Arg0
+ 			Notify (HKEY, 0x80)
++#endif
+ 		}
+ 	}
+ 
+ 	/* Report extended HKEY event. */
+ 	Method (RHKX, 1, NotSerialized) {
+ 		If (EN) {
++#if CONFIG(H8_HKEY_QUEUE)
++			QEVT (Arg0)
++#else
+ 			BTN = Arg0
+ 			Notify (HKEY, 0x80)
++#endif
+ 		}
+ 	}
+ 
+@@ -73,8 +163,12 @@ Device (HKEY)
+ 	Method (RTAB, 1, NotSerialized) {
+ 		Local0 = 1 << (Arg0 - 1)
+ 		If (ETAB & Local0) {
++#if CONFIG(H8_HKEY_QUEUE)
++			QEVT (0x5000 + Arg0)
++#else
+ 			BTAB = Arg0
+ 			Notify (HKEY, 0x80)
++#endif
+ 		}
+ 	}
+ 
+@@ -319,6 +413,9 @@ Device (HKEY)
+ 	 */
+ 	Method (WAKE, 1)
+ 	{
++#if CONFIG(H8_HKEY_QUEUE)
++		QCLR ()
++#endif
+ 		If (HAST) {
+ 			\_SB.PCI0.LPCB.EC.BTEB = WBDC
+ 			\_SB.PCI0.LPCB.EC.WWEB = WWAN
+diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
+index b75af9e035..08cd64055e 100644
+--- a/src/mainboard/lenovo/haswell/Kconfig
++++ b/src/mainboard/lenovo/haswell/Kconfig
+@@ -15,6 +15,7 @@ config BOARD_LENOVO_HASWELL_COMMON
+ 	select H8_HAS_LEDLOGO
+ 	select H8_HAS_FNLOCK_LED
+ 	select H8_HAS_PRIMARY_FN_KEYS
++	select H8_HKEY_QUEUE
+ 	select HAVE_ACPI_RESUME
+ 	select HAVE_ACPI_TABLES
+ 	select HAVE_CMOS_DEFAULT
+diff --git a/src/mainboard/lenovo/haswell/acpi/ec.asl b/src/mainboard/lenovo/haswell/acpi/ec.asl
+index acd6f967c2..049b0856b4 100644
+--- a/src/mainboard/lenovo/haswell/acpi/ec.asl
++++ b/src/mainboard/lenovo/haswell/acpi/ec.asl
+@@ -64,8 +64,9 @@ Scope (EC)
+ 	 * - 0x70, 0x72 and 0x73 (sticky Fn state, 0x6005) and 0x74 (Fn+Esc,
+ 	 *   0x6060): thinkpad_acpi ignores them, the OEM firmware also calls
+ 	 *   its SMI handler for them, and on 0x6060 thinkpad_acpi calls GMKS,
+-	 *   which this HKEY does not have. HKEY keeps one event (BTN), and a
+-	 *   sticky Fn event right after a hotkey would replace it.
++	 *   which this HKEY does not have. HKEY keeps one event per class
++	 *   (H8_HKEY_QUEUE): a sticky Fn event after a hotkey would no longer
++	 *   replace it, but would still be noise.
+ 	 */
+ 
+ 	/* Hotkey 0x1009 (Fn+F9 in the thinkpad_acpi key map), if enabled */
+diff --git a/src/mainboard/lenovo/haswell/acpi/platform.asl b/src/mainboard/lenovo/haswell/acpi/platform.asl
+index 69bd489cef..fb20c1aa1b 100644
+--- a/src/mainboard/lenovo/haswell/acpi/platform.asl
++++ b/src/mainboard/lenovo/haswell/acpi/platform.asl
+@@ -44,6 +44,11 @@ Method(_PTS,1)
+ {
+ 	\_SB.PCI0.LPCB.EC.RADI(0)
+ 
++#if CONFIG(H8_HKEY_QUEUE)
++	/* No HKEY event survives a sleep, as with the OEM firmware */
++	\_SB.PCI0.LPCB.EC.HKEY.QCLR ()
++#endif
++
+ 	/*
+ 	 * Under macOS, before S3: the sleep indicators (power button and logo
+ 	 * pulsing, moon on), which macOS does not set with _SST, and the wake
+-- 
+2.43.0
+

@@ -700,6 +700,12 @@ PlatformBootManagerBeforeConsole (
   PlatformRegisterBootManagerEntryNotifyCallback ();
 
   //
+  // Before EndOfDxe closes Variable Policy: the report of the option lock
+  // stays read-only to the OS (PlatformCapsule.c).
+  //
+  PlatformRegisterOptionLockPolicy ();
+
+  //
   // Install ready to lock.
   // This needs to be done before option rom dispatched.
   //

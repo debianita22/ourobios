@@ -306,6 +306,12 @@ bool haswell_tcc_offset_programmable(void)
 	return true;
 }
 
+/* E Hyper-Threading (CPUID o i bit di SOFT_RESET): il menu lo mostra */
+bool haswell_ht_available(void)
+{
+	return true;
+}
+
 #if CONFIG(BOARD_LENOVO_THINKPAD_W541)
 /*
  * W541 (me_status.h della mainboard): l'ME come lo legge me_status.c con lo

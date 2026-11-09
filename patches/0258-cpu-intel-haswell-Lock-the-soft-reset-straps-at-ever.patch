@@ -1,0 +1,91 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 16:43:03 +0100
+Subject: [PATCH] cpu/intel/haswell: Lock the soft reset straps at every boot
+ and resume
+
+SOFT_RESET_DATA and SOFT_RESET_CTRL stay writable after the boot: on a
+ThinkPad W541 under Linux, SOFT_RESET_LOCK (RCBA + 0x38F0) reads 0 and
+the straps written from the OS (the second threads, the active cores,
+the flex ratio) apply at the next warm reset, and at the next resume
+from S3. The Lenovo firmware of the W541 (GNET94WW, CpuInitPeim and
+PchInitDxe) sets SOFT_RESET_LOCK bit 0 at every boot, and again on S3
+resume through its boot script; model_206ax locks it too.
+
+Lock it in romstage once the Hyper-Threading option is applied, and on
+S3 resume, where romstage does not look at the option. A reset clears
+the lock, so the next boot can still change the straps.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: I4919b8b56002b2724d6835eb97c6d1f57a61a70f
+---
+ src/cpu/intel/haswell/haswell.h          |  2 ++
+ src/cpu/intel/haswell/hyperthreading.c   | 12 ++++++++++++
+ src/northbridge/intel/haswell/romstage.c |  1 +
+ src/southbridge/intel/lynxpoint/pch.h    |  1 +
+ 4 files changed, 16 insertions(+)
+
+diff --git a/src/cpu/intel/haswell/haswell.h b/src/cpu/intel/haswell/haswell.h
+index e3d362f51c..d0554f63d3 100644
+--- a/src/cpu/intel/haswell/haswell.h
++++ b/src/cpu/intel/haswell/haswell.h
+@@ -245,6 +245,8 @@ void haswell_check_vmx_option(void);
+ void haswell_check_ht_option(void);
+ /* Whether the last boot ended with that reset, before any memory init */
+ bool haswell_ht_reset_was_last(void);
++/* Lock the soft reset straps until the next reset, at every boot and resume */
++void haswell_lock_soft_reset(void);
+ /* A second thread per core, on or turned off by the option, for the menu */
+ bool haswell_ht_available(void);
+ 
+diff --git a/src/cpu/intel/haswell/hyperthreading.c b/src/cpu/intel/haswell/hyperthreading.c
+index 730be3628a..b8a3913f21 100644
+--- a/src/cpu/intel/haswell/hyperthreading.c
++++ b/src/cpu/intel/haswell/hyperthreading.c
+@@ -44,6 +44,18 @@ bool haswell_ht_reset_was_last(void)
+ 	return code == POSTCODE_RESET_REQUESTED && extra == RESET_EXTRA_HYPER_THREADING;
+ }
+ 
++/*
++ * Lock SOFT_RESET_DATA and SOFT_RESET_CTRL until the next reset, as the Lenovo
++ * firmware of the ThinkPad W541 does at every boot and resume: unlocked, the OS
++ * can write the straps (the second threads, the active cores, the flex ratio)
++ * for the next warm reset, or for the next resume from S3, where they apply
++ * too. A reset clears the lock, so the next boot can still change them.
++ */
++void haswell_lock_soft_reset(void)
++{
++	RCBA32_OR(SOFT_RESET_LOCK, 1);
++}
++
+ bool haswell_ht_available(void)
+ {
+ 	/* haswell_check_ht_option() needs CMOS_POST: without it, no option */
+diff --git a/src/northbridge/intel/haswell/romstage.c b/src/northbridge/intel/haswell/romstage.c
+index bb63ab86e4..0c4814d6c6 100644
+--- a/src/northbridge/intel/haswell/romstage.c
++++ b/src/northbridge/intel/haswell/romstage.c
+@@ -158,6 +158,7 @@ void mainboard_romstage_entry(void)
+ 		haswell_check_vmx_option();
+ 		haswell_check_ht_option();
+ 	}
++	haswell_lock_soft_reset();
+ 
+ 	/* After the resets of the options, before the memory init */
+ 	firmware_watchdog_romstage(s3resume);
+diff --git a/src/southbridge/intel/lynxpoint/pch.h b/src/southbridge/intel/lynxpoint/pch.h
+index d27d3cafd6..78df48cda9 100644
+--- a/src/southbridge/intel/lynxpoint/pch.h
++++ b/src/southbridge/intel/lynxpoint/pch.h
+@@ -504,6 +504,7 @@ void mainboard_config_rcba(void);
+ #define  PM_CFG2_DRAM_RESET_CTL	(1 << 26)	/* ULT only */
+ #define PMSYNC_CONFIG	0x33c4	/* 32bit */
+ #define PMSYNC_CONFIG2	0x33cc	/* 32bit */
++#define SOFT_RESET_LOCK 0x38f0
+ #define SOFT_RESET_CTRL 0x38f4
+ #define SOFT_RESET_DATA 0x38f8
+ 
+-- 
+2.43.0
+

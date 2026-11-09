@@ -197,7 +197,8 @@ assert update.build_flavour("ouroBIOS-ci-150-ecbf45d-nri", 12 << 20) == "nri"
 assert update.build_flavour("ouroBIOS-ci-150-ecbf45d-mrc", 12 << 20) == "mrc"
 assert update.build_flavour("ouroBIOS-v1.4.0-rc4-m920x-fsp", 24 << 20) == "m920x-fsp"
 assert update.build_flavour("?", 12 << 20) is None
-assert "RW_MRC_CACHE" in update.CURRENT_REGIONS["nri"] and "RW_MRC_CACHE" not in update.CURRENT_REGIONS["m920x-fsp"]
+assert all("RW_MRC_CACHE" not in update.CURRENT_REGIONS[v] for v in ("mrc", "nri", "m920x-fsp"))
+assert all(update.REGIONS in update.ACCEPTED_REGIONS[v] for v in ("mrc", "nri", "m920x-fsp"))
 EOF
 	then
 		ok "tools/update.py: other-slot riconosce anche le build di prova della CI e le rc della nri"
@@ -336,6 +337,8 @@ sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("hw_report", "tools/hw-report.py")
 hw = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hw)
+# non la variabile della macchina che fa girare il controllo (OptionLockStatus)
+hw.OPTION_LOCK_VAR = "/nonexistent/OptionLockStatus"
 
 
 def firmware(board, log, ts):
@@ -579,6 +582,8 @@ sys.path.insert(0, "tools")
 spec = importlib.util.spec_from_file_location("hw_report", "tools/hw-report.py")
 hw = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hw)
+# non la variabile della macchina che fa girare il controllo (OptionLockStatus)
+hw.OPTION_LOCK_VAR = "/nonexistent/OptionLockStatus"
 update = hw.update
 MRC, NRI = "ouroBIOS-ci-150-ecbf45d-mrc", "ouroBIOS-v1.4.0-rc4-nri"
 
@@ -823,7 +828,17 @@ assert (cap["variant"], cap["version"], cap["lsv"]) == ("nri", 0x01020302, 0x010
 assert cap["regions"] == update.REGIONS and cap["image"] == image and cap["signature"] == cert
 assert cap["signed"] == payload + struct.pack("<Q", 7)
 update.check_capsule(cap, {"variant": "nri", "legacy": False})
-update.check_capsule(cap, current_only=True)
+# dalla v1.6.1 la capsula del W541 lascia il training: stage accetta ancora
+# quelle di prima, info no
+try:
+    update.check_capsule(cap, current_only=True)
+    raise AssertionError("info accetta una capsula del W541 con RW_MRC_CACHE")
+except update.Error as e:
+    assert "stage la accetta ancora" in str(e), e
+wcap = update.parse_capsule(capsule("nri", image, ["RW_SECTION_A", "RW_SECTION_B"])[0])
+assert wcap["regions"] == update.CURRENT_REGIONS["nri"]
+update.check_capsule(wcap, {"variant": "nri", "legacy": False})
+update.check_capsule(wcap, current_only=True)
 m920x = {"variant": "m920x-fsp", "legacy": False}
 big = bytes(range(256)) * (update.FLAVOURS["m920x-fsp"][2] // 256)
 mcap = update.parse_capsule(capsule("m920x-fsp", big, ["RW_SECTION_A", "RW_SECTION_B"], 0x0103ff04)[0])
@@ -844,12 +859,13 @@ for regions, size in ((["RW_SECTION_A", "RW_SECTION_B"], update.ROM_SIZE), (["RW
         raise AssertionError("capsula del M920x accettata: %r, %d byte" % (regions, size))
     except update.Error:
         pass
-try:
-    update.check_capsule(update.parse_capsule(capsule("nri", image, update.CURRENT_REGIONS["m920x-fsp"])[0]),
-                         {"variant": "nri", "legacy": False})
-    raise AssertionError("capsula del W541 senza RW_MRC_CACHE accettata")
-except update.Error:
-    pass
+for regions in (["RW_SECTION_A"], ["RW_MRC_CACHE", "RW_SECTION_A"]):
+    try:
+        update.check_capsule(update.parse_capsule(capsule("nri", image, regions)[0]),
+                             {"variant": "nri", "legacy": False})
+        raise AssertionError("capsula del W541 accettata: %r" % regions)
+    except update.Error:
+        pass
 assert update.version_str(0x01020302) == "v1.2.4-rc2" and update.version_quad(0x01020302) == "1.2.3.2"
 assert update.version_str(0x01020300) == "v1.2.3" and update.version_str(0x0103ff01) == "v1.4.0-rc1"
 # i numeri fino a v1.3.6-rc1, nel formato di prima, sono ancora sui portatili
@@ -1803,6 +1819,8 @@ update.spi_protection = spi_protection
 spec = importlib.util.spec_from_file_location("hw_report", "tools/hw-report.py")
 hw = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hw)
+# non la variabile della macchina che fa girare il controllo (OptionLockStatus)
+hw.OPTION_LOCK_VAR = "/nonexistent/OptionLockStatus"
 assert hw.update is update
 fixture()
 update.spi_protection = lambda devmem=None: spi_protection(dm)

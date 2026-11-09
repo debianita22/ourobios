@@ -133,7 +133,7 @@ Inside coreboot:
   | Category | Settings |
   |---|---|
   | *General* | *About this ThinkPad*: model, machine type, serial number and UUID (from the VPD), processor, memory, firmware and EC versions, the state of the Intel ME (from v1.4.0, also in SMBIOS); *Boot*: the iPXE and CSMWrap boot entries, and from v1.4.0 the USB drives in the boot order and the boot menu prompt; *Sound*: beeps (from v1.4.0 the keyboard beep too) and volume; links to the time and date, firmware update, boot splash and UI pages |
-  | *Energy Saver* | battery charge thresholds (OS controlled, 100%, 80%, 60%), Intel SpeedStep, Turbo Boost, C-states, CPU PL1/PL2 limits, cooling policy (active or passive), TCC activation offset (from v1.6.0, on processors that have one), USB always on (from v1.4.0 *AC and battery* charges on battery too), power-on with AC attached (from v1.4.0), power-on after power failure |
+  | *Energy Saver* | battery charge thresholds (OS controlled, 100%, 80%, 60%), Hyper-Threading (from v1.6.1), Intel SpeedStep, Turbo Boost, C-states, CPU PL1/PL2 limits, cooling policy (active or passive), TCC activation offset (from v1.6.0, on processors that have one), USB always on (from v1.4.0 *AC and battery* charges on battery too), power-on with AC attached (from v1.4.0), power-on after power failure |
   | *Security* | *Flash protection*: BIOS Lock (flash writable only by the firmware, on by default from v1.6.0, off before) and Firmware protection (the read-only part, and from v1.6.1 the descriptor, the GbE and the ME regions, write-protected by the SPI controller at every boot, on by default); memory cleared at power-on, Intel VT-x, VT-d (from v1.4.0 with the ExpressCard and Thunderbolt ports untrusted for the OS, off by default), the Intel ME interface, Secure Boot, supervisor password (asked for before the setup menu opens) |
   | *Keyboard* | Fn/Ctrl swap, F1-F12 or special keys, sticky Fn, keyboard backlight, TrackPoint, touchpad |
   | *Hardware* | *NVIDIA graphics*: the GPU and the tuning of its PCIe link; *Intel graphics*: graphics stolen memory (native RAM init only, 32 MiB by default from v1.6.0 as `mrc.bin`, which reserves a fixed 32 MiB; the GTT is 2 MiB on both), aperture and the firmware screen resolution; *Storage*: the SATA ports besides the drive bay; *Expansion ports*: ExpressCard and Thunderbolt; *Wireless*: Wi-Fi, Bluetooth, WWAN |
@@ -269,22 +269,30 @@ Known limits, by hardware or by design, not open bugs:
   reporting them (FAILED by design). Locking the descriptor itself (a
   `FLMSTR` that denies the host) is one-way on these machines (no recovery
   without the FDSO strap or the external programmer) and is not done.
-- **The variable store is not protected from the kernel.** The UEFI
-  variables (Secure Boot's PK, KEK, db and dbx, the setup options, the
-  supervisor password, the boot entries) live in `SMMSTORE`, a block store
-  that coreboot's SMI handler reads and writes on behalf of the payload;
-  the driver that enforces their authentication (`VariableRuntimeDxe`)
-  runs outside SMM, because a payload has no SMM of its own on coreboot.
-  Code at ring 0 can call the same SMI with blocks of its own and rewrite
-  the store without that driver: enroll a key in db, clear the PK, turn
-  *Firmware protection* and *BIOS Lock* off for the next boot (coreboot
-  reads the options from the same store), reset the password. Secure Boot
-  therefore stops an unsigned boot loader, not a kernel that already runs
-  and wants to persist; the RW slots stay covered by vboot's signature,
-  the TPM measurements of the Secure Boot variables (PCR 7) record the
-  change, and the setup re-enrolls the defaults. EDK II's reference design
-  keeps the variable services in SMM, which coreboot's model does not
-  offer: a limit of the platform, not a bug of this firmware.
+- **The authenticated variables are not protected from the kernel.** The
+  UEFI variables (Secure Boot's PK, KEK, db and dbx, the setup options,
+  the supervisor password, the boot entries) live in `SMMSTORE`, a block
+  store that coreboot's SMI handler reads and writes on behalf of the
+  payload; the driver that enforces their authentication
+  (`VariableRuntimeDxe`) runs outside SMM, because a payload has no SMM of
+  its own on coreboot. Code at ring 0 can call the same SMI with blocks of
+  its own and rewrite the store without that driver. From v1.6.1 the
+  **flash-protection options are covered**: coreboot write-locks
+  `bios_lock` and `bootmedia_lock` in SMM once the payload arms them at
+  ReadyToBoot (`SMMSTORE_OPTION_LOCK`, the model of the TCG MOR lock), so
+  the OS can no longer turn *Firmware protection* or *BIOS Lock* off for
+  the next boot; the setup still changes them, before the arm. What stays
+  exposed are the **authenticated Secure Boot variables** (enroll a key in
+  db, clear the PK) and the supervisor password: covering those in MM would
+  need the signature check in SMM, a large attack surface and a fork of the
+  core EDK II variable driver, so they keep EDK II's design where the check
+  is in DXE. Secure Boot therefore stops an unsigned boot loader, not a
+  kernel that already runs and wants to persist; the RW slots stay covered
+  by vboot's signature, the TPM measurements of the Secure Boot variables
+  (PCR 7) record the change, the setup re-enrolls the defaults, and with
+  the flash options locked the forgery no longer grants a flash write. A
+  limit of the platform (no MM variable services on coreboot), not a bug of
+  this firmware.
 - **XMP profiles**: the memory runs at its JEDEC timings.
 - **macOS**: supported through OpenCore, with the firmware options of
   [docs/macos.md](docs/macos.md), on the same ACPI tables as Linux and

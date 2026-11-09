@@ -200,3 +200,15 @@ timeout. The overclocking watchdog reads as on the M920x, which makes
 the roadmap's plan (arm it in romstage of the RW slot, stop it from SMM
 when the payload confirms the slot) the same on both boards, with the
 same open questions. On this laptop the armed test stays the owner's.
+
+## Settings reset on the W541
+
+On 2026-11-08, under the CI build ci-273 in slot A, bit 2 of
+`GEN_PMCON_3` (`00:1f.0` 0xa4, `RTC_PWR_STS`) written from Linux with
+`setpci` ([rtc-bit-test.txt](rtc-bit-test.txt)): `0x1808` before,
+`0x180c` after writing 1 to the bit, `0x1808` again after writing 0. The
+bit is read-write, not write-1-to-clear: the OS can set it, and with the
+bit alone a reboot would reset every setup option. Put back to 0 at once,
+so the next boot saw no RTC failure. Patch 0256 makes the deletion also
+need the CMOS to have lost its contents
+([docs/roadmap.md](../../../roadmap.md#settings-reset-on-the-w541)).

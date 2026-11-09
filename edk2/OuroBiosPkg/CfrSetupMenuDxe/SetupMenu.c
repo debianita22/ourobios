@@ -73,8 +73,9 @@ CfrSetupMenuEntryPoint (
   CfrCreateRuntimeComponents ();
 
   //
-  // Defer Variable Policy locks for CFR_OPTFLAG_LOCK_AT_BOOT options until
-  // ReadyToBoot so setup can still write them during this boot.
+  // CFR_OPTFLAG_LOCK_AT_BOOT options: their rules are in (before EndOfDxe);
+  // the event sets at ReadyToBoot the trigger that makes them lock, so the
+  // setup can still write them during this boot.
   //
   Status = CfrRegisterLockAtBootEvent ();
   if (EFI_ERROR (Status)) {

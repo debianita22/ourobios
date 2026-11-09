@@ -53,3 +53,12 @@ BOARD_OPVK=blobs/opvk.inc
 # (verify-rom.sh); le varianti mrc e nri le controlla verify-rom.sh
 BOARD_CONFIG_WANT=(CONFIG_BOARD_LENOVO_THINKPAD_W541=y 'CONFIG_FMDFILE="w541/w541.fmd"'
 	CONFIG_VGA_BIOS_DGPU=y CONFIG_USE_ME_CLEANER=y CONFIG_LENOVO_HASWELL_VBOOT_MINIMAL_RO=y)
+# le regioni che scrive la capsula (tools/build.sh): solo i due slot, il
+# payload scrive quello che non gira, come sul M920x. Il training della RAM
+# resta: la sua versione ha l'etichetta della RAM init e una chiave, per la
+# NRI dal suo codice e dalla sua configurazione, per mrc.bin dai dati che
+# coreboot gli passa (patch 0250-0251); uno slot lo rifa' solo se non e'
+# suo. Dalla v1.6.1: le capsule di prima scrivono anche RW_MRC_CACHE
+# (tools/update.py), e i loro slot hanno la versione di prima, che nessuno
+# slot di oggi prende per sua
+BOARD_CAPSULE_REGIONS=(RW_SECTION_A RW_SECTION_B)

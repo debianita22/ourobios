@@ -1,0 +1,257 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Sun, 8 Nov 2026 15:55:32 +0100
+Subject: [PATCH] cpu/intel/haswell: Add an option for Hyper-Threading
+
+Sandy Bridge and Ivy Bridge (model_206ax) turn the second thread of
+each core off with bit 0 of SOFT_RESET_DATA, which the PCH applies at
+the next reset with bit 0 of SOFT_RESET_CTRL set; Haswell has no such
+option.
+
+The same bits do it on Haswell with Lynx Point. Written from Linux on a
+ThinkPad W541 (i7-4810MQ): after the next warm reset through CF9,
+MSR_CORE_THREAD_COUNT reads 4 cores and 4 threads, and coreboot, the
+ACPI tables and Linux follow the CPUID; the registers are not locked;
+they survive warm resets and S3, where they apply again at the resume,
+and are lost in S5; data 0 with the control bit gives the threads
+back. The reset also resets the TPM: on Lynx Point it is not "CPU only".
+
+Read a "hyper_threading" option in romstage, before raminit and not on
+S3 resume, which keeps the threads the OS suspended with. When the
+bits differ from it, set or clear bit 0 of SOFT_RESET_DATA, keeping the
+flex ratio that the bootblock may have set, read it back, set the
+control bit and do a warm reset. The bootblock is not used: with vboot
+it may be in a read-only part that does not know the option.
+
+A cold boot with the option off then has one more reset, so it leaves
+POSTCODE_RESET_REQUESTED in CMOS_POST, with "HT" in the extra field:
+the next boot does not log a hang, and at most one reset is done per
+boot if the bit did not stick (haswell_ht_reset_was_last()). That loop
+breaker needs CMOS_POST: without it the option is neither offered nor
+applied.
+
+The CFR object lists the option when the processor reports more than
+one thread per core, or when the bits turned them off.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: I63587b280589b3b3292521c7fe15badb451263bb
+---
+ src/cpu/intel/haswell/Makefile.mk        |   3 +
+ src/cpu/intel/haswell/cfr.h              |  18 ++++
+ src/cpu/intel/haswell/haswell.h          |   7 ++
+ src/cpu/intel/haswell/hyperthreading.c   | 112 +++++++++++++++++++++++
+ src/northbridge/intel/haswell/romstage.c |   9 +-
+ 5 files changed, 147 insertions(+), 2 deletions(-)
+ create mode 100644 src/cpu/intel/haswell/hyperthreading.c
+
+diff --git a/src/cpu/intel/haswell/Makefile.mk b/src/cpu/intel/haswell/Makefile.mk
+index bc23fd7fa1..4103c23525 100644
+--- a/src/cpu/intel/haswell/Makefile.mk
++++ b/src/cpu/intel/haswell/Makefile.mk
+@@ -5,6 +5,8 @@ bootblock-y += ../car/non-evict/cache_as_ram.S
+ bootblock-y += ../car/bootblock.c
+ bootblock-y += ../../x86/early_reset.S
+ 
++romstage-y += hyperthreading.c
++romstage-y += ../common/hyperthreading.c
+ romstage-y += pcode_mailbox.c
+ romstage-y += report_cpu_info.c
+ romstage-y += romstage.c
+@@ -14,6 +16,7 @@ postcar-y += ../car/non-evict/exit_car.S
+ 
+ ramstage-y += acpi.c
+ ramstage-y += haswell_init.c
++ramstage-y += hyperthreading.c
+ ramstage-y += pcode_mailbox.c
+ ramstage-$(CONFIG_HAVE_SMI_HANDLER) += smmrelocate.c
+ 
+diff --git a/src/cpu/intel/haswell/cfr.h b/src/cpu/intel/haswell/cfr.h
+index 63c016df5d..09b2d331e5 100644
+--- a/src/cpu/intel/haswell/cfr.h
++++ b/src/cpu/intel/haswell/cfr.h
+@@ -98,6 +98,24 @@ static const struct sm_object tcc_offset = SM_DECLARE_NUMBER({
+ 	.display_flags	= 0,
+ }, WITH_CALLBACK(update_tcc_offset));
+ 
++/* Listed only when the processor has a second thread per core, or it is off */
++static void update_hyper_threading(struct sm_object *new)
++{
++	if (!haswell_ht_available())
++		new->sm_bool.flags |= CFR_OPTFLAG_SUPPRESS;
++}
++
++static const struct sm_object hyper_threading = SM_DECLARE_BOOL({
++	.opt_name	= "hyper_threading",
++	.ui_name	= "Hyper-Threading",
++	.ui_helptext	= "Two threads per core. A change applies through a reset,\n"
++			  "which the firmware does by itself; while it is off, every\n"
++			  "power-on has that reset too, the OS sees one thread per\n"
++			  "core, and a resume from sleep keeps what the OS had.\n"
++			  "Default: on. Not listed on the processors without it.",
++	.default_value	= true,
++}, WITH_CALLBACK(update_hyper_threading));
++
+ static const struct sm_object vmx = SM_DECLARE_BOOL({
+ 	.opt_name	= "vmx",
+ 	.ui_name	= "Intel VT-x",
+diff --git a/src/cpu/intel/haswell/haswell.h b/src/cpu/intel/haswell/haswell.h
+index 885def47e2..e3d362f51c 100644
+--- a/src/cpu/intel/haswell/haswell.h
++++ b/src/cpu/intel/haswell/haswell.h
+@@ -241,6 +241,13 @@ void set_max_freq(void);
+ /* romstage.c: full reset if the vmx option differs from the locked state */
+ void haswell_check_vmx_option(void);
+ 
++/* hyperthreading.c: the hyper_threading option, through a warm reset */
++void haswell_check_ht_option(void);
++/* Whether the last boot ended with that reset, before any memory init */
++bool haswell_ht_reset_was_last(void);
++/* A second thread per core, on or turned off by the option, for the menu */
++bool haswell_ht_available(void);
++
+ /* pcode_mailbox.c */
+ int pcode_ready(void);
+ u32 pcode_mailbox_read(u32 command);
+diff --git a/src/cpu/intel/haswell/hyperthreading.c b/src/cpu/intel/haswell/hyperthreading.c
+new file mode 100644
+index 0000000000..730be3628a
+--- /dev/null
++++ b/src/cpu/intel/haswell/hyperthreading.c
+@@ -0,0 +1,112 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <cf9_reset.h>
++#include <console/console.h>
++#include <cpu/intel/common/common.h>
++#include <cpu/intel/haswell/haswell.h>
++#include <delay.h>
++#include <option.h>
++#include <post.h>
++#include <southbridge/intel/lynxpoint/pch.h>
++#include <types.h>
++
++/*
++ * The PCH keeps the second thread of each core off from the next reset with
++ * bit 0 of SOFT_RESET_DATA, which applies with bit 0 of SOFT_RESET_CTRL, as on
++ * Sandy Bridge (model_206ax). Both survive warm resets and S3, where they apply
++ * again at the resume, and are lost in S5. With the control bit, the warm reset
++ * through CF9 resets the whole platform on Lynx Point, the TPM included, not
++ * only the processor. The bits 11:6 of the flex ratio, which the bootblock may
++ * have set, are kept.
++ */
++#define SOFT_RESET_DATA_HT_OFF	(1 << 0)
++#define SOFT_RESET_CTRL_DATA	(1 << 0)
++
++/* In the extra field of CMOS_POST with POSTCODE_RESET_REQUESTED */
++#define RESET_EXTRA_HYPER_THREADING	0x48540000	/* "HT" */
++
++static bool ht_off_by_soft_reset(void)
++{
++	return (RCBA32(SOFT_RESET_CTRL) & SOFT_RESET_CTRL_DATA) &&
++	       (RCBA32(SOFT_RESET_DATA) & SOFT_RESET_DATA_HT_OFF);
++}
++
++/* Whether this boot follows the reset of haswell_check_ht_option() */
++bool haswell_ht_reset_was_last(void)
++{
++	u8 code;
++	u32 extra;
++
++	if (!CONFIG(CMOS_POST))
++		return false;
++
++	cmos_post_previous_boot(&code, &extra);
++	return code == POSTCODE_RESET_REQUESTED && extra == RESET_EXTRA_HYPER_THREADING;
++}
++
++bool haswell_ht_available(void)
++{
++	/* haswell_check_ht_option() needs CMOS_POST: without it, no option */
++	return CONFIG(CMOS_POST) && (intel_ht_supported() || ht_off_by_soft_reset());
++}
++
++/*
++ * Turn the second thread of each core on or off as the hyper_threading option
++ * says, through one warm reset. Not on an S3 resume: the bits survive S3 and
++ * apply at the resume, so the OS finds the threads it suspended with. Before
++ * raminit, which then sees the reset as the cold boot it follows (raminit.h).
++ */
++void haswell_check_ht_option(void)
++{
++	const bool off = ht_off_by_soft_reset();
++
++	/*
++	 * The loop breaker below is the POST code of the reset in CMOS_POST:
++	 * without it, a strap that does not stick would reset at every boot.
++	 */
++	if (!CONFIG(CMOS_POST))
++		return;
++
++	/* No second thread to turn off */
++	if (!off && !intel_ht_supported())
++		return;
++
++	const bool wanted = get_uint_option("hyper_threading", 1);
++	if (wanted != off)
++		return;
++
++	/* At most one reset per boot: the bit did not survive the last one */
++	if (haswell_ht_reset_was_last()) {
++		printk(BIOS_ERR, "Hyper-Threading: still %s after its reset, left so\n",
++		       off ? "off" : "on");
++		return;
++	}
++
++	u32 data = RCBA32(SOFT_RESET_DATA) & ~SOFT_RESET_DATA_HT_OFF;
++	if (!wanted)
++		data |= SOFT_RESET_DATA_HT_OFF;
++
++	RCBA32(SOFT_RESET_DATA) = data;
++	if (RCBA32(SOFT_RESET_DATA) != data) {
++		printk(BIOS_ERR, "Hyper-Threading: SOFT_RESET_DATA locked, left %s\n",
++		       off ? "off" : "on");
++		return;
++	}
++	RCBA32_OR(SOFT_RESET_CTRL, SOFT_RESET_CTRL_DATA);
++
++	printk(BIOS_INFO, "Hyper-Threading: warm reset to turn it %s\n",
++	       wanted ? "on" : "off");
++
++	/* For the next boot, also with NO_POST */
++	if (CONFIG(CMOS_POST)) {
++		cmos_post_extra(RESET_EXTRA_HYPER_THREADING);
++		cmos_post_code(POSTCODE_RESET_REQUESTED);
++	}
++	post_code(POSTCODE_RESET_REQUESTED);
++
++	/* Delay before reset to avoid potential TPM lockout, as the bootblock */
++	if (CONFIG(TPM))
++		mdelay(30);
++
++	system_reset();
++}
+diff --git a/src/northbridge/intel/haswell/romstage.c b/src/northbridge/intel/haswell/romstage.c
+index 129ce3d0ad..fe8f727941 100644
+--- a/src/northbridge/intel/haswell/romstage.c
++++ b/src/northbridge/intel/haswell/romstage.c
+@@ -122,9 +122,14 @@ void mainboard_romstage_entry(void)
+ 	/* An S3 resume is told from a normal boot by the code */
+ 	post_code(s3resume ? 0x35 : 0x33);
+ 
+-	/* S3 resume always starts with IA32_FEATURE_CONTROL unlocked */
+-	if (!s3resume)
++	/*
++	 * S3 resume always starts with IA32_FEATURE_CONTROL unlocked, and with the
++	 * threads the OS suspended with
++	 */
++	if (!s3resume) {
+ 		haswell_check_vmx_option();
++		haswell_check_ht_option();
++	}
+ 
+ 	elog_boot_notify(s3resume);
+ 
+-- 
+2.43.0
+

@@ -175,6 +175,12 @@ EVENT_FW_LOG = (
     (r"Setup options: \d+ reset to defaults \(RTC power lost\)", None,
      "la RTC ha perso l'alimentazione (pila, jumper della CMOS): le opzioni del setup sono ai default, "
      "Firmware protection compresa"),
+    # W541 dalla v1.6.1 (patch 0256): il bit RTC_PWR_STS acceso senza la CMOS
+    # persa, che il sistema operativo puo' fare da solo: le opzioni restano
+    (r"Setup options: not reset, RTC power lost but the CMOS kept the last boot|"
+     r"RTC power lost: setup options not reset, the CMOS kept its contents", "w541",
+     "il bit RTC_PWR_STS era acceso ma la CMOS no (il sistema operativo puo' accenderlo, o la RTC ha perso "
+     "l'alimentazione lasciando il segno dei banchi valido): le opzioni del setup restano come erano"),
 )
 
 # Il kernel: messaggi che riguardano il firmware (tabelle ACPI, PCI, VT-d,
@@ -428,6 +434,26 @@ def known(text, table, board, release=None):
 
 
 # --- i controlli ---------------------------------------------------------------
+
+OPTION_LOCK_VAR = "/sys/firmware/efi/efivars/OptionLockStatus-ceae4c1d-335b-4685-a4a0-fc4a94eea085"
+
+
+def option_lock_status():
+    """La risposta di SMM all'armamento del blocco delle opzioni come la riporta
+    il payload (edk2/0057): None senza la variabile (firmware di prima, o
+    senza vboot)."""
+    try:
+        raw = open(OPTION_LOCK_VAR, "rb").read()
+    except OSError:
+        return None
+    if len(raw) != 12:
+        return "variabile di %d byte, attesi 4 di attributi e 8 di valore" % len(raw)
+    v = int.from_bytes(raw[4:], "little")
+    if v == 0:
+        return "armato: bios_lock e bootmedia_lock di sola lettura per l'OS"
+    if v == 0x8000000000000003:
+        return "non armato: EFI_UNSUPPORTED (BIOS Lock spento o firmware senza il blocco)"
+    return "non armato: EFI_STATUS %#x" % v
 
 def check_firmware(fw, rep):
     """BOOT-01: quale firmware gira, e se le parti dicono la stessa versione."""
@@ -1536,6 +1562,22 @@ def check_me(fw, rep):
                 {"me_state": 2, "hap": hap_set, "heci": heci})
         return
     if com is None:
+        # dopo una ripresa da S3 la console di CBMEM ricomincia e le righe
+        # 'ME:' dell'avvio non ci sono piu'; le stringhe OEM di SMBIOS, scritte
+        # all'avvio, dicono ancora lo stato
+        try:
+            oem = update.me_status(fw.board)
+        except (OSError, update.Error):
+            oem = None
+        if oem:
+            disabled = oem.startswith("disattivata")
+            want = int(opt.group(1)) if opt else None
+            st = "INFO" if want is None else ("PASS" if (want != 0) == disabled else "WARN")
+            rep.add("ME-01", "Intel ME", st, "%s (dalle stringhe OEM di SMBIOS: nel log niente righe 'ME:', "
+                    "dopo una ripresa da S3 la console ricomincia)" % oem,
+                    ["opzione me_state: %s" % (want if want is not None else "non nel log")],
+                    {"oem": oem, "me_state": want})
+            return
         hint = debug_hint(fw, "le righe 'ME:'")
         rep.add("ME-01", "Intel ME", "SKIP", "nessuna riga 'ME: Current Operation Mode' nel log",
                 [hint] if hint else [])
@@ -1797,6 +1839,67 @@ def logged_fpr(fw):
     return prs, (areas or {}).get("WP_RO"), (areas or {}).get("SI_ALL")
 
 
+# OC_WDT_CTL, PMBASE + 0x54: Cannon Point (ACPI_BASE_ADDRESS 0x1800) e Lynx
+# Point-H (DEFAULT_PMBASE 0x500)
+OC_WDT_CTL_PORTS = {"m920x": 0x1854, "w541": 0x554}
+
+
+def check_watchdog(fw, rep):
+    """WDT-01: il firmware watchdog (dalla v1.6.1: M920x patch 0239, W541
+    patch 0254): armato in romstage se l'opzione firmware_watchdog lo
+    chiede, fermato in SMM quando il payload conferma lo slot; all'OS deve
+    essere spento."""
+    port = OC_WDT_CTL_PORTS.get(fw.board)
+    if port is None:
+        rep.add("WDT-01", "Firmware watchdog", "SKIP", "solo sul M920x e sul W541")
+        return
+    armed = fw.grep(r"^Firmware watchdog: armed, (\d+) s") if fw.log is not None else []
+    off = fw.grep(r"^Firmware watchdog: off") if fw.log is not None else []
+    last = fw.grep(r"^Firmware watchdog: the last reset came from the watchdog") if fw.log is not None else []
+    # la riga di romstage puo' mancare (un avvio con il training riempie la
+    # console prima di CBMEM): quella del ramstage dice che il codice c'e'
+    payload = fw.grep(r"^Firmware watchdog: at the payload") if fw.log is not None else []
+    details = []
+    try:
+        with open("/dev/port", "rb") as f:
+            f.seek(port)
+            ctl = int.from_bytes(f.read(4), "little")
+    except OSError as e:
+        ctl = None
+        details.append("OC_WDT_CTL non letto (/dev/port): %s" % e)
+    if ctl is not None:
+        details.append("OC_WDT_CTL 0x%08x: enable %d, timeout %d s, stato di reset %d" % (
+            ctl, (ctl >> 14) & 1, (ctl & 0x3ff) + 1, (ctl >> 24) & 3))
+    if last:
+        details.append("log: l'ultimo reset l'ha fatto il watchdog")
+    if not armed and not off and payload:
+        running = ctl is not None and (ctl >> 14) & 1
+        rep.add("WDT-01", "Firmware watchdog", "FAIL" if running else "PASS",
+                "acceso all'OS: il payload non l'ha fermato" if running else
+                "spento all'OS (la riga di romstage non e' nel log, quella del payload si')", details,
+                {"ctl": ctl, "armed": None, "last_reset_wdt": bool(last)})
+        return
+    if not armed and not off:
+        rep.add("WDT-01", "Firmware watchdog", "SKIP" if ctl is None else "INFO",
+                "firmware senza il watchdog (nessuna riga 'Firmware watchdog:' nel log)"
+                + ("" if ctl is None else ", OC_WDT_CTL 0x%08x" % ctl), details)
+        return
+    running = ctl is not None and (ctl >> 14) & 1
+    if armed:
+        t = int(armed[-1].group(1))
+        status = "FAIL" if running else ("PASS" if ctl is not None else "INFO")
+        summary = ("armato a %d s e ancora acceso all'OS: il payload non l'ha fermato, la macchina si "
+                   "resettera'" % t) if running else "armato a %d s all'avvio, fermato alla conferma dello " \
+            "slot%s" % (t, "" if ctl is not None else " (registro non letto)")
+    else:
+        status = "WARN" if running else "PASS"
+        summary = "acceso all'OS con l'opzione spenta" if running else "spento (opzione firmware_watchdog Off)"
+    if last:
+        status = "WARN" if status == "PASS" else status
+        summary += "; l'ultimo reset l'ha fatto il watchdog"
+    rep.add("WDT-01", "Firmware watchdog", status, summary, details,
+            {"ctl": ctl, "armed": bool(armed), "last_reset_wdt": bool(last)})
+
 def check_flash(fw, rep):
     """FLASH-01: Firmware protection (WP_RO e, dalla v1.6.1, SI_ALL in un
     Protected Range) e BIOS Lock."""
@@ -1804,6 +1907,15 @@ def check_flash(fw, rep):
     lock = [m.group(0) for m in fw.grep(r"^BM-LOCKDOWN: (Enabled bootmedia protection.*|Boot media protection off.*|"
                                         r"Failed to enable.*|Could not find region.*)")] if fw.log is not None else []
     details.extend("log: " + l for l in lock)
+    # SMMSTORE_OPTION_LOCK (dalla v1.6.1): il payload lo arma a ReadyToBoot; la
+    # printk SMM arriva nella CBMEM console solo con DEBUG_SMI (le release no)
+    if fw.log is not None and fw.grep(r"^Option lock: armed"):
+        details.append("option lock: bios_lock e bootmedia_lock di sola lettura per l'OS (armato a ReadyToBoot)")
+    # dalla v1.6.1 il payload lascia la risposta di SMM all'armamento nella
+    # variabile volatile OptionLockStatus (edk2/0057): l'EFI_STATUS in 8 byte
+    olk = option_lock_status()
+    if olk is not None:
+        details.append("option lock: %s (OptionLockStatus del payload)" % olk)
     covered, locked, flockdn, err, from_log, si, si_by = None, None, None, None, None, None, ""
     p = spi_probe(fw)
     if p is not None:
@@ -1863,6 +1975,11 @@ def check_flash(fw, rep):
             if flockdn is not None else "protezione accesa secondo il log (registri non letti)"
     else:
         status, summary = "INFO", "nessuna riga BM-LOCKDOWN nel log"
+    # il payload riporta che il blocco delle opzioni non si e' armato mentre
+    # le protezioni sono accese: l'OS potrebbe spegnerle per il prossimo avvio
+    if olk is not None and not olk.startswith("armato") and status == "PASS" and covered is not None:
+        status = "WARN"
+        summary += "; blocco delle opzioni non armato (OptionLockStatus): %s" % olk
     rep.add("FLASH-01", "Protezione del flash", status, summary, details,
             {"wp_ro_protected": covered is not None and bool(locked), "wp_ro_from_log": from_log,
              "option_off": off, "si_all_protected": si == "ok"})
@@ -2353,6 +2470,7 @@ def main():
     guard(check_vboot, "VB-01", "vboot", fw, rep)
     guard(check_update, "UPD-01", "Aggiornamenti", fw, rep)
     guard(check_flash, "FLASH-01", "Protezione del flash", fw, rep)
+    guard(check_watchdog, "WDT-01", "Firmware watchdog", fw, rep)
     guard(check_dump, "ELOG-01", "Registro degli eventi", fw, rep, args.dump)
     guard(check_smbios, "ID-01", "SMBIOS e VPD", fw, rep)
     guard(check_acpi, "ID-02", "Tabelle ACPI", fw, rep)
