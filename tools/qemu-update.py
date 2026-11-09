@@ -326,9 +326,11 @@ class UpdateTest:
     # flash in corso, si puo' spegnere. Fino a uefipayload_2608 f7cbaab0d5a2
     # aspettava un tasto dopo la prima voce fallita (il disco); da ebad826c3a44
     # scorre tutte le voci di BootOrder: la UEFI Shell del payload parte e
-    # aspetta un comando. Senza shell si fermerebbe (DEBUG) con "[Bds] Unable
-    # to boot!"
-    IDLE = ("Press any key to continue", "Welcome to the UEFI Shell!", "[Bds] Unable to boot!")
+    # aspetta un comando: il suo prompt (dalla v1.6.2 la Shell di TianoCore,
+    # edk2/0060: 5 s per startup.nsh, poi "Shell>"), o il banner che le dava
+    # MrChromebox (4373c4738) nei payload di prima. Senza shell si
+    # fermerebbe (DEBUG) con "[Bds] Unable to boot!"
+    IDLE = ("Press any key to continue", "Shell> ", "Welcome to the UEFI Shell!", "[Bds] Unable to boot!")
 
     def idle(self, text):
         return any(m in text for m in self.IDLE)
