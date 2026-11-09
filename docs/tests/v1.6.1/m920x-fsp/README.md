@@ -53,3 +53,16 @@ strings of SMBIOS after a resume from S3, when the CBMEM console has
 started again without the `ME:` lines (INFO instead of SKIP), and
 FLASH-01 turns WARN when the payload reports the option lock not armed
 while the protections are on.
+
+## v1.6.1-rc4
+
+rc4 (`959d89f`, `next` with the W541 work of v1.6.1 merged: patches
+0246-0264, all of the W541 but 0246, the POST code of a reset the
+firmware asks for) as a capsule from rc3, slot B, 2026-11-09, both
+protections on; rc3 stays in A. For the M920x the firmware is rc3's
+with 0246. Report 21 PASS, then 22 PASS after a resume from S3: BOOT-03
+no unknown message, WDT-01 off (romstage *off*, `0x00002000` at the
+OS), the option lock armed, FLASH-01 with PR0 and PR1, TPM-03 before
+and after the resume; with the copy of the flash ELOG-01 and VB-02
+PASS (slot B confirmed). This boot paid the ME's 5 s wait (BOOT-02
+15.66 s, 10.42 s without it).
