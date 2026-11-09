@@ -25,7 +25,10 @@
 #   - edk2/OuroBiosPkg/<cartella>: le cartelle di UefiPayloadPkg che TianoCore
 #     non ha (i moduli di MrChromebox e del progetto: il setup CFR, lo splash,
 #     la password, le chiavi di Secure Boot, la schermata di aggiornamento...)
-#     e FSDrivers, da R, con i percorsi del package nei loro file;
+#     e FSDrivers, da R, con i percorsi del package nei loro file; con
+#     OTHER_MOVED e gli header di PACKAGE_HEADERS (in Include/);
+#   - edk2/OuroBiosPkg/OuroBiosPkg.dec: le dichiarazioni di PACKAGE_DECLS,
+#     che escono dai .dec di TianoCore in R e in ogni patch della serie;
 #   - edk2/OuroBiosPkg/OuroBiosPkg.dsc.patch e .fdf.patch: il .dsc e l'.fdf di
 #     UefiPayloadPkg di R con i percorsi del package, come patch su quelli di
 #     TianoCore (edk2_package di tools/build.sh li rifa' da li').
@@ -100,14 +103,65 @@ CANCELLED = (
      "4258973881acd73464343e6a085c463e5360145a"),   # il suo revert, 0057
 )
 SEPARATE = ("LvglPkg", ".gitmodules")
+# Le dichiarazioni che R aggiunge ai .dec di TianoCore e che usano soltanto i
+# moduli del package e la sua piattaforma (docs/edk2-migration.md,
+# "package"): escono dal .dec di TianoCore, ognuna con le righe di commento
+# subito sopra, e vanno in OuroBiosPkg.dec, nella sezione da cui vengono. I
+# PCD prendono il token space del package: sono tutti FixedAtBuild, il loro
+# valore e' una costante nel codice, il GUID del token space non c'e' nel
+# binario. Le patch della serie (make_series) hanno i .dec di ogni commit e
+# di ogni patch di patches/edk2 senza quelle righe; una patch rimasta senza
+# file lascia il suo numero vuoto. main controlla che nessun file di R fuori
+# dal package, dalla piattaforma e da PACKAGE_HEADERS le nomini
+PACKAGE_DECLS = {
+    "UefiPayloadPkg/UefiPayloadPkg.dec": (
+        # lo splash, la lettura di CBFS, la schermata di aggiornamento
+        "BootSplashLib", "CbfsLib", "UpdateScreenLib",
+        "gUefiPayloadBootSplashGuid", "gBootSplashConfigFormSetGuid",
+        "gFirmwareUpdateFormSetGuid", "gFirmwareUpdateStatusProtocolGuid",
+        # le chiavi di Secure Boot di EnrollDefaultKeys
+        "gMicrosoftVendorGuid", "gMicrosoftDbxUpdateGuid", "gMicrosoftDbxBaselineGuid",
+        "gMicrosoftDbUefi2011Guid", "gMicrosoftDbWin2011Guid", "gMicrosoftDbUefi2023Guid",
+        "gMicrosoftDbWinUefi2023Guid", "gMicrosoftKek2011Guid", "gMicrosoftKek2023Guid",
+        "gMicrosoftDbOpRomUefi2023Guid", "gMicrosoftPkOem2023Guid",
+        "PcdSecureBootDefaultEnable",
+        # PlatformGopPolicy
+        "gPlatformGOPPolicyGuid",
+        # la console seriale del boot manager (non i PCD di iPXE e CSMWrap: il
+        # Makefile di coreboot da' i nomi delle loro voci con --pcd
+        # gUefiPayloadPkgTokenSpaceGuid.)
+        "PcdSerialTerminalPrintEnabled",
+        # il setup CFR e le regioni delle capsule
+        "PcdCfrSetupMenuPasswordCategory", "PcdCfrSetupMenuGeneralCategory",
+        "PcdFmpDeviceSmmAllowedRegions"),
+    "MdeModulePkg/MdeModulePkg.dec": (
+        "gTimeDateSettingsFormSetGuid",),
+}
+# Gli header di quelle dichiarazioni, nuovi in R: in Include del package
+PACKAGE_HEADERS = ("UefiPayloadPkg/Include/Guid/BootSplashConfig.h",
+                   "UefiPayloadPkg/Include/Guid/FirmwareUpdateConfig.h",
+                   "UefiPayloadPkg/Include/Library/BootSplashLib.h",
+                   "UefiPayloadPkg/Include/Library/CbfsLib.h",
+                   "UefiPayloadPkg/Include/Library/CfrHelpersLib.h",
+                   "UefiPayloadPkg/Include/Library/UpdateScreenLib.h",
+                   "UefiPayloadPkg/Include/Protocol/FirmwareUpdateStatus.h",
+                   "MdeModulePkg/Include/Guid/TimeDateSettingsHii.h")
+# Cartelle nuove di R fuori da UefiPayloadPkg, nel package con il nome dato:
+# il driver dell'ora e della data di MrChromebox (c3aa08f)
+OTHER_MOVED = {"MdeModulePkg/Universal/TimeDateSettingsDxe": "TimeDateSettingsDxe"}
+TOKEN_SPACE = "gOuroBiosPkgTokenSpaceGuid"
+TOKEN_SPACE_GUID = "{ 0xb29ace79, 0xa1db, 0x4d48, { 0x8d, 0xb7, 0x58, 0x8d, 0x3e, 0x8f, 0x21, 0xf4 } }"
 TOP_DIRS = ("FSDrivers",)
-# Il package: il .dec (senza GUID ne' PCD: i moduli usano quelli di
-# UefiPayloadPkg.dec, che ha i suoi in patches/tianocore)
+# Il package: l'inizio del .dec, a cui package_dec aggiunge le dichiarazioni
+# di PACKAGE_DECLS (gli altri GUID e PCD i moduli li prendono dai .dec di
+# TianoCore, con patches/tianocore)
 DEC = """## @file
 # OuroBiosPkg: the modules and the platform of the payload of ouroBIOS that
 # TianoCore's tree does not have, built against it (docs/edk2-migration.md
-# of ouroBIOS, steps (b) and (c)). The modules keep the GUIDs, PCDs and
-# library classes of UefiPayloadPkg.dec, which patches/tianocore extends.
+# of ouroBIOS, steps (b) and (c)). Declared here: the GUIDs, PCDs and
+# library classes that only the package uses (PACKAGE_DECLS of
+# tools/edk2-import.py); the modules take the others from TianoCore's
+# packages, which patches/tianocore extends.
 #
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 #
@@ -119,6 +173,7 @@ DEC = """## @file
   PACKAGE_GUID                   = 2201540D-F8BE-4411-A3BE-5549BE0F5B19
   PACKAGE_VERSION                = 0.1
 """
+DEC_NOTE = b", with the declarations that OuroBiosPkg.dec has left out]"
 DSC_NOTE = """# OuroBiosPkg: the platform of the payload of ouroBIOS. tools/build.sh of
 # ouroBIOS makes it from UefiPayloadPkg.dsc of the edk2 tree it builds
 # with and OuroBiosPkg.dsc.patch, which tools/edk2-import.py makes from
@@ -184,6 +239,17 @@ class Index:
     def tree(self):
         return git(self.repo, "write-tree", env=self.env).strip()
 
+    def blob(self, path):
+        sha = git(self.repo, "ls-files", "-s", "--", path, env=self.env).split()[1]
+        return git(self.repo, "cat-file", "blob", sha, binary=True)
+
+    def put(self, path, data):
+        """path nell'indice con il contenuto data."""
+        r = subprocess.run(["git", "-C", self.repo, "hash-object", "-w", "--stdin"], input=data,
+                           stdout=subprocess.PIPE, check=True)
+        git(self.repo, "update-index", "--cacheinfo", "100644,%s,%s" % (r.stdout.decode().strip(), path),
+            env=self.env)
+
 
 def entries(repo, tree):
     """path -> (mode, sha) dell'albero, i submodule compresi."""
@@ -210,10 +276,11 @@ def under(path, dirs):
 
 def package_dirs(base, r):
     """Le cartelle nuove di R sotto UefiPayloadPkg, le piu' esterne (quelle
-    il cui genitore c'e' nel tag), meno DROPPED; quelle di PACKAGE_MOVED; e
-    quelle in cima (TOP_DIRS).
+    il cui genitore c'e' nel tag), meno DROPPED; quelle di PACKAGE_MOVED;
+    quelle in cima (TOP_DIRS); e quelle di OTHER_MOVED.
     Non quelle di UefiPayloadPkg/Include: i moduli ne prendono gli header
-    per le [Includes] di UefiPayloadPkg.dec, restano li'."""
+    per le [Includes] di UefiPayloadPkg.dec, restano li', meno quelli di
+    PACKAGE_HEADERS, che vanno in Include del package."""
     old = dirs_of(base)
     new = set()
     for p in r:
@@ -233,11 +300,20 @@ def package_dirs(base, r):
     for d in TOP_DIRS:
         if any(p.startswith(d + "/") for p in r) and d not in old:
             keep.append(d)
+    for d in OTHER_MOVED:
+        if d in old or not any(p.startswith(d + "/") for p in r):
+            raise Error("OTHER_MOVED: %s non e' una cartella nuova di R" % d)
+        keep.append(d)
     return keep
 
 
 def pkg_path(path):
     """Il percorso nel package di un file di una cartella del package."""
+    for d, name in OTHER_MOVED.items():
+        if under(path, (d,)):
+            return name + path[len(d):]
+    if path in PACKAGE_HEADERS:
+        return path.split("/", 1)[1]
     if path.startswith("UefiPayloadPkg/"):
         return path[len("UefiPayloadPkg/"):]
     return path
@@ -247,12 +323,95 @@ def rewrite(text, dirs):
     """I percorsi delle cartelle del package nei file di testo: UefiPayloadPkg/X
     e FSDrivers/ (all'inizio di un percorso) in OuroBiosPkg/X."""
     for d in sorted(dirs, key=len, reverse=True):
-        if d.startswith("UefiPayloadPkg/"):
+        if d in OTHER_MOVED or d.startswith("UefiPayloadPkg/"):
             text = re.sub(r"(?<![\w/])" + re.escape(d) + r"(?=[/\s|]|$)",
                           PKG + "/" + pkg_path(d), text, flags=re.M)
         else:
             text = re.sub(r"(?<![\w/])" + re.escape(d) + r"/", PKG + "/" + d + "/", text)
-    return text
+    pcds = [n for names in PACKAGE_DECLS.values() for n in names if n.startswith("Pcd")]
+    return re.sub(r"\b\w+TokenSpaceGuid\.(%s)\b" % "|".join(pcds), TOKEN_SPACE + r".\1", text)
+
+
+def decl_name(line):
+    """Il nome che una riga di un .dec dichiara, o None."""
+    m = re.match(r"\s*(?:\w+\.)?(\w+)\s*[=|]", line)
+    return m.group(1) if m and not line.lstrip().startswith("#") else None
+
+
+def split_dec(text, names):
+    """(il .dec senza le dichiarazioni di names, [(sezione, righe)] tolte).
+    Con ogni dichiarazione escono le righe di commento subito sopra; una riga
+    vuota subito dopo esce se quella prima e' vuota anch'essa."""
+    lines = text.split("\r\n")
+    gone = set()
+    for i, line in enumerate(lines):
+        if decl_name(line) in names:
+            j = i
+            while j > 0 and lines[j - 1].lstrip().startswith("#") and not re.match(r"#{10,}", lines[j - 1]):
+                j -= 1
+            gone.update(range(j, i + 1))
+    out, blocks, section, cur = [], [], None, None
+    for i, line in enumerate(lines):
+        if line.startswith("["):
+            section = line.strip()
+        if i in gone:
+            if cur is None:
+                cur = (section, [])
+                blocks.append(cur)
+            cur[1].append(line)
+            continue
+        if cur is not None and not line.strip() and (not out or not out[-1].strip()):
+            cur = None
+            continue
+        cur = None
+        out.append(line)
+    return "\r\n".join(out), blocks
+
+
+def package_dec(decs):
+    """OuroBiosPkg.dec: le dichiarazioni tolte dai .dec di R (decs: path ->
+    testo di R), per sezione, i PCD nel token space del package."""
+    sections = {}
+    for path in sorted(decs):
+        for section, block in split_dec(decs[path], PACKAGE_DECLS[path])[1]:
+            sections.setdefault(section, []).append(block)
+    order = ["[LibraryClasses]", "[Guids]", "[Protocols]"]
+    text = DEC + "\n[Includes]\n  Include\n"
+    for section in order + sorted(set(sections) - set(order)):
+        if section not in sections and section != "[Guids]":
+            continue
+        text += "\n" + section + "\n"
+        if section == "[Guids]":
+            text += "  %s = %s\n" % (TOKEN_SPACE, TOKEN_SPACE_GUID)
+        for k, block in enumerate(sections.get(section, [])):
+            if k or section == "[Guids]":
+                text += "\n"
+            text += "\n".join(block) + "\n"
+    return crlf(rewrite(text, ()))
+
+
+def add_package_dec(files):
+    """[Packages] con OuroBiosPkg.dec negli .inf del package i cui file nominano
+    una dichiarazione o un header spostati (files: path del package -> (mode,
+    contenuto), cambiato sul posto)."""
+    names = [n for v in PACKAGE_DECLS.values() for n in v]
+    heads = [h.split("/Include/", 1)[1] for h in PACKAGE_HEADERS]
+    pat = re.compile((r"\b(%s)\b|" % "|".join(names) + "|".join(re.escape(h) for h in heads)).encode())
+    for inf in [p for p in files if p.endswith(".inf")]:
+        d = os.path.dirname(inf)
+        if not any(pat.search(data) for p, (_, data) in files.items()
+                   if (p.startswith(d + "/") if d else "/" not in p) and b"\0" not in data):
+            continue
+        mode, data = files[inf]
+        text = data.decode("utf-8", errors="surrogateescape")
+        m = re.search(r"^\[Packages\][^\r\n]*\r?\n((?:[ \t]*[^\[\s][^\r\n]*\r?\n|[ \t]*\r?\n)*)", text, re.M)
+        if not m:
+            raise Error("%s: nomina dichiarazioni spostate in %s.dec e non ha [Packages]" % (inf, PKG))
+        body = m.group(1)
+        last = [l for l in re.finditer(r"^([ \t]*)\S[^\r\n]*(\r?\n)", body, re.M) if not l.group(0).lstrip().startswith("#")][-1]
+        at = m.start(1) + last.end()
+        text = text[:at] + last.group(1) + "%s/%s.dec" % (PKG, PKG) + last.group(2) + text[at:]
+        files[inf] = (mode, text.encode("utf-8", errors="surrogateescape"))
 
 
 def crlf(text):
@@ -325,6 +484,56 @@ def restrict_mail(data, out):
     return head + b"".join(keep) + sig, dropped
 
 
+def dec_diff(tmp, path, old, new):
+    """Il blocco di una mail per il .dec path da old a new (testi)."""
+    d = tempfile.mkdtemp(dir=tmp)
+    for side, text in (("a", old), ("b", new)):
+        full = os.path.join(d, side, path)
+        os.makedirs(os.path.dirname(full))
+        with open(full, "wb") as f:
+            f.write(text.encode("utf-8", errors="surrogateescape"))
+    r = subprocess.run(["git", "diff", "--no-index", "--no-color", "--no-prefix", "--full-index", "-U3",
+                        "a/" + path, "b/" + path], cwd=d, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if r.returncode != 1:
+        raise Error("git diff --no-index di %s: %s" % (path, r.stderr.decode(errors="replace").strip()))
+    return r.stdout
+
+
+def filter_decs(tmp, data, texts):
+    """Una mail senza le dichiarazioni di PACKAGE_DECLS nei suoi .dec: texts(path)
+    da' il .dec prima e dopo la mail. None se non resta niente, se no (mail,
+    True se un .dec e' cambiato)."""
+    m = re.search(rb"\ndiff --git ", data)
+    head, body = data[:m.start() + 1], data[m.start() + 1:]
+    sig = b""
+    m2 = re.search(rb"\n-- \n[0-9.]+\n*$", body)
+    if m2:
+        body, sig = body[:m2.start() + 1], body[m2.start() + 1:]
+    keep, changed, restat = [], False, False
+    for b in re.split(rb"(?=^diff --git )", body, flags=re.M):
+        if not b.strip():
+            continue
+        path = re.match(rb"diff --git a/(\S+) ", b).group(1).decode()
+        if path not in PACKAGE_DECLS:
+            keep.append(b)
+            continue
+        before, after = texts(path)
+        old, gone_old = split_dec(before.decode("utf-8", errors="surrogateescape"), PACKAGE_DECLS[path])
+        new, gone_new = split_dec(after.decode("utf-8", errors="surrogateescape"), PACKAGE_DECLS[path])
+        regen = dec_diff(tmp, path, old, new) if old != new else b""
+        if regen != b:
+            restat = True
+        if gone_old != gone_new:
+            changed = True
+        if regen:
+            keep.append(regen)
+    if not keep:
+        return None
+    if restat:
+        head = re.sub(rb"\n---\n.*\Z", b"\n---\n", head, flags=re.S)
+    return head + b"".join(keep) + sig, changed
+
+
 def check_cancelled(mrc, commits, pathspec):
     """Le coppie di CANCELLED: tutte e due tra i commit della serie, nei file
     di TianoCore gli stessi file, che dopo il revert sono come prima del
@@ -354,7 +563,7 @@ def make_series(mrc, tmp, base, head, excl, out):
     nelle cartelle spostate nel package, o una coppia di CANCELLED, lascia il
     suo numero vuoto, cosi' le altre non cambiano nome."""
     pathspec = ["--", "."] + [":(exclude)%s" % p for p in excl]
-    numbered = [p for p in excl if p not in PACKAGE_MOVED]
+    numbered = [p for p in excl if p not in PACKAGE_MOVED and p not in OTHER_MOVED and p not in PACKAGE_HEADERS]
     pathspec_numbered = ["--", "."] + [":(exclude)%s" % p for p in numbered]
     made = []
     n = 0
@@ -389,12 +598,30 @@ def make_series(mrc, tmp, base, head, excl, out):
             c[:12], where_left([f for f in all_files if under(f, excl) or f in excl], excl))).encode()
         with open(path, "rb") as f:
             data = f.read()
+        os.unlink(path)
+        r = filter_decs(tmp, data, lambda p: (git(mrc, "cat-file", "blob", "%s^:%s" % (c, p), binary=True),
+                                              git(mrc, "cat-file", "blob", "%s:%s" % (c, p), binary=True)))
+        if r is None:
+            # solo dichiarazioni che sono in OuroBiosPkg.dec: il numero resta vuoto
+            continue
+        data, decs = r
+        if decs:
+            note = note[:-1] + DEC_NOTE
         with open(path, "wb") as f:
             f.write(note_after_headers(data, wrap(note)))
         made.append((os.path.basename(path), "MrChromebox %s" % c[:12]))
+    state = Index(mrc, tmp, "s", head)
     for name in series("edk2"):
-        with open(os.path.join(O, "patches", "edk2", name), "rb") as f:
+        patch = os.path.join(O, "patches", "edk2", name)
+        with open(patch, "rb") as f:
             data = f.read()
+        texts = {}
+        for p in set(re.findall(rb"^diff --git a/(\S+) ", data, re.M)):
+            if p.decode() in PACKAGE_DECLS:
+                texts[p.decode()] = [state.blob(p.decode())]
+        state.apply(patch, "patches/edk2/" + name)
+        for p in texts:
+            texts[p].append(state.blob(p))
         if restrict_mail(data, lambda p: under(p, numbered) or p in numbered) is None:
             continue
         n += 1
@@ -406,7 +633,13 @@ def make_series(mrc, tmp, base, head, excl, out):
             # tutta in PACKAGE_MOVED: il numero resta vuoto
             continue
         data, dropped = r
+        r = filter_decs(tmp, data, lambda p: tuple(texts[p]))
+        if r is None:
+            continue
+        data, decs = r
         note = ("[ouroBIOS: patches/edk2/%s%s]" % (name[:4], where_left(dropped, excl))).encode()
+        if decs:
+            note = note[:-1] + DEC_NOTE
         data = note_after_headers(data, wrap(note))
         out_name = "%04d-%s" % (n, name.split("-", 1)[1])
         with open(os.path.join(out, out_name), "wb") as f:
@@ -455,11 +688,12 @@ def wrap(text, width=72):
     return b"\n".join(lines)
 
 
-def package_files(mrc, r_entries, dirs):
-    """path del package -> (mode, contenuto) da R."""
+def package_files(mrc, r_entries, dirs, decs):
+    """path del package -> (mode, contenuto) da R; decs: i .dec di
+    PACKAGE_DECLS in R."""
     out = {}
     for path, (mode, sha) in r_entries.items():
-        if not under(path, dirs):
+        if not under(path, dirs) and path not in PACKAGE_HEADERS:
             continue
         if mode == "160000":
             raise Error("%s: un submodule in una cartella del package" % path)
@@ -468,8 +702,43 @@ def package_files(mrc, r_entries, dirs):
             data = rewrite(data.decode("utf-8", errors="surrogateescape"), dirs).encode(
                 "utf-8", errors="surrogateescape")
         out[pkg_path(path)] = (mode, data)
-    out[PKG + ".dec"] = ("100644", crlf(DEC).encode())
+    for h in PACKAGE_HEADERS:
+        if h not in r_entries:
+            raise Error("PACKAGE_HEADERS: %s non c'e' in R" % h)
+    add_package_dec(out)
+    out[PKG + ".dec"] = ("100644", package_dec(decs).encode())
     return out
+
+
+def check_package_decls(mrc, base, base_entries, r_tree, decs, dirs):
+    """Le dichiarazioni di PACKAGE_DECLS: nei .dec di R e non in quelli del
+    tag, e nominate (loro o i loro header) solo dai file del package, dalla
+    piattaforma e dagli header di PACKAGE_HEADERS. Si cercano nei file che R
+    cambia rispetto al tag: un file uguale a quello del tag non le conosce."""
+    names = [n for v in PACKAGE_DECLS.values() for n in v]
+    for path, text in decs.items():
+        have = {decl_name(l) for l in text.split("\r\n")}
+        old = {decl_name(l) for l in git(mrc, "cat-file", "blob", base_entries[path][1]).splitlines()}
+        for n in PACKAGE_DECLS[path]:
+            if n not in have:
+                raise Error("PACKAGE_DECLS: %s non e' dichiarato in %s di R" % (n, path))
+            if n in old:
+                raise Error("PACKAGE_DECLS: %s e' gia' in %s del tag" % (n, path))
+    changed = [p for p in git(mrc, "diff", "--name-only", base, r_tree).splitlines()
+               if not under(p, dirs) and p not in PACKAGE_HEADERS and p not in PLATFORM
+               and p not in PACKAGE_DECLS and not under(p, DROPPED) and not under(p, LEFT_OUT)
+               and not under(p, SEPARATE)]
+    heads = [h.split("/Include/", 1)[1] for h in PACKAGE_HEADERS]
+    hits = []
+    for args in (["-w", "-E", "|".join(names)], ["-F"] + [x for h in heads for x in ("-e", h)]):
+        r = subprocess.run(["git", "-C", mrc, "grep", "-l", "-I"] + args + [r_tree, "--"] + changed,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if r.returncode > 1:
+            raise Error("git grep: %s" % r.stderr.decode(errors="replace").strip())
+        hits += r.stdout.decode().split()
+    if hits:
+        raise Error("PACKAGE_DECLS: nominate fuori dal package in %s" % " ".join(
+            sorted({h.split(":", 1)[1] for h in hits})))
 
 
 def compare_trees(mrc, a, b, excl, what):
@@ -525,10 +794,19 @@ def main():
             raise Error("LVGLPKG_COMMIT di tools/build.sh e' %s, il submodule LvglPkg di %s e' %s" % (
                 lvgl[:12], head[:12], r_entries.get("LvglPkg", ("", "nessuno"))[1][:12]))
         dirs = package_dirs(base_entries, r_entries)
-        excl = sorted(set(dirs) | set(DROPPED) | set(LEFT_OUT) | set(SEPARATE) | set(PLATFORM))
+        excl = sorted(set(dirs) | set(DROPPED) | set(LEFT_OUT) | set(SEPARATE) | set(PLATFORM)
+                      | set(PACKAGE_HEADERS))
         print("R %s (%s + %d patch di patches/edk2): %d file, package: %s" % (
             r_tree[:12], head[:12], len(series("edk2")), len(r_entries), " ".join(pkg_path(d) for d in dirs)))
-        pkg = package_files(mrc, r_entries, dirs)
+        decs = {p: git(mrc, "cat-file", "blob", r_entries[p][1]).replace("\r\n", "\n").replace("\n", "\r\n")
+                for p in PACKAGE_DECLS}
+        check_package_decls(mrc, base, base_entries, r_tree, decs, dirs)
+        pkg = package_files(mrc, r_entries, dirs, decs)
+        # R': R con i .dec senza le dichiarazioni del package, l'albero che il
+        # tag con patches/tianocore deve dare fuori dal package
+        for p, text in decs.items():
+            idx.put(p, split_dec(text, PACKAGE_DECLS[p])[0].encode())
+        r_tree = idx.tree()
         plat = {}
         for p in PLATFORM:
             ext = p.rsplit(".", 1)[1]

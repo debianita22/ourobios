@@ -26,14 +26,11 @@ graphics and does not add a GOP driver to CBFS.
 
 Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
 ---
- UefiPayloadPkg/UefiPayloadPkg.dec | 5 -----
- 1 file changed, 5 deletions(-)
-
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
-index b44b33200042384a0d0d5b05ce691b525e9e9452..9bc0e39cd28088917c8ea82352a0f1f0785dae79 100644
+index 39da5e5daefe5de92914cb91e578acf29b3f6ebd..395c08cca0e60a00d3c00714b1633c451f8bdc19 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dec
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dec
-@@ -47,11 +47,6 @@
+@@ -41,11 +41,6 @@
    ## Include/UniversalPayload/DeviceTree.h
    gUniversalPayloadDeviceTreeGuid = { 0x6784b889, 0xb13c, 0x4c3b, {0xae, 0x4b, 0xf, 0xa, 0x2e, 0x32, 0xe, 0xa3 } }
  

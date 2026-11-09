@@ -122,10 +122,10 @@ index 0000000000..e81e4c8f00
 +
 +#endif
 diff --git a/MdeModulePkg/MdeModulePkg.dec b/MdeModulePkg/MdeModulePkg.dec
-index 33b2f815e6..d87fd6e313 100644
+index ff3169f06cb9ba5bbb80790d7000db0eafd9d388..f2ecdd8a3a92cfe5cea7619b1946230aa46577af 100644
 --- a/MdeModulePkg/MdeModulePkg.dec
 +++ b/MdeModulePkg/MdeModulePkg.dec
-@@ -771,6 +771,10 @@
+@@ -768,6 +768,10 @@
    ## Include/Protocol/VariablePolicy.h
    gEdkiiVariablePolicyProtocolGuid = { 0x81D1675C, 0x86F6, 0x48DF, { 0xBD, 0x95, 0x9A, 0x6E, 0x4F, 0x09, 0x25, 0xC3 } }
  

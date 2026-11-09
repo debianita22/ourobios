@@ -23,14 +23,6 @@ TEST=build/boot google/swanky, google/ultima, google/vilboz
 
 Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
 ---
- UefiPayloadPkg/Include/Coreboot.h             | 17 ++++
- .../Include/Guid/SdhciNonPciInfoGuid.h        | 40 +++++++++
- .../Library/CbParseLib/CbParseLib.c           | 82 +++++++++++++++++--
- .../Library/CbParseLib/CbParseLib.inf         |  1 +
- UefiPayloadPkg/UefiPayloadPkg.dec             |  2 +
- 5 files changed, 137 insertions(+), 5 deletions(-)
- create mode 100644 UefiPayloadPkg/Include/Guid/SdhciNonPciInfoGuid.h
-
 diff --git a/UefiPayloadPkg/Include/Coreboot.h b/UefiPayloadPkg/Include/Coreboot.h
 index be364f914a4bef073afc80da17863f1917712059..89471f8da1daa60e8d80c83b8e1ab160f80dd970 100644
 --- a/UefiPayloadPkg/Include/Coreboot.h
@@ -227,10 +219,10 @@ index c73bf66153c8b2cbb4e952ccb2be31bbd64b3a28..32803157e72adfeb2365c04d6cde87c5
  [Pcd]
    gUefiPayloadPkgTokenSpaceGuid.PcdBootloaderParameter
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
-index 031aceb685e3cb191fb2369fde63828af6a6f128..619b5eebc88c5ab3ce2fe3774e09b2a88617fe81 100644
+index 6820e681cc1dacbf9c18ddaeec355b517766657f..2b2ea5fa0ef2ef0eab11f8c97634216306fd0a02 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dec
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dec
-@@ -65,6 +65,8 @@
+@@ -61,6 +61,8 @@
  
    gEfiSmmStoreInfoHobGuid  = { 0xf585ca19, 0x881b, 0x44fb, { 0x3f, 0x3d, 0x81, 0x89, 0x7c, 0x57, 0xbb, 0x01 } }
    gEfiFirmwareInfoHobGuid  = { 0xe0653829, 0x274e, 0x4b1e, { 0x87, 0x2d, 0xa2, 0x20, 0xf5, 0xaf, 0x8f, 0x3d } }

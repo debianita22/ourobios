@@ -216,10 +216,10 @@ index 32803157e72adfeb2365c04d6cde87c5637137c9..c73bf66153c8b2cbb4e952ccb2be31bb
  [Pcd]
    gUefiPayloadPkgTokenSpaceGuid.PcdBootloaderParameter
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
-index bdaf58d931655306cca203397671c9e95b432e6e..930c0df5a1cdcd6c505ad3e6e231a05376671932 100644
+index 9e3bb1d3d53982f69da6b19a81d2b1f71675fee7..e47d29f990d62af6a5d3c2a83695ad908a316a93 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dec
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dec
-@@ -69,8 +69,6 @@
+@@ -58,8 +58,6 @@
    gEfiFirmwareInfoHobGuid  = { 0xe0653829, 0x274e, 0x4b1e, { 0x87, 0x2d, 0xa2, 0x20, 0xf5, 0xaf, 0x8f, 0x3d } }
    ## Include/Guid/BootMediaInfoGuid.h
    gEfiBootMediaInfoHobGuid = { 0xd0fad08b, 0xb129, 0x40ff, { 0xb8, 0x29, 0xf5, 0x9a, 0xbe, 0x75, 0x83, 0x8e } }

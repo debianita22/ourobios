@@ -47,13 +47,14 @@
   FmpDevicePkg/FmpDevicePkg.dec
   MdeModulePkg/MdeModulePkg.dec
   MdePkg/MdePkg.dec
+  OuroBiosPkg/OuroBiosPkg.dec
 
 [Guids]
   gEfiFirmwareInfoHobGuid
 
 [Pcd]
   gEfiMdeModulePkgTokenSpaceGuid.PcdSystemFmpCapsuleImageTypeIdGuid  ## PRODUCES
-  gUefiPayloadPkgTokenSpaceGuid.PcdFmpDeviceSmmAllowedRegions        ## CONSUMES
+  gOuroBiosPkgTokenSpaceGuid.PcdFmpDeviceSmmAllowedRegions        ## CONSUMES
 
 [Protocols]
   gFirmwareUpdateStatusProtocolGuid    ## PRODUCES

@@ -14,17 +14,6 @@ Slim Bootloader does not provide this information.
 
 Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
 ---
- UefiPayloadPkg/Include/Coreboot.h             | 11 ++++++
- .../Include/Guid/BootMediaInfoGuid.h          | 21 ++++++++++
- UefiPayloadPkg/Include/Library/BlParseLib.h   | 17 +++++++++
- .../Library/CbParseLib/CbParseLib.c           | 38 +++++++++++++++++++
- .../Library/SblParseLib/SblParseLib.c         | 16 ++++++++
- .../UefiPayloadEntry/UefiPayloadEntry.c       | 13 +++++++
- .../UefiPayloadEntry/UefiPayloadEntry.inf     |  1 +
- UefiPayloadPkg/UefiPayloadPkg.dec             |  2 +
- 8 files changed, 119 insertions(+)
- create mode 100644 UefiPayloadPkg/Include/Guid/BootMediaInfoGuid.h
-
 diff --git a/UefiPayloadPkg/Include/Coreboot.h b/UefiPayloadPkg/Include/Coreboot.h
 index 89471f8da1daa60e8d80c83b8e1ab160f80dd970..2c2320d0ce8c872c2ed19cab9fd6c7a53dbdfaaa 100644
 --- a/UefiPayloadPkg/Include/Coreboot.h
@@ -220,10 +209,10 @@ index 11198c0b138efc3029deab8ed95f90e6dde4df5a..b4f5768f21cf532ce26ce65c31fd53f1
  [FeaturePcd.IA32]
    gEfiMdeModulePkgTokenSpaceGuid.PcdDxeIplSwitchToLongMode      ## CONSUMES
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
-index 7f9b4391e5caafa9ea056372b879eb6b5c446885..3bc6814ed9b3e3cf6a5df17f68af858e4c5bd901 100644
+index 2b2ea5fa0ef2ef0eab11f8c97634216306fd0a02..39da5e5daefe5de92914cb91e578acf29b3f6ebd 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dec
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dec
-@@ -66,6 +66,8 @@
+@@ -61,6 +61,8 @@
  
    gEfiSmmStoreInfoHobGuid  = { 0xf585ca19, 0x881b, 0x44fb, { 0x3f, 0x3d, 0x81, 0x89, 0x7c, 0x57, 0xbb, 0x01 } }
    gEfiFirmwareInfoHobGuid  = { 0xe0653829, 0x274e, 0x4b1e, { 0x87, 0x2d, 0xa2, 0x20, 0xf5, 0xaf, 0x8f, 0x3d } }

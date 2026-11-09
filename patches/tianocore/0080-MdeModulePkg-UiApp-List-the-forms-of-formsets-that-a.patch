@@ -28,15 +28,6 @@ Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_018n3yuWwDLW63F4vdf7ZFTv
 
 ---
- .../Application/UiApp/FrontPageCustomizedUi.c |   8 +
- .../UiApp/FrontPageCustomizedUiSupport.c      | 201 ++++++++++++++++++
- .../UiApp/FrontPageCustomizedUiSupport.h      |  19 ++
- MdeModulePkg/Application/UiApp/UiApp.inf      |   1 +
- MdeModulePkg/Include/Guid/HiiFrontPageForms.h |  15 ++
- MdeModulePkg/MdeModulePkg.dec                 |   4 +
- 6 files changed, 248 insertions(+)
- create mode 100644 MdeModulePkg/Include/Guid/HiiFrontPageForms.h
-
 diff --git a/MdeModulePkg/Application/UiApp/FrontPageCustomizedUi.c b/MdeModulePkg/Application/UiApp/FrontPageCustomizedUi.c
 index cd5e3e0b9..139b16add 100644
 --- a/MdeModulePkg/Application/UiApp/FrontPageCustomizedUi.c
@@ -343,7 +334,7 @@ index 000000000..662efd8be
 +
 +extern EFI_GUID  gEdkiiIfrFrontPageFormsGuid;
 diff --git a/MdeModulePkg/MdeModulePkg.dec b/MdeModulePkg/MdeModulePkg.dec
-index f3e6a22cc..bd3d314c2 100644
+index c856616dba14be3a106c00dfd9efc79b3f153bba..6ac73e6ce1aa2040016be5c0d4f2ec1ce0c3cc32 100644
 --- a/MdeModulePkg/MdeModulePkg.dec
 +++ b/MdeModulePkg/MdeModulePkg.dec
 @@ -207,6 +207,10 @@

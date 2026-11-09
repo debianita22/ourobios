@@ -10,15 +10,6 @@ edk2/OuroBiosPkg]
 
 Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
 ---
- MdeModulePkg/Application/UiApp/FrontPage.c    | 269 +++++++++++++++++-
- .../Application/UiApp/FrontPageStrings.uni    |   1 +
- .../Application/UiApp/FrontPageVfr.Vfr        |   5 +
- MdeModulePkg/Application/UiApp/UiApp.inf      |   2 +
- MdeModulePkg/Include/Protocol/BatteryStatus.h |  56 ++++
- MdeModulePkg/MdeModulePkg.dec                 |  14 +
- 6 files changed, 345 insertions(+), 2 deletions(-)
- create mode 100644 MdeModulePkg/Include/Protocol/BatteryStatus.h
-
 diff --git a/MdeModulePkg/Application/UiApp/FrontPage.c b/MdeModulePkg/Application/UiApp/FrontPage.c
 index 48e0e44fd257e83b710d6d35c7424a99de532302..c486ed9439c80de31569d78b90243b5e8c3e1f5b 100644
 --- a/MdeModulePkg/Application/UiApp/FrontPage.c
@@ -440,10 +431,10 @@ index 0000000000000000000000000000000000000000..2be5577573136ce0d7ad5c631b4b62b9
 +#endif // BATTERY_STATUS_PROTOCOL_H_
 +
 diff --git a/MdeModulePkg/MdeModulePkg.dec b/MdeModulePkg/MdeModulePkg.dec
-index b52ba5c170e92c01637a3a56d1f229d8376cfdb3..b2f8c0bc5ab45618ed73cf045a102d3b80a3ee45 100644
+index 039c065722d41ff76baa2bce8c7d44f800c7c6f4..36ad3f7467e34e088ace015f1684f03906ffba9c 100644
 --- a/MdeModulePkg/MdeModulePkg.dec
 +++ b/MdeModulePkg/MdeModulePkg.dec
-@@ -610,6 +610,10 @@
+@@ -607,6 +607,10 @@
    # Include/Protocol/MediaSanitize.h
    gMediaSanitizeProtocolGuid = { 0x0d799a99, 0x25af, 0x429e, {0x92, 0x72, 0xd0, 0xb2, 0x7d, 0x6d, 0x5f, 0x14 } }
  
@@ -454,7 +445,7 @@ index b52ba5c170e92c01637a3a56d1f229d8376cfdb3..b2f8c0bc5ab45618ed73cf045a102d3b
    ## This protocol defines the generic memory test interfaces in Dxe phase.
    # Include/Protocol/GenericMemoryTest.h
    gEfiGenericMemTestProtocolGuid = { 0x309DE7F1, 0x7F5E, 0x4ACE, { 0xB4, 0x9C, 0x53, 0x1B, 0xE5, 0xAA, 0x95, 0xEF }}
-@@ -826,6 +830,16 @@
+@@ -823,6 +827,16 @@
    # @Prompt Enable ConOut GOP support.
    gEfiMdeModulePkgTokenSpaceGuid.PcdConOutGopSupport|TRUE|BOOLEAN|0x00010042
  

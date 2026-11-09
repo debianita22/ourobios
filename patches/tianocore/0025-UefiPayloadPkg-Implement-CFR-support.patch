@@ -4,7 +4,7 @@ Date: Thu, 20 Apr 2023 20:43:32 -0400
 Subject: [PATCH] UefiPayloadPkg: Implement CFR support
 
 [ouroBIOS: commit fc55cf022ba1 of MrChromebox's edk2, without the files
-that TianoCore's tree does not have (tools/edk2-import.py): 12 in
+that TianoCore's tree does not have (tools/edk2-import.py): 13 in
 edk2/OuroBiosPkg]
 
 Squash down of multiple commits:
@@ -22,16 +22,6 @@ Squash down of multiple commits:
 
 Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
 ---
- UefiPayloadPkg/Include/Coreboot.h             |   9 ++
- .../Include/Guid/CfrSetupMenuGuid.h           | 153 ++++++++++++++++++
- .../Include/Library/CfrHelpersLib.h           |  53 ++++++
- .../Library/CbParseLib/CbParseLib.c           | 112 ++++++++++++-
- .../Library/CbParseLib/CbParseLib.inf         |   4 +
- UefiPayloadPkg/UefiPayloadPkg.dec             |   6 +
- 6 files changed, 334 insertions(+), 3 deletions(-)
- create mode 100644 UefiPayloadPkg/Include/Guid/CfrSetupMenuGuid.h
- create mode 100644 UefiPayloadPkg/Include/Library/CfrHelpersLib.h
-
 diff --git a/UefiPayloadPkg/Include/Coreboot.h b/UefiPayloadPkg/Include/Coreboot.h
 index 395cb6ea5abab467d006cd86da14f004e4ac2702..b6c49e4c55fe824975b98aca9b7e844cb6b1cdf5 100644
 --- a/UefiPayloadPkg/Include/Coreboot.h
@@ -211,65 +201,6 @@ index 0000000000000000000000000000000000000000..570075681303aed47776eeb5e2c3cab9
 +#pragma pack ()
 +
 +#endif // __CFR_SETUP_MENU_GUID_H__
-diff --git a/UefiPayloadPkg/Include/Library/CfrHelpersLib.h b/UefiPayloadPkg/Include/Library/CfrHelpersLib.h
-new file mode 100644
-index 0000000000000000000000000000000000000000..e05268e3f2b21d55e13eabfbe569e7070333b510
---- /dev/null
-+++ b/UefiPayloadPkg/Include/Library/CfrHelpersLib.h
-@@ -0,0 +1,53 @@
-+/** @file
-+  Contains helper functions for working with CFR.
-+
-+  Copyright (c) 2023, 9elements GmbH.<BR>
-+  SPDX-License-Identifier: BSD-2-Clause-Patent
-+
-+**/
-+
-+#ifndef _CFR_HELPERS_LIB_H_
-+#define _CFR_HELPERS_LIB_H_
-+
-+#include <Uefi/UefiBaseType.h>
-+#include <Uefi/UefiMultiPhase.h>
-+#include <Pi/PiMultiPhase.h>
-+#include <Guid/CfrSetupMenuGuid.h>
-+
-+/**
-+  CFR_VARBINARY records are variable-length, so they aren't formal fields.
-+  Implement this handling by returning the struct at this offset.
-+
-+  By incrementing the offset, this function behaves like a queue.
-+  Optional fields handled by returning NULL immediately.
-+
-+**/
-+CFR_VARBINARY *
-+EFIAPI
-+CfrExtractVarBinary (
-+  IN     UINT8   *Buffer,
-+  IN OUT UINTN   *Offset,
-+  IN     UINT32  TargetTag
-+  );
-+
-+/**
-+  Return pointers into a buffer with the requested option's default value and size.
-+  This may be used by code that needs CFR defaults before the full CFR driver can write variables.
-+
-+  TODO: Consider returning pools instead, caller to free.
-+
-+  @retval EFI_SUCCESS            The default value is found.
-+  @retval EFI_INVALID_PARAMETER  The function parameters are invalid.
-+  @retval EFI_NOT_FOUND          The option cannot be found, or type doesn't have default values.
-+
-+**/
-+EFI_STATUS
-+EFIAPI
-+CfrOptionGetDefaultValue (
-+  IN     CHAR8  *FormName            OPTIONAL,
-+  IN     CHAR8  *OptionName,
-+  IN OUT VOID   **DefaultValueData,
-+  IN OUT UINTN  *DefaultValueLength  OPTIONAL
-+  );
-+
-+#endif
 diff --git a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c b/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
 index 852dd1dde989fb54b1ab95aabecef756b104b4a1..4bf3ca6af75fa5ef3306cde4474a51fa7a9f2f7f 100644
 --- a/UefiPayloadPkg/Library/CbParseLib/CbParseLib.c
@@ -438,7 +369,7 @@ index 7be238c850f8f101bd33ac123ab17f5577a2c8e9..282da6142870abca7391cb5bad2a61bf
  [Pcd]
    gUefiPayloadPkgTokenSpaceGuid.PcdBootloaderParameter
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
-index beca6d03b836a1919e029f4d237dd897cbd6c3bb..eb1cb590884c98b7b93eca87ee6953916bac2dba 100644
+index 6a1d30fb94ac730d3c6935ace456e05ee56e2e1c..b4bf624018ee0062a90551aa5917fd5add941594 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dec
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dec
 @@ -21,6 +21,12 @@

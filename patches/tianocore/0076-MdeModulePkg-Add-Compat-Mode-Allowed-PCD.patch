@@ -14,11 +14,6 @@ attempted to be executed.
 Signed-off-by: Oliver Smith-Denny <osde@microsoft.com>
 (cherry picked from commit cda8eae70d16b5d071624c48336229e2a563a8dc)
 ---
- MdeModulePkg/Core/Dxe/DxeMain.inf             | 1 +
- MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c | 5 +++++
- MdeModulePkg/MdeModulePkg.dec                 | 8 ++++++++
- 3 files changed, 14 insertions(+)
-
 diff --git a/MdeModulePkg/Core/Dxe/DxeMain.inf b/MdeModulePkg/Core/Dxe/DxeMain.inf
 index b49971b36f3b27a973e3697b6374403238d42ade..a78bf4ac92bdcf597cce589e82a6a98f9c1d647e 100644
 --- a/MdeModulePkg/Core/Dxe/DxeMain.inf
@@ -48,10 +43,10 @@ index a877beb63226cbb74e7524ff28ccf08b3dc5635f..8f75a5ef3954f5a810aada2adc899e38
      return;
    }
 diff --git a/MdeModulePkg/MdeModulePkg.dec b/MdeModulePkg/MdeModulePkg.dec
-index 0bc18a4ac63ed862c4f72ef6d64736b6f75b7728..f3e6a22cc2fa24b7dff3f1e3d2b3073cd789e9f6 100644
+index 4d2051f53dd6c612342a2caec1b16c006403f4b1..c856616dba14be3a106c00dfd9efc79b3f153bba 100644
 --- a/MdeModulePkg/MdeModulePkg.dec
 +++ b/MdeModulePkg/MdeModulePkg.dec
-@@ -1028,6 +1028,14 @@
+@@ -1025,6 +1025,14 @@
    # See MdeModulePkg/Core/MemoryBins.md for more details.
    gEfiMdeModulePkgTokenSpaceGuid.PcdPeiMemoryBinsEnable|FALSE|BOOLEAN|0x00010080
  

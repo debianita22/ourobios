@@ -28,6 +28,7 @@
   MdeModulePkg/MdeModulePkg.dec
   SecurityPkg/SecurityPkg.dec
   UefiPayloadPkg/UefiPayloadPkg.dec
+  OuroBiosPkg/OuroBiosPkg.dec
 
 [Guids]
   gEfiCertPkcs7Guid
@@ -62,7 +63,7 @@
   gEfiVariableWriteArchProtocolGuid                  ## CONSUMES
 
 [Pcd]
-  gUefiPayloadPkgTokenSpaceGuid.PcdSecureBootDefaultEnable
+  gOuroBiosPkgTokenSpaceGuid.PcdSecureBootDefaultEnable
 
 [Depex]
   TRUE

@@ -20,6 +20,19 @@ M920x with the release candidates, as for v1.6.1.
   change. `patches/tianocore` loses `0012` and `0062` (`REVERTED` of
   `tools/edk2-import.py`).
 
+- **The package declares its own names** (`edk2/OuroBiosPkg`): the GUIDs,
+  protocols, library classes and PCDs that only its modules use leave
+  TianoCore's `UefiPayloadPkg.dec` and `MdeModulePkg.dec` for
+  `OuroBiosPkg.dec`, their headers for the package's `Include/`, and
+  MrChromebox's time and date page moves from `MdeModulePkg` into the
+  package (`PACKAGE_DECLS`, `PACKAGE_HEADERS` and `OTHER_MOVED` of
+  `tools/edk2-import.py`). The PCDs take the package's token space; all
+  are FixedAtBuild, so the payload is the same (those of iPXE and CSMWrap
+  stay: coreboot sets them by name). `patches/tianocore` loses 11
+  patches that had nothing else; the "package" commits whose rest
+  changes TianoCore's own modules are now carry or upstream in
+  [docs/edk2-migration.md](docs/edk2-migration.md).
+
 - **coreboot 26.09-607** (2026-11-09, from 26.09-517 of 2026-11-03): the
   pin moved by 90 upstream commits. The native RAM init of Haswell got
   its first Broadwell support and a refactoring upstream (16 commits):

@@ -2342,7 +2342,7 @@ for fl in sorted((set(upd.CURRENT_REGIONS) | set(upd.ACCEPTED_REGIONS)) - seen):
     bad.append("tools/update.py: CURRENT_REGIONS o ACCEPTED_REGIONS[%r] di nessuna board" % fl)
 dsc = "edk2/OuroBiosPkg/OuroBiosPkg.dsc.patch"
 with open(os.path.join(os.path.dirname(tools), dsc), newline="") as f:
-    found = re.findall(r'^\+\s*gUefiPayloadPkgTokenSpaceGuid\.PcdFmpDeviceSmmAllowedRegions\|"([^"]*)"', f.read(), re.M)
+    found = re.findall(r'^\+\s*gOuroBiosPkgTokenSpaceGuid\.PcdFmpDeviceSmmAllowedRegions\|"([^"]*)"', f.read(), re.M)
 allowed = set(found[0].split()) if len(found) == 1 else set()
 if not allowed:
     bad.append("%s: PcdFmpDeviceSmmAllowedRegions %d volte o senza nomi, attesa una con le regioni" % (dsc, len(found)))

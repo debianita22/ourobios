@@ -27,6 +27,7 @@
   MdePkg/MdePkg.dec
   UefiPayloadPkg/UefiPayloadPkg.dec
   UnitTestFrameworkPkg/UnitTestFrameworkPkg.dec
+  OuroBiosPkg/OuroBiosPkg.dec
 
 [LibraryClasses]
   BaseLib

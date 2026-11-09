@@ -22,14 +22,11 @@ The implementation:
 
 Signed-off-by: Matt DeVillier <matt.devillier@gmail.com>
 ---
- UefiPayloadPkg/UefiPayloadPkg.dec | 4 ++++
- 1 file changed, 4 insertions(+)
-
 diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
-index eb1cb590884c98b7b93eca87ee6953916bac2dba..48d77955f6a0ce6224d358abf3478fb20284fa26 100644
+index b4bf624018ee0062a90551aa5917fd5add941594..6820e681cc1dacbf9c18ddaeec355b517766657f 100644
 --- a/UefiPayloadPkg/UefiPayloadPkg.dec
 +++ b/UefiPayloadPkg/UefiPayloadPkg.dec
-@@ -105,6 +105,10 @@ gUefiPayloadPkgTokenSpaceGuid.PcdPayloadFdMemSize|0|UINT32|0x10000002
+@@ -89,6 +89,10 @@ gUefiPayloadPkgTokenSpaceGuid.PcdPayloadFdMemSize|0|UINT32|0x10000002
  ## Save bootloader parameter
  gUefiPayloadPkgTokenSpaceGuid.PcdBootloaderParameter|0|UINT64|0x10000004
  
