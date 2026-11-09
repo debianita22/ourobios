@@ -235,9 +235,15 @@ The other *drop* ones, as looked at for v1.6.0:
   M920x it is what keeps BAR 0 of the SPI controller (0xfe010000, above
   the ECAM window) out of the root bridge aperture, which otherwise would
   grow over the reserved ECAM and fail with the whole PCI bus (PCI-09 of
-  `tools/hw-report.py` shows that BAR as the one left out). Still to do,
-  each a change the owner sees and decides: `1287861` (the Secure Boot
-  pages of the setup); `6cf55e1` (the MTRRs).
+  `tools/hw-report.py` shows that BAR as the one left out). `6cf55e1`
+  stays as well, moved to *carry*: `c4fdec0a83d6` and the MTRR series
+  before it are in the TianoCore tag, but they only stop `MtrrLib` from
+  trampling what is there; `CpuDxe` still writes the MTRRs whenever a
+  driver changes the cache type of a range, and `MpInitLib` copies them to
+  every AP. With the PCD the MTRRs the OS finds are the ones coreboot set
+  (on the M920x the write-combining framebuffer at 0xc0000000 among them);
+  without it they would be the payload's. Still to do, a change the owner
+  sees and decides: `1287861` (the Secure Boot pages of the setup).
 
 ## Setup menu and the other screens of the firmware
 
@@ -371,7 +377,7 @@ with the stable tag that takes the new OpenSSL.
 | Commit | Subject | Becomes | Note | Now |
 |---|---|---|---|---|
 | `214b236` | UefiPayloadPkg: Increase FD size | package | .fdf; or `-D FD_SIZE` and `NUM_BLOCKS` of the build, which win over the .fdf ([step (a)](#step-a-edk2-stable202608-in-qemu)) | package |
-| `6cf55e1` | UefiCpuPkg: Disable MTRR programming for UefiPayloadPkg | drop | if step (a) shows that upstream's MtrrLib leaves coreboot's MTRRs alone, as coreboot's Kconfig help says of c4fdec0a83d6 | `tianocore/0001`, package |
+| `6cf55e1` | UefiCpuPkg: Disable MTRR programming for UefiPayloadPkg | carry | checked after v1.6.2-rc1: upstream's `MtrrLib` no longer tramples coreboot's MTRRs (`c4fdec0a83d6` and the series before it, in the tag), but `CpuDxe` (`gDS->SetMemorySpaceAttributes()`) and `MpInitLib` (the copy to the APs) still write them; the PCD keeps coreboot's MTRRs as they are, and dropping it would change what the OS finds. For upstream, the `.uni` hunk needs fixing first: it gives the new PCD the prompt and help of `PcdCpuNumberOfReservedVariableMtrrs` and the other way round | `tianocore/0001`, package |
 | `96303b7` | MdeModulePkg: Don't remove rejected PCI devices | carry |  | `tianocore/0002` |
 | `7f7b9c7` | UefiPayloadPkg: drop Platform override config | package |  | package |
 | `9701a6f` | MdeModulePkg/FaultTolerantWrite: Don't check for block alignment | carry | SMMSTORE blocks; in [step (a)](#step-a-edk2-stable202608-in-qemu) FTW sets up its work space on the 512 KiB SMMSTORE without it, a fault tolerant write (a reclaim of the store) is still to be seen | `tianocore/0017` |
