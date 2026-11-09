@@ -10,7 +10,7 @@ is here. None of it is a promise of a date.
 
 | Item | Boards | Why not now | Next step |
 |---|---|---|---|
-| [Firmware watchdog](#firmware-watchdog) | both | built in v1.6.1 for the M920x (patches 0238-0240) and the W541 (patches 0254-0255), off by default; on a W541 armed at 300 s and stopped at the slot confirmation (WDT-01, 2026-11-08) | the armed path on the M920x; a real hang with a long timeout on either |
+| [Firmware watchdog](#firmware-watchdog) | both | built in v1.6.1 for the M920x (patches 0238-0240) and the W541 (patches 0254-0255), off by default; on a W541 armed at 300 s and stopped at the slot confirmation (WDT-01, 2026-11-08) | the armed path on the M920x; a real hang with a long timeout on either, which also tells whether the watchdog's status and enable bits survive its reset (patches 0266-0268, after v1.6.2) |
 | [Firmware update mode](#firmware-update-mode) | both | decided on 2026-11-05: not made; capsules need none of it, and a one-shot of the protections and Secure Boot is security code that can fail open | none planned; `update.py other-slot` reminds to turn *BIOS Lock* on again |
 | [DMA protection](#dma-protection) | M920x | no pre-boot DMA protection to report; the FSP-M has no PMR data; the help of *Intel VT-d* reworded in v1.5.0 (patch 0206); no Thunderbolt card at hand (2026-11-09) | none planned: the slot of the card for its `ExternalFacingPort`, when a card is at hand |
 | [Capsule regions in the payload](#capsule-regions-in-the-payload) | both | done in v1.6.0 (`edk2/0045`): the payload writes only the two slots and `RW_MRC_CACHE`, and on a flash with both slots only an update of one slot at a time | a new region in `PcdFmpDeviceSmmAllowedRegions` one release before any capsule that writes it |
@@ -101,6 +101,23 @@ the bootblock at every boot, so the TCO is out on two counts; no `WDAT`
   locked register left alone. *General* → *Boot* → *Firmware watchdog*,
   Off by default. `hw-report.py` WDT-01 reads the register on both boards
   (on the W541 under ci-273: `0x00002000`).
+- **After v1.6.2** (patches 0266-0268, from a review of the code, not from
+  a failure seen): the stop was reached only when the confirmation of the
+  slot went through (the store initialized, the vboot nvdata in the
+  flash), and a watchdog that is not stopped resets the OS at every
+  timeout, for ever when the slot is confirmed already. The SMI handler
+  now stops it as soon as the command arrives; romstage counts the resets
+  by the watchdog in a row with no boot confirmed in between (CMOS byte
+  0x7e) and does not arm it at the third; on the M920x the status of a
+  reset by the watchdog is cleared after its log, as on the W541 (it
+  would have been reported at every later boot).
+- **Still open, for the hang test**: whether the status bits are set
+  after a reset by the watchdog (the log and the count rely on them; if
+  not, the count stays at 0 and nothing changes), and whether the enable
+  bit survives that reset. If it does, a fallback to a slot older than
+  v1.6.1, which has no code for the watchdog, would be reset at every
+  timeout: until the test, the watchdog only with v1.6.1 or later in both
+  slots (CHANGELOG, v1.6.3).
 
 ## Firmware update mode
 

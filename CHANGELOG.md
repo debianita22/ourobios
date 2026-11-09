@@ -5,6 +5,48 @@ GitHub include its section; release candidates take the section of the
 version they lead to. For the releases before v1.3.0, see their notes on
 the [releases page](https://github.com/debianita22/ourobios/releases).
 
+## v1.6.3
+
+Not released. What ran on a machine: nothing yet, the CI builds only.
+
+- **The firmware watchdog is stopped whatever happens to the command**
+  (patch 0266): the SMI handler stopped it only once the payload's
+  confirmation of the slot had gone through its checks (the store
+  initialized, the vboot nvdata in the flash). A confirmation that
+  failed one of them left the watchdog armed, and the OS was reset at
+  every timeout, in a loop when the slot was confirmed already. The
+  handler now stops it as soon as the command arrives. Only with
+  *Firmware watchdog* on (off by default).
+- **No arming after three resets by the watchdog in a row** (patch
+  0268): romstage counts the resets by the watchdog that follow one
+  another with no boot confirmed in between (CMOS byte 0x7e), and at the
+  third logs *Firmware watchdog: 3 resets in a row and no boot confirmed,
+  not armed* and leaves it off, until a boot is confirmed again. The two
+  resets that make vboot fall back from a slot on trial stay as they
+  were. Not tested on a machine: no reset by the watchdog was provoked
+  on either board yet.
+- **M920x: a reset by the watchdog is reported once** (patch 0267): its
+  status in `OC_WDT_CTL` was logged and never cleared, so every boot
+  after one would have said *the last reset came from the watchdog*; it
+  is cleared after the log, as on the W541.
+- **Firmware watchdog and a slot older than v1.6.1**: such a slot has
+  no code for the watchdog. Whether its enable bit survives its own
+  reset is not known yet (no hang was provoked on a machine); if it
+  does, a fallback to that slot would be reset at every timeout. Turn
+  the watchdog on only with v1.6.1 or later in both slots.
+- **A coreboot table of 64 KiB** (patch 0269): the setup menu is one
+  record of the coreboot table, 28.2 KiB of the 32 on the W541, and
+  help texts were shortened twice to add an option (patches 0261,
+  0264). The table has 64 KiB now; what is written to it does not
+  change. `tools/cfr-dump.sh` takes the size from the tree and leaves
+  4 KiB of it to the other records: 60 KiB for the menu.
+- **The author of patches 0246-0265**: their `From:` was git's
+  placeholder identity, as the author of the commits of 2026-11-08 and
+  2026-11-09 that are in the tags v1.6.1 and v1.6.2. The patches are
+  corrected, `.mailmap` shows those commits with their author, and
+  `tools/ci-check.sh` refuses a placeholder identity in a patch or in a
+  new commit.
+
 ## v1.6.2
 
 What ran on a machine for v1.6.2: rc1 on the W541 (MEM-06, the

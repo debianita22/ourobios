@@ -1,0 +1,85 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 9 Nov 2026 21:14:45 +0100
+Subject: [PATCH] drivers/smmstore: Stop the firmware watchdog before the
+ command can fail
+
+The firmware watchdog of a platform is stopped from
+smmstore_firmware_confirmed(), which the SMI handler called only once
+SMMSTORE_CMD_VBOOT_SLOT_GOOD had gone through: after the parameter
+check, after smmstore_init(), and only with VBOOT and VBOOT_VBNV_FLASH.
+A store that does not initialize, or a build without the vboot nvdata
+in the flash, failed the command before the stop, and the watchdog,
+armed in romstage, then reset the OS at every timeout: in a loop when
+the slot is confirmed already, as vboot has nothing to fall back to.
+
+The command says that the payload runs, which is all a watchdog over
+the firmware needs to know. Call the hook as soon as the command is
+seen, before the checks of the command itself.
+
+TEST=Build of the ThinkPad W541 with the native RAM init and of the
+ThinkCentre M920x.
+---
+ src/drivers/smmstore/smi.c | 15 ++++++++++++---
+ src/include/smmstore.h     |  5 ++++-
+ 2 files changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/src/drivers/smmstore/smi.c b/src/drivers/smmstore/smi.c
+index c48a16ae..17f0bd84 100644
+--- a/src/drivers/smmstore/smi.c
++++ b/src/drivers/smmstore/smi.c
+@@ -284,8 +284,9 @@ static uint32_t vboot_try_other(void)
+ }
+ 
+ /*
+- * The payload confirmed the RW slot (SMMSTORE_CMD_VBOOT_SLOT_GOOD): the
+- * firmware booted. A platform with a firmware watchdog stops it here.
++ * The payload sent SMMSTORE_CMD_VBOOT_SLOT_GOOD: the firmware booted, whether
++ * or not there is a slot to confirm. A platform with a firmware watchdog
++ * stops it here.
+  */
+ __weak void smmstore_firmware_confirmed(void) {}
+ 
+@@ -297,6 +298,15 @@ uint32_t smmstore_exec(uint8_t command, void *param)
+ 	if (smmstore_preprocess_cmd(&command, param))
+ 		return SMMSTORE_RET_SUCCESS;
+ 
++	/*
++	 * The payload says that the firmware booted. Told here, before
++	 * anything of the store or of vboot can fail the command: a firmware
++	 * watchdog needs neither to be stopped, and one left running would
++	 * reset the OS at every timeout.
++	 */
++	if (command == SMMSTORE_CMD_VBOOT_SLOT_GOOD)
++		smmstore_firmware_confirmed();
++
+ 	/* No parameters: coreboot sends it too, on S3 resume */
+ 	if (command == SMMSTORE_CMD_VBOOT_LOCK) {
+ 		if (!CONFIG(VBOOT_SLOTS_RW_AB) || !CONFIG(VBOOT_VBNV_FLASH))
+@@ -360,7 +370,6 @@ uint32_t smmstore_exec(uint8_t command, void *param)
+ 			break;
+ 		}
+ 		vbnv_mark_tried_slot_good();
+-		smmstore_firmware_confirmed();
+ 		ret = SMMSTORE_RET_SUCCESS;
+ 		break;
+ 	case SMMSTORE_CMD_VBOOT_TRY_OTHER:
+diff --git a/src/include/smmstore.h b/src/include/smmstore.h
+index 563533ae..20391dfd 100644
+--- a/src/include/smmstore.h
++++ b/src/include/smmstore.h
+@@ -219,7 +219,10 @@ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size
+ struct lb_header;
+ void lb_smmstorev2(struct lb_header *header);
+ 
+-/* Called by the SMI handler when the payload confirms the RW slot (weak) */
++/*
++ * Called by the SMI handler at every SMMSTORE_CMD_VBOOT_SLOT_GOOD of the
++ * payload, before the command itself can fail (weak)
++ */
+ void smmstore_firmware_confirmed(void);
+ 
+ #endif
+-- 
+2.43.0
+
