@@ -74,9 +74,13 @@ These hold whatever else the agent decides.
   [v1.6.3-rc1-m920x-fsp](https://github.com/debianita22/ourobios/releases/tag/v1.6.3-rc1-m920x-fsp),
   built by the Release workflow from `next`: v1.6.2 plus patches
   0266-0269, with its capsule, which installs with *BIOS Lock* and
-  Secure Boot as they are and needs nobody. If the release is not there
-  (`gh release view v1.6.3-rc1-m920x-fsp -R debianita22/ourobios`), its
-  build failed: part 1 only, and the record says so.
+  Secure Boot as they are and needs nobody. Its build is run 42696841540, started on 2026-11-09 at
+  20:50 UTC: if the release is not there yet
+  (`gh release view v1.6.3-rc1-m920x-fsp -R debianita22/ourobios`), part 1 first
+  and then wait for it, up to three hours from that time
+  (`gh run view 42696841540 -R debianita22/ourobios --json status,conclusion`).
+  A run that failed, or no release by then: part 1 only, and the
+  record says so.
 - **Tools**: a clone at `next`; `python3`, flashrom 1.2 or later,
   `cbmem`, `gcc`, `acpica-tools`, `fwts`, chipsec, `wakeonlan` or
   `etherwake`, `gh`. Install what is missing; what cannot be installed

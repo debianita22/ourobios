@@ -63,9 +63,13 @@ These hold whatever else the agent decides.
   [v1.6.3-rc1-nri](https://github.com/debianita22/ourobios/releases/tag/v1.6.3-rc1-nri),
   built by the Release workflow from `next`: v1.6.2 plus patches
   0266-0269, with its capsule, which installs with *BIOS Lock* on and
-  needs nobody. If the release is not there
-  (`gh release view v1.6.3-rc1-nri -R debianita22/ourobios`), its build
-  failed: part 1 only, and the record says so.
+  needs nobody. Its build is run 42696841540, started on 2026-11-09 at
+  20:50 UTC: if the release is not there yet
+  (`gh release view v1.6.3-rc1-nri -R debianita22/ourobios`), part 1 first
+  and then wait for it, up to three hours from that time
+  (`gh run view 42696841540 -R debianita22/ourobios --json status,conclusion`).
+  A run that failed, or no release by then: part 1 only, and the
+  record says so.
 - **Tools**: a clone at `next`; `python3`, flashrom 1.2 or later,
   `cbmem`, `gcc`, `ethtool`, `acpica`, `fwts`, chipsec, `stress-ng`,
   `gh`. What is missing and cannot be installed makes its rows *not
