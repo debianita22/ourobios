@@ -7,6 +7,15 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.6.1
 
+What ran on a machine for v1.6.1: the M920x with rc1 to rc3
+([docs/tests/v1.6.1/m920x-fsp/README.md](docs/tests/v1.6.1/m920x-fsp/README.md)),
+a W541 with the `nri` CI builds of the W541 patches
+([docs/tests/v1.6.1/w541-nri/README.md](docs/tests/v1.6.1/w541-nri/README.md)).
+Not run: the `mrc` variant of the W541 (its features below are shared
+with `nri`, but the test machine boots only `nri` slots), Wake on LAN
+from off (NET-02), the armed firmware watchdog on the M920x, and a real
+hang caught by the watchdog on either board.
+
 - **Camera switch on the W541** (patches 0244-0245): *Hardware* →
   *Expansion ports* → *Integrated camera*, on by default. Off, its USB
   port (xHCI USB2 port 12) is disabled at every start and wake, so no OS
