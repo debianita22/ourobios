@@ -1,5 +1,5 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Il tuo nome <tu@esempio.com>
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sun, 8 Nov 2026 17:20:29 +0100
 Subject: [PATCH] ec/lenovo/h8: One pending HKEY event per class, as the OEM
  firmware

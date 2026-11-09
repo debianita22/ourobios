@@ -1,0 +1,5 @@
+# I commit dall'8 al 9 novembre 2026 fatti con l'identita' segnaposto di git
+# (nei tag v1.6.1 e v1.6.2, che non si riscrivono): git log e git shortlog li
+# mostrano con l'autore vero. tools/ci-check.sh rifiuta quelli nuovi.
+Domenico D'Arrigo <d.darrigo@outlook.it> Il tuo nome <tu@esempio.com>
+Domenico D'Arrigo <d.darrigo@outlook.it> domenico <tu@esempio.com>

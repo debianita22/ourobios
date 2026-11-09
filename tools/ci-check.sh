@@ -21,7 +21,9 @@
 #   5. patches/series, patches/edk2/series, patches/lvglpkg/series e
 #      patches/tianocore/series: ogni
 #      patch elencata c'e', ogni .patch della cartella e' elencata, ognuna e'
-#      una mail di git format-patch
+#      una mail di git format-patch, con un autore vero nel From:; e i
+#      commit dopo la v1.6.2 con autore e committer veri (non l'identita'
+#      segnaposto di git, "Il tuo nome <tu@esempio.com>")
 #   6. la chiave Optimus NVIDIA solo in blobs/opvk.inc (lista di byte con la
 #      firma della chiave): non nelle patch ne' in altri file
 #   7. i due defconfig del W541: diversi solo nella RAM init e nel GUID
@@ -1929,9 +1931,17 @@ for d in blobs assets legacy/coreboot-4.22 "${board_blob_dirs[@]}"; do
 	done
 done
 
+# Un'identita' segnaposto: quella che git propone in italiano o in inglese
+# quando user.name e user.email non sono impostati, e i domini di esempio.
+# Nei commit resta per sempre (niente force push), nelle patch finisce
+# nell'autore di un commit di coreboot o di EDK2.
+placeholder_identity() {
+	printf '%s\n' "$1" | grep -qiE '^(il tuo nome|your name)[[:space:]]*<|@(esempio|example)\.(com|org|net|it)>|<>|@\(none\)>'
+}
+
 # Una serie: la cartella $1 (patches, patches/edk2, ...) con il suo series
 check_series() {
-	local d="$1" p n=0 dups
+	local d="$1" p n=0 dups from
 	local -a listed
 	if [ ! -f "${d}/series" ]; then bad "${d}/series non c'e'"; return; fi
 	mapfile -t listed < <(sed -e 's/#.*//' -e 's/[[:space:]]*$//' "${d}/series" | sed '/^$/d')
@@ -1941,6 +1951,13 @@ check_series() {
 		head -1 "${d}/${p}" | grep -q '^From [0-9a-f]\{40\} ' || bad "${d}/${p}: non e' una mail di git format-patch"
 		grep -q '^Subject: \[PATCH' "${d}/${p}" || bad "${d}/${p}: senza Subject: [PATCH"
 		grep -q '^diff --git ' "${d}/${p}" || bad "${d}/${p}: senza diff"
+		# l'autore: il primo From: dell'intestazione, prima del Subject:
+		from="$(sed -n '2,/^Subject:/s/^From: //p' "${d}/${p}" | head -1)"
+		if [ -z "${from}" ]; then
+			bad "${d}/${p}: senza From: nell'intestazione"
+		elif placeholder_identity "${from}"; then
+			bad "${d}/${p}: From: ${from} e' un'identita' segnaposto (git config user.name, user.email)"
+		fi
 	done
 	for p in "${d}"/*.patch; do
 		[ -e "${p}" ] || continue
@@ -1963,6 +1980,27 @@ for p in patches/optional/*.patch; do
 	n=$((n + 1))
 done
 ok "${n} patch opzionali"
+# I commit dopo la v1.6.2 (6962b27 e' l'ultimo con l'identita' segnaposto,
+# .mailmap li mostra con l'autore vero): autore e committer veri. Con un
+# clone senza storia (check.yml) solo quello in cima; senza git, niente.
+if git rev-parse --git-dir > /dev/null 2>&1; then
+	base=6962b27c33ff4d3d16d0f8e213f74ba433a1a309
+	if git merge-base --is-ancestor "${base}" HEAD 2> /dev/null; then
+		range=("${base}..HEAD")
+	else
+		range=(-1 HEAD)
+	fi
+	n=0
+	while IFS='|' read -r h an cn; do
+		[ -n "${h}" ] || continue
+		n=$((n + 1))
+		for id in "${an}" "${cn}"; do
+			placeholder_identity "${id}" \
+				&& bad "commit ${h}: ${id} e' un'identita' segnaposto (git config user.name, user.email)"
+		done
+	done < <(git log --no-mailmap --format='%h|%an <%ae>|%cn <%ce>' "${range[@]}" 2> /dev/null)
+	ok "${n} commit con autore e committer veri"
+fi
 # la bozza per una release che riscrive la parte RO: in nessuna serie
 for p in patches/ro-next/*.patch; do
 	[ -e "${p}" ] || continue

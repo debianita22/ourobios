@@ -1,5 +1,5 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Il tuo nome <tu@esempio.com>
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Sun, 8 Nov 2026 16:30:15 +0100
 Subject: [PATCH] sb/intel/lynxpoint: A firmware watchdog from the option
  firmware_watchdog
