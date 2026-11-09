@@ -1,0 +1,42 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Il tuo nome <tu@esempio.com>
+Date: Mon, 9 Nov 2026 09:50:47 +0100
+Subject: [PATCH] mb/lenovo/haswell: Leave the Ethernet switch out on the W541
+
+On a ThinkPad W541 the switch turned the GbE off, but turning it back
+on did not bring the controller back: with BUC bit 5 cleared and a CF9
+0x0E reset, the sequence of the Lenovo firmware with its HECI hidden,
+then warm reboots and a power-down with the AC adapter and the battery
+out, 00:19.0 stays absent, while every PCH register that can be read
+matches a boot where it was present and the descriptor, GbE and ME
+regions of the flash are unchanged. The disabled state is kept
+somewhere else, likely by the ME in the RTC well, which only a removal
+of the coin cell clears.
+
+Do not select SOUTHBRIDGE_INTEL_LYNXPOINT_GBE_OPTION on the W541 until
+the way back is known: romstage leaves BUC alone, and the option is
+not in the menu. A value saved by a build with the option is ignored.
+
+TEST=Build of the ThinkPad W541 with the native RAM init; the menu
+without "Ethernet".
+
+Change-Id: I80bc8bd9756101eb4d826f170b29cddf0fc4686e
+---
+ src/mainboard/lenovo/haswell/Kconfig | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
+index 08cd64055e..84d9407686 100644
+--- a/src/mainboard/lenovo/haswell/Kconfig
++++ b/src/mainboard/lenovo/haswell/Kconfig
+@@ -40,7 +40,6 @@ config BOARD_LENOVO_THINKPAD_T440P
+ 
+ config BOARD_LENOVO_THINKPAD_W541
+ 	select BOARD_LENOVO_HASWELL_COMMON
+-	select SOUTHBRIDGE_INTEL_LYNXPOINT_GBE_OPTION
+ 
+ if BOARD_LENOVO_HASWELL_COMMON
+ 
+-- 
+2.43.0
+

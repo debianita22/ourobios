@@ -19,21 +19,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
   as an input; a soft switch, as its help says (the audio chip stays
   powered). The headset jack is not affected. Passed on a W541
   (DEV-W01).
-- **Ethernet switch on the W541** (patches 0241-0242, 0262-0263):
-  *Hardware* → *Expansion ports* → *Ethernet*, on by default, the
-  *Ethernet LAN* of the Lenovo setup. Off, the chipset turns the I217-LM
-  controller off for every OS and for network boot (the LAN disable bit
-  of `BUC`, in the RTC well, kept across updates and fallbacks until it is
-  turned on here again). Measured on a W541: the chipset lockdown that
-  coreboot sets at every boot, and that a warm reset keeps, blocks the
-  write, so the firmware first resets to clear it and writes at the next
-  boot, as the Lenovo firmware does; off then applies by itself.
-  Turning it back on: the plain reset after the write did not bring the
-  controller back, so the firmware resets with a global reset, as the
-  Lenovo firmware does with its ME on; neither reset is repeated by the
-  boot after it, so the switch cannot reset in a loop (patch 0262); not yet
-  confirmed on a machine, and until it is, the help says that turning
-  Ethernet back on needs a full power-down (patch 0263).
+- **No Ethernet switch on the W541** (patches 0241-0242, 0262-0264):
+  the *Ethernet* option of the release candidates is left out. On a W541
+  it turned the I217-LM off, but turning it back on did not bring the
+  controller back, not even after a power-down with the AC adapter and
+  the battery out; the state is kept somewhere the firmware cannot read,
+  likely by the ME in the RTC well, which only the coin cell's removal
+  clears. The code stays, unselected, until the way back is known.
 - **Firmware watchdog on the M920x** (patches 0238-0240), off by default:
   *General* → *Boot* → *Firmware watchdog* (5 or 10 minutes) arms the
   overclocking watchdog of the chipset before the memory init and stops it

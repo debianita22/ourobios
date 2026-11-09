@@ -21,7 +21,7 @@ is here. None of it is a promise of a date.
 | [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | done in v1.6.0 (patch 0222): a Kconfig for the version, and `tools/fspm-settings.sh` stops CI when the files of those settings change | the first bump, with the release that changes them |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
 | [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | built for v1.6.1 (patches 0247-0249, 0258); CPU-06 passed on a W541 (2026-11-08): off, locked, kept across S3, the training cache kept | `mrc` (this machine boots only `nri` slots) |
-| [Device switches on the W541](#device-switches-on-the-w541) | W541 | the microphone, the camera and the card reader passed in v1.6.1; the Ethernet disables, its re-enable failed with a plain reset and is being tried with a global reset (patch 0262) | the global reset on the W541; the fingerprint switch on a unit that has it |
+| [Device switches on the W541](#device-switches-on-the-w541) | W541 | the microphone, the camera and the card reader passed in v1.6.1; the Ethernet switch left out (patch 0264): after a disable the controller did not come back, even after a power-down | the coin cell out on the W541, to see whether the RTC well keeps the state; the fingerprint switch on a unit that has it |
 | [Wake on LAN after a shutdown on the W541](#wake-on-lan-after-a-shutdown-on-the-w541) | W541 | built for v1.6.1 (patch 0259), as the Lenovo firmware does it; not run on a machine | NET-02 from power-off on AC and on battery, with each setting |
 | [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot (no PEI, no LockBox, no boot script); the stock design read and a coreboot design written (2026-11-08), unbuilt: new secret-handling code in both, untestable without a locked drive | a decision whether to build it, with the caveats |
 | [NVIDIA power steering and the EC's CPU limits](#nvidia-power-steering-and-the-ecs-cpu-limits) | W541 | little use under Linux; a `_PPC` policy and adapter tests | count the EC's CPU limit events |
@@ -530,9 +530,16 @@ have a switch.
   then applies, but on did not: the bit cleared and a plain CF9 0x0E did
   not bring the controller back. The Lenovo firmware resets an enable with
   a global reset when its ME is on, and with the plain one only with the
-  HECI hidden, as here; patch 0262 now resets with the global one. Open: whether
-  it, or only a full power-down, re-enables the controller with the ME
-  disabled.
+  HECI hidden, as here, and that is the sequence that failed. A
+  power-down with the AC adapter and the battery out (2026-11-09) did
+  not bring it back either, with `BUC` 0 and every readable PCH register
+  as on a boot where the controller was present, and the flash regions
+  unchanged. The Lenovo firmware does nothing else for the LAN
+  ([stock-gnet94ww.md](tests/v1.6.1/w541-nri/stock-gnet94ww.md)), and
+  never sets the `FDSW` lockdown, which coreboot's finalize does. The
+  state is kept elsewhere, likely by the ME in the RTC well. Patch 0264
+  leaves the switch out of the W541. Open: whether removing the coin
+  cell brings the controller back.
 - **Read in the Lenovo firmware** (2026-11-08,
   [docs/tests/v1.6.1/w541-nri/stock-gnet94ww.md](tests/v1.6.1/w541-nri/stock-gnet94ww.md#2-io-port-access)): the
   Ethernet as 0241 (`BUC` bit 5, a global reset); the microphone by a

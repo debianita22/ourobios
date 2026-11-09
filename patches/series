@@ -256,3 +256,4 @@
 0261-mb-lenovo-haswell-cpu-intel-haswell-Shorter-help-tex.patch
 0262-sb-intel-lynxpoint-Apply-the-GbE-switch-as-the-Lenov.patch
 0263-mb-lenovo-haswell-Say-that-re-enabling-Ethernet-need.patch
+0264-mb-lenovo-haswell-Leave-the-Ethernet-switch-out-on-t.patch
