@@ -8,6 +8,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 ## v1.6.3
 
 Not released. What ran on a machine: nothing yet, the CI builds only.
+The tests of the candidate, and those still open from v1.6.2, are in
+`docs/test-v1.6.3-w541.md` and `docs/test-v1.6.3-m920x.md` of the `next`
+branch.
 
 - **The firmware watchdog is stopped whatever happens to the command**
   (patch 0266): the SMI handler stopped it only once the payload's

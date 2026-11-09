@@ -22,21 +22,21 @@ These hold whatever else the agent decides.
    25165824 bytes (less means flashrom went through `/dev/mtd0`: the
    `modprobe -r` did not take). Keep `flash-before.bin` off the machine
    too, if a place is reachable.
-2. **The only writes of the flash**: a capsule (`update.py stage`,
+2. **The only writes of the flash are capsules** (`update.py stage`,
    `update.py rollback`: the firmware writes the slot that is not
-   running) and the flashrom command that `update.py other-slot` prints,
-   as it is. Never `WP_RO`, `--ifd`, the descriptor, the ME, the GbE or
-   the whole image; never flashrom with a layout or a region of your
-   own. Those are a brick risk and no part of these tests; the external
-   programmer is not available to an agent.
+   running, with its own checks). flashrom only reads here (`-r`): no
+   `-w` of anything, no `update.py other-slot`, no `--ifd`, nothing on
+   `WP_RO`, the descriptor, the ME, the GbE or the whole image. Those
+   are a brick risk and no part of these tests; the external programmer
+   is not available to an agent.
 3. **No setup option is changed from the OS.** The options are
    boot-service variables; the only way to change one is the setup menu,
    by the owner. No tool that issues SMMSTORE SMIs against the variable
    store, no change of Secure Boot keys, no change of the ME state or of
    the HAP bit.
-4. flashrom must end with `VERIFIED`; if not, the same command once
-   more; if it fails again, stop, do not reboot, and report.
-5. Reboot right after a write, without suspending.
+4. A capsule that the firmware refuses is a result (UPD-01 says why),
+   not something to get around: no `--allow-older`, no other way in.
+5. Reboot right after a capsule is staged, without suspending.
 6. **The guests**: this is a Proxmox host. Before every reboot, suspend
    and reset, the list of what runs (`qm list`, `pct list`) in the
    journal and a clean shutdown of each guest; at the end, what was
@@ -49,8 +49,9 @@ These hold whatever else the agent decides.
    about to happen.
 8. **Stop the whole run** and report when: a `FAIL` of FLASH-01 with the
    protections on, a slot that vboot marks failed, a machine check or a
-   memory error, a flashrom write that does not verify, the date of the
-   RTC wrong after a CMOS step, or the RTC power bit of OPT-06 left set.
+   memory error, a capsule that leaves the machine on neither slot's
+   release, the date of the RTC wrong after a CMOS step, or the RTC
+   power bit of OPT-06 left set.
 9. **The repository**: the record only (below). No tag, no release, no
    push to `main` or to a `ci-test/**` or `ci-edk2/**` branch (a push
    there starts a build), no force push, no change outside
@@ -69,14 +70,13 @@ These hold whatever else the agent decides.
   (Secure Boot on), flashrom, the port helper and `/dev/mem` are
   refused: the rows that need them are *not run, Secure Boot on*, and
   turning it off is the owner's.
-- **Candidate**: the CI build of `ci-test/v1.6.3-consolidation`
-  (`24a28d6`, run 42692289173, build `ci-314-24a28d6`): v1.6.2 plus
-  patches 0266-0269. Install it only if the run ended green:
-  `gh run view 42692289173 -R debianita22/ourobios --json conclusion -q .conclusion`
-  must say `success`. A CI build has no capsule. If a pre-release
-  `v1.6.3-rc*` exists (`gh release list -R debianita22/ourobios`), use
-  its capsule instead: it installs with *BIOS Lock* and Secure Boot as
-  they are and needs nobody.
+- **Candidate**: the pre-release
+  [v1.6.3-rc1-m920x-fsp](https://github.com/debianita22/ourobios/releases/tag/v1.6.3-rc1-m920x-fsp),
+  built by the Release workflow from `next`: v1.6.2 plus patches
+  0266-0269, with its capsule, which installs with *BIOS Lock* and
+  Secure Boot as they are and needs nobody. If the release is not there
+  (`gh release view v1.6.3-rc1-m920x-fsp -R debianita22/ourobios`), its
+  build failed: part 1 only, and the record says so.
 - **Tools**: a clone at `next`; `python3`, flashrom 1.2 or later,
   `cbmem`, `gcc`, `acpica-tools`, `fwts`, chipsec, `wakeonlan` or
   `etherwake`, `gh`. Install what is missing; what cannot be installed
@@ -104,6 +104,27 @@ of the flash). Commit it on `next` with the git identity of the
 repository (`git config user.name` and `user.email` must be the
 owner's, not a placeholder; no `Co-authored-by` or other trailer of an
 AI), `git pull --rebase` before the push, that folder only.
+
+## The order of the run
+
+Nobody is at the machine: the step that may leave it down comes after
+what does not depend on it is in the record.
+
+1. Part 1, but WDT-02 and OPT-06.
+2. Part 2: the install and every row but WDT-02.
+3. The record, committed and pushed a first time.
+4. WDT-02 on rc1, which prints the register in its line and clears the
+   status by itself. What a reset by the watchdog does on this board is
+   not known: if the machine does not come back, the run ends here.
+5. The end, step 1: back on v1.6.2; then WDT-02 once more there, for
+   the defect that patch 0267 corrects (its table below is written for
+   v1.6.2).
+6. The record again.
+7. OPT-06, last of all: if its bit cannot be cleared the agent must not
+   reboot, and nothing else may still depend on a reboot. Then the
+   record a last time, the guests up, the rest of the end.
+
+The packet for the W541 (NET-02) is sent when asked, whatever the step.
 
 ## The helpers
 
@@ -158,8 +179,8 @@ Nothing is installed for this part.
 | CMOS-01 | agent | `./pio cr 0x7e` | whatever it holds, written down: patch 0268 takes byte 0x7e, which v1.6.2 does not use |
 | FLASH-06 | agent | `od -An -tx1 /sys/firmware/efi/efivars/OptionLockStatus-ceae4c1d-335b-4685-a4a0-fc4a94eea085` | `06 00 00 00` and eight zeros: the option lock armed |
 | VAR-01 | agent | the time of a variable write with the option lock armed: the `Timeout` now (`efibootmgr \| grep Timeout`), then twenty writes, `efibootmgr -q -t 4` and `-t 3` in turn, each timed; the first value back at the end | no limit set yet: the median and the worst written down. Above 0.5 s of median, an INFO with the numbers |
-| OPT-06 | agent | below | below |
-| WDT-02 | agent | below | below |
+| OPT-06 | agent | below, last of all (the order of the run) | below |
+| WDT-02 | agent | below, after part 2 (the order of the run) | below |
 | NET-02 | agent, for the W541 | when the agent of the W541 or the owner asks: `wakeonlan MAC` (or `etherwake -i IFACE MAC`) at the time they give | sent; the time in the record. The result is in the record of the W541 |
 
 ### OPT-06, the RTC power bit
@@ -227,40 +248,36 @@ To give up before it fires: `./pio w 0x1854 0x00002077`.
 
 ### Install
 
-- **With a `v1.6.3-rc*` capsule**: `python3 CLONE/tools/update.py stage FILE.cap`
-  and a reboot (UPD-02). Nobody needed.
-- **With the CI build**: `update.py other-slot` and flashrom
-  ([docs/update.md](update.md#a-release-from-its-image-in-the-other-slot)),
-  which needs *BIOS Lock* off for that boot, and Secure Boot off if it is
-  on: **the owner** turns them off in the setup and on again after the
-  first boot of the candidate. Until then part 2 waits and the record
-  says so. In the boot with *BIOS Lock* off the option lock is not armed
-  (`OptionLockStatus` holds `EFI_UNSUPPORTED`, not zeros): run VAR-01
-  once more there, for the comparison.
+As a user updates (UPD-02): the capsule of rc1 on v1.6.2, with *BIOS
+Lock* and *Firmware protection* on. The payload of v1.6.2 writes the
+slot that is not running, slot A, over v1.6.1; v1.6.2 stays in slot B.
 
 ```sh
-gh run download 42692289173 -R debianita22/ourobios -n ourobios-ci-314-24a28d6 -D ci-314
-ls ci-314            # the fsp ROM of the M920x, SHA256SUMS
-flashrom -p internal -r flash-now.bin
-python3 CLONE/tools/update.py other-slot flash-now.bin ci-314/M920X-FSP.rom
-# the flashrom command it prints, as it is (rule 2), then a reboot
+gh release download v1.6.3-rc1-m920x-fsp -R debianita22/ourobios -D rc1 -p '*.cap' -p SHA256SUMS
+( cd rc1 && sha256sum -c SHA256SUMS --ignore-missing )
+python3 CLONE/tools/update.py stage rc1/*.cap
+systemctl reboot
 ```
 
-The candidate goes to slot A, over v1.6.1; v1.6.2 stays in slot B.
+rc1 from slot A after the reboot: `update.py status` says *v1.6.3-rc1*,
+the last capsule *riuscito* (UPD-01). A capsule that is refused, or a
+boot that returns to v1.6.2: FAIL with `update.py status` and
+`cbmem -1`, and part 2 stops there.
 
 ### Tests
 
 | ID | Who | Test | Expected |
 |---|---|---|---|
-| — | agent | the reports: `hw-report.py --markdown` at the first boot and after a reboot, with `--dump` of a new copy of the flash | as the baseline; BOOT-01 with `ci-314-24a28d6` (or the rc) |
+| — | agent | the reports: `hw-report.py --markdown` at the first boot and after a reboot, with `--dump` of a new copy of the flash | as the baseline; BOOT-01 with `v1.6.3-rc1-m920x-fsp`; UPD-01 PASS |
 | MEM-03, BOOT-02 | agent | `cbmem -1 \| grep "MRC:"`, `cbmem -t` | no training (*does not need update*), FspMemoryInit about 0.25 s; to the payload within 12 s |
 | TBL-01 | agent | patch 0269: `cbmem -l \| grep -i coreboot`; `cbmem -1 \| grep -E "coreboot table:\|didn't fit\|CFR: Written"`; `cbmem -t`; OPT-01 of `hw-report.py --dump` | the `COREBOOT` entry 0x10000 bytes; *coreboot table: N bytes* with about the N of part 1 (the tables do not change, but for the version strings), no *didn't fit*; `cbmem` and the kernel read the table as before; the same options in OPT-01 |
 | CONF-02 | agent | `acpidump -b`, each table against the one of part 1 (`cmp`); the DSDT and the SSDT disassembled and compiled | the DSDT the same, byte for byte (no patch of the candidate touches the ACPI code); in the SSDT and the tables that carry addresses, only addresses differ (CBMEM moves by 32 KiB). Anything else that differs is an INFO with the list |
 | CONF-03, CONF-04 | agent | as in docs/testing.md | fwts as in the record of v1.6.2 (no CRITICAL or HIGH); chipsec as in the record of v1.6.1 rc2: `spi_desc` FAILED by design, the others PASSED |
-| FLASH-01, FLASH-06 | agent | as in part 1 | PASS; `06 00 00 00` and eight zeros (with *BIOS Lock* on) |
+| FLASH-01, FLASH-06 | agent | as in part 1 | PASS; `06 00 00 00` and eight zeros |
+| VAR-01 | agent | as in part 1 | the numbers of part 1, within their spread (the comparison with the lock not armed needs *BIOS Lock* off: the owner's) |
 | S3-01 | agent | three times `rtcwake -m mem -s 30`, the guests down | three resumes, `suspend_stats/fail` 0, FLASH-01 and TPM-03 PASS after |
 | WDT-03 | agent | below | below |
-| WDT-02 | agent | as in part 1, on the candidate | the line has the register now and ends with *, 1 in a row* (patches 0267, 0268): bit 14 of that value is the enable as the reset left it, the direct answer; at the OS the status **clear** and `./pio cr 0x7e` `0xa0`; after a reboot no *last reset came from the watchdog* line: reported once, nothing to clear by hand |
+| WDT-02 | agent | as described in part 1, on the candidate, after the first push of the record (the order of the run) | the line has the register now and ends with *, 1 in a row* (patches 0267, 0268): bit 14 of that value is the enable as the reset left it, the direct answer; at the OS the status **clear** and `./pio cr 0x7e` `0xa0`; after a reboot no *last reset came from the watchdog* line: reported once, nothing to clear by hand |
 | WDT-01 | owner, then agent | *General* → *Boot* → *Firmware watchdog* at 5 minutes: `cbmem -1 \| grep "Firmware watchdog"`, `./pio r 0x1854` after 7 minutes of uptime; with it on, WDT-03 again; then Off | *armed, 300 s*, *at the payload* with what FSP-S left of the register, the enable clear at the OS, the machine up past 420 s. Never run on this board |
 | VB-01, VB-02 | agent | as in docs/testing.md | the candidate in slot A, confirmed; v1.6.2 in slot B |
 
@@ -288,7 +305,7 @@ owner* until someone sits at the machine with a monitor.
 
 | ID | Test | Expected |
 |---|---|---|
-| — | *BIOS Lock* off (and Secure Boot off, if on) for the install of a CI build, on again after | part 2 can start |
+| VAR-01 | *BIOS Lock* off for one boot: the time of a variable write with the option lock not armed | the numbers to compare with the armed ones |
 | WDT-01 | *Firmware watchdog* at 5 minutes, for the agent's rows above | above |
 | BOOT-09 | *Serial Console* off in the setup, if the saved value is still on | the seconds of the serial port gone from `cbmem -t` |
 | ME-05 | as in docs/testing.md | not run since v1.6.0 |
@@ -297,9 +314,10 @@ owner* until someone sits at the machine with a monitor.
 
 ## The end
 
-1. The machine back on v1.6.2: `python3 CLONE/tools/update.py rollback flash-now.bin`
-   on a copy of that boot, a reboot, `update.py status`. If it refuses
-   (a CI build in the slot), leave the candidate running and say so.
+1. The machine back on v1.6.2 (UPD-05): a copy of the flash of that
+   boot, `python3 CLONE/tools/update.py rollback flash-now.bin`, a
+   reboot, `update.py status`: v1.6.2 from slot B, rc1 kept in slot A.
+   If it refuses, leave rc1 running and say so.
 2. `hw-report.py` once more: FLASH-01 PASS (*BIOS Lock* and *Firmware
    protection* on), *Firmware watchdog* off, `./pio r 0x1854` reads
    `0x00002000`, `./mm r 0xfe001024` with bit 2 clear, the `Timeout` of

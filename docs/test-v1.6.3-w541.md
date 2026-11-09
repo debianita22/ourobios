@@ -22,20 +22,20 @@ These hold whatever else the agent decides.
    12582912 bytes (8388608 means flashrom went through `/dev/mtd0`: the
    `modprobe -r` did not take). Keep `flash-before.bin` off the machine
    too, if a place is reachable.
-2. **The only writes of the flash**: a capsule (`update.py stage`,
+2. **The only writes of the flash are capsules** (`update.py stage`,
    `update.py rollback`: the firmware writes the slot that is not
-   running) and the flashrom command that `update.py other-slot` prints,
-   as it is. Never `WP_RO`, `--ifd`, the descriptor, the ME, the GbE or
-   the whole image; never flashrom with a layout or a region of your
-   own. Those are a brick risk and no part of these tests; the external
-   programmer is not available to an agent.
+   running, with its own checks). flashrom only reads here (`-r`): no
+   `-w` of anything, no `update.py other-slot`, no `--ifd`, nothing on
+   `WP_RO`, the descriptor, the ME, the GbE or the whole image. Those
+   are a brick risk and no part of these tests; the external programmer
+   is not available to an agent.
 3. **No setup option is changed from the OS.** The options are
    boot-service variables; the only way to change one is the setup menu,
    by the owner. No tool that issues SMMSTORE SMIs against the variable
    store, no change of Secure Boot keys, no change of the ME state.
-4. flashrom must end with `VERIFIED`; if not, the same command once
-   more; if it fails again, stop, do not reboot, and report.
-5. Reboot right after a write, without suspending.
+4. A capsule that the firmware refuses is a result (UPD-01 says why),
+   not something to get around: no `--allow-older`, no other way in.
+5. Reboot right after a capsule is staged, without suspending.
 6. **A boot that does not come back**: nothing to do from the agent's
    side. After two failed boots vboot returns to the slot of before by
    itself; otherwise the owner powers the machine off (4 s) and on. Say
@@ -43,8 +43,8 @@ These hold whatever else the agent decides.
    about to happen, so that whoever finds the machine knows.
 7. **Stop the whole run** and report when: a `FAIL` of FLASH-01 with the
    protections on, a slot that vboot marks failed, a machine check or a
-   memory error, a flashrom write that does not verify, or the date of
-   the RTC wrong after a CMOS step.
+   memory error, a capsule that leaves the machine on neither slot's
+   release, or the date of the RTC wrong after a CMOS step.
 8. **The repository**: the record only (below). No tag, no release, no
    push to `main` or to a `ci-test/**` or `ci-edk2/**` branch (a push
    there starts a build), no force push, no change outside
@@ -59,13 +59,13 @@ These hold whatever else the agent decides.
   `python3 CLONE/tools/update.py vboot flash-before.bin`. **Both slots
   must hold v1.6.1 or later** for WDT-02 (an older slot has no code that
   stops the watchdog).
-- **Candidate**: the CI build of `ci-test/v1.6.3-consolidation`
-  (`24a28d6`, run 42692289173, build `ci-314-24a28d6`): v1.6.2 plus
-  patches 0266-0269. Install it only if the run ended green:
-  `gh run view 42692289173 -R debianita22/ourobios --json conclusion -q .conclusion`
-  must say `success`. A CI build has no capsule. If a pre-release
-  `v1.6.3-rc*` exists (`gh release list -R debianita22/ourobios`), use
-  its capsule instead: it installs with *BIOS Lock* on and needs nobody.
+- **Candidate**: the pre-release
+  [v1.6.3-rc1-nri](https://github.com/debianita22/ourobios/releases/tag/v1.6.3-rc1-nri),
+  built by the Release workflow from `next`: v1.6.2 plus patches
+  0266-0269, with its capsule, which installs with *BIOS Lock* on and
+  needs nobody. If the release is not there
+  (`gh release view v1.6.3-rc1-nri -R debianita22/ourobios`), its build
+  failed: part 1 only, and the record says so.
 - **Tools**: a clone at `next`; `python3`, flashrom 1.2 or later,
   `cbmem`, `gcc`, `ethtool`, `acpica`, `fwts`, chipsec, `stress-ng`,
   `gh`. What is missing and cannot be installed makes its rows *not
@@ -94,6 +94,23 @@ no copy of the flash). Commit it on `next` with the git identity of the
 repository (`git config user.name` and `user.email` must be the
 owner's, not a placeholder; no `Co-authored-by` or other trailer of an
 AI), `git pull --rebase` before the push, that folder only.
+
+## The order of the run
+
+Nobody is at the machine: the steps that may leave it down come last,
+after what does not depend on them is in the record.
+
+1. Part 1, but WDT-02 and NET-02.
+2. Part 2: the install and every row but WDT-02.
+3. The record, committed and pushed a first time.
+4. WDT-02 on rc1, which prints the register in its line. What a reset
+   by the watchdog does on this board is not known: if the machine does
+   not come back, the run ends here.
+5. The end, step 1: back on v1.6.2. WDT-02 once more there if time
+   allows (the line of v1.6.2 has the register too, without the count).
+6. The record again, with what the steps above added.
+7. The power-offs, below, last of all: after them the machine may stay
+   off until the owner presses the button.
 
 ## The port helper
 
@@ -152,10 +169,26 @@ Nothing is installed for this part.
 | CONF-02 | agent | as in docs/testing.md | 0 errors, no warning 3115 |
 | CONF-03 | agent | as in docs/testing.md | no CRITICAL or HIGH; the MEDIUM ones are those of the rc7 record of v1.6.0 |
 | CONF-04 | agent | as in docs/testing.md | as in the record of v1.6.0: `spi_desc` FAILED by design (the Protected Range over `SI_ALL` is what protects the descriptor), the others PASSED |
-| NET-02 | agent, with a second host | below | the machine starts on the packet |
-| WDT-02 | agent | below | below |
+| NET-02 | agent, with a second host | below, among the power-offs: last | the machine starts on the packet |
+| WDT-02 | agent | below, after part 2 (the order of the run) | below |
 
-### NET-02, the case an agent can run
+### The power-offs: a cold boot, and NET-02
+
+Last of the run (the order above). First whether the RTC alarm starts
+this board from off, which was never tried and is the net of NET-02:
+
+```sh
+sudo rtcwake -m off -s 180      # power off; the RTC alarm 3 minutes later
+```
+
+Started by itself: the report of a cold boot
+(`hw-report.py --markdown hw-cold.md`, PASS but the known ones; the RAM
+init from the cache), and NET-02 next. Not started: the machine waits
+for the owner, the record of step 6 already says that these two rows
+were about to run, and NET-02 is not tried.
+
+NET-02, the case an agent can run:
+
 
 *Wake on LAN* at its default, *AC only*, the adapter plugged in. It needs
 another machine on the same network to send the packet: the M920x, if
@@ -168,6 +201,9 @@ sudo setpci -s 1f.0 a4.w                        # bit 13 (WOL_EN_OVRD) set
 # the sender, 3 minutes from now:  wakeonlan MAC   (or etherwake)
 sudo rtcwake -m off -s 900                      # power off; the RTC alarm 15 minutes later, as a net
 ```
+
+Before the power-off, the record pushed once more with the line *NET-02
+started at TIME, the sender asked for TIME + 3 minutes*.
 
 Expected: the machine starts about 3 minutes after the power-off, on the
 packet; the event log of that boot (`python3 CLONE/tools/elog.py` on a
@@ -216,39 +252,36 @@ To give up before it fires: `sudo ./pio w 0x554 0x00002077`.
 
 ### Install
 
-- **With a `v1.6.3-rc*` capsule**: `sudo python3 CLONE/tools/update.py stage FILE.cap`
-  and a reboot, with *BIOS Lock* on (UPD-02). Nobody needed.
-- **With the CI build**: `update.py other-slot` and flashrom
-  ([docs/update.md](update.md#a-release-from-its-image-in-the-other-slot)),
-  which needs *BIOS Lock* off for that boot: **the owner** turns it off
-  in the setup (*Security* → *Flash protection*) and on again after the
-  first boot of the candidate. Until then part 2 waits and the record
-  says so. In the boot with *BIOS Lock* off the option lock is not armed
-  (`OptionLockStatus` holds `EFI_UNSUPPORTED`, not zeros): run VAR-01
-  once more there, for the comparison.
+As a user updates (UPD-02): the capsule of rc1 on v1.6.2, with *BIOS
+Lock* and *Firmware protection* on. The payload of v1.6.2 writes the
+slot that is not running, slot B, over v1.6.2-rc1; v1.6.2 stays in slot
+A.
 
 ```sh
-gh run download 42692289173 -R debianita22/ourobios -n ourobios-ci-314-24a28d6 -D ci-314
-ls ci-314            # the nri ROM of the W541, SHA256SUMS
-sudo flashrom -p internal -r flash-now.bin
-python3 CLONE/tools/update.py other-slot flash-now.bin ci-314/W541-NRI.rom
-# the flashrom command it prints, as it is (rule 2), then a reboot
+gh release download v1.6.3-rc1-nri -R debianita22/ourobios -D rc1 -p '*.cap' -p SHA256SUMS
+( cd rc1 && sha256sum -c SHA256SUMS --ignore-missing )
+sudo python3 CLONE/tools/update.py stage rc1/*.cap
+sudo systemctl reboot
 ```
 
-The candidate goes to slot B, over rc1; v1.6.2 stays in slot A.
+The update screen, then rc1 from slot B: `update.py status` says
+*v1.6.3-rc1*, the last capsule *riuscito* (UPD-01). A capsule that is
+refused, or a boot that returns to v1.6.2: FAIL with `update.py status`
+and `sudo cbmem -1`, and part 2 stops there.
 
 ### Tests
 
 | ID | Who | Test | Expected |
 |---|---|---|---|
-| — | agent | the reports: `hw-report.py --markdown` at the first boot, after a reboot and after a cold boot (`sudo rtcwake -m off -s 120`; if it does not start by itself, the owner) | PASS but the known ones; BOOT-01 with `ci-314-24a28d6` (or the rc) |
+| — | agent | the reports: `hw-report.py --markdown` at the first boot and after a reboot, with `--dump` of a new copy of the flash (the cold boot is among the power-offs, last) | PASS but the known ones; BOOT-01 with `v1.6.3-rc1-nri`; UPD-01 PASS |
 | MEM-03 | agent | `sudo cbmem -1 \| grep -i "MRC:\|cached memory"` at the first boot | no training: the code of the native RAM init is that of v1.6.2 (*does not need update*, RAM init 0.11 s). A training is an INFO with the lines: the key of patch 0250 changed |
 | TBL-01 | agent | patch 0269: `sudo cbmem -l \| grep -i coreboot`; `sudo cbmem -1 \| grep -E "coreboot table:\|didn't fit\|CFR: Written"`; `sudo cbmem -t`; OPT-01 of `hw-report.py --dump` | the `COREBOOT` entry 0x10000 bytes; *coreboot table: N bytes* with about the N of part 1 (the tables do not change, but for the version strings), no *didn't fit*; `cbmem` and the kernel read the table as before; the same options in OPT-01 |
 | CONF-02 | agent | `sudo acpidump -b`, each table against the one of part 1 (`cmp`); the DSDT and the SSDT disassembled and compiled | the DSDT the same, byte for byte (no patch of the candidate touches the ACPI code); in the SSDT and the tables that carry addresses, only addresses differ (CBMEM moves by 32 KiB). Anything else that differs is an INFO with the list |
-| FLASH-01, FLASH-06 | agent | as in part 1 | PASS; `06 00 00 00` and eight zeros (with *BIOS Lock* on) |
+| FLASH-01, FLASH-06 | agent | as in part 1 | PASS; `06 00 00 00` and eight zeros |
+| VAR-01 | agent | as in part 1 | the numbers of part 1, within their spread (the comparison with the lock not armed needs *BIOS Lock* off: the owner's) |
 | S3-02 | agent | three times `sudo rtcwake -m mem -s 30` | three resumes, `fail` 0, FLASH-01 and TPM-03 PASS after |
 | WDT-03 | agent | below | below |
-| WDT-02 | agent | as in part 1, on the candidate | the line ends with *, 1 in a row* (patch 0268); at the OS `sudo ./pio cr 0x7e` reads `0xa0`: SMM cleared the count when the payload confirmed the boot |
+| WDT-02 | agent | as described in part 1, on the candidate, after the first push of the record (the order of the run) | the line ends with *, 1 in a row* (patch 0268); at the OS `sudo ./pio cr 0x7e` reads `0xa0`: SMM cleared the count when the payload confirmed the boot |
 | WDT-01 | owner, then agent | *General* → *Boot* → *Firmware watchdog* at 5 minutes: `sudo cbmem -1 \| grep "Firmware watchdog"`, `sudo ./pio r 0x554` after 7 minutes of uptime; with it on, WDT-03 again; then Off | *armed, 300 s*, *at the payload*, the enable clear at the OS, the machine up past 420 s |
 | VB-01, VB-02 | agent | as in docs/testing.md | the candidate in slot B, confirmed; v1.6.2 in slot A |
 
@@ -283,6 +316,7 @@ ran on v1.6.1 or v1.6.2.
 | DISP-03 | *NVIDIA GPU* off in the setup, then on | the panel at each step; with it off no `01:00.0` |
 | NET-02 | *Wake on LAN* Off, *AC only*, *AC and battery*; on AC and on battery; from off and from sleep | as in docs/testing.md |
 | WDT-01 | *Firmware watchdog* at 5 minutes, for the agent's rows above | above |
+| VAR-01 | *BIOS Lock* off for one boot: the time of a variable write with the option lock not armed | the numbers to compare with the armed ones |
 | — | Secure Boot with shim, CSMWrap (a legacy boot), NET-05 (iPXE), BOOT-05/06, OPT-02, MEM-09, USB-06, DISP-05 | as in docs/testing.md; not run since v1.6.0 |
 | DEV-W01 | the fingerprint switch, on a W541 that has the reader | the reader gone from `lsusb` with the switch off |
 | OPT-05 | a real loss of the RTC power (the coin cell out) | the options reset once |
@@ -293,9 +327,10 @@ installed).
 
 ## The end
 
-1. The machine back on v1.6.2: `sudo python3 CLONE/tools/update.py rollback flash-now.bin`
-   on a copy of that boot, a reboot, `update.py status`. If it refuses
-   (a CI build in the slot), leave the candidate running and say so.
+1. The machine back on v1.6.2 (UPD-05): a copy of the flash of that
+   boot, `sudo python3 CLONE/tools/update.py rollback flash-now.bin`, a
+   reboot, `update.py status`: v1.6.2 from slot A, rc1 kept in slot B.
+   If it refuses, leave rc1 running and say so.
 2. `hw-report.py` once more: FLASH-01 PASS (*BIOS Lock* and *Firmware
    protection* on), *Firmware watchdog* off, `sudo ./pio r 0x554` with
    the enable clear, the `Timeout` of the boot manager as it was.
