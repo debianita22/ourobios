@@ -20,6 +20,24 @@ and the watchdog at 5 minutes, then all back on and the watchdog off.
 | OPT-05 | PASS | the setup options reset only when the CMOS was lost too (patch 0256): `RTC_PWR_STS` set from Linux alone (`setpci 1f.0 a4.w=0004:0004`) and a reboot -> *Setup options: not reset, RTC power lost but the CMOS kept the last boot (POST 0xf8/0x00000000)*; the bit set and the `CMOS_POST` bytes 0x70-0x7a cleared -> *Setup options: 66 reset to defaults (RTC power lost)*, the setup back at its defaults, `RTC: failed = 0x1` |
 | FLASH-01 | PASS | after the OPT-05 reset the defaults turn *BIOS Lock* and *Firmware protection* back on: PR0 over `WP_RO`, PR1 over `SI_ALL`, FLOCKDN, flashrom refused. Clean protected end state |
 
+## v1.6.1-rc4 on the W541
+
+rc4 (`959d89f`, the first release candidate with the W541 patches)
+installed as a capsule from the CI build ci-303 with *BIOS Lock* on,
+2026-11-09: slot B, confirmed, ESRT *v1.6.1-rc4 riuscito* (UPD-01,
+UPD-02 PASS); the training cache kept by the capsule and valid for the
+new slot, RAM init 0.11 s (MEM-03 PASS); FLASH-01 PASS (PR0 over `WP_RO`,
+PR1 over `SI_ALL`, BIOS Lock on); 8 CPUs, the GbE present. Then the
+Ethernet switch of DEV-W01 on the release: off, two restarts by the
+firmware (boots 511 and 512 in the event log: the lockdown cleared, the
+bit applied), `BUC` `0x20`, 00:19.0 gone; on again, two restarts (513,
+514: the lockdown cleared, the bit cleared with the PHY woken in the same
+boot), `BUC` 0, GPIO12 high, `00:19.0 [8086/153a] enabled`, `eno0` back.
+No *Last POST code* event for any of the four resets. DEV-W01 Ethernet
+PASS.
+Then one `rtcwake -m mem -s 30`: resumed, every CPU back, the GbE and
+`eno0` there, RAM init 0.11 s on the resume path, S3-01 PASS.
+
 Not run (no hardware on this unit): NET-02 (Wake on LAN, patch 0259) and
 the fingerprint switch; FAN-10's CPU-limit count.
 
