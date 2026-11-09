@@ -47,9 +47,12 @@ every transaction), so no 0x48, 0x49 or 0x5B; EC 0x88-0x8b (the thermal
 alarms) stayed 0, EC 0x0d and 0xff (the acknowledgement bits the Lenovo
 ASL writes) stayed 0; the package held its power limits (CPU-02). The
 GPE 0x11 counter grew by about 5 a second under load and at idle alike:
-not EC queries. The EC asks the OS for no CPU limit on AC with the 170 W
-adapter of this unit; the battery leg (the adapter unplugged under
-load), where the Lenovo `_PPC` lowers the limit, is still to run.
+not EC queries. Then the same 3 minutes on battery (the adapter
+unplugged, 100%): again no query, no alarm, the acknowledgement bits 0.
+The EC asks the OS for no CPU limit on this unit, on AC (170 W adapter)
+or on battery; the Lenovo `_PPC` would lower the limit on battery by
+itself, from the battery state, not on an EC event. Nothing to handle
+for 0x48, 0x49 and 0x5B, as far as this unit shows.
 
 Not run (no hardware on this unit): NET-02 (Wake on LAN, patch 0259) and
 the fingerprint switch; FAN-10's CPU-limit count.

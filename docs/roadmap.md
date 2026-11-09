@@ -24,8 +24,8 @@ is here. None of it is a promise of a date.
 | [Device switches on the W541](#device-switches-on-the-w541) | W541 | the microphone, the camera, the card reader and the Ethernet built and passed in v1.6.1; the fingerprint switch built after it (patch 0265), from the port table of the Lenovo firmware | the fingerprint switch on a unit that has the reader |
 | [Wake on LAN after a shutdown on the W541](#wake-on-lan-after-a-shutdown-on-the-w541) | W541 | built for v1.6.1 (patch 0259), as the Lenovo firmware does it; not run on a machine | NET-02 from power-off on AC and on battery, with each setting |
 | [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot (no PEI, no LockBox, no boot script); the stock design read and a coreboot design written (2026-11-08), unbuilt: new secret-handling code in both, untestable without a locked drive | a decision whether to build it, with the caveats |
-| [NVIDIA power steering and the EC's CPU limits](#nvidia-power-steering-and-the-ecs-cpu-limits) | W541 | little use under Linux; on AC under 13 minutes of full load the EC raised no CPU-limit event at all (2026-11-09) | the same on battery, then decide whether the events need handling |
-| [EC events left out](#ec-events-left-out) | W541 | the HKEY queue built in v1.6.1 (patch 0260); the beep mask is the Lenovo one; 0x48, 0x49 and 0x5B still out, and none came on AC under load (2026-11-09) | count them on battery |
+| [NVIDIA power steering and the EC's CPU limits](#nvidia-power-steering-and-the-ecs-cpu-limits) | W541 | little use under Linux; under 16 minutes of full load, on AC and on battery, the EC raised no CPU-limit event at all (2026-11-09) | none planned: a `_PPC` policy only if a unit shows the events |
+| [EC events left out](#ec-events-left-out) | W541 | the HKEY queue built in v1.6.1 (patch 0260); the beep mask is the Lenovo one; 0x48, 0x49 and 0x5B out, and none came under load on AC or battery (2026-11-09) | none planned |
 | [Card reader of the W541](#card-reader-of-the-w541) | W541 | the premise was wrong: the reader is an O2 Micro OZ777, which the payload drives already | none planned |
 | [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | done in v1.6.0 (patches 0220-0221): CPU-05 passed on a W541 on 2026-11-03 | none planned |
 | [Upstream changes not taken](#upstream-changes-not-taken) | W541 | the pin moved to 26.09-607 for v1.6.2: 0185 and 96893 upstream, 0008 and 0086 rebased; 95880 not for the W541; 95912 at Code-Review -2 | the round trip of 0088 on a W541 with v1.6.2 (MEM-06); the next pin |
@@ -707,7 +707,8 @@ bits 5-6.
 - **Counted on a W541** (2026-11-09, v1.6.1,
   [docs/tests/v1.6.1/w541-nri/README.md](tests/v1.6.1/w541-nri/README.md#fan-10-the-ecs-cpu-limit-events-after-v161-on-v161)):
   on AC, 13 minutes of `stress-ng --cpu 0` with the EC driver's debug on,
-  no query from the EC at all, no thermal alarm; the battery leg is left.
+  and 3 more on battery: no query from the EC at all, no thermal alarm.
+  The events stay out: nothing on this unit sends them.
 - **Built for v1.6.1** (patch 0260): the queue (`H8_HKEY_QUEUE`), checked
   with `acpiexec`. The CPU-limit events stay out until FAN-10 counts
   them.
