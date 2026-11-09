@@ -225,8 +225,10 @@ The other *drop* ones, as looked at for v1.6.0:
   `patches/tianocore`, and the other numbers stay; what `5342f42` adds
   outside its directory stays in `tianocore/0060`, and `tianocore/0120`
   takes it out again, because `94a236511` (the boot media record) is
-  written against it. Still to do: `d7597bb` (HS400 enhanced strobe, in
-  the `SdMmcPciHcDxe` that drives the SD reader of the W541); `b8d0242`
+  written against it. Done after v1.6.2-rc1: `d7597bb` (HS400 enhanced strobe, in the
+  `SdMmcPciHcDxe` that drives the SD reader of the W541), reverted by
+  `edk2/0059`, the commit and its revert out of `patches/tianocore`
+  together (`REVERTED`). Still to do: `b8d0242`
   (in `UefiBootManagerLib` too); `1287861` (the Secure Boot pages of the
   setup); `6cf55e1` (the MTRRs); `0a270f8` (the aperture of the PCI root
   bridge, PCI-09 of `tools/hw-report.py`).
@@ -352,7 +354,7 @@ with the stable tag that takes the new OpenSSL.
 | `6aa87d0` | Revert "UefiPayloadPkg: Add AmdPcoSdhciDxe driver for AMD Picasso eMMC" | drop | reverts 88b95ba | left out with 88b95ba (0059 unused) |
 | `5342f42` | UefiPayloadPkg: Add SdhciNonPciDxe for non-PCI SDHCI | drop | no such controller | left out (`edk2/0055`); `tianocore/0060` keeps its record and parser, `tianocore/0120` takes them out |
 | `acf9505` | MdeModulePkg/Usb: Warm reset downstream SuperSpeed ports | upstream |  | `tianocore/0061` |
-| `d7597bb` | MdeModulePkg/SdMmcPciHcDxe: add HS400 Enhanced Strobe for Intel eMMC | drop | no eMMC | `tianocore/0062` |
+| `d7597bb` | MdeModulePkg/SdMmcPciHcDxe: add HS400 Enhanced Strobe for Intel eMMC | drop | no eMMC | left out from v1.6.2 (`edk2/0059`, its revert; `REVERTED` of `edk2-import.py`, `tianocore/0062` unused) |
 | `c205ceb` | MdeModulePkg/SdMmcPciHcDxe: Don't force EmbeddedSlot for Bayhub | carry | as a091558: Libreboot's fix for SD boot on the W541 | `tianocore/0065` |
 | `81c562f` | UefiPayloadPkg: Add CbfsLib to read files from coreboot's CBFS | package | if a module of the package reads CBFS | `tianocore/0068`, package |
 | `1f9ab46` | UefiPayloadPkg/PlatformGopPolicy: Load GOP driver and VBT from CBFS | drop | as 076933b | `tianocore/0069`, package |

@@ -84,6 +84,14 @@ PACKAGE_MOVED = ("UefiPayloadPkg/Library/PlatformBootManagerLib",
 # "drop"): i loro numeri restano vuoti, perche' le altre patch tengano i loro.
 # make_series controlla che si annullino davvero e che nessun commit tra i due
 # tocchi i loro file
+# Commit di MrChromebox che una patch di patches/edk2 (il valore) annulla con
+# un revert, perche' il payload delle board non lo usa (docs/edk2-migration.md,
+# "drop"): ne' il commit ne' la patch prendono un numero in patches/tianocore,
+# e gli altri numeri restano. make_series controlla che tocchino gli stessi
+# file; che si annullino lo dice il confronto finale di R con il tag e la serie
+REVERTED = {
+    "d7597bba915488d8a32a5569d0b786297c986c46": "0059",  # HS400 Enhanced Strobe, tianocore/0062
+}
 CANCELLED = (
     ("88b95baf0762129be91e90538f28d6dd2cef75ce",    # AmdPcoSdhciDxe, tianocore/0022
      "6aa87d02100f3d2bf037ffe1bf32728d271d74e2"),   # il suo revert, 0059
@@ -351,6 +359,19 @@ def make_series(mrc, tmp, base, head, excl, out):
     n = 0
     commits = git(mrc, "rev-list", "--reverse", "--topo-order", "%s..%s" % (base, head)).split()
     cancelled = check_cancelled(mrc, commits, pathspec)
+    for c, num in REVERTED.items():
+        if c not in commits:
+            raise Error("REVERTED: %s non e' tra i commit di MrChromebox" % c[:12])
+        name = [s for s in series("edk2") if s.startswith(num + "-")]
+        if len(name) != 1:
+            raise Error("REVERTED: nessuna patch %s in patches/edk2/series per %s" % (num, c[:12]))
+        with open(os.path.join(O, "patches", "edk2", name[0]), "rb") as f:
+            pfiles = sorted(set(re.findall(rb"^diff --git a/(\S+) ", f.read(), re.M)))
+        cfiles = sorted(f.encode() for f in git(mrc, "diff-tree", "--no-commit-id", "--name-only", "-r",
+                                                  c).split())
+        if pfiles != cfiles:
+            raise Error("REVERTED: patches/edk2/%s non tocca i file di %s" % (num, c[:12]))
+        cancelled.add(c)
     for c in commits:
         if not git(mrc, "diff-tree", "--no-commit-id", "--name-only", "-r", c, *pathspec_numbered).split():
             continue
@@ -376,6 +397,9 @@ def make_series(mrc, tmp, base, head, excl, out):
         if restrict_mail(data, lambda p: under(p, numbered) or p in numbered) is None:
             continue
         n += 1
+        if name[:4] in REVERTED.values():
+            # il revert di un commit di REVERTED: il numero resta vuoto
+            continue
         r = restrict_mail(data, lambda p: under(p, excl) or p in excl)
         if r is None:
             # tutta in PACKAGE_MOVED: il numero resta vuoto

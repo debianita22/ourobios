@@ -10,6 +10,13 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 What ran on a machine for v1.6.2: nothing yet at rc1; the W541 and the
 M920x with the release candidates, as for v1.6.1.
 
+- **One commit of MrChromebox less in the payload** (`edk2/0059`):
+  HS400 Enhanced Strobe, which he added to the eMMC side of
+  `SdMmcPciHcDxe` for the Intel eMMC of his Chromebooks, is reverted: no
+  board here has an eMMC. The SD reader of the W541 is driven by the same
+  driver's SD path, which does not change. `patches/tianocore` loses
+  `0062` (`REVERTED` of `tools/edk2-import.py`).
+
 - **coreboot 26.09-607** (2026-11-09, from 26.09-517 of 2026-11-03): the
   pin moved by 90 upstream commits. The native RAM init of Haswell got
   its first Broadwell support and a refactoring upstream (16 commits):
