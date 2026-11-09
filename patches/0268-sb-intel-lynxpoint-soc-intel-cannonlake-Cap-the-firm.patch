@@ -1,0 +1,213 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 9 Nov 2026 21:17:09 +0100
+Subject: [PATCH] sb/intel/lynxpoint, soc/intel/cannonlake: Cap the firmware
+ watchdog's resets
+
+Romstage arms the firmware watchdog at every boot when the option has a
+timeout, and SMM stops it when the payload says that the firmware
+booted. If that stop does not come while the firmware does boot (the
+payload cannot reach the SMI handler, for one), the watchdog resets the
+OS at every timeout and romstage arms it again each time, for ever.
+
+Count the resets by the watchdog that follow one another with no boot
+confirmed in between, in CMOS byte 0x7e (include/firmware_watchdog.h):
+romstage adds one when the status of OC_WDT_CTL says that the last
+reset was the watchdog's, SMM clears the count with the stop. At three
+romstage logs an error and leaves the watchdog off, until a boot is
+confirmed again or the CMOS is lost. vboot needs two hangs of a slot on
+trial to fall back to the other one, so the two resets that the
+watchdog is there for stay as they were.
+
+The byte has a mark in its high nibble, so that whatever it held before
+reads as no reset; SMM writes it only when it changes. It is free on
+the two boards that select a firmware watchdog: after the checksum of
+their cmos.layout and CMOS_POST (0x70-0x7a), before the byte of the GbE
+switch of Lynx Point (0x7f).
+
+Not tested on a machine: no reset by the watchdog was provoked on
+either board yet, and the count relies on the status bits being set
+after one. If they are not, the count stays at 0 and nothing changes.
+
+TEST=Build of the ThinkPad W541 with the native RAM init and of the
+ThinkCentre M920x.
+---
+ src/include/firmware_watchdog.h               | 58 +++++++++++++++++++
+ src/soc/intel/cannonlake/firmware_watchdog.c  | 19 ++++--
+ .../intel/lynxpoint/firmware_watchdog.c       | 16 ++++-
+ 3 files changed, 86 insertions(+), 7 deletions(-)
+ create mode 100644 src/include/firmware_watchdog.h
+
+diff --git a/src/include/firmware_watchdog.h b/src/include/firmware_watchdog.h
+new file mode 100644
+index 00000000..b105976c
+--- /dev/null
++++ b/src/include/firmware_watchdog.h
+@@ -0,0 +1,58 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _FIRMWARE_WATCHDOG_H_
++#define _FIRMWARE_WATCHDOG_H_
++
++#include <commonlib/helpers.h>
++#include <pc80/mc146818rtc.h>
++#include <types.h>
++
++/*
++ * A firmware watchdog (the option "firmware_watchdog") is armed by romstage
++ * and stopped by SMM when the payload says that the firmware booted. If that
++ * stop never comes while the firmware does boot, the OS is reset at every
++ * timeout, and romstage arms the watchdog again each time.
++ *
++ * Count the resets by the watchdog that follow one another with no boot that
++ * the payload confirmed in between, and do not arm it at the third: vboot
++ * needs two hangs to fall back to the other slot, so a third reset in a row
++ * is no longer a slot on trial. The count is a CMOS byte, with a mark in its
++ * high nibble so that whatever the byte held before reads as 0: romstage
++ * adds one when the watchdog's status says that the last reset was its own,
++ * SMM clears it with the stop. It stays at the limit, and the watchdog off,
++ * until a boot is confirmed again or the CMOS is lost.
++ *
++ * Byte 0x7e is free on the boards that select a firmware watchdog: after the
++ * checksum of their cmos.layout (0x7b, 0x7c) and CMOS_POST (0x70-0x7a), and
++ * before the byte of the GbE switch of Lynx Point (0x7f).
++ */
++#define FIRMWARE_WATCHDOG_CMOS_RESETS	0x7e
++#define  FIRMWARE_WATCHDOG_RESETS_MARK	0xa0
++#define FIRMWARE_WATCHDOG_MAX_RESETS	3
++
++static inline unsigned int firmware_watchdog_resets(void)
++{
++	const u8 v = cmos_read(FIRMWARE_WATCHDOG_CMOS_RESETS);
++
++	return (v & 0xf0) == FIRMWARE_WATCHDOG_RESETS_MARK ? v & 0x0f : 0;
++}
++
++static inline void firmware_watchdog_set_resets(unsigned int resets)
++{
++	const u8 v = FIRMWARE_WATCHDOG_RESETS_MARK | MIN(resets, FIRMWARE_WATCHDOG_MAX_RESETS);
++
++	if (cmos_read(FIRMWARE_WATCHDOG_CMOS_RESETS) != v)
++		cmos_write(v, FIRMWARE_WATCHDOG_CMOS_RESETS);
++}
++
++/* Romstage, with whether the watchdog's status says the last reset was its own */
++static inline unsigned int firmware_watchdog_count_reset(bool by_watchdog)
++{
++	unsigned int resets = firmware_watchdog_resets();
++
++	if (by_watchdog && resets < FIRMWARE_WATCHDOG_MAX_RESETS)
++		firmware_watchdog_set_resets(++resets);
++	return resets;
++}
++
++#endif
+diff --git a/src/soc/intel/cannonlake/firmware_watchdog.c b/src/soc/intel/cannonlake/firmware_watchdog.c
+index df0a3db2..b0e3cc4d 100644
+--- a/src/soc/intel/cannonlake/firmware_watchdog.c
++++ b/src/soc/intel/cannonlake/firmware_watchdog.c
+@@ -13,6 +13,7 @@
+ #include <bootstate.h>
+ #include <commonlib/helpers.h>
+ #include <console/console.h>
++#include <firmware_watchdog.h>
+ #include <intelblocks/oc_wdt.h>
+ #include <option.h>
+ #include <smmstore.h>
+@@ -34,15 +35,24 @@ static unsigned int firmware_watchdog_timeout(void)
+ 
+ void firmware_watchdog_romstage(bool s3wake)
+ {
+-	const unsigned int t = firmware_watchdog_timeout();
++	unsigned int t = firmware_watchdog_timeout();
++	const bool by_watchdog = oc_wdt_caused_reset();
++	/* Its resets in a row, with no boot confirmed in between */
++	const unsigned int resets = firmware_watchdog_count_reset(by_watchdog);
+ 
+-	if (oc_wdt_caused_reset()) {
++	if (by_watchdog) {
+ 		printk(BIOS_WARNING, "Firmware watchdog: the last reset came from the watchdog "
+-		       "(OC_WDT_CTL 0x%08x)\n", oc_wdt_read());
++		       "(OC_WDT_CTL 0x%08x), %u in a row\n", oc_wdt_read(), resets);
+ 		/* Clear the status, so that the next boot does not report it again */
+ 		oc_wdt_clear_reset_status();
+ 	}
+ 
++	if (t && !s3wake && resets >= FIRMWARE_WATCHDOG_MAX_RESETS) {
++		printk(BIOS_ERR, "Firmware watchdog: %u resets in a row and no boot confirmed, "
++		       "not armed\n", resets);
++		t = 0;
++	}
++
+ 	if (t && !s3wake) {
+ 		oc_wdt_arm(t);
+ 		printk(BIOS_INFO, "Firmware watchdog: armed, %u s (OC_WDT_CTL 0x%08x)\n", t,
+@@ -65,9 +75,10 @@ BOOT_STATE_INIT_ENTRY(BS_PAYLOAD_BOOT, BS_ON_ENTRY, firmware_watchdog_payload, N
+ #endif
+ 
+ #if ENV_SMM
+-/* The payload confirmed the slot: the firmware booted, stop the watchdog */
++/* The payload runs: the firmware booted, stop the watchdog and its count */
+ void smmstore_firmware_confirmed(void)
+ {
+ 	oc_wdt_stop();
++	firmware_watchdog_set_resets(0);
+ }
+ #endif
+diff --git a/src/southbridge/intel/lynxpoint/firmware_watchdog.c b/src/southbridge/intel/lynxpoint/firmware_watchdog.c
+index 69705d20..1699a006 100644
+--- a/src/southbridge/intel/lynxpoint/firmware_watchdog.c
++++ b/src/southbridge/intel/lynxpoint/firmware_watchdog.c
+@@ -17,6 +17,7 @@
+ #include <bootstate.h>
+ #include <commonlib/helpers.h>
+ #include <console/console.h>
++#include <firmware_watchdog.h>
+ #include <option.h>
+ #include <smmstore.h>
+ #include <types.h>
+@@ -67,12 +68,14 @@ static unsigned int firmware_watchdog_timeout(void)
+ 
+ void firmware_watchdog_romstage(bool s3wake)
+ {
+-	const unsigned int t = firmware_watchdog_timeout();
++	unsigned int t = firmware_watchdog_timeout();
+ 	const u32 ctl = oc_wdt_read();
++	/* Its resets in a row, with no boot confirmed in between */
++	const unsigned int resets = firmware_watchdog_count_reset(ctl & OC_WDT_CTL_STS_MASK);
+ 
+ 	if (ctl & OC_WDT_CTL_STS_MASK) {
+ 		printk(BIOS_WARNING, "Firmware watchdog: the last reset came from the watchdog "
+-		       "(OC_WDT_CTL 0x%08x)\n", ctl);
++		       "(OC_WDT_CTL 0x%08x), %u in a row\n", ctl, resets);
+ 		/* Clear them, so that the next boot does not report it again */
+ 		outl(ctl & ~OC_WDT_CTL_RLD, DEFAULT_PMBASE + OC_WDT_CTL);
+ 	}
+@@ -83,6 +86,12 @@ void firmware_watchdog_romstage(bool s3wake)
+ 		return;
+ 	}
+ 
++	if (t && !s3wake && resets >= FIRMWARE_WATCHDOG_MAX_RESETS) {
++		printk(BIOS_ERR, "Firmware watchdog: %u resets in a row and no boot confirmed, "
++		       "not armed\n", resets);
++		t = 0;
++	}
++
+ 	if (t && !s3wake) {
+ 		u32 v = oc_wdt_read() & ~OC_WDT_CTL_TOV_MASK;
+ 
+@@ -112,9 +121,10 @@ BOOT_STATE_INIT_ENTRY(BS_PAYLOAD_BOOT, BS_ON_ENTRY, firmware_watchdog_payload, N
+ #endif
+ 
+ #if ENV_SMM
+-/* The payload confirmed the slot: the firmware booted, stop the watchdog */
++/* The payload runs: the firmware booted, stop the watchdog and its count */
+ void smmstore_firmware_confirmed(void)
+ {
+ 	oc_wdt_stop();
++	firmware_watchdog_set_resets(0);
+ }
+ #endif
+-- 
+2.43.0
+

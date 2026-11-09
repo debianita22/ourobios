@@ -1,0 +1,88 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 9 Nov 2026 21:15:51 +0100
+Subject: [PATCH] soc/intel/cannonlake: Clear the watchdog's reset status once
+ it is logged
+
+Romstage logs that the last reset came from the firmware watchdog when
+ICCSURV_STS or NO_ICCSURV_STS of OC_WDT_CTL is set, and every write of
+the common code now leaves those bits as they are, so that they are not
+lost before the log. Nothing cleared them after it: one reset by the
+watchdog would be reported at every boot that follows, for as long as
+the register keeps the bits. The Lynx Point twin of this code clears
+them right after its log.
+
+Add oc_wdt_clear_reset_status() and call it after the log, which now
+has the register too, as on Lynx Point.
+
+The path is still untested on a machine: no reset by the watchdog was
+ever provoked on the ThinkCentre M920x.
+
+TEST=Build of the ThinkCentre M920x.
+---
+ src/soc/intel/cannonlake/firmware_watchdog.c         |  8 ++++++--
+ .../intel/common/block/include/intelblocks/oc_wdt.h  |  1 +
+ src/soc/intel/common/block/oc_wdt/oc_wdt.c           | 12 +++++++++++-
+ 3 files changed, 18 insertions(+), 3 deletions(-)
+
+diff --git a/src/soc/intel/cannonlake/firmware_watchdog.c b/src/soc/intel/cannonlake/firmware_watchdog.c
+index 21879fac..df0a3db2 100644
+--- a/src/soc/intel/cannonlake/firmware_watchdog.c
++++ b/src/soc/intel/cannonlake/firmware_watchdog.c
+@@ -36,8 +36,12 @@ void firmware_watchdog_romstage(bool s3wake)
+ {
+ 	const unsigned int t = firmware_watchdog_timeout();
+ 
+-	if (oc_wdt_caused_reset())
+-		printk(BIOS_WARNING, "Firmware watchdog: the last reset came from the watchdog\n");
++	if (oc_wdt_caused_reset()) {
++		printk(BIOS_WARNING, "Firmware watchdog: the last reset came from the watchdog "
++		       "(OC_WDT_CTL 0x%08x)\n", oc_wdt_read());
++		/* Clear the status, so that the next boot does not report it again */
++		oc_wdt_clear_reset_status();
++	}
+ 
+ 	if (t && !s3wake) {
+ 		oc_wdt_arm(t);
+diff --git a/src/soc/intel/common/block/include/intelblocks/oc_wdt.h b/src/soc/intel/common/block/include/intelblocks/oc_wdt.h
+index 7b40869d..dd27255e 100644
+--- a/src/soc/intel/common/block/include/intelblocks/oc_wdt.h
++++ b/src/soc/intel/common/block/include/intelblocks/oc_wdt.h
+@@ -20,5 +20,6 @@ void oc_wdt_arm(unsigned int timeout);
+ void oc_wdt_stop(void);
+ uint32_t oc_wdt_read(void);
+ bool oc_wdt_caused_reset(void);
++void oc_wdt_clear_reset_status(void);
+ 
+ #endif
+diff --git a/src/soc/intel/common/block/oc_wdt/oc_wdt.c b/src/soc/intel/common/block/oc_wdt/oc_wdt.c
+index 891bf8fc..f870f63d 100644
+--- a/src/soc/intel/common/block/oc_wdt/oc_wdt.c
++++ b/src/soc/intel/common/block/oc_wdt/oc_wdt.c
+@@ -115,12 +115,22 @@ uint32_t oc_wdt_read(void)
+ 	return inl(PCH_OC_WDT_CTL);
+ }
+ 
+-/* Whether the last reset came from the watchdog, read before any write clears it */
++/* Whether the last reset came from the watchdog, until the status is cleared */
+ bool oc_wdt_caused_reset(void)
+ {
+ 	return inl(PCH_OC_WDT_CTL) & PCH_OC_WDT_CTL_STS_MASK;
+ }
+ 
++/*
++ * Clear the status of a reset by the watchdog (write-1-to-clear), once it is
++ * logged: every other write here leaves it as it is, so the boots that follow
++ * would report the same reset again.
++ */
++void oc_wdt_clear_reset_status(void)
++{
++	outl(inl(PCH_OC_WDT_CTL) & ~PCH_OC_WDT_CTL_RLD, PCH_OC_WDT_CTL);
++}
++
+ /* Returns currently programmed OC watchdog timeout in seconds */
+ unsigned int oc_wdt_get_current_timeout(void)
+ {
+-- 
+2.43.0
+

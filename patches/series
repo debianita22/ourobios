@@ -257,3 +257,7 @@
 0263-sb-intel-lynxpoint-Wake-the-GbE-PHY-with-LANPHYPC-wh.patch
 0264-mb-lenovo-haswell-The-Ethernet-help-text-with-the-re.patch
 0265-mb-lenovo-haswell-A-switch-for-the-W541-s-fingerprin.patch
+0266-drivers-smmstore-Stop-the-firmware-watchdog-before-t.patch
+0267-soc-intel-cannonlake-Clear-the-watchdog-s-reset-stat.patch
+0268-sb-intel-lynxpoint-soc-intel-cannonlake-Cap-the-firm.patch
+0269-arch-x86-A-coreboot-table-of-64-KiB.patch

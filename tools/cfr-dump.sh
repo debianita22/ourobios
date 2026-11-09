@@ -31,11 +31,14 @@
 #      build: anche quelle degli header, che il compilatore non segnala),
 #      tranne quelle di -x NOME (anche con * e ?, ripetibile), che la
 #      board lascia fuori apposta.
-#   5. il record non supera i 28 KiB: la tabella di coreboot ne ha 32 in
-#      tutto (COREBOOT_TABLE_SIZE in src/arch/x86/include/arch/cbconfig.h)
-#      e write_tables() non si ferma se non ci sta, scrive oltre la sua
-#      voce di CBMEM e lo dice solo dopo; gli altri record ne prendono
-#      circa 1,6 (M920x) e le stringhe dei callback crescono sulla macchina.
+#   5. il record lascia 4 KiB della tabella di coreboot agli altri record
+#      (COREBOOT_TABLE_SIZE in src/arch/x86/include/arch/cbconfig.h
+#      dell'albero: 64 KiB dalla patch 0269, quindi 60 per il menu; 32 e 28
+#      prima, e con -c, che non ha un albero, se CFR_TABLE_SIZE non dice
+#      altro): write_tables() non si ferma se la tabella non ci sta, scrive
+#      oltre la sua voce di CBMEM e lo dice solo dopo; gli altri record ne
+#      prendono circa 1,6 (M920x) e le stringhe dei callback crescono sulla
+#      macchina.
 # Esce con 1 se il blob non e' valido o non corrisponde, un'opzione manca
 # o e' ripetuta o il record e' troppo grande, con gli avvisi
 # (dipendenze senza oggetto, form visibili vuote, piu' di otto categorie...)
@@ -85,6 +88,11 @@ stubs="${here}/cfr-dump/stubs.c"
 CC="${HOSTCC:-gcc}"
 
 [ -f "${tree}/src/drivers/option/cfr.c" ] || die "${tree}: non e' un albero coreboot con CFR"
+# La tabella di coreboot dell'albero, per il margine del punto 5
+CFR_TABLE_SIZE="$(sed -n 's/^#define COREBOOT_TABLE_SIZE[[:space:]]\{1,\}\(0x[0-9a-fA-F]\{1,\}\)[[:space:]]*$/\1/p' \
+	"${tree}/src/arch/x86/include/arch/cbconfig.h" 2> /dev/null)"
+[ -n "${CFR_TABLE_SIZE}" ] || die "${tree}: COREBOOT_TABLE_SIZE non trovato in src/arch/x86/include/arch/cbconfig.h"
+export CFR_TABLE_SIZE
 for f in config.h build.h; do
 	[ -f "${build}/${f}" ] || die "${build}: manca ${f} (prima make ... olddefconfig, o una build)"
 done
@@ -217,6 +225,7 @@ python3 -I - "${out}" "${work}/list.ref" "${quiet}" "${mbcfr#"${tree}"/}" "${wor
 import collections
 import difflib
 import fnmatch
+import os
 import struct
 import sys
 
@@ -459,13 +468,15 @@ for w in warnings:
 # (due oggetti con lo stesso nome sono la stessa variabile, mostrata due
 # volte), e ogni opzione dichiarata dai sorgenti compilati nel menu
 errors = []
-# Il margine nella tabella di coreboot (32 KiB, COREBOOT_TABLE_SIZE): vedi
-# il punto 5 in cima
-BUDGET = 28 << 10
+# Il margine nella tabella di coreboot (COREBOOT_TABLE_SIZE dell'albero, in
+# CFR_TABLE_SIZE; senza, i 32 KiB di prima della patch 0269): vedi il punto
+# 5 in cima
+TABLE = int(os.environ.get("CFR_TABLE_SIZE", "0x8000"), 0)
+BUDGET = TABLE - (4 << 10)
 if len(data) > BUDGET:
     errors.append("record di %d byte, oltre %d: con gli altri record la tabella di coreboot "
-                  "(0x8000 byte) puo' non bastare, e write_tables() scrive oltre la voce di CBMEM"
-                  % (len(data), BUDGET))
+                  "(0x%x byte) puo' non bastare, e write_tables() scrive oltre la voce di CBMEM"
+                  % (len(data), BUDGET, TABLE))
 count = collections.Counter(n["name"] for n, _ in walk(forms) if n["name"] != "-")
 for name, c in sorted(count.items()):
     if c > 1:

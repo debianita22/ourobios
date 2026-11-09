@@ -1856,6 +1856,10 @@ def check_watchdog(fw, rep):
     armed = fw.grep(r"^Firmware watchdog: armed, (\d+) s") if fw.log is not None else []
     off = fw.grep(r"^Firmware watchdog: off") if fw.log is not None else []
     last = fw.grep(r"^Firmware watchdog: the last reset came from the watchdog") if fw.log is not None else []
+    # dalla patch 0268: tre reset del watchdog di fila senza un avvio
+    # confermato, romstage non lo arma (e scrive anche la riga "off")
+    capped = fw.grep(r"^Firmware watchdog: (\d+) resets in a row and no boot confirmed, not armed") \
+        if fw.log is not None else []
     # la riga di romstage puo' mancare (un avvio con il training riempie la
     # console prima di CBMEM): quella del ramstage dice che il codice c'e'
     payload = fw.grep(r"^Firmware watchdog: at the payload") if fw.log is not None else []
@@ -1894,6 +1898,10 @@ def check_watchdog(fw, rep):
     else:
         status = "WARN" if running else "PASS"
         summary = "acceso all'OS con l'opzione spenta" if running else "spento (opzione firmware_watchdog Off)"
+    if capped and not armed:
+        status = "WARN" if status == "PASS" else status
+        summary = "non armato: %s reset del watchdog di fila senza un avvio confermato" % capped[-1].group(1) \
+            + (", ma acceso all'OS" if running else "")
     if last:
         status = "WARN" if status == "PASS" else status
         summary += "; l'ultimo reset l'ha fatto il watchdog"

@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 9 Nov 2026 21:17:31 +0100
+Subject: [PATCH] arch/x86: A coreboot table of 64 KiB
+
+The coreboot table of x86 has 32 KiB. With DRIVERS_OPTION_CFR the setup
+menu is one record of it, with the name and the help text of every
+option: 28.2 KiB on the ThinkPad W541 with its 70 options, 26.9 KiB of
+table on the machine before the last ten. Help texts were already
+shortened twice to add an option, and write_tables() does not stop a
+table that outgrows its CBMEM entry: it writes past the entry, over the
+one added before it, and reports the size afterwards.
+
+Double it. The tables written do not change, only the size of the
+CBMEM entry they are written to; the payloads read the size of the
+table from its header.
+
+TEST=Build of the ThinkPad W541 with the native RAM init and of the
+ThinkCentre M920x.
+---
+ src/arch/x86/include/arch/cbconfig.h | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/src/arch/x86/include/arch/cbconfig.h b/src/arch/x86/include/arch/cbconfig.h
+index 3779646e..84060a1d 100644
+--- a/src/arch/x86/include/arch/cbconfig.h
++++ b/src/arch/x86/include/arch/cbconfig.h
+@@ -10,6 +10,12 @@
+  * to have the same name across all architectures.
+  */
+ 
+-#define COREBOOT_TABLE_SIZE 0x8000
++/*
++ * 64 KiB: with DRIVERS_OPTION_CFR the setup menu is one record of the table,
++ * with the name and the help text of every option (28 KiB on a board with 70
++ * of them), and write_tables() does not stop a table that outgrows its CBMEM
++ * entry: it writes past it and says so afterwards.
++ */
++#define COREBOOT_TABLE_SIZE 0x10000
+ 
+ #endif
+-- 
+2.43.0
+
