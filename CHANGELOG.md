@@ -7,8 +7,10 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.6.2
 
-What ran on a machine for v1.6.2: nothing yet at rc1; the W541 and the
-M920x with the release candidates, as for v1.6.1.
+What ran on a machine for v1.6.2: rc1 on the W541 (MEM-06, the
+fingerprint switch, an S3 resume, 2026-11-09,
+[docs/tests/v1.6.1/w541-nri](docs/tests/v1.6.1/w541-nri/README.md));
+the M920x still to run.
 
 - **coreboot 26.09-607** (2026-11-09, from 26.09-517 of 2026-11-03): the
   pin moved by 90 upstream commits. The native RAM init of Haswell got
@@ -16,16 +18,18 @@ M920x with the release candidates, as for v1.6.1.
   patches 0008 and 0086 were rebased onto it, 0185 (the rank mapping
   fix) is upstream and leaves the series, the other 257 apply as they
   were; the initial round trip delta of the NRI is now 0 upstream
-  (CB:96893), so the round trip step of patch 0088 may have nothing left
-  to shorten on the W541 (to measure); the first boot of a v1.6.2 slot trains the memory once, as the
-  version of the training cache follows the NRI code. The read-only
+  (CB:96893); on a W541 the round trip step of patch 0088 still
+  shortens it, and ends at the 4 + 21 of v1.6.1 (MEM-06); the first
+  boot of a v1.6.2 slot trains the memory once, as the version of the
+  training cache follows the NRI code. The read-only
   interface was checked by hand: the vboot, TPM and cache-as-RAM code the
   slots share with the read-only part did not change
   ([configs/ro-interface.txt](configs/ro-interface.txt)).
 - **Fingerprint reader switch on the W541** (patch 0265): *Hardware* →
   *Expansion ports* → *Fingerprint reader*, off disables its USB port at
   every start and wake, as the camera switch. The port comes from the
-  Lenovo firmware's table; not tried, the W541 of the port has no reader.
+  Lenovo firmware's table; on a W541 without the reader the switch
+  touches that port alone (Bluetooth and the camera stay).
 
 ## v1.6.1
 
