@@ -1,0 +1,66 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 9 Nov 2026 20:00:00 +0100
+Subject: [PATCH] ShellPkg: Leave MrChromebox's startup changes out of the
+ Shell
+
+MrChromebox's commit 4373c4738 takes startup.nsh and the mapping table
+out of the Shell's start and prints a welcome banner instead. No board
+of ouroBIOS has the Shell in its payload (SHELL_TYPE NONE since v1.6.0),
+so their ROMs do not change. Revert the commit, so that Shell.c and
+Shell.uni are TianoCore's again: a build with the Shell starts as
+TianoCore's does, with the mapping table and startup.nsh after the wait
+of PcdShellDefaultDelay.
+---
+ ShellPkg/Application/Shell/Shell.c   | 18 ++++++++++++++----
+ ShellPkg/Application/Shell/Shell.uni |  1 -
+ 2 files changed, 14 insertions(+), 5 deletions(-)
+
+diff --git a/ShellPkg/Application/Shell/Shell.c b/ShellPkg/Application/Shell/Shell.c
+index d0a87c725632c96516eb2406a35f8308044b723a..e2dd95b3c47ea908455ccf305cabebbe9a8f4896 100644
+--- a/ShellPkg/Application/Shell/Shell.c
++++ b/ShellPkg/Application/Shell/Shell.c
+@@ -539,6 +539,14 @@ UefiMain (
+         );
+     }
+ 
++    //
++    // Display the mapping
++    //
++    if ((PcdGet8 (PcdShellSupportLevel) >= 2) && !ShellInfoObject.ShellInitSettings.BitUnion.Bits.NoMap) {
++      Status = RunCommand (L"map");
++      ASSERT_EFI_ERROR (Status);
++    }
++
+     //
+     // init all the built in alias'
+     //
+@@ -602,10 +610,12 @@ UefiMain (
+         ConInHandle = NULL;
+       }
+ 
+-      //
+-      // show welcome notice
+-      //
+-      ShellPrintHiiEx(-1, -1, NULL, STRING_TOKEN (STR_SHELL_WELCOME), ShellInfoObject.HiiHandle);
++      if (!EFI_ERROR (Status) && (PcdGet8 (PcdShellSupportLevel) >= 1)) {
++        //
++        // process the startup script or launch the called app.
++        //
++        Status = DoStartupScript (ShellInfoObject.ImageDevPath, ShellInfoObject.FileDevPath);
++      }
+ 
+       if (!ShellInfoObject.ShellInitSettings.BitUnion.Bits.Exit && !ShellCommandGetExit () && ((PcdGet8 (PcdShellSupportLevel) >= 3) || PcdGetBool (PcdShellForceConsole)) && !EFI_ERROR (Status) && !ShellInfoObject.ShellInitSettings.BitUnion.Bits.NoConsoleIn) {
+         //
+diff --git a/ShellPkg/Application/Shell/Shell.uni b/ShellPkg/Application/Shell/Shell.uni
+index ff16c401c392b07eacb1dc772ab87fdb7aa7c292..7dd0072601d0be6f23f37ef7162a4ef3e988fda5 100644
+--- a/ShellPkg/Application/Shell/Shell.uni
++++ b/ShellPkg/Application/Shell/Shell.uni
+@@ -50,4 +50,3 @@
+ 
+ #string STR_SHELL_IMAGE_NOT_APP       #language en-US "The image is not an application.\r\n"
+ 
+-#string STR_SHELL_WELCOME             #language en-US "\r\nWelcome to the UEFI Shell!\r\n\r\nIf you wound up here by mistake, just type 'exit' to return to the UEFI Options Menu.\r\n\r\n"
+-- 
+2.47.3
+

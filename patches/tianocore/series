@@ -12,7 +12,6 @@
 0009-MdeModulePkg-Improve-boot-descriptions-and-skip-dupl.patch
 0010-MdeModulePkg-SdMmcPciHcDxe-add-Bayhub-support.patch
 0011-MdeModulePkg-Usb-Keyboard.c-remove-Get-SetConfig-cal.patch
-0012-ShellPkg-disable-startup-script-mapping-print-show-w.patch
 0013-UefiPayloadPkg-Add-and-use-PlatformGopPolicy.patch
 0014-MdeModulePkg-UefiPayloadPkg-Improve-Device-Manager-p.patch
 0015-MdeModulePkg-Add-Logo-position-PCD-and-BGRT-support.patch

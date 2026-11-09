@@ -29,7 +29,7 @@ is here. None of it is a promise of a date.
 | [Card reader of the W541](#card-reader-of-the-w541) | W541 | the premise was wrong: the reader is an O2 Micro OZ777, which the payload drives already | none planned |
 | [TCC offset on the W541](#tcc-offset-on-the-w541) | W541 | done in v1.6.0 (patches 0220-0221): CPU-05 passed on a W541 on 2026-11-03 | none planned |
 | [Upstream changes not taken](#upstream-changes-not-taken) | W541 | the pin moved to 26.09-607 for v1.6.2: 0185 and 96893 upstream, 0008 and 0086 rebased; 95880 not for the W541; 95912 at Code-Review -2; the round trip of 0088 checked on a W541 with v1.6.2-rc1 (MEM-06, 2026-11-09): still 4 + 21 | the next pin |
-| [EDK II from TianoCore](#edk-ii-from-tianocore) | both | moved in v1.6.0: the payload of the ROMs is TianoCore's tag with the package [`edk2/OuroBiosPkg`](../edk2/README.md) and `patches/tianocore`, the same payload as MrChromebox's tree with `patches/edk2`; what is left is the carried series, 100 patches | the series shorter: the *drop* commits in the payload, each with its test, then the *package* ones into `OuroBiosPkg`, the *upstream* ones proposed; the *drop* ones already out of the payload when `patches/edk2` retires ([docs/edk2-migration.md](edk2-migration.md)) |
+| [EDK II from TianoCore](#edk-ii-from-tianocore) | both | moved in v1.6.0: the payload of the ROMs is TianoCore's tag with the package [`edk2/OuroBiosPkg`](../edk2/README.md) and `patches/tianocore`, the same payload as MrChromebox's tree with `patches/edk2`; what is left is the carried series, 100 patches | the series shorter: the *drop* commits decided after v1.6.2-rc1 (`d7597bb` and `4373c47` reverted by `edk2/0059` and `edk2/0060`, the others kept as carry or upstream); next the *package* ones into `OuroBiosPkg`, the *upstream* ones proposed ([docs/edk2-migration.md](edk2-migration.md)) |
 | [LVGL v10](#lvgl-v10) | both | not out yet (v9.6, in the setup from v1.6.0, is the last of v9); LvglPkg calls the setters of v9.6 in place of the flag functions that v10 removes (`lvglpkg/0021`) | the pin |
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
 | [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
@@ -842,7 +842,7 @@ SioBusDxe), `0007` (Ps2MouseDxe), `0019` (TcgDxe), `0021` (BaseTools,
 mainline: they go).
 MrChromebox's branch itself is `edk2-stable202608` and 100 commits of his:
 [docs/edk2-migration.md](edk2-migration.md) lists them, each with what it
-becomes (40 to the package, 23 carried, 17 to propose upstream, 18 left
+becomes (39 to the package, 28 carried, 18 to propose upstream, 13 left
 out, 2 already in TianoCore's `master`).
 
 The order, each step tested in the QEMU smoke and update tests before any
