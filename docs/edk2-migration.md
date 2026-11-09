@@ -40,13 +40,13 @@ since steps (b) and (c), made by `tools/edk2-import.py`: the patch of
 | | package | carry | upstream | drop | merged | total |
 |---|---|---|---|---|---|---|
 | Setup menu and the other screens of the firmware | 14 | 8 | 4 | 0 | 0 | 26 |
-| Boot manager and boot options | 4 | 3 | 0 | 1 | 0 | 8 |
+| Boot manager and boot options | 3 | 3 | 0 | 2 | 0 | 8 |
 | Capsule updates and the ESRT | 6 | 1 | 1 | 0 | 0 | 8 |
 | Secure Boot, TPM and crypto | 9 | 1 | 1 | 0 | 0 | 11 |
 | Memory protection | 1 | 6 | 0 | 2 | 0 | 9 |
 | Drivers for storage, USB, graphics and the console | 2 | 3 | 7 | 9 | 1 | 22 |
 | Platform plumbing for coreboot | 4 | 6 | 5 | 0 | 1 | 16 |
-| **all** | 40 | 28 | 18 | 12 | 2 | 100 |
+| **all** | 39 | 28 | 18 | 13 | 2 | 100 |
 
 ## Step (a): `edk2-stable202608` in QEMU
 
@@ -74,8 +74,8 @@ Three more things the runs show:
 
 - the Shell of TianoCore waits 5 s for `startup.nsh`
   (`PcdShellDefaultDelay`) and reads a key each second; MrChromebox's
-  `4373c47` takes the script out, and in the package the PCD at 0 takes
-  out the wait;
+  `4373c47` took the script out; the boards' payload has no Shell, and
+  `edk2/0060` reverts the commit;
 - `AcpiPlatform.efi` does not start (`EFI_ABORTED`): it installs the ACPI
   tables of a firmware volume of the payload, which has none, since the
   tables are coreboot's. The same driver is in MrChromebox's branch;
@@ -228,7 +228,9 @@ The other *drop* ones, as looked at for v1.6.0:
   written against it. Done after v1.6.2-rc1: `d7597bb` (HS400 enhanced strobe, in the
   `SdMmcPciHcDxe` that drives the SD reader of the W541), reverted by
   `edk2/0059`, the commit and its revert out of `patches/tianocore`
-  together (`REVERTED`). `b8d0242` stays, moved to
+  together (`REVERTED`); the same for `4373c47` (the start of the UEFI
+  Shell, which the boards' payload does not have), reverted by
+  `edk2/0060`. `b8d0242` stays, moved to
   *upstream*: besides the UFS fix, which is not built, it guards
   `BmEnumerateBootOptions()` against a block device without a device
   path, which every board wants. `0a270f8` stays too, moved to *carry*: on the
@@ -283,7 +285,7 @@ The other *drop* ones, as looked at for v1.6.0:
 |---|---|---|---|---|
 | `d8205d0` | MdeModulePkg/UefiPayloadPkg: Add PrioritizeInternal boot device support | carry | PRIORITIZE_INTERNAL | `tianocore/0005`, package |
 | `4a4c3a1` | MdeModulePkg: Improve boot descriptions and skip duplicate eMMC | carry |  | `tianocore/0009` |
-| `4373c47` | ShellPkg: disable startup script, mapping print; show welcome banner | package | the 5 s of the Shell for `startup.nsh`: `PcdShellDefaultDelay` 0 in the package's .dsc ([step (a)](#step-a-edk2-stable202608-in-qemu)); the mapping and the banner are cosmetic | `tianocore/0012` |
+| `4373c47` | ShellPkg: disable startup script, mapping print; show welcome banner | drop | the boards' payload has no Shell (`SHELL_TYPE NONE` from v1.6.0), so nothing of it is in their ROMs; a build with the Shell starts as TianoCore's | left out (`edk2/0060`) |
 | `6676ad7` | UefiPayloadPkg/MdeModulePkg: Platform setup and boot defaults | package | PCD defaults of the package's .dsc | `tianocore/0016`, package |
 | `0ec988f` | UefiPayloadPkg: Add network and PXE boot support | drop | the UEFI network stack: the boards boot from the network with iPXE's own driver, so NetworkPkg's PXE driver is not in the payload (not exposed to CVE-2026-97631, fixed on TianoCore's master by `560ed9b` on 2026-10-15, after `edk2-stable202608`) | package, binaries left out |
 | `9c5e2da` | PlatformBootManagerLib: Refactor BdsGetShellFvDevicePath | package |  | package |

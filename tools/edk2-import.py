@@ -91,6 +91,7 @@ PACKAGE_MOVED = ("UefiPayloadPkg/Library/PlatformBootManagerLib",
 # file; che si annullino lo dice il confronto finale di R con il tag e la serie
 REVERTED = {
     "d7597bba915488d8a32a5569d0b786297c986c46": "0059",  # HS400 Enhanced Strobe, tianocore/0062
+    "4373c4738530b0b56e1c34689fb9112521c9b52c": "0060",  # Shell startup, tianocore/0012
 }
 CANCELLED = (
     ("88b95baf0762129be91e90538f28d6dd2cef75ce",    # AmdPcoSdhciDxe, tianocore/0022
