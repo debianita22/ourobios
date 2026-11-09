@@ -84,8 +84,8 @@ is not in `cbmem`). MEM-06 PASS on rc1.
 This W541 has no reader, so the switch could only be checked for what it
 touches: *Fingerprint reader* off, `USB2PDO` reads `0x00000100` (bit 8
 alone), the Bluetooth module (xHCI USB2 port 11) and the camera (12) and
-the two EHCI hubs stay, nothing else disappears from `lsusb`; on again:
-to confirm at the owner's second setup visit. The port itself is empty on this unit, as the Lenovo table
+the two EHCI hubs stay, nothing else disappears from `lsusb`; on again,
+`0x00000000`, the Bluetooth module and the camera there. The port itself is empty on this unit, as the Lenovo table
 says for a unit without the reader; whether the reader of another W541
 sits on it is still to see there.
 
