@@ -231,10 +231,13 @@ The other *drop* ones, as looked at for v1.6.0:
   together (`REVERTED`). `b8d0242` stays, moved to
   *upstream*: besides the UFS fix, which is not built, it guards
   `BmEnumerateBootOptions()` against a block device without a device
-  path, which every board wants. Still to do, each a change the owner
-  sees and decides: `1287861` (the Secure Boot pages of the setup);
-  `6cf55e1` (the MTRRs); `0a270f8` (the aperture of the PCI root bridge,
-  PCI-09 of `tools/hw-report.py`).
+  path, which every board wants. `0a270f8` stays too, moved to *carry*: on the
+  M920x it is what keeps BAR 0 of the SPI controller (0xfe010000, above
+  the ECAM window) out of the root bridge aperture, which otherwise would
+  grow over the reserved ECAM and fail with the whole PCI bus (PCI-09 of
+  `tools/hw-report.py` shows that BAR as the one left out). Still to do,
+  each a change the owner sees and decides: `1287861` (the Secure Boot
+  pages of the setup); `6cf55e1` (the MTRRs).
 
 ## Setup menu and the other screens of the firmware
 
@@ -373,7 +376,7 @@ with the stable tag that takes the new OpenSSL.
 | `7f7b9c7` | UefiPayloadPkg: drop Platform override config | package |  | package |
 | `9701a6f` | MdeModulePkg/FaultTolerantWrite: Don't check for block alignment | carry | SMMSTORE blocks; in [step (a)](#step-a-edk2-stable202608-in-qemu) FTW sets up its work space on the 512 KiB SMMSTORE without it, a fault tolerant write (a reclaim of the store) is still to be seen | `tianocore/0017` |
 | `2deb904` | UefiPayloadPkg: Check more ACPI tables | carry |  | `tianocore/0020` |
-| `0a270f8` | UefiPayloadPkg/Library/PciHostBridgeLib: Add warning for coreboot/EDK2 incompability | drop | not only a warning: when the root bridge aperture would grow over reserved memory to take a memory BAR of bus 0, the BAR stays out of it, and the payload's drivers then cannot reach that device. From v1.6.0 the ECAM window is reserved memory (`edk2/0052`), but coreboot keeps every 32-bit BAR of both boards below it (`DOMAIN_RESOURCE_32BIT_LIMIT` is the ECAM base, 0xf0000000, on Haswell, and 0xe0000000, where the ECAM of the system agent starts, on Cannon Lake), so the check never leaves one out here; `tools/hw-report.py` PCI-09 replays it on the machine. Dropping it changes the payload's code, with no effect on these boards | `tianocore/0024` |
+| `0a270f8` | UefiPayloadPkg/Library/PciHostBridgeLib: Add warning for coreboot/EDK2 incompability | carry | not only a warning: when the root bridge aperture would grow over reserved memory to take a memory BAR of bus 0, the BAR stays out of it, and the payload's drivers then cannot reach that device. Needed on the M920x (checked after v1.6.2-rc1, PCI-09 of `tools/hw-report.py`): BAR 0 of the SPI controller `00:1f.5`, fixed at 0xfe010000, sits above the ECAM window (0xe0000000-0xefffffff, reserved memory from v1.6.0, `edk2/0052`); without the check the aperture would grow from 0xbecb9000 over the ECAM to 0xfe010fff, and `PciHostBridgeDxe` would fail on the reserved range, the whole PCI bus with it. The W541 has no such BAR. Kept; for upstream, the check as a fix of the aperture rather than a warning | `tianocore/0024` |
 | `4b57ca5` | UefiPayloadPkg: Set PcdCpuFeaturesInitOnS3Resume to FALSE for coreboot | package | a PCD of the .dsc | package |
 | `252f6d2` | UefiPayloadPkg: Extend SmmStoreLib for 64-bit MMIO store | upstream | SmmStoreLib | `tianocore/0028` |
 | `1c39058` | UefiPayloadPkg/Library/CbParseLib: Populate root bridges info from HOB | upstream | CbParseLib | `tianocore/0035` |
