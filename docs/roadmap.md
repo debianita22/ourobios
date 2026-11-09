@@ -770,7 +770,7 @@ The M920x has *TCC activation offset* from v1.4.0 (patch 0177).
   rt_iocomp step could have had nothing to shorten. Checked on a W541
   with v1.6.2-rc1 (MEM-06, 2026-11-09): the step still shortens 3 and 2
   qclk after the receive enable training, the round trip still ends at
-  44/45 with 4 + 21 ([docs/tests/v1.6.1/w541-nri](tests/v1.6.1/w541-nri/README.md)).
+  44/45 with 4 + 21 ([docs/tests/v1.6.2/w541-nri](tests/v1.6.2/w541-nri/README.md)).
 - [95880](https://review.coreboot.org/c/coreboot/+/95880), no master
   wireless switch bit on newer H8 ECs (`no_wireless_switch`), and
   [95912](https://review.coreboot.org/c/coreboot/+/95912), the tablet

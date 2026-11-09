@@ -10,11 +10,7 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 What ran on a machine for v1.6.2: rc1 on the W541 (MEM-06, the
 fingerprint switch, an S3 resume) and the release itself as a capsule
 from rc1 (UPD-01/02, an S3 resume, 2026-11-09,
-[docs/tests/v1.6.1/w541-nri](docs/tests/v1.6.1/w541-nri/README.md));
-What ran on a machine for v1.6.2: rc1 on the W541 (MEM-06, the
-fingerprint switch, an S3 resume) and the release itself as a capsule
-from rc1 (UPD-01/02, an S3 resume, 2026-11-09,
-[docs/tests/v1.6.1/w541-nri](docs/tests/v1.6.1/w541-nri/README.md));
+[docs/tests/v1.6.2/w541-nri](docs/tests/v1.6.2/w541-nri/README.md));
 the release on the M920x, as a capsule from v1.6.1 with both protections
 on (2026-11-09, [docs/tests/v1.6.2/m920x-fsp](docs/tests/v1.6.2/m920x-fsp/README.md)).
 
