@@ -1,0 +1,7 @@
+contenuto:  RO      ouroBIOS-ci-203-045bf06-m920x-fsp
+            slot A  ouroBIOS-v1.6.3-rc1-m920x-fsp
+            slot B  ouroBIOS-v1.6.2-m920x-fsp
+RW_NVRAM:   164 record su 4096
+prossimo:   slot A
+corrente:   slot A, confermato
+precedente: slot A, confermato

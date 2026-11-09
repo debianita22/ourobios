@@ -1,0 +1,19 @@
+b2 2026-11-09T22:39:15+01:00 uptime=54.55 bios=ouroBIOS-v1.6.3-rc1-m920x-fsp 0x7e=[0xa0 0xa0 0xa0] wdt=0x00002000 | Firmware watchdog: off (OC_WDT_CTL 0x00002000);Firmware watchdog: at the payload, OC_WDT_CTL 0x00002000;
+b3 2026-11-09T22:42:13+01:00 uptime=64.14 bios=ouroBIOS-v1.6.3-rc1-m920x-fsp 0x7e=[0xa0 0xa0 0xa0] wdt=0x00002000 | Firmware watchdog: off (OC_WDT_CTL 0x00002000);Firmware watchdog: at the payload, OC_WDT_CTL 0x00002000;
+b4 2026-11-09T22:43:39+01:00 uptime=51.47 bios=ouroBIOS-v1.6.3-rc1-m920x-fsp 0x7e=[0xa0 0xa0 0xa0] wdt=0x00002000 | Firmware watchdog: off (OC_WDT_CTL 0x00002000);Firmware watchdog: at the payload, OC_WDT_CTL 0x00002000;
+b5 2026-11-09T22:45:11+01:00 uptime=51.85 bios=ouroBIOS-v1.6.3-rc1-m920x-fsp 0x7e=[0xa0 0xa0 0xa0] wdt=0x00002000 | Firmware watchdog: off (OC_WDT_CTL 0x00002000);Firmware watchdog: at the payload, OC_WDT_CTL 0x00002000;
+b6 2026-11-09T22:46:45+01:00 uptime=52.98 bios=ouroBIOS-v1.6.3-rc1-m920x-fsp 0x7e=[0xa0 0xa0 0xa0] wdt=0x00002000 | Firmware watchdog: off (OC_WDT_CTL 0x00002000);Firmware watchdog: at the payload, OC_WDT_CTL 0x00002000;
+               Local time: Mon 2026-11-09 22:46:48 CET
+                 RTC time: Mon 2026-11-09 21:46:48
+System clock synchronized: no
+          RTC in local TZ: no
+b7-after-55 2026-11-09T22:48:19+01:00 uptime=49.74 bios=ouroBIOS-v1.6.3-rc1-m920x-fsp 0x7e=[0xa0 0xa0 0xa0] wdt=0x00002000 | Firmware watchdog: off (OC_WDT_CTL 0x00002000);Firmware watchdog: at the payload, OC_WDT_CTL 0x00002000;
+               Local time: Mon 2026-11-09 22:48:39 CET
+                 RTC time: Mon 2026-11-09 21:48:39
+System clock synchronized: yes
+System time     : 0.000001351 seconds fast of NTP time
+Leap status     : Normal
+b8-after-a3 2026-11-09T22:50:26+01:00 uptime=58.31 bios=ouroBIOS-v1.6.3-rc1-m920x-fsp 0x7e=[0xa0 0xa0 0xa0] wdt=0x00002000 | Firmware watchdog: off (OC_WDT_CTL 0x00002000);Firmware watchdog: at the payload, OC_WDT_CTL 0x00002000;
+               Local time: Mon 2026-11-09 22:50:41 CET
+                 RTC time: Mon 2026-11-09 21:50:41
+System clock synchronized: yes

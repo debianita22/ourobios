@@ -1,0 +1,4 @@
+times s: 0.533 0.532 0.531 0.532 0.532 0.532 0.534 0.532 0.532 0.532 0.536 0.534 0.534 0.541 0.536 0.535 0.533 0.533 0.535 0.536
+median 0.533 s, worst 0.541 s, best 0.531 s
+Timeout: 3 seconds
+context, efibootmgr -q without a write (reads only): median 0.002 s
