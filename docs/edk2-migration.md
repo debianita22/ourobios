@@ -39,14 +39,14 @@ since steps (b) and (c), made by `tools/edk2-import.py`: the patch of
 
 | | package | carry | upstream | drop | merged | total |
 |---|---|---|---|---|---|---|
-| Setup menu and the other screens of the firmware | 14 | 7 | 4 | 1 | 0 | 26 |
+| Setup menu and the other screens of the firmware | 14 | 8 | 4 | 0 | 0 | 26 |
 | Boot manager and boot options | 4 | 3 | 0 | 1 | 0 | 8 |
 | Capsule updates and the ESRT | 6 | 1 | 1 | 0 | 0 | 8 |
 | Secure Boot, TPM and crypto | 9 | 1 | 1 | 0 | 0 | 11 |
 | Memory protection | 1 | 6 | 0 | 2 | 0 | 9 |
-| Drivers for storage, USB, graphics and the console | 2 | 3 | 6 | 10 | 1 | 22 |
-| Platform plumbing for coreboot | 4 | 4 | 5 | 2 | 1 | 16 |
-| **all** | 40 | 25 | 17 | 16 | 2 | 100 |
+| Drivers for storage, USB, graphics and the console | 2 | 3 | 7 | 9 | 1 | 22 |
+| Platform plumbing for coreboot | 4 | 6 | 5 | 0 | 1 | 16 |
+| **all** | 40 | 28 | 18 | 12 | 2 | 100 |
 
 ## Step (a): `edk2-stable202608` in QEMU
 
@@ -242,8 +242,9 @@ The other *drop* ones, as looked at for v1.6.0:
   driver changes the cache type of a range, and `MpInitLib` copies them to
   every AP. With the PCD the MTRRs the OS finds are the ones coreboot set
   (on the M920x the write-combining framebuffer at 0xc0000000 among them);
-  without it they would be the payload's. Still to do, a change the owner
-  sees and decides: `1287861` (the Secure Boot pages of the setup).
+  without it they would be the payload's. `1287861` (the Secure Boot
+  pages of the setup) stays, as *carry*, by the owner's choice. That ends
+  the commits left to the owner's decision.
 
 ## Setup menu and the other screens of the firmware
 
@@ -265,7 +266,7 @@ The other *drop* ones, as looked at for v1.6.0:
 | `9b3274a` | MdeModulePkg/SetupBrowserDxe: Sync ordered lists before action callback | upstream | a fix of SetupBrowserDxe | `tianocore/0036` |
 | `1fb7d11` | UefiPayloadPkg/PlatformBootManager: Clear boot prompt on ENTER | package | as 435706b | package |
 | `f168fd0` | MdeModulePkg/SecurityPkg: Use HII popup for setup dialogs | carry | the HII popups the graphical setup draws (also edk2/0006) | `tianocore/0041` |
-| `1287861` | SecurityPkg/SecureBootConfigDxe: Overhaul Secure Boot setup UI | drop | the standard SecureBootConfigDxe pages instead, as the project's rules ask; or carry, if the LVGL renderer needs the new layout | `tianocore/0042` |
+| `1287861` | SecurityPkg/SecureBootConfigDxe: Overhaul Secure Boot setup UI | carry | kept by the owner after v1.6.2-rc1: the reworked Secure Boot pages stay instead of the standard SecureBootConfigDxe ones | `tianocore/0042` |
 | `ad284e9` | MdeModulePkg/FileExplorerLib: Add "Up one level" navigation | upstream |  | `tianocore/0043` |
 | `17671bf` | UefiPayloadPkg: Add LVGL display engine support | package | with LvglPkg: the *System Preferences* look | `tianocore/0046`, package, LvglPkg |
 | `dfb8d33` | UefiPayloadPkg: Add NVRAM-controlled bootsplash with Setup UI | package | BootSplashConfigDxe | `tianocore/0058`, package |
