@@ -83,6 +83,8 @@ from the lists of `docs/test-v1.6.3-w541.md` and
   stayed off (seen once the card reader no longer kept the package in
   PC2). After S3 the ACPI wake method turns the PWM off when the panel is
   not powered, but under macOS, which keeps the firmware's PWM.
+  On the W541 with rc4: the PWM off after each resume, no warning, and
+  the backlight back at its level with the screen on.
 - **`tools/hw-report.py`: VB-02 recognizes the running slot on the
   W541**: it compared the SMBIOS version, which the W541 writes with the
   Lenovo ID in front (`CBET4000 ouroBIOS-...`), against the build names

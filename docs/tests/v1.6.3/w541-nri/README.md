@@ -144,6 +144,19 @@ enable bit cleared by hand after a resume: no warning in 90 s, and with
 the screen on again i915 enabled the PWM at its level. Patch 0274 does
 that in `_WAK`, but under macOS.
 
+## v1.6.3-rc4: the backlight PWM after S3
+
+rc4 (`a91b184`, patch 0274) as a capsule from rc3, slot A (rc3 stays in
+slot B), 2026-11-10 ([files](rc4/)). Right after each of three resumes
+with the screen off, `BLC_PWM_PCH_CTL1` reads `0x40000000`: the PWM off,
+the 50% duty of coreboot kept in `CTL2`, the panel unpowered
+(`PCH_PP_CONTROL` `0x00000008`). No *PCH PWM1 enabled* in the whole
+boot, 90 s with the screen off after the last resume included; with
+the screen on again i915 enabled the PWM (`0xc0000000`) at its level.
+The card reader's LTR stayed off, the package in PC7 at 1.2-1.3 W after
+the boot and after each resume. [The report](rc4/hw-w541-nri-rc4.md):
+21 PASS, BOOT-04 and PCI-01 PASS, only ME-01 and EC-01 WARN (known).
+
 ## A bug of hw-report.py
 
 Fixed on `next` (2026-11-10). VB-02 said *CBET4000 ouroBIOS-v1.6.3-rc1-nri non e' in nessuno slot

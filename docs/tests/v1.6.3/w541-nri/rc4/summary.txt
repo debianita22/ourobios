@@ -1,0 +1,26 @@
+# 2026-11-10T15:32:33+01:00 versione:  v1.6.3-rc4, minima per una capsula v1.3.9
+nov 10 14:51:40 cachyos kernel: ACPI: \_SB_: platform _OSC: OS support mask [006e7eff]
+nov 10 14:51:40 cachyos kernel: acpi PNP0A08:00: _OSC: OS supports [ExtendedConfig ASPM ClockPM Segments MSI EDR HPX-Type3]
+nov 10 14:51:40 cachyos kernel: acpi PNP0A08:00: _OSC: platform does not support [LTR]
+nov 10 14:51:40 cachyos kernel: acpi PNP0A08:00: _OSC: OS now controls [PCIeHotplug SHPCHotplug PME AER PCIeCapability DPC]
+[INFO ]  PCI: 00:01:00.0: Enabled LTR
+[INFO ]  PCI: 00:01:00.0: Programmed LTR max latencies
+[INFO ]  PCI: 00:02:00.0: Enabled LTR
+[INFO ]  PCI: 00:02:00.0: Programmed LTR max latencies
+[INFO ]  Card reader: LTR off on PCI: 00:01:00.0
+== LTR enable (DevCtl2) per device
+00:1c.0 DevCtl2=0400 LTR=1
+01:00.0 DevCtl2=0000 LTR=0
+00:1c.1 DevCtl2=0400 LTR=1
+02:00.0 DevCtl2=0405 LTR=1
+== panel: On
+boot: package: PC2 3.0%  PC3 1.7%  PC6 0.3%  PC7 88.0% package 1.18 W panel=Off
+resume 1: PCH_CTL1=40000000 CTL2=12ba095d PP_CONTROL=00000008
+after S3 1: package: PC2 3.7%  PC3 1.9%  PC6 0.4%  PC7 86.9% package 1.25 W panel=Off reader LTR=0
+resume 2: PCH_CTL1=40000000 CTL2=12ba095d PP_CONTROL=00000008
+after S3 2: package: PC2 3.5%  PC3 1.9%  PC6 0.6%  PC7 86.1% package 1.31 W panel=Off reader LTR=0
+resume 3: PCH_CTL1=40000000 CTL2=12ba095d PP_CONTROL=00000008
+after S3 3: package: PC2 3.7%  PC3 1.8%  PC6 0.3%  PC7 87.1% package 1.20 W panel=Off reader LTR=0
+PWM warnings in the last resume + 90 s with the screen off: 0; this boot: 0
+screen on: PCH_CTL1=c0000000 CTL2=12ba005e PP_STATUS=80000008
+suspend fail=0
