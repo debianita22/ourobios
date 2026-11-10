@@ -136,6 +136,28 @@ bit, which OPT-06 showed the OS can set.
 | S3-01 | PASS | one resume after the test, PR0 and PR1 back |
 | OPT-05 | not run, needs the owner | the real case, a CMOS clear: the options must be reset once |
 
+## rc3
+
+v1.6.3-rc3 (`next` 72cb533: patches 0271-0272 for the W541's card
+reader, VB-02 of `hw-report.py`; not 0273), 2026-11-10. First back to
+v1.6.2 (`update.py rollback`, slot B), so that the release stays the
+fallback; then the capsule of rc3 from v1.6.2, slot A over rc2, both
+protections on.
+
+| ID | Result | Notes |
+|---|---|---|
+| UPD-05, UPD-02 | PASS | v1.6.2 from slot B after the rollback; rc3 from slot A, *ultimo: v1.6.3-rc3, riuscito* |
+| — | PASS | report 22 PASS at the first boot, 25 with a copy of the flash after a reboot ([rc3/hw-rc3-2.md](rc3/hw-rc3-2.md)); 10.51 s to the payload, FspMemoryInit 0.23 s; the 36 options those of the baseline |
+| VB-02 | PASS | the corrected comparison: next A, current A confirmed, previous A confirmed |
+| TBL-01 | PASS | `COREBOOT` 0x10000, *coreboot table: 18360 bytes* |
+| CONF-02, CONF-03 | PASS | every ACPI table byte for byte that of rc1; fwts 43 passed, 0 failed |
+| FLASH-01, FLASH-06, WDT-01 | PASS | PR0 and PR1, the option lock armed, the watchdog off (`0x00002000`), byte 0x7e `0xa0`, bit 2 of `GEN_PMCON_B` clear |
+| VAR-01 | INFO | median 0.584 s, 6 to 8 SMIs a write, 84 ms an SMI ([rc3/var-01-rc3.txt](rc3/var-01-rc3.txt)): the reference for patch 0273, which rc3 does not have |
+| S3-01 | PASS | one resume, PR0 and PR1 back |
+
+Nothing of rc3's own changes runs on the M920x (they are the W541's);
+the run is a regression check, and it found none.
+
 ## VAR-01: where the time of a write goes
 
 On rc2, 2026-11-10: `MSR_SMI_COUNT` (0x34) read around each
