@@ -112,11 +112,15 @@ again. The boot-time helpers of the run were removed.
 
 ## The power-offs
 
-The cold boot: about to run at 2026-11-10 07:03 (`rtcwake -m off -s 180`, whether the
-RTC alarm starts this board from off, never tried before). If this line
-is still here, the machine did not start by itself and waits for the
-owner's button. NET-02 is not tried after it: no cable on the Ethernet
-port.
+The cold boot: `rtcwake -m off -s 180` at 07:16:54 on 2026-11-10; the
+machine was off at 07:17:01 and the RTC alarm, set for 07:19:56, started
+it from off (the kernel at 07:20:15). The first time this was tried on
+the board, and the net that NET-02 needs. [Its report](hw-w541-nri-v1.6.2-cold.md):
+20 PASS, ME-01 and EC-01 WARN (known), IDLE-01 INFO (the greeter's panel
+on), S3-01 INFO and ELOG-01 SKIP (no resume, no copy of the flash);
+BOOT-02 1.50 s from the reset to the payload, the RAM init from the cache
+(0.11 s), FLASH-01 PASS. NET-02 was not tried after it: no cable on the
+Ethernet port.
 
 ## Not run here
 
