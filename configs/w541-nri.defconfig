@@ -61,6 +61,9 @@ CONFIG_HASWELL_NRI_ROUND_TRIP=y
 # valore del registro provato con una scrittura e rilettura su ogni rank, e un
 # canale tiene quello che aveva se la finestra non e' misurata bene (patch 0280)
 CONFIG_HASWELL_NRI_WRITE_VREF=y
+# il Vref dei comandi dei DIMM (uno per i due canali) centrato allo stesso modo,
+# con il test del training dei comandi e un JEDEC init a ogni valore (patch 0290)
+CONFIG_HASWELL_NRI_COMMAND_VREF=y
 # i profili XMP dei DIMM come opzione (Hardware -> Memory), spenta di default:
 # con il profilo, i timing e il clock sono quelli del profilo, e uno che non
 # porta al payload due volte di fila viene lasciato da solo (patch 0275-0279)

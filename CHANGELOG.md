@@ -43,10 +43,30 @@ modules (2026-11-10,
   narrower than 8 steps, keeps what it had, and a training redone after
   a failed memory test does not run the step. `sudo cbmem -1 | grep
   'WRV:'` on the boot that trained has the range, which is the write
-  voltage margin of the machine. **Not tried on a machine**: MEM-14 of
-  [docs/testing.md](docs/testing.md). The training boot takes longer (as
-  many tests as the read voltage centering runs; not measured yet); the
-  boots from the saved training do not change.
+  voltage margin of the machine. On the W541 with rc1 (MEM-14): 3 and
+  -1 on the two channels, 4 and 1 at a second training, in eyes 32 to
+  39 steps wide; the same after a reboot, a cold boot and a resume;
+  the memory test and 30 minutes of `stress-ng` clean. A boot that
+  trains takes 0.98 s in the RAM init (0.83 s before); the boots from
+  the saved training do not change. From rc2 a move of the reference of
+  more than one step waits for the circuit (rc1 logged *Vref circuit N
+  failed to converge* once per channel, harmless).
+- **W541 (`nri`): the command Vref of the memory modules is centred**
+  (patch 0290), the second of those steps: the reference of the
+  command, address and control inputs, one for both channels, which
+  `mrc.bin` leaves 3 steps below the middle. After the command
+  training, every other value is tried with a JEDEC init and the test
+  of that training on every rank, and the reference gets the centre of
+  the values that pass, unless their range is not closed on both
+  sides, is narrower than 20 steps, or the test does not pass at the
+  centre with the reference 8 steps to each side. `sudo cbmem -1 |
+  grep 'CMDV:'` has the range. **Not tried on a machine**: MEM-15 of
+  [docs/testing.md](docs/testing.md).
+- **W541 (`nri`): the lines about an XMP profile are in the log of a
+  boot that trains** (patch 0278, from rc2): such a boot overflows the
+  console of romstage and loses its start, with the lines that say a
+  profile was asked for, refused or given up. They are said again once
+  the console is in CBMEM, as a module left out already was.
 - **XMP 1.3 profiles decoded exactly** (patch 0275): the fine offsets
   of a profile were not read, so a DDR3-1866 profile gave a cycle time
   of 1.125 ns, one standard speed lower, and the times of a profile

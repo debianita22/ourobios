@@ -108,11 +108,46 @@ sudo python3 tools/ddr-report.py | grep VREF_ADJUST   # vref_dq_ch0_ctrl, vref_d
 ```
 
 In one dimension, at the write timing already trained: `mrc.bin` goes on
-to centre timing and voltage together. **Not tried on a machine yet**:
-what it ends at on the W541, against the +3 and +2 of `mrc.bin`
-([On the W541](#on-the-w541)), and how long it adds to a training boot
-(one write and read test per rank for each of 109 values, as many as
-the read voltage centering runs) are for MEM-14 to say.
+to centre timing and voltage together. On the W541 with v1.7.0-rc1
+(MEM-14, [docs/tests/v1.7.0/w541-nri](tests/v1.7.0/w541-nri/README.md)):
+
+| Training | Channel 0 | Channel 1 |
+|---|---|---|
+| the first | eye -16 to 23, 39 steps: Vref 3 | eye -17 to 15, 32 steps: Vref -1 |
+| a second | eye -15 to 23, 38 steps: Vref 4 | eye -17 to 19, 36 steps: Vref 1 |
+| `mrc.bin` | +3 | +2 |
+
+The references are the same after a reboot, a cold boot and a resume
+from S3, the memory test passes and 30 minutes of `stress-ng --vm
+--verify` find nothing. With the reference at 0, where it was, the
+nearest edge of the eye was 16 and 15 steps away; at the centre it is 19
+and 16: the step moves little on this machine, and what it adds is the
+measure. The RAM init of a boot that trains takes 0.98 s with it (0.83 s
+with v1.6.0 on the same machine), 0.11 s from the saved training as
+before. rc1 logged *Vref circuit N failed to converge* once per channel,
+at the move from 0 to -54: a move of more than one step takes the
+circuit longer than the 50 µs upstream gives it, so from rc2 such a move
+waits for its done bit for up to 10 ms (`set_dimm_vref()`).
+
+And **patch 0290**, the command Vref centred the same way, the second of
+the missing steps. The command, address and control inputs of the
+modules have one reference for both channels, which the NRI also left
+in the middle of its range; the command training finds its timings with
+that reference 8 steps to each side, wherever in its eye it is. After
+that training, the step sets the reference to every other value of its
+range, runs a JEDEC init (a module that took a command for another one
+is in no known state) and the test of the command training on every
+rank, and leaves the reference at the centre of the values at which both
+channels pass. It stays as it was unless the passing range holds it,
+ends within the range on both sides and is at least 20 steps wide, and
+the test passes at the centre with the reference 8 steps to each side,
+as the timings were found. A training redone after a failure does not
+run it. `mrc.bin` ends at -3. **Not tried on a machine yet** (MEM-15):
+
+```sh
+sudo cbmem -1 | grep 'CMDV:'    # on the boot that trained
+sudo python3 tools/ddr-report.py | grep VREF_ADJUST   # vref_ca_ctrl
+```
 
 And, for both variants, **patch 0187**: SMBIOS (type 17) takes the size
 and ranks of each slot from the field of the memory controller that
@@ -127,9 +162,9 @@ which widen the margins and lower the power of the memory interface; none
 of them is needed to boot. On the W541, `mrc.bin` leaves the results of
 each of them in the registers:
 
-- timing and voltage centering together (2D), and the centering of the
-  command Vref of the DIMMs (the write Vref is centred from v1.7.0, patch
-  0280, in one dimension);
+- timing and voltage centering together (2D): the write and the command
+  Vref of the DIMMs are centred from v1.7.0 (patches 0280 and 0290), each
+  in one dimension;
 - power training: read ODT, drive strength, transmit and receive
   equalisation, receive bias, ODT and sense amplifier windows per byte (at
   rest the two variants draw the same, as far as the battery reading can
@@ -187,7 +222,7 @@ The registers after `mrc.bin` (v1.3.9-rc1) and after the NRI (rc3), from
 | tXP (power down exit) | 6 | 5, the JEDEC minimum |
 | Round trip, channel 0 / 1 (qclk) | 44 / 45 | 44 / 45; 49 / 49 without patch 0088 |
 | IO latency + rt_iocomp | 4 + 21 | 4 + 21; 7 / 6 + 23 without patch 0088 |
-| Write Vref channel 0 / 1, command Vref | +3 / +2, -3 | 0, 0 (before patch 0280, which centres the write Vref: not measured yet) |
+| Write Vref channel 0 / 1, command Vref | +3 / +2, -3 | 0, 0; from v1.7.0-rc1 the write Vref is trained, 3 / -1 and 4 / 1 in two trainings (patch 0280); the command Vref from rc2 (patch 0290), not measured yet |
 | Transmit equalisation | 51-56 per byte | 59 |
 | Read ODT offsets, drive offsets per byte | -6..+1, -3..+3 | 0, 0 |
 | Per bit deskew, read and write | trained | none |
@@ -354,7 +389,10 @@ firmware.
   `cbmem -c` reports *Pre-CBMEM romstage console overflowed* and keeps the
   last 16 KiB: on the W541 from the receive enable training on (the eyes,
   the command training, the round trip, the memory test), not the SPD and
-  timing part.
+  timing part. What must not be lost is said again once the console is in
+  CBMEM: a DIMM left out (patch 0188) and, from v1.7.0-rc2, what was
+  decided about an XMP profile (patch 0278; rc1 lost those lines on the
+  boots that trained).
 - S3 resume: tried on the W541 with v1.3.9-rc2 and rc3 (suspend, wake,
   session intact). A report from 2025, with the NRI of that time, had a W541 reboot
   instead of resuming ([coreboot ticket 461](https://ticket.coreboot.org/issues/461));
