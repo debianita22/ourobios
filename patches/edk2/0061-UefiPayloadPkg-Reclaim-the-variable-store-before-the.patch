@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 11 Nov 2026 00:30:00 +0100
+Subject: [PATCH] UefiPayloadPkg: Reclaim the variable store before the option
+ lock
+
+SMMSTORE_OPTION_LOCK, armed at ReadyToBoot, refuses a write of the fault
+tolerant write blocks once armed (the restart of a pending one would let
+the store be rewritten with a protected option off). A reclaim of the
+variable store uses those blocks, so it must run before the lock is
+armed. PcdReclaimVariableSpaceAtEndOfDxe moves the reclaim from
+ReadyToBoot to EndOfDxe, which is before it; a runtime reclaim, when the
+store is full, is refused and the variable write fails until the next
+boot, which reclaims again.
+
+---
+ UefiPayloadPkg/UefiPayloadPkg.dsc | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
+--- a/UefiPayloadPkg/UefiPayloadPkg.dsc
++++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
+@@ -811,6 +811,7 @@
+   gEfiMdeModulePkgTokenSpaceGuid.PcdMaxVariableSize|0x8000
+   gEfiMdeModulePkgTokenSpaceGuid.PcdMaxHardwareErrorVariableSize|0x8000
+   gEfiMdeModulePkgTokenSpaceGuid.PcdVariableStoreSize|0x10000
++  gEfiMdeModulePkgTokenSpaceGuid.PcdReclaimVariableSpaceAtEndOfDxe|TRUE
+ !if $(VARIABLE_SUPPORT) == "EMU"
+   gEfiMdeModulePkgTokenSpaceGuid.PcdEmuVariableNvModeEnable        |TRUE
+ !elseif $(VARIABLE_SUPPORT) == "SPI" || $(VARIABLE_SUPPORT) == "SMMSTORE"
+-- 
+2.43.0

@@ -439,7 +439,7 @@
  
  [PcdsFeatureFlag.X64]
    gEfiMdeModulePkgTokenSpaceGuid.PcdDxeIplSwitchToLongMode|TRUE
-@@ -599,7 +813,8 @@
+@@ -599,9 +813,11 @@
  
  [PcdsFixedAtBuild]
    gEfiMdePkgTokenSpaceGuid.PcdHardwareErrorRecordLevel|1
@@ -448,8 +448,11 @@
 +  gEfiMdeModulePkgTokenSpaceGuid.PcdMaxVariableSize|0x8000
    gEfiMdeModulePkgTokenSpaceGuid.PcdMaxHardwareErrorVariableSize|0x8000
    gEfiMdeModulePkgTokenSpaceGuid.PcdVariableStoreSize|0x10000
++  gEfiMdeModulePkgTokenSpaceGuid.PcdReclaimVariableSpaceAtEndOfDxe|TRUE
  !if $(VARIABLE_SUPPORT) == "EMU"
-@@ -613,6 +828,20 @@
+   gEfiMdeModulePkgTokenSpaceGuid.PcdEmuVariableNvModeEnable        |TRUE
+ !elseif $(VARIABLE_SUPPORT) == "SPI" || $(VARIABLE_SUPPORT) == "SMMSTORE"
+@@ -613,6 +829,20 @@
    gEfiMdeModulePkgTokenSpaceGuid.PcdUse1GPageTable|TRUE
    gUefiPayloadPkgTokenSpaceGuid.PcdHandOffFdtEnable|$(HAND_OFF_FDT_ENABLE)
  
@@ -470,7 +473,7 @@
    gEfiMdeModulePkgTokenSpaceGuid.PcdBootManagerMenuFile|{ 0x21, 0xaa, 0x2c, 0x46, 0x14, 0x76, 0x03, 0x45, 0x83, 0x6e, 0x8a, 0xb6, 0xf4, 0x66, 0x23, 0x31 }
    gUefiPayloadPkgTokenSpaceGuid.PcdPcdDriverFile|{ 0x57, 0x72, 0xcf, 0x80, 0xab, 0x87, 0xf9, 0x47, 0xa3, 0xfe, 0xD5, 0x0B, 0x76, 0xd8, 0x95, 0x41 }
  
-@@ -626,12 +855,29 @@
+@@ -626,12 +856,29 @@
  !endif
    gEfiMdeModulePkgTokenSpaceGuid.PcdSdMmcGenericTimeoutValue|$(SD_MMC_TIMEOUT)
  
@@ -500,7 +503,7 @@
  
  !if $(CRYPTO_PROTOCOL_SUPPORT) == TRUE
  !if $(CRYPTO_DRIVER_EXTERNAL_SUPPORT) == FALSE
-@@ -669,6 +915,14 @@
+@@ -669,6 +916,14 @@
    ## Whether allows PCI RB to allocate DMA memory above 4GB
    gUefiPayloadPkgTokenSpaceGuid.PcdPciAllocateMemoryAbove4GB|FALSE
  
@@ -515,7 +518,7 @@
  [PcdsFixedAtBuild.AARCH64]
    # System Memory Base -- fixed at 0x4000_0000
    gArmTokenSpaceGuid.PcdSystemMemoryBase|0x40000000
-@@ -714,9 +968,14 @@
+@@ -714,9 +969,14 @@
    gUefiPayloadPkgTokenSpaceGuid.PcdUseUniversalPayloadSerialPort|FALSE
  
  [PcdsPatchableInModule.IA32, PcdsPatchableInModule.X64]
@@ -531,7 +534,7 @@
    gUefiPayloadPkgTokenSpaceGuid.SizeOfIoSpace|16
    gUefiPayloadPkgTokenSpaceGuid.PcdFDTPageSize|8
    #
-@@ -786,6 +1045,15 @@
+@@ -786,6 +1046,15 @@
    gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut|L"Timeout"|gEfiGlobalVariableGuid|0x0|$(PLATFORM_BOOT_TIMEOUT)
  
  [PcdsDynamicExDefault]
@@ -547,7 +550,7 @@
    gEfiMdePkgTokenSpaceGuid.PcdDefaultTerminalType|$(DEFAULT_TERMINAL_TYPE)
    gEfiMdeModulePkgTokenSpaceGuid.PcdAriSupport|TRUE
    gEfiMdeModulePkgTokenSpaceGuid.PcdSrIovSupport|TRUE
-@@ -833,6 +1101,9 @@
+@@ -833,6 +1102,9 @@
  
    gEfiMdeModulePkgTokenSpaceGuid.PcdConOutRow|31
    gEfiMdeModulePkgTokenSpaceGuid.PcdConOutColumn|100
@@ -557,7 +560,7 @@
    gEfiMdePkgTokenSpaceGuid.PcdPciExpressBaseAddress|0
    gEfiMdePkgTokenSpaceGuid.PcdPciExpressBaseSize|0
    gEfiMdeModulePkgTokenSpaceGuid.PcdGhcbBase|0
-@@ -840,6 +1111,21 @@
+@@ -840,6 +1112,21 @@
    gUefiCpuPkgTokenSpaceGuid.PcdSevEsIsEnabled|0
    gEfiMdeModulePkgTokenSpaceGuid.PcdPciDisableBusEnumeration|TRUE
  
@@ -579,7 +582,7 @@
  [PcdsDynamicExDefault.IA32, PcdsDynamicExDefault.X64]
    gPcAtChipsetPkgTokenSpaceGuid.PcdRtcIndexRegister|$(RTC_INDEX_REGISTER)
    gPcAtChipsetPkgTokenSpaceGuid.PcdRtcTargetRegister|$(RTC_TARGET_REGISTER)
-@@ -965,27 +1251,49 @@
+@@ -965,27 +1252,49 @@
        <LibraryClasses>
  !if $(SECURE_BOOT_ENABLE) == TRUE
        NULL|SecurityPkg/Library/DxeImageVerificationLib/DxeImageVerificationLib.inf
@@ -631,7 +634,7 @@
    FmpDevicePkg/FmpDxe/FmpDxe.inf {
      <Defines>
        # FmpDxe interprets its FILE_GUID as firmware GUID.  This allows including
-@@ -998,16 +1306,21 @@
+@@ -998,16 +1307,21 @@
        #
        # See BaseTools/Source/Python/Pkcs7Sign/Readme.md for more details on such
        # PCDs and include files.
@@ -656,7 +659,7 @@
  !endif
  
  
-@@ -1042,11 +1355,26 @@
+@@ -1042,11 +1356,26 @@
  !endif
    MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
    MdeModulePkg/Universal/SetupBrowserDxe/SetupBrowserDxe.inf
@@ -683,7 +686,7 @@
  
    #
    # SMBIOS Support
-@@ -1085,6 +1413,11 @@
+@@ -1085,6 +1414,11 @@
    MdeModulePkg/Bus/Ata/AtaAtapiPassThru/AtaAtapiPassThru.inf
    MdeModulePkg/Bus/Scsi/ScsiBusDxe/ScsiBusDxe.inf
    MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf
@@ -695,7 +698,7 @@
  !if $(NVME_ENABLE) == TRUE
    MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf
  !endif
-@@ -1111,13 +1444,19 @@
+@@ -1111,13 +1445,19 @@
    #
    # Usb Support
    #
@@ -715,7 +718,7 @@
  
    #
    # ISA Support
-@@ -1144,7 +1483,15 @@
+@@ -1144,7 +1484,15 @@
  !if $(DISABLE_SERIAL_TERMINAL) == FALSE
    MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf
  !endif
@@ -731,7 +734,7 @@
  !if $(PERFORMANCE_MEASUREMENT_ENABLE)
    MdeModulePkg/Universal/Acpi/FirmwarePerformanceDataTableDxe/FirmwarePerformanceDxe.inf
  !endif
-@@ -1175,6 +1522,8 @@
+@@ -1175,6 +1523,8 @@
        NULL|MdeModulePkg/Library/VarCheckUefiLib/VarCheckUefiLib.inf
        NULL|EmbeddedPkg/Library/NvVarStoreFormattedLib/NvVarStoreFormattedLib.inf
    }
@@ -740,7 +743,7 @@
  !elseif $(VARIABLE_SUPPORT) == "SPI"
    MdeModulePkg/Universal/Variable/RuntimeDxe/VariableSmm.inf {
      <LibraryClasses>
-@@ -1200,6 +1549,46 @@
+@@ -1200,6 +1550,46 @@
        TlsLib|CryptoPkg/Library/TlsLib/TlsLib.inf
    }
  !endif
@@ -787,7 +790,7 @@
  !endif
  
  [Components.X64]
-@@ -1282,7 +1671,6 @@
+@@ -1282,7 +1672,6 @@
    DevicePathLib|MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib.inf
    FileHandleLib|MdePkg/Library/UefiFileHandleLib/UefiFileHandleLib.inf
    ShellLib|ShellPkg/Library/UefiShellLib/UefiShellLib.inf

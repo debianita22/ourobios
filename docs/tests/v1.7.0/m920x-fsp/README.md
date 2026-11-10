@@ -61,3 +61,40 @@ only writer; the check of a write then reads no flash, and the erased
 tail is a length, not a scan. Stage 1 is therefore done inside stage 2,
 and LOCK-02 measures it on each candidate against the 0.285 s of F1.
 
+## Stage 2, first part: the fault tolerant write (F6), on rc2
+
+The owner chose to cover F6 inside stage 2. v1.7.0-rc2 (this branch,
+patch 0281 and `edk2/0061`) carries its fix; the lock for every option
+(the SHA-256 latch of the whole set in SMRAM) and the SMRAM store copy
+of stage 1 are the next candidate, with the one decision left: the size
+of the SMRAM subregion that would hold the 192 KiB store for the "reads
+no flash" fast path, against keeping it at 4 KiB with a digest-only
+latch and the walk cost of today.
+
+**The fix (patch 0281):** the option lock and the MOR lock refuse, while
+armed, any raw SMMSTORE write or erase that reaches past the variable
+store, into the fault tolerant write blocks (`efi_fv_store_end()`).
+Those blocks are where the payload restarts a pending fault tolerant
+write at its start, before the lock is armed, so a write of them could
+rewrite the store with a protected option off. A reclaim of the store
+uses them and is refused too; it writes the spare area first, before it
+erases the store, so a refused reclaim leaves the store intact and the
+variable write fails until the next boot. `edk2/0061` moves the reclaim
+to EndOfDxe, before the lock is armed, so it is not refused in the
+normal flow. Unit test: `efi_test_store_end` (a valid and a broken
+firmware volume), with the 32 tests of `drivers/efi` passing.
+
+The rows below are filled from the run on rc2 once it is built,
+installed and tested (to run):
+
+| ID | Check | Expected |
+|---|---|---|
+| UPD-02 | rc2 as a capsule from rc1, slot A; rc1 kept in slot B | installed |
+| LOCK-01 | the option lock armed (`OptionLockStatus`) | `06 00 00 00` and eight zeros |
+| LOCK-02 | 20 writes of `Timeout`, `MSR_SMI_COUNT` around each | near F1 (0.285 s, 45 ms an SMI): the fix is a bounds check, no walk added |
+| LOCK-03 | a boot entry created and deleted; a variable of the test's GUID created, changed, deleted through efivarfs | each works, the entries as before |
+| LOCK-04 | three resumes, then LOCK-01 and LOCK-03 | the lock still armed, the writes work |
+| LOCK-06 | the 36 options before and after the run | the same, name by name |
+| LOCK-07, LOCK-08 | `hw-report.py`, `cbmem -t`; fwts, chipsec | the baseline of v1.6.3; no new failure |
+| LOCK-09 | a variable written until a write fails, a reboot, one more write, the variable deleted | how much a boot can write; after the reboot the write works and the space is back |
+

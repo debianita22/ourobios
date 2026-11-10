@@ -1,0 +1,199 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 10 Nov 2026 21:31:20 +0100
+Subject: [PATCH] drivers/smmstore: Lock the fault tolerant write blocks with the
+ options
+
+The option lock (SMMSTORE_OPTION_LOCK) and the MOR lock refuse a raw
+SMMSTORE write that would turn a protected option, or the MOR request,
+off. They check the variable store as it would be after the write, but
+the SMMSTORE region holds more than the store: past it are the fault
+tolerant write blocks, the working and spare areas of the payload's
+variable driver.
+
+At its start, before the lock is armed, the payload restarts a pending
+fault tolerant write, copying the spare blocks over the variable store.
+A program with root could write a record and a matching spare copy with
+the raw SMMSTORE commands during one boot, leaving the store itself
+untouched so that the check allows it; at the next boot the payload would
+rewrite the store from the spare, with a protected option off, which
+coreboot reads at the boot after. The lock of every release since the
+feature landed could be gone around this way.
+
+Refuse, while either lock is armed, any write or erase that reaches past
+the variable store. efi_fv_store_end() returns where the store ends, from
+its validated headers. A reclaim of the store uses those blocks and so is
+refused too; it writes the spare area first, before erasing the store, so
+a refused reclaim leaves the store intact, and the variable write fails
+until the next boot (PcdReclaimVariableSpaceAtEndOfDxe reclaims before the
+lock is armed). Unit tests of efi_fv_store_end() cover a valid and a
+broken firmware volume.
+---
+ src/drivers/efi/efivars.c           | 24 ++++++++++++++++++++++++
+ src/drivers/efi/efivars.h           |  9 +++++++++
+ src/drivers/smmstore/mor_lock.c     | 12 ++++++++++++
+ src/drivers/smmstore/options_lock.c | 19 +++++++++++++++++++
+ tests/drivers/efivars.c             | 21 +++++++++++++++++++++
+ 5 files changed, 85 insertions(+)
+
+diff --git a/src/drivers/efi/efivars.c b/src/drivers/efi/efivars.c
+index a4b21b735d0..af04c436ca8 100644
+--- a/src/drivers/efi/efivars.c
++++ b/src/drivers/efi/efivars.c
+@@ -817,6 +817,30 @@ enum cb_err efi_fv_get_options(const struct region_device *rdev, const EFI_GUID
+ 	return ret;
+ }
+ 
++/*
++ * efi_fv_store_end: the offset within @rdev where the variable store ends, the
++ * FV header plus the store. Past it, in the SMMSTORE region, are the fault
++ * tolerant write blocks (the payload's working and spare areas), which the
++ * variable store reader does not cover; the option and MOR locks refuse writes
++ * there while armed, so that a restart of a pending fault tolerant write cannot
++ * rewrite the store with the options they protect turned off.
++ */
++enum cb_err efi_fv_store_end(const struct region_device *rdev, size_t *end)
++{
++	struct region_device store_rdev = *rdev;
++	bool auth_format;
++	enum cb_err ret;
++
++	ret = efi_fv_init(&store_rdev, &auth_format);
++	if (ret != CB_SUCCESS)
++		return ret;
++
++	/* efi_fv_init chained store_rdev to the store content, inside rdev */
++	*end = region_device_offset(&store_rdev) - region_device_offset(rdev) +
++		region_device_sz(&store_rdev);
++	return CB_SUCCESS;
++}
++
+ enum cb_err efi_fv_get_mor(const struct region_device *rdev, uint8_t *mor)
+ {
+ 	static const EFI_GUID mor_guid = {
+diff --git a/src/drivers/efi/efivars.h b/src/drivers/efi/efivars.h
+index dc04b0bcc53..0483fa19e1c 100644
+--- a/src/drivers/efi/efivars.h
++++ b/src/drivers/efi/efivars.h
+@@ -57,6 +57,15 @@ struct efi_fv_query {
+ enum cb_err efi_fv_get_options(const struct region_device *rdev, const EFI_GUID *guid,
+ 			       struct efi_fv_query *queries, size_t count);
+ 
++/**
++ * efi_fv_store_end
++ * The end of the variable store inside the region device (the FV header plus
++ * the store), where the fault tolerant write blocks begin.
++ * @rdev: the readable region that begins with the firmware volume
++ * @end: on CB_SUCCESS, the offset within rdev where the store ends
++ */
++enum cb_err efi_fv_store_end(const struct region_device *rdev, size_t *end);
++
+ /**
+  * efi_fv_get_mor
+  * The TCG MOR variable MemoryOverwriteRequestControl in the variable store,
+diff --git a/src/drivers/smmstore/mor_lock.c b/src/drivers/smmstore/mor_lock.c
+index 770cffebaa9..e64e9808109 100644
+--- a/src/drivers/smmstore/mor_lock.c
++++ b/src/drivers/smmstore/mor_lock.c
+@@ -144,6 +144,7 @@ bool smmstore_mor_write_allowed(size_t offset, const void *data, size_t size)
+ {
+ 	struct region_device store, overlay_root, overlay;
+ 	struct after_write aw;
++	size_t store_end;
+ 	bool requested;
+ 
+ 	if (!smmstore_mor_protecting())
+@@ -154,6 +155,17 @@ bool smmstore_mor_write_allowed(size_t offset, const void *data, size_t size)
+ 		return false;
+ 	}
+ 
++	/* The fault tolerant write blocks past the store: as the option lock */
++	if (efi_fv_store_end(&store, &store_end) != CB_SUCCESS) {
++		printk(BIOS_ERR, "MOR lock: store end unknown, write refused\n");
++		return false;
++	}
++	if (offset + size > store_end) {
++		printk(BIOS_WARNING, "MOR lock: refused a %s of the fault tolerant "
++		       "write blocks\n", data ? "write" : "erase");
++		return false;
++	}
++
+ 	aw = (struct after_write){
+ 		.store = &store,
+ 		.offset = offset,
+diff --git a/src/drivers/smmstore/options_lock.c b/src/drivers/smmstore/options_lock.c
+index 08b09787a08..4340cf16d7c 100644
+--- a/src/drivers/smmstore/options_lock.c
++++ b/src/drivers/smmstore/options_lock.c
+@@ -193,6 +193,7 @@ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size
+ 	uint32_t after[ARRAY_SIZE(protected_options)];
+ 	struct region_device store, overlay_root, overlay;
+ 	struct after_write aw;
++	size_t store_end;
+ 
+ 	if (!state || !state->armed)
+ 		return true;
+@@ -202,6 +203,24 @@ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size
+ 		return false;
+ 	}
+ 
++	/*
++	 * The fault tolerant write blocks are past the store, in the SMMSTORE
++	 * region but outside what the walk below reads. The payload restarts a
++	 * pending fault tolerant write at its start, before the lock is armed,
++	 * copying its spare blocks over the store, so a raw write there could
++	 * change a protected option without this check seeing it. Refuse any
++	 * write or erase that reaches past the store while armed.
++	 */
++	if (efi_fv_store_end(&store, &store_end) != CB_SUCCESS) {
++		printk(BIOS_ERR, "Option lock: store end unknown, write refused\n");
++		return false;
++	}
++	if (offset + size > store_end) {
++		printk(BIOS_WARNING, "Option lock: refused a %s of the fault tolerant "
++		       "write blocks\n", data ? "write" : "erase");
++		return false;
++	}
++
+ 	aw = (struct after_write){
+ 		.store = &store,
+ 		.offset = offset,
+diff --git a/tests/drivers/efivars.c b/tests/drivers/efivars.c
+index d77efc045df..118fbd6722f 100644
+--- a/tests/drivers/efivars.c
++++ b/tests/drivers/efivars.c
+@@ -739,6 +739,26 @@ static void assert_flash_changed_at(const size_t *offsets, size_t count)
+ 	}
+ }
+ 
++/* efi_fv_store_end is the FV header plus the store; the FTW blocks begin there */
++static void efi_test_store_end(void **state)
++{
++	EFI_FIRMWARE_VOLUME_HEADER *fv;
++	VARIABLE_STORE_HEADER *store;
++	size_t end, expected;
++
++	mock_rdev(true);
++	fv = (EFI_FIRMWARE_VOLUME_HEADER *)flash_buffer;
++	store = (VARIABLE_STORE_HEADER *)(flash_buffer + fv->HeaderLength);
++	expected = fv->HeaderLength + store->Size;
++
++	assert_int_equal(efi_fv_store_end(&flash_rdev_rw, &end), CB_SUCCESS);
++	assert_int_equal(end, expected);
++
++	/* A broken firmware volume: an error, no end */
++	flash_buffer[0x28] ^= 0xff;
++	assert_int_not_equal(efi_fv_store_end(&flash_rdev_rw, &end), CB_SUCCESS);
++}
++
+ /* One walk for several variables finds each as efi_fv_get_option() would alone */
+ static void efi_test_get_options(void **state)
+ {
+@@ -995,6 +1015,7 @@ int main(void)
+ 		cmocka_unit_test(efi_test_propagate_print_name_read_error),
+ 		cmocka_unit_test(efi_test_propagate_data_read_error),
+ 		cmocka_unit_test(efi_test_exact_fit_write),
++		cmocka_unit_test(efi_test_store_end),
+ 		cmocka_unit_test(efi_test_get_options),
+ 		cmocka_unit_test(efi_test_delete_options),
+ 		cmocka_unit_test(efi_test_delete_options_refuse_malformed),

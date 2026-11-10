@@ -272,3 +272,4 @@
 0278-nb-intel-haswell-native_raminit-Add-an-option-for-th.patch
 0279-mb-lenovo-haswell-Put-the-memory-profile-in-the-setu.patch
 0280-nb-intel-haswell-native_raminit-Centre-the-write-Vre.patch
+0281-drivers-smmstore-Lock-the-fault-tolerant-write-block.patch

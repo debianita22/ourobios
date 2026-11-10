@@ -7,8 +7,21 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.7.0
 
-Not released. What ran on a machine: nothing yet, the CI builds only.
+Not released. What ran on a machine: v1.7.0-rc1 and -rc2 on the M920x
+(the option lock work).
 
+- **The option lock and the MOR lock cannot be gone around through the
+  fault tolerant write** (patch 0281, `edk2/0061`): the locks refused a
+  raw SMMSTORE write that turns a protected option, or the MOR request,
+  off, but only checked the variable store; the payload rewrites the
+  store at its start from the fault tolerant write blocks, which are in
+  the SMMSTORE region past the store and which the check did not cover,
+  so a program with root could change a protected option across two
+  boots. The locks now refuse a write past the store while armed; the
+  store is reclaimed before the lock is armed (EndOfDxe) so a runtime
+  reclaim, which uses those blocks, is rare and fails safely. This closes
+  the bypass on every release with the lock (v1.6.1 and later); a v1.6.x
+  backport is still to be decided. Checked on the M920x (v1.7.0-rc2).
 - **W541 (`nri`): an XMP profile of the memory as an option** (patches
   0275-0279): *Hardware* → *Memory* → *Memory profile*, *SPD (JEDEC)* by
   default, or *XMP profile 1* or *2*. With a profile the native RAM init

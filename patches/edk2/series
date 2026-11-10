@@ -58,3 +58,4 @@
 0058-UefiPayloadPkg-CfrSetupMenuDxe-Lock-at-boot-with-rule.patch
 0059-MdeModulePkg-SdMmcPciHcDxe-Leave-HS400-Enhanced-Strob.patch
 0060-ShellPkg-Leave-MrChromebox-s-startup-changes-out-of-t.patch
+0061-UefiPayloadPkg-Reclaim-the-variable-store-before-the.patch
