@@ -91,7 +91,10 @@ These hold whatever else the agent decides.
     stage that is ready for the machine, never a release. A
     `v1.7.0-rcN` is 1.6.255.N in the ESRT, above every v1.6.3: going
     back to a v1.6.3 afterwards is `update.py rollback` to the other
-    slot, or the owner's `--allow-older`.
+    slot, or the owner's `--allow-older`. `v1.7.0-rc1` is out (the
+    owner's, 2026-11-10, from `19e053a`): for the M920x it is
+    v1.6.3-rc6 plus an empty hook in the SMMSTORE handler (patch 0277),
+    and the next candidate is rc2.
 
 ## Where things are
 
@@ -110,7 +113,7 @@ These hold whatever else the agent decides.
 
 ## Stage 0: the facts, before any code
 
-On the firmware that runs (v1.6.3-rc6 or later, *BIOS Lock* on), and
+On the firmware that runs (v1.6.3-rc6 or v1.7.0-rc1, *BIOS Lock* on), and
 from the sources. Each answer goes in the record with where it comes
 from; the design of the next stages depends on them.
 
