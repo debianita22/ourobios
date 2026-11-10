@@ -136,6 +136,35 @@ bit, which OPT-06 showed the OS can set.
 | S3-01 | PASS | one resume after the test, PR0 and PR1 back |
 | OPT-05 | not run, needs the owner | the real case, a CMOS clear: the options must be reset once |
 
+## VAR-01: where the time of a write goes
+
+On rc2, 2026-11-10: `MSR_SMI_COUNT` (0x34) read around each
+`efibootmgr -q -t`: 6 to 8 SMIs a write, 0.60 s each, no SMI at rest and
+none for `efibootmgr -q` without a write. That is about 85 ms an SMI,
+where the SPI write of a record takes a few milliseconds. The time grows
+with the store: 0.53 s on v1.6.2 and 0.52 s on rc1 the day before, 0.60
+s now, after some hundred more records.
+
+In the code (patch 0237), with the option lock armed every SMMSTORE
+write first goes through `smmstore_options_write_allowed()`, which reads
+each protected option (`bios_lock`, `bootmedia_lock`) from the store as
+it would be after the write: one `efi_fv_get_option()` for each, two
+walks of the whole store a write. The overlay that adds the write to the
+store has no `mmap`, so each walk reads through `readat`: every header
+and name of some hundred records, and the erased tail (54 KiB free of
+191) in 64-byte pieces in `region_is_erased()`, all from the memory
+mapped flash. About 150 KiB of flash reads a walk, two walks an SMI,
+seven SMIs a write fits the 0.6 s.
+
+What would shorten it, for the owner to decide (it is the code that
+keeps the firmware's protections): one walk for both options instead of
+two (half the time); the check of the erased tail once a walk at most,
+or not on the overlay (the store as it is was already checked when the
+lock was armed); or the walk only for a write that can change a
+protected option. Without the lock armed (*BIOS Lock* off, the owner's
+row) the numbers would tell how much is the lock and how much the
+write.
+
 ## Part 3: the owner's
 
 Not run, needs the owner: VAR-01 with *BIOS Lock* off, WDT-01 (and the
