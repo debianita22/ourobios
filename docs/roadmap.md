@@ -18,7 +18,7 @@ is here. None of it is a promise of a date.
 | [Top Swap and the Protected Range test](#top-swap-and-the-protected-range-test) | M920x | the read-only part is never written by an update | FLASH-04 with the protection on; a map with room for a second bootblock |
 | [Settings reset on the W541](#settings-reset-on-the-w541) | both | on from v1.6.1: the OS can set the RTC power loss bit (checked on a W541), so the reset also needs the CMOS to have lost its contents (patch 0256); OPT-05 passed on a W541 with a simulated loss (2026-11-08); the M920x has the same read-write bit (OPT-06, 2026-11-10): patch 0270 | a real loss (the coin cell out) when convenient; OPT-05 on the M920x with 0270 (the stray bit passed with rc2) |
 | [Memory training across updates on the W541](#memory-training-across-updates-on-the-w541) | W541 | built for v1.6.1 (patches 0250-0252): the version of the cache is a tag and a key from the code (`nri`) or from the inputs of `mrc.bin`; the capsules and *Go back to* keep the cache; MEM-03 passed on a W541 (2026-11-08) | a capsule update and a fallback to an older slot on a W541; `mrc` |
-| [Native RAM init: XMP, and the steps still missing](#native-ram-init-xmp-and-the-steps-still-missing) | W541 | built for v1.7.0 (patches 0275-0280): an XMP profile of the modules as an option, off by default, given up by itself when it does not train or does not reach the payload; the decoder of XMP 1.3 corrected, with a unit test; the write Vref of the modules centred, the first of the missing steps. Not tried on a machine; whether the modules of the W541 of the port have an XMP profile is still to read from their SPD | MEM-10 to MEM-12 and MEM-14 on a W541; MEM-13 with DDR3L SO-DIMMs that have a profile at 1.35 V; then the command Vref |
+| [Native RAM init: XMP, and the steps still missing](#native-ram-init-xmp-and-the-steps-still-missing) | W541 | built for v1.7.0 (patches 0275-0280, 0290): an XMP profile of the modules as an option, off by default, given up by itself when it does not train or does not reach the payload; the decoder of XMP 1.3 corrected, with a unit test; the write Vref of the modules centred, and their command Vref. On the W541 with rc1 (2026-11-10): the default, the refusal of a profile that is not there, the giving up and the write Vref passed; its modules have no XMP profile | MEM-15 (the command Vref) and MEM-11, MEM-12 again for their lines, on a W541 with rc2; MEM-13 with DDR3L SO-DIMMs that have a profile at 1.35 V; then the write to read turnaround |
 | [The option lock for every setup option](#the-option-lock-for-every-setup-option) | both | the lock of v1.6.1 keeps two options from being turned off; the others can still be changed for the next boot through the SMMSTORE commands by a program with root. The plan is written ([docs/dev-v1.7.0-m920x.md](dev-v1.7.0-m920x.md)), with the time of a variable write under the lock (0.29 s on the M920x) | on the M920x first: the facts of its stage 0, then the two stages; the W541 after it |
 | [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | done in v1.6.0 (patch 0222): a Kconfig for the version, and `tools/fspm-settings.sh` stops CI when the files of those settings change | the first bump, with the release that changes them |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
@@ -438,8 +438,8 @@ What a W541 without XMP modules can show: the default unchanged
 (MEM-10), the refusal of a profile that is not there (MEM-11), the giving
 up with the byte written by hand (MEM-12). The profile itself needs DDR3L
 SO-DIMMs with an XMP profile at 1.35 V for two modules per channel
-(MEM-13): whether those of the W541 of the port have one is in bytes 176
-on of their SPD ([docs/raminit.md](raminit.md#xmp-profiles)), and
+(MEM-13): those of the W541 of the port have none (bytes 176 and 177 of
+their SPD read `ff ff`), and all three passed there with rc1.
 `setpci -s 00:00.0 e4.l e8.l` on the machine says whether the processor
 would run a profile faster than DDR3-1600.
 
@@ -448,17 +448,17 @@ without the upstream author's unpublished tree, each with what `mrc.bin`
 leaves on the W541 ([docs/raminit.md](raminit.md#on-the-w541)) as the
 reference and `ddr-report.py --compare` as the measure:
 
-1. **Write Vref centring**: written for v1.7.0 (patch 0280,
-   [docs/raminit.md](raminit.md#what-runs)), not tried on a machine yet
-   (MEM-14). `mrc.bin` ends at +3 and +2 steps on the two channels, the
-   NRI left 0. After the command training: the reference of each channel
-   over its range, a write and read test on every rank at each value, the
-   centre of the values that pass; a channel whose range is not measured
-   on both sides keeps what it had, and the training that is redone after
-   a failure does not run the step, as with the round trip one. The range
-   it prints is the write voltage margin, which nothing measured before.
-2. **The command Vref** (`mrc.bin`: -3). The same sweep with the command
-   patterns of the late command training; after the first.
+1. **Write Vref centring**: done in v1.7.0 (patch 0280,
+   [docs/raminit.md](raminit.md#what-runs)), and passed on the W541 with
+   rc1 (MEM-14): 3 and -1 on the two channels, 4 and 1 at a second
+   training, where `mrc.bin` ends at +3 and +2 and the NRI left 0; eyes
+   of 32 to 39 steps, 0.15 s more in a boot that trains. The range it
+   prints is the write voltage margin, which nothing measured before.
+2. **The command Vref** (`mrc.bin`: -3): written for v1.7.0 (patch 0290),
+   not tried on a machine yet (MEM-15). The same scan with the test of
+   the late command training and a JEDEC init at each value; the
+   reference moves only if the test passes with it 8 steps to each side
+   of the new value, as that training finds its timings.
 3. **The write to read turnaround between ranks** (3 with `mrc.bin`, 4
    here): needs the turnaround patterns of the REUT, which no step uses
    yet, so that a turnaround too short is seen by a test and not by the

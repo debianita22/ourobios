@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
-Date: Tue, 10 Nov 2026 19:28:25 +0100
+Date: Tue, 10 Nov 2026 21:53:57 +0100
 Subject: [PATCH] nb/intel/haswell/native_raminit: Centre the write Vref of the
  DIMMs
 
@@ -26,17 +26,35 @@ so a reference that the memory test (HASWELL_NRI_MEMORY_TEST) does not
 like is not kept. The register is among the saved ones, so the fast
 boot and the resume from S3 restore what was trained.
 
+set_dimm_vref() sets a reference to a value of its range. A move of
+more than one step takes the circuit longer than the 50 us that
+update_vref_and_wait() gives it: the first version of this step logged
+"Vref circuit 0 failed to converge" and the same for 1 at the move
+from 0 to -54, once in each training, and at no step of one. Such a
+move now waits for the done bit for up to 10 ms, then 1 ms more.
+
 The lines of the log give the write voltage eye of each channel, which
 nothing measured so far.
 
-Not tested on hardware.
+TEST=ThinkPad W541 with four dual rank DDR3L-1600 SO-DIMMs, as
+v1.7.0-rc1 of ouroBIOS, which had this step with a fixed wait of 1 ms
+after the first move in place of set_dimm_vref(). Two trainings: eyes
+-16 to 23 and -17 to 15, references 3 and -1 (they were 0 and 0);
+eyes -15 to 23 and -17 to 19, references 4 and 1. "Memory test
+passed". The references are the same after a reboot, a cold boot and a
+resume from S3, and nothing else that is trained moved more than
+between two trainings. 30 minutes of stress-ng --vm --verify without
+errors. The RAM init of a boot that trains takes 0.98 s (0.83 s with
+an earlier release on the same machine), 0.11 s from the saved
+training as before.
 ---
  src/northbridge/intel/haswell/Kconfig         |  12 ++
  .../intel/haswell/native_raminit/Makefile.mk  |   1 +
+ .../haswell/native_raminit/change_margin.c    |  46 ++++++
  .../haswell/native_raminit/raminit_main.c     |   1 +
- .../haswell/native_raminit/raminit_native.h   |   1 +
- .../haswell/native_raminit/train_write_vref.c | 152 ++++++++++++++++++
- 5 files changed, 167 insertions(+)
+ .../haswell/native_raminit/raminit_native.h   |   3 +
+ .../haswell/native_raminit/train_write_vref.c | 133 ++++++++++++++++++
+ 6 files changed, 196 insertions(+)
  create mode 100644 src/northbridge/intel/haswell/native_raminit/train_write_vref.c
 
 diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
@@ -74,6 +92,63 @@ index dffaa9b9..cbe8241b 100644
  
  romstage-$(CONFIG_DEBUG_RAM_SETUP) += info_dumps.c
  
+diff --git a/src/northbridge/intel/haswell/native_raminit/change_margin.c b/src/northbridge/intel/haswell/native_raminit/change_margin.c
+index 8a31054b..15871572 100644
+--- a/src/northbridge/intel/haswell/native_raminit/change_margin.c
++++ b/src/northbridge/intel/haswell/native_raminit/change_margin.c
+@@ -170,6 +170,52 @@ void update_vref_and_wait(
+ 	}
+ }
+ 
++/* For a move of more than one step: how long to wait for the circuit */
++#define DIMM_VREF_FAR_TIMEOUT_MS	10
++/* And then for what is between it and the DIMMs */
++#define DIMM_VREF_FAR_SETTLE_MS		1
++
++/*
++ * Set a DIMM Vref to a value of its range, not to an offset from the saved
++ * one, as a scan of the whole range needs; saved as the new value or not.
++ * One step from where the circuit is, this is update_vref_and_wait(). After
++ * a longer move the done bit comes later than the 50 us of that wait (on a
++ * ThinkPad W541 the move of the DQ Vrefs from 0 to -54 logged "failed to
++ * converge", and no step of one did): wait for it for longer, then for the
++ * DIMM side as well.
++ */
++void set_dimm_vref(struct sysinfo *ctrl, const enum dimm_vref_type vref_type,
++		   const int32_t value, const bool update_ctrl)
++{
++	const uint32_t done_bit = get_vref_done_bit(vref_type);
++	const uint16_t vref_reg = ddrio_offset(ctrl, DDRIO_VREF_ADJUST, 1, 7);
++	const union ddr_data_vref_adjust_reg now = {
++		.raw = mchbar_read32(vref_reg),
++	};
++	int32_t current = now.vref_ca_ctrl;
++	if (vref_type == VREF_DQ_CH0)
++		current = now.vref_dq_ch0_ctrl;
++	else if (vref_type == VREF_DQ_CH1)
++		current = now.vref_dq_ch1_ctrl;
++
++	const bool far = ABS(value - current) > 1;
++	update_vref_and_wait(ctrl, vref_type, update_ctrl,
++			     value - ctrl->dimm_vref.raw[vref_type], far);
++	if (!far)
++		return;
++
++	struct stopwatch timer;
++	stopwatch_init_msecs_expire(&timer, DIMM_VREF_FAR_TIMEOUT_MS);
++	while (!(mchbar_read32(vref_reg) & done_bit)) {
++		if (stopwatch_expired(&timer)) {
++			printk(BIOS_WARNING, "Vref circuit %u did not settle in %u ms\n",
++			       vref_type, DIMM_VREF_FAR_TIMEOUT_MS);
++			break;
++		}
++	}
++	mdelay(DIMM_VREF_FAR_SETTLE_MS);
++}
++
+ void download_regfile(
+ 	struct sysinfo *ctrl,
+ 	const uint8_t channel,
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 index bb91c883..3d721427 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
@@ -87,10 +162,10 @@ index bb91c883..3d721427 100644
  	{ activate_mc,                                            true, "ACTIVATE",   },
  	{ save_training_values,                                   true, "SAVE_TRAIN", },
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index 41051cd8..544054ec 100644
+index f789a002..995b9b39 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-@@ -699,6 +699,7 @@ enum nri_status activate_mc(struct sysinfo *ctrl);
+@@ -701,6 +701,7 @@ enum nri_status activate_mc(struct sysinfo *ctrl);
  enum nri_status ecc_scrub(struct sysinfo *ctrl);
  enum nri_status memory_test(struct sysinfo *ctrl);
  enum nri_status optimise_round_trip(struct sysinfo *ctrl);
@@ -98,16 +173,24 @@ index 41051cd8..544054ec 100644
  enum nri_status alias_check(struct sysinfo *ctrl);
  enum nri_status raminit_done(struct sysinfo *ctrl);
  
+@@ -824,6 +825,8 @@ void update_vref_and_wait(
+ 	const bool update_ctrl,
+ 	const int32_t offset,
+ 	const bool skip_wait);
++void set_dimm_vref(struct sysinfo *ctrl, enum dimm_vref_type vref_type, int32_t value,
++		   bool update_ctrl);
+ 
+ void change_margin(
+ 	struct sysinfo *ctrl,
 diff --git a/src/northbridge/intel/haswell/native_raminit/train_write_vref.c b/src/northbridge/intel/haswell/native_raminit/train_write_vref.c
 new file mode 100644
-index 00000000..3033ead0
+index 00000000..1bfff270
 --- /dev/null
 +++ b/src/northbridge/intel/haswell/native_raminit/train_write_vref.c
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,133 @@
 +/* SPDX-License-Identifier: GPL-2.0-or-later */
 +
 +#include <console/console.h>
-+#include <delay.h>
 +#include <northbridge/intel/haswell/haswell.h>
 +#include <types.h>
 +
@@ -143,11 +226,6 @@ index 00000000..3033ead0
 +#define WRV_TEST_LOOPCOUNT	15
 +/* As the eyes of the 1D margin training */
 +#define WRV_MIN_WIDTH		8
-+/*
-+ * update_vref_and_wait() waits for the circuit of the processor. After a move
-+ * across the range, as against one step, give the DIMM side this long as well.
-+ */
-+#define WRV_SETTLE_MS		1
 +
 +/* Channels of chanmask with errors in a write and read test on any of their ranks */
 +static uint8_t test_writes(struct sysinfo *ctrl, const uint8_t chanmask_in)
@@ -166,15 +244,6 @@ index 00000000..3033ead0
 +		failed |= run_io_test(ctrl, chanmask, ctrl->dq_pat, true) & chanmask;
 +	}
 +	return failed;
-+}
-+
-+/* Set the DQ Vref of a channel to a value of its range, the saved one or not */
-+static void set_dq_vref(struct sysinfo *ctrl, const uint8_t channel, const int32_t value,
-+			const bool update_ctrl)
-+{
-+	/* update_vref_and_wait() takes an offset from the saved value */
-+	update_vref_and_wait(ctrl, channel, update_ctrl, value - ctrl->dimm_vref.dq[channel],
-+			     false);
 +}
 +
 +enum nri_status train_write_vref(struct sysinfo *ctrl)
@@ -204,11 +273,8 @@ index 00000000..3033ead0
 +	for (int32_t value = MIN_VREF; value <= MAX_VREF; value++) {
 +		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
 +			if (all & BIT(channel))
-+				set_dq_vref(ctrl, channel, value, false);
++				set_dimm_vref(ctrl, channel, value, false);
 +		}
-+		if (value == MIN_VREF)
-+			mdelay(WRV_SETTLE_MS);
-+
 +		const uint8_t failed = test_writes(ctrl, all);
 +		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
 +			if (all & BIT(channel))
@@ -233,14 +299,13 @@ index 00000000..3033ead0
 +		if (width < WRV_MIN_WIDTH || range.start <= MIN_VREF || range.end >= MAX_VREF ||
 +		    before[channel] < range.start || before[channel] > range.end) {
 +			printk(BIOS_WARNING, "WRV: C%u eye not usable, Vref as set\n", channel);
-+			set_dq_vref(ctrl, channel, before[channel], false);
++			set_dimm_vref(ctrl, channel, before[channel], false);
 +			continue;
 +		}
-+		set_dq_vref(ctrl, channel, centre, true);
++		set_dimm_vref(ctrl, channel, centre, true);
 +	}
 +
 +	/* Back to the reference of before if the result does not pass */
-+	mdelay(WRV_SETTLE_MS);
 +	const uint8_t failed = test_writes(ctrl, all);
 +	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
 +		if (!(all & BIT(channel)))
@@ -249,7 +314,7 @@ index 00000000..3033ead0
 +		if (failed & BIT(channel)) {
 +			printk(BIOS_WARNING, "WRV: C%u fails at the centre, Vref as set\n",
 +			       channel);
-+			set_dq_vref(ctrl, channel, before[channel], true);
++			set_dimm_vref(ctrl, channel, before[channel], true);
 +		}
 +		printk(BIOS_INFO, "WRV: C%u write Vref %d (was %d)\n", channel,
 +		       ctrl->dimm_vref.dq[channel], before[channel]);

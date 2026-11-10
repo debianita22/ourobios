@@ -7,9 +7,14 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.7.0
 
-Not released. What ran on a machine: v1.7.0-rc1 on the M920x (the
-facts for the option lock work); the candidates with the changes below
-are still to run.
+Not released. What ran on a machine: rc1 on the W541 (`nri`), as a
+capsule from v1.6.3-rc4, with the modules of the port, which have no
+XMP profile: MEM-10 to MEM-12 and MEM-14 passed, MEM-13 needs XMP
+modules (2026-11-10,
+[docs/tests/v1.7.0/w541-nri](docs/tests/v1.7.0/w541-nri/README.md)); rc1
+on the M920x for the facts of the option lock work
+([docs/tests/v1.7.0/m920x-fsp](docs/tests/v1.7.0/m920x-fsp/README.md)),
+whose changes below are still to run on a machine.
 
 - **The option lock and the MOR lock cannot be gone around through the
   fault tolerant write** (patch 0281, `edk2/0061`): the locks refused a
@@ -53,9 +58,10 @@ are still to run.
   test, or that does not reach the payload twice in a row, is given up
   by itself until the option is changed (CMOS byte 0x7d), so a profile
   that does not work cannot keep the machine from booting
-  ([docs/raminit.md](docs/raminit.md#xmp-profiles)). **Not tried on a
-  machine**: whether the modules of the W541 of the port have a profile
-  is still to read (bytes 176 on of their SPD). With the default the
+  ([docs/raminit.md](docs/raminit.md#xmp-profiles)). **Not tried with
+  XMP modules**: the four of the W541 of the port have none (bytes 176
+  and 177 of their SPD read `ff ff`); with them the fallback to the SPD
+  timings and the giving up passed (MEM-11, MEM-12). With the default the
   memory is set up as before; the first boot trains once, as the
   version of the saved training has the profile now. `mrc.bin` has no
   such option.
@@ -71,10 +77,30 @@ are still to run.
   narrower than 8 steps, keeps what it had, and a training redone after
   a failed memory test does not run the step. `sudo cbmem -1 | grep
   'WRV:'` on the boot that trained has the range, which is the write
-  voltage margin of the machine. **Not tried on a machine**: MEM-14 of
-  [docs/testing.md](docs/testing.md). The training boot takes longer (as
-  many tests as the read voltage centering runs; not measured yet); the
-  boots from the saved training do not change.
+  voltage margin of the machine. On the W541 with rc1 (MEM-14): 3 and
+  -1 on the two channels, 4 and 1 at a second training, in eyes 32 to
+  39 steps wide; the same after a reboot, a cold boot and a resume;
+  the memory test and 30 minutes of `stress-ng` clean. A boot that
+  trains takes 0.98 s in the RAM init (0.83 s before); the boots from
+  the saved training do not change. From rc2 a move of the reference of
+  more than one step waits for the circuit (rc1 logged *Vref circuit N
+  failed to converge* once per channel, harmless).
+- **W541 (`nri`): the command Vref of the memory modules is centred**
+  (patch 0290), the second of those steps: the reference of the
+  command, address and control inputs, one for both channels, which
+  `mrc.bin` leaves 3 steps below the middle. After the command
+  training, every other value is tried with a JEDEC init and the test
+  of that training on every rank, and the reference gets the centre of
+  the values that pass, unless their range is not closed on both
+  sides, is narrower than 20 steps, or the test does not pass at the
+  centre with the reference 8 steps to each side. `sudo cbmem -1 |
+  grep 'CMDV:'` has the range. **Not tried on a machine**: MEM-15 of
+  [docs/testing.md](docs/testing.md).
+- **W541 (`nri`): the lines about an XMP profile are in the log of a
+  boot that trains** (patch 0278, from rc2): such a boot overflows the
+  console of romstage and loses its start, with the lines that say a
+  profile was asked for, refused or given up. They are said again once
+  the console is in CBMEM, as a module left out already was.
 - **XMP 1.3 profiles decoded exactly** (patch 0275): the fine offsets
   of a profile were not read, so a DDR3-1866 profile gave a cycle time
   of 1.125 ns, one standard speed lower, and the times of a profile

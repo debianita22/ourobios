@@ -1,0 +1,199 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 10 Nov 2026 21:55:16 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: Centre the command Vref of
+ the DIMMs
+
+The DIMMs sample the command, address and control signals against a
+reference voltage that the processor makes, one for both channels.
+configure_mc() sets it to the middle of its range, and the late
+command training finds its timings with that reference 8 steps to
+each side, without asking where in its eye the reference is. On a
+ThinkPad W541 with four DIMMs mrc.bin ends 3 steps below.
+
+Add a step after the late command training
+(HASWELL_NRI_COMMAND_VREF): set the reference to every other value of
+its range in turn and run the test of that training on every rank,
+after a JEDEC init each time, as the training does for its timings:
+the DIMMs are in no known state after commands they took for others.
+The reference is left at the centre of the values at which both
+channels pass. In one dimension, at the trained timings.
+
+The reference stays as it was unless the range of passing values holds
+it, ends on both sides within the range of the register, has room for
+the 8 steps on both sides of its centre, and the test passes at the
+centre with the reference 8 steps to each side, as the timings were
+found. Like the write Vref and the round trip steps, it is not run in
+the training that is done again after a failure. The register is among
+the saved ones.
+
+The lines of the log give the command voltage eye, which nothing
+measured so far.
+
+Not tested on hardware.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+---
+ src/northbridge/intel/haswell/Kconfig         |  11 ++
+ .../haswell/native_raminit/raminit_main.c     |   1 +
+ .../haswell/native_raminit/raminit_native.h   |   1 +
+ .../native_raminit/train_late_command.c       | 100 ++++++++++++++++++
+ 4 files changed, 113 insertions(+)
+
+diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
+index d5681d05..9c2ad84e 100644
+--- a/src/northbridge/intel/haswell/Kconfig
++++ b/src/northbridge/intel/haswell/Kconfig
+@@ -40,6 +40,17 @@ config HASWELL_NRI_ROUND_TRIP
+ 	  HASWELL_NRI_MEMORY_TEST, which trains again without this when the
+ 	  memory test fails.
+ 
++config HASWELL_NRI_COMMAND_VREF
++	bool "Centre the command Vref of the DIMMs after training"
++	depends on USE_NATIVE_RAMINIT
++	help
++	  After the command training, move the reference voltage that the
++	  processor makes for the command, address and control inputs of
++	  the DIMMs over its range, with the test of the command training
++	  on every rank at each value, and leave it at the centre of the
++	  values that pass. Best with HASWELL_NRI_MEMORY_TEST, which trains
++	  again without this when the memory test fails.
++
+ config HASWELL_NRI_WRITE_VREF
+ 	bool "Centre the write Vref of the DIMMs after training"
+ 	depends on USE_NATIVE_RAMINIT
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index 3d721427..40478cd6 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -133,6 +133,7 @@ static const struct task_entry cold_boot[] = {
+ 	{ optimise_comp,                                          true, "OPTCOMP",    },
+ 	{ post_training,                                          true, "POSTTRAIN",  },
+ 	{ train_late_command,                                     true, "LCT",        },
++	{ train_command_vref,                                     true, "CMDVC1D",    },
+ 	{ train_write_vref,                                       true, "WRVC1D",     },
+ 	{ optimise_round_trip,                                    true, "RTL",        },
+ 	{ activate_mc,                                            true, "ACTIVATE",   },
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index 995b9b39..a0882b58 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -701,6 +701,7 @@ enum nri_status activate_mc(struct sysinfo *ctrl);
+ enum nri_status ecc_scrub(struct sysinfo *ctrl);
+ enum nri_status memory_test(struct sysinfo *ctrl);
+ enum nri_status optimise_round_trip(struct sysinfo *ctrl);
++enum nri_status train_command_vref(struct sysinfo *ctrl);
+ enum nri_status train_write_vref(struct sysinfo *ctrl);
+ enum nri_status alias_check(struct sysinfo *ctrl);
+ enum nri_status raminit_done(struct sysinfo *ctrl);
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_late_command.c b/src/northbridge/intel/haswell/native_raminit/train_late_command.c
+index a8d4953b..0db7fd91 100644
+--- a/src/northbridge/intel/haswell/native_raminit/train_late_command.c
++++ b/src/northbridge/intel/haswell/native_raminit/train_late_command.c
+@@ -1090,3 +1090,103 @@ enum nri_status train_late_command(struct sysinfo *ctrl)
+ 	reut_disable_cadb_deselects();
+ 	return do_jedec_init(ctrl);
+ }
++
++/*
++ * Command voltage centring.
++ *
++ * The DIMMs sample the command, address and control signals against a second
++ * reference voltage that the processor makes, one for both channels (the CA
++ * Vref of DDR_DATA VREF_ADJUST). configure_mc() sets it and nothing centres
++ * it: the timings above are found with the reference CMDV_GUARD steps to each
++ * side of where it is, wherever that is in its eye. On a ThinkPad W541 with
++ * four DIMMs, mrc.bin leaves it 3 steps below where this code leaves it.
++ *
++ * With the command timings final: set the reference to each value of its
++ * range in turn and run the test of this training on every rank, after a
++ * JEDEC init, as a DIMM that took a command for another one is in no known
++ * state. The values at which every channel passes are the command voltage
++ * eye, and its centre is the new reference. One dimension, at the trained
++ * timings: the MRC centres the two together.
++ *
++ * The reference stays as it was unless the eye holds it, closes on both sides
++ * within the range, is wide enough for the guard on both sides of its centre,
++ * and the test passes at the centre with the guard, as the timings were
++ * found. Not run in the training that is done again after a failure.
++ */
++
++/* Every other value: each one costs a JEDEC init */
++#define CMDV_STEP	2
++/* The offsets of run_io_test_lct() */
++#define CMDV_GUARD	8
++#define CMDV_MIN_WIDTH	(2 * CMDV_GUARD + 2 * CMDV_STEP)
++
++enum nri_status train_command_vref(struct sysinfo *ctrl)
++{
++	if (!CONFIG(HASWELL_NRI_COMMAND_VREF) || ctrl->lpddr)
++		return NRI_STATUS_SUCCESS;
++
++	if (ctrl->no_latency_optimisation) {
++		printk(BIOS_INFO, "Command Vref left as set\n");
++		return NRI_STATUS_SUCCESS;
++	}
++
++	/* The test of the clock centring above: every rank at once */
++	setup_io_test_cadb(ctrl, ctrl->chanmap, 10, NTHSOE);
++	const uint8_t rankmask = ctrl->rankmap[0] | ctrl->rankmap[1];
++	uint8_t chanmask = 0;
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++)
++		chanmask |= select_reut_ranks(ctrl, channel, rankmask);
++
++	const int8_t before = ctrl->dimm_vref.ca;
++
++	/* The test has to pass as trained, or it tells nothing */
++	do_jedec_init(ctrl);
++	uint8_t failing = run_io_test_lct(ctrl, chanmask, false) & chanmask;
++	update_vref_and_wait(ctrl, VREF_CA, false, 0, false);
++	if (failing) {
++		printk(BIOS_WARNING, "CMDV: command test fails as trained (0x%x), "
++		       "not centring\n", failing);
++		reut_disable_cadb_deselects();
++		return do_jedec_init(ctrl);
++	}
++
++	struct linear_train_data eye = { 0 };
++	for (int32_t value = MIN_VREF; value <= MAX_VREF; value += CMDV_STEP) {
++		set_dimm_vref(ctrl, VREF_CA, value, false);
++		do_jedec_init(ctrl);
++		failing = run_io_test(ctrl, chanmask, ctrl->dq_pat, true) & chanmask;
++		linear_record_pass(&eye, !failing, value, MIN_VREF, CMDV_STEP);
++	}
++
++	const struct passing_range range = eye.largest;
++	const int32_t width = range_width(range);
++	const int32_t centre = range_center(range);
++	const bool usable = width >= CMDV_MIN_WIDTH && range.start > MIN_VREF &&
++			    range.end < MAX_VREF && before >= range.start &&
++			    before <= range.end;
++
++	printk(BIOS_DEBUG, "CMDV: eye %d to %d, width %d, centre %d, Vref %d\n",
++	       range.start, range.end, width, centre, before);
++
++	if (!usable)
++		printk(BIOS_WARNING, "CMDV: eye not usable, Vref as set\n");
++
++	set_dimm_vref(ctrl, VREF_CA, usable ? centre : before, usable);
++	do_jedec_init(ctrl);
++
++	if (usable) {
++		/* Back to the reference of before if the result does not pass */
++		failing = run_io_test_lct(ctrl, chanmask, false) & chanmask;
++		update_vref_and_wait(ctrl, VREF_CA, false, 0, false);
++		if (failing) {
++			printk(BIOS_WARNING, "CMDV: fails around the centre (0x%x), "
++			       "Vref as set\n", failing);
++			set_dimm_vref(ctrl, VREF_CA, before, true);
++		}
++	}
++	printk(BIOS_INFO, "CMDV: command Vref %d (was %d)\n", ctrl->dimm_vref.ca, before);
++
++	/* Clean up after testing */
++	reut_disable_cadb_deselects();
++	return do_jedec_init(ctrl);
++}
+-- 
+2.43.0
+

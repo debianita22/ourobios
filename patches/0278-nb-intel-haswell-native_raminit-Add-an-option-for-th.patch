@@ -53,24 +53,39 @@ With the timings of the SPD at every boot the MPLL is not looked at.
 The version of the saved training now has the profile that the boot
 asks for: changing the option trains again.
 
-Not tested on a machine with XMP DIMMs. The SPD path, the default, is
-unchanged but for the version of the saved training.
+What was decided about the profile, and whether the DIMMs have it, is
+said again once the console is in CBMEM on a boot that trains: such a
+boot overflows the pre-RAM console and loses its start, and a profile
+asked for, refused or given up makes one.
 
-TEST=Build of the ThinkPad W541 with the native RAM init.
+Not tested with XMP DIMMs: the ThinkPad W541 at hand has none (no XMP
+header in the SPDs). The SPD path, the default, is unchanged but for
+the version of the saved training.
+
+TEST=ThinkPad W541 with four DDR3L SO-DIMMs without an XMP profile, as
+v1.7.0-rc1 of ouroBIOS (without the lines said again in CBMEM, which
+that test asked for). With the option at 0: one training after the
+update, then the saved one; timings, round trips and latencies as
+before; byte 0x7d reads 0xa0. With 1: "CH0S0 has no XMP profile 1,
+using the SPD timings", the timings of the SPD, byte 0xb0 once the
+payload confirmed the boot, also after an S3 resume. 0xb2 written to
+the byte: the next boot gives the profile up (0xa4), the one after
+says "failed before"; back at 0 the byte reads 0xa0. 30 minutes of
+stress-ng --vm --verify without errors.
 ---
- src/northbridge/intel/haswell/Kconfig         |  18 +++
+ src/northbridge/intel/haswell/Kconfig         |  18 ++
  src/northbridge/intel/haswell/Makefile.mk     |   2 +
- .../intel/haswell/memory_profile.h            |  74 ++++++++++
+ .../intel/haswell/memory_profile.h            |  74 ++++++++
  .../intel/haswell/memory_profile_smm.c        |  21 +++
  .../intel/haswell/native_raminit/Makefile.mk  |   2 +
- .../intel/haswell/native_raminit/init_mpll.c  | 139 +++++++++++++++++-
- .../haswell/native_raminit/memory_profile.c   | 129 ++++++++++++++++
+ .../intel/haswell/native_raminit/init_mpll.c  | 139 +++++++++++++-
+ .../haswell/native_raminit/memory_profile.c   | 174 ++++++++++++++++++
  .../haswell/native_raminit/raminit_main.c     |   5 +
- .../haswell/native_raminit/raminit_native.c   |   3 +
- .../haswell/native_raminit/raminit_native.h   |  10 ++
+ .../haswell/native_raminit/raminit_native.c   |   5 +
+ .../haswell/native_raminit/raminit_native.h   |  12 ++
  .../haswell/native_raminit/save_restore.c     |   7 +-
- .../haswell/native_raminit/spd_bitmunching.c  | 122 ++++++++++++---
- 12 files changed, 509 insertions(+), 23 deletions(-)
+ .../haswell/native_raminit/spd_bitmunching.c  | 165 +++++++++++++++--
+ 12 files changed, 601 insertions(+), 23 deletions(-)
  create mode 100644 src/northbridge/intel/haswell/memory_profile.h
  create mode 100644 src/northbridge/intel/haswell/memory_profile_smm.c
  create mode 100644 src/northbridge/intel/haswell/native_raminit/memory_profile.c
@@ -449,10 +464,10 @@ index d8887705..bfaf46a1 100644
  			if (!(mchbar_read32(MC_BIOS_REQ) & BIT(31))) {
 diff --git a/src/northbridge/intel/haswell/native_raminit/memory_profile.c b/src/northbridge/intel/haswell/native_raminit/memory_profile.c
 new file mode 100644
-index 00000000..e56854e8
+index 00000000..f5a670cd
 --- /dev/null
 +++ b/src/northbridge/intel/haswell/native_raminit/memory_profile.c
-@@ -0,0 +1,129 @@
+@@ -0,0 +1,174 @@
 +/* SPDX-License-Identifier: GPL-2.0-or-later */
 +
 +#include <cf9_reset.h>
@@ -472,6 +487,35 @@ index 00000000..e56854e8
 +
 +/* Whether the boot before this one asked for a profile */
 +static bool profile_before;
++
++/* What nri_memory_profile_init() said, for nri_memory_profile_report() */
++static enum {
++	SAID_NOTHING,
++	SAID_REQUESTED,
++	SAID_FAILED_BEFORE,
++	SAID_GAVE_UP,
++} said;
++static uint8_t said_option, said_boots;
++
++static void say_decision(void)
++{
++	switch (said) {
++	case SAID_REQUESTED:
++		printk(BIOS_INFO, "Memory profile: XMP profile %u requested\n", said_option);
++		break;
++	case SAID_FAILED_BEFORE:
++		printk(BIOS_ERR, "Memory profile: XMP profile %u failed before, using the SPD "
++		       "timings. Select the SPD timings once to try it again\n", said_option);
++		break;
++	case SAID_GAVE_UP:
++		printk(BIOS_ERR, "Memory profile: %u boots in a row with XMP profile %u did not "
++		       "reach the payload, using the SPD timings from now on\n",
++		       said_boots, said_option);
++		break;
++	default:
++		break;
++	}
++}
 +
 +uint8_t nri_memory_profile(void)
 +{
@@ -496,6 +540,7 @@ index 00000000..e56854e8
 +void nri_memory_profile_init(const bool s3resume)
 +{
 +	boot_profile = MEMORY_PROFILE_SPD;
++	said = SAID_NOTHING;
 +
 +	if (!CONFIG(HASWELL_NRI_MEMORY_PROFILE))
 +		return;
@@ -511,9 +556,11 @@ index 00000000..e56854e8
 +		return;
 +	}
 +
++	said_option = option;
++
 +	if (state.failed == option) {
-+		printk(BIOS_ERR, "Memory profile: XMP profile %u failed before, using the SPD "
-+		       "timings. Select the SPD timings once to try it again\n", option);
++		said = SAID_FAILED_BEFORE;
++		say_decision();
 +		state.active = false;
 +		state.unconfirmed = 0;
 +		memory_profile_write_state(state);
@@ -526,9 +573,9 @@ index 00000000..e56854e8
 +	}
 +
 +	if (state.unconfirmed >= MEMORY_PROFILE_MAX_UNCONFIRMED) {
-+		printk(BIOS_ERR, "Memory profile: %u boots in a row with XMP profile %u did not "
-+		       "reach the payload, using the SPD timings from now on\n",
-+		       state.unconfirmed, option);
++		said = SAID_GAVE_UP;
++		said_boots = state.unconfirmed;
++		say_decision();
 +		state.active = false;
 +		state.failed = option;
 +		state.unconfirmed = 0;
@@ -540,7 +587,20 @@ index 00000000..e56854e8
 +	state.unconfirmed++;
 +	memory_profile_write_state(state);
 +	boot_profile = option;
-+	printk(BIOS_INFO, "Memory profile: XMP profile %u requested\n", option);
++	said = SAID_REQUESTED;
++	say_decision();
++}
++
++/*
++ * Say again, once the console is in CBMEM, what was decided about the profile
++ * and whether the DIMMs have it. A boot that trains overflows the pre-RAM
++ * console and loses its start, and a profile asked for, refused or given up
++ * makes such a boot: the version of the saved training has the profile.
++ */
++void nri_memory_profile_report(void)
++{
++	say_decision();
++	report_xmp_profile_use();
 +}
 +
 +/* A reset that this code asks for before the training is not a boot that failed */
@@ -605,7 +665,7 @@ index ac2afb96..bb91c883 100644
  	die("Memory initialization was met with utmost failure and misery\n");
  }
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.c b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
-index 9d38c42b..065e31b8 100644
+index 9d38c42b..63f6e942 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
 @@ -176,6 +176,9 @@ void perform_raminit(const bool s3resume)
@@ -618,8 +678,17 @@ index 9d38c42b..065e31b8 100644
  	if (CONFIG(DEBUG_RAM_SETUP)) {
  		/* Log CAPID values before dynamic fusing takes place */
  		dump_capid_values();
+@@ -220,6 +223,8 @@ void perform_raminit(const bool s3resume)
+ 	}
+ 
+ 	report_ignored_dimms();
++	if (bootmode == BOOTMODE_COLD)
++		nri_memory_profile_report();
+ 
+ 	/* Save training data on non-S3 resumes */
+ 	if (!s3resume)
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index 43898d59..41051cd8 100644
+index 43898d59..f789a002 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 @@ -393,6 +393,9 @@ struct sysinfo {
@@ -632,7 +701,7 @@ index 43898d59..41051cd8 100644
  	long wait_time_us;
  
  	/** TODO: ECC support untested **/
-@@ -666,6 +669,13 @@ void raminit_reset(void);
+@@ -666,6 +669,15 @@ void raminit_reset(void);
  enum nri_status collect_spd_info(struct sysinfo *ctrl);
  void report_ignored_dimms(void);
  enum nri_status initialise_mpll(struct sysinfo *ctrl);
@@ -641,6 +710,8 @@ index 43898d59..41051cd8 100644
 +uint8_t nri_memory_profile(void);
 +bool nri_memory_profile_may_change_clock(void);
 +void nri_memory_profile_init(bool s3resume);
++void nri_memory_profile_report(void);
++void report_xmp_profile_use(void);
 +void nri_memory_profile_uncount(void);
 +__noreturn void nri_memory_profile_failed(void);
  enum nri_status convert_timings(struct sysinfo *ctrl);
@@ -675,7 +746,7 @@ index 074011bd..385ff5bd 100644
  
  	memcpy(settings.spd_addresses, cfg->spd_addresses, sizeof(settings.spd_addresses));
 diff --git a/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c b/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
-index 07fabf22..3e8b2832 100644
+index 07fabf22..f8dcca8f 100644
 --- a/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
 +++ b/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
 @@ -7,6 +7,7 @@
@@ -686,7 +757,7 @@ index 07fabf22..3e8b2832 100644
  #include <northbridge/intel/haswell/raminit.h>
  #include <static.h>
  #include <string.h>
-@@ -60,13 +61,77 @@ static void get_spd_data(struct sysinfo *ctrl)
+@@ -60,13 +61,120 @@ static void get_spd_data(struct sysinfo *ctrl)
  	}
  }
  
@@ -695,6 +766,51 @@ index 07fabf22..3e8b2832 100644
 +{
 +	return ctrl->memory_profile == MEMORY_PROFILE_XMP_2 ? DDR3_XMP_PROFILE_2
 +							    : DDR3_XMP_PROFILE_1;
++}
++
++/* What xmp_profile_is_usable() found, for report_xmp_profile_use() */
++static struct {
++	enum {
++		XMP_NOT_ASKED,
++		XMP_USED,
++		XMP_NO_PROFILE,
++		XMP_FEWER_DIMMS,
++		XMP_HIGHER_VOLTAGE,
++	} verdict;
++	uint8_t number, channel, slot;
++	uint16_t profile, board;
++} xmp_use;
++
++static void say_xmp_profile_use(void)
++{
++	switch (xmp_use.verdict) {
++	case XMP_USED:
++		printk(BIOS_INFO, "Memory profile: XMP profile %u of the DIMMs, %u mV\n",
++		       xmp_use.number, xmp_use.profile);
++		break;
++	case XMP_NO_PROFILE:
++		printk(BIOS_WARNING, "Memory profile: CH%uS%u has no XMP profile %u, using the "
++		       "SPD timings\n", xmp_use.channel, xmp_use.slot, xmp_use.number);
++		break;
++	case XMP_FEWER_DIMMS:
++		printk(BIOS_WARNING, "Memory profile: XMP profile %u of CH%uS%u is for %u per "
++		       "channel, not %u, using the SPD timings\n", xmp_use.number,
++		       xmp_use.channel, xmp_use.slot, xmp_use.profile, xmp_use.board);
++		break;
++	case XMP_HIGHER_VOLTAGE:
++		printk(BIOS_WARNING, "Memory profile: XMP profile %u is for %u mV, the DIMMs "
++		       "get %u mV, using the SPD timings\n", xmp_use.number, xmp_use.profile,
++		       xmp_use.board);
++		break;
++	default:
++		break;
++	}
++}
++
++/* Again once the console is in CBMEM (nri_memory_profile_report()) */
++void report_xmp_profile_use(void)
++{
++	say_xmp_profile_use();
 +}
 +
 +/*
@@ -709,10 +825,12 @@ index 07fabf22..3e8b2832 100644
 +{
 +	/* Too large for the stack before the memory is up */
 +	static struct dimm_attr_ddr3_st attr;
-+	const unsigned int number = ctrl->memory_profile;
 +	uint8_t dpc[NUM_CHANNELS] = { 0 };
 +	bool all_1v35 = true;
 +	uint16_t xmp_mv = 0;
++
++	xmp_use.verdict = XMP_USED;
++	xmp_use.number = ctrl->memory_profile;
 +
 +	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
 +		for (uint8_t slot = 0; slot < NUM_SLOTS; slot++)
@@ -722,23 +840,19 @@ index 07fabf22..3e8b2832 100644
 +	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
 +		for (uint8_t slot = 0; slot < NUM_SLOTS; slot++) {
 +			struct raminit_dimm_info *const dimm = &ctrl->dimms[channel][slot];
-+			if (!dimm->valid)
++			if (!dimm->valid || xmp_use.verdict != XMP_USED)
 +				continue;
 +
++			xmp_use.channel = channel;
++			xmp_use.slot = slot;
 +			memset(&attr, 0, sizeof(attr));
 +			if (spd_xmp_decode_ddr3(&attr, dimm->raw_spd, xmp_profile_of(ctrl))
 +			    != SPD_STATUS_OK) {
-+				printk(BIOS_WARNING, "Memory profile: CH%uS%u has no XMP "
-+				       "profile %u, using the SPD timings\n",
-+				       channel, slot, number);
-+				return false;
-+			}
-+			if (attr.dimms_per_channel < dpc[channel]) {
-+				printk(BIOS_WARNING, "Memory profile: XMP profile %u of "
-+				       "CH%uS%u is for %u per channel, not %u, using the SPD "
-+				       "timings\n", number, channel, slot,
-+				       attr.dimms_per_channel, dpc[channel]);
-+				return false;
++				xmp_use.verdict = XMP_NO_PROFILE;
++			} else if (attr.dimms_per_channel < dpc[channel]) {
++				xmp_use.verdict = XMP_FEWER_DIMMS;
++				xmp_use.profile = attr.dimms_per_channel;
++				xmp_use.board = dpc[channel];
 +			}
 +			all_1v35 &= attr.flags.operable_1_35V;
 +			xmp_mv = MAX(xmp_mv, attr.voltage);
@@ -746,15 +860,15 @@ index 07fabf22..3e8b2832 100644
 +	}
 +
 +	const uint16_t board_mv = ctrl->vdd_mv_cfg ? ctrl->vdd_mv_cfg : all_1v35 ? 1350 : 1500;
-+	if (xmp_mv > board_mv) {
-+		printk(BIOS_WARNING, "Memory profile: XMP profile %u is for %u mV, the DIMMs "
-+		       "get %u mV, using the SPD timings\n", number, xmp_mv, board_mv);
-+		return false;
++	if (xmp_use.verdict == XMP_USED) {
++		xmp_use.profile = xmp_mv;
++		xmp_use.board = board_mv;
++		if (xmp_mv > board_mv)
++			xmp_use.verdict = XMP_HIGHER_VOLTAGE;
 +	}
 +
-+	printk(BIOS_INFO, "Memory profile: XMP profile %u of the DIMMs, %u mV\n",
-+	       number, xmp_mv);
-+	return true;
++	say_xmp_profile_use();
++	return xmp_use.verdict == XMP_USED;
 +}
 +
 +static void decode_spd(const struct sysinfo *ctrl, struct raminit_dimm_info *const dimm)
@@ -769,7 +883,7 @@ index 07fabf22..3e8b2832 100644
  	else
  		spd_decode_ddr3(&dimm->data, dimm->raw_spd);
  
-@@ -149,6 +214,8 @@ static enum nri_status find_common_spd_parameters(struct sysinfo *ctrl)
+@@ -149,6 +257,8 @@ static enum nri_status find_common_spd_parameters(struct sysinfo *ctrl)
  	bool not_ecc = false;
  	uint8_t ignored = 0;
  
@@ -778,7 +892,7 @@ index 07fabf22..3e8b2832 100644
  	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
  		ctrl->dpc[channel] = 0;
  		ctrl->rankmap[channel] = 0;
-@@ -160,7 +227,7 @@ static enum nri_status find_common_spd_parameters(struct sysinfo *ctrl)
+@@ -160,7 +270,7 @@ static enum nri_status find_common_spd_parameters(struct sysinfo *ctrl)
  				continue;
  
  			printk(RAM_DEBUG, "\nCH%uS%u SPD:\n", channel, slot);
@@ -787,7 +901,7 @@ index 07fabf22..3e8b2832 100644
  			if (!dimm_is_usable(dimm, channel, slot)) {
  				ignored++;
  				continue;
-@@ -284,19 +351,30 @@ enum nri_status convert_timings(struct sysinfo *ctrl)
+@@ -284,19 +394,30 @@ enum nri_status convert_timings(struct sysinfo *ctrl)
  	 */
  
  	/* Convert primary timings from nanoseconds to DCLKs */
@@ -831,7 +945,7 @@ index 07fabf22..3e8b2832 100644
  
  	/* Constrain primary timings to hardware limits */
  	/** TODO: complain when clamping? **/
-@@ -333,6 +411,10 @@ enum nri_status convert_timings(struct sysinfo *ctrl)
+@@ -333,6 +454,10 @@ enum nri_status convert_timings(struct sysinfo *ctrl)
  	if (ctrl->tCWL < MIN_CWL || ctrl->tCWL > MAX_CWL)
  		ctrl->tCWL = get_tCWL(ctrl->mem_clock_mhz);
  
@@ -842,7 +956,7 @@ index 07fabf22..3e8b2832 100644
  	/* This is needed to support ODT properly on 2DPC */
  	if (ctrl->tAA - ctrl->tCWL > 4)
  		ctrl->tCWL = ctrl->tAA - 4;
-@@ -342,7 +424,7 @@ enum nri_status convert_timings(struct sysinfo *ctrl)
+@@ -342,7 +467,7 @@ enum nri_status convert_timings(struct sysinfo *ctrl)
  	};
  	const uint32_t min_tCMD = capid0_a.D1NM ? 2 : 1;
  
