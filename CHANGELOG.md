@@ -7,8 +7,9 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.7.0
 
-Not released. What ran on a machine: v1.7.0-rc1 and -rc2 on the M920x
-(the option lock work).
+Not released. What ran on a machine: v1.7.0-rc1 on the M920x (the
+facts for the option lock work); the candidates with the changes below
+are still to run.
 
 - **The option lock and the MOR lock cannot be gone around through the
   fault tolerant write** (patch 0281, `edk2/0061`): the locks refused a
@@ -21,7 +22,19 @@ Not released. What ran on a machine: v1.7.0-rc1 and -rc2 on the M920x
   store is reclaimed before the lock is armed (EndOfDxe) so a runtime
   reclaim, which uses those blocks, is rare and fails safely. This closes
   the bypass on every release with the lock (v1.6.1 and later); a v1.6.x
-  backport is still to be decided. Checked on the M920x (v1.7.0-rc2).
+  backport is still to be decided.
+- **M920x: the option lock is for every setup option** (patch 0282,
+  `SMMSTORE_OPTION_LOCK_ALL`): once the payload has armed it, a program
+  of the OS can no longer write the variable store with the raw SMMSTORE
+  commands so that coreboot reads another option at the next boot: a
+  device turned off in the setup stays off, as *BIOS Lock* and
+  *Firmware protection* stayed on. The variables of the OS (boot
+  entries, the capsule variables) are written as before. Two things
+  change for the OS: a variable write that needs a reclaim of a full
+  store fails until the next boot, which reclaims; and, rarely (a
+  header that lands on the end of a 64 KiB flash block), a variable
+  write fails. The decisions are unit tests of coreboot, which the CI
+  now runs. The W541 keeps the lock of the two security options.
 - **W541 (`nri`): an XMP profile of the memory as an option** (patches
   0275-0279): *Hardware* → *Memory* → *Memory profile*, *SPD (JEDEC)* by
   default, or *XMP profile 1* or *2*. With a profile the native RAM init

@@ -76,6 +76,12 @@
 #                  un aggiornamento puo' scrivere, i due slot di vboot, i
 #                  tentativi sul flash), nell'albero di EDK2 di prepare.
 #                  Esito in WORK/edk2-unit-test
+#   coreboot-unit-test le prove unitarie di coreboot che il progetto
+#                  aggiunge o cambia, sull'host (tests/ di coreboot, con
+#                  cmocka del sistema: libcmocka-dev): il lettore dello
+#                  store delle variabili (drivers/efi) e le decisioni del
+#                  lock delle opzioni di SMMSTORE, con e senza
+#                  SMMSTORE_OPTION_LOCK_ALL. Nell'albero di prepare
 #   edk2-upstream  il passaggio a EDK II di TianoCore: il payload di
 #                  EDK2_UPSTREAM_TAG senza patch in una ROM per QEMU q35 (e
 #                  in una seconda con SECURE_BOOT_ENABLE), poi in una terza
@@ -390,7 +396,7 @@ while [ $# -gt 0 ]; do
 		--dist)      DIST="$(realpath -m "${2:?--dist DIR}")"; shift 2 ;;
 		--jobs)      JOBS="${2:?--jobs N}"; shift 2 ;;
 		-h|--help)   sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
-		prepare|toolchain|config|roms|repro|menu|smoke|update-test|edk2-unit-test|edk2-upstream|edk2-parity|keys|toolchain-key) CMDS+=("$1"); shift ;;
+		prepare|toolchain|config|roms|repro|menu|smoke|update-test|edk2-unit-test|coreboot-unit-test|edk2-upstream|edk2-parity|keys|toolchain-key) CMDS+=("$1"); shift ;;
 		*) die "argomento sconosciuto: $1 (tools/build.sh --help)" ;;
 	esac
 done
@@ -2501,6 +2507,23 @@ cmd_edk2_upstream() {
 # Con le chiavi di prova di vboot, che il payload non contiene
 EDK2_PARITY_BAD=()
 EDK2_PARITY_READY=no
+# Le prove unitarie di coreboot del progetto (tests/drivers): il make di
+# coreboot le compila per l'host e le esegue, e fallisce se una non passa
+COREBOOT_UNIT_TESTS=(tests/drivers/efivars-test tests/drivers/smmstore_options_lock-test
+	tests/drivers/smmstore_options_lock_two-test)
+cmd_coreboot_unit_test() {
+	need_prepared
+	local t log="${WORK}/coreboot-unit-test.log"
+	say "coreboot-unit-test: ${COREBOOT_UNIT_TESTS[*]}"
+	for t in "${COREBOOT_UNIT_TESTS[@]}"; do
+		make -C "${TREE}" -s "${t}" > "${log}" 2>&1 || {
+			grep -E "ERROR|LINE|FAILED|error" "${log}" | head -20 >&2
+			die "coreboot-unit-test: ${t} non passa (${log})"
+		}
+		echo "  ok  ${t}: $(grep -c '^\[       OK \]' "${log}") prove passate"
+	done
+}
+
 cmd_edk2_parity() {
 	need_prepared
 	if [ "${TOOLCHAIN}" = crossgcc ]; then
@@ -2607,6 +2630,7 @@ for c in "${CMDS[@]}"; do
 		smoke)         each_board cmd_smoke ;;
 		update-test)   cmd_update_test ;;
 		edk2-unit-test) cmd_edk2_unit_test ;;
+		coreboot-unit-test) cmd_coreboot_unit_test ;;
 		edk2-upstream) cmd_edk2_upstream ;;
 		edk2-parity)
 			each_board cmd_edk2_parity

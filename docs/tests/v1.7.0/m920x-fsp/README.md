@@ -49,52 +49,118 @@ be after the write, and the walk reads every header and name and then
 the whole erased tail (101 KiB of the 192, `region_is_erased()` in
 64-byte reads) through the overlay's `readat`, which has no `mmap`.
 
-Step 1 of the plan, *the erased tail read once*, does not come out as a
-change of its own here. The walk finds where the records end only by
-walking; the erased-tail scan runs at that point, and the overlay cannot
-tell a tail read from a header read, so the tail cannot be skipped
-except where the write lands without the walk knowing where the tail
-begins — which is step 2, the store held in SMRAM. So step 1 folds into
-step 2: a copy of the variable store in SMRAM, made at the arm (the
-latch of stage 2 is the same copy) and kept in step by the handler, the
-only writer; the check of a write then reads no flash, and the erased
-tail is a length, not a scan. Stage 1 is therefore done inside stage 2,
-and LOCK-02 measures it on each candidate against the 0.285 s of F1.
+Step 1 of the plan, *the erased tail read once* (in patch 0282): the
+walk of the arm says where the records end (`efi_fv_walk_guid()`), and
+the handler, the only writer of the store while armed (F7), keeps that
+mark: a write past it moves it to the end of the write. The overlay of
+a check answers reads past the mark with erased bytes, then lays the
+write over them, so a write into the tail is still seen and the
+decision does not change; what a walk reads from the flash is the 625
+headers, about 40 KiB of the 150. The mark is with the handler's
+statics, taken again with the set of options after a resume.
 
-## Stage 2, first part: the fault tolerant write (F6), on rc2
+Step 2, the store in SMRAM, only if LOCK-02 on the candidate leaves the
+SMI well above the flash write.
 
-The owner chose to cover F6 inside stage 2. v1.7.0-rc2 (this branch,
-patch 0281 and `edk2/0061`) carries its fix; the lock for every option
-(the SHA-256 latch of the whole set in SMRAM) and the SMRAM store copy
-of stage 1 are the next candidate, with the one decision left: the size
-of the SMRAM subregion that would hold the 192 KiB store for the "reads
-no flash" fast path, against keeping it at 4 KiB with a digest-only
-latch and the walk cost of today.
+## Stage 2: the lock for every option, and the fault tolerant write
 
-**The fix (patch 0281):** the option lock and the MOR lock refuse, while
-armed, any raw SMMSTORE write or erase that reaches past the variable
-store, into the fault tolerant write blocks (`efi_fv_store_end()`).
-Those blocks are where the payload restarts a pending fault tolerant
-write at its start, before the lock is armed, so a write of them could
-rewrite the store with a protected option off. A reclaim of the store
-uses them and is refused too; it writes the spare area first, before it
-erases the store, so a refused reclaim leaves the store intact and the
-variable write fails until the next boot. `edk2/0061` moves the reclaim
-to EndOfDxe, before the lock is armed, so it is not refused in the
-normal flow. Unit test: `efi_test_store_end` (a valid and a broken
-firmware volume), with the 32 tests of `drivers/efi` passing.
+One candidate, v1.7.0-rc2 (patches 0281 and 0282, `edk2/0061`), as the
+owner asked.
 
-The rows below are filled from the run on rc2 once it is built,
-installed and tested (to run):
+**The fault tolerant write, F6 (patch 0281):** the option lock and the
+MOR lock refuse, while armed, any raw SMMSTORE write or erase that
+reaches past the variable store, into the fault tolerant write blocks
+(`efi_fv_store_end()`), from which the payload would rewrite the store
+at its next start. A reclaim of the store uses them and is refused too;
+its first writes are to those blocks, before it erases the store, so a
+refused reclaim leaves the store intact and the variable write fails
+until the next boot. `edk2/0061` moves the reclaim to EndOfDxe, before
+the lock is armed.
+
+**The rule (patch 0282, `SMMSTORE_OPTION_LOCK_ALL`, on in
+`boards/m920x/fsp.defconfig` only):** the set is every live variable of
+the options GUID (added, or added and in deleted transition) with its
+state, attributes, name and data, in the order of the store, from the
+walk of the reader that the boot uses; kept as a count and a SHA-256
+(vboot's, in C). A write or an erase is refused when the store as it
+would be after it has another set, or the reader cannot read it. This
+is stricter than "what the reader returns for each name" and needs no
+table of names: a second record of an option's name is one more
+variable, so it is refused when it becomes one, whatever its
+attributes. Nothing of the firmware writes those variables after the
+arm (F3).
+
+Decided while writing it, each with its reason:
+
+- *The set is not in the SMRAM region.* SMM is loaded again on a resume
+  from S3 and ramstage may write an option before it
+  (`me_state_counter`), so a set kept across the resume would refuse
+  every later write. The first check after a load takes the set from
+  the flash again: between the suspend and the resume only the
+  firmware writes it. The region keeps that the lock is armed, and for
+  what.
+- *No limit of options*: the mark is one digest, so "more options than
+  fit" does not exist. The lock of the two options remains for a store
+  that cannot be read at the arm, with `SMMSTORE_RET_FAILURE`, which the
+  payload publishes in `OptionLockStatus` as an error status.
+- *`me_state_counter`* has the runtime attribute (coreboot writes its
+  own options so): the OS could write it with `SetVariable` and now
+  cannot. Nothing known does.
+- *The SMM stack* is 8 KiB with the option (4 KiB before): the hash runs
+  inside the walk, the deepest call chain of SMM.
+- *Not with `VBOOT_X86_SHA256_ACCELERATION`* (Kconfig): vboot's SHA
+  extension code would use XMM registers inside SMM.
+
+**F4, a header split at the end of a flash block:** the payload's
+driver writes a variable header (60 bytes) in two raw writes when it
+crosses the end of a 64 KiB block. After the first piece the reader
+cannot read the store, so the rule refuses it: that `SetVariable` fails
+and the store stays as it was (unit test `test_split_header`). It
+happens when the next record starts in the last 60 bytes of a block,
+about one append in a thousand; the driver then tries the same place
+again, so variable writes of the OS fail until something moves the end
+of the records (a write of the firmware before the arm, or a reclaim).
+The store of this machine is at 0x17500 of 0x30000: the next such
+place is the block end at 0x20000. This is decision 2 of the plan, for
+the owner: either coreboot's reader takes "less than a header left in
+the block, the rest of the store erased" as the end of the records
+(then the piece can be allowed, and a power loss at that point no
+longer resets every option to its default, which it does today), or
+the payload pads past the block end before it arms the lock.
+
+**The proof**, `tools/build.sh coreboot-unit-test` (in `check.yml` and
+the update job of `build.yml`, with `libcmocka-dev`):
+`tests/drivers/smmstore_options_lock.c`, built with the option (13
+tests) and without it (5), and `efivars-test` (33).
+
+| Case | Decision | Test |
+|---|---|---|
+| not armed: anything | allowed | `test_not_armed` |
+| a variable of another GUID appended, updated (the new record, then the states of the old one), deleted, step by step; again past the tail of the arm | allowed at each step | `test_other_variables` |
+| the value of an option changed: the new record | refused when it becomes a variable (the header, *header valid*, name and data are allowed and leave a dead record) | `test_option_changed` |
+| an option deleted, in either state step | refused | `test_option_deleted` |
+| a variable of the options GUID that was not there; the same name with other attributes | refused | `test_option_added` |
+| the data, the name or the attributes of an option programmed over | refused | `test_option_bits` |
+| the block of an option erased, the store still readable; the block of the headers | refused | `test_option_erased` |
+| an erase of a block of the store with nothing in it | allowed | `test_option_erased` |
+| the size or the start mark of a record damaged; the headers of the store; bytes after the last record, near and far | refused | `test_store_damaged` |
+| a read error during the check | refused | `test_read_error` |
+| the working and spare blocks written or erased | refused | `test_ftw_blocks` |
+| the first piece of a split header | refused (F4) | `test_split_header` |
+| after a resume, with an option written by ramstage | the set of the flash at the resume | `test_resume` |
+| the set unreadable at the arm | the lock of the two options, `SMMSTORE_RET_FAILURE`, the blocks past the store refused | `test_no_latch` |
+| the Kconfig off: another option changed; a security option turned off; one deleted | allowed; refused; allowed (it reads as its default) | `test_two_options` |
+
+The rows of the machine, to run on rc2:
 
 | ID | Check | Expected |
 |---|---|---|
 | UPD-02 | rc2 as a capsule from rc1, slot A; rc1 kept in slot B | installed |
-| LOCK-01 | the option lock armed (`OptionLockStatus`) | `06 00 00 00` and eight zeros |
-| LOCK-02 | 20 writes of `Timeout`, `MSR_SMI_COUNT` around each | near F1 (0.285 s, 45 ms an SMI): the fix is a bounds check, no walk added |
+| LOCK-01 | `OptionLockStatus`; `cbmem -1 \| grep -i "option lock"` | armed; ramstage: *option lock for every setup option* |
+| LOCK-02 | 20 writes of `Timeout`, `MSR_SMI_COUNT` around each | against F1 (0.285 s, 45 ms an SMI) |
 | LOCK-03 | a boot entry created and deleted; a variable of the test's GUID created, changed, deleted through efivarfs | each works, the entries as before |
 | LOCK-04 | three resumes, then LOCK-01 and LOCK-03 | the lock still armed, the writes work |
+| LOCK-05 | the next candidate as a capsule, with the lock armed | installed |
 | LOCK-06 | the 36 options before and after the run | the same, name by name |
 | LOCK-07, LOCK-08 | `hw-report.py`, `cbmem -t`; fwts, chipsec | the baseline of v1.6.3; no new failure |
 | LOCK-09 | a variable written until a write fails, a reboot, one more write, the variable deleted | how much a boot can write; after the reboot the write works and the space is back |
-

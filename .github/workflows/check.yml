@@ -58,7 +58,7 @@ jobs:
       - name: Pacchetti
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq nasm xxd uuid-dev >/dev/null
+          sudo apt-get install -y -qq nasm xxd uuid-dev libcmocka-dev >/dev/null
 
       # solo Kconfig: gcc del sistema (--toolchain host), niente crossgcc
       - name: tools/build.sh prepare config
@@ -66,6 +66,11 @@ jobs:
 
       - name: Prove unitarie del payload
         run: ./tools/build.sh --toolchain host edk2-unit-test
+
+      # il lettore dello store delle variabili e le decisioni del lock delle
+      # opzioni di SMMSTORE (libcmocka-dev): un controllo che non gira non vale
+      - name: Prove unitarie di coreboot
+        run: ./tools/build.sh --toolchain host coreboot-unit-test
 
       # come Jenkins su Gerrit: lint-stable sull'albero con la serie,
       # checkpatch.pl sulle patch del progetto

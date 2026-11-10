@@ -143,6 +143,12 @@ CONFIG_BOOTMEDIA_LOCK_SI_ALL=y
 # bootmedia_lock con la SMI raw di SMMSTORE e ripartire senza protezioni.
 # Il setup le cambia ancora, prima dell'arm. Richiede BIOS Lock.
 CONFIG_SMMSTORE_OPTION_LOCK=y
+# Il lock per tutte le opzioni del setup (patch 0282): armato, il flash non
+# tiene mai uno store da cui coreboot leggerebbe al prossimo avvio opzioni
+# diverse da quelle dell'arm. Un programma dell'OS non puo' riaccendere un
+# dispositivo spento nel setup. Il W541 resta col lock delle due opzioni
+# finche' non l'ha provato (docs/dev-v1.7.0-m920x.md)
+CONFIG_SMMSTORE_OPTION_LOCK_ALL=y
 
 # Le opzioni del setup tornano ai default quando la RTC perde
 # l'alimentazione (pila scarica, jumper della CMOS), come col BIOS Lenovo:

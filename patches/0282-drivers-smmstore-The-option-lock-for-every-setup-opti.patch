@@ -1,0 +1,1149 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 10 Nov 2026 21:51:07 +0100
+Subject: [PATCH] drivers/smmstore: The option lock for every setup option
+
+The option lock keeps two options, bios_lock and bootmedia_lock, from
+being turned off by a raw SMMSTORE write. Every other setup option is a
+boot-service variable too, but a program with root can still write the
+variable store with the raw commands and, at the next boot, turn on
+again a device that the owner turned off in the setup.
+
+SMMSTORE_OPTION_LOCK_ALL makes the lock one of the whole set: while
+armed, the flash never holds a variable store from which coreboot would
+read another set of options than the one of the arm. The set is every
+live variable of the options GUID, with its state, attributes, name and
+data, in the order of the store, from efi_fv_walk_guid(), the walk of
+the reader that the boot uses. It is kept as a count and a SHA-256
+(vboot's library, in C: not with VBOOT_X86_SHA256_ACCELERATION, which
+would use XMM registers in SMM), so that whoever writes the store cannot
+choose a second set with the same mark. A write or an erase is refused
+when the store as it would be after it has another set or cannot be
+read. Variables of other GUIDs are written, updated and deleted as
+before, step by step as the payload's driver does it.
+
+The set is not kept in the SMRAM region: SMM is loaded again on a
+resume from S3, after ramstage may have written an option, so the first
+check after a load takes it from the flash again; only the firmware
+writes the flash between the two. When the set cannot be read at the
+arm, the lock is the one of the two options and the command returns
+SMMSTORE_RET_FAILURE.
+
+The walk of the arm also says where the erased tail of the store
+begins. Only this handler writes the store while armed, so the check of
+a write no longer reads the tail from the flash, about two thirds of
+what a walk read on a ThinkCentre M920x; a write past the mark moves it.
+A write into the tail is still seen, through the overlay.
+
+One write of the payload's driver is refused that was not: the first
+piece of a variable header that it splits at the end of a flash block,
+after which the reader could not read the store. That variable write
+fails, and the store stays as it was.
+
+The stack of the SMM modules is 8 KiB with the option, for the hash
+inside the walk. ramstage logs which option lock the build has, as SMM
+has no console in a release build.
+
+TEST=tests/drivers: smmstore_options_lock-test (13 decisions with the
+option), smmstore_options_lock_two-test (the decisions of the two
+options, without it), efivars-test with efi_test_walk_guid.
+---
+ src/cpu/x86/Kconfig                   |   4 +-
+ src/drivers/efi/efivars.c             |  56 +++
+ src/drivers/efi/efivars.h             |  31 ++
+ src/drivers/smmstore/Kconfig          |  15 +
+ src/drivers/smmstore/options_lock.c   | 154 +++++++-
+ src/drivers/smmstore/ramstage.c       |  13 +
+ src/soc/intel/common/Kconfig.common   |   1 +
+ tests/drivers/Makefile.mk             |  28 ++
+ tests/drivers/efivars.c               |  68 ++++
+ tests/drivers/smmstore_options_lock.c | 537 ++++++++++++++++++++++++++
+ 10 files changed, 903 insertions(+), 4 deletions(-)
+ create mode 100644 tests/drivers/smmstore_options_lock.c
+
+diff --git a/src/cpu/x86/Kconfig b/src/cpu/x86/Kconfig
+index 9fd6d64952b..e850b82ec96 100644
+--- a/src/cpu/x86/Kconfig
++++ b/src/cpu/x86/Kconfig
+@@ -190,6 +190,7 @@ if HAVE_SMI_HANDLER
+ 
+ config SMM_MODULE_STACK_SIZE
+ 	hex
++	default 0x2000 if SMMSTORE_OPTION_LOCK_ALL
+ 	default 0x1000 if SMMSTORE_MOR_LOCK
+ 	default 0x800 if ARCH_RAMSTAGE_X86_64
+ 	default 0x400
+@@ -198,7 +199,8 @@ config SMM_MODULE_STACK_SIZE
+ 	  modules. The MOR lock (SMMSTORE_MOR_LOCK) walks the UEFI variable
+ 	  store from the SMI handler, a call chain deeper than any other in
+ 	  SMM: 4 KiB leaves it a margin, which an overflow here would not
+-	  report (the canary only dies with DEBUG_SMI).
++	  report (the canary only dies with DEBUG_SMI). The lock of every
++	  option (SMMSTORE_OPTION_LOCK_ALL) hashes inside that walk: 8 KiB.
+ 
+ config SMM_OPAL_S3_STATE_SMRAM
+ 	bool
+diff --git a/src/drivers/efi/efivars.c b/src/drivers/efi/efivars.c
+index af04c436ca8..93e000e920b 100644
+--- a/src/drivers/efi/efivars.c
++++ b/src/drivers/efi/efivars.c
+@@ -817,6 +817,62 @@ enum cb_err efi_fv_get_options(const struct region_device *rdev, const EFI_GUID
+ 	return ret;
+ }
+ 
++struct efi_walk_guid_args {
++	const EFI_GUID *guid;
++	enum cb_err (*fn)(const struct efi_fv_var *var, void *arg);
++	void *arg;
++};
++
++static enum cb_err walk_guid(struct region_device *rdev, VARIABLE_HEADER *hdr,
++			     size_t hdr_size, void *arg, bool *stop)
++{
++	const struct efi_walk_guid_args *wa = arg;
++	struct efi_fv_var var;
++
++	/* The states that match() takes: the others are not variables any more */
++	if ((hdr->State != VAR_ADDED) &&
++	    (hdr->State != (VAR_IN_DELETED_TRANSITION & VAR_ADDED)))
++		return CB_SUCCESS;
++
++	if (!compare_guid(&hdr->VendorGuid, wa->guid))
++		return CB_SUCCESS;
++
++	var = (struct efi_fv_var){
++		.rdev = rdev,
++		.name_offset = hdr_size,
++		.name_size = hdr->NameSize,
++		.data_size = hdr->DataSize,
++		.attributes = hdr->Attributes,
++		.state = hdr->State,
++	};
++	return wa->fn(&var, wa->arg);
++}
++
++enum cb_err efi_fv_walk_guid(const struct region_device *rdev, const EFI_GUID *guid,
++			     enum cb_err (*fn)(const struct efi_fv_var *var, void *arg),
++			     void *arg, size_t *tail)
++{
++	struct efi_walk_guid_args args = { .guid = guid, .fn = fn, .arg = arg };
++	struct region_device store_rdev = *rdev;
++	bool auth_format, full;
++	enum cb_err ret;
++
++	ret = efi_fv_init(&store_rdev, &auth_format);
++	if (ret != CB_SUCCESS)
++		return ret;
++
++	/* The walker never stops: a walk to the end returns "not found" */
++	ret = walk_variables(&store_rdev, auth_format, walk_guid, &args, &full);
++	if (ret != CB_EFI_OPTION_NOT_FOUND)
++		return ret == CB_SUCCESS ? CB_ERR : ret;
++
++	/* walk_variables() left store_rdev at what follows the last record */
++	if (tail)
++		*tail = region_device_offset(&store_rdev) - region_device_offset(rdev) +
++			(full ? region_device_sz(&store_rdev) : 0);
++	return CB_SUCCESS;
++}
++
+ /*
+  * efi_fv_store_end: the offset within @rdev where the variable store ends, the
+  * FV header plus the store. Past it, in the SMMSTORE region, are the fault
+diff --git a/src/drivers/efi/efivars.h b/src/drivers/efi/efivars.h
+index 0483fa19e1c..282e06b81d2 100644
+--- a/src/drivers/efi/efivars.h
++++ b/src/drivers/efi/efivars.h
+@@ -57,6 +57,37 @@ struct efi_fv_query {
+ enum cb_err efi_fv_get_options(const struct region_device *rdev, const EFI_GUID *guid,
+ 			       struct efi_fv_query *queries, size_t count);
+ 
++/**
++ * efi_fv_walk_guid
++ * Every live variable of one vendor guid, in the order of the store, with one
++ * walk: the records that efi_fv_get_option() looks at (added, or added and in
++ * deleted transition), whatever their names. What the reader returns for any
++ * name of the guid depends on these records and on nothing else, as long as
++ * the walk succeeds.
++ * @rdev: the readable region to operate on
++ * @guid: the vendor guid to look for
++ * @fn: called for each variable; another return than CB_SUCCESS ends the walk
++ *      and is returned
++ * @arg: passed to fn
++ * @tail: if not NULL, on CB_SUCCESS the offset within rdev of the first byte
++ *        after the last record: from there to the end of the store the walk
++ *        found the store erased
++ * Returns CB_SUCCESS when the whole store could be walked, or the error.
++ */
++struct efi_fv_var {
++	/* The record: the name is at name_offset, the data right after it */
++	const struct region_device *rdev;
++	size_t name_offset;
++	uint32_t name_size;
++	uint32_t data_size;
++	uint32_t attributes;
++	uint8_t state;
++};
++
++enum cb_err efi_fv_walk_guid(const struct region_device *rdev, const EFI_GUID *guid,
++			     enum cb_err (*fn)(const struct efi_fv_var *var, void *arg),
++			     void *arg, size_t *tail);
++
+ /**
+  * efi_fv_store_end
+  * The end of the variable store inside the region device (the FV header plus
+diff --git a/src/drivers/smmstore/Kconfig b/src/drivers/smmstore/Kconfig
+index 3bab14e1771..93e0496c27c 100644
+--- a/src/drivers/smmstore/Kconfig
++++ b/src/drivers/smmstore/Kconfig
+@@ -79,6 +79,21 @@ config SMMSTORE_OPTION_LOCK
+ 	  (BIOS Lock), which is why "bios_lock" is one of the protected options.
+ 	  The setup still changes them (before the lock is armed).
+ 
++config SMMSTORE_OPTION_LOCK_ALL
++	bool "Write-lock every setup option in SMM"
++	depends on SMMSTORE_OPTION_LOCK && VBOOT_LIB
++	# vboot's SHA-256 in C: its SHA extension code would use XMM registers in SMM
++	depends on !VBOOT_X86_SHA256_ACCELERATION
++	help
++	  SMMSTORE_CMD_OPTION_LOCK for every variable of the coreboot options
++	  GUID, not only the two security options: once armed, the handler
++	  refuses a write or an erase of the variable store after which
++	  coreboot would read another set of options at the next boot, or
++	  could not read the store. A program of the OS can then not turn on
++	  again a device that the owner turned off in the setup. The set is
++	  kept as a SHA-256 (vboot's library in SMM). The setup still changes
++	  the options, before the lock is armed.
++
+ endif
+ 
+ # Outside "if SMMSTORE": a board selects it whatever its payload
+diff --git a/src/drivers/smmstore/options_lock.c b/src/drivers/smmstore/options_lock.c
+index 4340cf16d7c..c2d57e7b5b2 100644
+--- a/src/drivers/smmstore/options_lock.c
++++ b/src/drivers/smmstore/options_lock.c
+@@ -13,6 +13,21 @@
+  * It only means anything with the flash written by SMM alone (BIOS Lock):
+  * without it the OS writes the flash directly. "bios_lock" is itself a
+  * protected option, so once armed the lock stays effective.
++ *
++ * With SMMSTORE_OPTION_LOCK_ALL the lock is for every setup option. The rule:
++ * while armed, the flash never holds a variable store from which coreboot
++ * would read, at the next boot, another set of options than the one of the
++ * arm. The set is every live variable of the options GUID (state, attributes,
++ * name and data, in the order of the store: efi_fv_walk_guid(), the walk of
++ * the reader the boot uses), kept as a count and a SHA-256, so that whoever
++ * writes the store cannot choose a second set with the same mark. A write or
++ * an erase is refused when the store as it would be after it has another
++ * set, or cannot be read (the reader then gives every option its default).
++ * Nothing of the firmware writes those variables once the payload has armed
++ * the lock, so nothing that must work is refused; a write of the OS to one of
++ * them (coreboot's own have the runtime attribute) is refused like any other.
++ * When the set cannot be read at the arm, the lock is the one of the two
++ * security options and the arm returns SMMSTORE_RET_FAILURE.
+  */
+ 
+ #include <boot_device.h>
+@@ -26,6 +41,9 @@
+ #include <smmstore.h>
+ #include <string.h>
+ #include <types.h>
++#if CONFIG(SMMSTORE_OPTION_LOCK_ALL)
++#include <vb2_sha.h>
++#endif
+ 
+ #define OPTION_LOCK_SIGNATURE 0x4b4c504f /* "OPLK" */
+ 
+@@ -56,9 +74,29 @@ struct option_lock_state {
+ 	uint32_t signature;
+ 	uint8_t armed;
+ 	uint8_t on[4];
+-	uint8_t reserved[3];
++	/* SMMSTORE_OPTION_LOCK_ALL: armed for the whole set of options */
++	uint8_t all;
++	uint8_t reserved[2];
+ } __packed;
+ 
++#define OPTION_SET_DIGEST_SIZE 32
++
++/*
++ * The set of options of the arm (SMMSTORE_OPTION_LOCK_ALL), and where the
++ * erased tail of the store begins. Not in the SMRAM region: SMM is loaded
++ * again on a resume from S3, and ramstage may have written an option before
++ * it (the firmware is the only writer between the suspend and the resume), so
++ * the first check after a load takes the set from the flash again.
++ */
++static struct {
++	bool fresh;
++	uint32_t count;
++	uint8_t digest[OPTION_SET_DIGEST_SIZE];
++	/* From here to the end of the store the flash is erased: only this
++	   handler writes the store while armed, and it moves the mark */
++	size_t tail;
++} option_set;
++
+ _Static_assert(ARRAY_SIZE(protected_options) <= 4, "option_lock_state.on is too small");
+ 
+ /* In the SMRAM region kept across S3, zeroed on every other boot */
+@@ -136,6 +174,8 @@ struct after_write {
+ 	size_t offset;
+ 	size_t size;
+ 	const uint8_t *data;
++	/* From here on the store is known to be erased: not read (SIZE_MAX: all read) */
++	size_t erased_from;
+ 	bool read_error;
+ };
+ 
+@@ -151,7 +191,9 @@ static ssize_t after_write_readat(const struct region_device *rd, void *b, size_
+ 	if (aw == NULL)
+ 		return -1;
+ 
+-	if (rdev_readat(aw->store, b, offset, size) != size) {
++	if (offset >= aw->erased_from) {
++		memset(b, 0xff, size);
++	} else if (rdev_readat(aw->store, b, offset, size) != size) {
+ 		aw->read_error = true;
+ 		return -1;
+ 	}
+@@ -180,6 +222,65 @@ static const struct region_device_ops after_write_ops = {
+ 	.readat = after_write_readat,
+ };
+ 
++#if CONFIG(SMMSTORE_OPTION_LOCK_ALL)
++struct option_set_walk {
++	struct vb2_sha256_context sha;
++	uint32_t count;
++};
++
++/* One SMI at a time: static, not on the stack of the handler */
++static struct option_set_walk set_walk;
++
++static enum cb_err option_set_add(const struct efi_fv_var *var, void *arg)
++{
++	struct option_set_walk *walk = arg;
++	const struct {
++		uint8_t state;
++		uint32_t attributes;
++		uint32_t name_size;
++		uint32_t data_size;
++	} __packed fields = { var->state, var->attributes, var->name_size, var->data_size };
++	uint64_t left = (uint64_t)var->name_size + var->data_size;
++	size_t offset = var->name_offset;
++	uint8_t buf[64];
++
++	vb2_sha256_update(&walk->sha, (const uint8_t *)&fields, sizeof(fields));
++	while (left) {
++		const size_t size = MIN(left, sizeof(buf));
++
++		if (rdev_readat(var->rdev, buf, offset, size) != size)
++			return CB_EFI_ACCESS_ERROR;
++		vb2_sha256_update(&walk->sha, buf, size);
++		offset += size;
++		left -= size;
++	}
++	walk->count++;
++	return CB_SUCCESS;
++}
++
++/* The set of options of a store: false when the reader cannot read it */
++static bool option_set_of(const struct region_device *store, uint32_t *count,
++			  uint8_t digest[OPTION_SET_DIGEST_SIZE], size_t *tail)
++{
++	set_walk.count = 0;
++	vb2_sha256_init(&set_walk.sha, VB2_HASH_SHA256);
++	if (efi_fv_walk_guid(store, &EficorebootNvDataGuid, option_set_add, &set_walk,
++			     tail) != CB_SUCCESS)
++		return false;
++	vb2_sha256_finalize(&set_walk.sha, digest, VB2_HASH_SHA256);
++	*count = set_walk.count;
++	return true;
++}
++
++/* The set of the flash as it is: at the arm, and at the first check after a load */
++static bool option_set_latch(const struct region_device *store)
++{
++	option_set.fresh = option_set_of(store, &option_set.count, option_set.digest,
++					 &option_set.tail);
++	return option_set.fresh;
++}
++#endif
++
+ bool smmstore_options_protecting(void)
+ {
+ 	const struct option_lock_state *state = option_state();
+@@ -189,7 +290,7 @@ bool smmstore_options_protecting(void)
+ 
+ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size)
+ {
+-	const struct option_lock_state *state = option_state();
++	struct option_lock_state *state = option_state();
+ 	uint32_t after[ARRAY_SIZE(protected_options)];
+ 	struct region_device store, overlay_root, overlay;
+ 	struct after_write aw;
+@@ -226,6 +327,7 @@ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size
+ 		.offset = offset,
+ 		.size = size,
+ 		.data = data,
++		.erased_from = SIZE_MAX,
+ 	};
+ 	/*
+ 	 * The reader gets a child of the overlay, never the root itself:
+@@ -240,6 +342,42 @@ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size
+ 		return false;
+ 	}
+ 
++#if CONFIG(SMMSTORE_OPTION_LOCK_ALL)
++	/* SMM was loaded again (a resume from S3): the set from the flash once more */
++	if (state->all && !option_set.fresh && !option_set_latch(&store)) {
++		printk(BIOS_ERR, "Option lock: the options cannot be read, "
++		       "locked for the security options only\n");
++		state->all = 0;
++	}
++	if (state->all) {
++		uint8_t digest[OPTION_SET_DIGEST_SIZE];
++		uint32_t count;
++		bool readable;
++
++		/* One walk of the store as it would be after the write */
++		aw.erased_from = option_set.tail;
++		after_write_ctx = &aw;
++		readable = option_set_of(&overlay, &count, digest, NULL);
++		after_write_ctx = NULL;
++
++		if (!readable) {
++			printk(BIOS_WARNING, "Option lock: refused a %s that leaves the variable "
++			       "store unreadable\n", data ? "write" : "erase");
++			return false;
++		}
++		if (count != option_set.count ||
++		    memcmp(digest, option_set.digest, sizeof(digest))) {
++			printk(BIOS_WARNING, "Option lock: refused a %s that changes a setup "
++			       "option\n", data ? "write" : "erase");
++			return false;
++		}
++		/* What a write programs past the mark is not erased any more */
++		if (data && offset + size > option_set.tail)
++			option_set.tail = offset + size;
++		return true;
++	}
++#endif
++
+ 	/* One walk of the store as it would be after the write, for every option */
+ 	after_write_ctx = &aw;
+ 	aw.read_error = false;
+@@ -295,7 +433,17 @@ uint32_t smmstore_options_lock(void)
+ 			state->on[i] = (have_store ? values[i]
+ 						   : protected_options[i].fallback) ? 1 : 0;
+ 		state->armed = 1;
++#if CONFIG(SMMSTORE_OPTION_LOCK_ALL)
++		state->all = have_store && option_set_latch(&store);
++		if (state->all)
++			printk(BIOS_INFO, "Option lock: armed, the %u setup options are "
++			       "read-only to the OS\n", option_set.count);
++		else
++#endif
+ 		printk(BIOS_INFO, "Option lock: armed, the security options are read-only to the OS\n");
+ 	}
++	/* Armed, but not for every option as the build asks: the caller is told */
++	if (CONFIG(SMMSTORE_OPTION_LOCK_ALL) && !state->all)
++		return SMMSTORE_RET_FAILURE;
+ 	return SMMSTORE_RET_SUCCESS;
+ }
+diff --git a/src/drivers/smmstore/ramstage.c b/src/drivers/smmstore/ramstage.c
+index 2c4e329e37c..c2b95760412 100644
+--- a/src/drivers/smmstore/ramstage.c
++++ b/src/drivers/smmstore/ramstage.c
+@@ -56,3 +56,16 @@ static void lock_vboot_try_other(void *unused)
+ }
+ 
+ BOOT_STATE_INIT_ENTRY(BS_OS_RESUME, BS_ON_ENTRY, lock_vboot_try_other, NULL);
++
++/* SMM has no console in a release build: say here which option lock the build has */
++static void log_option_lock(void *unused)
++{
++	if (!CONFIG(SMMSTORE_OPTION_LOCK))
++		return;
++
++	printk(BIOS_INFO, "SMMSTORE: option lock for %s, armed by the payload\n",
++	       CONFIG(SMMSTORE_OPTION_LOCK_ALL) ? "every setup option" :
++						  "the security options");
++}
++
++BOOT_STATE_INIT_ENTRY(BS_PAYLOAD_LOAD, BS_ON_ENTRY, log_option_lock, NULL);
+diff --git a/src/soc/intel/common/Kconfig.common b/src/soc/intel/common/Kconfig.common
+index 80a17223923..a7c7cd6d80d 100644
+--- a/src/soc/intel/common/Kconfig.common
++++ b/src/soc/intel/common/Kconfig.common
+@@ -239,6 +239,7 @@ config SOC_INTEL_COMPLIANCE_TEST_MODE
+ 
+ config SMM_MODULE_STACK_SIZE
+ 	hex
++	default 0x2000 if SMMSTORE_OPTION_LOCK_ALL
+ 	default 0x1000 if SMMSTORE_MOR_LOCK
+ 	default 0x800
+ 
+diff --git a/tests/drivers/Makefile.mk b/tests/drivers/Makefile.mk
+index d77f43c57fe..344baddce53 100644
+--- a/tests/drivers/Makefile.mk
++++ b/tests/drivers/Makefile.mk
+@@ -11,3 +11,31 @@ efivars-test-cflags += -I src/vendorcode/intel/edk2/UDK2017/MdePkg/Include/
+ efivars-test-cflags += -I src/vendorcode/intel/edk2/UDK2017/MdePkg/Include/Ia32/
+ efivars-test-cflags += -I src/vendorcode/intel/edk2/UDK2017/MdePkg/Include/Pi/
+ efivars-test-cflags += -I src/vendorcode/intel/edk2/UDK2017/MdeModulePkg/Include/
++
++# The SMMSTORE option lock, for every option and for the two security options
++tests-y += smmstore_options_lock-test smmstore_options_lock_two-test
++
++smmstore_options_lock-test-srcs += tests/drivers/smmstore_options_lock.c
++smmstore_options_lock-test-srcs += src/drivers/efi/efivars.c
++smmstore_options_lock-test-srcs += tests/stubs/console.c
++smmstore_options_lock-test-srcs += src/commonlib/region.c
++smmstore_options_lock-test-srcs += 3rdparty/vboot/firmware/2lib/2sha256.c
++smmstore_options_lock-test-srcs += 3rdparty/vboot/firmware/2lib/2sha_utility.c
++
++smmstore_options_lock-test-cflags += -I src/vendorcode/intel/edk2/UDK2017/MdePkg/Include/
++smmstore_options_lock-test-cflags += -I src/vendorcode/intel/edk2/UDK2017/MdePkg/Include/Ia32/
++smmstore_options_lock-test-cflags += -I src/vendorcode/intel/edk2/UDK2017/MdePkg/Include/Pi/
++smmstore_options_lock-test-cflags += -I src/vendorcode/intel/edk2/UDK2017/MdeModulePkg/Include/
++smmstore_options_lock-test-cflags += -I tests/include/tests/lib
++smmstore_options_lock-test-cflags += -I 3rdparty/vboot/firmware/2lib/include
++
++$(call copy-test,smmstore_options_lock-test,smmstore_options_lock_two-test)
++
++smmstore_options_lock-test-config += CONFIG_SMMSTORE_OPTION_LOCK=1 \
++	CONFIG_SMMSTORE_OPTION_LOCK_ALL=1 CONFIG_BOOTMEDIA_SMM_BWP=1 \
++	CONFIG_BOOTMEDIA_SMM_BWP_RUNTIME_OPTION=0 \
++	CONFIG_SMM_OPTION_LOCK_STATE_SMRAM=1
++smmstore_options_lock_two-test-config += CONFIG_SMMSTORE_OPTION_LOCK=1 \
++	CONFIG_SMMSTORE_OPTION_LOCK_ALL=0 CONFIG_BOOTMEDIA_SMM_BWP=1 \
++	CONFIG_BOOTMEDIA_SMM_BWP_RUNTIME_OPTION=0 \
++	CONFIG_SMM_OPTION_LOCK_STATE_SMRAM=1
+diff --git a/tests/drivers/efivars.c b/tests/drivers/efivars.c
+index 118fbd6722f..fd5abd41814 100644
+--- a/tests/drivers/efivars.c
++++ b/tests/drivers/efivars.c
+@@ -759,6 +759,73 @@ static void efi_test_store_end(void **state)
+ 	assert_int_not_equal(efi_fv_store_end(&flash_rdev_rw, &end), CB_SUCCESS);
+ }
+ 
++struct walk_guid_seen {
++	int count;
++	uint32_t data_size[4];
++	uint8_t state[4];
++};
++
++static enum cb_err walk_guid_see(const struct efi_fv_var *var, void *arg)
++{
++	struct walk_guid_seen *seen = arg;
++	uint8_t data[16];
++
++	assert_true(seen->count < 4);
++	assert_true(var->data_size <= sizeof(data));
++	/* The data follows the name */
++	assert_int_equal(rdev_readat(var->rdev, data, var->name_offset + var->name_size,
++				     var->data_size), var->data_size);
++	seen->data_size[seen->count] = var->data_size;
++	seen->state[seen->count] = var->state;
++	seen->count++;
++	return seen->count == 3 ? CB_ERR : CB_SUCCESS;
++}
++
++/* efi_fv_walk_guid gives the live variables of a guid, in order, and the tail */
++static void efi_test_walk_guid(void **state)
++{
++	const size_t state_offset = offsetof(AUTHENTICATED_VARIABLE_HEADER, State);
++	struct walk_guid_seen seen = { 0 };
++	uint32_t number = 7;
++	size_t second, third, tail;
++
++	mock_rdev(true);
++	assert_int_equal(efi_fv_set_option(&flash_rdev_rw, &OtherGuid, "other", "kept",
++		sizeof("kept")), CB_SUCCESS);
++	assert_int_equal(efi_fv_set_option(&flash_rdev_rw, &EficorebootNvDataGuid, "second",
++		&number, sizeof(number)), CB_SUCCESS);
++	second = next_variable(VARIABLE_OFFSET);
++	third = next_variable(second);
++	tail = next_variable(third);
++
++	/* The variable of the test image and "second"; not the one of the other guid */
++	assert_int_equal(efi_fv_walk_guid(&flash_rdev_rw, &EficorebootNvDataGuid,
++		walk_guid_see, &seen, &tail), CB_SUCCESS);
++	assert_int_equal(seen.count, 2);
++	assert_int_equal(seen.data_size[1], sizeof(number));
++	assert_int_equal(tail, next_variable(third));
++
++	/* In deleted transition it is still one; deleted it is not */
++	flash_buffer[VARIABLE_OFFSET + state_offset] = VAR_IN_DELETED_TRANSITION & VAR_ADDED;
++	flash_buffer[third + state_offset] = VAR_DELETED & VAR_ADDED;
++	memset(&seen, 0, sizeof(seen));
++	assert_int_equal(efi_fv_walk_guid(&flash_rdev_rw, &EficorebootNvDataGuid,
++		walk_guid_see, &seen, NULL), CB_SUCCESS);
++	assert_int_equal(seen.count, 1);
++	assert_int_equal(seen.state[0], VAR_IN_DELETED_TRANSITION & VAR_ADDED);
++
++	/* The error of the callback ends the walk */
++	seen.count = 2;
++	assert_int_equal(efi_fv_walk_guid(&flash_rdev_rw, &EficorebootNvDataGuid,
++		walk_guid_see, &seen, NULL), CB_ERR);
++
++	/* A store that the reader refuses: no walk */
++	flash_buffer[second] = 0;
++	memset(&seen, 0, sizeof(seen));
++	assert_int_equal(efi_fv_walk_guid(&flash_rdev_rw, &EficorebootNvDataGuid,
++		walk_guid_see, &seen, &tail), CB_EFI_VS_CORRUPTED_INVALID);
++}
++
+ /* One walk for several variables finds each as efi_fv_get_option() would alone */
+ static void efi_test_get_options(void **state)
+ {
+@@ -1016,6 +1083,7 @@ int main(void)
+ 		cmocka_unit_test(efi_test_propagate_data_read_error),
+ 		cmocka_unit_test(efi_test_exact_fit_write),
+ 		cmocka_unit_test(efi_test_store_end),
++		cmocka_unit_test(efi_test_walk_guid),
+ 		cmocka_unit_test(efi_test_get_options),
+ 		cmocka_unit_test(efi_test_delete_options),
+ 		cmocka_unit_test(efi_test_delete_options_refuse_malformed),
+diff --git a/tests/drivers/smmstore_options_lock.c b/tests/drivers/smmstore_options_lock.c
+new file mode 100644
+index 00000000000..68dccbe4efb
+--- /dev/null
++++ b/tests/drivers/smmstore_options_lock.c
+@@ -0,0 +1,537 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * The decisions of the SMMSTORE option lock, on variable stores that the test
++ * builds: what a write or an erase of the store is answered once the payload
++ * has armed the lock. Built twice, with and without SMMSTORE_OPTION_LOCK_ALL.
++ */
++
++#include <tests/test.h>
++
++#include <types.h>
++
++/* cpu/x86/smm.h declares it only in a build with the SMRAM region */
++void smm_get_option_lock_state_buffer(uintptr_t *base, size_t *size);
++
++/* The lock itself, with its statics */
++#include "../../src/drivers/smmstore/options_lock.c"
++
++#include <vendorcode/intel/edk2/UDK2017/MdeModulePkg/Include/Guid/VariableFormat.h>
++
++#define BLOCK 0x1000
++#define BLOCKS 8
++
++static uint8_t flash[BLOCKS * BLOCK];
++static uint8_t smram[0x1000];
++static struct region_device flash_rw;
++
++/* The flash as the lock reads it: reads fail from fail_from on */
++static size_t fail_from = SIZE_MAX;
++
++static ssize_t flash_readat(const struct region_device *rd, void *b, size_t offset, size_t size)
++{
++	if (offset + size > fail_from)
++		return -1;
++	memcpy(b, flash + offset, size);
++	return size;
++}
++
++static void *flash_mmap(const struct region_device *rd, size_t offset, size_t size)
++{
++	return NULL;
++}
++
++static int flash_munmap(const struct region_device *rd, void *mapping)
++{
++	return 0;
++}
++
++static const struct region_device_ops flash_ops = {
++	.mmap = flash_mmap,
++	.munmap = flash_munmap,
++	.readat = flash_readat,
++};
++
++static struct region_device flash_root;
++
++int fmap_locate_area(const char *name, struct region *ar)
++{
++	*ar = region_create(0, sizeof(flash));
++	return 0;
++}
++
++int boot_device_ro_subregion(const struct region *sub, struct region_device *subrd)
++{
++	return rdev_chain(subrd, &flash_root, region_offset(sub), region_sz(sub));
++}
++
++void smm_get_option_lock_state_buffer(uintptr_t *base, size_t *size)
++{
++	*base = (uintptr_t)smram;
++	*size = sizeof(smram);
++}
++
++static const EFI_GUID other_guid = {
++	0x8be4df61, 0x93ca, 0x11d2, { 0xaa, 0x0d, 0x00, 0xe0, 0x98, 0x03, 0x2b, 0x8c } };
++
++static size_t store_end;
++
++/* A new boot: an empty store, SMM loaded, the lock not armed */
++static void new_store(void)
++{
++	memset(flash, 0xff, sizeof(flash));
++	memset(smram, 0, sizeof(smram));
++	memset(&option_set, 0, sizeof(option_set));
++	fail_from = SIZE_MAX;
++	region_device_init(&flash_root, &flash_ops, 0, sizeof(flash));
++	rdev_chain_mem_rw(&flash_rw, flash, sizeof(flash));
++	assert_int_equal(efi_fv_initialize(&flash_rw, BLOCK), CB_SUCCESS);
++	assert_int_equal(efi_fv_store_end(&flash_rw, &store_end), CB_SUCCESS);
++	assert_true(store_end < sizeof(flash));
++}
++
++static void set_option(const char *name, uint32_t value)
++{
++	assert_int_equal(efi_fv_set_option(&flash_rw, &EficorebootNvDataGuid, name, &value,
++					   sizeof(value)), CB_SUCCESS);
++}
++
++static enum cb_err no_var(const struct efi_fv_var *var, void *arg)
++{
++	return CB_SUCCESS;
++}
++
++/* Where the next record goes */
++static size_t store_tail(void)
++{
++	size_t tail;
++
++	assert_int_equal(efi_fv_walk_guid(&flash_rw, &other_guid, no_var, NULL, &tail),
++			 CB_SUCCESS);
++	return ALIGN_UP(tail, HEADER_ALIGNMENT);
++}
++
++/* The handler: the decision, then the flash programmed (bits only cleared) */
++static bool raw_write(size_t offset, const void *data, size_t size)
++{
++	if (!smmstore_options_write_allowed(offset, data, size))
++		return false;
++	for (size_t i = 0; i < size; i++)
++		flash[offset + i] &= ((const uint8_t *)data)[i];
++	return true;
++}
++
++static bool raw_erase(size_t block)
++{
++	if (!smmstore_options_write_allowed(block * BLOCK, NULL, BLOCK))
++		return false;
++	memset(flash + block * BLOCK, 0xff, BLOCK);
++	return true;
++}
++
++static bool raw_state(size_t record, uint8_t state)
++{
++	return raw_write(record + offsetof(AUTHENTICATED_VARIABLE_HEADER, State), &state,
++			 sizeof(state));
++}
++
++struct record {
++	AUTHENTICATED_VARIABLE_HEADER hdr;
++	uint8_t body[128];
++	size_t body_size;
++};
++
++static void make_record(struct record *r, const EFI_GUID *guid, const char *name,
++			uint32_t attributes, const void *data, size_t size)
++{
++	const size_t name_size = (strlen(name) + 1) * sizeof(CHAR16);
++
++	assert_true(name_size + size <= sizeof(r->body));
++	memset(r, 0xff, sizeof(*r));
++	r->hdr.StartId = VARIABLE_DATA;
++	r->hdr.Attributes = attributes;
++	r->hdr.NameSize = name_size;
++	r->hdr.DataSize = size;
++	memcpy(&r->hdr.VendorGuid, guid, sizeof(*guid));
++	memset(r->body, 0, name_size);
++	for (size_t i = 0; name[i]; i++)
++		r->body[i * sizeof(CHAR16)] = name[i];
++	memcpy(r->body + name_size, data, size);
++	r->body_size = name_size + size;
++}
++
++/*
++ * A record as the payload's variable driver writes it: the header, the state
++ * "header valid", name and data, the state "added". Returns how many of the
++ * four writes the lock allowed.
++ */
++static int append_record(const struct record *r, size_t at)
++{
++	if (!raw_write(at, &r->hdr, sizeof(r->hdr)))
++		return 0;
++	if (!raw_state(at, VAR_HEADER_VALID_ONLY))
++		return 1;
++	if (!raw_write(at + sizeof(r->hdr), r->body, r->body_size))
++		return 2;
++	if (!raw_state(at, VAR_ADDED))
++		return 3;
++	return 4;
++}
++
++static void arm(uint32_t expected)
++{
++	assert_int_equal(smmstore_options_lock(), expected);
++	assert_true(smmstore_options_protecting());
++}
++
++static size_t option_record(const char *name)
++{
++	struct region_device rdev = flash_rw;
++	uint32_t value, size = sizeof(value);
++	const size_t name_size = (strlen(name) + 1) * sizeof(CHAR16);
++
++	/* efi_fv_get_option() does not say where: look for the name */
++	assert_int_equal(efi_fv_get_option(&rdev, &EficorebootNvDataGuid, name, &value, &size),
++			 CB_SUCCESS);
++	for (size_t at = 0; at + sizeof(AUTHENTICATED_VARIABLE_HEADER) < store_end;
++	     at += HEADER_ALIGNMENT) {
++		const AUTHENTICATED_VARIABLE_HEADER *h = (const void *)(flash + at);
++		const uint8_t *n = flash + at + sizeof(*h);
++		size_t i;
++
++		if (h->StartId != VARIABLE_DATA || h->State != VAR_ADDED ||
++		    h->NameSize != name_size ||
++		    memcmp(&h->VendorGuid, &EficorebootNvDataGuid, sizeof(EFI_GUID)))
++			continue;
++		for (i = 0; name[i] && n[i * 2] == name[i]; i++)
++			;
++		if (!name[i])
++			return at;
++	}
++	fail_msg("no record of %s", name);
++	return 0;
++}
++
++static void three_options(void)
++{
++	new_store();
++	set_option("bios_lock", 1);
++	set_option("bootmedia_lock", 1);
++	set_option("onboard_audio", 0);
++}
++
++/* Not armed: anything goes */
++static void test_not_armed(void **state)
++{
++	const uint8_t zero[8] = { 0 };
++
++	three_options();
++	assert_false(smmstore_options_protecting());
++	assert_true(smmstore_options_write_allowed(option_record("bios_lock"), zero,
++						   sizeof(zero)));
++	assert_true(smmstore_options_write_allowed(0, NULL, BLOCK));
++	assert_true(smmstore_options_write_allowed(store_end, zero, sizeof(zero)));
++}
++
++/* What must keep working: variables of other GUIDs written, updated, deleted */
++static void test_other_variables(void **state)
++{
++	const uint16_t timeout = 3;
++	struct record r;
++	size_t first, second;
++
++	three_options();
++	arm(SMMSTORE_RET_SUCCESS);
++
++	/* A new variable, step by step */
++	first = store_tail();
++	make_record(&r, &other_guid, "Timeout", 7, &timeout, sizeof(timeout));
++	assert_int_equal(append_record(&r, first), 4);
++
++	/* Updated: the new record, then the states of the old one */
++	second = store_tail();
++	assert_true(second > first);
++	assert_int_equal(append_record(&r, second), 4);
++	assert_true(raw_state(first, VAR_IN_DELETED_TRANSITION & VAR_ADDED));
++	assert_true(raw_state(first, VAR_DELETED & VAR_IN_DELETED_TRANSITION & VAR_ADDED));
++
++	/* Deleted */
++	assert_true(raw_state(second, VAR_IN_DELETED_TRANSITION & VAR_ADDED));
++	assert_true(raw_state(second, VAR_DELETED & VAR_IN_DELETED_TRANSITION & VAR_ADDED));
++
++	/* And once more after it, past what the lock knew as erased at the arm */
++	assert_int_equal(append_record(&r, store_tail()), 4);
++}
++
++/* The fault tolerant write blocks, past the store: read-only while armed */
++static void test_ftw_blocks(void **state)
++{
++	const uint8_t record[16] = { 0 };
++
++	three_options();
++	arm(SMMSTORE_RET_SUCCESS);
++	assert_false(raw_write(store_end, record, sizeof(record)));
++	assert_false(raw_write(store_end - 4, record, sizeof(record)));
++	assert_false(raw_write(sizeof(flash) - sizeof(record), record, sizeof(record)));
++	assert_false(raw_erase(store_end / BLOCK));
++	assert_false(raw_erase(BLOCKS - 1));
++}
++
++/* A read error during the check */
++static void test_read_error(void **state)
++{
++	const uint16_t timeout = 3;
++	struct record r;
++	size_t at;
++
++	three_options();
++	arm(SMMSTORE_RET_SUCCESS);
++	at = store_tail();
++	make_record(&r, &other_guid, "Timeout", 7, &timeout, sizeof(timeout));
++	fail_from = 0x100;
++	assert_false(raw_write(at, &r.hdr, sizeof(r.hdr)));
++	fail_from = SIZE_MAX;
++	assert_true(raw_write(at, &r.hdr, sizeof(r.hdr)));
++}
++
++#if CONFIG(SMMSTORE_OPTION_LOCK_ALL)
++
++/* The value of an option changed: a new record of its name, the old one deleted */
++static void test_option_changed(void **state)
++{
++	const uint32_t on = 1;
++	struct record r;
++	size_t old;
++
++	three_options();
++	arm(SMMSTORE_RET_SUCCESS);
++	old = option_record("onboard_audio");
++
++	/* The record can be prepared, not made a variable */
++	make_record(&r, &EficorebootNvDataGuid, "onboard_audio", 3, &on, sizeof(on));
++	assert_int_equal(append_record(&r, store_tail()), 3);
++	/* Nor can the old one go, in either step */
++	assert_false(raw_state(old, VAR_IN_DELETED_TRANSITION & VAR_ADDED));
++	assert_false(raw_state(old, VAR_DELETED & VAR_ADDED));
++
++	/* The option reads as before */
++	assert_int_equal(option_record("onboard_audio"), old);
++}
++
++/* An option deleted, a security one and another */
++static void test_option_deleted(void **state)
++{
++	three_options();
++	arm(SMMSTORE_RET_SUCCESS);
++	assert_false(raw_state(option_record("onboard_audio"), VAR_DELETED & VAR_ADDED));
++	assert_false(raw_state(option_record("bios_lock"), VAR_DELETED & VAR_ADDED));
++	assert_false(raw_state(option_record("bios_lock"),
++			       VAR_IN_DELETED_TRANSITION & VAR_ADDED));
++}
++
++/* A variable of the options GUID that was not there, or there with other attributes */
++static void test_option_added(void **state)
++{
++	const uint32_t value = 1;
++	struct record r;
++
++	three_options();
++	arm(SMMSTORE_RET_SUCCESS);
++	make_record(&r, &EficorebootNvDataGuid, "new_option", 3, &value, sizeof(value));
++	assert_int_equal(append_record(&r, store_tail()), 3);
++
++	three_options();
++	arm(SMMSTORE_RET_SUCCESS);
++	make_record(&r, &EficorebootNvDataGuid, "bios_lock", 7, &value, sizeof(value));
++	assert_int_equal(append_record(&r, store_tail()), 3);
++}
++
++/* The data, the name or the attributes of an option programmed over */
++static void test_option_bits(void **state)
++{
++	const uint8_t zero[4] = { 0 };
++	size_t at;
++
++	three_options();
++	arm(SMMSTORE_RET_SUCCESS);
++	at = option_record("bootmedia_lock");
++	/* The data: the last four bytes of the record */
++	assert_false(raw_write(at + sizeof(AUTHENTICATED_VARIABLE_HEADER) +
++			       sizeof("bootmedia_lock") * sizeof(CHAR16), zero, sizeof(zero)));
++	/* A letter of the name */
++	assert_false(raw_write(at + sizeof(AUTHENTICATED_VARIABLE_HEADER), zero, 1));
++	/* The attributes */
++	assert_false(raw_write(at + offsetof(AUTHENTICATED_VARIABLE_HEADER, Attributes), zero,
++			       sizeof(zero)));
++}
++
++/* The block of an option erased, with the store still readable */
++static void test_option_erased(void **state)
++{
++	uint8_t filler[100];
++	struct record r;
++
++	new_store();
++	set_option("bios_lock", 1);
++	/* Other variables up to the second block, then an option in it */
++	memset(filler, 0x5a, sizeof(filler));
++	make_record(&r, &other_guid, "Filler", 7, filler, sizeof(filler));
++	while (store_tail() < BLOCK) {
++		const size_t at = store_tail();
++
++		memcpy(flash + at, &r.hdr, sizeof(r.hdr));
++		memcpy(flash + at + sizeof(r.hdr), r.body, r.body_size);
++		flash[at + offsetof(AUTHENTICATED_VARIABLE_HEADER, State)] = VAR_ADDED;
++	}
++	set_option("onboard_audio", 0);
++	assert_true(option_record("onboard_audio") >= BLOCK);
++	arm(SMMSTORE_RET_SUCCESS);
++
++	assert_false(raw_erase(1));
++	/* The block of the headers: the store unreadable */
++	assert_false(raw_erase(0));
++	/* A block of the store with nothing in it */
++	assert_true(raw_erase(2));
++}
++
++/* The store made unreadable: every option would read as its default */
++static void test_store_damaged(void **state)
++{
++	const uint8_t zero[4] = { 0 };
++	const uint8_t byte = 0x7f;
++	const uint16_t timeout = 3;
++	struct record r;
++	size_t at, tail;
++
++	three_options();
++	at = store_tail();
++	make_record(&r, &other_guid, "Timeout", 7, &timeout, sizeof(timeout));
++	memcpy(flash + at, &r.hdr, sizeof(r.hdr));
++	memcpy(flash + at + sizeof(r.hdr), r.body, r.body_size);
++	flash[at + offsetof(AUTHENTICATED_VARIABLE_HEADER, State)] = VAR_ADDED;
++	set_option("vtd", 1);
++	arm(SMMSTORE_RET_SUCCESS);
++
++	/* The size of a record between two options */
++	assert_false(raw_write(at + offsetof(AUTHENTICATED_VARIABLE_HEADER, NameSize), zero,
++			       sizeof(zero)));
++	/* Its start mark */
++	assert_false(raw_write(at, zero, 1));
++	/* The headers of the store */
++	assert_false(raw_write(0x10, zero, sizeof(zero)));
++	/* Bytes after the last record, at once and further on */
++	tail = store_tail();
++	assert_false(raw_write(tail, &byte, sizeof(byte)));
++	assert_false(raw_write(tail + 0x200, &byte, sizeof(byte)));
++	assert_false(raw_write(store_end - 1, &byte, sizeof(byte)));
++}
++
++/*
++ * The first piece of a header that the payload's driver splits at the end of
++ * a flash block: the reader cannot read a store that ends in half a header,
++ * so the piece is refused, and the write of that variable fails.
++ */
++static void test_split_header(void **state)
++{
++	const uint16_t timeout = 3;
++	struct record r;
++	size_t at;
++
++	three_options();
++	arm(SMMSTORE_RET_SUCCESS);
++	at = store_tail();
++	make_record(&r, &other_guid, "Timeout", 7, &timeout, sizeof(timeout));
++	assert_false(raw_write(at, &r.hdr, 20));
++	assert_false(raw_write(at, &r.hdr, 1));
++	/* Whole, it goes */
++	assert_true(raw_write(at, &r.hdr, sizeof(r.hdr)));
++}
++
++/* SMM loaded again on a resume: the set is the one of the flash at that time */
++static void test_resume(void **state)
++{
++	const uint16_t timeout = 3;
++	struct record r;
++
++	three_options();
++	arm(SMMSTORE_RET_SUCCESS);
++	/* ramstage wrote an option on the resume; SMM lost its statics */
++	set_option("me_state_counter", 2);
++	memset(&option_set, 0, sizeof(option_set));
++
++	make_record(&r, &other_guid, "Timeout", 7, &timeout, sizeof(timeout));
++	assert_int_equal(append_record(&r, store_tail()), 4);
++	assert_false(raw_state(option_record("me_state_counter"), VAR_DELETED & VAR_ADDED));
++	assert_false(raw_state(option_record("onboard_audio"), VAR_DELETED & VAR_ADDED));
++}
++
++/* The set cannot be read at the arm: the lock of the two options, and a status */
++static void test_no_latch(void **state)
++{
++	const uint8_t zero[4] = { 0 };
++
++	three_options();
++	/* A record with a size that does not fit: the reader gives the store up */
++	flash[option_record("onboard_audio") +
++	      offsetof(AUTHENTICATED_VARIABLE_HEADER, DataSize) + 3] = 0x7f;
++	arm(SMMSTORE_RET_FAILURE);
++	assert_int_equal(smmstore_options_lock(), SMMSTORE_RET_FAILURE);
++	/* The blocks past the store all the same */
++	assert_false(raw_write(store_end, zero, sizeof(zero)));
++}
++
++#else /* !SMMSTORE_OPTION_LOCK_ALL */
++
++/* The decisions of the lock of the two security options, as before */
++static void test_two_options(void **state)
++{
++	const uint32_t off = 0, on = 1;
++	struct record r;
++	size_t old;
++
++	three_options();
++	arm(SMMSTORE_RET_SUCCESS);
++
++	/* Another option changes */
++	old = option_record("onboard_audio");
++	make_record(&r, &EficorebootNvDataGuid, "onboard_audio", 3, &on, sizeof(on));
++	assert_int_equal(append_record(&r, store_tail()), 4);
++	assert_true(raw_state(old, VAR_IN_DELETED_TRANSITION & VAR_ADDED));
++	assert_true(raw_state(old, VAR_DELETED & VAR_IN_DELETED_TRANSITION & VAR_ADDED));
++
++	/* A security option turned off: refused when the reader would return it */
++	old = option_record("bios_lock");
++	make_record(&r, &EficorebootNvDataGuid, "bios_lock", 3, &off, sizeof(off));
++	assert_int_equal(append_record(&r, store_tail()), 4);
++	assert_false(raw_state(old, VAR_DELETED & VAR_ADDED));
++
++	/* Deleted, it reads as its default, on */
++	assert_true(raw_state(option_record("bootmedia_lock"), VAR_DELETED & VAR_ADDED));
++}
++
++#endif
++
++int main(void)
++{
++	const struct CMUnitTest tests[] = {
++		cmocka_unit_test(test_not_armed),
++		cmocka_unit_test(test_other_variables),
++		cmocka_unit_test(test_ftw_blocks),
++		cmocka_unit_test(test_read_error),
++#if CONFIG(SMMSTORE_OPTION_LOCK_ALL)
++		cmocka_unit_test(test_option_changed),
++		cmocka_unit_test(test_option_deleted),
++		cmocka_unit_test(test_option_added),
++		cmocka_unit_test(test_option_bits),
++		cmocka_unit_test(test_option_erased),
++		cmocka_unit_test(test_store_damaged),
++		cmocka_unit_test(test_split_header),
++		cmocka_unit_test(test_resume),
++		cmocka_unit_test(test_no_latch),
++#else
++		cmocka_unit_test(test_two_options),
++#endif
++	};
++
++	return cb_run_group_tests(tests, NULL, NULL);
++}

@@ -382,6 +382,12 @@ jobs:
       - name: Prove unitarie del payload
         run: ./tools/build.sh edk2-unit-test
 
+      # drivers/efi e il lock delle opzioni di SMMSTORE sull'host
+      - name: Prove unitarie di coreboot
+        run: |
+          sudo apt-get install -y -qq libcmocka-dev >/dev/null
+          ./tools/build.sh coreboot-unit-test
+
       - name: Prova dell'aggiornamento in QEMU
         run: ./tools/build.sh update-test
 
