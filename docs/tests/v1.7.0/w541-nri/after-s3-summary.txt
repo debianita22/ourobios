@@ -1,0 +1,12 @@
+# after-s3 2026-11-10T20:49:11+01:00 boot_id=8a034dc9-9db1-4a37-a29e-6270b96239b6 uptime=101.51
+CMOS 0x7d=0xa0
+CMOS 0x7d=0xa0
+CMOS 0x7d=0xa0
+[INFO ]  Using cached memory parameters
+[DEBUG]  S3 Resume
+[DEBUG]  S3 Resume
+[DEBUG]  S3 Resume
+   2:before RAM initialization                         470,423 (24,820)
+   3:after RAM initialization                          580,988 (110,565)
+Total Time: 863,724
+  VREF_ADJUST  vref_ca_ctrl=0 vref_dq_ch1_ctrl=-1 vref_dq_ch0_ctrl=3 en_dimm_vref_ca=1 en_dimm_vref_ch1=1 en_dimm_vref_ch0=1 hi_z_timer_ctrl=3 vccddq_hi_qnnn_h=0 ca_slow_bw=1 ch0_slow_bw=1 ch1_slow_bw=1

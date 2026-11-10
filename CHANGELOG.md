@@ -7,7 +7,11 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.7.0
 
-Not released. What ran on a machine: nothing yet, the CI builds only.
+Not released. What ran on a machine: rc1 on the W541 (`nri`), as a
+capsule from v1.6.3-rc4, with the modules of the port, which have no
+XMP profile: MEM-10 to MEM-12 and MEM-14 passed, MEM-13 needs XMP
+modules (2026-11-10,
+[docs/tests/v1.7.0/w541-nri](docs/tests/v1.7.0/w541-nri/README.md)).
 
 - **W541 (`nri`): an XMP profile of the memory as an option** (patches
   0275-0279): *Hardware* → *Memory* → *Memory profile*, *SPD (JEDEC)* by
@@ -20,9 +24,10 @@ Not released. What ran on a machine: nothing yet, the CI builds only.
   test, or that does not reach the payload twice in a row, is given up
   by itself until the option is changed (CMOS byte 0x7d), so a profile
   that does not work cannot keep the machine from booting
-  ([docs/raminit.md](docs/raminit.md#xmp-profiles)). **Not tried on a
-  machine**: whether the modules of the W541 of the port have a profile
-  is still to read (bytes 176 on of their SPD). With the default the
+  ([docs/raminit.md](docs/raminit.md#xmp-profiles)). **Not tried with
+  XMP modules**: the four of the W541 of the port have none (bytes 176
+  and 177 of their SPD read `ff ff`); with them the fallback to the SPD
+  timings and the giving up passed (MEM-11, MEM-12). With the default the
   memory is set up as before; the first boot trains once, as the
   version of the saved training has the profile now. `mrc.bin` has no
   such option.
