@@ -55,6 +55,11 @@ from the lists of `docs/test-v1.6.3-w541.md` and
   RTC power lost but the CMOS kept the last boot*). On the M920x with
   rc2 the bit set from Linux and a reboot kept the 36 options; a real
   CMOS clear (OPT-05) is still to run.
+- **Variable writes faster with the option lock armed** (patch 0273):
+  every write of the variable store walked the whole store once for
+  each protected option before it was allowed, about 85 ms an SMI and
+  0.6 s a variable write from the OS on the M920x (VAR-01). One walk now
+  serves both options; what is allowed and refused does not change.
 - **A coreboot table of 64 KiB** (patch 0269): the setup menu is one
   record of the coreboot table, 28.2 KiB of the 32 on the W541, and
   help texts were shortened twice to add an option (patches 0261,

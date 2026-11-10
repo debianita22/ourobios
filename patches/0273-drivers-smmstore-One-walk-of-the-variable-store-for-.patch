@@ -1,0 +1,381 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 10 Nov 2026 12:23:54 +0100
+Subject: [PATCH] drivers/smmstore: One walk of the variable store for the
+ option lock
+
+With the option lock armed, every SMMSTORE write first reads each
+protected option from the variable store as it would be after the write:
+one efi_fv_get_option() for bios_lock and one for bootmedia_lock, two
+walks of the whole store. The overlay of the write has no mmap, so each
+walk reads every header and name and the erased tail through readat
+from the memory-mapped flash. On a ThinkCentre M920x a variable write
+from the OS takes 6 to 8 SMIs (MSR_SMI_COUNT) and 0.52-0.60 s, about
+85 ms an SMI, growing with the store; the flash write itself takes a
+few milliseconds.
+
+Add efi_fv_get_options(), which finds several variables of one GUID in
+one walk, each as efi_fv_get_option() would find it alone (a match in
+transition kept until a later one, the first added one ending its
+search), and use it for the check of each write and for the latch at
+arm. The decision is the same: an option latched on that would read off
+after the write refuses it, a store that cannot be read refuses it, a
+missing or unreadable option takes its fallback.
+
+TEST=The unit tests of drivers/efi, with efi_test_get_options: the
+values and errors of each query as efi_fv_get_option() gives them,
+an option in transition behind an added one, a store that is not one.
+---
+ src/drivers/efi/efivars.c           | 86 +++++++++++++++++++++++++++++
+ src/drivers/efi/efivars.h           | 24 ++++++++
+ src/drivers/smmstore/options_lock.c | 72 +++++++++++++++---------
+ tests/drivers/efivars.c             | 57 +++++++++++++++++++
+ 4 files changed, 213 insertions(+), 26 deletions(-)
+
+diff --git a/src/drivers/efi/efivars.c b/src/drivers/efi/efivars.c
+index d88ef9f5e72..a4b21b735d0 100644
+--- a/src/drivers/efi/efivars.c
++++ b/src/drivers/efi/efivars.c
+@@ -2,6 +2,7 @@
+ 
+ #include <stdint.h>
+ #include <string.h>
++#include <commonlib/helpers.h>
+ #include <console/console.h>
+ 
+ #include <Uefi/UefiBaseType.h>
+@@ -731,6 +732,91 @@ enum cb_err efi_fv_get_option(const struct region_device *rdev,
+ 	return walk_variables(&store_rdev, auth_format, find_and_copy, &args, NULL);
+ }
+ 
++struct efi_find_many_args {
++	const EFI_GUID *guid;
++	struct efi_fv_query *queries;
++	uint32_t *capacity;
++	bool *done;
++	size_t count;
++};
++
++/*
++ * find_and_copy() for each query not done yet, without ever stopping the walk:
++ * as walk_variables() does for one walker, a match in transition is kept until
++ * a later one, and the first match that is VAR_ADDED ends the search of its
++ * query.
++ */
++static enum cb_err find_and_copy_many(struct region_device *rdev, VARIABLE_HEADER *hdr,
++				      size_t hdr_size, void *arg, bool *stop)
++{
++	struct efi_find_many_args *fa = arg;
++
++	for (size_t i = 0; i < fa->count; i++) {
++		struct efi_fv_query *q = &fa->queries[i];
++		bool matched;
++		enum cb_err ret;
++
++		if (fa->done[i])
++			continue;
++		ret = match(rdev, hdr, hdr_size, q->name, fa->guid, &matched);
++		if (ret != CB_SUCCESS)
++			return ret;
++		if (!matched)
++			continue;
++
++		fa->done[i] = hdr->State == VAR_ADDED;
++		if (fa->capacity[i] < hdr->DataSize) {
++			q->ret = CB_EFI_BUFFER_TOO_SMALL;
++			continue;
++		}
++		if (hdr->DataSize &&
++		    rdev_readat(rdev, q->dest, hdr_size + hdr->NameSize, hdr->DataSize) !=
++				hdr->DataSize)
++			return CB_EFI_ACCESS_ERROR;
++		*q->size = hdr->DataSize;
++		q->ret = CB_SUCCESS;
++	}
++
++	return CB_SUCCESS;
++}
++
++enum cb_err efi_fv_get_options(const struct region_device *rdev, const EFI_GUID *guid,
++			       struct efi_fv_query *queries, size_t count)
++{
++	struct efi_find_many_args args;
++	uint32_t capacity[8];
++	bool done[8] = { false };
++	bool auth_format;
++	enum cb_err ret;
++	struct region_device store_rdev = *rdev;
++
++	if (count > ARRAY_SIZE(capacity))
++		return CB_ERR_ARG;
++	for (size_t i = 0; i < count; i++) {
++		capacity[i] = *queries[i].size;
++		queries[i].ret = CB_EFI_OPTION_NOT_FOUND;
++	}
++
++	ret = efi_fv_init(&store_rdev, &auth_format);
++	if (ret == CB_SUCCESS) {
++		args = (struct efi_find_many_args){
++			.guid = guid,
++			.queries = queries,
++			.capacity = capacity,
++			.done = done,
++			.count = count,
++		};
++		/* The walker never stops: a walk to the end returns "not found" */
++		ret = walk_variables(&store_rdev, auth_format, find_and_copy_many, &args, NULL);
++		if (ret == CB_EFI_OPTION_NOT_FOUND)
++			return CB_SUCCESS;
++	}
++
++	for (size_t i = 0; i < count; i++)
++		queries[i].ret = ret;
++	return ret;
++}
++
+ enum cb_err efi_fv_get_mor(const struct region_device *rdev, uint8_t *mor)
+ {
+ 	static const EFI_GUID mor_guid = {
+diff --git a/src/drivers/efi/efivars.h b/src/drivers/efi/efivars.h
+index f3383fc3ffc..dc04b0bcc53 100644
+--- a/src/drivers/efi/efivars.h
++++ b/src/drivers/efi/efivars.h
+@@ -33,6 +33,30 @@ enum cb_err efi_fv_get_option(const struct region_device *rdev,
+ 			      void *dest,
+ 			      uint32_t *size);
+ 
++/**
++ * efi_fv_get_options
++ * Several variables of one vendor guid with one walk of the store, each found
++ * as efi_fv_get_option() would find it alone: the walk of the store costs the
++ * same for one variable as for all of them.
++ * @rdev: the readable region to operate on
++ * @guid: the vendor guid to look for
++ * @queries: the variables; on input each name, dest and *size (the size of
++ *           dest), on output in each ret what efi_fv_get_option() would have
++ *           returned for it and, on CB_SUCCESS, in *size the bytes written
++ * @count: the number of queries
++ * Returns CB_SUCCESS when the store could be walked (then each query has its
++ * ret), or the error of the store, which is then also each query's ret.
++ */
++struct efi_fv_query {
++	const char *name;
++	void *dest;
++	uint32_t *size;
++	enum cb_err ret;
++};
++
++enum cb_err efi_fv_get_options(const struct region_device *rdev, const EFI_GUID *guid,
++			       struct efi_fv_query *queries, size_t count);
++
+ /**
+  * efi_fv_get_mor
+  * The TCG MOR variable MemoryOverwriteRequestControl in the variable store,
+diff --git a/src/drivers/smmstore/options_lock.c b/src/drivers/smmstore/options_lock.c
+index 06c86429a28..08b09787a08 100644
+--- a/src/drivers/smmstore/options_lock.c
++++ b/src/drivers/smmstore/options_lock.c
+@@ -93,16 +93,32 @@ static int variable_store(struct region_device *rdev)
+ 	return boot_device_ro_subregion(&region, rdev);
+ }
+ 
+-/* The effective value of a protected option (its fallback when it is missing) */
+-static uint32_t option_value(const struct region_device *store, size_t which)
++/*
++ * The effective values of the protected options (each its fallback when it is
++ * missing or cannot be read), with one walk of the store for all of them: the
++ * check of every write walks the whole store, and each walk costs the same for
++ * one option as for all.
++ */
++static void option_values(const struct region_device *store,
++			  uint32_t values[ARRAY_SIZE(protected_options)])
+ {
+-	uint32_t value;
+-	uint32_t size = sizeof(value);
++	struct efi_fv_query queries[ARRAY_SIZE(protected_options)];
++	uint32_t sizes[ARRAY_SIZE(protected_options)];
+ 
+-	if (efi_fv_get_option(store, &EficorebootNvDataGuid, protected_options[which].name,
+-			      &value, &size) != CB_SUCCESS || size != sizeof(value))
+-		return protected_options[which].fallback;
+-	return value;
++	for (size_t i = 0; i < ARRAY_SIZE(protected_options); i++) {
++		sizes[i] = sizeof(values[i]);
++		queries[i] = (struct efi_fv_query){
++			.name = protected_options[i].name,
++			.dest = &values[i],
++			.size = &sizes[i],
++		};
++	}
++
++	efi_fv_get_options(store, &EficorebootNvDataGuid, queries, ARRAY_SIZE(queries));
++
++	for (size_t i = 0; i < ARRAY_SIZE(protected_options); i++)
++		if (queries[i].ret != CB_SUCCESS || sizes[i] != sizeof(values[i]))
++			values[i] = protected_options[i].fallback;
+ }
+ 
+ /*
+@@ -111,7 +127,7 @@ static uint32_t option_value(const struct region_device *store, size_t which)
+  * (@data NULL) of [@offset, @offset + @size).
+  *
+  * The context is a file-static pointer, not container_of() on the rdev:
+- * efi_fv_get_option() copies the rdev by value, so the rdev the readat
++ * efi_fv_get_options() copies the rdev by value, so the rdev the readat
+  * callback is given is not the one embedded here. An SMI is handled by one
+  * CPU at a time with the others held, so one static context is enough.
+  */
+@@ -174,6 +190,7 @@ bool smmstore_options_protecting(void)
+ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size)
+ {
+ 	const struct option_lock_state *state = option_state();
++	uint32_t after[ARRAY_SIZE(protected_options)];
+ 	struct region_device store, overlay_root, overlay;
+ 	struct after_write aw;
+ 
+@@ -193,7 +210,7 @@ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size
+ 	};
+ 	/*
+ 	 * The reader gets a child of the overlay, never the root itself:
+-	 * efi_fv_get_option() copies the rdev it is given and chains that copy
++	 * efi_fv_get_options() copies the rdev it is given and chains that copy
+ 	 * to itself, and rdev_chain() on a root device makes the copy its own
+ 	 * root with no ops, so the next read calls through NULL. A child keeps
+ 	 * the real root. overlay_root outlives the call.
+@@ -204,26 +221,26 @@ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size
+ 		return false;
+ 	}
+ 
+-	for (size_t i = 0; i < ARRAY_SIZE(protected_options); i++) {
+-		uint32_t after;
++	/* One walk of the store as it would be after the write, for every option */
++	after_write_ctx = &aw;
++	aw.read_error = false;
++	option_values(&overlay, after);
++	after_write_ctx = NULL;
+ 
+-		/* Latched at arm; an option that was off is never refused, so the
+-		 * store is not read for it. bios_lock is always on (the guard). */
++	if (aw.read_error) {
++		/* Not the content: the flash could not be read, the check failed */
++		printk(BIOS_ERR, "Option lock: variable store unreadable, write refused\n");
++		return false;
++	}
++
++	for (size_t i = 0; i < ARRAY_SIZE(protected_options); i++) {
++		/* Latched at arm; an option that was off is never refused.
++		 * bios_lock is always on (the guard). */
+ 		if (!state->on[i])
+ 			continue;
+ 
+-		after_write_ctx = &aw;
+-		aw.read_error = false;
+-		after = option_value(&overlay, i);
+-		after_write_ctx = NULL;
+-
+-		if (aw.read_error) {
+-			/* Not the content: the flash could not be read, the check failed */
+-			printk(BIOS_ERR, "Option lock: variable store unreadable, write refused\n");
+-			return false;
+-		}
+ 		/* The downgrade to guard: a latched-on option becoming off */
+-		if (!after) {
++		if (!after[i]) {
+ 			printk(BIOS_WARNING, "Option lock: refused a %s that turns '%s' off\n",
+ 			       data ? "write" : "erase", protected_options[i].name);
+ 			return false;
+@@ -236,6 +253,7 @@ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size
+ uint32_t smmstore_options_lock(void)
+ {
+ 	struct option_lock_state *state = option_state();
++	uint32_t values[ARRAY_SIZE(protected_options)];
+ 	struct region_device store;
+ 	bool have_store;
+ 
+@@ -252,8 +270,10 @@ uint32_t smmstore_options_lock(void)
+ 		 * store that cannot be read latches the secure fallback.
+ 		 */
+ 		have_store = variable_store(&store) == 0;
++		if (have_store)
++			option_values(&store, values);
+ 		for (size_t i = 0; i < ARRAY_SIZE(protected_options); i++)
+-			state->on[i] = (have_store ? option_value(&store, i)
++			state->on[i] = (have_store ? values[i]
+ 						   : protected_options[i].fallback) ? 1 : 0;
+ 		state->armed = 1;
+ 		printk(BIOS_INFO, "Option lock: armed, the security options are read-only to the OS\n");
+diff --git a/tests/drivers/efivars.c b/tests/drivers/efivars.c
+index 682055b641b..d77efc045df 100644
+--- a/tests/drivers/efivars.c
++++ b/tests/drivers/efivars.c
+@@ -739,6 +739,62 @@ static void assert_flash_changed_at(const size_t *offsets, size_t count)
+ 	}
+ }
+ 
++/* One walk for several variables finds each as efi_fv_get_option() would alone */
++static void efi_test_get_options(void **state)
++{
++	AUTHENTICATED_VARIABLE_HEADER *old_header;
++	uint8_t value[16], again[16], small[2];
++	uint32_t number = 7, got = 0, size, value_size, small_size, got_size, missing_size;
++	struct efi_fv_query queries[4];
++
++	mock_rdev(true);
++	assert_int_equal(efi_fv_set_option(&flash_rdev_rw, &OtherGuid, "second", "other",
++		sizeof("other")), CB_SUCCESS);
++	assert_int_equal(efi_fv_set_option(&flash_rdev_rw, &EficorebootNvDataGuid, "second",
++		&number, sizeof(number)), CB_SUCCESS);
++	assert_int_equal(efi_fv_set_option(&flash_rdev_rw, &EficorebootNvDataGuid, name,
++		"is awesome", strlen("is awesome") + 1), CB_SUCCESS);
++	/* The first copy of name in transition: the later one, added, wins */
++	old_header = (AUTHENTICATED_VARIABLE_HEADER *)(flash_buffer + VARIABLE_OFFSET);
++	old_header->State = VAR_IN_DELETED_TRANSITION & VAR_ADDED;
++	mock_rdev(false);
++
++	value_size = sizeof(value);
++	got_size = sizeof(got);
++	missing_size = sizeof(again);
++	small_size = sizeof(small);
++	queries[0] = (struct efi_fv_query){ .name = name, .dest = value, .size = &value_size };
++	queries[1] = (struct efi_fv_query){ .name = "second", .dest = &got, .size = &got_size };
++	queries[2] = (struct efi_fv_query){ .name = "missing", .dest = again,
++		.size = &missing_size };
++	queries[3] = (struct efi_fv_query){ .name = name, .dest = small, .size = &small_size };
++	assert_int_equal(efi_fv_get_options(&flash_rdev_rw, &EficorebootNvDataGuid, queries,
++		ARRAY_SIZE(queries)), CB_SUCCESS);
++
++	size = sizeof(again);
++	assert_int_equal(efi_fv_get_option(&flash_rdev_rw, &EficorebootNvDataGuid, name,
++		again, &size), CB_SUCCESS);
++	assert_int_equal(queries[0].ret, CB_SUCCESS);
++	assert_int_equal(value_size, size);
++	assert_memory_equal(value, again, size);
++	assert_string_equal((const char *)value, "is awesome");
++
++	assert_int_equal(queries[1].ret, CB_SUCCESS);
++	assert_int_equal(got_size, sizeof(number));
++	assert_int_equal(got, number);
++
++	assert_int_equal(queries[2].ret, CB_EFI_OPTION_NOT_FOUND);
++	assert_int_equal(queries[3].ret, CB_EFI_BUFFER_TOO_SMALL);
++
++	/* A store that is not one: every query gets the error of the store */
++	memset(flash_buffer, 0xff, sizeof(flash_buffer));
++	value_size = sizeof(value);
++	queries[0] = (struct efi_fv_query){ .name = name, .dest = value, .size = &value_size };
++	assert_int_not_equal(efi_fv_get_options(&flash_rdev_rw, &EficorebootNvDataGuid,
++		queries, 1), CB_SUCCESS);
++	assert_int_not_equal(queries[0].ret, CB_SUCCESS);
++}
++
+ /* Only the variables of the guid go, one state byte each, live or in transition */
+ static void efi_test_delete_options(void **state)
+ {
+@@ -939,6 +995,7 @@ int main(void)
+ 		cmocka_unit_test(efi_test_propagate_print_name_read_error),
+ 		cmocka_unit_test(efi_test_propagate_data_read_error),
+ 		cmocka_unit_test(efi_test_exact_fit_write),
++		cmocka_unit_test(efi_test_get_options),
+ 		cmocka_unit_test(efi_test_delete_options),
+ 		cmocka_unit_test(efi_test_delete_options_refuse_malformed),
+ 		cmocka_unit_test(efi_test_delete_options_erased_or_empty),
