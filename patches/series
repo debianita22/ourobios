@@ -266,3 +266,8 @@
 0272-mb-lenovo-haswell-The-W541-s-card-reader-without-LTR.patch
 0273-drivers-smmstore-One-walk-of-the-variable-store-for-.patch
 0274-mb-lenovo-haswell-The-backlight-PWM-off-after-S3-wit.patch
+0275-device-dram-ddr3-Decode-XMP-1.3-fine-offsets-and-odd.patch
+0276-nb-intel-haswell-native_raminit-Key-the-training-dat.patch
+0277-drivers-smmstore-Tell-the-code-that-set-the-memory-u.patch
+0278-nb-intel-haswell-native_raminit-Add-an-option-for-th.patch
+0279-mb-lenovo-haswell-Put-the-memory-profile-in-the-setu.patch

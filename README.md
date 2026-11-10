@@ -136,12 +136,15 @@ Inside coreboot:
   | *Energy Saver* | battery charge thresholds (OS controlled, 100%, 80%, 60%), Hyper-Threading (from v1.6.1), Intel SpeedStep, Turbo Boost, C-states, CPU PL1/PL2 limits, cooling policy (active or passive), TCC activation offset (from v1.6.0, on processors that have one), USB always on (from v1.4.0 *AC and battery* charges on battery too), power-on with AC attached (from v1.4.0), power-on after power failure |
   | *Security* | *Flash protection*: BIOS Lock (flash writable only by the firmware, on by default from v1.6.0, off before) and Firmware protection (the read-only part, and from v1.6.1 the descriptor, the GbE and the ME regions, write-protected by the SPI controller at every boot, on by default); memory cleared at power-on, Intel VT-x, VT-d (from v1.4.0 with the ExpressCard and Thunderbolt ports untrusted for the OS, off by default), the Intel ME interface, Secure Boot, supervisor password (asked for before the setup menu opens) |
   | *Keyboard* | Fn/Ctrl swap, F1-F12 or special keys, sticky Fn, keyboard backlight, TrackPoint, touchpad |
-  | *Hardware* | *NVIDIA graphics*: the GPU and the tuning of its PCIe link; *Intel graphics*: graphics stolen memory (native RAM init only, 32 MiB by default from v1.6.0 as `mrc.bin`, which reserves a fixed 32 MiB; the GTT is 2 MiB on both), aperture and the firmware screen resolution; *Storage*: the SATA ports besides the drive bay; *Expansion ports*: ExpressCard and Thunderbolt; *Wireless*: Wi-Fi, Bluetooth, WWAN |
+  | *Hardware* | *NVIDIA graphics*: the GPU and the tuning of its PCIe link; *Intel graphics*: graphics stolen memory (native RAM init only, 32 MiB by default from v1.6.0 as `mrc.bin`, which reserves a fixed 32 MiB; the GTT is 2 MiB on both), aperture and the firmware screen resolution; *Memory* (native RAM init, from v1.7.0): the memory profile, SPD or XMP; *Storage*: the SATA ports besides the drive bay; *Expansion ports*: ExpressCard and Thunderbolt; *Wireless*: Wi-Fi, Bluetooth, WWAN |
   | *Compatibility* | *macOS*: the options that take the place of parts of an OpenCore configuration (ACPI processor objects as *Processor*, the C-state configuration lock, the NVIDIA GPU off under macOS, the panel, the display audio, the device properties; [docs/macos.md](docs/macos.md)); *Advanced*: NMI |
 
   Settings live in UEFI variables in the `SMMSTORE` flash region and apply
-  at the next boot. XMP memory profiles are not supported: the memory runs
-  at its JEDEC timings;
+  at the next boot. The memory runs at the JEDEC timings of its SPD; on
+  the `nri` variant, from v1.7.0, *Hardware* → *Memory* → *Memory profile*
+  can take an XMP profile of the modules instead
+  ([docs/raminit.md](docs/raminit.md#xmp-profiles)), not yet tried on a
+  machine with XMP modules;
 - the serial number, machine type model and UUID of the laptop in the
   `RO_VPD` flash region, written once with `tools/vpd.py` and reported in
   SMBIOS as the Lenovo firmware did
@@ -293,7 +296,11 @@ Known limits, by hardware or by design, not open bugs:
   the flash options locked the forgery no longer grants a flash write. A
   limit of the platform (no MM variable services on coreboot), not a bug of
   this firmware.
-- **XMP profiles**: the memory runs at its JEDEC timings.
+- **XMP profiles**: with `mrc.bin` the memory runs at its JEDEC timings.
+  With the native RAM init an XMP profile is an option from v1.7.0, off
+  by default, for profiles at the voltage the board feeds (1.35 V with
+  DDR3L modules: nothing raises it) and up to the speed the processor
+  supports ([docs/raminit.md](docs/raminit.md#xmp-profiles)).
 - **macOS**: supported through OpenCore, with the firmware options of
   [docs/macos.md](docs/macos.md), on the same ACPI tables as Linux and
   Windows; the Darwin-only paths are gated by `_OSI ("Darwin")`, which

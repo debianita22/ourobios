@@ -57,6 +57,10 @@ CONFIG_USE_NATIVE_RAMINIT=y
 CONFIG_HASWELL_NRI_MEMORY_TEST=y
 # la latenza di lettura accorciata dopo il training, con un qclk di margine (patch 0088)
 CONFIG_HASWELL_NRI_ROUND_TRIP=y
+# i profili XMP dei DIMM come opzione (Hardware -> Memory), spenta di default:
+# con il profilo, i timing e il clock sono quelli del profilo, e uno che non
+# porta al payload due volte di fila viene lasciato da solo (patch 0275-0279)
+CONFIG_HASWELL_NRI_MEMORY_PROFILE=y
 CONFIG_ENABLE_DDR_2X_REFRESH=y
 # Memoria azzerata a ogni avvio (non alla ripresa da S3): 1,7 s con 32 GB.
 # Si spegne dal menu, Security -> Memory protection (patch 0045-0046).

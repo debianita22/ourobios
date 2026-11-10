@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 10 Nov 2026 19:12:23 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: Key the training data on the
+ SPD decoder too
+
+The version of the saved training hashes the sources of the native RAM
+init, so that a slot never restores what other code trained. The
+timings that code trains with come from the DDR3 SPD decoder of
+device/dram, which the hash left out: a correction there, like the one
+of the XMP times, would have kept the data trained with the old
+timings.
+
+Add the decoder and its headers to the sources of the key.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+---
+ .../intel/haswell/native_raminit/Makefile.mk          | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+index b2f404e5..1ca76c69 100644
+--- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
++++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+@@ -32,12 +32,17 @@ romstage-y += train_sense_amp_offset.c
+ romstage-$(CONFIG_DEBUG_RAM_SETUP) += info_dumps.c
+ 
+ # The key of the training data: a hash of the code that trains and restores
+-# the memory and of its Kconfig options, so that a slot never restores data
+-# saved by other code (save_restore.c)
++# the memory, of the SPD decoder that gives it the timings and of its Kconfig
++# options, so that a slot never restores data saved by other code
++# (save_restore.c)
+ nri-key-srcs := $(sort $(wildcard $(dir)/*.c $(dir)/*.h)) \
+ 	$(sort $(wildcard src/northbridge/intel/haswell/registers/*.h)) \
+ 	src/northbridge/intel/haswell/raminit.h \
+-	src/northbridge/intel/haswell/raminit_shared.c
++	src/northbridge/intel/haswell/raminit_shared.c \
++	src/device/dram/ddr3.c \
++	src/device/dram/ddr_common.c \
++	src/include/device/dram/common.h \
++	src/include/device/dram/ddr3.h
+ nri-key-h := $(obj)/romstage/northbridge/intel/haswell/native_raminit/nri_code_key.h
+ 
+ $(nri-key-h): $(nri-key-srcs) $(DOTCONFIG)
+-- 
+2.43.0
+

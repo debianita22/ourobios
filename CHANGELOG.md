@@ -5,6 +5,35 @@ GitHub include its section; release candidates take the section of the
 version they lead to. For the releases before v1.3.0, see their notes on
 the [releases page](https://github.com/debianita22/ourobios/releases).
 
+## v1.7.0
+
+Not released. What ran on a machine: nothing yet, the CI builds only.
+
+- **W541 (`nri`): an XMP profile of the memory as an option** (patches
+  0275-0279): *Hardware* → *Memory* → *Memory profile*, *SPD (JEDEC)* by
+  default, or *XMP profile 1* or *2*. With a profile the native RAM init
+  trains with the timings and the speed of that profile, when every
+  module has it for the number of modules installed, at the voltage the
+  board feeds (1.35 V with DDR3L modules: nothing raises it) and up to
+  the speed the processor supports; otherwise the SPD timings are used
+  and the log says why. A profile that fails the training or the memory
+  test, or that does not reach the payload twice in a row, is given up
+  by itself until the option is changed (CMOS byte 0x7d), so a profile
+  that does not work cannot keep the machine from booting
+  ([docs/raminit.md](docs/raminit.md#xmp-profiles)). **Not tried with
+  XMP modules**: the W541 of the port has none. With the default the
+  memory is set up as before; the first boot trains once, as the
+  version of the saved training has the profile now. `mrc.bin` has no
+  such option.
+- **XMP 1.3 profiles decoded exactly** (patch 0275): the fine offsets
+  of a profile were not read, so a DDR3-1866 profile gave a cycle time
+  of 1.125 ns, one standard speed lower, and the times of a profile
+  with a timebase of 1/14 or 1/12 ns came out up to 1.6% short. With a
+  unit test.
+- **The saved training of the `nri` variant also follows the SPD
+  decoder** (patch 0276): a change of the code that reads the timings
+  from the SPD trains once, as a change of the RAM init does.
+
 ## v1.6.3
 
 Not released. What ran on a machine: rc1 on both boards, as a capsule

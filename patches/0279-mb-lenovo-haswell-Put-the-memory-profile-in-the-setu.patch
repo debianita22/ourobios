@@ -1,0 +1,86 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 10 Nov 2026 19:13:18 +0100
+Subject: [PATCH] mb/lenovo/haswell: Put the memory profile in the setup menu
+
+With HASWELL_NRI_MEMORY_PROFILE, add *Hardware* -> *Memory* ->
+*Memory profile* (the option "memory_profile": SPD, XMP profile 1, XMP
+profile 2; default SPD), and hide the line of *About this ThinkPad*
+that says XMP is not supported: the *Memory* line above it has the
+speed the memory runs at. Without it (mrc.bin, or the option not
+selected) the menu is as before.
+
+TEST=Build of the ThinkPad W541 with the native RAM init; the menu
+built on the host has the option once, in its card.
+---
+ src/mainboard/lenovo/haswell/cfr.c | 39 ++++++++++++++++++++++++++++++
+ 1 file changed, 39 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/cfr.c b/src/mainboard/lenovo/haswell/cfr.c
+index e2f3ca96..40160534 100644
+--- a/src/mainboard/lenovo/haswell/cfr.c
++++ b/src/mainboard/lenovo/haswell/cfr.c
+@@ -159,7 +159,9 @@ static const struct sm_object info_memory = SM_DECLARE_VARCHAR({
+ 	.default_value	= "Unknown",
+ }, WITH_CALLBACK(update_memory));
+ 
++/* With the option for an XMP profile (Hardware, Memory), the line above has the speed */
+ static const struct sm_object info_memory_profile = SM_DECLARE_COMMENT({
++	.flags		= CONFIG(HASWELL_NRI_MEMORY_PROFILE) ? CFR_OPTFLAG_SUPPRESS : 0,
+ 	.ui_name	= "Memory profile: JEDEC (XMP is not supported)",
+ 	.ui_helptext	= "The memory runs at the JEDEC timings from its SPD, at\n"
+ 			  "1.35 V. Neither mrc.bin nor the native RAM init can use\n"
+@@ -837,6 +839,42 @@ static const struct sm_object hardware_storage = SM_DECLARE_FORM({
+ 	},
+ });
+ 
++/* Read by northbridge/intel/haswell/native_raminit/memory_profile.c */
++static const struct sm_object memory_profile = SM_DECLARE_ENUM({
++	.flags		= CONFIG(HASWELL_NRI_MEMORY_PROFILE) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.opt_name	= "memory_profile",
++	.ui_name	= "Memory profile",
++	.ui_helptext	= "The timings and the speed of the memory: those of its SPD\n"
++			  "(JEDEC), or those of an XMP profile, when every module has\n"
++			  "it for the number of modules installed, at the voltage the\n"
++			  "board feeds (1.35 V for DDR3L) and up to the speed the\n"
++			  "processor supports. Otherwise the SPD timings are used, and\n"
++			  "the firmware log says why.\n"
++			  "The memory is trained again at the next boot (black screen\n"
++			  "for a second). A profile that fails the training or the\n"
++			  "memory test, or that does not reach this menu or the boot\n"
++			  "manager twice in a row, is given up by itself: select SPD\n"
++			  "once to try it again. A memory that passes all that can\n"
++			  "still be unstable under the OS: test it before relying on\n"
++			  "it.\n"
++			  "Default: SPD.",
++	.default_value	= 0,
++	.values		= (const struct sm_enum_value[]) {
++				{ "SPD (JEDEC)",	0	},
++				{ "XMP profile 1",	1	},
++				{ "XMP profile 2",	2	},
++				SM_ENUM_VALUE_END	},
++});
++
++static const struct sm_object hardware_memory = SM_DECLARE_FORM({
++	.flags		= CONFIG(HASWELL_NRI_MEMORY_PROFILE) ? 0 : CFR_OPTFLAG_SUPPRESS,
++	.ui_name	= "Memory",
++	.obj_list	= (const struct sm_object *[]) {
++		&memory_profile,
++		NULL
++	},
++});
++
+ static const struct sm_object hardware_ports = SM_DECLARE_FORM({
+ 	.flags		= CONFIG(BOARD_LENOVO_THINKPAD_W541) ? 0 : CFR_OPTFLAG_SUPPRESS,
+ 	.ui_name	= "Expansion ports",
+@@ -1007,6 +1045,7 @@ static struct sm_obj_form hardware = {
+ 	.obj_list = (const struct sm_object *[]) {
+ 		&hardware_intel_graphics,
+ 		&hardware_nvidia_graphics,
++		&hardware_memory,
+ 		&hardware_storage,
+ 		&hardware_ports,
+ 		&hardware_wireless,
+-- 
+2.43.0
+

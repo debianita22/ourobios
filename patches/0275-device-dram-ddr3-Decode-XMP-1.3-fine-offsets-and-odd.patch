@@ -1,0 +1,475 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 10 Nov 2026 19:06:37 +0100
+Subject: [PATCH] device/dram/ddr3: Decode XMP 1.3 fine offsets and odd
+ timebases exactly
+
+A profile for DDR3-1866 or faster cannot tell its cycle time in the
+usual medium timebase of 1/8 ns: tCKmin reads 1.125 ns for DDR3-1866
+(1.071 ns) and 0.875 ns for DDR3-2400 (0.833 ns). XMP 1.3 adds fine
+offsets for tCKmin, tAAmin, tRPmin, tRCDmin and tRCmin, in units of the
+fine timebase of the SPD, as the SPD has them for the same timings.
+They were not decoded, so the memory controller code, which takes the
+standard speed that the cycle time allows, chose one speed lower than
+the profile's.
+
+Apply them when the profile says revision 1.3 and the SPD has a fine
+timebase. The XMP specification is not public; the bytes and their
+meaning are from profiles of modules on sale: with a cycle time of 7
+units of 1/8 ns and an offset of -42, and offsets of -39, -79, -79 and
+-28 for the others, a DDR3-2400 kit decodes to the 11-13-13-31 it is
+sold as. The offsets of tRPmin and tRCDmin were the same in every
+profile seen, so their order could not be told apart: both timings get
+the larger of the two, so that neither is shortened by more than its
+own offset.
+
+Other profiles use a medium timebase of 1/14 or 1/12 ns, which is not
+a whole number of the units of 1/256 ns that the decoded times use.
+The timebase was rounded down once and then multiplied: times up to
+1.6% too short. Multiply first and round up; the cycle time to the
+nearest unit, as the cycle times of the standard speeds are rounded
+(15/14 ns must stay the TCK_933MHZ it is). A profile with no cycle
+time or no timebase is invalid.
+
+Add a unit test for the decoder, with the SPD of a DDR3L SO-DIMM and
+profiles as described above.
+
+TEST=make run-tests/device/ddr3-test
+---
+ src/device/dram/ddr3.c   |  92 ++++++++++----
+ tests/device/Makefile.mk |   7 ++
+ tests/device/ddr3-test.c | 258 +++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 334 insertions(+), 23 deletions(-)
+ create mode 100644 tests/device/ddr3-test.c
+
+diff --git a/src/device/dram/ddr3.c b/src/device/dram/ddr3.c
+index eb872894..bab9cbef 100644
+--- a/src/device/dram/ddr3.c
++++ b/src/device/dram/ddr3.c
+@@ -403,7 +403,7 @@ int spd_xmp_decode_ddr3(struct dimm_attr_ddr3_st *dimm, spd_ddr3_raw_data spd,
+ 			enum ddr3_xmp_profile profile)
+ {
+ 	int ret;
+-	u32 mtb; /* medium time base */
++	u32 mtb_dividend, mtb_divisor; /* medium time base of the profile, in ns */
+ 	u8 *xmp; /* pointer to XMP profile data */
+ 
+ 	/* need a valid SPD */
+@@ -431,9 +431,8 @@ int spd_xmp_decode_ddr3(struct dimm_attr_ddr3_st *dimm, spd_ddr3_raw_data spd,
+ 		/* Medium Timebase =
+ 		 *   Medium Timebase (MTB) Dividend /
+ 		 *   Medium Timebase (MTB) Divisor */
+-		if (spd[181] == 0) // Avoid dividing by zero.
+-			return SPD_STATUS_INVALID;
+-		mtb = (((u32)spd[180]) << 8) / spd[181];
++		mtb_dividend = spd[180];
++		mtb_divisor = spd[181];
+ 
+ 		dimm->dimms_per_channel = ((spd[178] >> 2) & 0x3) + 1;
+ 	} else {
+@@ -448,13 +447,25 @@ int spd_xmp_decode_ddr3(struct dimm_attr_ddr3_st *dimm, spd_ddr3_raw_data spd,
+ 		/* Medium Timebase =
+ 		 *   Medium Timebase (MTB) Dividend /
+ 		 *   Medium Timebase (MTB) Divisor */
+-		if (spd[183] == 0) // Avoid dividing by zero.
+-			return SPD_STATUS_INVALID;
+-		mtb = (((u32)spd[182]) << 8) / spd[183];
++		mtb_dividend = spd[182];
++		mtb_divisor = spd[183];
+ 
+ 		dimm->dimms_per_channel = ((spd[178] >> 4) & 0x3) + 1;
+ 	}
+ 
++	/* Avoid dividing by zero, and a profile without a cycle time */
++	if (mtb_dividend == 0 || mtb_divisor == 0 || xmp[1] == 0)
++		return SPD_STATUS_INVALID;
++
++	/*
++	 * A time of the profile in units of 1/256 ns, rounded up. With a
++	 * timebase that is not a multiple of 1/256 ns (1/14 ns and 1/12 ns
++	 * are in use), a timebase rounded once and then multiplied gave
++	 * times up to 1.6% too short, and a timing one clock too tight when
++	 * the time was a whole number of clocks.
++	 */
++#define XMP_TIME(v)	DIV_ROUND_UP((u32)(v) * mtb_dividend * 256, mtb_divisor)
++
+ 	printram("  Max DIMMs/channel  : %u\n", dimm->dimms_per_channel);
+ 
+ 	printram("  XMP Revision       : %u.%u\n", spd[179] >> 4, spd[179] & 0xf);
+@@ -468,36 +479,71 @@ int spd_xmp_decode_ddr3(struct dimm_attr_ddr3_st *dimm, spd_ddr3_raw_data spd,
+ 
+ 	printram("  Requested voltage  : %u mV\n", dimm->voltage);
+ 
+-	/* SDRAM Minimum Cycle Time (tCKmin) */
+-	dimm->tCK = xmp[1] * mtb;
++	/*
++	 * SDRAM Minimum Cycle Time (tCKmin), to the nearest unit: the cycle
++	 * times of the standard speeds are rounded down (TCK_933MHZ is 274
++	 * for 274.3), so 15/14 ns rounded up would not be DDR3-1866 any more.
++	 */
++	dimm->tCK = DIV_ROUND_CLOSEST((u32)xmp[1] * mtb_dividend * 256, mtb_divisor);
+ 	/* CAS Latencies Supported */
+ 	dimm->cas_supported = ((xmp[4] << 8) + xmp[3]) & 0x7fff;
+ 	/* Minimum CAS Latency Time (tAAmin) */
+-	dimm->tAA = xmp[2] * mtb;
++	dimm->tAA = XMP_TIME(xmp[2]);
+ 	/* Minimum Write Recovery Time (tWRmin) */
+-	dimm->tWR = xmp[8] * mtb;
++	dimm->tWR = XMP_TIME(xmp[8]);
+ 	/* Minimum RAS# to CAS# Delay Time (tRCDmin) */
+-	dimm->tRCD = xmp[7] * mtb;
++	dimm->tRCD = XMP_TIME(xmp[7]);
+ 	/* Minimum Row Active to Row Active Delay Time (tRRDmin) */
+-	dimm->tRRD = xmp[17] * mtb;
++	dimm->tRRD = XMP_TIME(xmp[17]);
+ 	/* Minimum Row Precharge Delay Time (tRPmin) */
+-	dimm->tRP = xmp[6] * mtb;
++	dimm->tRP = XMP_TIME(xmp[6]);
+ 	/* Minimum Active to Precharge Delay Time (tRASmin) */
+-	dimm->tRAS = (((xmp[9] & 0x0f) << 8) + xmp[10]) * mtb;
++	dimm->tRAS = XMP_TIME(((xmp[9] & 0x0f) << 8) + xmp[10]);
+ 	/* Minimum Active to Active/Refresh Delay Time (tRCmin) */
+-	dimm->tRC = (((xmp[9] & 0xf0) << 4) + xmp[11]) * mtb;
++	dimm->tRC = XMP_TIME(((xmp[9] & 0xf0) << 4) + xmp[11]);
+ 	/* Minimum Refresh Recovery Delay Time (tRFCmin) */
+-	dimm->tRFC = ((xmp[15] << 8) + xmp[14]) * mtb;
++	dimm->tRFC = XMP_TIME((xmp[15] << 8) + xmp[14]);
+ 	/* Minimum Internal Write to Read Command Delay Time (tWTRmin) */
+-	dimm->tWTR = xmp[20] * mtb;
++	dimm->tWTR = XMP_TIME(xmp[20]);
+ 	/* Minimum Internal Read to Precharge Command Delay Time (tRTPmin) */
+-	dimm->tRTP = xmp[16] * mtb;
++	dimm->tRTP = XMP_TIME(xmp[16]);
+ 	/* Minimum Four Activate Window Delay Time (tFAWmin) */
+-	dimm->tFAW = (((xmp[18] & 0x0f) << 8) + xmp[19]) * mtb;
++	dimm->tFAW = XMP_TIME(((xmp[18] & 0x0f) << 8) + xmp[19]);
+ 	/* Minimum CAS Write Latency Time (tCWLmin) */
+-	dimm->tCWL = xmp[5] * mtb;
+-	/* System CMD Rate Mode */
+-	dimm->tCMD = xmp[23] * mtb;
++	dimm->tCWL = XMP_TIME(xmp[5]);
++	/* System CMD Rate Mode: in clocks, with the timebase taken as a number */
++	dimm->tCMD = XMP_TIME(xmp[23]);
++
++#undef XMP_TIME
++
++	/*
++	 * XMP 1.3 adds fine offsets, in units of the fine timebase of the SPD,
++	 * to the five timings that the SPD itself corrects this way. A profile
++	 * for DDR3-1866 or faster cannot tell its cycle time in medium timebase
++	 * units of 1/8 ns: without the offset, tCKmin reads 1.125 ns for
++	 * DDR3-1866 (1.071 ns) and 0.875 ns for DDR3-2400 (0.833 ns), and the
++	 * memory would run one frequency lower than the profile says.
++	 *
++	 * The offsets of tRPmin and tRCDmin follow one another, as the two
++	 * timings do in the profile, and are the same in the profiles seen so
++	 * far. Use the larger for both, so that neither is shortened by more
++	 * than its own offset whichever of the two comes first.
++	 */
++	if (spd[179] >= 0x13 && spd[1] >= 0x11 && (spd[9] & 0x0f)) {
++		/* Fine timebase (1/256 ps), as spd_decode_ddr3() */
++		const u32 ftb = (((u16)spd[9] & 0xf0) << 4) / (spd[9] & 0x0f);
++		const s8 rp_rcd = MAX((s8)xmp[28], (s8)xmp[29]);
++
++		printram("  XMP fine offsets   : tCK %d tAA %d tRP/tRCD %d tRC %d\n",
++			 (s8)xmp[26], (s8)xmp[27], rp_rcd, (s8)xmp[30]);
++
++		/* As for the SPD: the MTB part is rounded up, the offset negative */
++		dimm->tCK += (s32)((s8)xmp[26] * ftb - 500) / 1000;
++		dimm->tAA += (s32)((s8)xmp[27] * ftb - 500) / 1000;
++		dimm->tRP += (s32)(rp_rcd * ftb - 500) / 1000;
++		dimm->tRCD += (s32)(rp_rcd * ftb - 500) / 1000;
++		dimm->tRC += (s32)((s8)xmp[30] * ftb - 500) / 1000;
++	}
+ 
+ 	return ret;
+ }
+diff --git a/tests/device/Makefile.mk b/tests/device/Makefile.mk
+index 22036cc9..142a693e 100644
+--- a/tests/device/Makefile.mk
++++ b/tests/device/Makefile.mk
+@@ -2,6 +2,7 @@
+ 
+ tests-y += i2c-test
+ tests-y += ddr4-test
++tests-y += ddr3-test
+ 
+ i2c-test-srcs += tests/device/i2c-test.c
+ i2c-test-srcs += src/device/i2c.c
+@@ -10,3 +11,9 @@ i2c-test-mocks += platform_i2c_transfer
+ ddr4-test-srcs += tests/device/ddr4-test.c
+ ddr4-test-srcs += tests/stubs/console.c
+ ddr4-test-srcs += src/device/dram/ddr4.c
++
++ddr3-test-srcs += tests/device/ddr3-test.c
++ddr3-test-srcs += tests/stubs/console.c
++ddr3-test-srcs += src/device/dram/ddr3.c
++ddr3-test-srcs += src/device/dram/ddr_common.c
++ddr3-test-mocks += cbmem_find cbmem_add
+diff --git a/tests/device/ddr3-test.c b/tests/device/ddr3-test.c
+new file mode 100644
+index 00000000..d3172714
+--- /dev/null
++++ b/tests/device/ddr3-test.c
+@@ -0,0 +1,258 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <device/dram/common.h>
++#include <device/dram/ddr3.h>
++#include <string.h>
++#include <tests/test.h>
++
++/* Where the two profiles start, and the fields the tests set, from there */
++#define XMP_PROFILE_1	185
++#define XMP_PROFILE_2	220
++#define  XMP_VOLTAGE	0
++#define  XMP_TCK	1
++#define  XMP_TAA	2
++#define  XMP_CAS_LSB	3
++#define  XMP_CAS_MSB	4
++#define  XMP_TCWL	5
++#define  XMP_TRP	6
++#define  XMP_TRCD	7
++#define  XMP_TWR	8
++#define  XMP_TRAS_TRC	9
++#define  XMP_TRAS_LSB	10
++#define  XMP_TRC_LSB	11
++#define  XMP_TCMD	23
++#define  XMP_FINE_TCK	26
++#define  XMP_FINE_TAA	27
++#define  XMP_FINE_TRP	28
++#define  XMP_FINE_TRCD	29
++#define  XMP_FINE_TRC	30
++
++/* A DDR3L-1600 SO-DIMM, 8 GiB, two ranks of x8, CL 11-11-11: the SPD itself */
++static void fill_base_spd(spd_ddr3_raw_data spd)
++{
++	memset(spd, 0, sizeof(spd_ddr3_raw_data));
++	spd[0] = 0x92;	/* 176 bytes used of 256, the CRC over 0-116 */
++	spd[1] = 0x13;	/* revision 1.3 */
++	spd[2] = SPD_MEMORY_TYPE_SDRAM_DDR3;
++	spd[3] = 0x03;	/* SO-DIMM */
++	spd[4] = 0x04;	/* 4 Gb, 8 banks */
++	spd[5] = 0x21;	/* 16 rows, 10 columns */
++	spd[6] = 0x02;	/* 1.35 V and 1.5 V */
++	spd[7] = 0x09;	/* two ranks, x8 */
++	spd[8] = 0x03;	/* 64 bit, no ECC */
++	spd[9] = 0x11;	/* fine timebase 1 ps */
++	spd[10] = 1;	/* medium timebase 1/8 ns */
++	spd[11] = 8;
++	spd[12] = 10;	/* tCK 1.25 ns */
++	spd[14] = 0xfc;	/* CL 6-11 */
++	spd[15] = 0x00;
++	spd[16] = 0x69;	/* tAA 13.125 ns */
++	spd[17] = 0x78;	/* tWR 15 ns */
++	spd[18] = 0x69;	/* tRCD */
++	spd[19] = 0x30;	/* tRRD 6 ns */
++	spd[20] = 0x69;	/* tRP */
++	spd[21] = 0x11;
++	spd[22] = 0x18;	/* tRAS 35 ns */
++	spd[23] = 0x81;	/* tRC 48.125 ns */
++	spd[24] = 0x20;	/* tRFC 260 ns */
++	spd[25] = 0x08;
++	spd[26] = 0x3c;	/* tWTR 7.5 ns */
++	spd[27] = 0x3c;	/* tRTP 7.5 ns */
++	spd[28] = 0x00;
++	spd[29] = 0xf0;	/* tFAW 30 ns */
++}
++
++static void seal_spd(spd_ddr3_raw_data spd)
++{
++	const u16 crc = spd_ddr3_calc_crc(spd, sizeof(spd_ddr3_raw_data));
++
++	spd[126] = crc & 0xff;
++	spd[127] = crc >> 8;
++}
++
++/* An XMP header with profile 1 on, for the DIMMs per channel given */
++static void fill_xmp_header(spd_ddr3_raw_data spd, u8 revision, u8 dividend, u8 divisor,
++			    u8 dimms_per_channel)
++{
++	spd[176] = 0x0c;
++	spd[177] = 0x4a;
++	spd[178] = 0x01 | (dimms_per_channel - 1) << 2;
++	spd[179] = revision;
++	spd[180] = dividend;
++	spd[181] = divisor;
++}
++
++/* The base SPD decodes, and has what an XMP profile adds at zero */
++static void test_spd_decode_ddr3_base(void **state)
++{
++	static struct dimm_attr_ddr3_st dimm;
++	spd_ddr3_raw_data spd;
++
++	fill_base_spd(spd);
++	seal_spd(spd);
++
++	assert_int_equal(SPD_STATUS_OK, spd_decode_ddr3(&dimm, spd));
++	assert_int_equal(TCK_800MHZ, dimm.tCK);
++	assert_int_equal(105 * 32, dimm.tAA);
++	assert_int_equal(8192, dimm.size_mb);
++	assert_int_equal(2, dimm.ranks);
++	assert_int_equal(10, dimm.col_bits);
++	assert_true(dimm.flags.operable_1_35V);
++	assert_int_equal(0, dimm.tCWL);
++	assert_int_equal(0, dimm.tCMD);
++}
++
++/* No header, or the profile not enabled: not an XMP profile */
++static void test_spd_xmp_decode_ddr3_absent(void **state)
++{
++	static struct dimm_attr_ddr3_st dimm;
++	spd_ddr3_raw_data spd;
++
++	fill_base_spd(spd);
++	seal_spd(spd);
++	assert_int_equal(SPD_STATUS_INVALID,
++			 spd_xmp_decode_ddr3(&dimm, spd, DDR3_XMP_PROFILE_1));
++
++	fill_xmp_header(spd, 0x13, 1, 8, 2);
++	spd[XMP_PROFILE_1 + XMP_TCK] = 9;
++	assert_int_equal(SPD_STATUS_INVALID,
++			 spd_xmp_decode_ddr3(&dimm, spd, DDR3_XMP_PROFILE_2));
++
++	/* A profile with no cycle time, or no timebase */
++	spd[XMP_PROFILE_1 + XMP_TCK] = 0;
++	assert_int_equal(SPD_STATUS_INVALID,
++			 spd_xmp_decode_ddr3(&dimm, spd, DDR3_XMP_PROFILE_1));
++	spd[XMP_PROFILE_1 + XMP_TCK] = 9;
++	spd[181] = 0;
++	assert_int_equal(SPD_STATUS_INVALID,
++			 spd_xmp_decode_ddr3(&dimm, spd, DDR3_XMP_PROFILE_1));
++}
++
++/* DDR3L-1866 CL 10-10-10-32 at 1.35 V, as a SO-DIMM kit for two per channel has it */
++static void fill_xmp_1866(spd_ddr3_raw_data spd, u8 revision)
++{
++	u8 *const xmp = &spd[XMP_PROFILE_1];
++
++	fill_xmp_header(spd, revision, 1, 8, 2);
++	xmp[XMP_VOLTAGE] = 1 << 5 | 3 << 1 | 1;	/* 1.35 V */
++	xmp[XMP_TCK] = 9;			/* 1.125 ns, 1.071 ns with the offset */
++	xmp[XMP_TAA] = 86;			/* 10.75 ns */
++	xmp[XMP_CAS_LSB] = 0x40;		/* CL 10 */
++	xmp[XMP_TCWL] = 60;			/* 7.5 ns */
++	xmp[XMP_TRP] = 86;
++	xmp[XMP_TRCD] = 86;
++	xmp[XMP_TWR] = 120;			/* 15 ns */
++	xmp[XMP_TRAS_TRC] = 0x11;
++	xmp[XMP_TRAS_LSB] = 0x12;		/* 34.25 ns */
++	xmp[XMP_TRC_LSB] = 0x69;		/* 45.125 ns */
++	xmp[XMP_TCMD] = 16;			/* 2N */
++	xmp[XMP_FINE_TCK] = (u8)-54;
++	xmp[XMP_FINE_TAA] = (u8)-36;
++	xmp[XMP_FINE_TRP] = (u8)-36;
++	xmp[XMP_FINE_TRCD] = (u8)-36;
++	xmp[XMP_FINE_TRC] = (u8)-10;
++}
++
++/* XMP 1.3: the fine offsets make the cycle time that of DDR3-1866 */
++static void test_spd_xmp_decode_ddr3_fine_offsets(void **state)
++{
++	static struct dimm_attr_ddr3_st dimm;
++	spd_ddr3_raw_data spd;
++
++	fill_base_spd(spd);
++	fill_xmp_1866(spd, 0x13);
++	seal_spd(spd);
++
++	assert_int_equal(SPD_STATUS_OK, spd_xmp_decode_ddr3(&dimm, spd, DDR3_XMP_PROFILE_1));
++	assert_int_equal(TCK_933MHZ, dimm.tCK);
++	assert_int_equal(1350, dimm.voltage);
++	assert_int_equal(2, dimm.dimms_per_channel);
++	assert_int_equal(0x40, dimm.cas_supported);
++	/* 10.75 ns - 36 ps = 10.714 ns, in units of 1/256 ns and rounded up */
++	assert_int_equal(86 * 32 - 9, dimm.tAA);
++	assert_int_equal(86 * 32 - 9, dimm.tRCD);
++	assert_int_equal(86 * 32 - 9, dimm.tRP);
++	/* No fine offset for these */
++	assert_int_equal(274 * 32, dimm.tRAS);
++	assert_int_equal(60 * 32, dimm.tCWL);
++	assert_int_equal(120 * 32, dimm.tWR);
++	/* 45.125 ns - 10 ps */
++	assert_int_equal(361 * 32 - 3, dimm.tRC);
++	/* The command rate is in clocks */
++	assert_int_equal(2, DIV_ROUND_UP(dimm.tCMD, 256));
++	/* What the profile does not replace is that of the SPD */
++	assert_int_equal(8192, dimm.size_mb);
++	assert_true(dimm.flags.operable_1_35V);
++}
++
++/* tRPmin and tRCDmin both get the larger of their two offsets */
++static void test_spd_xmp_decode_ddr3_fine_offsets_rp_rcd(void **state)
++{
++	static struct dimm_attr_ddr3_st dimm;
++	spd_ddr3_raw_data spd;
++
++	fill_base_spd(spd);
++	fill_xmp_1866(spd, 0x13);
++	spd[XMP_PROFILE_1 + XMP_FINE_TRP] = (u8)-100;
++	spd[XMP_PROFILE_1 + XMP_FINE_TRCD] = 0;
++	seal_spd(spd);
++
++	assert_int_equal(SPD_STATUS_OK, spd_xmp_decode_ddr3(&dimm, spd, DDR3_XMP_PROFILE_1));
++	assert_int_equal(86 * 32, dimm.tRP);
++	assert_int_equal(86 * 32, dimm.tRCD);
++}
++
++/* XMP 1.2 has no fine offsets: the bytes are not used, the cycle time is 1.125 ns */
++static void test_spd_xmp_decode_ddr3_no_fine_offsets(void **state)
++{
++	static struct dimm_attr_ddr3_st dimm;
++	spd_ddr3_raw_data spd;
++
++	fill_base_spd(spd);
++	fill_xmp_1866(spd, 0x12);
++	seal_spd(spd);
++
++	assert_int_equal(SPD_STATUS_OK, spd_xmp_decode_ddr3(&dimm, spd, DDR3_XMP_PROFILE_1));
++	assert_int_equal(9 * 32, dimm.tCK);
++	assert_true(dimm.tCK > TCK_900MHZ);
++	assert_int_equal(86 * 32, dimm.tAA);
++}
++
++/* A timebase of 1/14 ns: 15 units are the cycle time of DDR3-1866, the rest rounds up */
++static void test_spd_xmp_decode_ddr3_odd_timebase(void **state)
++{
++	static struct dimm_attr_ddr3_st dimm;
++	spd_ddr3_raw_data spd;
++	u8 *const xmp = &spd[XMP_PROFILE_1];
++
++	fill_base_spd(spd);
++	fill_xmp_header(spd, 0x13, 1, 14, 1);
++	xmp[XMP_VOLTAGE] = 1 << 5 | 5 << 1;	/* 1.5 V */
++	xmp[XMP_TCK] = 15;			/* 1.0714 ns */
++	xmp[XMP_TAA] = 135;			/* 9 clocks, to the unit */
++	xmp[XMP_CAS_LSB] = 0x20;		/* CL 9 */
++	xmp[XMP_TCMD] = 28;			/* 2N */
++	seal_spd(spd);
++
++	assert_int_equal(SPD_STATUS_OK, spd_xmp_decode_ddr3(&dimm, spd, DDR3_XMP_PROFILE_1));
++	assert_int_equal(TCK_933MHZ, dimm.tCK);
++	assert_int_equal(1500, dimm.voltage);
++	assert_int_equal(1, dimm.dimms_per_channel);
++	/* 135/14 ns is 2468.6 units of 1/256 ns: not 135 * 18 = 2430 */
++	assert_int_equal(2469, dimm.tAA);
++	assert_int_equal(2, DIV_ROUND_UP(dimm.tCMD, 256));
++}
++
++int main(void)
++{
++	const struct CMUnitTest tests[] = {
++		cmocka_unit_test(test_spd_decode_ddr3_base),
++		cmocka_unit_test(test_spd_xmp_decode_ddr3_absent),
++		cmocka_unit_test(test_spd_xmp_decode_ddr3_fine_offsets),
++		cmocka_unit_test(test_spd_xmp_decode_ddr3_fine_offsets_rp_rcd),
++		cmocka_unit_test(test_spd_xmp_decode_ddr3_no_fine_offsets),
++		cmocka_unit_test(test_spd_xmp_decode_ddr3_odd_timebase),
++	};
++
++	return cb_run_group_tests(tests, NULL, NULL);
++}
+-- 
+2.43.0
+

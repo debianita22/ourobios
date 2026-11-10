@@ -1,0 +1,856 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 10 Nov 2026 19:13:18 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: Add an option for the XMP
+ profiles of the DIMMs
+
+The native RAM init trains with the timings of the SPD; its hook for an
+XMP profile was a constant set to false, with a TODO. Read the option
+"memory_profile" (HASWELL_NRI_MEMORY_PROFILE): 0, the default, is the
+SPD; 1 or 2 take the timings and the clock of that profile. The path of
+the SPD is the one it was: what follows applies with a profile only.
+
+The profile is used when every DIMM has it, for as many DIMMs as its
+channel holds, at a voltage that is not above what the board is taken
+to feed (1.35 V when every DIMM runs at it, 1.5 V otherwise, or the
+devicetree's): nothing here can raise the voltage. Otherwise all the
+DIMMs run with the timings of their SPD, and the log says which
+condition failed.
+
+The clock is the standard speed that the cycle time of the profile
+allows, as for an SPD, up to what the processor says it supports for
+each reference clock (DMFC and PLL_REF100_CFG of CAPID0_B) unless it
+allows memory overclocking (CAPID0_A). The times are converted to
+clocks with the clock itself, in hundredths of a clock and without the
+last hundredth: the times of a profile are whole numbers of its clock,
+which the cycle times of the standard speeds, rounded down to 1/256 ns,
+turn into one clock more (10.714 ns at DDR3-1866: 11 clocks, and with
+it a lower speed when the profile supports CL 10 alone). The command
+rate of a profile is in clocks, and is taken when it is slower than the
+one this code chooses; the CAS write latency is never below that of the
+speed. The maximum tREFI of a profile is not used.
+
+A profile is the DIMM maker's word, and the option lives in the
+variable store, which only a firmware that boots can change. So the
+firmware gives a profile up by itself, with one CMOS byte (0x7d,
+memory_profile.h): romstage counts the boots with a profile, SMM
+clears the count when the payload confirms the boot
+(smmstore_memory_confirmed()). Two boots in a row not confirmed, or a
+training that fails twice, mark the profile as failed, and the timings
+of the SPD are used until the option is set to the SPD once or to the
+other profile. An S3 resume takes the profile of the boot it resumes
+and counts nothing.
+
+The MPLL cannot be locked again at another frequency. After a training
+that failed with a profile, the fallback is therefore a reset that
+powers the processor down, marked in CMOS_POST as one the firmware
+asked for. For the same reason, when this boot or the one before asked
+for a profile and the first request of the boot finds the MPLL locked
+at another multiplier (the option changed, and a warm reset may keep
+the lock), the processor is powered down once before the training.
+With the timings of the SPD at every boot the MPLL is not looked at.
+
+The version of the saved training now has the profile that the boot
+asks for: changing the option trains again.
+
+Not tested on a machine with XMP DIMMs. The SPD path, the default, is
+unchanged but for the version of the saved training.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+---
+ src/northbridge/intel/haswell/Kconfig         |  18 +++
+ src/northbridge/intel/haswell/Makefile.mk     |   2 +
+ .../intel/haswell/memory_profile.h            |  74 ++++++++++
+ .../intel/haswell/memory_profile_smm.c        |  21 +++
+ .../intel/haswell/native_raminit/Makefile.mk  |   2 +
+ .../intel/haswell/native_raminit/init_mpll.c  | 139 +++++++++++++++++-
+ .../haswell/native_raminit/memory_profile.c   | 129 ++++++++++++++++
+ .../haswell/native_raminit/raminit_main.c     |   5 +
+ .../haswell/native_raminit/raminit_native.c   |   3 +
+ .../haswell/native_raminit/raminit_native.h   |  10 ++
+ .../haswell/native_raminit/save_restore.c     |   7 +-
+ .../haswell/native_raminit/spd_bitmunching.c  | 122 ++++++++++++---
+ 12 files changed, 509 insertions(+), 23 deletions(-)
+ create mode 100644 src/northbridge/intel/haswell/memory_profile.h
+ create mode 100644 src/northbridge/intel/haswell/memory_profile_smm.c
+ create mode 100644 src/northbridge/intel/haswell/native_raminit/memory_profile.c
+
+diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
+index 4e71e49e..b661e5e6 100644
+--- a/src/northbridge/intel/haswell/Kconfig
++++ b/src/northbridge/intel/haswell/Kconfig
+@@ -40,6 +40,24 @@ config HASWELL_NRI_ROUND_TRIP
+ 	  HASWELL_NRI_MEMORY_TEST, which trains again without this when the
+ 	  memory test fails.
+ 
++config HASWELL_NRI_MEMORY_PROFILE
++	bool "Offer the XMP profiles of the DIMMs as an option"
++	depends on USE_NATIVE_RAMINIT && SMMSTORE && CMOS_POST
++	help
++	  Read the option "memory_profile": with 1 or 2, train the memory
++	  with the timings and the clock of that XMP profile instead of
++	  those of the SPD, when every DIMM has it, for as many DIMMs as its
++	  channel holds and at a voltage the board is taken to feed, and up
++	  to the clock that the processor says it supports. The default is
++	  the SPD.
++
++	  A profile that fails the training, or that does not carry the
++	  firmware to the payload twice in a row, is given up until the
++	  option is changed: the state is in CMOS byte 0x7d, which the board
++	  must leave free, and the payload has to confirm each boot with
++	  SMMSTORE_CMD_VBOOT_SLOT_GOOD, or the profile is given up after two
++	  boots.
++
+ config HASWELL_VBOOT_IN_BOOTBLOCK
+ 	depends on VBOOT
+ 	bool "Start verstage in bootblock"
+diff --git a/src/northbridge/intel/haswell/Makefile.mk b/src/northbridge/intel/haswell/Makefile.mk
+index 1780e1d1..2c1bad4d 100644
+--- a/src/northbridge/intel/haswell/Makefile.mk
++++ b/src/northbridge/intel/haswell/Makefile.mk
+@@ -20,6 +20,8 @@ romstage-y += raminit_shared.c
+ 
+ postcar-y += memmap.c
+ 
++smm-$(CONFIG_HASWELL_NRI_MEMORY_PROFILE) += memory_profile_smm.c
++
+ ifneq ($(CONFIG_INTEL_LYNXPOINT_LP),y)
+ romstage-y += early_peg.c
+ endif
+diff --git a/src/northbridge/intel/haswell/memory_profile.h b/src/northbridge/intel/haswell/memory_profile.h
+new file mode 100644
+index 00000000..68e432f1
+--- /dev/null
++++ b/src/northbridge/intel/haswell/memory_profile.h
+@@ -0,0 +1,74 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#ifndef NORTHBRIDGE_INTEL_HASWELL_MEMORY_PROFILE_H
++#define NORTHBRIDGE_INTEL_HASWELL_MEMORY_PROFILE_H
++
++#include <commonlib/helpers.h>
++#include <pc80/mc146818rtc.h>
++#include <types.h>
++
++/* The option "memory_profile": the timings of the SPD, or those of an XMP profile */
++enum memory_profile {
++	MEMORY_PROFILE_SPD = 0,
++	MEMORY_PROFILE_XMP_1 = 1,
++	MEMORY_PROFILE_XMP_2 = 2,
++};
++
++/*
++ * An XMP profile runs the memory faster than its SPD says, and a memory that
++ * trains and passes the memory test may still not carry the firmware to the
++ * payload. The option is in the variable store, which only a firmware that
++ * boots can change, so the firmware has to give the profile up by itself.
++ *
++ * One CMOS byte: whether the last boot asked for a profile, the profile that
++ * failed, and the boots in a row with a profile that the payload did not
++ * confirm. Romstage adds one to the count at every boot with a profile, but
++ * an S3 resume; SMM clears it when the payload says that the firmware booted
++ * (SMMSTORE_CMD_VBOOT_SLOT_GOOD). With two boots not confirmed, or a training
++ * that fails, the profile is marked as failed and the timings of the SPD are
++ * used, until the option is set to the SPD timings once (which forgets the
++ * mark) or to the other profile.
++ *
++ * A mark in the three high bits, so that a byte nobody wrote reads as
++ * nothing. Byte 0x7d is free on the boards that select the option: after the
++ * checksum of their cmos.layout (0x7b, 0x7c) and CMOS_POST (0x70-0x7a), before
++ * the bytes of the firmware watchdog (0x7e) and of the GbE switch (0x7f).
++ */
++#define MEMORY_PROFILE_CMOS		0x7d
++#define  MEMORY_PROFILE_MARK		0xa0
++#define  MEMORY_PROFILE_MARK_MASK	0xe0
++#define  MEMORY_PROFILE_ACTIVE		(1 << 4)
++#define  MEMORY_PROFILE_FAILED_SHIFT	2
++#define  MEMORY_PROFILE_FIELD_MASK	0x3
++#define MEMORY_PROFILE_MAX_UNCONFIRMED	2
++
++struct memory_profile_state {
++	bool active;		/* The last boot asked for a profile */
++	uint8_t failed;		/* The profile that failed, or MEMORY_PROFILE_SPD */
++	uint8_t unconfirmed;	/* Boots in a row with a profile, not confirmed */
++};
++
++static inline struct memory_profile_state memory_profile_read_state(void)
++{
++	const uint8_t v = cmos_read(MEMORY_PROFILE_CMOS);
++	struct memory_profile_state state = { 0 };
++
++	if ((v & MEMORY_PROFILE_MARK_MASK) == MEMORY_PROFILE_MARK) {
++		state.active = v & MEMORY_PROFILE_ACTIVE;
++		state.failed = (v >> MEMORY_PROFILE_FAILED_SHIFT) & MEMORY_PROFILE_FIELD_MASK;
++		state.unconfirmed = v & MEMORY_PROFILE_FIELD_MASK;
++	}
++	return state;
++}
++
++static inline void memory_profile_write_state(const struct memory_profile_state state)
++{
++	const uint8_t v = MEMORY_PROFILE_MARK | (state.active ? MEMORY_PROFILE_ACTIVE : 0) |
++		(state.failed & MEMORY_PROFILE_FIELD_MASK) << MEMORY_PROFILE_FAILED_SHIFT |
++		MIN(state.unconfirmed, MEMORY_PROFILE_FIELD_MASK);
++
++	if (cmos_read(MEMORY_PROFILE_CMOS) != v)
++		cmos_write(v, MEMORY_PROFILE_CMOS);
++}
++
++#endif
+diff --git a/src/northbridge/intel/haswell/memory_profile_smm.c b/src/northbridge/intel/haswell/memory_profile_smm.c
+new file mode 100644
+index 00000000..16833ae4
+--- /dev/null
++++ b/src/northbridge/intel/haswell/memory_profile_smm.c
+@@ -0,0 +1,21 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <smmstore.h>
++
++#include "memory_profile.h"
++
++/*
++ * The payload runs: the memory carried the firmware this far with the profile
++ * of this boot, if there is one. Clear the count of the boots that did not
++ * get here.
++ */
++void smmstore_memory_confirmed(void)
++{
++	struct memory_profile_state state = memory_profile_read_state();
++
++	if (!state.unconfirmed)
++		return;
++
++	state.unconfirmed = 0;
++	memory_profile_write_state(state);
++}
+diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+index 1ca76c69..dffaa9b9 100644
+--- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
++++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+@@ -10,6 +10,7 @@ romstage-y += io_comp_control.c
+ romstage-y += jedec_reset.c
+ romstage-y += lookup_timings.c
+ romstage-y += memory_map.c
++romstage-y += memory_profile.c
+ romstage-y += memory_scrub.c
+ romstage-y += memory_test.c
+ romstage-y += raminit_main.c
+@@ -37,6 +38,7 @@ romstage-$(CONFIG_DEBUG_RAM_SETUP) += info_dumps.c
+ # (save_restore.c)
+ nri-key-srcs := $(sort $(wildcard $(dir)/*.c $(dir)/*.h)) \
+ 	$(sort $(wildcard src/northbridge/intel/haswell/registers/*.h)) \
++	src/northbridge/intel/haswell/memory_profile.h \
+ 	src/northbridge/intel/haswell/raminit.h \
+ 	src/northbridge/intel/haswell/raminit_shared.c \
+ 	src/device/dram/ddr3.c \
+diff --git a/src/northbridge/intel/haswell/native_raminit/init_mpll.c b/src/northbridge/intel/haswell/native_raminit/init_mpll.c
+index d8887705..bfaf46a1 100644
+--- a/src/northbridge/intel/haswell/native_raminit/init_mpll.c
++++ b/src/northbridge/intel/haswell/native_raminit/init_mpll.c
+@@ -1,10 +1,12 @@
+ /* SPDX-License-Identifier: GPL-2.0-or-later */
+ 
++#include <cf9_reset.h>
+ #include <commonlib/bsd/clamp.h>
+ #include <console/console.h>
+ #include <delay.h>
+ #include <device/pci_ops.h>
+ #include <northbridge/intel/haswell/haswell.h>
++#include <post.h>
+ #include <types.h>
+ 
+ #include "raminit_native.h"
+@@ -22,6 +24,79 @@ static uint32_t get_mem_multiplier(const struct sysinfo *ctrl)
+ 	die("Unsupported base frequency\n");
+ }
+ 
++/*
++ * A time in units of 1/256 ns, in DCLKs of the memory clock that
++ * normalize_tck() chose.
++ *
++ * The times of an XMP profile are whole numbers of its own clock: ten clocks
++ * of DDR3-1866 are 10.714 ns. Divided by the cycle time of the standard speed,
++ * which is rounded down to a unit of 1/256 ns (274 for 274.3), that is 10.01
++ * clocks: one clock lost on each such timing, and on tAA the speed itself, as
++ * a profile often supports no other CAS latency. So, with a profile, use the
++ * clock itself, a multiple of 400/3 MHz or of 100 MHz, in hundredths of a
++ * DCLK, and drop the last hundredth, for the rounding up of the decoded
++ * times. The times of an SPD are converted as they always were.
++ */
++uint32_t time_to_dclks(const struct sysinfo *ctrl, const uint32_t time)
++{
++	if (!ctrl->xmp)
++		return DIV_ROUND_UP(time, ctrl->tCK);
++
++	/*
++	 * time / 256 ns * multiplier * 400/3 MHz, times 100, is
++	 * time * multiplier * 5 / 96; with 100 MHz, 5 / 128.
++	 */
++	const uint32_t bounded = MIN(time, 0x00ffffff);
++	const uint32_t dclks_x100 = DIV_ROUND_UP(bounded * get_mem_multiplier(ctrl) * 5,
++						 ctrl->base_freq == 100 ? 128 : 96);
++
++	return DIV_ROUND_UP(dclks_x100 - MIN(dclks_x100, 1), 100);
++}
++
++/*
++ * The fastest memory clock that the processor says it supports, for each
++ * reference clock (CAPID0_B), unless it allows memory overclocking (CAPID0_A).
++ * Only asked with an XMP profile, the one case in which the DIMMs may say more
++ * than the processor.
++ */
++static bool mem_clock_is_supported(const struct sysinfo *ctrl)
++{
++	static const uint16_t ref133_max_mhz[] = {
++		[0] = UINT16_MAX,	/* No limit */
++		[1] = 1333,
++		[2] = 1200,
++		[3] = 1066,
++		[4] = 933,
++		[5] = 800,
++		[6] = 666,
++		[7] = 533,
++	};
++	static const uint16_t ref100_max_mhz[] = {
++		[0] = 0,		/* Not supported */
++		[1] = 700,
++		[2] = 800,
++		[3] = 900,
++		[4] = 1000,
++		[5] = 1100,
++		[6] = 1200,
++		[7] = UINT16_MAX,	/* No limit */
++	};
++	const union pci_capid0_a_reg capid0_a = {
++		.raw = pci_read_config32(HOST_BRIDGE, CAPID0_A)
++	};
++	const union pci_capid0_b_reg capid0_b = {
++		.raw = pci_read_config32(HOST_BRIDGE, CAPID0_B)
++	};
++
++	if (capid0_a.DDR_OVERCLOCK)
++		return true;
++
++	if (ctrl->base_freq == 100)
++		return ctrl->mem_clock_mhz <= ref100_max_mhz[capid0_b.PLL_REF100_CFG];
++
++	return ctrl->mem_clock_mhz <= ref133_max_mhz[capid0_b.DMFC];
++}
++
+ static void normalize_tck(struct sysinfo *ctrl, const bool pll_ref100)
+ {
+ 	/** TODO: Haswell supports up to DDR3-2600 **/
+@@ -90,6 +165,11 @@ static void normalize_tck(struct sysinfo *ctrl, const bool pll_ref100)
+ 		/* Skip unsupported frequency */
+ 		ctrl->tCK++;
+ 		normalize_tck(ctrl, pll_ref100);
++	} else if (ctrl->xmp && !mem_clock_is_supported(ctrl)) {
++		printk(BIOS_DEBUG, "The processor does not support %u MHz, trying less\n",
++		       ctrl->mem_clock_mhz);
++		ctrl->tCK++;
++		normalize_tck(ctrl, pll_ref100);
+ 	}
+ }
+ 
+@@ -99,7 +179,7 @@ static void normalize_tck(struct sysinfo *ctrl, const bool pll_ref100)
+ static uint8_t find_compatible_cas(struct sysinfo *ctrl)
+ {
+ 	printk(RAM_DEBUG, "With tCK %u, try CAS: ", ctrl->tCK);
+-	const uint8_t cas_lower = MAX(MIN_CAS, DIV_ROUND_UP(ctrl->tAA, ctrl->tCK));
++	const uint8_t cas_lower = MAX(MIN_CAS, time_to_dclks(ctrl, ctrl->tAA));
+ 	const uint8_t cas_upper = MIN(MAX_CAS, 19); /* JEDEC MR0 limit */
+ 
+ 	if (!(ctrl->cas_supported >> (cas_lower - MIN_CAS))) {
+@@ -123,6 +203,11 @@ static enum nri_status find_cas_tck(struct sysinfo *ctrl)
+ 	uint8_t pll_ref100 = (pci_read_config32(HOST_BRIDGE, CAPID0_B) >> 21) & 0x7;
+ 	printk(RAM_DEBUG, "PLL_REF100_CFG value: 0x%x\n", pll_ref100);
+ 	printk(RAM_DEBUG, "100MHz reference clock support: %s\n", pll_ref100 ? "yes" : "no");
++	if (ctrl->xmp) {
++		printk(BIOS_DEBUG, "XMP profile: tCK %u, CAPID0_A 0x%08x, CAPID0_B 0x%08x\n",
++		       ctrl->tCK, pci_read_config32(HOST_BRIDGE, CAPID0_A),
++		       pci_read_config32(HOST_BRIDGE, CAPID0_B));
++	}
+ 
+ 	uint8_t selected_cas;
+ 	while (true) {
+@@ -145,6 +230,55 @@ static enum nri_status find_cas_tck(struct sysinfo *ctrl)
+ 	return NRI_STATUS_SUCCESS;
+ }
+ 
++/* In the extra field of CMOS_POST with POSTCODE_RESET_REQUESTED */
++#define RESET_EXTRA_MPLL	0x4d504c4c	/* "MPLL" */
++
++/*
++ * The MPLL cannot be locked again at another frequency. With the option for
++ * an XMP profile the frequency can change from one boot to the next, and if
++ * the MPLL is still locked where the boot before left it (a warm reset may
++ * keep it), the memory controller would be set up for one clock and run at
++ * another. Power the processor down then, which the MPLL does not survive.
++ * Only when this boot or the one before asked for a profile (with the
++ * timings of the SPD at every boot, nothing is looked at and nothing
++ * changes), only before the first request of this boot (after it, the MPLL
++ * is where this boot put it), and at most once: if it is still locked
++ * elsewhere after that reset, go on as this code always did.
++ */
++static bool mpll_requested;
++
++static void reset_if_mpll_locked_elsewhere(const struct sysinfo *ctrl)
++{
++	/* CMOS_POST is the loop breaker: without it, no reset */
++	if (!CONFIG(HASWELL_NRI_MEMORY_PROFILE) || !CONFIG(CMOS_POST) ||
++	    ctrl->bootmode == BOOTMODE_S3 || mpll_requested ||
++	    !nri_memory_profile_may_change_clock())
++		return;
++
++	const uint32_t locked = mchbar_read32(MC_BIOS_DATA) & 0xf;
++	if (!locked || locked == ctrl->multiplier)
++		return;
++
++	u8 code;
++	u32 extra;
++
++	cmos_post_previous_boot(&code, &extra);
++	if (code == POSTCODE_RESET_REQUESTED && extra == RESET_EXTRA_MPLL) {
++		printk(BIOS_ERR, "MPLL still locked at multiplier %u after a reset, "
++		       "%u wanted\n", locked, ctrl->multiplier);
++		return;
++	}
++	cmos_post_extra(RESET_EXTRA_MPLL);
++	cmos_post_code(POSTCODE_RESET_REQUESTED);
++
++	printk(BIOS_NOTICE, "MPLL locked at multiplier %u, %u wanted: resetting\n",
++	       locked, ctrl->multiplier);
++	/* This boot is not one that failed with the profile */
++	nri_memory_profile_uncount();
++	post_code(POSTCODE_RESET_REQUESTED);
++	full_reset();
++}
++
+ enum nri_status initialise_mpll(struct sysinfo *ctrl)
+ {
+ 	if (ctrl->tCK > TCK_400MHZ) {
+@@ -177,6 +311,8 @@ enum nri_status initialise_mpll(struct sysinfo *ctrl)
+ 		//if (mchbar_read32(MC_BIOS_DATA) != 0)
+ 		//	break;
+ 
++		reset_if_mpll_locked_elsewhere(ctrl);
++
+ 		uint32_t mc_bios_req = ctrl->multiplier;
+ 		if (ctrl->base_freq == 100) {
+ 			/* Use 100 MHz reference clock */
+@@ -186,6 +322,7 @@ enum nri_status initialise_mpll(struct sysinfo *ctrl)
+ 		printk(RAM_DEBUG, "MC_BIOS_REQ = 0x%08x\n", mc_bios_req);
+ 		printk(BIOS_DEBUG, "MPLL busy... ");
+ 		mchbar_write32(MC_BIOS_REQ, mc_bios_req);
++		mpll_requested = true;
+ 
+ 		for (unsigned int i = 0; i <= 5000; i++) {
+ 			if (!(mchbar_read32(MC_BIOS_REQ) & BIT(31))) {
+diff --git a/src/northbridge/intel/haswell/native_raminit/memory_profile.c b/src/northbridge/intel/haswell/native_raminit/memory_profile.c
+new file mode 100644
+index 00000000..e56854e8
+--- /dev/null
++++ b/src/northbridge/intel/haswell/native_raminit/memory_profile.c
+@@ -0,0 +1,129 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <cf9_reset.h>
++#include <console/console.h>
++#include <northbridge/intel/haswell/memory_profile.h>
++#include <option.h>
++#include <post.h>
++#include <types.h>
++
++#include "raminit_native.h"
++
++/* In the extra field of CMOS_POST with POSTCODE_RESET_REQUESTED */
++#define RESET_EXTRA_MEMORY_PROFILE	0x584d5000	/* "XMP" */
++
++/* The profile of this boot: decided once, before the saved training is looked up */
++static uint8_t boot_profile = MEMORY_PROFILE_SPD;
++
++/* Whether the boot before this one asked for a profile */
++static bool profile_before;
++
++uint8_t nri_memory_profile(void)
++{
++	return boot_profile;
++}
++
++/*
++ * Whether the memory clock of this boot may differ from that of the boot
++ * before: a profile now, or a profile then.
++ */
++bool nri_memory_profile_may_change_clock(void)
++{
++	return boot_profile != MEMORY_PROFILE_SPD || profile_before;
++}
++
++/*
++ * Decide the profile of this boot from the option and from how the boots
++ * before went (northbridge/intel/haswell/memory_profile.h). An S3 resume
++ * takes what the boot it resumes took, and counts nothing: neither the
++ * option nor the mark of a failed profile can have changed since.
++ */
++void nri_memory_profile_init(const bool s3resume)
++{
++	boot_profile = MEMORY_PROFILE_SPD;
++
++	if (!CONFIG(HASWELL_NRI_MEMORY_PROFILE))
++		return;
++
++	const unsigned int option = get_uint_option("memory_profile", MEMORY_PROFILE_SPD);
++	struct memory_profile_state state = memory_profile_read_state();
++
++	profile_before = state.active;
++
++	if (option != MEMORY_PROFILE_XMP_1 && option != MEMORY_PROFILE_XMP_2) {
++		/* Forget a failed profile: selecting it again tries it again */
++		memory_profile_write_state((struct memory_profile_state) { 0 });
++		return;
++	}
++
++	if (state.failed == option) {
++		printk(BIOS_ERR, "Memory profile: XMP profile %u failed before, using the SPD "
++		       "timings. Select the SPD timings once to try it again\n", option);
++		state.active = false;
++		state.unconfirmed = 0;
++		memory_profile_write_state(state);
++		return;
++	}
++
++	if (s3resume) {
++		boot_profile = option;
++		return;
++	}
++
++	if (state.unconfirmed >= MEMORY_PROFILE_MAX_UNCONFIRMED) {
++		printk(BIOS_ERR, "Memory profile: %u boots in a row with XMP profile %u did not "
++		       "reach the payload, using the SPD timings from now on\n",
++		       state.unconfirmed, option);
++		state.active = false;
++		state.failed = option;
++		state.unconfirmed = 0;
++		memory_profile_write_state(state);
++		return;
++	}
++
++	state.active = true;
++	state.unconfirmed++;
++	memory_profile_write_state(state);
++	boot_profile = option;
++	printk(BIOS_INFO, "Memory profile: XMP profile %u requested\n", option);
++}
++
++/* A reset that this code asks for before the training is not a boot that failed */
++void nri_memory_profile_uncount(void)
++{
++	struct memory_profile_state state = memory_profile_read_state();
++
++	if (boot_profile == MEMORY_PROFILE_SPD || !state.unconfirmed)
++		return;
++
++	state.unconfirmed--;
++	memory_profile_write_state(state);
++}
++
++/*
++ * The training with the profile failed twice. The memory clock cannot be
++ * lowered once the MPLL is locked, so mark the profile as failed and start
++ * again through a reset that powers the processor down: the next boot trains
++ * with the timings of the SPD.
++ */
++void nri_memory_profile_failed(void)
++{
++	/* Active: the next boot starts from the clock of this one */
++	const struct memory_profile_state state = {
++		.active = true,
++		.failed = boot_profile,
++		.unconfirmed = 0,
++	};
++
++	memory_profile_write_state(state);
++	printk(BIOS_ERR, "Memory profile: the training with XMP profile %u failed, resetting "
++	       "to train with the SPD timings\n", boot_profile);
++
++	/* For the next boot, also with NO_POST: a reset the firmware asked for */
++	if (CONFIG(CMOS_POST)) {
++		cmos_post_extra(RESET_EXTRA_MEMORY_PROFILE);
++		cmos_post_code(POSTCODE_RESET_REQUESTED);
++	}
++	post_code(POSTCODE_RESET_REQUESTED);
++	full_reset();
++}
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index ac2afb96..bb91c883 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -202,6 +202,7 @@ static void initialize_ctrl(struct sysinfo *ctrl)
+ 	ctrl->dq_pins_interleaved = cfg->dq_pins_interleaved;
+ 	ctrl->restore_mrs = false;
+ 	ctrl->bootmode = bootmode;
++	ctrl->memory_profile = nri_memory_profile();
+ }
+ 
+ /** TODO: Adjust unit scale dynamically? **/
+@@ -311,5 +312,9 @@ void raminit_main(const enum raminit_boot_mode bootmode)
+ 			return;
+ 	}
+ 
++	/* With the timings of an XMP profile: once more, with those of the SPD */
++	if (mighty_ctrl.xmp)
++		nri_memory_profile_failed();
++
+ 	die("Memory initialization was met with utmost failure and misery\n");
+ }
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.c b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
+index 9d38c42b..065e31b8 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
+@@ -176,6 +176,9 @@ void perform_raminit(const bool s3resume)
+ 	 */
+ 	const enum raminit_boot_mode orig_bootmode = get_boot_mode();
+ 
++	/* Before the saved training is looked up: its version has the profile */
++	nri_memory_profile_init(s3resume);
++
+ 	if (CONFIG(DEBUG_RAM_SETUP)) {
+ 		/* Log CAPID values before dynamic fusing takes place */
+ 		dump_capid_values();
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index 43898d59..41051cd8 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -393,6 +393,9 @@ struct sysinfo {
+ 	bool restore_mrs;
+ 	bool no_latency_optimisation;	/* training again after a failure */
+ 
++	uint8_t memory_profile;		/* enum memory_profile: what this boot asks for */
++	bool xmp;			/* the timings are those of the XMP profile */
++
+ 	long wait_time_us;
+ 
+ 	/** TODO: ECC support untested **/
+@@ -666,6 +669,13 @@ void raminit_reset(void);
+ enum nri_status collect_spd_info(struct sysinfo *ctrl);
+ void report_ignored_dimms(void);
+ enum nri_status initialise_mpll(struct sysinfo *ctrl);
++uint32_t time_to_dclks(const struct sysinfo *ctrl, uint32_t time);
++
++uint8_t nri_memory_profile(void);
++bool nri_memory_profile_may_change_clock(void);
++void nri_memory_profile_init(bool s3resume);
++void nri_memory_profile_uncount(void);
++__noreturn void nri_memory_profile_failed(void);
+ enum nri_status convert_timings(struct sysinfo *ctrl);
+ enum nri_status configure_mc(struct sysinfo *ctrl);
+ enum nri_status configure_memory_map(struct sysinfo *ctrl);
+diff --git a/src/northbridge/intel/haswell/native_raminit/save_restore.c b/src/northbridge/intel/haswell/native_raminit/save_restore.c
+index 074011bd..385ff5bd 100644
+--- a/src/northbridge/intel/haswell/native_raminit/save_restore.c
++++ b/src/northbridge/intel/haswell/native_raminit/save_restore.c
+@@ -19,8 +19,9 @@
+  * The version of the saved training data, which mrc_cache compares as a whole:
+  * the tag, and 24 bits of a key. The key hashes NRI_CODE_KEY, made at build time
+  * from the sources of the native RAM init and its Kconfig options (Makefile.mk),
+- * with the memory settings of the devicetree. A slot built from other code, or
+- * a board with other settings, does not restore the data: it trains again. The
++ * with the memory settings of the devicetree and the memory profile that this
++ * boot asks for. A slot built from other code, a board with other settings or
++ * a boot with another profile does not restore the data: it trains again. The
+  * fast path restores the registers without testing them, so a number bumped by
+  * hand, as before (revisions 1 to 3), let a slot restore data that other code
+  * had trained or saved in another layout. The tag keeps the data of mrc.bin,
+@@ -33,9 +34,11 @@ uint32_t reg_frame_rev(void)
+ 		uint8_t spd_addresses[ARRAY_SIZE(cfg->spd_addresses)];
+ 		uint16_t ddr_voltage_mv;
+ 		uint8_t dq_pins_interleaved;
++		uint8_t memory_profile;
+ 	} __packed settings = {
+ 		.ddr_voltage_mv		= cfg->ddr_voltage_mv,
+ 		.dq_pins_interleaved	= cfg->dq_pins_interleaved,
++		.memory_profile		= nri_memory_profile(),
+ 	};
+ 
+ 	memcpy(settings.spd_addresses, cfg->spd_addresses, sizeof(settings.spd_addresses));
+diff --git a/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c b/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
+index 07fabf22..3e8b2832 100644
+--- a/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
++++ b/src/northbridge/intel/haswell/native_raminit/spd_bitmunching.c
+@@ -7,6 +7,7 @@
+ #include <device/smbus_host.h>
+ #include <northbridge/intel/haswell/chip.h>
+ #include <northbridge/intel/haswell/haswell.h>
++#include <northbridge/intel/haswell/memory_profile.h>
+ #include <northbridge/intel/haswell/raminit.h>
+ #include <static.h>
+ #include <string.h>
+@@ -60,13 +61,77 @@ static void get_spd_data(struct sysinfo *ctrl)
+ 	}
+ }
+ 
+-static void decode_spd(struct raminit_dimm_info *const dimm)
++static enum ddr3_xmp_profile xmp_profile_of(const struct sysinfo *ctrl)
++{
++	return ctrl->memory_profile == MEMORY_PROFILE_XMP_2 ? DDR3_XMP_PROFILE_2
++							    : DDR3_XMP_PROFILE_1;
++}
++
++/*
++ * Whether the XMP profile that the option asks for can be used: every DIMM
++ * has it, for as many DIMMs as its channel holds, at a voltage that is not
++ * above what the board is taken to feed (see the DRAM voltage below: nothing
++ * here can raise it). One DIMM without it, and all run with the timings of
++ * their SPD: a mix would have to be worked out per timing, for a set of
++ * DIMMs that nobody sold to run together at those timings.
++ */
++static bool xmp_profile_is_usable(struct sysinfo *ctrl)
++{
++	/* Too large for the stack before the memory is up */
++	static struct dimm_attr_ddr3_st attr;
++	const unsigned int number = ctrl->memory_profile;
++	uint8_t dpc[NUM_CHANNELS] = { 0 };
++	bool all_1v35 = true;
++	uint16_t xmp_mv = 0;
++
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		for (uint8_t slot = 0; slot < NUM_SLOTS; slot++)
++			dpc[channel] += ctrl->dimms[channel][slot].valid;
++	}
++
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		for (uint8_t slot = 0; slot < NUM_SLOTS; slot++) {
++			struct raminit_dimm_info *const dimm = &ctrl->dimms[channel][slot];
++			if (!dimm->valid)
++				continue;
++
++			memset(&attr, 0, sizeof(attr));
++			if (spd_xmp_decode_ddr3(&attr, dimm->raw_spd, xmp_profile_of(ctrl))
++			    != SPD_STATUS_OK) {
++				printk(BIOS_WARNING, "Memory profile: CH%uS%u has no XMP "
++				       "profile %u, using the SPD timings\n",
++				       channel, slot, number);
++				return false;
++			}
++			if (attr.dimms_per_channel < dpc[channel]) {
++				printk(BIOS_WARNING, "Memory profile: XMP profile %u of "
++				       "CH%uS%u is for %u per channel, not %u, using the SPD "
++				       "timings\n", number, channel, slot,
++				       attr.dimms_per_channel, dpc[channel]);
++				return false;
++			}
++			all_1v35 &= attr.flags.operable_1_35V;
++			xmp_mv = MAX(xmp_mv, attr.voltage);
++		}
++	}
++
++	const uint16_t board_mv = ctrl->vdd_mv_cfg ? ctrl->vdd_mv_cfg : all_1v35 ? 1350 : 1500;
++	if (xmp_mv > board_mv) {
++		printk(BIOS_WARNING, "Memory profile: XMP profile %u is for %u mV, the DIMMs "
++		       "get %u mV, using the SPD timings\n", number, xmp_mv, board_mv);
++		return false;
++	}
++
++	printk(BIOS_INFO, "Memory profile: XMP profile %u of the DIMMs, %u mV\n",
++	       number, xmp_mv);
++	return true;
++}
++
++static void decode_spd(const struct sysinfo *ctrl, struct raminit_dimm_info *const dimm)
+ {
+-	/** TODO: Hook up somewhere, and handle lack of XMP data **/
+-	const bool enable_xmp = false;
+ 	memset(&dimm->data, 0, sizeof(dimm->data));
+-	if (enable_xmp)
+-		spd_xmp_decode_ddr3(&dimm->data, dimm->raw_spd, DDR3_XMP_PROFILE_1);
++	if (ctrl->xmp)
++		spd_xmp_decode_ddr3(&dimm->data, dimm->raw_spd, xmp_profile_of(ctrl));
+ 	else
+ 		spd_decode_ddr3(&dimm->data, dimm->raw_spd);
+ 
+@@ -149,6 +214,8 @@ static enum nri_status find_common_spd_parameters(struct sysinfo *ctrl)
+ 	bool not_ecc = false;
+ 	uint8_t ignored = 0;
+ 
++	ctrl->xmp = ctrl->memory_profile != MEMORY_PROFILE_SPD && xmp_profile_is_usable(ctrl);
++
+ 	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
+ 		ctrl->dpc[channel] = 0;
+ 		ctrl->rankmap[channel] = 0;
+@@ -160,7 +227,7 @@ static enum nri_status find_common_spd_parameters(struct sysinfo *ctrl)
+ 				continue;
+ 
+ 			printk(RAM_DEBUG, "\nCH%uS%u SPD:\n", channel, slot);
+-			decode_spd(dimm);
++			decode_spd(ctrl, dimm);
+ 			if (!dimm_is_usable(dimm, channel, slot)) {
+ 				ignored++;
+ 				continue;
+@@ -284,19 +351,30 @@ enum nri_status convert_timings(struct sysinfo *ctrl)
+ 	 */
+ 
+ 	/* Convert primary timings from nanoseconds to DCLKs */
+-	ctrl->tAA  = DIV_ROUND_UP(ctrl->tAA,  ctrl->tCK);
+-	ctrl->tWR  = DIV_ROUND_UP(ctrl->tWR,  ctrl->tCK);
+-	ctrl->tRCD = DIV_ROUND_UP(ctrl->tRCD, ctrl->tCK);
+-	ctrl->tRRD = DIV_ROUND_UP(ctrl->tRRD, ctrl->tCK);
+-	ctrl->tRP  = DIV_ROUND_UP(ctrl->tRP,  ctrl->tCK);
+-	ctrl->tRAS = DIV_ROUND_UP(ctrl->tRAS, ctrl->tCK);
+-	ctrl->tRC  = DIV_ROUND_UP(ctrl->tRC,  ctrl->tCK);
+-	ctrl->tRFC = DIV_ROUND_UP(ctrl->tRFC, ctrl->tCK);
+-	ctrl->tWTR = DIV_ROUND_UP(ctrl->tWTR, ctrl->tCK);
+-	ctrl->tRTP = DIV_ROUND_UP(ctrl->tRTP, ctrl->tCK);
+-	ctrl->tFAW = DIV_ROUND_UP(ctrl->tFAW, ctrl->tCK);
+-	ctrl->tCWL = DIV_ROUND_UP(ctrl->tCWL, ctrl->tCK);
+-	ctrl->tCMD = DIV_ROUND_UP(ctrl->tCMD, ctrl->tCK);
++	ctrl->tAA  = time_to_dclks(ctrl, ctrl->tAA);
++	ctrl->tWR  = time_to_dclks(ctrl, ctrl->tWR);
++	ctrl->tRCD = time_to_dclks(ctrl, ctrl->tRCD);
++	ctrl->tRRD = time_to_dclks(ctrl, ctrl->tRRD);
++	ctrl->tRP  = time_to_dclks(ctrl, ctrl->tRP);
++	ctrl->tRAS = time_to_dclks(ctrl, ctrl->tRAS);
++	ctrl->tRC  = time_to_dclks(ctrl, ctrl->tRC);
++	ctrl->tRFC = time_to_dclks(ctrl, ctrl->tRFC);
++	ctrl->tWTR = time_to_dclks(ctrl, ctrl->tWTR);
++	ctrl->tRTP = time_to_dclks(ctrl, ctrl->tRTP);
++	ctrl->tFAW = time_to_dclks(ctrl, ctrl->tFAW);
++	ctrl->tCWL = time_to_dclks(ctrl, ctrl->tCWL);
++	if (ctrl->xmp) {
++		/*
++		 * A profile gives the command rate in clocks. Take it when it
++		 * is slower than what this code chooses for the DIMMs of the
++		 * channels, never when it is faster.
++		 */
++		const uint8_t dpc = MAX(ctrl->dpc[0], ctrl->dpc[1]);
++		ctrl->tCMD = MAX(DIV_ROUND_UP(ctrl->tCMD, 256),
++				 get_tCMD(ctrl->mem_clock_mhz, dpc));
++	} else {
++		ctrl->tCMD = DIV_ROUND_UP(ctrl->tCMD, ctrl->tCK);
++	}
+ 
+ 	/* Constrain primary timings to hardware limits */
+ 	/** TODO: complain when clamping? **/
+@@ -333,6 +411,10 @@ enum nri_status convert_timings(struct sysinfo *ctrl)
+ 	if (ctrl->tCWL < MIN_CWL || ctrl->tCWL > MAX_CWL)
+ 		ctrl->tCWL = get_tCWL(ctrl->mem_clock_mhz);
+ 
++	/* A profile may ask for less than the CAS write latency of the speed: not less */
++	if (ctrl->xmp)
++		ctrl->tCWL = MAX(ctrl->tCWL, get_tCWL(ctrl->mem_clock_mhz));
++
+ 	/* This is needed to support ODT properly on 2DPC */
+ 	if (ctrl->tAA - ctrl->tCWL > 4)
+ 		ctrl->tCWL = ctrl->tAA - 4;
+@@ -342,7 +424,7 @@ enum nri_status convert_timings(struct sysinfo *ctrl)
+ 	};
+ 	const uint32_t min_tCMD = capid0_a.D1NM ? 2 : 1;
+ 
+-	/* tCMD is only available in XMP profiles */
++	/* The SPD has no tCMD */
+ 	if (!ctrl->tCMD) {
+ 		const uint8_t dpc = MAX(ctrl->dpc[0], ctrl->dpc[1]);
+ 		ctrl->tCMD = get_tCMD(ctrl->mem_clock_mhz, dpc);
+-- 
+2.43.0
+

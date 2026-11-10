@@ -10,6 +10,7 @@ same machine.
 
 - [What runs](#what-runs)
 - [On the W541](#on-the-w541)
+- [XMP profiles](#xmp-profiles)
 - [Measuring](#measuring)
 - [Limits](#limits)
 
@@ -83,6 +84,10 @@ This project adds:
   replaced processor (up to 50 ms) and the early PCH and DMI init, which
   `mrc.bin` does inside its own span: the RAM init times of the two
   variants do not compare one to one.
+
+From v1.7.0, **patches 0275-0279**: an XMP profile of the modules as an
+option, off by default ([XMP profiles](#xmp-profiles)), and the SPD decoder
+among the sources that the version of the saved training hashes.
 
 And, for both variants, **patch 0187**: SMBIOS (type 17) takes the size
 and ranks of each slot from the field of the memory controller that
@@ -184,6 +189,89 @@ spends most of the time in PC6, so the settings that the power training
 tunes, which spend energy on data transfers, have little to show there.
 The RAPL DRAM domain does not compare: `mrc.bin` programs other energy
 weights (2.9 W against 1.6 W).
+
+## XMP profiles
+
+From v1.7.0 the `nri` variant has *Hardware* → *Memory* → *Memory profile*:
+*SPD (JEDEC)*, the default, or *XMP profile 1* or *2*. With a profile, the
+native RAM init takes the timings and the memory clock from that profile of
+the modules instead of from their SPD, and trains as it always does: the
+steps, the memory test after them (patch 0087) and the shorter round trip
+(patch 0088) are the same. With the default nothing changes but the version
+of the saved training (one training at the first boot). `mrc.bin` has no
+such option.
+
+**Not tried on a machine with XMP modules yet.** The four modules of the
+W541 of the port carry the SPD of a Samsung OEM module and have no XMP
+profile: on that machine only the default and the refusals below can run.
+
+The profile is used when:
+
+- every module has it, enabled, for at least as many modules as its
+  channel holds (a profile says for how many modules per channel it is
+  meant; the W541 has two per channel when its four slots are full);
+- its voltage is not above what the board feeds: 1.35 V when every module
+  is DDR3L, as on the W541, 1.5 V otherwise. Nothing in the firmware can
+  raise the memory voltage, so a profile for 1.5 V or 1.65 V on DDR3L
+  modules is refused;
+- otherwise all the modules run at the timings of their SPD, and the log
+  says which condition failed (`sudo cbmem -1 | grep "Memory profile"`).
+
+What is taken from it, and what is not:
+
+- the cycle time selects the standard speed that it allows, as for an SPD:
+  an XMP 1.3 profile carries fine offsets and gives its speed exactly (patch
+  0275); an older one for DDR3-1866 or faster often says 1.125 ns or 1.0 ns
+  in units of 1/8 ns, slower than the kit is sold as, and then runs one
+  standard speed lower (DDR3-1600 for 1.125 ns) with the profile's timings.
+  The firmware takes the module at its word and does not guess the speed
+  on the box;
+- up to the speed the processor says it supports (`CAPID0_B`, for each
+  reference clock), unless it allows memory overclocking (`CAPID0_A`);
+  `sudo setpci -s 00:00.0 e4.l e8.l` reads the two: bit 3 of the first is
+  the overclocking, bits 6:4 of the second the limit with the 133 MHz
+  reference (5 is DDR3-1600, 4 DDR3-1866, 3 DDR3-2133, 0 none), bits 23:21
+  the one with the 100 MHz reference;
+- CL, tRCD, tRP, tRAS, tRC, tRFC, tWR, tRRD, tWTR, tRTP and tFAW, in clocks
+  of the clock itself (a time up to 1% over a whole number of clocks takes
+  that number: the times of a profile are whole numbers of its clock, and
+  rounding would add one to each);
+- the command rate when it is slower than the one the NRI chooses (2N with
+  two modules per channel and above DDR3-1866), the CAS write latency when
+  it is not below that of the speed;
+- not its refresh interval, and not its voltage as a setting.
+
+A profile is the module maker's word, and the option is in the variable
+store, which only a firmware that boots can change. So the firmware gives a
+profile up by itself:
+
+- a training or a memory test that fails twice with the profile marks it
+  as failed and resets (a power cycle of the processor, a few seconds):
+  the next boot trains with the SPD timings;
+- two boots in a row with the profile that do not reach the payload (the
+  logo, the setup, the boot manager) do the same at the third;
+- the log then says *XMP profile N failed before, using the SPD timings*
+  at every boot, until *Memory profile* is set to *SPD* once (which
+  forgets the mark) or to the other profile.
+
+A memory that passes all that can still fail under the OS: with a profile
+on, run MEM-04 before relying on the machine. If the OS does not boot any
+more, the setup still does: set the profile back to *SPD*.
+
+The state is CMOS byte 0x7d: `0xa0` plus bit 4 when the last boot asked for
+a profile, bits 3:2 the profile that failed, bits 1:0 the boots not
+confirmed (`0xa0` with *SPD*, `0xb0` with a profile after a boot that
+reached the payload). Changing the option changes the speed, and the
+memory PLL cannot be locked twice: when this boot or the one before asked
+for a profile and the PLL is found locked where the boot before left it,
+the firmware powers the processor down once (*MPLL locked at multiplier N,
+M wanted: resetting*) before it trains. A machine that never had a profile
+on never takes that path.
+
+Limits: the DDR3-2400 step is not reached by a profile that says 0.833 ns
+(the constant for it in coreboot is one unit shorter; it runs at DDR3-2200
+or DDR3-2133), which no SO-DIMM kit asks for; modules with different
+profiles are not mixed timing by timing.
 
 ## Measuring
 
