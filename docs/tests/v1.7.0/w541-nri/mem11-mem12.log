@@ -1,0 +1,33 @@
+== m1-cache-boot 2026-11-10T21:30:31+01:00 uptime=54.86 0x7d: 0xb0 0xb0 0xb0 
+  [DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+  [DEBUG]  MRC: 'RW_MRC_CACHE' does not need update.
+  [INFO ]  Memory profile: XMP profile 1 requested
+  [INFO ]  Using cached memory parameters
+  [WARN ]  Memory profile: CH0S0 has no XMP profile 1, using the SPD timings
+     2:before RAM initialization                         481,311 (28,303)
+     3:after RAM initialization                          593,638 (112,326)
+  after S3: 0x7d 0xb0 0xb0 0xb0  1 resumes
+  wrote 0xb2, reads 0xb2 0xb2 0xb2 
+  time: sys 20:31:24 rtc 20:31:24 net 20:31:21 ntp=yes
+== m2-after-b2 2026-11-10T21:32:36+01:00 uptime=54.59 0x7d: 0xa4 0xa4 0xa4 
+  [DEBUG]  MRC: cache data 'RW_MRC_CACHE' needs update.
+  [DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+  [DEBUG]  MRC: updated 'RW_MRC_CACHE'.
+  [INFO ]  Memory test passed
+  *** Pre-CBMEM romstage console overflowed, log truncated! ***
+     2:before RAM initialization                         479,527 (28,342)
+     3:after RAM initialization                          1,466,430 (986,902)
+== m3-second-reboot 2026-11-10T21:33:57+01:00 uptime=54.34 0x7d: 0xa4 0xa4 0xa4 
+  [DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+  [DEBUG]  MRC: 'RW_MRC_CACHE' does not need update.
+  [ERROR]  Memory profile: XMP profile 1 failed before, using the SPD timings. Select the SPD timings once to try it again
+  [INFO ]  Using cached memory parameters
+     2:before RAM initialization                         478,724 (28,326)
+     3:after RAM initialization                          591,181 (112,457)
+== spd-back 2026-11-10T21:36:39+01:00: 0x7d a0 a0 a0, no profile line, cache used (no training: m2 already trained for SPD). wrote 0xb6, reads 0xb6 0xb6 0xb6 ; time: sys 20:36:38 rtc 20:36:38 net 20:36:38
+== b6-after 2026-11-10T21:37:59+01:00 0x7d: 0xa0 0xa0 0xa0 
+  [INFO ]  Using cached memory parameters
+  [DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+  [DEBUG]  MRC: 'RW_MRC_CACHE' does not need update.
+     2:before RAM initialization                         482,637 (28,383)
+     3:after RAM initialization                          595,153 (112,515)
