@@ -1,0 +1,33 @@
+SMMSTORE region: offset 0xc10000, size 0x80000 (512 KiB)
+FV length 0x80000 (512 KiB), FV header 0x48
+store size 196536, used 95480, free 101028, auth True
+records: 625 {'valida': 106, 'cancellata': 519}
+live records: 106
+options GUID live: 36, attributes {'0x3': 35, '0x7': 1}
+options GUID all records (any state): 36
+duplicate live option names: []
+other live GUIDs:
+  39b68c46-f7fb-441b-b6ec-16b0f69821f3 31
+  8be4df61-93ca-11d2-aa0d-00e098032b8c 17
+  6339d487-26ba-424b-9a5d-687e25d740bc 3
+  d719b2cb-3d3a-4596-a3bc-dad00e67656f 2
+  8a7c3e21-4f5b-4d91-9c2e-1a3b5d7f8e90 2
+  9073e4e0-60ec-4b6e-9903-4c223c260f3c 1
+  c076ec0c-7028-4399-a072-71ee5c448b9f 1
+  f0a30bc7-af08-4556-99c4-001009c93a44 1
+  ddb969f2-e99b-4dd5-8e36-b80b526d3b73 1
+  04b37fe8-f6ae-480b-bdd5-37d98c5e89aa 1
+  fab7e9e1-39dd-4f2b-8408-e20e906cb6de 1
+  bb983ccf-151d-40e1-a07b-4a17be168292 1
+  4c19049f-4137-4dd3-9c10-8b97a83ffdfa 1
+  d9bee56e-75dc-49d9-b4d7-b534210f637a 1
+  378d7b65-8da9-4773-b6e4-a47826a833e1 1
+  711c703f-c285-4b10-a3b0-36ecbd3c8be2 1
+  c9405485-0c3d-40b8-88bf-d2a07e5c3edd 1
+  eb704011-1402-11d3-8e77-00a0c969723b 1
+  605dab50-e046-4300-abb6-3dd810dd8b23 1
+  e20939be-32d4-41be-a150-897f85d49829 1
+after FV: 0 KiB; first 64 bytes nonFF: False
+option with RT attribute: me_state_counter
+store ends at 0x30000
+  0x30000:  148 non-FF bytes, head 2b29589e687c7d49a0ce6500fd9f1b95f5955200feffffffe0ff000000000000f8ffffff76ea5cfe724fe849986f2cd8
