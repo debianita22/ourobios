@@ -36,3 +36,28 @@ also stops the reclaim at runtime (decision 1 of the plan), with the
 reclaim moved to EndOfDxe (`PcdReclaimVariableSpaceAtEndOfDxe`) so that
 it runs before the lock; and whether the fix goes to a v1.6.x release
 too (decision 6).
+
+The owner's answers (2026-11-10): the fault tolerant write is covered
+**inside stage 2**, with the lock for every option, in one candidate,
+not before it; the fix stays on the v1.7.0 branch for now, a v1.6.x
+backport decided after the tests on the machine.
+
+## Stage 1: the time of a write
+
+Where the 45 ms of an SMI go (F1): the check walks the store as it would
+be after the write, and the walk reads every header and name and then
+the whole erased tail (101 KiB of the 192, `region_is_erased()` in
+64-byte reads) through the overlay's `readat`, which has no `mmap`.
+
+Step 1 of the plan, *the erased tail read once*, does not come out as a
+change of its own here. The walk finds where the records end only by
+walking; the erased-tail scan runs at that point, and the overlay cannot
+tell a tail read from a header read, so the tail cannot be skipped
+except where the write lands without the walk knowing where the tail
+begins — which is step 2, the store held in SMRAM. So step 1 folds into
+step 2: a copy of the variable store in SMRAM, made at the arm (the
+latch of stage 2 is the same copy) and kept in step by the handler, the
+only writer; the check of a write then reads no flash, and the erased
+tail is a length, not a scan. Stage 1 is therefore done inside stage 2,
+and LOCK-02 measures it on each candidate against the 0.285 s of F1.
+
