@@ -52,13 +52,13 @@ options, without it), efivars-test with efi_test_walk_guid.
  src/drivers/efi/efivars.c             |  56 +++
  src/drivers/efi/efivars.h             |  31 ++
  src/drivers/smmstore/Kconfig          |  15 +
- src/drivers/smmstore/options_lock.c   | 154 +++++++-
+ src/drivers/smmstore/options_lock.c   | 156 +++++++-
  src/drivers/smmstore/ramstage.c       |  13 +
  src/soc/intel/common/Kconfig.common   |   1 +
  tests/drivers/Makefile.mk             |  28 ++
  tests/drivers/efivars.c               |  68 ++++
- tests/drivers/smmstore_options_lock.c | 537 ++++++++++++++++++++++++++
- 10 files changed, 903 insertions(+), 4 deletions(-)
+ tests/drivers/smmstore_options_lock.c | 539 ++++++++++++++++++++++++++
+ 10 files changed, 907 insertions(+), 4 deletions(-)
  create mode 100644 tests/drivers/smmstore_options_lock.c
 
 diff --git a/src/cpu/x86/Kconfig b/src/cpu/x86/Kconfig
@@ -219,7 +219,7 @@ index 3bab14e1771..93e0496c27c 100644
  
  # Outside "if SMMSTORE": a board selects it whatever its payload
 diff --git a/src/drivers/smmstore/options_lock.c b/src/drivers/smmstore/options_lock.c
-index 4340cf16d7c..c2d57e7b5b2 100644
+index 4340cf16d7c..e5693cee08d 100644
 --- a/src/drivers/smmstore/options_lock.c
 +++ b/src/drivers/smmstore/options_lock.c
 @@ -13,6 +13,21 @@
@@ -254,7 +254,7 @@ index 4340cf16d7c..c2d57e7b5b2 100644
  
  #define OPTION_LOCK_SIGNATURE 0x4b4c504f /* "OPLK" */
  
-@@ -56,9 +74,29 @@ struct option_lock_state {
+@@ -56,9 +74,31 @@ struct option_lock_state {
  	uint32_t signature;
  	uint8_t armed;
  	uint8_t on[4];
@@ -264,6 +264,7 @@ index 4340cf16d7c..c2d57e7b5b2 100644
 +	uint8_t reserved[2];
  } __packed;
  
++#if CONFIG(SMMSTORE_OPTION_LOCK_ALL)
 +#define OPTION_SET_DIGEST_SIZE 32
 +
 +/*
@@ -281,11 +282,12 @@ index 4340cf16d7c..c2d57e7b5b2 100644
 +	   handler writes the store while armed, and it moves the mark */
 +	size_t tail;
 +} option_set;
++#endif
 +
  _Static_assert(ARRAY_SIZE(protected_options) <= 4, "option_lock_state.on is too small");
  
  /* In the SMRAM region kept across S3, zeroed on every other boot */
-@@ -136,6 +174,8 @@ struct after_write {
+@@ -136,6 +176,8 @@ struct after_write {
  	size_t offset;
  	size_t size;
  	const uint8_t *data;
@@ -294,7 +296,7 @@ index 4340cf16d7c..c2d57e7b5b2 100644
  	bool read_error;
  };
  
-@@ -151,7 +191,9 @@ static ssize_t after_write_readat(const struct region_device *rd, void *b, size_
+@@ -151,7 +193,9 @@ static ssize_t after_write_readat(const struct region_device *rd, void *b, size_
  	if (aw == NULL)
  		return -1;
  
@@ -305,7 +307,7 @@ index 4340cf16d7c..c2d57e7b5b2 100644
  		aw->read_error = true;
  		return -1;
  	}
-@@ -180,6 +222,65 @@ static const struct region_device_ops after_write_ops = {
+@@ -180,6 +224,65 @@ static const struct region_device_ops after_write_ops = {
  	.readat = after_write_readat,
  };
  
@@ -371,7 +373,7 @@ index 4340cf16d7c..c2d57e7b5b2 100644
  bool smmstore_options_protecting(void)
  {
  	const struct option_lock_state *state = option_state();
-@@ -189,7 +290,7 @@ bool smmstore_options_protecting(void)
+@@ -189,7 +292,7 @@ bool smmstore_options_protecting(void)
  
  bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size)
  {
@@ -380,7 +382,7 @@ index 4340cf16d7c..c2d57e7b5b2 100644
  	uint32_t after[ARRAY_SIZE(protected_options)];
  	struct region_device store, overlay_root, overlay;
  	struct after_write aw;
-@@ -226,6 +327,7 @@ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size
+@@ -226,6 +329,7 @@ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size
  		.offset = offset,
  		.size = size,
  		.data = data,
@@ -388,7 +390,7 @@ index 4340cf16d7c..c2d57e7b5b2 100644
  	};
  	/*
  	 * The reader gets a child of the overlay, never the root itself:
-@@ -240,6 +342,42 @@ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size
+@@ -240,6 +344,42 @@ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size
  		return false;
  	}
  
@@ -431,7 +433,7 @@ index 4340cf16d7c..c2d57e7b5b2 100644
  	/* One walk of the store as it would be after the write, for every option */
  	after_write_ctx = &aw;
  	aw.read_error = false;
-@@ -295,7 +433,17 @@ uint32_t smmstore_options_lock(void)
+@@ -295,7 +435,17 @@ uint32_t smmstore_options_lock(void)
  			state->on[i] = (have_store ? values[i]
  						   : protected_options[i].fallback) ? 1 : 0;
  		state->armed = 1;
@@ -606,10 +608,10 @@ index 118fbd6722f..fd5abd41814 100644
  		cmocka_unit_test(efi_test_delete_options_refuse_malformed),
 diff --git a/tests/drivers/smmstore_options_lock.c b/tests/drivers/smmstore_options_lock.c
 new file mode 100644
-index 00000000000..68dccbe4efb
+index 00000000000..b1e2417a052
 --- /dev/null
 +++ b/tests/drivers/smmstore_options_lock.c
-@@ -0,0 +1,537 @@
+@@ -0,0 +1,539 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +/*
@@ -693,7 +695,9 @@ index 00000000000..68dccbe4efb
 +{
 +	memset(flash, 0xff, sizeof(flash));
 +	memset(smram, 0, sizeof(smram));
++#if CONFIG(SMMSTORE_OPTION_LOCK_ALL)
 +	memset(&option_set, 0, sizeof(option_set));
++#endif
 +	fail_from = SIZE_MAX;
 +	region_device_init(&flash_root, &flash_ops, 0, sizeof(flash));
 +	rdev_chain_mem_rw(&flash_rw, flash, sizeof(flash));

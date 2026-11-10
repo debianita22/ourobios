@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Domenico D'Arrigo <d.darrigo@outlook.it>
 Date: Tue, 10 Nov 2026 22:08:47 +0100
-Subject: [PATCH] drivers/smmstore: Check a write split at the end of a block
- as one
+Subject: [PATCH] drivers/smmstore: Check a write split at the end of a
+ block as one
 
 The payload's variable driver writes a variable header with one write
 to its flash driver for each flash block, so a header that crosses the
@@ -312,7 +312,7 @@ index 344baddce53..056fb579c04 100644
 +	CONFIG_SMM_OPTION_LOCK_STATE_SMRAM=1 \
 +	CONFIG_SMMSTORE_BLOCK_SIZE=0x1000
 diff --git a/tests/drivers/smmstore_options_lock.c b/tests/drivers/smmstore_options_lock.c
-index 68dccbe4efb..ed11a2909ae 100644
+index b1e2417a052..e45f82d77a6 100644
 --- a/tests/drivers/smmstore_options_lock.c
 +++ b/tests/drivers/smmstore_options_lock.c
 @@ -15,6 +15,8 @@ void smm_get_option_lock_state_buffer(uintptr_t *base, size_t *size);
@@ -324,15 +324,15 @@ index 68dccbe4efb..ed11a2909ae 100644
  
  #include <vendorcode/intel/edk2/UDK2017/MdeModulePkg/Include/Guid/VariableFormat.h>
  
-@@ -82,6 +84,7 @@ static void new_store(void)
- 	memset(flash, 0xff, sizeof(flash));
- 	memset(smram, 0, sizeof(smram));
+@@ -84,6 +86,7 @@ static void new_store(void)
+ #if CONFIG(SMMSTORE_OPTION_LOCK_ALL)
  	memset(&option_set, 0, sizeof(option_set));
+ #endif
 +	smmstore_locked_write_reset();
  	fail_from = SIZE_MAX;
  	region_device_init(&flash_root, &flash_ops, 0, sizeof(flash));
  	rdev_chain_mem_rw(&flash_rw, flash, sizeof(flash));
-@@ -111,18 +114,47 @@ static size_t store_tail(void)
+@@ -113,18 +116,47 @@ static size_t store_tail(void)
  	return ALIGN_UP(tail, HEADER_ALIGNMENT);
  }
  
@@ -384,7 +384,7 @@ index 68dccbe4efb..ed11a2909ae 100644
  	if (!smmstore_options_write_allowed(block * BLOCK, NULL, BLOCK))
  		return false;
  	memset(flash + block * BLOCK, 0xff, BLOCK);
-@@ -167,11 +199,11 @@ static void make_record(struct record *r, const EFI_GUID *guid, const char *name
+@@ -169,11 +201,11 @@ static void make_record(struct record *r, const EFI_GUID *guid, const char *name
   */
  static int append_record(const struct record *r, size_t at)
  {
@@ -398,7 +398,7 @@ index 68dccbe4efb..ed11a2909ae 100644
  		return 2;
  	if (!raw_state(at, VAR_ADDED))
  		return 3;
-@@ -423,28 +455,99 @@ static void test_store_damaged(void **state)
+@@ -425,28 +457,99 @@ static void test_store_damaged(void **state)
  	tail = store_tail();
  	assert_false(raw_write(tail, &byte, sizeof(byte)));
  	assert_false(raw_write(tail + 0x200, &byte, sizeof(byte)));
