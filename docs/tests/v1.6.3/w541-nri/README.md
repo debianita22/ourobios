@@ -103,6 +103,35 @@ reader reports latencies that depend on a state inside it. Fixed by
 patches 0271-0272, after rc2: LTR left off on the reader, and `_OSC`
 keeps the control of LTR from the OS.
 
+## v1.6.3-rc3: the card reader without LTR
+
+rc3 (`72cb533`, patches 0271-0272) as a capsule from v1.6.2, slot B,
+2026-11-10 ([files](rc3/)). Linux logs *_OSC: platform does not support
+[LTR]* and no longer lists LTR among what it controls; coreboot logs
+*Card reader: LTR off on PCI: 00:01:00.0*. LTR enable (DevCtl2 bit 10):
+root ports 1 and 2 and the Wi-Fi on, the card reader off, as coreboot
+left them.
+
+| State, the screen off | Package | Power |
+|---|---|---|
+| after the boot | PC7 88.1% | 1.14 W |
+| after resume 1 | PC7 74.8% | 2.49 W |
+| after resume 2 | PC7 84.6% | 1.56 W |
+| after resume 3 | PC7 86.1% | 1.40 W |
+
+The reader's LTR stays off across the resumes; `suspend_stats/fail` 0.
+[The report](rc3/hw-w541-nri-rc3.md): 19 PASS, BOOT-03 without an error
+or a warning, ME-01 and EC-01 WARN (known), PCI-01 WARN for the reader's
+LTR off (now known to `hw-report.py`), and BOOT-04 FAIL below.
+
+**A new finding, which the card reader hid**: with the package free to go
+deep and the greeter's screen off, i915 enters PC8 at runtime suspend
+and warns *PCH PWM1 enabled* in `hsw_enable_pc8` (11 times on rc3, 194
+on v1.6.2 this morning after the reader's LTR was cleared by hand). The
+only backlight device is `acpi_video0`, no `intel_backlight`: i915 does
+not drive the PCH PWM, so it does not turn it off with the panel. Not
+looked into yet; it does not stop the package from reaching PC7.
+
 ## A bug of hw-report.py
 
 Fixed on `next` (2026-11-10). VB-02 said *CBET4000 ouroBIOS-v1.6.3-rc1-nri non e' in nessuno slot

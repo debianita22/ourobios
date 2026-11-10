@@ -1235,7 +1235,11 @@ def check_pcie(fw, rep):
             bdf, d["ids"], d["drv"][:12], idle.PCIE_TYPES.get(p["type"], "?"), idle.ASPM_BITS[cap],
             idle.ASPM_BITS[ctl], "+" if p["ltr_cap"] else "-", "+" if p["ltr_en"] else "-", link))
         if p["ltr_cap"] and not p["ltr_en"]:
-            issues.append("%s: LTR supportato ma spento" % bdf)
+            if d["ids"] == "1217:8520" and fw.board == "w541":
+                # patch 0272: il lettore SD del W541 senza LTR, che lo teneva in PC2
+                details.append("         %s: LTR spento dal firmware (noto: patch 0272)" % bdf)
+            else:
+                issues.append("%s: LTR supportato ma spento" % bdf)
         up = state.get(d["parent"])
         if up and up["pcie"] and p["type"] in (0, 1, 5) and width:
             ucap, uctl = (up["pcie"]["lnkcap"] >> 10) & 3, up["pcie"]["lnkctl"] & 3

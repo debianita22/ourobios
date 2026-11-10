@@ -73,8 +73,8 @@ from the lists of `docs/test-v1.6.3-w541.md` and
   or the lid closed. coreboot now leaves LTR off on that device, and the
   `_OSC` of the PCI host bridge keeps the control of LTR from the OS, so
   that it does not enable it again; the other devices keep their LTR.
-  Measured with the bit cleared from Linux by hand (PC7 at 1.5 W after
-  each resume); the build itself is to be tested.
+  On the W541 with rc3: PC7 at 1.1-1.6 W with the screen off after the
+  boot and after three resumes, where rc1 stayed in PC2 at 9 W.
 - **`tools/hw-report.py`: VB-02 recognizes the running slot on the
   W541**: it compared the SMBIOS version, which the W541 writes with the
   Lenovo ID in front (`CBET4000 ouroBIOS-...`), against the build names
