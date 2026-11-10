@@ -274,3 +274,4 @@
 0280-nb-intel-haswell-native_raminit-Centre-the-write-Vre.patch
 0281-drivers-smmstore-Lock-the-fault-tolerant-write-block.patch
 0282-drivers-smmstore-The-option-lock-for-every-setup-opti.patch
+0283-drivers-smmstore-Check-a-write-split-at-the-end-of-a-.patch

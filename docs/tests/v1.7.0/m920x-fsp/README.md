@@ -111,22 +111,31 @@ Decided while writing it, each with its reason:
 - *Not with `VBOOT_X86_SHA256_ACCELERATION`* (Kconfig): vboot's SHA
   extension code would use XMM registers inside SMM.
 
-**F4, a header split at the end of a flash block:** the payload's
-driver writes a variable header (60 bytes) in two raw writes when it
-crosses the end of a 64 KiB block. After the first piece the reader
-cannot read the store, so the rule refuses it: that `SetVariable` fails
-and the store stays as it was (unit test `test_split_header`). It
-happens when the next record starts in the last 60 bytes of a block,
-about one append in a thousand; the driver then tries the same place
-again, so variable writes of the OS fail until something moves the end
-of the records (a write of the firmware before the arm, or a reclaim).
-The store of this machine is at 0x17500 of 0x30000: the next such
-place is the block end at 0x20000. This is decision 2 of the plan, for
-the owner: either coreboot's reader takes "less than a header left in
-the block, the rest of the store erased" as the end of the records
-(then the piece can be allowed, and a power loss at that point no
-longer resets every option to its default, which it does today), or
-the payload pads past the block end before it arms the lock.
+**F4, a header split at the end of a flash block (decision 2, left to
+the agent by the owner; patch 0283):** the payload's driver writes a
+variable header (60 bytes) in two raw writes when it crosses the end of
+a 64 KiB block. After the first piece the reader cannot read the store,
+so the rule refuses it, as the MOR lock already did since v1.6.0 when it
+held a request; the variable write of the OS failed, and at every later
+try, since the driver starts again at the same place (about one append
+in a thousand; on this machine the records end at 0x17500, the next
+such place is the block end at 0x20000).
+
+Of the ways out, the one taken changes neither the reader nor the
+payload: *the pieces are checked as one write*, in the handler. A raw
+write that the locks refuse and that ends where a flash block ends is
+kept in SMRAM, neither written nor failed; when the next raw write
+begins where it ended, the two are checked and written together; any
+other write or erase drops the piece (`split.c`). Not taken: a reader
+that accepts an unfinished last record (it would have to follow what
+EDK II's driver makes of each kind of half header, in the parser that
+decides the options, and the flash would hold the state the rule is
+there to keep out); a padding variable written by the payload before
+the arm (it moves the first write of a boot only, the later ones reach
+the next block end all the same). The rule stays as written: nothing
+reaches the flash that the locks have not allowed as a whole, and while
+a lock is armed the half header is never in the flash, not even across
+a power loss. Before the arm the driver's two writes are as they were.
 
 **The proof**, `tools/build.sh coreboot-unit-test` (in `check.yml` and
 the update job of `build.yml`, with `libcmocka-dev`):
@@ -146,7 +155,7 @@ tests) and without it (5), and `efivars-test` (33).
 | the size or the start mark of a record damaged; the headers of the store; bytes after the last record, near and far | refused | `test_store_damaged` |
 | a read error during the check | refused | `test_read_error` |
 | the working and spare blocks written or erased | refused | `test_ftw_blocks` |
-| the first piece of a split header | refused (F4) | `test_split_header` |
+| the first piece of a header split at the end of a block | refused by the lock; kept by the handler, the flash unchanged, and written whole with the second piece; dropped by any other write; two pieces refused together | `test_split_header` |
 | after a resume, with an option written by ramstage | the set of the flash at the resume | `test_resume` |
 | the set unreadable at the arm | the lock of the two options, `SMMSTORE_RET_FAILURE`, the blocks past the store refused | `test_no_latch` |
 | the Kconfig off: another option changed; a security option turned off; one deleted | allowed; refused; allowed (it reads as its default) | `test_two_options` |

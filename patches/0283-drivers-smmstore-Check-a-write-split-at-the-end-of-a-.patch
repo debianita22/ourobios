@@ -1,0 +1,508 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 10 Nov 2026 22:08:47 +0100
+Subject: [PATCH] drivers/smmstore: Check a write split at the end of a block
+ as one
+
+The payload's variable driver writes a variable header with one write
+to its flash driver for each flash block, so a header that crosses the
+end of a block arrives as two raw SMMSTORE writes. After the first one
+the store ends in half a header, which coreboot's reader does not read:
+every option would be read as its default at the next boot, and the
+request of the MOR lock as absent. The MOR lock and the option lock
+therefore refuse the piece, and the variable write of the OS fails,
+there and at every later try, as the driver starts again at the same
+place: about one append in a thousand, with either lock.
+
+Keep such a piece instead: a write that the locks refuse and that ends
+where a flash block ends is neither written nor failed, but kept in
+SMRAM. When the next raw write begins where it ended, the two are
+checked and written as the one write they are; any other write, or an
+erase, drops the piece. Nothing reaches the flash that the locks have
+not allowed as a whole, and while a lock is armed the flash no longer
+holds the half header between the two writes, where a power loss would
+have reset every option.
+
+The copy of a checked write is now one buffer for both locks.
+
+TEST=tests/drivers/smmstore_options_lock-test, test_split_header: the
+piece kept and the flash unchanged, the header written whole with the
+second piece and the variable completed; a piece dropped by another
+write; two pieces refused together; an option's record still refused
+when it becomes a variable.
+---
+ src/drivers/smmstore/Makefile.mk      |   3 +
+ src/drivers/smmstore/split.c          |  83 ++++++++++++++++
+ src/drivers/smmstore/store.c          |  84 ++++++++++++-----
+ src/include/smmstore.h                |  21 +++++
+ tests/drivers/Makefile.mk             |   6 +-
+ tests/drivers/smmstore_options_lock.c | 131 +++++++++++++++++++++++---
+ 6 files changed, 286 insertions(+), 42 deletions(-)
+ create mode 100644 src/drivers/smmstore/split.c
+
+diff --git a/src/drivers/smmstore/Makefile.mk b/src/drivers/smmstore/Makefile.mk
+index d85b9d6c4d2..d6f801aab67 100644
+--- a/src/drivers/smmstore/Makefile.mk
++++ b/src/drivers/smmstore/Makefile.mk
+@@ -7,3 +7,6 @@ ramstage-$(CONFIG_SMMSTORE) += ramstage.c
+ smm-$(CONFIG_SMMSTORE) += store.c smi.c
+ smm-$(CONFIG_SMMSTORE_MOR_LOCK) += mor_lock.c
+ smm-$(CONFIG_SMMSTORE_OPTION_LOCK) += options_lock.c
++ifneq ($(CONFIG_SMMSTORE_MOR_LOCK)$(CONFIG_SMMSTORE_OPTION_LOCK),)
++smm-y += split.c
++endif
+diff --git a/src/drivers/smmstore/split.c b/src/drivers/smmstore/split.c
+new file mode 100644
+index 00000000000..63113a05beb
+--- /dev/null
++++ b/src/drivers/smmstore/split.c
+@@ -0,0 +1,83 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * The writes of the variable store while the MOR lock or the option lock
++ * checks them (store.c), and one case that the checks alone get wrong.
++ *
++ * The payload's variable driver writes a variable header with one write to
++ * its flash driver for each flash block, so a header that crosses the end of
++ * a block arrives as two raw writes. After the first one the store ends in
++ * half a header, which coreboot's reader does not read: every option would
++ * then be read as its default at the next boot, and the request of the MOR
++ * lock as absent, so the locks refuse the piece, and the variable write of
++ * the OS fails, there and at every later try, since the driver starts again
++ * at the same place.
++ *
++ * A piece that the locks refuse and that ends where a flash block ends is
++ * therefore not written and not failed, but kept here, in SMRAM. When the
++ * next raw write begins where it ended, the two are checked and written as
++ * the one write they are; any other write, or an erase, drops the piece.
++ * Nothing reaches the flash that the locks have not allowed as a whole, and
++ * the flash never holds the half header, not even across a power loss.
++ */
++
++#include <commonlib/helpers.h>
++#include <smmstore.h>
++#include <string.h>
++#include <types.h>
++
++/* More than the larger header (the authenticated one, 60 bytes) */
++#define SPLIT_PIECE_MAX 64
++
++static struct {
++	size_t offset;
++	size_t size;
++	uint8_t data[SPLIT_PIECE_MAX];
++} kept;
++
++/* The write as it is checked and written: the OS cannot change it in between */
++static uint8_t write_copy[SMM_BLOCK_SIZE + SPLIT_PIECE_MAX];
++
++void smmstore_locked_write_reset(void)
++{
++	kept.size = 0;
++}
++
++enum smmstore_locked_write smmstore_locked_write(size_t offset, const void *data, size_t size,
++		size_t block_size, bool (*allowed)(size_t offset, const void *data, size_t size),
++		size_t *write_offset, const void **write_data, size_t *write_size)
++{
++	bool joined = false;
++
++	if (size > SMM_BLOCK_SIZE) {
++		kept.size = 0;
++		return SMMSTORE_WRITE_REFUSED;
++	}
++
++	if (kept.size && offset == kept.offset + kept.size) {
++		memcpy(write_copy, kept.data, kept.size);
++		memcpy(write_copy + kept.size, data, size);
++		offset = kept.offset;
++		size += kept.size;
++		joined = true;
++	} else {
++		memcpy(write_copy, data, size);
++	}
++	kept.size = 0;
++
++	if (allowed(offset, write_copy, size)) {
++		*write_offset = offset;
++		*write_data = write_copy;
++		*write_size = size;
++		return SMMSTORE_WRITE_ALLOWED;
++	}
++
++	if (!joined && size && size < SPLIT_PIECE_MAX && (offset + size) % block_size == 0) {
++		kept.offset = offset;
++		kept.size = size;
++		memcpy(kept.data, write_copy, size);
++		return SMMSTORE_WRITE_KEPT;
++	}
++
++	return SMMSTORE_WRITE_REFUSED;
++}
+diff --git a/src/drivers/smmstore/store.c b/src/drivers/smmstore/store.c
+index d70e0a6e5b0..4c981b7ebce 100644
+--- a/src/drivers/smmstore/store.c
++++ b/src/drivers/smmstore/store.c
+@@ -55,8 +55,6 @@ static bool mor_lock_allows(size_t store_offset, const void *data, size_t size)
+ 		end - start);
+ }
+ 
+-/* A write checked for the MOR lock is checked and written from here, in SMRAM */
+-static uint8_t mor_lock_copy[SMM_BLOCK_SIZE];
+ #endif
+ 
+ #if ENV_SMM && CONFIG(SMMSTORE_OPTION_LOCK)
+@@ -87,8 +85,40 @@ static bool options_lock_allows(size_t store_offset, const void *data, size_t si
+ 		end - start);
+ }
+ 
+-/* A write checked for the option lock is checked and written from here, in SMRAM */
+-static uint8_t options_lock_copy[SMM_BLOCK_SIZE];
++#endif
++
++#if ENV_SMM && (CONFIG(SMMSTORE_MOR_LOCK) || CONFIG(SMMSTORE_OPTION_LOCK))
++#define SMMSTORE_LOCKS 1
++
++/* Whether a lock checks the writes and erases of the store */
++static bool locks_protecting(void)
++{
++#if CONFIG(SMMSTORE_MOR_LOCK)
++	if (smmstore_mor_protecting())
++		return true;
++#endif
++#if CONFIG(SMMSTORE_OPTION_LOCK)
++	if (smmstore_options_protecting())
++		return true;
++#endif
++	return false;
++}
++
++/* A write (or, @data NULL, an erase) at @store_offset of the store, for every lock */
++static bool locks_allow(size_t store_offset, const void *data, size_t size)
++{
++#if CONFIG(SMMSTORE_MOR_LOCK)
++	if (!mor_lock_allows(store_offset, data, size))
++		return false;
++#endif
++#if CONFIG(SMMSTORE_OPTION_LOCK)
++	if (!options_lock_allows(store_offset, data, size))
++		return false;
++#endif
++	return true;
++}
++#else
++#define SMMSTORE_LOCKS 0
+ #endif
+ static int has_capsules = -1;
+ 
+@@ -391,28 +421,33 @@ int smmstore_rawwrite_region(uint32_t block_id, uint32_t offset, uint32_t bufsiz
+ 	       ptr, block_id, offset, bufsize);
+ 
+ 	const void *data = ptr;
+-#if ENV_SMM && CONFIG(SMMSTORE_MOR_LOCK)
+-	if (smmstore_mor_protecting()) {
+-		/* The OS cannot change it between the check and the write */
+-		memcpy(mor_lock_copy, ptr, bufsize);
+-		data = mor_lock_copy;
+-		if (!mor_lock_allows((size_t)block_id * SMM_BLOCK_SIZE + offset, data, bufsize)) {
++#if SMMSTORE_LOCKS
++	if (locks_protecting()) {
++		size_t write_offset, write_size;
++
++		/*
++		 * Checked and written from a copy in SMRAM: the OS cannot change
++		 * it in between. The write may be this one joined to a piece that
++		 * was kept before it, or be kept itself (split.c).
++		 */
++		switch (smmstore_locked_write((size_t)block_id * SMM_BLOCK_SIZE + offset, ptr,
++					      bufsize, SMM_BLOCK_SIZE, locks_allow,
++					      &write_offset, &data, &write_size)) {
++		case SMMSTORE_WRITE_ALLOWED:
++			break;
++		case SMMSTORE_WRITE_KEPT:
++			rdev_munmap(&com_buf, ptr);
++			return 0;
++		default:
+ 			rdev_munmap(&com_buf, ptr);
+ 			return -1;
+ 		}
+-	}
+-#endif
+-#if ENV_SMM && CONFIG(SMMSTORE_OPTION_LOCK)
+-	if (smmstore_options_protecting()) {
+-		/* The OS cannot change it between the check and the write */
+-		if (data == ptr) {
+-			memcpy(options_lock_copy, ptr, bufsize);
+-			data = options_lock_copy;
+-		}
+-		if (!options_lock_allows((size_t)block_id * SMM_BLOCK_SIZE + offset, data, bufsize)) {
++		if (lookup_store(&store) < 0 ||
++		    rdev_chain(&store, &store, write_offset, write_size)) {
+ 			rdev_munmap(&com_buf, ptr);
+ 			return -1;
+ 		}
++		bufsize = write_size;
+ 	}
+ #endif
+ 
+@@ -438,12 +473,9 @@ int smmstore_rawclear_region(uint32_t block_id)
+ 	if (lookup_block_in_store(&store, block_id) < 0)
+ 		return -1;
+ 
+-#if ENV_SMM && CONFIG(SMMSTORE_MOR_LOCK)
+-	if (!mor_lock_allows((size_t)block_id * SMM_BLOCK_SIZE, NULL, SMM_BLOCK_SIZE))
+-		return -1;
+-#endif
+-#if ENV_SMM && CONFIG(SMMSTORE_OPTION_LOCK)
+-	if (!options_lock_allows((size_t)block_id * SMM_BLOCK_SIZE, NULL, SMM_BLOCK_SIZE))
++#if SMMSTORE_LOCKS
++	smmstore_locked_write_reset();
++	if (!locks_allow((size_t)block_id * SMM_BLOCK_SIZE, NULL, SMM_BLOCK_SIZE))
+ 		return -1;
+ #endif
+ 
+diff --git a/src/include/smmstore.h b/src/include/smmstore.h
+index 20391dfd09f..4a365c54206 100644
+--- a/src/include/smmstore.h
++++ b/src/include/smmstore.h
+@@ -215,6 +215,27 @@ bool smmstore_options_protecting(void);
+  */
+ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size);
+ 
++/*
++ * A raw write at @offset of the store while a lock checks the writes
++ * (split.c). @allowed is the check of the locks. SMMSTORE_WRITE_ALLOWED: write
++ * @write_size bytes of @write_data at @write_offset, which is the write itself
++ * or, joined to it, the piece kept before it. SMMSTORE_WRITE_KEPT: the write
++ * was refused but may be the first piece of a write that the payload splits
++ * at the end of a flash block (@block_size): nothing to write, and no error.
++ * SMMSTORE_WRITE_REFUSED: an error.
++ */
++enum smmstore_locked_write {
++	SMMSTORE_WRITE_ALLOWED,
++	SMMSTORE_WRITE_KEPT,
++	SMMSTORE_WRITE_REFUSED,
++};
++
++enum smmstore_locked_write smmstore_locked_write(size_t offset, const void *data, size_t size,
++		size_t block_size, bool (*allowed)(size_t offset, const void *data, size_t size),
++		size_t *write_offset, const void **write_data, size_t *write_size);
++/* Any other access of the store drops a kept piece */
++void smmstore_locked_write_reset(void);
++
+ /* Advertise SMMSTORE support */
+ struct lb_header;
+ void lb_smmstorev2(struct lb_header *header);
+diff --git a/tests/drivers/Makefile.mk b/tests/drivers/Makefile.mk
+index 344baddce53..056fb579c04 100644
+--- a/tests/drivers/Makefile.mk
++++ b/tests/drivers/Makefile.mk
+@@ -34,8 +34,10 @@ $(call copy-test,smmstore_options_lock-test,smmstore_options_lock_two-test)
+ smmstore_options_lock-test-config += CONFIG_SMMSTORE_OPTION_LOCK=1 \
+ 	CONFIG_SMMSTORE_OPTION_LOCK_ALL=1 CONFIG_BOOTMEDIA_SMM_BWP=1 \
+ 	CONFIG_BOOTMEDIA_SMM_BWP_RUNTIME_OPTION=0 \
+-	CONFIG_SMM_OPTION_LOCK_STATE_SMRAM=1
++	CONFIG_SMM_OPTION_LOCK_STATE_SMRAM=1 \
++	CONFIG_SMMSTORE_BLOCK_SIZE=0x1000
+ smmstore_options_lock_two-test-config += CONFIG_SMMSTORE_OPTION_LOCK=1 \
+ 	CONFIG_SMMSTORE_OPTION_LOCK_ALL=0 CONFIG_BOOTMEDIA_SMM_BWP=1 \
+ 	CONFIG_BOOTMEDIA_SMM_BWP_RUNTIME_OPTION=0 \
+-	CONFIG_SMM_OPTION_LOCK_STATE_SMRAM=1
++	CONFIG_SMM_OPTION_LOCK_STATE_SMRAM=1 \
++	CONFIG_SMMSTORE_BLOCK_SIZE=0x1000
+diff --git a/tests/drivers/smmstore_options_lock.c b/tests/drivers/smmstore_options_lock.c
+index 68dccbe4efb..ed11a2909ae 100644
+--- a/tests/drivers/smmstore_options_lock.c
++++ b/tests/drivers/smmstore_options_lock.c
+@@ -15,6 +15,8 @@ void smm_get_option_lock_state_buffer(uintptr_t *base, size_t *size);
+ 
+ /* The lock itself, with its statics */
+ #include "../../src/drivers/smmstore/options_lock.c"
++/* And the writes while it is armed, as store.c does them */
++#include "../../src/drivers/smmstore/split.c"
+ 
+ #include <vendorcode/intel/edk2/UDK2017/MdeModulePkg/Include/Guid/VariableFormat.h>
+ 
+@@ -82,6 +84,7 @@ static void new_store(void)
+ 	memset(flash, 0xff, sizeof(flash));
+ 	memset(smram, 0, sizeof(smram));
+ 	memset(&option_set, 0, sizeof(option_set));
++	smmstore_locked_write_reset();
+ 	fail_from = SIZE_MAX;
+ 	region_device_init(&flash_root, &flash_ops, 0, sizeof(flash));
+ 	rdev_chain_mem_rw(&flash_rw, flash, sizeof(flash));
+@@ -111,18 +114,47 @@ static size_t store_tail(void)
+ 	return ALIGN_UP(tail, HEADER_ALIGNMENT);
+ }
+ 
+-/* The handler: the decision, then the flash programmed (bits only cleared) */
++/* What the handler answered to the last raw write */
++static enum smmstore_locked_write last_write;
++
++/*
++ * The handler, as smmstore_rawwrite_region() of store.c: the decision, then
++ * the flash programmed (bits only cleared). True when the write is on the
++ * flash; a piece that was kept is not, and last_write says so.
++ */
+ static bool raw_write(size_t offset, const void *data, size_t size)
+ {
+-	if (!smmstore_options_write_allowed(offset, data, size))
++	const void *write_data;
++	size_t write_offset, write_size;
++
++	last_write = smmstore_locked_write(offset, data, size, BLOCK,
++					   smmstore_options_write_allowed, &write_offset,
++					   &write_data, &write_size);
++	if (last_write != SMMSTORE_WRITE_ALLOWED)
+ 		return false;
+-	for (size_t i = 0; i < size; i++)
+-		flash[offset + i] &= ((const uint8_t *)data)[i];
++	for (size_t i = 0; i < write_size; i++)
++		flash[write_offset + i] &= ((const uint8_t *)write_data)[i];
++	return true;
++}
++
++/* A write of the payload's flash driver: one raw write for each flash block */
++static bool fvb_write(size_t offset, const void *data, size_t size)
++{
++	while (size) {
++		const size_t piece = MIN(size, BLOCK - offset % BLOCK);
++
++		if (!raw_write(offset, data, piece) && last_write != SMMSTORE_WRITE_KEPT)
++			return false;
++		offset += piece;
++		data = (const uint8_t *)data + piece;
++		size -= piece;
++	}
+ 	return true;
+ }
+ 
+ static bool raw_erase(size_t block)
+ {
++	smmstore_locked_write_reset();
+ 	if (!smmstore_options_write_allowed(block * BLOCK, NULL, BLOCK))
+ 		return false;
+ 	memset(flash + block * BLOCK, 0xff, BLOCK);
+@@ -167,11 +199,11 @@ static void make_record(struct record *r, const EFI_GUID *guid, const char *name
+  */
+ static int append_record(const struct record *r, size_t at)
+ {
+-	if (!raw_write(at, &r->hdr, sizeof(r->hdr)))
++	if (!fvb_write(at, &r->hdr, sizeof(r->hdr)))
+ 		return 0;
+ 	if (!raw_state(at, VAR_HEADER_VALID_ONLY))
+ 		return 1;
+-	if (!raw_write(at + sizeof(r->hdr), r->body, r->body_size))
++	if (!fvb_write(at + sizeof(r->hdr), r->body, r->body_size))
+ 		return 2;
+ 	if (!raw_state(at, VAR_ADDED))
+ 		return 3;
+@@ -423,28 +455,99 @@ static void test_store_damaged(void **state)
+ 	tail = store_tail();
+ 	assert_false(raw_write(tail, &byte, sizeof(byte)));
+ 	assert_false(raw_write(tail + 0x200, &byte, sizeof(byte)));
++	/* The last byte of the store, the end of a block: kept, never written */
+ 	assert_false(raw_write(store_end - 1, &byte, sizeof(byte)));
++	assert_int_equal(last_write, SMMSTORE_WRITE_KEPT);
++	assert_int_equal(flash[store_end - 1], 0xff);
++}
++
++/* Other variables, written before the arm, up to @tail */
++static void fill_to(size_t tail)
++{
++	AUTHENTICATED_VARIABLE_HEADER hdr;
++	const size_t at = store_tail();
++	const size_t name_size = sizeof(CHAR16);
++
++	assert_true(tail % HEADER_ALIGNMENT == 0 && tail >= at + sizeof(hdr) + name_size);
++	memset(&hdr, 0xff, sizeof(hdr));
++	hdr.StartId = VARIABLE_DATA;
++	hdr.State = VAR_ADDED;
++	hdr.Attributes = 7;
++	hdr.NameSize = name_size;
++	hdr.DataSize = tail - at - sizeof(hdr) - name_size;
++	memcpy(&hdr.VendorGuid, &other_guid, sizeof(other_guid));
++	memcpy(flash + at, &hdr, sizeof(hdr));
++	memset(flash + at + sizeof(hdr), 0, name_size);
++	memset(flash + at + sizeof(hdr) + name_size, 0x5a, hdr.DataSize);
++	assert_int_equal(store_tail(), tail);
+ }
+ 
+ /*
+- * The first piece of a header that the payload's driver splits at the end of
+- * a flash block: the reader cannot read a store that ends in half a header,
+- * so the piece is refused, and the write of that variable fails.
++ * A header that the payload's driver splits at the end of a flash block. Alone,
++ * the first piece leaves a store that the reader cannot read: the lock refuses
++ * it, and the handler keeps it and writes it with the second one.
+  */
+ static void test_split_header(void **state)
+ {
+ 	const uint16_t timeout = 3;
++	const uint32_t on = 1;
++	const size_t at = BLOCK - 20;
++	uint8_t before[sizeof(flash)];
+ 	struct record r;
+-	size_t at;
+ 
+ 	three_options();
++	fill_to(at);
+ 	arm(SMMSTORE_RET_SUCCESS);
+-	at = store_tail();
+ 	make_record(&r, &other_guid, "Timeout", 7, &timeout, sizeof(timeout));
++	memcpy(before, flash, sizeof(flash));
++
++	/* The decision of the lock on the piece alone */
++	assert_false(smmstore_options_write_allowed(at, &r.hdr, 20));
++
++	/* The handler: kept, the flash as it was; then the whole header */
+ 	assert_false(raw_write(at, &r.hdr, 20));
+-	assert_false(raw_write(at, &r.hdr, 1));
+-	/* Whole, it goes */
+-	assert_true(raw_write(at, &r.hdr, sizeof(r.hdr)));
++	assert_int_equal(last_write, SMMSTORE_WRITE_KEPT);
++	assert_memory_equal(flash, before, sizeof(flash));
++	assert_true(raw_write(BLOCK, (const uint8_t *)&r.hdr + 20, sizeof(r.hdr) - 20));
++	assert_memory_equal(flash + at, &r.hdr, sizeof(r.hdr));
++	/* And the rest of the variable, as the driver goes on */
++	assert_true(raw_state(at, VAR_HEADER_VALID_ONLY));
++	assert_true(fvb_write(at + sizeof(r.hdr), r.body, r.body_size));
++	assert_true(raw_state(at, VAR_ADDED));
++	assert_int_equal(store_tail(), ALIGN_UP(at + sizeof(r.hdr) + r.body_size,
++						HEADER_ALIGNMENT));
++
++	/* A kept piece that is not followed by its rest is dropped */
++	three_options();
++	fill_to(at);
++	arm(SMMSTORE_RET_SUCCESS);
++	memcpy(before, flash, sizeof(flash));
++	assert_false(raw_write(at, &r.hdr, 20));
++	assert_int_equal(last_write, SMMSTORE_WRITE_KEPT);
++	/* Something else, elsewhere: refused, and the piece is gone */
++	assert_false(raw_write(BLOCK + 4, &r.hdr, 8));
++	assert_int_equal(last_write, SMMSTORE_WRITE_REFUSED);
++	assert_false(raw_write(BLOCK, (const uint8_t *)&r.hdr + 20, sizeof(r.hdr) - 20));
++	assert_memory_equal(flash, before, sizeof(flash));
++
++	/* The two pieces of what the lock refuses whole: refused, nothing written */
++	smmstore_locked_write_reset();
++	assert_false(raw_write(at, before + 0x40, 20));
++	assert_int_equal(last_write, SMMSTORE_WRITE_KEPT);
++	assert_false(raw_write(BLOCK, before + 0x40, 40));
++	assert_int_equal(last_write, SMMSTORE_WRITE_REFUSED);
++	assert_memory_equal(flash, before, sizeof(flash));
++
++	/* The whole variable through the driver's writes, an option's too */
++	three_options();
++	fill_to(at);
++	arm(SMMSTORE_RET_SUCCESS);
++	assert_int_equal(append_record(&r, at), 4);
++	three_options();
++	fill_to(at);
++	arm(SMMSTORE_RET_SUCCESS);
++	make_record(&r, &EficorebootNvDataGuid, "onboard_audio", 3, &on, sizeof(on));
++	assert_int_equal(append_record(&r, at), 3);
+ }
+ 
+ /* SMM loaded again on a resume: the set is the one of the flash at that time */

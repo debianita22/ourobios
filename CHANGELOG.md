@@ -29,12 +29,19 @@ are still to run.
   commands so that coreboot reads another option at the next boot: a
   device turned off in the setup stays off, as *BIOS Lock* and
   *Firmware protection* stayed on. The variables of the OS (boot
-  entries, the capsule variables) are written as before. Two things
-  change for the OS: a variable write that needs a reclaim of a full
-  store fails until the next boot, which reclaims; and, rarely (a
-  header that lands on the end of a 64 KiB flash block), a variable
-  write fails. The decisions are unit tests of coreboot, which the CI
-  now runs. The W541 keeps the lock of the two security options.
+  entries, the capsule variables) are written as before. One thing
+  changes for the OS: a variable write that needs a reclaim of a full
+  store fails until the next boot, which reclaims. The decisions are
+  unit tests of coreboot, which the CI now runs. The W541 keeps the lock
+  of the two security options.
+- **A variable write no longer fails at the end of a flash block**
+  (patch 0283): with the MOR lock holding a request, or the option lock
+  armed, a variable whose header crossed the end of a 64 KiB block of
+  the store could not be written from the OS, at any try, until the
+  firmware wrote something there itself (about one append in a
+  thousand; the first piece of the header alone leaves a store that the
+  locks rightly refuse). The handler now checks and writes the two
+  pieces as one.
 - **W541 (`nri`): an XMP profile of the memory as an option** (patches
   0275-0279): *Hardware* → *Memory* → *Memory profile*, *SPD (JEDEC)* by
   default, or *XMP profile 1* or *2*. With a profile the native RAM init
