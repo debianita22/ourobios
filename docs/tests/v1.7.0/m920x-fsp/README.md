@@ -64,7 +64,7 @@ SMI well above the flash write.
 
 ## Stage 2: the lock for every option, and the fault tolerant write
 
-One candidate, v1.7.0-rc2 (patches 0281 and 0282, `edk2/0061`), as the
+One candidate, v1.7.0-rc3 (patches 0281 to 0283, `edk2/0061`; rc2 is the W541's), as the
 owner asked.
 
 **The fault tolerant write, F6 (patch 0281):** the option lock and the
@@ -160,11 +160,11 @@ tests) and without it (5), and `efivars-test` (33).
 | the set unreadable at the arm | the lock of the two options, `SMMSTORE_RET_FAILURE`, the blocks past the store refused | `test_no_latch` |
 | the Kconfig off: another option changed; a security option turned off; one deleted | allowed; refused; allowed (it reads as its default) | `test_two_options` |
 
-The rows of the machine, to run on rc2:
+The rows of the machine, to run on rc3:
 
 | ID | Check | Expected |
 |---|---|---|
-| UPD-02 | rc2 as a capsule from rc1, slot A; rc1 kept in slot B | installed |
+| UPD-02 | rc3 as a capsule from rc1, slot A; rc1 kept in slot B | installed |
 | LOCK-01 | `OptionLockStatus`; `cbmem -1 \| grep -i "option lock"` | armed; ramstage: *option lock for every setup option* |
 | LOCK-02 | 20 writes of `Timeout`, `MSR_SMI_COUNT` around each | against F1 (0.285 s, 45 ms an SMI) |
 | LOCK-03 | a boot entry created and deleted; a variable of the test's GUID created, changed, deleted through efivarfs | each works, the entries as before |
