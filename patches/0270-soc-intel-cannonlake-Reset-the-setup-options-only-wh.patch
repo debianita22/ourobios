@@ -29,8 +29,11 @@ too, and keeps the bit.
 Software that also rewrites the CMOS bytes of CMOS_POST can still do
 it: the check is against a stray bit, not against root.
 
-TEST=Built in the CI of ouroBIOS. On the M920x the bit was set and cleared from Linux with
-v1.6.2 (OPT-06 of the v1.6.3 tests); the run with the patch is to come.
+TEST=On a ThinkCentre M920x with v1.6.3-rc2 of ouroBIOS: the bit set
+from Linux and a reboot logged "Setup options: not reset, RTC power lost
+but the CMOS kept the last boot (POST 0xf8/0x00000000)", cleared the bit
+and kept the 36 options; the CMOS was not zeroed and the next boot had
+no such line. A real CMOS clear not run yet.
 ---
  src/soc/intel/cannonlake/romstage/romstage.c | 35 +++++++++++++++++++-
  1 file changed, 34 insertions(+), 1 deletion(-)

@@ -47,8 +47,9 @@ branch.
   boot, *BIOS Lock* and *Firmware protection* among them. As on the W541
   (patch 0256), the CMOS must have lost the last boot's POST code too; a
   bit set by software is cleared and logged (*Setup options: not reset,
-  RTC power lost but the CMOS kept the last boot*). Not run on a machine
-  yet.
+  RTC power lost but the CMOS kept the last boot*). On the M920x with
+  rc2 the bit set from Linux and a reboot kept the 36 options; a real
+  CMOS clear (OPT-05) is still to run.
 - **A coreboot table of 64 KiB** (patch 0269): the setup menu is one
   record of the coreboot table, 28.2 KiB of the 32 on the W541, and
   help texts were shortened twice to add an option (patches 0261,
