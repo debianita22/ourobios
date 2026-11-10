@@ -122,6 +122,20 @@ The answers for the roadmap:
   status and counts the reset (patches 0267, 0268); v1.6.2 reports the
   same reset again at every boot until the status is cleared by hand.
 
+## rc2: patch 0270
+
+v1.6.3-rc2 (run 42799869464, `next` with patch 0270) as a capsule from
+v1.6.2 with both protections on, slot A (over rc1), 2026-11-10; v1.6.2
+stays in slot B. The owner asked for the test of 0270 with the stray
+bit, which OPT-06 showed the OS can set.
+
+| ID | Result | Notes |
+|---|---|---|
+| UPD-02 | PASS | signature valid, rc2 from slot A, *ultimo: v1.6.3-rc2, riuscito*; report 21 PASS ([rc2/hw-rc2-1.md](rc2/hw-rc2-1.md)) |
+| OPT-07 (0270) | PASS | before: the 36 options from a copy of the flash, CMOS 0x70-0x7e `80 f8 f8 00…00 a0` (the bank mark and POST code 0xf8 in both banks, [rc2/cmos-pre.txt](rc2/cmos-pre.txt)); bit 2 set from Linux, `0x00062210` → `0x00062214`; a reboot. Romstage: *GEN_PMCON: d8a01608 00002204*, *Setup options: not reset, RTC power lost but the CMOS kept the last boot (POST 0xf8/0x00000000)* ([rc2/cbmem-rc2-bitset.txt](rc2/cbmem-rc2-bitset.txt)); at the OS bit 2 clear (`0x00062210`), the 36 options identical to those before, no RTC event in the event log, the CMOS not zeroed (the bank mark moved on to `0x81` as at every boot, 0x7e still `0xa0`), the clock right (`timedatectl`, chrony synchronized), slot A confirmed, FLASH-01 PASS ([rc2/hw-rc2-post.md](rc2/hw-rc2-post.md); its one WARN is that line). The next boot: no *Setup options* line, `GEN_PMCON: … 00002200` |
+| S3-01 | PASS | one resume after the test, PR0 and PR1 back |
+| OPT-05 | not run, needs the owner | the real case, a CMOS clear: the options must be reset once |
+
 ## Part 3: the owner's
 
 Not run, needs the owner: VAR-01 with *BIOS Lock* off, WDT-01 (and the
