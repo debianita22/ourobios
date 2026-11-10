@@ -59,7 +59,8 @@ from the lists of `docs/test-v1.6.3-w541.md` and
   every write of the variable store walked the whole store once for
   each protected option before it was allowed, about 85 ms an SMI and
   0.6 s a variable write from the OS on the M920x (VAR-01). One walk now
-  serves both options; what is allowed and refused does not change.
+  serves both options: 0.29 s a write with rc4. What is allowed and
+  refused does not change.
 - **A coreboot table of 64 KiB** (patch 0269): the setup menu is one
   record of the coreboot table, 28.2 KiB of the 32 on the W541, and
   help texts were shortened twice to add an option (patches 0261,
