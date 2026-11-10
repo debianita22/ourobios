@@ -105,7 +105,7 @@ whose changes below are still to run on a machine.
   of a profile were not read, so a DDR3-1866 profile gave a cycle time
   of 1.125 ns, one standard speed lower, and the times of a profile
   with a timebase of 1/14 or 1/12 ns came out up to 1.6% short. With a
-  unit test.
+  unit test, which the CI runs.
 - **The saved training of the `nri` variant also follows the SPD
   decoder** (patch 0276): a change of the code that reads the timings
   from the SPD trains once, as a change of the RAM init does.

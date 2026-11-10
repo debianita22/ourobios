@@ -270,11 +270,11 @@ store as a memory region. At least:
 | more options than the latch holds | the lock of the two options, the status |
 | the Kconfig off: the two options of today turned off, deleted, the store erased | the decisions of v1.6.3 |
 
-The CI does not run coreboot's unit tests today
-(`make run-tests/device/ddr3-test`, `tests/drivers/efivars` run by
-hand). A step of the *Build* workflow that runs the ones the project
-adds or changes (they need `libcmocka-dev` and vboot's submodule) is
-part of this work: a check that does not run does not hold.
+The CI did not run coreboot's unit tests when this was written. From
+v1.7.0-rc2 a step of the *Build* workflow runs the ones the project adds
+or changes (`tools/build.sh coreboot-unit-test`: `drivers/efi`, the two
+builds of the option lock, and the XMP decoder of patch 0275): a check
+that does not run does not hold.
 
 ### On the machine
 

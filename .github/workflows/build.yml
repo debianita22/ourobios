@@ -382,7 +382,7 @@ jobs:
       - name: Prove unitarie del payload
         run: ./tools/build.sh edk2-unit-test
 
-      # drivers/efi e il lock delle opzioni di SMMSTORE sull'host
+      # drivers/efi, il lock delle opzioni di SMMSTORE e il decoder XMP sull'host
       - name: Prove unitarie di coreboot
         run: |
           sudo apt-get install -y -qq libcmocka-dev >/dev/null

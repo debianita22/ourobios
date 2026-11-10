@@ -79,9 +79,10 @@
 #   coreboot-unit-test le prove unitarie di coreboot che il progetto
 #                  aggiunge o cambia, sull'host (tests/ di coreboot, con
 #                  cmocka del sistema: libcmocka-dev): il lettore dello
-#                  store delle variabili (drivers/efi) e le decisioni del
+#                  store delle variabili (drivers/efi), le decisioni del
 #                  lock delle opzioni di SMMSTORE, con e senza
-#                  SMMSTORE_OPTION_LOCK_ALL. Nell'albero di prepare
+#                  SMMSTORE_OPTION_LOCK_ALL, e il decoder dei profili XMP
+#                  (device/dram, patch 0275). Nell'albero di prepare
 #   edk2-upstream  il passaggio a EDK II di TianoCore: il payload di
 #                  EDK2_UPSTREAM_TAG senza patch in una ROM per QEMU q35 (e
 #                  in una seconda con SECURE_BOOT_ENABLE), poi in una terza
@@ -2507,10 +2508,10 @@ cmd_edk2_upstream() {
 # Con le chiavi di prova di vboot, che il payload non contiene
 EDK2_PARITY_BAD=()
 EDK2_PARITY_READY=no
-# Le prove unitarie di coreboot del progetto (tests/drivers): il make di
-# coreboot le compila per l'host e le esegue, e fallisce se una non passa
+# Le prove unitarie di coreboot del progetto (tests/drivers, tests/device): il
+# make di coreboot le compila per l'host e le esegue, e fallisce se una non passa
 COREBOOT_UNIT_TESTS=(tests/drivers/efivars-test tests/drivers/smmstore_options_lock-test
-	tests/drivers/smmstore_options_lock_two-test)
+	tests/drivers/smmstore_options_lock_two-test tests/device/ddr3-test)
 cmd_coreboot_unit_test() {
 	need_prepared
 	local t log="${WORK}/coreboot-unit-test.log"
