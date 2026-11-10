@@ -3,8 +3,9 @@
 The ThinkPad W541 of the port (`nri`), 2026-11-10: v1.7.0-rc1, built from
 `ci-test/v1.7.0-nri-xmp` (`19e053a`, patches 0275-0280), as a capsule from
 v1.6.3-rc4 with *BIOS Lock* on: slot B, rc4 kept in slot A. The modules are
-the four 8 GiB DDR3L SO-DIMMs of the port, which have no XMP profile, so
-MEM-13 cannot run here. The baseline is a `ddr-report.py` dump of rc4 taken
+the four DDR3L SO-DIMMs of the port, which have no XMP profile (bytes
+176 and 177 of each SPD, read from Linux through `at24`, are `ff ff`
+where an XMP header has `0c 4a`), so MEM-13 cannot run here. The baseline is a `ddr-report.py` dump of rc4 taken
 before the update (write Vref 0 on both channels).
 
 | ID | Result | Notes |
