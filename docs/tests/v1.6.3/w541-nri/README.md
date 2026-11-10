@@ -41,7 +41,31 @@ port.
 | WDT-03 | PASS, the last step not run | byte 0x7e `0xa0` at the first boot (it held `0x00`: SMM wrote the mark at the first confirmed boot), after the resumes and at each of the next five boots; `0x55` written, a reboot: `0xa0`; `0xa3` written with *Firmware watchdog* Off, a reboot: no *resets in a row* line, `0xa0`; the clock right after each write (system, RTC and network time the same second). The step with the watchdog at 5 minutes needs the owner's setup visit (WDT-01) ([log](wdt03.log)) |
 | WDT-01 | not run, needs the owner | the setup visit; the watchdog Off throughout: *Firmware watchdog: off*, OC_WDT_CTL `0x00002000` at every boot |
 | VB-01, VB-02 | PASS | rc1 in slot B, confirmed; v1.6.2 in slot A, confirmed |
-| WDT-02 | to come | after this first push |
+| WDT-02 | PASS | below: a global reset about 120 s after the arm, ICCSURV_STS set, the enable cleared by the reset, *1 in a row*, `0x7e` back at `0xa0` at the OS |
+
+## WDT-02: a reset by the watchdog
+
+Armed from Linux with `0x8000e077` (reload, enable, all modes, ICC
+survivability, 120 s), *Firmware watchdog* Off, both slots v1.6.2 or
+later, the register `0x00002000` before. Once on rc1, once on v1.6.2
+after the return to it ([files](wdt02/)).
+
+| What | rc1 | v1.6.2 |
+|---|---|---|
+| the reset | between 120 and 125 s after the arm: the last line of the journal 23:00:01, the boot in the event log 23:00:10, the kernel 141 s after the arm | the same, 141 s to the kernel |
+| romstage | *the last reset came from the watchdog (OC_WDT_CTL 0x02002000), 1 in a row*, then *off* | *... (OC_WDT_CTL 0x02002000)*, then *off* (no count: patch 0268 is not in v1.6.2) |
+| the status | bit 25 (ICCSURV_STS) set, bit 24 clear: the timer was armed with ICC survivability (bit 13) | the same |
+| the enable | bit 14 clear after the reset: the reset leaves the watchdog off | the same |
+| the kind of reset | the ME's *Power Management Event: Clean global reset* (a plain reboot logs *Pseudo-global reset*); the RAM init from the cache, no training; the event log only *System boot* and *System reset*, no event of its own | the same |
+| at the OS | `0x00002000`, the status clear (romstage cleared it); byte 0x7e `0xa0`: SMM cleared the count when the payload confirmed the boot | `0x00002000` |
+| a reboot | no *last reset came from the watchdog* line: reported once (three reboots) | not run |
+| the slot | still slot B, next slot B, no try counted; vboot's result reads `-` (unknown) for the current and the previous boot, where it read *confermato* before: `vbnv_mark_tried_slot_good()` writes the result only when it is *trying*, and the reset left an *unknown* one that the next boots keep | slot A, *confermato* (it was on trial after the return) |
+
+The answers the roadmap waited for: the status bits are set after a
+reset by the watchdog (ICCSURV_STS, with the mode the firmware arms), the
+enable bit does not survive it, and the reset is a global one that keeps
+the training cache. So the count of patch 0268 works on this board: the
+romstage of rc1 counted the reset and SMM cleared it.
 
 ## The SD reader after a resume
 
@@ -74,6 +98,25 @@ della copia* at every boot: it looks for the running version with
 `b.endswith(fw.bios)`, where the SMBIOS version (`CBET4000 ouroBIOS-...`)
 is the longer string and the slot's build name the shorter; the test
 wants the other way round. The vboot state itself is right.
+
+## The end
+
+`update.py rollback` from rc1: v1.6.2 from slot A, *riuscito*, rc1 kept
+in slot B. [The last report](hw-w541-nri-v1.6.2-end.md): FLASH-01 PASS
+(*BIOS Lock* and *Firmware protection* on), *Firmware watchdog* off,
+OC_WDT_CTL `0x00002000`, the boot manager's `Timeout` 3 s as before;
+BOOT-03 and WDT-01 WARN name the reset by the watchdog of the boot before
+(they go at the next boot). Three plain reboots more than the plan's one
+happened after WDT-02 on rc1: the agent was cut off and started the step
+again. The boot-time helpers of the run were removed.
+
+## The power-offs
+
+The cold boot: about to run at 2026-11-10 07:03 (`rtcwake -m off -s 180`, whether the
+RTC alarm starts this board from off, never tried before). If this line
+is still here, the machine did not start by itself and waits for the
+owner's button. NET-02 is not tried after it: no cable on the Ethernet
+port.
 
 ## Not run here
 

@@ -1,0 +1,20 @@
+290  2026-11-09 22:03:08  System reset             
+291  2026-11-09 22:03:09  Management Engine        disabled
+292  2026-11-09 22:03:09  Management Engine extra  0106020001064d
+293  2026-11-09 22:04:12  System boot              534
+294  2026-11-09 22:04:12  System reset             
+295  2026-11-09 22:04:12  Management Engine        disabled
+296  2026-11-09 22:04:12  Management Engine extra  0106020001064d
+297  2026-11-09 22:05:26  System boot              535
+298  2026-11-09 22:05:26  System reset             
+299  2026-11-09 22:05:27  Management Engine        disabled
+300  2026-11-09 22:05:27  Management Engine extra  0106020001064d
+301  2026-11-09 22:06:34  System boot              536
+302  2026-11-09 22:06:34  System reset             
+303  2026-11-09 22:06:34  Management Engine        disabled
+304  2026-11-09 22:06:34  Management Engine extra  0106020001064d
+305  2026-11-09 22:07:38  System boot              537
+306  2026-11-09 22:07:38  System reset             
+307  2026-11-09 22:07:38  Management Engine        disabled
+308  2026-11-09 22:07:38  Management Engine extra  0106020001064d
+309 eventi, 3682 byte usati

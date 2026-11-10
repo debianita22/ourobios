@@ -1,0 +1,30 @@
+nov 09 22:59:42 Wurtz tailscaled[701]: netcheck: netcheck: UDP is blocked, trying HTTPS
+nov 09 22:59:42 Wurtz tailscaled[701]: netcheck: UDP is blocked, trying ICMP
+nov 09 22:59:42 Wurtz tailscaled[701]: Received error: fetch control key: Get "https://controlplane.tailscale.com/key?v=148": dial tcp [2606:b740:49::116]:443: connect: cannot assign requested address
+nov 09 22:59:42 Wurtz tailscaled[701]: control: doLogin(regen=false, hasUrl=false)
+nov 09 22:59:46 Wurtz tailscaled[701]: derphttp.Client.Recv: connecting to derp-4 (fra)
+nov 09 22:59:48 Wurtz NetworkManager[671]: <warn>  [1794261588.2005] platform-linux: do-add-ip6-address[3: fe80::fe41:b3fe:27b2:6130]: failure 13 (Permesso negato - ipv6: IPv6 is disabled on this device)
+nov 09 22:59:48 Wurtz NetworkManager[671]: <warn>  [1794261588.2005] platform-linux: do-add-ip6-address[3: 2001:b07:2ef:64c5:69b3:72e5:8b85:6715]: failure 13 (Permesso negato - ipv6: IPv6 is disabled on this device)
+nov 09 22:59:48 Wurtz NetworkManager[671]: <warn>  [1794261588.2006] l3cfg[a387260b4786d63e,ifindex=3]: unable to configure IPv6 route: type unicast fe80::/64 dev 3 metric 1024 mss 0 rt-src ipv6ll
+nov 09 22:59:50 Wurtz NetworkManager[671]: <warn>  [1794261590.2015] platform-linux: do-add-ip6-address[3: fe80::3f72:b927:c1a9:bd91]: failure 13 (Permesso negato - ipv6: IPv6 is disabled on this device)
+nov 09 22:59:50 Wurtz NetworkManager[671]: <warn>  [1794261590.2015] platform-linux: do-add-ip6-address[3: 2001:b07:2ef:64c5:69b3:72e5:8b85:6715]: failure 13 (Permesso negato - ipv6: IPv6 is disabled on this device)
+nov 09 22:59:52 Wurtz NetworkManager[671]: <warn>  [1794261592.2018] platform-linux: do-add-ip6-address[3: fe80::a4a8:d02c:bec7:1193]: failure 13 (Permesso negato - ipv6: IPv6 is disabled on this device)
+nov 09 22:59:52 Wurtz NetworkManager[671]: <warn>  [1794261592.2019] platform-linux: do-add-ip6-address[3: 2001:b07:2ef:64c5:69b3:72e5:8b85:6715]: failure 13 (Permesso negato - ipv6: IPv6 is disabled on this device)
+nov 09 22:59:52 Wurtz tailscaled[701]: health(warnable=no-derp-connection): error: Tailscale could not connect to the 'Frankfurt' relay server. Your Internet connection might be down, or the server might be temporarily unavailable.
+nov 09 22:59:52 Wurtz tailscaled[701]: health: connectivity impacted; triggering captive portal detection
+nov 09 22:59:54 Wurtz NetworkManager[671]: <warn>  [1794261594.2124] platform-linux: do-add-ip6-address[3: fe80::906b:ce65:c519:f6ec]: failure 13 (Permesso negato - ipv6: IPv6 is disabled on this device)
+nov 09 22:59:54 Wurtz NetworkManager[671]: <warn>  [1794261594.2125] platform-linux: do-add-ip6-address[3: 2001:b07:2ef:64c5:69b3:72e5:8b85:6715]: failure 13 (Permesso negato - ipv6: IPv6 is disabled on this device)
+nov 09 22:59:56 Wurtz tailscaled[701]: DetectCaptivePortal(found=false)
+nov 09 22:59:56 Wurtz NetworkManager[671]: <warn>  [1794261596.2222] platform-linux: do-add-ip6-address[3: fe80::a58b:d53d:b3b5:ef6]: failure 13 (Permesso negato - ipv6: IPv6 is disabled on this device)
+nov 09 22:59:56 Wurtz NetworkManager[671]: <warn>  [1794261596.2222] platform-linux: do-add-ip6-address[3: 2001:b07:2ef:64c5:69b3:72e5:8b85:6715]: failure 13 (Permesso negato - ipv6: IPv6 is disabled on this device)
+nov 09 22:59:56 Wurtz tailscaled[701]: magicsock: [0xea4063d4000] derp.Recv(derp-4): derphttp.Client.Recv connect to region 4 (fra): context deadline exceeded: context deadline exceeded
+nov 09 22:59:56 Wurtz tailscaled[701]: health(warnable=no-derp-connection): ok
+nov 09 22:59:58 Wurtz NetworkManager[671]: <warn>  [1794261598.2226] platform-linux: do-add-ip6-address[3: fe80::278a:fee7:67c7:8a7c]: failure 13 (Permesso negato - ipv6: IPv6 is disabled on this device)
+nov 09 22:59:58 Wurtz NetworkManager[671]: <warn>  [1794261598.2227] platform-linux: do-add-ip6-address[3: 2001:b07:2ef:64c5:69b3:72e5:8b85:6715]: failure 13 (Permesso negato - ipv6: IPv6 is disabled on this device)
+nov 09 22:59:59 Wurtz tailscaled[701]: netcheck: netcheck: UDP is blocked, trying HTTPS
+nov 09 22:59:59 Wurtz tailscaled[701]: netcheck: UDP is blocked, trying ICMP
+nov 09 23:00:00 Wurtz NetworkManager[671]: <warn>  [1794261600.2325] ipv6ll[892060b93b1112a9,ifindex=3]: changed: no IPv6 link local address to retry after Duplicate Address Detection failures (back off)
+nov 09 23:00:00 Wurtz NetworkManager[671]: <warn>  [1794261600.2327] platform-linux: do-add-ip6-address[3: 2001:b07:2ef:64c5:69b3:72e5:8b85:6715]: failure 13 (Permesso negato - ipv6: IPv6 is disabled on this device)
+nov 09 23:00:00 Wurtz NetworkManager[671]: <warn>  [1794261600.2328] l3cfg[a387260b4786d63e,ifindex=3]: unable to configure IPv6 route: type unicast fe80::5a76:acff:fe2b:4eb0/128 dev 3 metric 605 mss 0 rt-src ndisc
+nov 09 23:00:00 Wurtz NetworkManager[671]: <warn>  [1794261600.2328] l3cfg[a387260b4786d63e,ifindex=3]: unable to configure IPv6 route: type unicast fe80::5a76:acff:fe2b:4eb0/128 dev 3 metric 20600 mss 0 rt-src ndisc
+nov 09 23:00:01 Wurtz tailscaled[701]: derphttp.Client.Recv: connecting to derp-4 (fra)

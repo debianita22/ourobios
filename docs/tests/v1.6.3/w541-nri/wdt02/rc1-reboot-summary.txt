@@ -1,0 +1,28 @@
+boot 1794262109 2026-11-09T23:08:29+01:00 boot_id=1f70843d-e067-4c8a-9870-01c3d74bd057 uptime=36.29
+armed at 1794261485  (boot - arm = 588 s to the kernel start)
+OC_WDT_CTL at the OS: 0x00002000
+0x7e=0xa0
+0x7e=0xa0
+0x7e=0xa0
+count of 'Firmware watchdog' lines: 2
+[DEBUG]  PEG10: Gen3 presets on 16 lanes, lane 0 EQ control 2703
+[DEBUG]  Firmware watchdog: off (OC_WDT_CTL 0x00002000)
+[DEBUG]  warm_reset_usb3_ports: took 5 usecs
+[INFO ]  Using cached memory parameters
+[DEBUG]  ME: Power Management Event  : Pseudo-global reset
+[DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+[DEBUG]  MRC: 'RW_MRC_CACHE' does not need update.
+[DEBUG]  ME: Power Management Event  : Pseudo-global reset
+[DEBUG]  BS: BS_POST_DEVICE run times (exec / console): 1 / 0 ms
+[INFO ]  Firmware watchdog: at the payload, OC_WDT_CTL 0x00002000
+firmware:  ouroBIOS, variante nri (BIOS CBET4000 ouroBIOS-v1.6.3-rc1-nri)
+mappa:     vboot, due slot RW (una capsula scrive quello che non gira)
+versione:  v1.6.3-rc1, minima per una capsula v1.3.9
+ME:        ferma nel BUP (stato 0x4d), stato di lavoro 1, modo 2, codice di errore 0, fase 1 stato 0x4d; HECI (00:16.0) nascosta al sistema
+ultimo:    v1.6.3-rc1, riuscito
+su disco:  supportato
+WP_RO:     protetta fino al prossimo reset o ripresa da S3 (PR0)
+SI_ALL:    protetta fino al prossimo reset o ripresa da S3 (PR1)
+BIOS Lock: acceso: scrive solo il firmware in SMM
+slot RW:   scrivibili con la capsula; flashrom no (BIOS Lock)
+in attesa: niente

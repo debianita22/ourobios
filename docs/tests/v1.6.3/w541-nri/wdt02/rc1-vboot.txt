@@ -1,0 +1,7 @@
+contenuto:  RO      ouroBIOS-ci-205-d123865-nri
+            slot A  ouroBIOS-v1.6.2-nri
+            slot B  ouroBIOS-v1.6.3-rc1-nri
+RW_NVRAM:   128 record su 4096
+prossimo:   slot B
+corrente:   slot B, -
+precedente: slot B, -
