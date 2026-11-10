@@ -20,8 +20,9 @@ Not released. What ran on a machine: nothing yet, the CI builds only.
   test, or that does not reach the payload twice in a row, is given up
   by itself until the option is changed (CMOS byte 0x7d), so a profile
   that does not work cannot keep the machine from booting
-  ([docs/raminit.md](docs/raminit.md#xmp-profiles)). **Not tried with
-  XMP modules**: the W541 of the port has none. With the default the
+  ([docs/raminit.md](docs/raminit.md#xmp-profiles)). **Not tried on a
+  machine**: whether the modules of the W541 of the port have a profile
+  is still to read (bytes 176 on of their SPD). With the default the
   memory is set up as before; the first boot trains once, as the
   version of the saved training has the profile now. `mrc.bin` has no
   such option.

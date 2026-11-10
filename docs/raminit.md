@@ -227,9 +227,20 @@ steps, the memory test after them (patch 0087) and the shorter round trip
 of the saved training (one training at the first boot). `mrc.bin` has no
 such option.
 
-**Not tried on a machine with XMP modules yet.** The four modules of the
-W541 of the port carry the SPD of a Samsung OEM module and have no XMP
-profile: on that machine only the default and the refusals below can run.
+**Not tried on a machine yet.** The four modules of the W541 of the port
+carry the JEDEC part of the SPD of a Samsung OEM module, DDR3L-1600 at
+1.35 V; whether they have an XMP profile is not known, as the records
+have their bytes 0 to 127 only:
+
+```sh
+sudo modprobe at24
+sudo cat /sys/bus/i2c/drivers/at24/*-0050/eeprom | xxd -s 176 -l 80
+```
+
+`0c 4a` as the first two bytes is a profile; byte 178 says which
+profiles are enabled and for how many modules per channel, byte 185 the
+voltage of the first (`27` 1.35 V, `2a` 1.5 V). Without a profile only
+the default and the refusals below can run on that machine.
 
 The profile is used when:
 
