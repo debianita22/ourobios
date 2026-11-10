@@ -26,17 +26,29 @@ branch.
   third logs *Firmware watchdog: 3 resets in a row and no boot confirmed,
   not armed* and leaves it off, until a boot is confirmed again. The two
   resets that make vboot fall back from a slot on trial stay as they
-  were. Not tested on a machine: no reset by the watchdog was provoked
-  on either board yet.
+  were. On the M920x with rc1 a reset by the watchdog, armed from
+  Linux, logged *1 in a row* and the count went back at the confirmed
+  boot; the third reset in a row was tried only by writing the byte
+  ([docs/tests/v1.6.3/m920x-fsp](docs/tests/v1.6.3/m920x-fsp/README.md)).
 - **M920x: a reset by the watchdog is reported once** (patch 0267): its
   status in `OC_WDT_CTL` was logged and never cleared, so every boot
   after one would have said *the last reset came from the watchdog*; it
   is cleared after the log, as on the W541.
 - **Firmware watchdog and a slot older than v1.6.1**: such a slot has
-  no code for the watchdog. Whether its enable bit survives its own
-  reset is not known yet (no hang was provoked on a machine); if it
-  does, a fallback to that slot would be reset at every timeout. Turn
-  the watchdog on only with v1.6.1 or later in both slots.
+  no code for the watchdog. On the M920x its reset is a global reset of
+  the platform and the enable bit does not survive it (WDT-02 with rc1
+  and v1.6.2), so a fallback to an older slot is not reset again; on the
+  W541 that is not measured yet. Turn the watchdog on only with v1.6.1
+  or later in both slots.
+- **M920x: the setup options are reset only when the CMOS was lost
+  too** (patch 0270): the OS can set the RTC power loss bit on Cannon
+  Point as on Lynx Point (OPT-06, set and cleared from Linux on the
+  M920x), so the bit alone would have reset every option at the next
+  boot, *BIOS Lock* and *Firmware protection* among them. As on the W541
+  (patch 0256), the CMOS must have lost the last boot's POST code too; a
+  bit set by software is cleared and logged (*Setup options: not reset,
+  RTC power lost but the CMOS kept the last boot*). Not run on a machine
+  yet.
 - **A coreboot table of 64 KiB** (patch 0269): the setup menu is one
   record of the coreboot table, 28.2 KiB of the 32 on the W541, and
   help texts were shortened twice to add an option (patches 0261,

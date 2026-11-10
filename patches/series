@@ -261,3 +261,4 @@
 0267-soc-intel-cannonlake-Clear-the-watchdog-s-reset-stat.patch
 0268-sb-intel-lynxpoint-soc-intel-cannonlake-Cap-the-firm.patch
 0269-arch-x86-A-coreboot-table-of-64-KiB.patch
+0270-soc-intel-cannonlake-Reset-the-setup-options-only-wh.patch

@@ -1,0 +1,103 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 10 Nov 2026 07:19:19 +0100
+Subject: [PATCH] soc/intel/cannonlake: Reset the setup options only when the
+ CMOS was lost too
+
+The setup options are reset when RTC_PWR_STS says that the RTC lost
+power. On Cannon Point that bit, GEN_PMCON_B bit 2, is read-write: on a
+ThinkCentre M920x under Linux, writing 1 to it reads back 1
+(0x00062210 -> 0x00062214) and writing 0 clears it. The OS, or any root
+process, could then reset every option at the next boot, BIOS Lock and
+Firmware protection among them.
+
+With CMOS_POST, which the M920x builds have, also require that the CMOS
+lost its contents, as the W541 does since patch 0256 of ouroBIOS: the
+bootblock then finds no valid bank mark and clears both banks
+(cmos_post_init()), so the previous boot reads as code 0 with no extra.
+A real power loss of the RTC well does that; the bit set by software
+leaves the code of the boot before.
+
+Clear a bit set without a lost CMOS in romstage, in the register and in
+the power state snapshot that rtc_init() reads through
+soc_get_rtc_failed(): rtc_init() would take it for a power loss and zero
+the CMOS, CMOS_POST included, and since pmc_final() clears the bit only
+after a reset of the options, the next boot would find the CMOS lost
+with the bit still set and reset them. A real loss loses the bank mark
+too, and keeps the bit.
+
+Software that also rewrites the CMOS bytes of CMOS_POST can still do
+it: the check is against a stray bit, not against root.
+
+TEST=Built in the CI of ouroBIOS. On the M920x the bit was set and cleared from Linux with
+v1.6.2 (OPT-06 of the v1.6.3 tests); the run with the patch is to come.
+---
+ src/soc/intel/cannonlake/romstage/romstage.c | 35 +++++++++++++++++++-
+ 1 file changed, 34 insertions(+), 1 deletion(-)
+
+diff --git a/src/soc/intel/cannonlake/romstage/romstage.c b/src/soc/intel/cannonlake/romstage/romstage.c
+index f6aeda71eda..fb2a5b50f9f 100644
+--- a/src/soc/intel/cannonlake/romstage/romstage.c
++++ b/src/soc/intel/cannonlake/romstage/romstage.c
+@@ -3,6 +3,7 @@
+ #include <arch/romstage.h>
+ #include <cbmem.h>
+ #include <console/console.h>
++#include <device/mmio.h>
+ #include <drivers/efi/option.h>
+ #include <fsp/util.h>
+ #include <intelblocks/cfg.h>
+@@ -10,6 +11,7 @@
+ #include <intelblocks/pmclib.h>
+ #include <intelblocks/smbus.h>
+ #include <memory_info.h>
++#include <post.h>
+ #include <soc/intel/common/smbios.h>
+ #include <soc/iomap.h>
+ #include <soc/pci_devs.h>
+@@ -122,13 +124,44 @@ static void save_dimm_info(void)
+ /*
+  * The RTC lost power (a CMOS clear): reset the setup options too, which live
+  * in SMMSTORE and not in the CMOS. Before FSP-M, which reads them.
++ *
++ * On Cannon Point the OS can set RTC_PWR_STS too (GEN_PMCON_B bit 2 is
++ * read-write, checked on a ThinkCentre M920x): the bit alone would let software
++ * reset every option at the next boot. With CMOS_POST the deletion also needs
++ * the CMOS to have lost its contents: the bootblock then found no valid bank
++ * mark and cleared both banks (cmos_post_init()), so the previous boot reads as
++ * code 0 with no extra. Any boot that ran before left a code there, so a reset
++ * between the deletion and pmc_final(), which clears the bit, does not repeat
++ * it either.
+  */
+-static bool reset_options_on_rtc_failure(const struct chipset_power_state *ps)
++static bool reset_options_on_rtc_failure(struct chipset_power_state *ps)
+ {
+ 	if (!CONFIG(DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE) ||
+ 	    !(ps->gen_pmcon_b & RTC_BATTERY_DEAD))
+ 		return false;
+ 
++	if (CONFIG(CMOS_POST)) {
++		u32 extra;
++		u8 code;
++
++		cmos_post_previous_boot(&code, &extra);
++		if (code || extra) {
++			printk(BIOS_WARNING, "Setup options: not reset, RTC power lost but the "
++			       "CMOS kept the last boot (POST 0x%02x/0x%08x)\n", code, extra);
++			/*
++			 * Clear the stray bit, in the register and in the snapshot
++			 * that rtc_init() reads: it would take it for a power loss
++			 * and zero the CMOS, CMOS_POST included, so that the next
++			 * boot finds the CMOS lost with the bit still set (only a
++			 * reset of the options clears it) and resets them. A real
++			 * loss loses the bank mark too, and keeps the bit.
++			 */
++			clrbits8(pmc_mmio_regs() + GEN_PMCON_B, RTC_BATTERY_DEAD);
++			ps->gen_pmcon_b &= ~RTC_BATTERY_DEAD;
++			return false;
++		}
++	}
++
+ 	return efi_option_reset_all() == CB_SUCCESS;
+ }
+ 

@@ -16,7 +16,7 @@ is here. None of it is a promise of a date.
 | [Capsule regions in the payload](#capsule-regions-in-the-payload) | both | done in v1.6.0 (`edk2/0045`): the payload writes only the two slots and `RW_MRC_CACHE`, and on a flash with both slots only an update of one slot at a time | a new region in `PcdFmpDeviceSmmAllowedRegions` one release before any capsule that writes it |
 | [Variable store robustness](#variable-store-robustness) | both | looked at for v1.6.0: coreboot's all-or-nothing reader is upstream's choice, and the corner case of the reset is not one | none planned |
 | [Top Swap and the Protected Range test](#top-swap-and-the-protected-range-test) | M920x | the read-only part is never written by an update | FLASH-04 with the protection on; a map with room for a second bootblock |
-| [Settings reset on the W541](#settings-reset-on-the-w541) | W541 | on from v1.6.1: the OS can set the RTC power loss bit (checked on a W541), so the reset also needs the CMOS to have lost its contents (patch 0256); OPT-05 passed on a W541 with a simulated loss (2026-11-08) | a real loss (the coin cell out) when convenient |
+| [Settings reset on the W541](#settings-reset-on-the-w541) | both | on from v1.6.1: the OS can set the RTC power loss bit (checked on a W541), so the reset also needs the CMOS to have lost its contents (patch 0256); OPT-05 passed on a W541 with a simulated loss (2026-11-08); the M920x has the same read-write bit (OPT-06, 2026-11-10): patch 0270 | a real loss (the coin cell out) when convenient; the stray bit and OPT-05 on the M920x with 0270 |
 | [Memory training across updates on the W541](#memory-training-across-updates-on-the-w541) | W541 | built for v1.6.1 (patches 0250-0252): the version of the cache is a tag and a key from the code (`nri`) or from the inputs of `mrc.bin`; the capsules and *Go back to* keep the cache; MEM-03 passed on a W541 (2026-11-08) | a capsule update and a fallback to an older slot on a W541; `mrc` |
 | [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | done in v1.6.0 (patch 0222): a Kconfig for the version, and `tools/fspm-settings.sh` stops CI when the files of those settings change | the first bump, with the release that changes them |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
@@ -317,6 +317,14 @@ event as before. Off up to v1.6.0; on from v1.6.1
   (`Setup options: not reset, RTC power lost but the CMOS kept the last
   boot`). Root can still rewrite those CMOS bytes too; the defaults keep
   *BIOS Lock* and *Firmware protection* on. To run: OPT-05 on the W541.
+- **The M920x too** (2026-11-10): bit 2 of `GEN_PMCON_B` (0xfe001024)
+  is read-write on Cannon Point as well: writing 1 read back
+  `0x00062214`, writing 0 `0x00062210` again (OPT-06,
+  [docs/tests/v1.6.3/m920x-fsp](tests/v1.6.3/m920x-fsp/README.md)).
+  Patch 0270 adds the same check to Cannon Lake romstage, and clears a
+  stray bit in the power state snapshot too, which `rtc_init()` reads
+  there. To run: the bit set from Linux and a reboot (the options kept,
+  the *not reset* line), then OPT-05 on the M920x.
 
 ## Memory training across updates on the W541
 
