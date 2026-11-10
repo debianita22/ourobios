@@ -1,0 +1,84 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 10 Nov 2026 11:45:15 +0100
+Subject: [PATCH] sb/intel/lynxpoint: Optionally keep LTR control from the OS
+
+The _OSC of the PCI host bridge grants the OS whatever it asks for. An
+OS that controls LTR enables it on every device that has the
+capability, at enumeration and again at each resume, whatever coreboot
+set up. A board that has to leave LTR off on one device, because the
+latencies that device reports keep the package in PC2, cannot do so.
+
+Add SOUTHBRIDGE_INTEL_LYNXPOINT_FIRMWARE_LTR: with it, _OSC clears the
+LTR control bit of the request (and says that it masked a capability),
+and the OS leaves the LTR enable bits as coreboot programmed them.
+coreboot still enables LTR on the root ports and on the devices behind
+them, so nothing changes for a board that selects it but the device
+that its own code leaves without LTR.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: Ic1a5bd3846998d020d47bbe83b748492be0f1032
+---
+ src/southbridge/intel/lynxpoint/Kconfig      |  9 +++++++++
+ src/southbridge/intel/lynxpoint/acpi/pch.asl | 17 ++++++++++++++++-
+ 2 files changed, 25 insertions(+), 1 deletion(-)
+
+diff --git a/src/southbridge/intel/lynxpoint/Kconfig b/src/southbridge/intel/lynxpoint/Kconfig
+index 9cd297f505..254a9a8f8d 100644
+--- a/src/southbridge/intel/lynxpoint/Kconfig
++++ b/src/southbridge/intel/lynxpoint/Kconfig
+@@ -115,4 +115,13 @@ config SOUTHBRIDGE_INTEL_LYNXPOINT_GBE_OPTION
+ 	  off (and on again) with the LAN disable bit of BUC, in RW romstage,
+ 	  with one full reset when the bit changes.
+ 
++config SOUTHBRIDGE_INTEL_LYNXPOINT_FIRMWARE_LTR
++	bool
++	help
++	  The _OSC of the PCI host bridge keeps the control of LTR from the
++	  OS: the OS then leaves LTR as coreboot set it up, device by device,
++	  instead of enabling it on every device that reports it. For a board
++	  with a device whose latency reports keep the package in shallow
++	  C-states, which the board's code leaves without LTR.
++
+ endif
+diff --git a/src/southbridge/intel/lynxpoint/acpi/pch.asl b/src/southbridge/intel/lynxpoint/acpi/pch.asl
+index af064e326b..e3d40a24cf 100644
+--- a/src/southbridge/intel/lynxpoint/acpi/pch.asl
++++ b/src/southbridge/intel/lynxpoint/acpi/pch.asl
+@@ -93,16 +93,31 @@ Scope (\)
+ 
+ Method (_OSC, 4)
+ {
++	CreateDWordField (Arg3, 0, CDW1)
++
+ 	/* Check for proper GUID */
+ 	If (Arg0 == ToUUID ("33DB4D5B-1FF7-401C-9657-7441C03DD766"))
+ 	{
++#if CONFIG(SOUTHBRIDGE_INTEL_LYNXPOINT_FIRMWARE_LTR)
++		/* Everything but LTR, which stays as the firmware set it up */
++		If (SizeOf (Arg3) >= 12)
++		{
++			CreateDWordField (Arg3, 8, CDW3)
++			If (CDW3 & 0x20)
++			{
++				CDW3 &= ~0x20
++				/* Capabilities masked */
++				CDW1 |= 0x10
++			}
++		}
++#else
+ 		/* Let OS control everything */
++#endif
+ 		Return (Arg3)
+ 	}
+ 	Else
+ 	{
+ 		/* Unrecognized UUID */
+-		CreateDWordField (Arg3, 0, CDW1)
+ 		CDW1 |= 4
+ 		Return (Arg3)
+ 	}
+-- 
+2.56.0
+

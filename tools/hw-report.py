@@ -2293,6 +2293,12 @@ def saved_options(region):
     return out, info
 
 
+
+def same_build(bios, build):
+    """La versione SMBIOS (il W541 la scrive con l'ID Lenovo davanti, 'CBET4000
+    ouroBIOS-...') e' quella di una build trovata in uno slot."""
+    return bios == build or bios.endswith(" " + build) or build.endswith(bios)
+
 def check_dump(fw, rep, path):
     """ELOG-01, VB-02, OPT-01: registro degli eventi, RW_NVRAM e opzioni da una copia del flash."""
     if not path:
@@ -2358,7 +2364,7 @@ def check_dump(fw, rep, path):
             slot[st["tried"]], update.NV_RESULTS[st["result"]], slot[st["prev_tried"]],
             update.NV_RESULTS[st["prev_result"]], note)
         running = [n for n in ("FW_MAIN_A", "FW_MAIN_B") if n in areas and fw.bios and
-                   any(b.endswith(fw.bios) or b == fw.bios for b in update.region_builds(data, areas[n]))]
+                   any(same_build(fw.bios, b) for b in update.region_builds(data, areas[n]))]
         if fw.bios and not running:
             # una copia di prima di questo avvio puo' essere di prima dell'aggiornamento
             status = worst(status, "INFO" if stale else "WARN")

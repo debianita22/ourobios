@@ -7,10 +7,12 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.6.3
 
-Not released. What ran on a machine: nothing yet, the CI builds only.
-The tests of the candidate, and those still open from v1.6.2, are in
-`docs/test-v1.6.3-w541.md` and `docs/test-v1.6.3-m920x.md` of the `next`
-branch.
+Not released. What ran on a machine: rc1 on both boards, as a capsule
+from v1.6.2, and rc2 on the M920x, by an agent with nobody there (2026-11-09 and 10,
+[docs/tests/v1.6.3/w541-nri](docs/tests/v1.6.3/w541-nri/README.md),
+[docs/tests/v1.6.3/m920x-fsp](docs/tests/v1.6.3/m920x-fsp/README.md)),
+from the lists of `docs/test-v1.6.3-w541.md` and
+`docs/test-v1.6.3-m920x.md`; patches 0271-0272 came after rc2.
 
 - **The firmware watchdog is stopped whatever happens to the command**
   (patch 0266): the SMI handler stopped it only once the payload's
@@ -26,19 +28,22 @@ branch.
   third logs *Firmware watchdog: 3 resets in a row and no boot confirmed,
   not armed* and leaves it off, until a boot is confirmed again. The two
   resets that make vboot fall back from a slot on trial stay as they
-  were. On the M920x with rc1 a reset by the watchdog, armed from
-  Linux, logged *1 in a row* and the count went back at the confirmed
-  boot; the third reset in a row was tried only by writing the byte
-  ([docs/tests/v1.6.3/m920x-fsp](docs/tests/v1.6.3/m920x-fsp/README.md)).
+  were. Tested on both boards with rc1 and a reset by the watchdog
+  armed from Linux (WDT-02): the status bit is set after it, romstage
+  logs *1 in a row*, and SMM clears the count when the payload confirms
+  the boot; the third reset in a row was tried only by writing the byte
+  ([docs/tests/v1.6.3/m920x-fsp](docs/tests/v1.6.3/m920x-fsp/README.md),
+  [docs/tests/v1.6.3/w541-nri](docs/tests/v1.6.3/w541-nri/README.md)).
 - **M920x: a reset by the watchdog is reported once** (patch 0267): its
   status in `OC_WDT_CTL` was logged and never cleared, so every boot
   after one would have said *the last reset came from the watchdog*; it
   is cleared after the log, as on the W541.
 - **Firmware watchdog and a slot older than v1.6.1**: such a slot has
-  no code for the watchdog. On the M920x its reset is a global reset of
-  the platform and the enable bit does not survive it (WDT-02 with rc1
-  and v1.6.2), so a fallback to an older slot is not reset again; on the
-  W541 that is not measured yet. Turn the watchdog on only with v1.6.1
+  no code for the watchdog. On both boards its reset is a global reset
+  of the platform that keeps the training cache, and the enable bit
+  does not survive it (WDT-02 with rc1 and v1.6.2; on the W541
+  `OC_WDT_CTL` reads `0x02002000` after it), so a fallback to an older
+  slot is not reset again. Still, turn the watchdog on only with v1.6.1
   or later in both slots.
 - **M920x: the setup options are reset only when the CMOS was lost
   too** (patch 0270): the OS can set the RTC power loss bit on Cannon
@@ -56,6 +61,19 @@ branch.
   0264). The table has 64 KiB now; what is written to it does not
   change. `tools/cfr-dump.sh` takes the size from the tree and leaves
   4 KiB of it to the other records: 60 KiB for the menu.
+- **W541: the card reader no longer keeps the package awake** (patches
+  0271, 0272): after most resumes from S3, and after some boots, the
+  O2 Micro card reader reported latencies over LTR that kept the
+  package in PC2 at idle: about 9 W instead of 1 W with the screen off
+  or the lid closed. coreboot now leaves LTR off on that device, and the
+  `_OSC` of the PCI host bridge keeps the control of LTR from the OS, so
+  that it does not enable it again; the other devices keep their LTR.
+  Measured with the bit cleared from Linux by hand (PC7 at 1.5 W after
+  each resume); the build itself is to be tested.
+- **`tools/hw-report.py`: VB-02 recognizes the running slot on the
+  W541**: it compared the SMBIOS version, which the W541 writes with the
+  Lenovo ID in front (`CBET4000 ouroBIOS-...`), against the build names
+  of the slots the wrong way round, and gave WARN at every boot.
 - **The author of patches 0246-0265**: their `From:` was git's
   placeholder identity, as the author of the commits of 2026-11-08 and
   2026-11-09 that are in the tags v1.6.1 and v1.6.2. The patches are

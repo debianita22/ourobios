@@ -258,7 +258,7 @@ or *manual*.
 
 | ID | Board | How to run | Pass criteria | Auto |
 |---|---|---|---|---|
-| IDLE-01 | both | `hw-report.py --seconds 60` at idle, nothing running, on the W541 with the panel off: `sudo -v`, then the screen off (Hyprland `hyprctl dispatch dpms off`; with its Lua configuration `hyprctl dispatch 'hl.dsp.dpms({ action = "off" })'`; KDE Plasma `kscreen-doctor --dpms off`), `sleep 2; sudo python3 -I tools/hw-report.py --seconds 60 > hw-idle.txt`, and the screen on again (`on` in place of `off`) | PC6 and deeper ≥ 50%: M920x PC9 about 85% and package about 0.5 W, W541 PC6 about 90% with the screen off (with its 3K panel on, the W541 stays in PC2: INFO, known) | IDLE-01 |
+| IDLE-01 | both | `hw-report.py --seconds 60` at idle, nothing running, on the W541 with the panel off: `sudo -v`, then the screen off (Hyprland `hyprctl dispatch dpms off`; with its Lua configuration `hyprctl dispatch 'hl.dsp.dpms({ action = "off" })'`; KDE Plasma `kscreen-doctor --dpms off`), `sleep 2; sudo python3 -I tools/hw-report.py --seconds 60 > hw-idle.txt`, and the screen on again (`on` in place of `off`) | PC6 and deeper ≥ 50%: M920x PC9 about 85% and package about 0.5 W, W541 PC6 about 90% with the screen off (with its 3K panel on, the W541 stays in PC2: INFO, known); on the W541 run it again after a resume from S3 (`rtcwake -m mem -s 30`): up to v1.6.3-rc2 the card reader's LTR kept the package in PC2 after most resumes (patch 0272), which `lspci -vvv -s 01:00.0` shows as `DevCtl2: ... LTR+` | IDLE-01 |
 | IDLE-02 | both | `sudo python3 tools/idle-report.py --seconds 60` ([docs/flashing.md](flashing.md#power-at-idle)) | no device keeping the package awake: ASPM, LTR, runtime PM, SATA LPM as that section describes | partial (PCI-01) |
 
 ### Suspend (S3)

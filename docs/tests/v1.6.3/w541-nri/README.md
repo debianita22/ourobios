@@ -91,13 +91,25 @@ new coreboot pin, or the payload. Not bisected; files in
 any case (known), so a user sees it only with the screen off or the lid
 closed.
 
+Followed up on 2026-11-10 on v1.6.2 ([sd-fix/](sd-fix/)): the state is
+not tied to S3, a cold boot showed it too (PC2 93.6% with the screen
+off before any resume), so the good reading of v1.6.1-rc4 does not make
+it a regression of v1.6.2. Clearing the reader's *LTR Mechanism Enable*
+(DevCtl2 bit 10) took the package to PC7 84% (1.5 W) at once, and it
+stayed there across a resume; clock PM and ASPM off changed nothing,
+nor did writing its Max Snoop Latency, which reads 0 in every state
+while coreboot programs 3146 µs (the no-snoop one reads 3146 µs). The
+reader reports latencies that depend on a state inside it. Fixed by
+patches 0271-0272, after rc2: LTR left off on the reader, and `_OSC`
+keeps the control of LTR from the OS.
+
 ## A bug of hw-report.py
 
-VB-02 says *CBET4000 ouroBIOS-v1.6.3-rc1-nri non e' in nessuno slot
+Fixed on `next` (2026-11-10). VB-02 said *CBET4000 ouroBIOS-v1.6.3-rc1-nri non e' in nessuno slot
 della copia* at every boot: it looks for the running version with
 `b.endswith(fw.bios)`, where the SMBIOS version (`CBET4000 ouroBIOS-...`)
 is the longer string and the slot's build name the shorter; the test
-wants the other way round. The vboot state itself is right.
+wanted the other way round. The vboot state itself was right.
 
 ## The end
 

@@ -262,3 +262,5 @@
 0268-sb-intel-lynxpoint-soc-intel-cannonlake-Cap-the-firm.patch
 0269-arch-x86-A-coreboot-table-of-64-KiB.patch
 0270-soc-intel-cannonlake-Reset-the-setup-options-only-wh.patch
+0271-sb-intel-lynxpoint-Optionally-keep-LTR-control-from-.patch
+0272-mb-lenovo-haswell-The-W541-s-card-reader-without-LTR.patch

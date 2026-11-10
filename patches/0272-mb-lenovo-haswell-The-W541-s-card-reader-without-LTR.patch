@@ -1,0 +1,98 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 10 Nov 2026 11:46:55 +0100
+Subject: [PATCH] mb/lenovo/haswell: The W541's card reader without LTR
+
+On the ThinkPad W541 of the port the package stays in PC2 at idle,
+about 9 W with the screen off instead of 1 W in PC7, after most resumes
+from S3 and after some boots. The O2 Micro OZ777 card reader (1217:8520,
+behind root port 1) holds it there, through LTR: with its LTR enable bit
+cleared the package reaches PC7 at once (84%, 1.5 W) and stays there
+across resumes; unbinding its driver does the same, binding it again
+or a resume brings the PC2 back. Its config space and its SDHCI
+registers read the same in both states, and writing its Max Snoop
+Latency (which reads 0) changes nothing: the latencies it reports
+depend on a state inside the chip.
+
+Clear LTR on that device in its init, after the bus scan enabled it,
+and select SOUTHBRIDGE_INTEL_LYNXPOINT_FIRMWARE_LTR so that the OS does
+not enable it again. The other devices keep the LTR that coreboot
+enables. An SD reader needs no latency guarantee from the package: its
+transfers are buffered and slow.
+
+TEST=Build of the ThinkPad W541 with the native RAM init; the reader's
+LTR cleared from Linux by hand: PC7 at idle after each of the resumes
+that showed PC2 before.
+
+Change-Id: I67d72d944719c0e307a49abe0e3495cbc1afee4b
+---
+ src/mainboard/lenovo/haswell/Kconfig     |  1 +
+ src/mainboard/lenovo/haswell/mainboard.c | 40 ++++++++++++++++++++++++
+ 2 files changed, 41 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/Kconfig b/src/mainboard/lenovo/haswell/Kconfig
+index 08cd64055e..9ca9ff6ded 100644
+--- a/src/mainboard/lenovo/haswell/Kconfig
++++ b/src/mainboard/lenovo/haswell/Kconfig
+@@ -41,6 +41,7 @@ config BOARD_LENOVO_THINKPAD_T440P
+ config BOARD_LENOVO_THINKPAD_W541
+ 	select BOARD_LENOVO_HASWELL_COMMON
+ 	select SOUTHBRIDGE_INTEL_LYNXPOINT_GBE_OPTION
++	select SOUTHBRIDGE_INTEL_LYNXPOINT_FIRMWARE_LTR
+ 
+ if BOARD_LENOVO_HASWELL_COMMON
+ 
+diff --git a/src/mainboard/lenovo/haswell/mainboard.c b/src/mainboard/lenovo/haswell/mainboard.c
+index 265c805226..aca75d7e02 100644
+--- a/src/mainboard/lenovo/haswell/mainboard.c
++++ b/src/mainboard/lenovo/haswell/mainboard.c
+@@ -93,6 +93,46 @@ static void disable_root_port_link(unsigned int func, const char *what)
+ 	pci_or_config16(rp, cap + PCI_EXP_LNKCTL, PCI_EXP_LNKCTL_LD);
+ }
+ 
++/*
++ * The card reader of the W541, an O2 Micro OZ777 (1217:8520) behind root port
++ * 1, without LTR. With LTR on, it reports latencies that keep the package in
++ * PC2 at idle (about 9 W instead of 1 W with the screen off) after most resumes
++ * from S3 and after some boots, until its driver is unbound or bound again;
++ * with LTR off the package reaches PC7 in every case. Its config space and its
++ * SDHCI registers read the same in both states, and its Max Snoop Latency does
++ * not change it. coreboot enabled LTR on it while scanning the bus: clear it
++ * here, and SOUTHBRIDGE_INTEL_LYNXPOINT_FIRMWARE_LTR keeps the OS from
++ * enabling it again.
++ */
++static void card_reader_init(struct device *dev)
++{
++	unsigned int cap;
++
++	if (!CONFIG(BOARD_LENOVO_THINKPAD_W541))
++		return;
++
++	cap = pci_find_capability(dev, PCI_CAP_ID_PCIE);
++	if (!cap)
++		return;
++
++	pci_and_config16(dev, cap + PCI_EXP_DEVCTL2, (u16)~PCI_EXP_DEV2_LTR);
++	printk(BIOS_INFO, "Card reader: LTR off on %s\n", dev_path(dev));
++}
++
++static struct device_operations card_reader_ops = {
++	.read_resources		= pci_dev_read_resources,
++	.set_resources		= pci_dev_set_resources,
++	.enable_resources	= pci_dev_enable_resources,
++	.init			= card_reader_init,
++	.ops_pci		= &pci_dev_ops_pci,
++};
++
++static const struct pci_driver card_reader_driver __pci_driver = {
++	.ops	= &card_reader_ops,
++	.vendor	= 0x1217,
++	.device	= 0x8520,
++};
++
+ /*
+  * Whether the DMAR table has the remapping engine of the PCIe devices, as
+  * northbridge_write_acpi_tables() and acpi_fill_dmar() decide it: VT-d in the
+-- 
+2.56.0
+

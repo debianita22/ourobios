@@ -10,7 +10,7 @@ is here. None of it is a promise of a date.
 
 | Item | Boards | Why not now | Next step |
 |---|---|---|---|
-| [Firmware watchdog](#firmware-watchdog) | both | built in v1.6.1 for the M920x (patches 0238-0240) and the W541 (patches 0254-0255), off by default; on a W541 armed at 300 s and stopped at the slot confirmation (WDT-01, 2026-11-08); on the M920x a reset by it is a global reset, its status bit is set and its enable bit does not survive (WDT-02, 2026-11-09) | the armed path on the M920x from the setup (the owner); WDT-02 on the W541; a real hang with a long timeout on either |
+| [Firmware watchdog](#firmware-watchdog) | both | built in v1.6.1 for the M920x (patches 0238-0240) and the W541 (patches 0254-0255), off by default; on a W541 armed at 300 s and stopped at the slot confirmation (WDT-01, 2026-11-08); on both a reset by it is a global reset that keeps the training cache, its status bit is set and its enable bit does not survive (WDT-02, 2026-11-09) | the armed path from the setup on both (the owner); a real hang with a long timeout on either |
 | [Firmware update mode](#firmware-update-mode) | both | decided on 2026-11-05: not made; capsules need none of it, and a one-shot of the protections and Secure Boot is security code that can fail open | none planned; `update.py other-slot` reminds to turn *BIOS Lock* on again |
 | [DMA protection](#dma-protection) | M920x | no pre-boot DMA protection to report; the FSP-M has no PMR data; the help of *Intel VT-d* reworded in v1.5.0 (patch 0206); no Thunderbolt card at hand (2026-11-09) | none planned: the slot of the card for its `ExternalFacingPort`, when a card is at hand |
 | [Capsule regions in the payload](#capsule-regions-in-the-payload) | both | done in v1.6.0 (`edk2/0045`): the payload writes only the two slots and `RW_MRC_CACHE`, and on a flash with both slots only an update of one slot at a time | a new region in `PcdFmpDeviceSmmAllowedRegions` one release before any capsule that writes it |
@@ -125,11 +125,20 @@ the bootblock at every boot, so the TCO is out on two counts; no `WDAT`
   count of 0268 was tried by writing CMOS byte 0x7e (WDT-03): the mark
   `0xa0` stays across boots and resumes, a byte without it reads as no
   reset, the confirmation clears a count of 3.
-- **Still open**: on the W541 the same questions (WDT-02 of its file);
-  on the M920x the armed path from the setup (WDT-01, then the last step
-  of WDT-03 with a count of 3 and the watchdog on), which needs the
-  owner at the setup; a real firmware hang with the timeout of 5
-  minutes.
+- **Answered on the W541** (WDT-02, 2026-11-09, on v1.6.3-rc1 and on
+  v1.6.2, [docs/tests/v1.6.3/w541-nri](tests/v1.6.3/w541-nri/README.md)):
+  armed from Linux at 120 s, the watchdog resets the machine with a
+  global reset (the ME logs *Clean global reset*, a plain reboot
+  *Pseudo-global reset*), which keeps the training cache; after it
+  `OC_WDT_CTL` reads `0x02002000`: ICCSURV_STS set, the enable bit
+  clear. So a slot without the feature is not reset again, and the
+  count of patch 0268 works (romstage logs *1 in a row*, SMM clears it).
+  vboot does not count the reset against the slot, though its result
+  for the slot reads *unknown* after it instead of *confirmed*.
+- **Still open**: on both boards the armed path from the setup (WDT-01,
+  then the last step of WDT-03 with a count of 3 and the watchdog on),
+  which needs the owner at the setup; a real firmware hang with the
+  timeout of 5 minutes.
 
 ## Firmware update mode
 
