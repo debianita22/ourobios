@@ -158,6 +158,21 @@ protections on.
 Nothing of rc3's own changes runs on the M920x (they are the W541's);
 the run is a regression check, and it found none.
 
+## rc4: patch 0273
+
+v1.6.3-rc4 (`next` a91b184: patch 0273, one walk of the store for the
+option lock, and 0274 for the W541), 2026-11-10, the same way as rc3:
+back to v1.6.2 in slot B, then rc4 from v1.6.2 into slot A, both
+protections on.
+
+| ID | Result | Notes |
+|---|---|---|
+| UPD-05, UPD-02 | PASS | v1.6.2 from slot B after the rollback; rc4 from slot A, *ultimo: v1.6.3-rc4, riuscito* |
+| VAR-01 | PASS | **median 0.292 s** a write (worst 0.296), 6 to 8 SMIs as before, **44 ms an SMI** against 84 on rc3 ([rc4/var-01-rc4.txt](rc4/var-01-rc4.txt)): half, as one walk of the store instead of two would give. The option lock armed (`06 00 00 00` and eight zeros); the writes allowed as before, also after a resume. That it still refuses a write that turns an option off needs a raw SMMSTORE write, which these tests do not issue; the unit test of `efi_fv_get_options()` covers the lookup |
+| — | PASS | report 22 PASS at the first boot, 24 PASS and 3 INFO with a copy of the flash after a reboot (the third INFO the ME's wait of patch 0191, 5.23 s in FspMemoryInit that boot) ([rc4/hw-rc4-2.md](rc4/hw-rc4-2.md)); VB-02 A confirmed; the 36 options those of the baseline |
+| CONF-02, CONF-03 | PASS | every ACPI table byte for byte that of rc1; fwts 43 passed, 0 failed |
+| FLASH-01, WDT-01, S3-01 | PASS | PR0 and PR1, also after a resume; the watchdog off (`0x00002000`); bit 2 of `GEN_PMCON_B` clear |
+
 ## VAR-01: where the time of a write goes
 
 On rc2, 2026-11-10: `MSR_SMI_COUNT` (0x34) read around each
