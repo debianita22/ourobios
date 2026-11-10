@@ -1,0 +1,12 @@
+273  2026-11-09 21:49:11  System reset             
+274  2026-11-09 21:55:05  System boot              137
+275  2026-11-09 21:55:05  ACPI wake                S5
+276  2026-11-09 21:58:28  System boot              138
+277  2026-11-09 21:58:28  System reset             
+278  2026-11-09 22:02:57  System boot              139
+279  2026-11-09 22:02:57  System reset             
+280  2026-11-09 22:03:19  System boot              140
+281  2026-11-09 22:03:19  System reset             
+282  2026-11-09 22:06:58  System boot              141
+283  2026-11-09 22:06:58  ACPI wake                S5
+284 eventi, 3227 byte usati

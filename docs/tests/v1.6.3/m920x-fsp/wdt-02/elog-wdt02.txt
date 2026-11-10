@@ -1,0 +1,277 @@
+  0  2026-10-31 17:58:13  System reset             
+  1  2026-10-31 20:26:20  System boot              45
+  2  2026-10-31 20:26:20  System reset             
+  3  2026-10-31 20:30:22  System boot              46
+  4  2026-10-31 20:30:22  Power fail               
+  5  2026-10-31 20:30:22  SUS power fail           
+  6  2026-10-31 20:30:22  ACPI wake                S5
+  7  2026-10-31 22:44:42  System boot              47
+  8  2026-10-31 22:44:42  System reset             
+  9  2026-10-31 22:46:31  System boot              48
+ 10  2026-10-31 22:46:31  System reset             
+ 11  2026-10-31 22:48:18  System boot              49
+ 12  2026-10-31 22:48:18  System reset             
+ 13  2026-10-31 22:52:08  System boot              50
+ 14  2026-10-31 22:52:08  System reset             
+ 15  2026-10-31 22:53:59  System boot              51
+ 16  2026-10-31 22:53:59  System reset             
+ 17  2026-11-01 08:22:20  System boot              52
+ 18  2026-11-01 08:22:20  System reset             
+ 19  2026-11-01 09:00:37  System boot              53
+ 20  2026-11-01 09:00:37  System reset             
+ 21  2026-11-01 09:44:51  System boot              54
+ 22  2026-11-01 09:44:51  System reset             
+ 23  2026-11-01 20:34:35  System boot              55
+ 24  2026-11-01 20:34:35  System reset             
+ 25  2026-11-01 21:03:05  System boot              56
+ 26  2026-11-01 21:03:05  System reset             
+ 27  2026-11-01 21:34:33  System boot              57
+ 28  2026-11-01 21:34:33  System reset             
+ 29  2026-11-02 08:27:42  System boot              58
+ 30  2026-11-02 08:27:42  System reset             
+ 31  2026-11-02 11:21:39  System boot              59
+ 32  2026-11-02 11:21:39  System reset             
+ 33  2026-11-02 12:31:02  System boot              60
+ 34  2026-11-02 12:31:02  System reset             
+ 35  2026-11-02 12:31:39  System boot              61
+ 36  2026-11-02 12:31:39  System reset             
+ 37  2026-11-02 12:36:06  System boot              62
+ 38  2026-11-02 12:36:06  System reset             
+ 39  2026-11-02 13:09:54  System boot              63
+ 40  2026-11-02 13:09:54  System reset             
+ 41  2026-11-02 13:42:22  System boot              64
+ 42  2026-11-02 13:42:22  System reset             
+ 43  2026-11-02 13:45:35  System boot              65
+ 44  2026-11-02 13:45:35  System reset             
+ 45  2026-11-03 17:46:37  System boot              66
+ 46  2026-11-03 17:46:37  System reset             
+ 47  2026-11-03 17:53:06  System boot              67
+ 48  2026-11-03 17:53:06  System reset             
+ 49  2026-11-03 17:57:47  System boot              68
+ 50  2026-11-03 17:57:47  System reset             
+ 51  2026-11-03 17:58:13  System boot              69
+ 52  2026-11-03 17:58:13  System reset             
+ 53  2026-11-03 18:10:08  System boot              70
+ 54  2026-11-03 18:10:08  System reset             
+ 55  2026-11-03 18:20:16  System boot              71
+ 56  2026-11-03 18:20:16  System reset             
+ 57  2026-11-03 18:24:51  System boot              72
+ 58  2026-11-03 18:24:51  System reset             
+ 59  2026-11-03 18:25:20  System boot              73
+ 60  2026-11-03 18:25:20  System reset             
+ 61  2026-11-03 18:27:59  ACPI wake                S3
+ 62  2026-11-03 18:27:59  Wake source              RTC alarm
+ 63  2026-11-03 18:28:45  ACPI wake                S3
+ 64  2026-11-03 18:28:45  Wake source              RTC alarm
+ 65  2026-11-03 18:29:36  ACPI wake                S3
+ 66  2026-11-03 18:29:36  Wake source              RTC alarm
+ 67  2026-11-03 18:30:22  ACPI wake                S3
+ 68  2026-11-03 18:30:22  Wake source              RTC alarm
+ 69  2026-11-03 18:31:08  ACPI wake                S3
+ 70  2026-11-03 18:31:08  Wake source              RTC alarm
+ 71  2026-11-03 18:40:21  System boot              74
+ 72  2026-11-03 18:40:21  System reset             
+ 73  2026-11-03 18:40:44  System boot              75
+ 74  2026-11-03 18:40:44  System reset             
+ 75  2026-11-03 18:45:04  System boot              76
+ 76  2026-11-03 18:45:04  System reset             
+ 77  2026-11-03 18:52:41  System boot              77
+ 78  2026-11-03 18:52:41  System reset             
+ 79  2026-11-03 18:58:24  System boot              78
+ 80  2026-11-03 18:58:24  System reset             
+ 81  2026-11-03 19:33:20  System boot              79
+ 82  2026-11-03 19:33:20  System reset             
+ 83  2026-11-03 19:33:49  System boot              80
+ 84  2026-11-03 19:33:49  System reset             
+ 85  2026-11-03 19:34:07  System boot              81
+ 86  2026-11-03 19:34:07  ACPI wake                S5
+ 87  2026-11-03 19:34:07  Wake source              power button
+ 88  2026-11-03 20:31:42  System boot              82
+ 89  2026-11-03 20:31:43  System reset             
+ 90  2026-11-03 22:10:30  System boot              83
+ 91  2026-11-03 22:10:30  System reset             
+ 92  2026-11-03 22:11:11  System boot              84
+ 93  2026-11-03 22:11:11  System reset             
+ 94  2026-11-03 22:27:56  ACPI wake                S3
+ 95  2026-11-03 22:27:56  Wake source              RTC alarm
+ 96  2026-11-03 22:28:34  ACPI wake                S3
+ 97  2026-11-03 22:28:34  Wake source              RTC alarm
+ 98  2026-11-03 22:29:17  ACPI wake                S3
+ 99  2026-11-03 22:29:17  Wake source              RTC alarm
+100  2026-11-03 22:30:00  ACPI wake                S3
+101  2026-11-03 22:30:00  Wake source              RTC alarm
+102  2026-11-03 22:30:43  ACPI wake                S3
+103  2026-11-03 22:30:43  Wake source              RTC alarm
+104  2026-11-03 22:45:05  System boot              85
+105  2026-11-03 22:45:05  System reset             
+106  2026-11-03 22:54:03  System boot              86
+107  2026-11-03 22:54:03  ACPI wake                S5
+108  2026-11-03 22:54:03  Wake source              RTC alarm
+109  2026-11-04 05:54:16  System boot              87
+110  2026-11-04 05:54:16  System reset             
+111  2026-11-04 06:21:14  System boot              88
+112  2026-11-04 06:21:14  System reset             
+113  2026-11-04 06:21:53  System boot              89
+114  2026-11-04 06:21:53  System reset             
+115  2026-11-04 07:01:28  ACPI wake                S3
+116  2026-11-04 07:01:28  Wake source              RTC alarm
+117  2026-11-04 07:02:10  ACPI wake                S3
+118  2026-11-04 07:02:10  Wake source              RTC alarm
+119  2026-11-04 07:02:52  ACPI wake                S3
+120  2026-11-04 07:02:52  Wake source              RTC alarm
+121  2026-11-04 07:03:29  ACPI wake                S3
+122  2026-11-04 07:03:29  Wake source              RTC alarm
+123  2026-11-04 07:04:10  ACPI wake                S3
+124  2026-11-04 07:04:10  Wake source              RTC alarm
+125  2026-11-05 10:10:34  System boot              90
+126  2026-11-05 10:10:34  System reset             
+127  2026-11-05 10:11:03  System boot              91
+128  2026-11-05 10:11:03  System reset             
+129  2026-11-05 11:16:48  System boot              92
+130  2026-11-05 11:16:48  System reset             
+131  2026-11-05 11:17:22  System boot              93
+132  2026-11-05 11:17:22  System reset             
+133  2026-11-05 12:32:34  System boot              94
+134  2026-11-05 12:32:34  System reset             
+135  2026-11-05 12:33:03  System boot              95
+136  2026-11-05 12:33:03  System reset             
+137  2026-11-05 12:38:50  ACPI wake                S3
+138  2026-11-05 12:38:50  Wake source              RTC alarm
+139  2026-11-05 12:39:32  ACPI wake                S3
+140  2026-11-05 12:39:32  Wake source              RTC alarm
+141  2026-11-05 12:40:09  ACPI wake                S3
+142  2026-11-05 12:40:09  Wake source              RTC alarm
+143  2026-11-05 12:40:51  ACPI wake                S3
+144  2026-11-05 12:40:51  Wake source              RTC alarm
+145  2026-11-05 12:41:28  ACPI wake                S3
+146  2026-11-05 12:41:28  Wake source              RTC alarm
+147  2026-11-05 12:44:11  System boot              96
+148  2026-11-05 12:44:11  System reset             
+149  2026-11-05 12:48:12  System boot              97
+150  2026-11-05 12:48:12  System reset             
+151  2026-11-05 20:19:15  System boot              98
+152  2026-11-05 20:19:15  System reset             
+153  2026-11-05 20:19:54  System boot              99
+154  2026-11-05 20:19:54  System reset             
+155  2026-11-05 20:25:11  ACPI wake                S3
+156  2026-11-05 20:25:11  Wake source              RTC alarm
+157  2026-11-05 20:25:48  ACPI wake                S3
+158  2026-11-05 20:25:48  Wake source              RTC alarm
+159  2026-11-05 20:26:25  ACPI wake                S3
+160  2026-11-05 20:26:25  Wake source              RTC alarm
+161  2026-11-05 20:27:02  ACPI wake                S3
+162  2026-11-05 20:27:02  Wake source              RTC alarm
+163  2026-11-05 20:27:44  ACPI wake                S3
+164  2026-11-05 20:27:44  Wake source              RTC alarm
+165  2026-11-05 20:32:13  System boot              100
+166  2026-11-05 20:32:13  System reset             
+167  2026-11-05 20:32:41  System boot              101
+168  2026-11-05 20:32:41  System reset             
+169  2026-11-05 20:36:29  System boot              102
+170  2026-11-05 20:36:29  System reset             
+171  2026-11-05 20:36:52  System boot              103
+172  2026-11-05 20:36:52  System reset             
+173  2026-11-06 15:05:17  System boot              104
+174  2026-11-06 15:05:18  System reset             
+175  2026-11-06 15:06:01  System boot              105
+176  2026-11-06 15:06:01  System reset             
+177  2026-11-06 16:38:48  System boot              106
+178  2026-11-06 16:38:48  System reset             
+179  2026-11-06 16:43:56  System boot              107
+180  2026-11-06 16:43:56  ACPI wake                S5
+181  2026-11-06 16:43:56  Wake source              RTC alarm
+182  2026-11-06 18:19:10  System boot              108
+183  2026-11-06 18:19:10  System reset             
+184  2026-11-06 18:19:37  System boot              109
+185  2026-11-06 18:19:37  System reset             
+186  2026-11-07 18:03:56  System boot              110
+187  2026-11-07 18:03:56  System reset             
+188  2026-11-07 18:04:35  System boot              111
+189  2026-11-07 18:04:35  System reset             
+190  2026-11-07 18:10:36  ACPI wake                S3
+191  2026-11-07 18:10:36  Wake source              RTC alarm
+192  2026-11-07 18:11:17  ACPI wake                S3
+193  2026-11-07 18:11:17  Wake source              RTC alarm
+194  2026-11-07 18:11:53  ACPI wake                S3
+195  2026-11-07 18:11:53  Wake source              RTC alarm
+196  2026-11-07 19:31:52  System boot              112
+197  2026-11-07 19:31:52  System reset             
+198  2026-11-07 19:32:25  System boot              113
+199  2026-11-07 19:32:25  System reset             
+200  2026-11-07 19:37:56  ACPI wake                S3
+201  2026-11-07 19:37:56  Wake source              RTC alarm
+202  2026-11-07 19:38:37  ACPI wake                S3
+203  2026-11-07 19:38:37  Wake source              RTC alarm
+204  2026-11-07 22:56:35  System boot              114
+205  2026-11-07 22:56:35  ACPI wake                S5
+206  2026-11-07 22:56:35  Wake source              RTC alarm
+207  2026-11-07 23:00:38  System boot              115
+208  2026-11-07 23:00:38  System reset             
+209  2026-11-07 23:01:05  System boot              116
+210  2026-11-07 23:01:05  System reset             
+211  2026-11-07 23:06:03  System boot              117
+212  2026-11-07 23:06:03  System reset             
+213  2026-11-07 23:06:30  System boot              118
+214  2026-11-07 23:06:30  System reset             
+215  2026-11-07 23:11:16  ACPI wake                S3
+216  2026-11-07 23:11:16  Wake source              RTC alarm
+217  2026-11-07 23:36:00  ACPI wake                S3
+218  2026-11-07 23:36:00  Wake source              RTC alarm
+219  2026-11-08 09:38:40  System boot              119
+220  2026-11-08 09:38:40  System reset             
+221  2026-11-08 09:39:11  System boot              120
+222  2026-11-08 09:39:11  System reset             
+223  2026-11-08 09:54:58  ACPI wake                S3
+224  2026-11-08 09:54:58  Wake source              RTC alarm
+225  2026-11-08 09:55:34  ACPI wake                S3
+226  2026-11-08 09:55:34  Wake source              RTC alarm
+227  2026-11-09 14:30:58  System boot              121
+228  2026-11-09 14:30:58  System reset             
+229  2026-11-09 14:31:30  System boot              122
+230  2026-11-09 14:31:30  System reset             
+231  2026-11-09 14:33:31  ACPI wake                S3
+232  2026-11-09 14:33:31  Wake source              RTC alarm
+233  2026-11-09 15:10:17  System boot              123
+234  2026-11-09 15:10:17  System reset             
+235  2026-11-09 15:10:48  System boot              124
+236  2026-11-09 15:10:48  System reset             
+237  2026-11-09 15:15:45  ACPI wake                S3
+238  2026-11-09 15:15:45  Wake source              RTC alarm
+239  2026-11-09 15:16:16  ACPI wake                S3
+240  2026-11-09 15:16:16  Wake source              RTC alarm
+241  2026-11-09 19:06:21  System boot              125
+242  2026-11-09 19:06:21  System reset             
+243  2026-11-09 19:06:55  System boot              126
+244  2026-11-09 19:06:55  System reset             
+245  2026-11-09 19:10:17  ACPI wake                S3
+246  2026-11-09 19:10:17  Wake source              RTC alarm
+247  2026-11-09 20:58:18  System boot              127
+248  2026-11-09 20:58:18  Log area cleared         1027 byte
+249  2026-11-09 20:58:18  System reset             
+250  2026-11-09 21:30:10  System boot              128
+251  2026-11-09 21:30:10  System reset             
+252  2026-11-09 21:30:45  System boot              129
+253  2026-11-09 21:30:45  System reset             
+254  2026-11-09 21:35:21  ACPI wake                S3
+255  2026-11-09 21:35:21  Wake source              RTC alarm
+256  2026-11-09 21:36:07  ACPI wake                S3
+257  2026-11-09 21:36:07  Wake source              RTC alarm
+258  2026-11-09 21:36:59  ACPI wake                S3
+259  2026-11-09 21:36:59  Wake source              RTC alarm
+260  2026-11-09 21:38:04  System boot              130
+261  2026-11-09 21:38:04  System reset             
+262  2026-11-09 21:40:52  System boot              131
+263  2026-11-09 21:40:52  System reset             
+264  2026-11-09 21:42:31  System boot              132
+265  2026-11-09 21:42:31  System reset             
+266  2026-11-09 21:44:03  System boot              133
+267  2026-11-09 21:44:03  System reset             
+268  2026-11-09 21:45:35  System boot              134
+269  2026-11-09 21:45:35  System reset             
+270  2026-11-09 21:47:11  System boot              135
+271  2026-11-09 21:47:11  System reset             
+272  2026-11-09 21:49:11  System boot              136
+273  2026-11-09 21:49:11  System reset             
+274  2026-11-09 21:55:05  System boot              137
+275  2026-11-09 21:55:05  ACPI wake                S5
+276 eventi, 3138 byte usati

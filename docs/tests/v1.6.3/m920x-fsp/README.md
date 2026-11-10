@@ -21,7 +21,7 @@ S3, whose log has no coreboot table line).
 | FLASH-06 | PASS | `06 00 00 00` and eight zeros |
 | VAR-01 | INFO | twenty writes of `Timeout` (`efibootmgr -q -t 4`/`-t 3`): median 0.533 s, worst 0.541 s, best 0.531 s; `efibootmgr -q` without a write takes 0.002 s, so the time is the write. Above the 0.5 s of the row ([part1/var-01-1.txt](part1/var-01-1.txt)); `Timeout` back at 3 s |
 | OPT-06 | to run | last of all (the order of the run). The address is confirmed: `cbmem -1` *GEN_PMCON: d8a01608 00002200*, `./mm r 0xfe001024` `0x00062210`, the difference only the lock bits 4, 17 and 18; bit 2 clear |
-| WDT-02 | to run | after this first push |
+| WDT-02 | PASS (on v1.6.2, the defect of 0267 seen) | see [WDT-02](#wdt-02-a-reset-by-the-watchdog) below |
 | NET-02 | not asked | no request from the W541 or the owner so far |
 
 ## Part 2: the candidate
@@ -34,6 +34,7 @@ riuscito*.
 | ID | Result | Notes |
 |---|---|---|
 | UPD-02, UPD-01 | PASS | the capsule written by the payload of v1.6.2 into slot A |
+| UPD-05 | PASS | back to v1.6.2 after WDT-02 on rc1: `update.py rollback` on a copy of the flash, a reboot, v1.6.2 from slot B, *ultimo: v1.6.2, riuscito*; rc1 kept in slot A |
 | — | PASS | report at the first boot 22 PASS ([rc1/hw-rc1-1.md](rc1/hw-rc1-1.md)), BOOT-01 `ouroBIOS-v1.6.3-rc1-m920x-fsp`; after a reboot, with a new copy of the flash, 25 PASS ([rc1/hw-rc1-2.md](rc1/hw-rc1-2.md)) |
 | MEM-03, BOOT-02 | PASS | *MRC: 'RW_MRC_CACHE' does not need update*, FspMemoryInit 0.25 s; 10.59 s to the payload |
 | TBL-01 | PASS | the `COREBOOT` entry 0x10000 bytes; *coreboot table: 18360 bytes* (8 more than v1.6.2: the version strings), *CFR: Written 16712 bytes*, no *didn't fit*; `cbmem` and the kernel read the table; OPT-01 the same 36 options with the same values |
@@ -45,7 +46,7 @@ riuscito*.
 | S3-01 | PASS | three `rtcwake -m mem -s 30`: three resumes, `suspend_stats/fail` 0; FLASH-01, TPM-03 and WDT-01 PASS after ([rc1/hw-rc1-s3.md](rc1/hw-rc1-s3.md)) |
 | WDT-03 | PASS (the agent's steps) | `0xa0` at the first boot of rc1 (the byte held `0x00`, CMOS-01), after each of the next five boots and after each of the three resumes; `0x55` written, after a reboot `0xa0`; `0xa3` written, after a reboot with *Firmware watchdog* Off no *resets in a row* line and `0xa0`. The RTC right after each write (`timedatectl`, chrony 0.000001 s from NTP). The step with the watchdog at 5 minutes needs the owner's visit of WDT-01 ([rc1/wdt-03.txt](rc1/wdt-03.txt)) |
 | VB-01, VB-02 | PASS | rc1 in slot A, current A confirmed; v1.6.2 in slot B ([rc1/vboot-rc1.txt](rc1/vboot-rc1.txt)) |
-| WDT-02 | to run | after this push |
+| WDT-02 | PASS | the line with the register and *1 in a row*, the status clear at the OS, `0xa0`, no line after a reboot: [WDT-02](#wdt-02-a-reset-by-the-watchdog) below |
 | WDT-01 | not run, needs the owner | the setup menu |
 
 Every boot of rc1 logs *Firmware watchdog: off (OC_WDT_CTL 0x00002000)*
@@ -56,6 +57,44 @@ The event log of the copy after rc1 has 262 events against 338 at the
 start: coreboot shrank it on 2026-11-09 at 20:58 UTC, on v1.6.2, at the
 boot of the baseline (*Log area cleared, 1027 bytes*), as it does when
 the log nears its 4 KiB. Nothing of rc1.
+
+## WDT-02, a reset by the watchdog
+
+The overclocking watchdog armed from Linux, `./pio w 0x1854 0x8000e077`
+(reload, enable, all modes, ICC survivability, 120 s; it read back
+`0x0000e077`), with no guest up and `sync` first. Once on rc1 (slot A)
+and, after the return to v1.6.2 (UPD-05, below), once on v1.6.2 (slot
+B). Files in [wdt-02](wdt-02).
+
+| What | rc1 | v1.6.2 |
+|---|---|---|
+| the reset | about 140 s after the arm (armed 22:52:41, the boot event of the next boot at 22:55:05, the kernel at 22:55:26) | about 148 s (armed 23:04:39, the kernel at 23:07:18 after 10.5 s of firmware) |
+| the line | *Firmware watchdog: the last reset came from the watchdog (OC_WDT_CTL 0x02002000), 1 in a row*, then *off (OC_WDT_CTL 0x00002000)* | *the last reset came from the watchdog* (no register, as expected), then *off (OC_WDT_CTL 0x02002000)* |
+| the enable bit | clear in `0x02002000`: it did **not** survive the reset | no *OC Watchdog: disabling watchdog timer* line: the same |
+| at the OS | `0x00002000`: the status cleared by the firmware; `./pio cr 0x7e` `0xa0` | `0x02002000`: bit 25 still set, v1.6.2 never clears it |
+| which status bit | bit 25 (the ICC survivability status: the arm set bit 13), bit 24 clear | the same |
+| a reboot | no watchdog line | the line again for a reset one boot old: the defect that 0267 corrects. Cleared by hand afterwards (`0x02002000` written back), `0x00002000` |
+| the slot | slot A, tries 0, no fallback | slot B, confirmed |
+
+**The kind of reset: a global reset of the platform**, not a reset of
+the host. Against a warm reboot of the same boards (`GEN_PMCON_A`
+`d8a01608`, `prev_sleep_state 0`), the boot after the watchdog has
+`GEN_PMCON_A` `d9801408`: `GBL_RST_STS` (bit 24) set, `MEM_SR` (bit 21)
+and `HOST_RST_STS` (bit 9) clear; `prev_sleep_state 5 (S5)`; the event
+log has *System boot* and *ACPI wake S5* and no *System reset*, as after
+a power-on. The memory training was not redone (*RW_MRC_CACHE does not
+need update*); FspMemoryInit took 5.25 s on rc1 (the ME's wait of patch
+0191, which comes at random) and 0.25 s on v1.6.2. The ME stayed off
+(ME-01 PASS). The time from the arm to the reset, 140-150 s against the
+120 s programmed, includes the power-down and power-up of a global
+reset.
+
+On rc1 `update.py vboot` shows the slot's result as `-` (unknown), not
+*confermato*: vboot clears the result at every boot that is not a try
+(`vb2_select_fw_slot()`), and only a trying boot gets *success* from the
+payload; the same `-` is in the records of v1.6.2 before this run
+(#158). The reset was not counted against the slot: no try used, no
+fallback.
 
 ## Part 3: the owner's
 
