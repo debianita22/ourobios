@@ -75,6 +75,14 @@ from the lists of `docs/test-v1.6.3-w541.md` and
   that it does not enable it again; the other devices keep their LTR.
   On the W541 with rc3: PC7 at 1.1-1.6 W with the screen off after the
   boot and after three resumes, where rc1 stayed in PC2 at 9 W.
+- **W541: no backlight PWM left on after a resume with the screen off**
+  (patch 0274): on every resume from S3 coreboot sets the backlight PWM
+  at 50% and enables it, also when it leaves the display to the OS; with
+  the screen off, Linux did not touch it and i915 warned *PCH PWM1
+  enabled* in the kernel log every 20-30 s for as long as the screen
+  stayed off (seen once the card reader no longer kept the package in
+  PC2). After S3 the ACPI wake method turns the PWM off when the panel is
+  not powered, but under macOS, which keeps the firmware's PWM.
 - **`tools/hw-report.py`: VB-02 recognizes the running slot on the
   W541**: it compared the SMBIOS version, which the W541 writes with the
   Lenovo ID in front (`CBET4000 ouroBIOS-...`), against the build names

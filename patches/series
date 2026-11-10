@@ -265,3 +265,4 @@
 0271-sb-intel-lynxpoint-Optionally-keep-LTR-control-from-.patch
 0272-mb-lenovo-haswell-The-W541-s-card-reader-without-LTR.patch
 0273-drivers-smmstore-One-walk-of-the-variable-store-for-.patch
+0274-mb-lenovo-haswell-The-backlight-PWM-off-after-S3-wit.patch

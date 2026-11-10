@@ -129,8 +129,20 @@ deep and the greeter's screen off, i915 enters PC8 at runtime suspend
 and warns *PCH PWM1 enabled* in `hsw_enable_pc8` (11 times on rc3, 194
 on v1.6.2 this morning after the reader's LTR was cleared by hand). The
 only backlight device is `acpi_video0`, no `intel_backlight`: i915 does
-not drive the PCH PWM, so it does not turn it off with the panel. Not
-looked into yet; it does not stop the package from reaching PC7.
+not drive the PCH PWM, so it does not turn it off with the panel. It
+does not stop the package from reaching PC7.
+
+Followed up the same day: the warnings came every 20-30 s for as long
+as the screen stayed off after a resume (5 in 90 s), and stopped after
+one screen on and off. Before the sleep, with the screen off,
+`BLC_PWM_PCH_CTL1` read `0x40000000` (the PWM off); right after the
+resume `0xc0000000` with the duty at 50% (`0x12ba095d`), the panel still
+unpowered (`PCH_PP_CONTROL` `0x00000008`): `gma_setup_panel()` of
+coreboot runs on resume also when the display is left to the OS, and
+enables the PWM. i915 resumes with the backlight off and leaves it. The
+enable bit cleared by hand after a resume: no warning in 90 s, and with
+the screen on again i915 enabled the PWM at its level. Patch 0274 does
+that in `_WAK`, but under macOS.
 
 ## A bug of hw-report.py
 

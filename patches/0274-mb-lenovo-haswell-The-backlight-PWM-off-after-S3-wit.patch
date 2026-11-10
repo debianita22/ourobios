@@ -1,0 +1,104 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 10 Nov 2026 14:19:26 +0100
+Subject: [PATCH] mb/lenovo/haswell: The backlight PWM off after S3 with the
+ panel off
+
+On S3 resume with the display left to the OS (gfx_resume_init off),
+gma_setup_panel() still runs and enables the PWM of the PCH at 50%,
+while the panel stays unpowered until the OS lights it. Linux resumes
+with the panel as it was before the sleep; with the panel off, i915
+leaves the backlight alone, the PWM stays enabled, and every entry
+into PC8 warns *PCH PWM1 enabled* (on the W541 of the port, every
+20-30 s for as long as the screen stayed off after a resume, as soon
+as the package could reach PC7).
+
+In _WAK after S3, but under macOS (which keeps the firmware's PWM and
+sets only its duty cycle), clear the enable bit of BLC_PWM_PCH_CTL1
+when PCH_PP_CONTROL says the panel is not powered: the state the OS
+finds after a VBIOS that does not run on resume. The frequency stays.
+With gfx_resume_init on, the panel is powered and nothing changes.
+
+TEST=Build of the ThinkPad W541 with the native RAM init; the same
+change made by hand after a resume: no warning in 90 s with the screen
+off, and with the screen on again i915 enabled the PWM at its level.
+
+Change-Id: Ica0e54bbab0d8eb25ba950f2a6e8882b8fe8787f
+---
+ .../lenovo/haswell/acpi/platform.asl          |  7 +++-
+ src/mainboard/lenovo/haswell/acpi/pnlf.asl    | 34 +++++++++++++++++++
+ 2 files changed, 40 insertions(+), 1 deletion(-)
+
+diff --git a/src/mainboard/lenovo/haswell/acpi/platform.asl b/src/mainboard/lenovo/haswell/acpi/platform.asl
+index fb20c1aa1b..f973f7d62d 100644
+--- a/src/mainboard/lenovo/haswell/acpi/platform.asl
++++ b/src/mainboard/lenovo/haswell/acpi/platform.asl
+@@ -13,7 +13,9 @@ Method(_WAK,1)
+ 	/*
+ 	 * The firmware sets the backlight PWM at the frequency of the panel and
+ 	 * at 50%, at boot and at every resume from S3 (gma_setup_panel()).
+-	 * Linux and Windows set their own level again, macOS keeps that one:
++	 * Linux and Windows set their own level again when they light the
++	 * panel, and after S3 find the PWM off if the panel is not powered
++	 * (GFX0.BLOF); macOS keeps the firmware's level:
+ 	 * there, with PNLF (the panel as built-in display) the maximum of the
+ 	 * PWM as macOS takes it, after S4 as well, and after S3 the last level
+ 	 * that _BCM or the brightness keys set or _BQC read (BRLV).
+@@ -25,6 +27,9 @@ Method(_WAK,1)
+ 		If (Arg0 == 3 && \_SB.PCI0.GFX0.BRVA) {
+ 			\_SB.PCI0.GFX0.XBCM (\_SB.PCI0.GFX0.BRLV)
+ 		}
++	} ElseIf (Arg0 == 3) {
++		/* The PWM off when the panel was left unpowered (BLOF) */
++		\_SB.PCI0.GFX0.BLOF ()
+ 	}
+ 
+ #if CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM)
+diff --git a/src/mainboard/lenovo/haswell/acpi/pnlf.asl b/src/mainboard/lenovo/haswell/acpi/pnlf.asl
+index efe98a1914..a834df3ce1 100644
+--- a/src/mainboard/lenovo/haswell/acpi/pnlf.asl
++++ b/src/mainboard/lenovo/haswell/acpi/pnlf.asl
+@@ -14,6 +14,40 @@ External (\_SB.PCI0.GFX0.MPBI, IntObj)
+ 
+ Scope (\_SB.PCI0.GFX0)
+ {
++	/*
++	 * After S3 with the display left to the OS (gfx_resume_init off), the
++	 * panel is not powered (PCH_PP_CONTROL bit 0 clear), but the panel
++	 * setup of coreboot (gma_setup_panel()) enabled the PWM of the PCH at
++	 * 50%. An OS that resumes with the panel off does not touch it, and
++	 * i915 then finds it enabled at every entry into PC8 (*PCH PWM1
++	 * enabled*). Turn the PWM off, as the OS found it after a VBIOS that
++	 * does not run on resume; the OS enables it when it lights the panel.
++	 * The frequency (BLC_PWM_PCH_CTL2) stays.
++	 */
++	Method (BLOF, 0, Serialized)
++	{
++		Local0 = GMMB ()
++		If (Local0 != 0) {
++			OperationRegion (PPCR, SystemMemory, Local0 + 0xc7204, 4)
++			Field (PPCR, DWordAcc, NoLock, Preserve)
++			{
++				PPCT, 32,	/* PCH_PP_CONTROL */
++			}
++			OperationRegion (BLCR, SystemMemory, Local0 + 0xc8250, 4)
++			Field (BLCR, DWordAcc, NoLock, Preserve)
++			{
++				BLC1, 32,	/* BLC_PWM_PCH_CTL1 */
++			}
++			Local1 = PPCT
++			Local2 = BLC1
++			/* All ones: the GPU does not decode its MMIO, leave it */
++			If (Local1 != 0xffffffff && (Local1 & 1) == 0 &&
++			    (Local2 & 0x80000000)) {
++				BLC1 = Local2 & 0x7fffffff
++			}
++		}
++	}
++
+ 	/* 1 under macOS with the panel as built-in display */
+ 	Method (DWBI)
+ 	{
+-- 
+2.56.0
+
