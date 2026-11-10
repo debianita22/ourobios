@@ -1,7 +1,7 @@
 # v1.6.3-rc1 on the M920x
 
 The run of [docs/test-v1.6.3-m920x.md](../../../test-v1.6.3-m920x.md) on
-the ThinkCentre M920x of the port, 2026-11-09, by an agent on the
+the ThinkCentre M920x of the port, 2026-11-09 and 10, by an agent on the
 machine (Proxmox, root, lockdown `[none]`). At the start: v1.6.2 in
 slot B, v1.6.1 in slot A, the read-only part of `ci-203`, *BIOS Lock*
 and *Firmware protection* on. The guests: VM 101 stopped, no
@@ -20,7 +20,7 @@ S3, whose log has no coreboot table line).
 | CMOS-01 | INFO | byte 0x7e reads `0x00` (three reads, chrony stopped around them) |
 | FLASH-06 | PASS | `06 00 00 00` and eight zeros |
 | VAR-01 | INFO | twenty writes of `Timeout` (`efibootmgr -q -t 4`/`-t 3`): median 0.533 s, worst 0.541 s, best 0.531 s; `efibootmgr -q` without a write takes 0.002 s, so the time is the write. Above the 0.5 s of the row ([part1/var-01-1.txt](part1/var-01-1.txt)); `Timeout` back at 3 s |
-| OPT-06 | to run | last of all (the order of the run). The address is confirmed: `cbmem -1` *GEN_PMCON: d8a01608 00002200*, `./mm r 0xfe001024` `0x00062210`, the difference only the lock bits 4, 17 and 18; bit 2 clear |
+| OPT-06 | INFO: **the OS can set the bit** | run last, on v1.6.2. The address confirmed: `cbmem -1` *GEN_PMCON: d8a01608 00002200*, `./mm r 0xfe001024` `0x00062210`, the difference only the lock bits 4, 17 and 18. R0 `0x00062210` (bit 2 clear); `./mm w 0xfe001024 0x00062214` read back R1 `0x00062214`: bit 2 set by the OS, as on the W541; `./mm w 0xfe001024 0x00062210` read back R2 `0x00062210`, equal to R0: the bit clears by writing 0 (a plain read-write bit, not write-1-to-clear). No boot happened with the bit set; after the next boot the 36 options are those of the baseline ([part1/opt-06.txt](part1/opt-06.txt)). The next step is patch 0256's check (a lost CMOS as well) on this board |
 | WDT-02 | PASS (on v1.6.2, the defect of 0267 seen) | see [WDT-02](#wdt-02-a-reset-by-the-watchdog) below |
 | NET-02 | not asked | no request from the W541 or the owner so far |
 
@@ -95,6 +95,32 @@ On rc1 `update.py vboot` shows the slot's result as `-` (unknown), not
 payload; the same `-` is in the records of v1.6.2 before this run
 (#158). The reset was not counted against the slot: no try used, no
 fallback.
+
+## The end
+
+Back on v1.6.2 from slot B (UPD-05 above), rc1 kept in slot A, the
+read-only part of `ci-203`. The last boot, a reboot after OPT-06 with
+the bit clear and the watchdog status cleared by hand: report 25 PASS
+with a copy of the flash ([hw-end.md](hw-end.md)), FLASH-01 PASS
+(*BIOS Lock* and *Firmware protection* on), *Firmware watchdog: off
+(OC_WDT_CTL 0x00002000)* with no watchdog line, `./pio r 0x1854`
+`0x00002000`, `./mm r 0xfe001024` `0x00062210` (bit 2 clear), the
+`Timeout` of the boot manager 3 s as it was, the option lock armed, the
+36 options those of the baseline. Byte 0x7e holds `0xa0`, written by rc1
+(v1.6.2 does not use it). VM 101 stays stopped as it was; nothing was
+set up to survive the reboots.
+
+The answers for the roadmap:
+
+- **OPT-06**: on Cannon Point too the OS can set `RTC_PWR_STS`, so a
+  reset of the options needs more than that bit, as patch 0256 does on
+  the W541.
+- **WDT-02**: a reset by the watchdog is a global reset of the platform
+  (`GBL_RST_STS`, S5, the event log as after a power-on); its status is
+  bit 25 (ICC survivability, armed with bit 13) and stays set until
+  written; the enable bit does not survive it. rc1 reads and clears the
+  status and counts the reset (patches 0267, 0268); v1.6.2 reports the
+  same reset again at every boot until the status is cleared by hand.
 
 ## Part 3: the owner's
 
