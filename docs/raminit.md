@@ -87,7 +87,32 @@ This project adds:
 
 From v1.7.0, **patches 0275-0279**: an XMP profile of the modules as an
 option, off by default ([XMP profiles](#xmp-profiles)), and the SPD decoder
-among the sources that the version of the saved training hashes.
+among the sources that the version of the saved training hashes. And
+**patch 0280**, the write Vref of the DIMMs centred, the first of the
+steps listed as missing below. The modules sample what is written to them
+against a reference voltage that the processor makes, one per channel;
+the NRI set it to the middle of its range and no step moved it. After the
+command training, the step sets the reference of each channel to every
+value of the register in turn (-54 to +54) with a write and read test on
+every rank at each, and leaves it at the centre of the values at which all
+the ranks of the channel pass. A channel keeps the reference it had
+unless the passing range holds that reference, ends within the range of
+the register on both sides and is at least 8 steps wide, and the test
+passes again at the centre. A training redone after a failed memory test
+does not run it, as with patch 0088. The log has the range of each
+channel, the write voltage margin, which nothing measured before:
+
+```sh
+sudo cbmem -1 | grep 'WRV:'     # on the boot that trained
+sudo python3 tools/ddr-report.py | grep VREF_ADJUST   # vref_dq_ch0_ctrl, vref_dq_ch1_ctrl
+```
+
+In one dimension, at the write timing already trained: `mrc.bin` goes on
+to centre timing and voltage together. **Not tried on a machine yet**:
+what it ends at on the W541, against the +3 and +2 of `mrc.bin`
+([On the W541](#on-the-w541)), and how long it adds to a training boot
+(one write and read test per rank for each of 109 values, as many as
+the read voltage centering runs) are for MEM-14 to say.
 
 And, for both variants, **patch 0187**: SMBIOS (type 17) takes the size
 and ranks of each slot from the field of the memory controller that
@@ -103,7 +128,8 @@ of them is needed to boot. On the W541, `mrc.bin` leaves the results of
 each of them in the registers:
 
 - timing and voltage centering together (2D), and the centering of the
-  write and command Vrefs of the DIMMs;
+  command Vref of the DIMMs (the write Vref is centred from v1.7.0, patch
+  0280, in one dimension);
 - power training: read ODT, drive strength, transmit and receive
   equalisation, receive bias, ODT and sense amplifier windows per byte (at
   rest the two variants draw the same, as far as the battery reading can
@@ -161,7 +187,7 @@ The registers after `mrc.bin` (v1.3.9-rc1) and after the NRI (rc3), from
 | tXP (power down exit) | 6 | 5, the JEDEC minimum |
 | Round trip, channel 0 / 1 (qclk) | 44 / 45 | 44 / 45; 49 / 49 without patch 0088 |
 | IO latency + rt_iocomp | 4 + 21 | 4 + 21; 7 / 6 + 23 without patch 0088 |
-| Write Vref channel 0 / 1, command Vref | +3 / +2, -3 | 0, 0 |
+| Write Vref channel 0 / 1, command Vref | +3 / +2, -3 | 0, 0 (before patch 0280, which centres the write Vref: not measured yet) |
 | Transmit equalisation | 51-56 per byte | 59 |
 | Read ODT offsets, drive offsets per byte | -6..+1, -3..+3 | 0, 0 |
 | Per bit deskew, read and write | trained | none |

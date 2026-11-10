@@ -18,7 +18,7 @@ is here. None of it is a promise of a date.
 | [Top Swap and the Protected Range test](#top-swap-and-the-protected-range-test) | M920x | the read-only part is never written by an update | FLASH-04 with the protection on; a map with room for a second bootblock |
 | [Settings reset on the W541](#settings-reset-on-the-w541) | both | on from v1.6.1: the OS can set the RTC power loss bit (checked on a W541), so the reset also needs the CMOS to have lost its contents (patch 0256); OPT-05 passed on a W541 with a simulated loss (2026-11-08); the M920x has the same read-write bit (OPT-06, 2026-11-10): patch 0270 | a real loss (the coin cell out) when convenient; OPT-05 on the M920x with 0270 (the stray bit passed with rc2) |
 | [Memory training across updates on the W541](#memory-training-across-updates-on-the-w541) | W541 | built for v1.6.1 (patches 0250-0252): the version of the cache is a tag and a key from the code (`nri`) or from the inputs of `mrc.bin`; the capsules and *Go back to* keep the cache; MEM-03 passed on a W541 (2026-11-08) | a capsule update and a fallback to an older slot on a W541; `mrc` |
-| [Native RAM init: XMP, and the steps still missing](#native-ram-init-xmp-and-the-steps-still-missing) | W541 | built for v1.7.0 (patches 0275-0279): an XMP profile of the modules as an option, off by default, given up by itself when it does not train or does not reach the payload; the decoder of XMP 1.3 corrected, with a unit test. Not tried with XMP modules: the W541 of the port has none | MEM-10 to MEM-12 on a W541; MEM-13 with DDR3L XMP SO-DIMMs; then the write Vref centring, the first of the missing steps |
+| [Native RAM init: XMP, and the steps still missing](#native-ram-init-xmp-and-the-steps-still-missing) | W541 | built for v1.7.0 (patches 0275-0280): an XMP profile of the modules as an option, off by default, given up by itself when it does not train or does not reach the payload; the decoder of XMP 1.3 corrected, with a unit test; the write Vref of the modules centred, the first of the missing steps. Not tried on a machine; the profile itself needs XMP modules, and the W541 of the port has none | MEM-10 to MEM-12 and MEM-14 on a W541; MEM-13 with DDR3L XMP SO-DIMMs; then the command Vref |
 | [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | done in v1.6.0 (patch 0222): a Kconfig for the version, and `tools/fspm-settings.sh` stops CI when the files of those settings change | the first bump, with the release that changes them |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
 | [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | built for v1.6.1 (patches 0247-0249, 0258); CPU-06 passed on a W541 (2026-11-08): off, locked, kept across S3, the training cache kept | `mrc` (this machine boots only `nri` slots) |
@@ -445,15 +445,15 @@ without the upstream author's unpublished tree, each with what `mrc.bin`
 leaves on the W541 ([docs/raminit.md](raminit.md#on-the-w541)) as the
 reference and `ddr-report.py --compare` as the measure:
 
-1. **Write Vref centring.** `mrc.bin` ends at +3 and +2 steps on the two
-   channels, the NRI leaves 0. The code has what it needs: the write Vref
-   is one value per channel (`update_vref_and_wait()`), and the 1D margin
-   loop runs a write and read test per rank. A step after the read
-   voltage centring: sweep the Vref of each channel, keep the offsets at
-   which every byte of every rank passes, take the centre; skipped in the
-   training that is redone after a failure, as the round trip step is.
-   The window it prints is the write voltage margin, which nothing
-   measures today.
+1. **Write Vref centring**: written for v1.7.0 (patch 0280,
+   [docs/raminit.md](raminit.md#what-runs)), not tried on a machine yet
+   (MEM-14). `mrc.bin` ends at +3 and +2 steps on the two channels, the
+   NRI left 0. After the command training: the reference of each channel
+   over its range, a write and read test on every rank at each value, the
+   centre of the values that pass; a channel whose range is not measured
+   on both sides keeps what it had, and the training that is redone after
+   a failure does not run the step, as with the round trip one. The range
+   it prints is the write voltage margin, which nothing measured before.
 2. **The command Vref** (`mrc.bin`: -3). The same sweep with the command
    patterns of the late command training; after the first.
 3. **The write to read turnaround between ranks** (3 with `mrc.bin`, 4

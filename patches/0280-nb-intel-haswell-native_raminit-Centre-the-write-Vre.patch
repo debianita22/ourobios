@@ -1,0 +1,261 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Tue, 10 Nov 2026 19:28:25 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: Centre the write Vref of the
+ DIMMs
+
+The DIMMs sample what is written to them against a reference voltage
+that the processor makes, one per channel. configure_mc() sets it to
+the middle of its range and no step moves it: the write timing is
+centred, the voltage is not. On a ThinkPad W541 with four DIMMs
+mrc.bin ends 3 and 2 steps above that on the two channels.
+
+Add a step after the late command training (HASWELL_NRI_WRITE_VREF):
+with the write and command timings final, set the reference of every
+channel to each value of its range in turn, run a write and read test
+on every rank at each, and leave the reference of a channel at the
+centre of the values at which all its ranks pass. In one dimension, at
+the trained write timing; the MRC goes on to centre the two together.
+
+A channel keeps the reference it had unless the range of passing
+values holds that reference, ends on both sides within the range of
+the register and is as wide as the 1D margin training asks of an eye,
+and the test passes again at the centre. The step is not run in the
+training that is done again after a failure, like the round trip one,
+so a reference that the memory test (HASWELL_NRI_MEMORY_TEST) does not
+like is not kept. The register is among the saved ones, so the fast
+boot and the resume from S3 restore what was trained.
+
+The lines of the log give the write voltage eye of each channel, which
+nothing measured so far.
+
+Not tested on hardware.
+---
+ src/northbridge/intel/haswell/Kconfig         |  12 ++
+ .../intel/haswell/native_raminit/Makefile.mk  |   1 +
+ .../haswell/native_raminit/raminit_main.c     |   1 +
+ .../haswell/native_raminit/raminit_native.h   |   1 +
+ .../haswell/native_raminit/train_write_vref.c | 152 ++++++++++++++++++
+ 5 files changed, 167 insertions(+)
+ create mode 100644 src/northbridge/intel/haswell/native_raminit/train_write_vref.c
+
+diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
+index b661e5e6..d5681d05 100644
+--- a/src/northbridge/intel/haswell/Kconfig
++++ b/src/northbridge/intel/haswell/Kconfig
+@@ -40,6 +40,18 @@ config HASWELL_NRI_ROUND_TRIP
+ 	  HASWELL_NRI_MEMORY_TEST, which trains again without this when the
+ 	  memory test fails.
+ 
++config HASWELL_NRI_WRITE_VREF
++	bool "Centre the write Vref of the DIMMs after training"
++	depends on USE_NATIVE_RAMINIT
++	help
++	  After the command training, move the DQ reference voltage that
++	  the processor makes for the DIMMs of each channel over its range,
++	  with a write and read test on every rank at each value, and leave
++	  it at the centre of the values that pass: the writes are then
++	  sampled in the middle of their voltage eye, as they are in the
++	  middle of their timing. Best with HASWELL_NRI_MEMORY_TEST, which
++	  trains again without this when the memory test fails.
++
+ config HASWELL_NRI_MEMORY_PROFILE
+ 	bool "Offer the XMP profiles of the DIMMs as an option"
+ 	depends on USE_NATIVE_RAMINIT && SMMSTORE && CMOS_POST
+diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+index dffaa9b9..cbe8241b 100644
+--- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
++++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+@@ -29,6 +29,7 @@ romstage-y += train_read_mpr.c
+ romstage-y += train_receive_enable.c
+ romstage-y += train_round_trip.c
+ romstage-y += train_sense_amp_offset.c
++romstage-y += train_write_vref.c
+ 
+ romstage-$(CONFIG_DEBUG_RAM_SETUP) += info_dumps.c
+ 
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index bb91c883..3d721427 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -133,6 +133,7 @@ static const struct task_entry cold_boot[] = {
+ 	{ optimise_comp,                                          true, "OPTCOMP",    },
+ 	{ post_training,                                          true, "POSTTRAIN",  },
+ 	{ train_late_command,                                     true, "LCT",        },
++	{ train_write_vref,                                       true, "WRVC1D",     },
+ 	{ optimise_round_trip,                                    true, "RTL",        },
+ 	{ activate_mc,                                            true, "ACTIVATE",   },
+ 	{ save_training_values,                                   true, "SAVE_TRAIN", },
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index 41051cd8..544054ec 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -699,6 +699,7 @@ enum nri_status activate_mc(struct sysinfo *ctrl);
+ enum nri_status ecc_scrub(struct sysinfo *ctrl);
+ enum nri_status memory_test(struct sysinfo *ctrl);
+ enum nri_status optimise_round_trip(struct sysinfo *ctrl);
++enum nri_status train_write_vref(struct sysinfo *ctrl);
+ enum nri_status alias_check(struct sysinfo *ctrl);
+ enum nri_status raminit_done(struct sysinfo *ctrl);
+ 
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_write_vref.c b/src/northbridge/intel/haswell/native_raminit/train_write_vref.c
+new file mode 100644
+index 00000000..3033ead0
+--- /dev/null
++++ b/src/northbridge/intel/haswell/native_raminit/train_write_vref.c
+@@ -0,0 +1,152 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <console/console.h>
++#include <delay.h>
++#include <northbridge/intel/haswell/haswell.h>
++#include <types.h>
++
++#include "raminit_native.h"
++#include "ranges.h"
++
++/*
++ * Write voltage centring.
++ *
++ * The DIMMs sample what the controller writes against a reference voltage
++ * that the processor makes for them, one per channel (the DQ Vref of
++ * DDR_DATA VREF_ADJUST). configure_mc() sets it and no step moves it: the
++ * write timing is centred, the voltage at which the writes are sampled is
++ * not. On a ThinkPad W541 with four DIMMs, mrc.bin leaves it 3 and 2 steps
++ * above where this code leaves it.
++ *
++ * After the command training, with the write and the command timing final:
++ * set the reference of every channel to each value of its range in turn, and
++ * run a write and read test on every rank. The values at which every rank of
++ * a channel passes are its write voltage eye, and the centre of the eye is
++ * the new reference. One dimension, at the trained write timing: the MRC goes
++ * on to centre timing and voltage together.
++ *
++ * A channel keeps the reference it had unless its eye holds that reference,
++ * closes on both sides within the range and is WRV_MIN_WIDTH wide, and the
++ * test passes at the centre: an eye that is open at an end of the range is
++ * not one this step has measured. A memory test follows the training
++ * (HASWELL_NRI_MEMORY_TEST); if it fails, the training is done again without
++ * this step.
++ */
++
++/* As the 1D margin training: 128 cachelines, 256 loops per rank */
++#define WRV_TEST_LOOPCOUNT	15
++/* As the eyes of the 1D margin training */
++#define WRV_MIN_WIDTH		8
++/*
++ * update_vref_and_wait() waits for the circuit of the processor. After a move
++ * across the range, as against one step, give the DIMM side this long as well.
++ */
++#define WRV_SETTLE_MS		1
++
++/* Channels of chanmask with errors in a write and read test on any of their ranks */
++static uint8_t test_writes(struct sysinfo *ctrl, const uint8_t chanmask_in)
++{
++	uint8_t failed = 0;
++	setup_io_test_basic_va(ctrl, chanmask_in, WRV_TEST_LOOPCOUNT, NSOE);
++	for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
++		uint8_t chanmask = 0;
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (chanmask_in & BIT(channel))
++				chanmask |= select_reut_ranks(ctrl, channel, BIT(rank));
++		}
++		if (!chanmask)
++			continue;
++
++		failed |= run_io_test(ctrl, chanmask, ctrl->dq_pat, true) & chanmask;
++	}
++	return failed;
++}
++
++/* Set the DQ Vref of a channel to a value of its range, the saved one or not */
++static void set_dq_vref(struct sysinfo *ctrl, const uint8_t channel, const int32_t value,
++			const bool update_ctrl)
++{
++	/* update_vref_and_wait() takes an offset from the saved value */
++	update_vref_and_wait(ctrl, channel, update_ctrl, value - ctrl->dimm_vref.dq[channel],
++			     false);
++}
++
++enum nri_status train_write_vref(struct sysinfo *ctrl)
++{
++	if (!CONFIG(HASWELL_NRI_WRITE_VREF) || ctrl->lpddr)
++		return NRI_STATUS_SUCCESS;
++
++	if (ctrl->no_latency_optimisation) {
++		printk(BIOS_INFO, "Write Vref left as set\n");
++		return NRI_STATUS_SUCCESS;
++	}
++
++	const uint8_t all = ctrl->chanmap;
++
++	/* The patterns of the 1D margin training, as the memory test reloads them */
++	setup_wdb(ctrl);
++
++	/* The test has to pass as trained, or it tells nothing */
++	const uint8_t failing = test_writes(ctrl, all);
++	if (failing) {
++		printk(BIOS_WARNING, "WRV: write test fails as trained (0x%x), not centring\n",
++		       failing);
++		return NRI_STATUS_SUCCESS;
++	}
++
++	struct linear_train_data eye[NUM_CHANNELS] = { 0 };
++	for (int32_t value = MIN_VREF; value <= MAX_VREF; value++) {
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (all & BIT(channel))
++				set_dq_vref(ctrl, channel, value, false);
++		}
++		if (value == MIN_VREF)
++			mdelay(WRV_SETTLE_MS);
++
++		const uint8_t failed = test_writes(ctrl, all);
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (all & BIT(channel))
++				linear_record_pass(&eye[channel], !(failed & BIT(channel)),
++						   value, MIN_VREF, 1);
++		}
++	}
++
++	int8_t before[NUM_CHANNELS] = { 0 };
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(all & BIT(channel)))
++			continue;
++
++		const struct passing_range range = eye[channel].largest;
++		const int32_t width = range_width(range);
++		const int32_t centre = range_center(range);
++
++		before[channel] = ctrl->dimm_vref.dq[channel];
++		printk(BIOS_DEBUG, "WRV: C%u eye %d to %d, width %d, centre %d, Vref %d\n",
++		       channel, range.start, range.end, width, centre, before[channel]);
++
++		if (width < WRV_MIN_WIDTH || range.start <= MIN_VREF || range.end >= MAX_VREF ||
++		    before[channel] < range.start || before[channel] > range.end) {
++			printk(BIOS_WARNING, "WRV: C%u eye not usable, Vref as set\n", channel);
++			set_dq_vref(ctrl, channel, before[channel], false);
++			continue;
++		}
++		set_dq_vref(ctrl, channel, centre, true);
++	}
++
++	/* Back to the reference of before if the result does not pass */
++	mdelay(WRV_SETTLE_MS);
++	const uint8_t failed = test_writes(ctrl, all);
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(all & BIT(channel)))
++			continue;
++
++		if (failed & BIT(channel)) {
++			printk(BIOS_WARNING, "WRV: C%u fails at the centre, Vref as set\n",
++			       channel);
++			set_dq_vref(ctrl, channel, before[channel], true);
++		}
++		printk(BIOS_INFO, "WRV: C%u write Vref %d (was %d)\n", channel,
++		       ctrl->dimm_vref.dq[channel], before[channel]);
++	}
++	return NRI_STATUS_SUCCESS;
++}
+-- 
+2.43.0
+

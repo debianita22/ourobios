@@ -25,6 +25,22 @@ Not released. What ran on a machine: nothing yet, the CI builds only.
   memory is set up as before; the first boot trains once, as the
   version of the saved training has the profile now. `mrc.bin` has no
   such option.
+- **W541 (`nri`): the write Vref of the memory modules is centred**
+  (patch 0280), the first of the training steps that the native RAM
+  init lacked against `mrc.bin`. The modules sample what is written to
+  them against a reference voltage, one per channel, which the native
+  RAM init left in the middle of its range (`mrc.bin` ends 3 and 2
+  steps above it on the W541). After the command training, every value
+  of the reference is tried with a write and read test on every rank,
+  and each channel gets the centre of the values that pass; a channel
+  whose range of passing values is not closed on both sides, or is
+  narrower than 8 steps, keeps what it had, and a training redone after
+  a failed memory test does not run the step. `sudo cbmem -1 | grep
+  'WRV:'` on the boot that trained has the range, which is the write
+  voltage margin of the machine. **Not tried on a machine**: MEM-14 of
+  [docs/testing.md](docs/testing.md). The training boot takes longer (as
+  many tests as the read voltage centering runs; not measured yet); the
+  boots from the saved training do not change.
 - **XMP 1.3 profiles decoded exactly** (patch 0275): the fine offsets
   of a profile were not read, so a DDR3-1866 profile gave a cycle time
   of 1.125 ns, one standard speed lower, and the times of a profile
