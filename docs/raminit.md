@@ -154,19 +154,61 @@ sudo python3 tools/ddr-report.py | grep VREF_ADJUST   # vref_ca_ctrl
 
 The third of the missing steps, the write to read turnaround between
 ranks (`tWRRD_dr`, `tWRRD_dd`: 4 clocks here, the sum of the JEDEC
-times, 3 with `mrc.bin`), was tried in v1.7.0-rc3 and rc4 and is not in
-the series. A step that shortened it with the turnaround test of the
-REUT (patches 0298 and 0300, out from rc5) found nothing to measure: on
-the W541 every form of the test passed at every value down to 0, where
-the bursts would overlap, while a control on one rank with tWTR violated
-failed at once (MEM-16, [docs/tests/v1.7.0/w541-nri](tests/v1.7.0/w541-nri/README.md)). The memory controller keeps
-a spacing of its own between a write and a read of another rank, which
-the register below that does not change. Sandy Bridge, whose native
-init coreboot has, works the same way: its fields are small increments
-over the controller's minimum, chosen from the spread of the trained
-delays of the ranks (`set_read_write_timings()`: no increment when the
-spread is above 51 PI ticks, the offset of the raw card otherwise). The
-3 of `mrc.bin` is that kind of choice, not a limit a test can find.
+times, 3 with `mrc.bin`). A scan with the turnaround test of the REUT
+(patches 0298 and 0300, rc3 and rc4, out of the series) found nothing to
+measure: every form of the test passed at every value down to 0, as the
+controller keeps a spacing of its own (MEM-16,
+[docs/tests/v1.7.0/w541-nri](tests/v1.7.0/w541-nri/README.md)). The MRC
+of the Lenovo firmware of the W541 does not scan, as its code shows: its
+turnaround step tries the JEDEC value minus one clock and keeps it if
+the turnaround test passes with the read and write timing moved by 7 PI
+ticks and the read and write voltage by 7 Vref steps, to each side, one
+at a time. **Patch 0303** (`HASWELL_NRI_TURNAROUND`, from v1.7.0-rc6)
+does the same after the round trip step:
+
+```sh
+sudo cbmem -1 | grep 'TAT:'     # on the boot that trained
+```
+
+**What the MRC does that the NRI did not** was read in its code, the
+`MemoryInit` module of the stock firmware of the W541 (GNET94WW): its
+table of steps, and in each the margin parameters, the tests, the loop
+counts and the ranges. Against the dump of `mrc.bin` on the same
+machine ([below](#on-the-w541)) it explains what differed, and it
+explains the spread of channel 1 between trainings that rc5 measured
+(one training in three with every margin of channel 1 5 to 9 steps
+narrower):
+
+- the **write and command Vref**: the MRC sets them with its margin
+  search (edges confirmed and interpolated on the error count), the
+  write Vref on three write timings with all ranks at once, where the
+  scans of patches 0280 and 0290 test each value once; the result moved
+  by up to 3 steps between trainings, and with 3 the write margins of
+  channel 1 were lopsided. **Patch 0304** adds the MRC's centring after
+  the scans;
+- the **read Vref per bit**: the MRC centres the receiver offset of each
+  bit on the read data after the write Vref, then the reference of each
+  byte on three read timings. The NRI kept what the sense amplifier
+  training sets, from one sample of each value on the receivers alone.
+  **Patch 0305** (`HASWELL_NRI_READ_VREF`);
+- the **signal settings of each byte** (its power training): write drive
+  strength and equalisation, read termination and receiver bias, which
+  `mrc.bin` leaves different per byte on the W541 (the read termination
+  of bytes 5 to 7 of channel 1, the narrowest with the NRI, 3 to 7 codes
+  stronger than the others), where the NRI sets the same for all.
+  **Patch 0306** (`HASWELL_NRI_OPT_PARAMS`), without the weight of the
+  power;
+- the rest matched: the 2D timing centring of patch 0295 has the MRC's
+  weights and points; the sense amplifier training takes one sample
+  per value in the MRC too.
+
+The results of these steps are logged again at the end of the training
+(**patch 0302**), as the console before CBMEM loses the lines of the
+steps before the 2D centring:
+
+```sh
+sudo cbmem -1 | grep -A24 'NRI summary'
+```
 
 And the first of the upstream author's unpublished steps, which he put on
 Gerrit on 2026-11-06 and 10 as work in progress (CB:97117, 97118, 97119,
@@ -239,10 +281,9 @@ each of them in the registers:
   the read offsets at zero on purpose, so as not to use up the range of
   the read strobe delay, and the write ones neutral; the 2D centring of
   patch 0295 trains them, from v1.7.0-rc4);
-- turnaround optimisation. On the W541 only one turnaround differs: write
-  to read between ranks, 3 clocks with `mrc.bin` and 4 here. A test of the
-  REUT cannot find it (above): the controller keeps its own minimum, and
-  `mrc.bin` chooses the increment over it from the trained delays.
+- turnaround optimisation: on the W541 only write to read between ranks
+  differs, 3 clocks with `mrc.bin` and 4 here; patch 0303 sets it as the
+  MRC does (above), from v1.7.0-rc6.
 
 With two DIMMs per channel the NRI runs the commands at 2N, by a TODO in
 `lookup_timings.c` written before the late command training existed;

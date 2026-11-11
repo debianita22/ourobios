@@ -282,3 +282,8 @@
 0297-nb-intel-haswell-native_raminit-Options-for-the-marg.patch
 0299-nb-intel-haswell-native_raminit-The-eye-after-the-2D.patch
 0301-nb-intel-haswell-native_raminit-Wait-longer-for-a-Vr.patch
+0302-nb-intel-haswell-native_raminit-Log-what-the-steps-d.patch
+0303-nb-intel-haswell-native_raminit-Shorten-tWRRD-betwee.patch
+0304-nb-intel-haswell-native_raminit-Centre-the-DIMM-Vref.patch
+0305-nb-intel-haswell-native_raminit-Centre-the-read-Vref.patch
+0306-nb-intel-haswell-native_raminit-Train-the-signal-set.patch

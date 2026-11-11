@@ -1,0 +1,385 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 21:21:17 +0100
+Subject: [PATCH 306/306] nb/intel/haswell/native_raminit: Train the signal
+ settings of each byte
+
+The MRC of the Lenovo firmware trains, byte by byte, the settings that
+shape the signal (its power training: TrainDDROptParam for the write
+drive strength, the transmit equalisation, the read termination and the
+receiver bias), where the NRI sets the same for every byte. On a
+ThinkPad W541 it leaves the read termination of bytes 5 to 7 of channel
+1, the narrowest of the board with the NRI, 3 to 7 codes stronger than
+that of the other bytes, and a transmit equalisation of 51 to 56.
+
+Add HASWELL_NRI_OPT_PARAMS: after the 1D centring, for the write drive
+strength and equalisation, then the read termination and bias, set
+every byte to each value of a list in turn, measure the margins that
+the setting acts on with the margin library (the tests and loop counts
+of the MRC, all the ranks at once), and keep for each byte the value
+with the widest eye, if it beats the one it had by three steps. Power
+is not weighed. The writes and the reads are centred again after their
+settings, and optimise_comp() moves the mean of the offsets into the
+global compensation codes, as it was written to.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: Ieb14139e415270f599e36c98945d0ab931f804fb
+---
+ src/northbridge/intel/haswell/Kconfig         |  12 +
+ .../intel/haswell/native_raminit/Makefile.mk  |   1 +
+ .../haswell/native_raminit/raminit_main.c     |   2 +
+ .../haswell/native_raminit/raminit_native.h   |   2 +
+ .../haswell/native_raminit/train_opt_param.c  | 283 ++++++++++++++++++
+ 5 files changed, 300 insertions(+)
+ create mode 100644 src/northbridge/intel/haswell/native_raminit/train_opt_param.c
+
+diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
+index 5beef2afa9..a82f22f675 100644
+--- a/src/northbridge/intel/haswell/Kconfig
++++ b/src/northbridge/intel/haswell/Kconfig
+@@ -77,6 +77,18 @@ config HASWELL_NRI_2D_TIMING
+ 	  training that is done again after a failure. Best with
+ 	  HASWELL_NRI_MEMORY_TEST and HASWELL_NRI_MARGIN_CHECK.
+ 
++config HASWELL_NRI_OPT_PARAMS
++	bool "Train the drive, equalisation, termination and bias per byte"
++	depends on USE_NATIVE_RAMINIT
++	help
++	  After the 1D centring, try for every byte several values of the
++	  write drive strength and equalisation and of the read termination
++	  and receiver bias, measure the write or the read margins at each
++	  with the margin library, and keep for each byte the one with the
++	  widest eye, as the MRC does (without weighing the power). It adds
++	  a few seconds to a boot that trains. Not run in the training that
++	  is done again after a failure.
++
+ config HASWELL_NRI_READ_VREF
+ 	bool "Centre the read Vref per bit and per byte as the MRC does"
+ 	depends on USE_NATIVE_RAMINIT
+diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+index 993332dd35..3a5f08221b 100644
+--- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
++++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+@@ -29,6 +29,7 @@ romstage-y += train_1d_margins.c
+ romstage-y += train_2d_margins.c
+ romstage-y += train_jedec_write_leveling.c
+ romstage-y += train_late_command.c
++romstage-y += train_opt_param.c
+ romstage-y += train_read_mpr.c
+ romstage-y += train_read_vref.c
+ romstage-y += train_receive_enable.c
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index 90a085f6ba..abf696ee1a 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -130,6 +130,8 @@ static const struct task_entry cold_boot[] = {
+ 	{ train_write_timing_centering,                           true, "WRTC1D",     },
+ 	{ train_read_timing_centering,                            true, "RDTC1D",     },
+ 	{ train_read_voltage_centering,                           true, "RDVC1D",     },
++	{ train_write_opt_params,                                 true, "WROPT",      },
++	{ train_read_opt_params,                                  true, "RDOPT",      },
+ 	{ optimise_comp,                                          true, "OPTCOMP",    },
+ 	{ post_training,                                          true, "POSTTRAIN",  },
+ 	{ train_late_command,                                     true, "LCT",        },
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index 13a51f7c85..8e5cde1f0e 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -752,6 +752,8 @@ enum nri_status train_command_vref(struct sysinfo *ctrl);
+ enum nri_status train_write_vref(struct sysinfo *ctrl);
+ enum nri_status optimise_turnaround(struct sysinfo *ctrl);
+ enum nri_status train_read_vref(struct sysinfo *ctrl);
++enum nri_status train_read_opt_params(struct sysinfo *ctrl);
++enum nri_status train_write_opt_params(struct sysinfo *ctrl);
+ enum nri_status print_nri_summary(struct sysinfo *ctrl);
+ void nri_note(struct sysinfo *ctrl, const char *fmt, ...) __printf(2, 3);
+ enum nri_status alias_check(struct sysinfo *ctrl);
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_opt_param.c b/src/northbridge/intel/haswell/native_raminit/train_opt_param.c
+new file mode 100644
+index 0000000000..bf17379796
+--- /dev/null
++++ b/src/northbridge/intel/haswell/native_raminit/train_opt_param.c
+@@ -0,0 +1,283 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <commonlib/bsd/clamp.h>
++#include <console/console.h>
++#include <delay.h>
++#include <lib.h>
++#include <types.h>
++
++#include "raminit_native.h"
++
++/*
++ * Per-byte signal settings, as the MRC trains them.
++ *
++ * The MRC of the Lenovo firmware does not stop at the delays and the
++ * references: before the 2D centring it tries, byte by byte, the settings
++ * that shape the signal itself, and keeps for each byte the one with the
++ * widest eye (its "power training", TrainDDROptParam, which also weighs
++ * the power each setting costs). On a ThinkPad W541 with four DIMMs it
++ * leaves the read termination of bytes 5, 6 and 7 of channel 1 three to
++ * seven codes stronger than that of the other bytes, a higher bias for the
++ * receivers of the same bytes, and a transmit equalisation of 51 to 56 per
++ * byte, where this code had the same for every byte: those bytes are the
++ * narrowest of the board with the NRI, and the ones whose margins move from
++ * one training to the next.
++ *
++ * For each setting: set every byte of every channel to each value of a list
++ * in turn and measure the margins that the setting acts on with the margin
++ * library (the error rate searched to each side, as the margin check does),
++ * all the ranks of a channel tested at once, with the tests and the loop
++ * counts of the MRC. The score of a byte is the sum of its margins on both
++ * sides. The MRC's order: drive strength and equalisation of the writes,
++ * then termination and receiver bias of the reads. A byte moves to the
++ * value with the highest score only if it beats the setting it had by
++ * OPT_MIN_GAIN, so that the noise of the measure does not move it; a tie
++ * goes to the value nearer to the one it had. Power is not weighed.
++ *
++ * The read termination is a per-byte offset of the compensation codes; the
++ * step that follows (optimise_comp) moves their mean into the global code.
++ * After the read settings the read timing and voltage are centred again, as
++ * a stronger termination moves the eye. Not run in the training that is
++ * done again after a failure.
++ */
++
++/* Tenths of a tick or step, in the sum of the margins of the tests */
++#define OPT_MIN_GAIN	30
++#define OPT_MAX_TESTS	2
++#define OPT_MAX_VALUES	10
++
++struct opt_setting {
++	const char *name;
++	enum opt_param param;
++	/* The value of the setting as it is now, which the scores compare to */
++	int8_t current;
++	int8_t values[OPT_MAX_VALUES];
++	uint8_t num_values;
++	enum margin_param tests[OPT_MAX_TESTS];
++	uint8_t num_tests;
++	uint8_t loopcount;
++};
++
++static void set_all_bytes(struct sysinfo *ctrl, const uint8_t chanmask,
++			  const enum opt_param param, const int16_t value, const bool update)
++{
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		for (uint8_t byte = 0; byte < ctrl->lanes; byte++)
++			update_opt_param_offset(ctrl, channel, 0xf, byte, param, value, update);
++	}
++	/* The compensation offsets reach the pads with the next comp update */
++	udelay(10);
++}
++
++/*
++ * The score of each byte at the setting as it is. As the MRC does, with all
++ * the ranks of a channel selected at once: an error on any of them counts.
++ */
++static void measure(struct sysinfo *ctrl, const uint8_t chanmask_in,
++		    const struct opt_setting *s, uint32_t score[NUM_CHANNELS][NUM_LANES])
++{
++	uint8_t b_map[NUM_LANES];
++	for (uint8_t byte = 0; byte < NUM_LANES; byte++)
++		b_map[byte] = byte;
++
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		for (uint8_t byte = 0; byte < NUM_LANES; byte++)
++			score[channel][byte] = 0;
++	}
++	setup_io_test_basic_va(ctrl, chanmask_in, s->loopcount, NSOE);
++	uint8_t chanmask = 0;
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (chanmask_in & BIT(channel))
++			chanmask |= select_reut_ranks(ctrl, channel, ctrl->rankmap[channel]);
++	}
++	if (!chanmask)
++		return;
++
++	clear_data_offset_train_all(ctrl);
++	for (uint8_t t = 0; t < s->num_tests; t++) {
++		const enum margin_param param = s->tests[t];
++		const bool voltage = param == RdV || param == WrV;
++		ctrl->dq_pat = voltage ? BASIC_VA : RD_RD_TA;
++		get_ber_margin_byte(ctrl, ctrl->results, chanmask, 0, 0xff, param, b_map, true,
++				    voltage ? MAX_POSSIBLE_VREF : MAX_POSSIBLE_TIME);
++
++		const uint8_t res = get_margin_result_type(param);
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++				const union last_margin *m = &ctrl->results[res][0][channel][byte];
++				score[channel][byte] += m->start + m->end;
++			}
++		}
++	}
++}
++
++static void train_opt_setting(struct sysinfo *ctrl, const struct opt_setting *s)
++{
++	const uint8_t chanmask = ctrl->chanmap;
++	uint32_t scores[OPT_MAX_VALUES][NUM_CHANNELS][NUM_LANES];
++	uint8_t at_current = s->num_values;
++
++	printk(BIOS_DEBUG, "OPT: %s, %s", s->name, get_margin_name(s->tests[0]));
++	for (uint8_t t = 1; t < s->num_tests; t++)
++		printk(BIOS_DEBUG, " + %s", get_margin_name(s->tests[t]));
++	printk(BIOS_DEBUG, ", tenths, all ranks\n");
++
++	for (uint8_t v = 0; v < s->num_values; v++) {
++		if (s->values[v] == s->current)
++			at_current = v;
++
++		set_all_bytes(ctrl, chanmask, s->param, s->values[v], false);
++		measure(ctrl, chanmask, s, scores[v]);
++
++		printk(BIOS_DEBUG, "OPT: %s % 3d:", s->name, s->values[v]);
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			printk(BIOS_DEBUG, "  C%u", channel);
++			for (uint8_t byte = 0; byte < ctrl->lanes; byte++)
++				printk(BIOS_DEBUG, " %4u", scores[v][channel][byte]);
++		}
++		printk(BIOS_DEBUG, "\n");
++	}
++	if (at_current == s->num_values)
++		die("%s: %s: the current value is not in the list\n", __func__, s->name);
++
++	nri_note(ctrl, "  OPT %s:", s->name);
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		nri_note(ctrl, " C%u", channel);
++		for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++			uint8_t best = at_current;
++			for (uint8_t v = 0; v < s->num_values; v++) {
++				const uint32_t score = scores[v][channel][byte];
++				const uint32_t best_score = scores[best][channel][byte];
++				const bool nearer = ABS(s->values[v] - s->current) <
++						    ABS(s->values[best] - s->current);
++				if (score > best_score || (score == best_score && nearer))
++					best = v;
++			}
++			const uint32_t gain = scores[best][channel][byte] -
++					      scores[at_current][channel][byte];
++			if (gain < OPT_MIN_GAIN)
++				best = at_current;
++
++			update_opt_param_offset(ctrl, channel, 0xf, byte, s->param,
++						s->values[best], true);
++			nri_note(ctrl, " %d", s->values[best]);
++			printk(BIOS_DEBUG, "OPT: %s C%u byte %u: %d (%u, as it was %u)\n",
++			       s->name, channel, byte, s->values[best],
++			       scores[best][channel][byte], scores[at_current][channel][byte]);
++		}
++	}
++	nri_note(ctrl, "\n");
++	udelay(10);
++}
++
++enum nri_status train_read_opt_params(struct sysinfo *ctrl)
++{
++	if (!CONFIG(HASWELL_NRI_OPT_PARAMS) || ctrl->lpddr)
++		return NRI_STATUS_SUCCESS;
++
++	if (ctrl->no_latency_optimisation) {
++		printk(BIOS_INFO, "Per-byte read settings left as set\n");
++		return NRI_STATUS_SUCCESS;
++	}
++
++	/*
++	 * Read termination: an offset of the ODT compensation codes of the
++	 * byte, a step being a code. The MRC's ends up 3 to 7 codes stronger
++	 * on the narrow bytes than on the others. Loop count 17, as the MRC.
++	 */
++	const struct opt_setting rd_odt = {
++		.name       = "RdOdt",
++		.param      = OptRdOdt,
++		.current    = 0,
++		.values     = { -4, -2, 0, 2, 4, 6, 8 },
++		.num_values = 7,
++		.tests      = { RdV, RdT },
++		.num_tests  = 2,
++		.loopcount  = 17,
++	};
++	train_opt_setting(ctrl, &rd_odt);
++
++	/*
++	 * Receiver bias: 0 to 7 (0.44 to 2.33 of the nominal current),
++	 * configure_mc() sets 3 (1.00). The MRC sweeps 0 to 7 and, weighing
++	 * the power, leaves 1, and 2 on the narrow bytes.
++	 */
++	const struct opt_setting rx_bias = {
++		.name       = "RxBias",
++		.param      = OptRxBias,
++		.current    = ctrl->ch[0].dq_ctrl_1[0].rx_bias_ctl,
++		.values     = { 1, 2, 3, 4, 5 },
++		.num_values = 5,
++		.tests      = { RdV, RdT },
++		.num_tests  = 2,
++		.loopcount  = 15,
++	};
++	if (rx_bias.current >= 1 && rx_bias.current <= 5)
++		train_opt_setting(ctrl, &rx_bias);
++
++	/* The eye moved: centre the reads again, timing first */
++	enum nri_status status = train_read_timing_centering(ctrl);
++	if (status)
++		return status;
++
++	return train_read_voltage_centering(ctrl);
++}
++
++enum nri_status train_write_opt_params(struct sysinfo *ctrl)
++{
++	if (!CONFIG(HASWELL_NRI_OPT_PARAMS) || ctrl->lpddr)
++		return NRI_STATUS_SUCCESS;
++
++	if (ctrl->no_latency_optimisation) {
++		printk(BIOS_INFO, "Per-byte write settings left as set\n");
++		return NRI_STATUS_SUCCESS;
++	}
++
++	/*
++	 * Write drive strength: an offset of the drive compensation codes of
++	 * the byte. The MRC sweeps -13 to 10 and leaves -3 to +3 on channel 1.
++	 */
++	const struct opt_setting wr_ds = {
++		.name       = "WrDS",
++		.param      = OptWrDS,
++		.current    = 0,
++		.values     = { -4, -2, 0, 2, 4 },
++		.num_values = 5,
++		.tests      = { WrV, WrT },
++		.num_tests  = 2,
++		.loopcount  = 15,
++	};
++	train_opt_setting(ctrl, &wr_ds);
++
++	/*
++	 * Transmit equalisation: the de-emphasis legs of the byte (0 to 11,
++	 * with the 12 emphasis legs that configure_mc() sets). configure_mc()
++	 * sets 11 for every byte; the MRC sweeps 0 to 11 and leaves 3 to 8.
++	 */
++	const struct opt_setting tx_eq = {
++		.name       = "TxEq",
++		.param      = OptTxEq,
++		.current    = 11,
++		.values     = { 3, 5, 7, 9, 11 },
++		.num_values = 5,
++		.tests      = { WrV, WrT },
++		.num_tests  = 2,
++		.loopcount  = 15,
++	};
++	train_opt_setting(ctrl, &tx_eq);
++
++	/* The eye moved: centre the writes again, as the MRC does */
++	return train_write_timing_centering(ctrl);
++}

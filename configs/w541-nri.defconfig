@@ -64,6 +64,21 @@ CONFIG_HASWELL_NRI_WRITE_VREF=y
 # il Vref dei comandi dei DIMM (uno per i due canali) centrato allo stesso modo,
 # con il test del training dei comandi e un JEDEC init a ogni valore (patch 0290)
 CONFIG_HASWELL_NRI_COMMAND_VREF=y
+# i due Vref dei DIMM poi centrati con la ricerca dei margini dell'MRC: quello
+# di scrittura su tre timing di scrittura, tutti i rank insieme, loop 17; quello
+# dei comandi una volta, dai margini piu' piccoli dei due canali (patch 0304)
+# il Vref di lettura ricentrato come fa l'MRC dopo quello di scrittura: gli
+# offset dei ricevitori di ogni bit sui dati letti, poi il riferimento di ogni
+# byte su tre timing di lettura (patch 0305)
+CONFIG_HASWELL_NRI_READ_VREF=y
+# forza e equalizzazione di scrittura, terminazione e bias di lettura provate
+# per ogni byte e tenute dove l'occhio e' piu' largo, come il power training
+# dell'MRC senza il peso della potenza (patch 0306)
+CONFIG_HASWELL_NRI_OPT_PARAMS=y
+# il turnaround scrittura-lettura tra rank un clock sotto la somma JEDEC se il
+# test del turnaround passa con gli occhi stretti di 7 da ogni lato, come fa
+# l'MRC (patch 0303; da 4 a 3 su questo W541, come mrc.bin)
+CONFIG_HASWELL_NRI_TURNAROUND=y
 # i margini di lettura e scrittura di ogni rank misurati e scritti nel log dopo
 # il training, 1-2 s in un avvio che fa il training; solo un rapporto (patch
 # 0291-0297, dal codice dell'autore upstream su Gerrit)
@@ -71,6 +86,9 @@ CONFIG_HASWELL_NRI_MARGIN_CHECK=y
 # la centratura 2D di lettura e scrittura con il deskew per bit (patch 0295,
 # 0299, 0301): accesa dalla v1.7.0-rc4, misurata con i margini di rc3 (MEM-18)
 CONFIG_HASWELL_NRI_2D_TIMING=y
+# la console prima di CBMEM a 32 KiB (16 di default): i grafici del training la
+# riempiono; il riepilogo della patch 0302 resta comunque nella parte tenuta
+CONFIG_PRERAM_CBMEM_CONSOLE_SIZE=0x8000
 # i profili XMP dei DIMM come opzione (Hardware -> Memory), spenta di default:
 # con il profilo, i timing e il clock sono quelli del profilo, e uno che non
 # porta al payload due volte di fila viene lasciato da solo (patch 0275-0279)

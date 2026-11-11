@@ -1,0 +1,212 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 21:21:17 +0100
+Subject: [PATCH 304/306] nb/intel/haswell/native_raminit: Centre the DIMM
+ Vrefs with the margin search
+
+The write and command Vref steps take the centre of a scan with one
+test at each value. On a ThinkPad W541 three trainings of v1.7.0-rc5
+gave channel 1 a write Vref of 3, 0 and 0 and the command Vref -6, -4
+and -4; with 3 the write voltage margins of its first DIMM were 4 to 6
+steps lopsided (high 15, below the retrain limit).
+
+The MRC of the Lenovo firmware centres them with its margin search,
+which confirms each edge and interpolates it on the error count:
+
+- the write Vref (its write voltage centring, the only step that sets
+  it): all the ranks of a channel tested at once, loop count 17, the
+  low and high write voltage margins at the trained write timing and
+  4 PI ticks to each side, the reference moved to the mean of the three
+  centres;
+- the command Vref (its command voltage centring): the CADB test on all
+  ranks and both channels, a JEDEC reset at each point, the reference
+  moved by half the difference of the smallest margins to each side.
+
+Do the same after the scans, which stay as the first estimate and the
+fallback, and note the margins in the summary.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: I74bea76bd3612936f5fc860d65c94a2825f2d183
+---
+ .../native_raminit/train_late_command.c       | 46 +++++++++++
+ .../haswell/native_raminit/train_write_vref.c | 79 +++++++++++++++++++
+ 2 files changed, 125 insertions(+)
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_late_command.c b/src/northbridge/intel/haswell/native_raminit/train_late_command.c
+index 2045e6a4df..a93876a0c9 100644
+--- a/src/northbridge/intel/haswell/native_raminit/train_late_command.c
++++ b/src/northbridge/intel/haswell/native_raminit/train_late_command.c
+@@ -1119,6 +1119,48 @@ enum nri_status train_late_command(struct sysinfo *ctrl)
+ /* The offsets of run_io_test_lct() */
+ #define CMDV_GUARD	8
+ #define CMDV_MIN_WIDTH	(2 * CMDV_GUARD + 2 * CMDV_STEP)
++#define CMDV_BER_ROUNDS	1
++
++/*
++ * The scan tries every other value, once each: its centre is good to a step
++ * or two (on a ThinkPad W541 it took -6, -4 and -4 in three trainings). As the
++ * MRC does (its command voltage centring, the only step that sets this
++ * reference), centre it then with the margin search: the low and high
++ * command voltage margins, all ranks and both channels together as they
++ * share the reference, a JEDEC reset at each point, the reference moved by
++ * half the difference of the smallest margins to each side, once. The MRC
++ * takes the edges where the test first fails; this interpolates them on the
++ * error count, as for the other margins.
++ */
++static void centre_cmd_vref_by_margins(struct sysinfo *ctrl, const uint8_t chanmask)
++{
++	const uint8_t res = get_margin_result_type(CmdV);
++	for (uint8_t round = 0; round < CMDV_BER_ROUNDS; round++) {
++		get_ber_margin_ch(ctrl, ctrl->results, chanmask, 0, 0xff, CmdV, true,
++				  MAX_POSSIBLE_VREF);
++		do_jedec_init(ctrl);
++		uint32_t low = UINT32_MAX, high = UINT32_MAX;
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			const union last_margin *m = &ctrl->results[res][0][channel][0];
++			low = MIN(low, m->start);
++			high = MIN(high, m->end);
++		}
++		const int32_t shift = DIV_ROUND_CLOSEST((int32_t)high - (int32_t)low, 20);
++		const int32_t now = ctrl->dimm_vref.ca;
++		printk(BIOS_DEBUG, "CMDV: margins at %d: low %u high %u, move %+d\n",
++		       now, low, high, shift);
++		nri_note(ctrl, "  CMDV: at %d low %u.%u high %u.%u\n", now, low / 10, low % 10,
++			 high / 10, high % 10);
++		if (!shift || !low || !high)
++			return;
++
++		set_dimm_vref(ctrl, VREF_CA, clamp_s32(MIN_VREF, now + shift, MAX_VREF), true);
++		do_jedec_init(ctrl);
++	}
++}
+ 
+ enum nri_status train_command_vref(struct sysinfo *ctrl)
+ {
+@@ -1173,8 +1215,12 @@ enum nri_status train_command_vref(struct sysinfo *ctrl)
+ 
+ 	set_dimm_vref(ctrl, VREF_CA, usable ? centre : before, usable);
+ 	do_jedec_init(ctrl);
++	nri_note(ctrl, "  CMDV: scan %d to %d, centre %d%s\n", range.start, range.end, centre,
++		 usable ? "" : ", not usable");
+ 
+ 	if (usable) {
++		centre_cmd_vref_by_margins(ctrl, chanmask);
++
+ 		/* Back to the reference of before if the result does not pass */
+ 		failing = run_io_test_lct(ctrl, chanmask, false) & chanmask;
+ 		update_vref_and_wait(ctrl, VREF_CA, false, 0, false);
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_write_vref.c b/src/northbridge/intel/haswell/native_raminit/train_write_vref.c
+index 1bfff27024..4a00d559b6 100644
+--- a/src/northbridge/intel/haswell/native_raminit/train_write_vref.c
++++ b/src/northbridge/intel/haswell/native_raminit/train_write_vref.c
+@@ -1,5 +1,6 @@
+ /* SPDX-License-Identifier: GPL-2.0-or-later */
+ 
++#include <commonlib/bsd/clamp.h>
+ #include <console/console.h>
+ #include <northbridge/intel/haswell/haswell.h>
+ #include <types.h>
+@@ -36,6 +37,9 @@
+ #define WRV_TEST_LOOPCOUNT	15
+ /* As the eyes of the 1D margin training */
+ #define WRV_MIN_WIDTH		8
++/* The write voltage centring of the MRC: its loop count and write timings */
++#define WRV_BER_LOOPCOUNT	17
++#define WRV_2D_TICKS		4
+ 
+ /* Channels of chanmask with errors in a write and read test on any of their ranks */
+ static uint8_t test_writes(struct sysinfo *ctrl, const uint8_t chanmask_in)
+@@ -56,6 +60,77 @@ static uint8_t test_writes(struct sysinfo *ctrl, const uint8_t chanmask_in)
+ 	return failed;
+ }
+ 
++/*
++ * The centre of the scan is the centre of the values at which one test passed,
++ * one test for each value, from the bottom of the range up, at the trained
++ * write timing: an edge that passes once and fails once moves it (on a
++ * ThinkPad W541 channel 1 took 0, 1 and 3 in three trainings, its margins 4
++ * to 6 steps lopsided with 3). The MRC (its write voltage centring, the only
++ * step that sets this reference) measures instead, with all the ranks of a
++ * channel tested at once and a loop count of 17, the low and high write
++ * voltage margins with its margin search (from the reference outwards, the
++ * edges confirmed and interpolated on the error count), at three write
++ * timings: the trained one and WRV_2D_TICKS PI ticks to each side. The
++ * reference of the channel moves to the mean of the three centres, once.
++ * So does this, after the scan.
++ */
++static void centre_by_margins(struct sysinfo *ctrl, const uint8_t all)
++{
++	static const int8_t timing[] = { -WRV_2D_TICKS, 0, WRV_2D_TICKS };
++	const uint8_t res = get_margin_result_type(WrV);
++	int32_t sum[NUM_CHANNELS] = { 0 };
++	uint8_t usable = all;
++
++	setup_io_test_basic_va(ctrl, all, WRV_BER_LOOPCOUNT, NSOE);
++	ctrl->dq_pat = BASIC_VA;
++	uint8_t chanmask = 0;
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (all & BIT(channel))
++			chanmask |= select_reut_ranks(ctrl, channel, ctrl->rankmap[channel]);
++	}
++	clear_data_offset_train_all(ctrl);
++	for (size_t i = 0; i < ARRAY_SIZE(timing); i++) {
++		change_1d_margin_multicast(ctrl, WrT, timing[i], 0, false, REG_FILE_USE_START);
++		get_ber_margin_ch(ctrl, ctrl->results, chanmask, 0, 0xff, WrV, true,
++				  MAX_POSSIBLE_VREF);
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			const union last_margin *m = &ctrl->results[res][0][channel][0];
++			printk(BIOS_DEBUG, "WRV: C%u WrT %+d: low %u high %u (tenths)\n",
++			       channel, timing[i], m->start, m->end);
++			nri_note(ctrl, "  WRV C%u: WrT %+d low %u.%u high %u.%u\n", channel,
++				 timing[i], m->start / 10, m->start % 10, m->end / 10,
++				 m->end % 10);
++			if (!m->start || !m->end)
++				usable &= ~BIT(channel);
++
++			sum[channel] += (int32_t)m->end - (int32_t)m->start;
++		}
++	}
++	change_1d_margin_multicast(ctrl, WrT, 0, 0, false, REG_FILE_USE_CURRENT);
++
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		/* The mean of the centres, in steps: tenths, halved */
++		const int32_t shift = DIV_ROUND_CLOSEST(sum[channel],
++							(int32_t)(20 * ARRAY_SIZE(timing)));
++		const int32_t now = ctrl->dimm_vref.dq[channel];
++		if (!(usable & BIT(channel))) {
++			printk(BIOS_WARNING, "WRV: C%u no margin to a side, left at %d\n",
++			       channel, now);
++			continue;
++		}
++		printk(BIOS_DEBUG, "WRV: C%u from %d by %+d\n", channel, now, shift);
++		if (shift)
++			set_dimm_vref(ctrl, channel,
++				      clamp_s32(MIN_VREF, now + shift, MAX_VREF), true);
++	}
++}
++
+ enum nri_status train_write_vref(struct sysinfo *ctrl)
+ {
+ 	if (!CONFIG(HASWELL_NRI_WRITE_VREF) || ctrl->lpddr)
+@@ -113,8 +188,12 @@ enum nri_status train_write_vref(struct sysinfo *ctrl)
+ 			continue;
+ 		}
+ 		set_dimm_vref(ctrl, channel, centre, true);
++		nri_note(ctrl, "  WRV C%u: scan %d to %d, centre %d\n", channel, range.start,
++			 range.end, centre);
+ 	}
+ 
++	centre_by_margins(ctrl, all);
++
+ 	/* Back to the reference of before if the result does not pass */
+ 	const uint8_t failed = test_writes(ctrl, all);
+ 	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
