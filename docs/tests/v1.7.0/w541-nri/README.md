@@ -203,7 +203,61 @@ change it. The turnaround between ranks cannot be found by a scan; what
 `mrc.bin` sets (3) has to come from the trained delays of the ranks, and
 the step of patch 0298 changes nothing, as written.
 
+## v1.7.0-rc5: three trainings of the 2D centring (MEM-18)
+
+rc5 (`3a5d77c`: rc4 with patch 0301, which waits for a late Vref move,
+without the turnaround patches 0298 and 0300, and with the option lock
+work of the M920x branch to `f783399`) as a capsule from rc4,
+2026-11-11: slot B, over rc3; rc4 stays in slot A ([files](rc5/)). The
+build had to be run three times: the runners of GitHub could not resolve
+the package mirror of Ubuntu for two hours; nothing in the code.
+
+| ID | Result | Notes |
+|---|---|---|
+| UPD-01, UPD-02 | PASS | the capsule (`SHA256SUMS` OK, signature valid) written by the payload of rc4; rc5 from slot B, *riuscito* |
+| MEM-18 | PASS | three trainings, below: no *failed to converge* in any (patch 0301), the memory test passed in each; channel 0 the same in the three and wider than with rc3; channel 1 narrow in the first, wider than with rc3 in the other two; the read timing of its first DIMM centred in all three |
+| MEM-17 | PASS | the margin check below the limits only in the first training (C1R1 RdV low 15, WrV high 15); none in the second and the third |
+| MEM-15, MEM-14 again | PASS | command Vref -6 and write Vref 3/3 in the first training, -4 and 3/0 in the second, -4 and 2/0 in the third; the first the same after a reboot, a cold boot, a resume and the stress |
+| MEM-11 | PASS | the second training by *XMP profile 1* on modules without one: *XMP profile 1 requested*, *has no XMP profile 1, using the SPD timings*, byte `0xb0`; back on *SPD* it trained again (the profile had not been given up, unlike in MEM-12), byte `0xa0` |
+| MEM-10 | PASS | the trainings take 2.51, 2.30 and 2.32 s, the cache 0.11 s |
+| MEM-04 | PASS | `stress-ng --vm 4 --vm-bytes 75% --verify`, 30 minutes after a resume: 0 failed, no machine check |
+| FLASH-06, VAR-01 | PASS | `OptionLockStatus` armed; twenty writes of `Timeout`: median 0.153 s |
+| report | PASS but the known ones | [the first boot](rc5/hw-w541-nri-boot1.md): 18 PASS; BOOT-03 INFO (the margin report), no unknown line |
+
+The margins of channel 1 in the three trainings of rc5, against rc3 (no
+2D centring) and rc4 (time in PI ticks, voltage in Vref steps; retrain
+limits 9 and 16):
+
+| Rank | | RdT left / right | WrT left / right | RdV low / high | WrV low / high |
+|---|---|---|---|---|---|
+| C1R0 | rc3 | 16/11 | 14/14 | 14/20 | 15/17 |
+| | rc4 | 11/12 | 15/14 | 18/18 | 16/21 |
+| | rc5, 1 / 2 / 3 | 13/13, 15/15, 15/15 | 15/16, 15/14, 15/15 | 19/18, 24/25, 25/24 | 18/18, 17/24, 18/23 |
+| C1R1 | rc3 | 14/13 | 14/14 | 17/18 | 15/20 |
+| | rc4 | 12/14 | 15/14 | 12/19 | 15/22 |
+| | rc5, 1 / 2 / 3 | 13/13, 15/15, 16/15 | 13/15, 14/16, 14/15 | 15/17, 27/24, 24/26 | 22/15, 18/21, 18/23 |
+| C1R2 | rc3 | 16/14 | 15/15 | 26/28 | 20/29 |
+| | rc5, 1 / 2 / 3 | 15/16, 18/17, 18/16 | 17/18, 17/18, 18/18 | 26/25, 35/34, 35/35 | 26/29, 23/33, 24/32 |
+| C1R3 | rc3 | 16/14 | 15/16 | 27/29 | 22/29 |
+| | rc5, 1 / 2 / 3 | 16/16, 18/17, 19/17 | 17/18, 17/18, 18/18 | 26/26, 33/34, 34/36 | 22/28, 20/32, 21/33 |
+
+Channel 0 is within a step or two in the three trainings (read timing
+19-21 each side, write timing 18-20, read voltage 27-38, write voltage
+22-37), one to three steps wider than with rc3 on every rank: that is
+the effect of the 2D centring. Channel 1 spreads from one training to the
+next more than the 2D centring moves it: the first training of rc5 came
+out as narrow as rc3 and rc4 did, the second and the third had every
+margin above the limits and the voltage margins of all its ranks 6 to 12
+steps wider. The narrow margins seen with rc3 and rc4 were mostly that
+spread, not the 2D centring. What the 2D centring does on channel 1 in
+every training is the read timing of the first DIMM: centred (13/13,
+15/15) where rc3 left it 16/11. The narrow first training also took a
+higher write Vref for channel 1 (3, against 0 in the other two) and a
+lower command Vref (-6 against -4): which of the trainings of the NRI
+decide the spread is still to see.
+
 ## The machine after the run
 
-v1.7.0-rc4 in slot A, rc3 in slot B; *Memory profile* on *SPD*, byte 0x7d
+v1.7.0-rc5 in slot B, rc4 in slot A, with the training of the third boot;
+*Memory profile* on *SPD*, byte 0x7d
 `0xa0`; *BIOS Lock* and *Firmware protection* on; no helper left.
