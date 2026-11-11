@@ -1,0 +1,45 @@
+# boot1 2026-11-11T12:12:10+01:00 boot_id=da0f1da8-81a4-426e-8917-50f967072259 uptime=53.18
+versione:  v1.7.0-rc3, minima per una capsula v1.3.9
+ultimo:    v1.7.0-rc3, riuscito
+CMOS 0x7d=0xa0 0x7e=0xa0
+CMOS 0x7d=0xa0 0x7e=0xa0
+CMOS 0x7d=0xa0 0x7e=0xa0
+console overflow lines: 1
+[INFO ]  CMDV: command Vref -6 (was 0)
+[INFO ]  WRV: C0 write Vref 2 (was 0)
+[INFO ]  WRV: C1 write Vref 1 (was 0)
+[DEBUG]  TAT: C0 write to read, other rank, 4: pass
+[DEBUG]  TAT: C1 write to read, other rank, 4: pass
+[DEBUG]  TAT: C0 write to read, other rank, 3: pass
+[DEBUG]  TAT: C1 write to read, other rank, 3: pass
+[DEBUG]  TAT: C0 write to read, other rank, 2: pass
+[DEBUG]  TAT: C1 write to read, other rank, 2: pass
+[DEBUG]  TAT: C0 write to read, other rank, 1: pass
+[DEBUG]  TAT: C1 write to read, other rank, 1: pass
+[WARN ]  TAT: C0 no value fails, test not usable, left at 4
+[INFO ]  TAT: C0 write to read, other rank: 4 (was 4)
+[WARN ]  TAT: C1 no value fails, test not usable, left at 4
+[INFO ]  TAT: C1 write to read, other rank: 4 (was 4)
+[ERROR]  ***** Margin limit check failed! *****
+[WARN ]  Margins below the retrain limits, training kept
+[INFO ]  Memory test passed
+[DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+[DEBUG]  MRC: cache data 'RW_MRC_CACHE' needs update.
+[DEBUG]  MRC: updated 'RW_MRC_CACHE'.
+[DEBUG]  Margin: RdT     WrT     RdV     WrV
+[DEBUG]          Lft Rgt Lft Rgt Low Hi  Low Hi
+[DEBUG]  C0R0:   18  18  17  17  26  26  21  22 
+[DEBUG]  C0R1:   18  19  15  17  24  27  21  18 
+[DEBUG]  C0R2:   18  19  19  20  36  37  36  22 
+[DEBUG]  C0R3:   18  19  17  19  36  37  35  24 
+
+[DEBUG]  C1R0:   16  11  14  14 -14  20 -15  17 *** FAILED ***
+[DEBUG]  C1R1:   14  13  14  14  17  18 -15  20 *** FAILED ***
+[DEBUG]  C1R2:   16  14  15  15  26  28  20  29 
+[DEBUG]  C1R3:   16  14  15  16  27  29  22  29 
+
+  tWRRD                         20/4/4    20/4/4
+   2:before RAM initialization                         480,942 (27,495)
+   3:after RAM initialization                          2,415,609 (1,934,667)
+Total Time: 3,268,324
+  VREF_ADJUST  vref_ca_ctrl=-6 vref_dq_ch1_ctrl=1 vref_dq_ch0_ctrl=2 en_dimm_vref_ca=1 en_dimm_vref_ch1=1 en_dimm_vref_ch0=1 hi_z_timer_ctrl=3 vccddq_hi_qnnn_h=0 ca_slow_bw=1 ch0_slow_bw=1 ch1_slow_bw=1
