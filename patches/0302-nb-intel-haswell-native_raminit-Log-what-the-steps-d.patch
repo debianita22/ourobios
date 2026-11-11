@@ -1,0 +1,127 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 21:20:57 +0100
+Subject: [PATCH 302/306] nb/intel/haswell/native_raminit: Log what the steps
+ decided at the end
+
+The romstage console before CBMEM holds 16 KiB, and the plots of the 2D
+centring fill it: on a ThinkPad W541 the lines of the steps before it
+(the command and write Vref among them) were lost in every training
+since the 2D centring was turned on.
+
+Give the training a small buffer that the steps write a line of their
+result to (nri_note()), and log it as a whole after the margin check,
+in the part of the log that is kept. Cleared at each attempt.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: Ie8245e1531c2aebd1c29253bbb11f777d1ab1c96
+---
+ .../intel/haswell/native_raminit/Makefile.mk  |  1 +
+ .../haswell/native_raminit/nri_summary.c      | 39 +++++++++++++++++++
+ .../haswell/native_raminit/raminit_main.c     |  3 ++
+ .../haswell/native_raminit/raminit_native.h   |  6 +++
+ 4 files changed, 49 insertions(+)
+ create mode 100644 src/northbridge/intel/haswell/native_raminit/nri_summary.c
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+index fc17f32af2..25ce12c420 100644
+--- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
++++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+@@ -17,6 +17,7 @@ romstage-y += memory_test.c
+ romstage-y += raminit_main.c
+ romstage-y += raminit_native.c
+ romstage-y += ranges.c
++romstage-y += nri_summary.c
+ romstage-y += retrain_margin_check.c
+ romstage-y += reut.c
+ romstage-y += save_restore.c
+diff --git a/src/northbridge/intel/haswell/native_raminit/nri_summary.c b/src/northbridge/intel/haswell/native_raminit/nri_summary.c
+new file mode 100644
+index 0000000000..6337034b8d
+--- /dev/null
++++ b/src/northbridge/intel/haswell/native_raminit/nri_summary.c
+@@ -0,0 +1,39 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <commonlib/bsd/helpers.h>
++#include <console/console.h>
++#include <stdarg.h>
++#include <stdio.h>
++#include <types.h>
++
++#include "raminit_native.h"
++
++/*
++ * The romstage console before CBMEM holds 16 KiB on most boards, and the
++ * plots of the 2D centring fill it: the lines of the steps before it are
++ * lost. Each step notes its result here in a few words, and the whole is
++ * logged after the margin check, in the part of the log that is kept.
++ */
++void nri_note(struct sysinfo *ctrl, const char *fmt, ...)
++{
++	const size_t room = sizeof(ctrl->summary) - ctrl->summary_len;
++	if (room < 2)
++		return;
++
++	va_list args;
++	va_start(args, fmt);
++	const int len = vsnprintf(ctrl->summary + ctrl->summary_len, room, fmt, args);
++	va_end(args);
++	if (len > 0)
++		ctrl->summary_len += MIN((size_t)len, room - 1);
++}
++
++enum nri_status print_nri_summary(struct sysinfo *ctrl)
++{
++	if (ctrl->summary_len)
++		printk(BIOS_INFO, "NRI summary:\n%s", ctrl->summary);
++
++	ctrl->summary_len = 0;
++	ctrl->summary[0] = '\0';
++	return NRI_STATUS_SUCCESS;
++}
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index 70900a2c7e..89b9a613ef 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -139,6 +139,7 @@ static const struct task_entry cold_boot[] = {
+ 	{ train_read_timing_centering_2d,                         true, "RDTC2D",     },
+ 	{ optimise_round_trip,                                    true, "RTL",        },
+ 	{ retrain_margin_check,                                   true, "RMC",        },
++	{ print_nri_summary,                                      true, "SUMMARY",    },
+ 	{ activate_mc,                                            true, "ACTIVATE",   },
+ 	{ save_training_values,                                   true, "SAVE_TRAIN", },
+ 	{ save_non_training,                                      true, "SAVE_NONT",  },
+@@ -332,6 +333,8 @@ void raminit_main(const enum raminit_boot_mode bootmode)
+ 			/* As trained: the optimisations are the first suspects */
+ 			mighty_ctrl.no_latency_optimisation = true;
+ 		}
++		mighty_ctrl.summary_len = 0;
++		mighty_ctrl.summary[0] = '\0';
+ 		status = try_raminit(&mighty_ctrl, cold_boot, ARRAY_SIZE(cold_boot));
+ 		if (status == NRI_STATUS_SUCCESS)
+ 			return;
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index 266943eb0f..f9b9874982 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -425,6 +425,10 @@ struct sysinfo {
+ 	bool restore_mrs;
+ 	bool no_latency_optimisation;	/* training again after a failure */
+ 
++	/* What the steps decided, logged again at the end of the training */
++	char summary[1536];
++	size_t summary_len;
++
+ 	uint8_t memory_profile;		/* enum memory_profile: what this boot asks for */
+ 	bool xmp;			/* the timings are those of the XMP profile */
+ 
+@@ -746,6 +750,8 @@ enum nri_status memory_test(struct sysinfo *ctrl);
+ enum nri_status optimise_round_trip(struct sysinfo *ctrl);
+ enum nri_status train_command_vref(struct sysinfo *ctrl);
+ enum nri_status train_write_vref(struct sysinfo *ctrl);
++enum nri_status print_nri_summary(struct sysinfo *ctrl);
++void nri_note(struct sysinfo *ctrl, const char *fmt, ...) __printf(2, 3);
+ enum nri_status alias_check(struct sysinfo *ctrl);
+ enum nri_status raminit_done(struct sysinfo *ctrl);
+ 

@@ -1,0 +1,303 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 21:21:17 +0100
+Subject: [PATCH 305/306] nb/intel/haswell/native_raminit: Centre the read Vref
+ per bit and per byte
+
+The receiver offsets of the data bits (RX_OFFSET_VDQ, one register per
+byte for all ranks on Haswell) are set by the sense amplifier training,
+from one sample of each value, on the receivers alone, and nothing
+looks at them again with data. On a ThinkPad W541 one training in three
+of v1.7.0-rc5 left every read margin of channel 1 5 to 9 steps narrower
+than the other two, with offsets 1 to 2 codes away.
+
+The read voltage centring of the MRC, after the write voltage, starts
+the bits from the middle again and centres each on its own read voltage
+margins, then centres the reference of each byte at three read timings
+(the trained one and 8 PI ticks to each side), all the ranks of a
+channel tested at once. Add HASWELL_NRI_READ_VREF, which does the same.
+If the read test fails after it, the training is done again without
+the optimisations.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: I47a97ab642a559669aaeae8ef982d611aa594063
+---
+ src/northbridge/intel/haswell/Kconfig         |  10 +
+ .../intel/haswell/native_raminit/Makefile.mk  |   1 +
+ .../haswell/native_raminit/raminit_main.c     |   1 +
+ .../haswell/native_raminit/raminit_native.h   |   1 +
+ .../haswell/native_raminit/train_read_vref.c  | 208 ++++++++++++++++++
+ 5 files changed, 221 insertions(+)
+ create mode 100644 src/northbridge/intel/haswell/native_raminit/train_read_vref.c
+
+diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
+index 0f5615a7a7..5beef2afa9 100644
+--- a/src/northbridge/intel/haswell/Kconfig
++++ b/src/northbridge/intel/haswell/Kconfig
+@@ -77,6 +77,16 @@ config HASWELL_NRI_2D_TIMING
+ 	  training that is done again after a failure. Best with
+ 	  HASWELL_NRI_MEMORY_TEST and HASWELL_NRI_MARGIN_CHECK.
+ 
++config HASWELL_NRI_READ_VREF
++	bool "Centre the read Vref per bit and per byte as the MRC does"
++	depends on USE_NATIVE_RAMINIT
++	help
++	  After the write Vref, centre the offset of each data receiver on
++	  the read data (the sense amplifier training sets it from the
++	  receivers alone), then the read reference of each byte at three
++	  read timings, all the ranks tested at once, as the MRC does. Not
++	  run in the training that is done again after a failure.
++
+ config HASWELL_NRI_TURNAROUND
+ 	bool "Shorten the write to read turnaround between ranks as the MRC does"
+ 	depends on USE_NATIVE_RAMINIT
+diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+index ab72d82c67..993332dd35 100644
+--- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
++++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+@@ -30,6 +30,7 @@ romstage-y += train_2d_margins.c
+ romstage-y += train_jedec_write_leveling.c
+ romstage-y += train_late_command.c
+ romstage-y += train_read_mpr.c
++romstage-y += train_read_vref.c
+ romstage-y += train_receive_enable.c
+ romstage-y += train_round_trip.c
+ romstage-y += train_sense_amp_offset.c
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index 9967243817..90a085f6ba 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -135,6 +135,7 @@ static const struct task_entry cold_boot[] = {
+ 	{ train_late_command,                                     true, "LCT",        },
+ 	{ train_command_vref,                                     true, "CMDVC1D",    },
+ 	{ train_write_vref,                                       true, "WRVC1D",     },
++	{ train_read_vref,                                        true, "RDVC2D",     },
+ 	{ train_write_timing_centering_2d,                        true, "WRTC2D",     },
+ 	{ train_read_timing_centering_2d,                         true, "RDTC2D",     },
+ 	{ optimise_round_trip,                                    true, "RTL",        },
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index 1443a70434..13a51f7c85 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -751,6 +751,7 @@ enum nri_status optimise_round_trip(struct sysinfo *ctrl);
+ enum nri_status train_command_vref(struct sysinfo *ctrl);
+ enum nri_status train_write_vref(struct sysinfo *ctrl);
+ enum nri_status optimise_turnaround(struct sysinfo *ctrl);
++enum nri_status train_read_vref(struct sysinfo *ctrl);
+ enum nri_status print_nri_summary(struct sysinfo *ctrl);
+ void nri_note(struct sysinfo *ctrl, const char *fmt, ...) __printf(2, 3);
+ enum nri_status alias_check(struct sysinfo *ctrl);
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_read_vref.c b/src/northbridge/intel/haswell/native_raminit/train_read_vref.c
+new file mode 100644
+index 0000000000..ae7cebcec7
+--- /dev/null
++++ b/src/northbridge/intel/haswell/native_raminit/train_read_vref.c
+@@ -0,0 +1,208 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <commonlib/bsd/clamp.h>
++#include <console/console.h>
++#include <lib.h>
++#include <types.h>
++
++#include "raminit_native.h"
++
++/*
++ * Read voltage centring, as the MRC does it after the command training.
++ *
++ * Each data bit has an offset of its receiver (the sense amplifier) in the
++ * one RX_OFFSET_VDQ register of its byte, and each byte a read reference
++ * (the Rx Vref of RX_TRAIN). The sense amplifier offset training sets the
++ * bits from one sample of each value, on the receivers alone; the 1D read
++ * voltage centring sets the byte. After that nothing looks at the bits
++ * again with data, and on a ThinkPad W541 channel 1 came out of one
++ * training in three with every read margin 5 to 9 steps narrower, the
++ * offsets of its bytes 1 to 2 codes away from those of the other two.
++ *
++ * The MRC (its read voltage centring, the step after the write voltage)
++ * centres the bits on the read data instead, then the bytes in two
++ * dimensions; all the ranks of a channel are tested at once, as the bits
++ * have one register for all of them:
++ * - per bit: the offsets back to the middle (8) and the read voltage margin
++ *   of each bit searched to each side with the per-bit offsets, loop count
++ *   15, stop when all lanes fail; the offset of each bit moves to the middle
++ *   of its margins;
++ * - per byte: the read voltage margins of each byte with the margin search
++ *   at three read timings, the trained one and RDV_2D_TICKS PI ticks to each
++ *   side, and the reference of the byte moves by the mean of the three
++ *   centres (a step of the reference being two of the margin).
++ * So does this. Not run in the training that is done again after a failure.
++ */
++
++#define RDV_LOOPCOUNT	15
++#define RDV_2D_TICKS	8
++#define RDV_BIT_MAX	15
++
++static uint8_t select_all_ranks(struct sysinfo *ctrl)
++{
++	uint8_t chanmask = 0;
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (does_ch_exist(ctrl, channel))
++			chanmask |= select_reut_ranks(ctrl, channel, ctrl->rankmap[channel]);
++	}
++	return chanmask;
++}
++
++static void set_err_ctl(const uint8_t chanmask, const enum test_stop stop)
++{
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		const union reut_err_ctl_reg reut_err_ctl = {
++			.selective_err_enable_cacheline = 0xff,
++			.selective_err_enable_chunk     = 0xff,
++			.stop_on_error_control          = stop,
++			.stop_on_nth_error              = 1,
++		};
++		mchbar_write32(REUT_ch_ERR_CONTROL(channel), reut_err_ctl.raw);
++	}
++}
++
++static void centre_bits(struct sysinfo *ctrl, const uint8_t chanmask)
++{
++	uint8_t b_map[NUM_LANES];
++	for (uint8_t byte = 0; byte < NUM_LANES; byte++)
++		b_map[byte] = byte;
++
++	/* From the middle, as the MRC: the bits are measured, not corrected */
++	change_1d_margin_multicast(ctrl, RdVBit, 0x88888888, 0, true, REG_FILE_USE_RANK);
++
++	/* The byte margins, where the search of the bits starts */
++	const uint8_t res = get_margin_result_type(RdV);
++	get_ber_margin_byte(ctrl, ctrl->results, chanmask, 0, 0xff, RdV, b_map, true,
++			    MAX_POSSIBLE_VREF);
++	uint32_t margin_byte[NUM_CHANNELS][NUM_LANES][NUM_SIGN] = {};
++	uint32_t margin_bit[NUM_CHANNELS][NUM_LANES][NUM_BITS][NUM_SIGN];
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		for (uint8_t byte = 0; byte < NUM_LANES; byte++) {
++			for (uint8_t sign = 0; sign < NUM_SIGN; sign++) {
++				margin_byte[channel][byte][sign] =
++					ctrl->results[res][0][channel][byte].m[sign];
++			}
++			for (uint8_t bit = 0; bit < NUM_BITS; bit++) {
++				margin_bit[channel][byte][bit][0] = 8;
++				margin_bit[channel][byte][bit][1] = 8;
++			}
++		}
++	}
++
++	set_err_ctl(chanmask, ALSOE);
++	get_margin_bit(ctrl, chanmask, 0, margin_bit, margin_byte, RdVBit, RDV_BIT_MAX);
++	set_err_ctl(chanmask, NSOE);
++
++	printk(BIOS_DEBUG, "RDV: per-bit offsets");
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		printk(BIOS_DEBUG, "\n  C%u:", channel);
++		for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++			uint32_t value = 0;
++			for (uint8_t bit = 0; bit < NUM_BITS; bit++) {
++				const uint32_t *m = margin_bit[channel][byte][bit];
++				const int32_t centre = (int32_t)(m[1] + m[0]) - 16;
++				const int32_t code = clamp_s32(0, 8 + DIV_ROUND_CLOSEST(centre, 2),
++							       15);
++				value |= (uint32_t)code << (4 * bit);
++			}
++			change_margin(ctrl, RdVBit, value, false, channel, 0, byte, true, false,
++				      REG_FILE_USE_RANK);
++			printk(BIOS_DEBUG, " %08x", value);
++		}
++	}
++	printk(BIOS_DEBUG, "\n");
++}
++
++static void centre_bytes(struct sysinfo *ctrl, const uint8_t chanmask)
++{
++	static const int8_t timing[] = { 0, -RDV_2D_TICKS, RDV_2D_TICKS };
++	uint8_t b_map[NUM_LANES];
++	for (uint8_t byte = 0; byte < NUM_LANES; byte++)
++		b_map[byte] = byte;
++
++	const uint8_t res = get_margin_result_type(RdV);
++	int32_t sum[NUM_CHANNELS][NUM_LANES] = {};
++	uint8_t no_margin[NUM_CHANNELS] = {};
++	for (size_t i = 0; i < ARRAY_SIZE(timing); i++) {
++		change_1d_margin_multicast(ctrl, RdT, timing[i], 0, false, REG_FILE_USE_START);
++		get_ber_margin_byte(ctrl, ctrl->results, chanmask, 0, 0xff, RdV, b_map, true,
++				    MAX_POSSIBLE_VREF);
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++				const union last_margin *m =
++					&ctrl->results[res][0][channel][byte];
++				if (!m->start || !m->end)
++					no_margin[channel] |= BIT(byte);
++
++				sum[channel][byte] += (int32_t)m->end - (int32_t)m->start;
++			}
++		}
++	}
++	change_1d_margin_multicast(ctrl, RdT, 0, 0, false, REG_FILE_USE_CURRENT);
++
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		nri_note(ctrl, "  RDV C%u: Rx Vref moved", channel);
++		printk(BIOS_DEBUG, "RDV: C%u Rx Vref moved", channel);
++		for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++			/* Margin steps (tenths, halved, mean of the points); two per Rx Vref step */
++			const int32_t centre = DIV_ROUND_CLOSEST(sum[channel][byte],
++								 (int32_t)(20 * ARRAY_SIZE(timing)));
++			const int32_t shift = no_margin[channel] & BIT(byte) ? 0 : centre / 2;
++			for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
++				if (!rank_in_ch(ctrl, rank, channel))
++					continue;
++
++				int8_t *const vref = &ctrl->rxvref[channel][rank][byte];
++				*vref = clamp_s32(-32, *vref + shift, 31);
++				update_rxt(ctrl, channel, rank, byte, RXT_RESTORE, 0);
++			}
++			nri_note(ctrl, " %+d", (int)shift);
++			printk(BIOS_DEBUG, " %+d", (int)shift);
++		}
++		nri_note(ctrl, "\n");
++		printk(BIOS_DEBUG, "\n");
++	}
++}
++
++enum nri_status train_read_vref(struct sysinfo *ctrl)
++{
++	if (!CONFIG(HASWELL_NRI_READ_VREF) || ctrl->lpddr || ctrl->bdw)
++		return NRI_STATUS_SUCCESS;
++
++	if (ctrl->no_latency_optimisation) {
++		printk(BIOS_INFO, "Read Vref per bit left as trained\n");
++		return NRI_STATUS_SUCCESS;
++	}
++
++	setup_wdb(ctrl);
++	setup_io_test_basic_va(ctrl, ctrl->chanmap, RDV_LOOPCOUNT, NSOE);
++	ctrl->dq_pat = BASIC_VA;
++	const uint8_t chanmask = select_all_ranks(ctrl);
++	if (!chanmask)
++		return NRI_STATUS_SUCCESS;
++
++	clear_data_offset_train_all(ctrl);
++	centre_bits(ctrl, chanmask);
++	centre_bytes(ctrl, chanmask);
++
++	/* The result has to pass, or the training does not go on with it */
++	const uint8_t failed = run_io_test(ctrl, chanmask, ctrl->dq_pat, true) & chanmask;
++	if (failed) {
++		printk(BIOS_ERR, "RDV: read test fails after the read Vref centring (0x%x)\n",
++		       failed);
++		return NRI_STATUS_1D_MARGINING_FAILURE;
++	}
++	return NRI_STATUS_SUCCESS;
++}

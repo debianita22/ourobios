@@ -122,12 +122,35 @@ whose changes below are still to run on a machine.
   (patch 0301). On the W541 with rc4 (MEM-18): channel 0 wider on every
   rank, channel 1's first DIMM narrower in the read timing; rc5 is
   measured with two trainings.
-- **Not in v1.7.0: the turnaround between ranks.** rc3 and rc4 tried to
-  shorten the write to read turnaround between ranks (4 clocks here, 3
-  with `mrc.bin`) with a test of the memory controller (patches 0298,
-  0300): it passes at every value down to 0, as the controller keeps a
-  minimum of its own. The value of `mrc.bin` comes from the trained
-  delays, by a rule still to learn; 4 stays.
+- **W541 (`nri`): the training steps that the native RAM init lacked
+  against the MRC, as the MRC of the Lenovo firmware does them** (patches
+  0302-0306, from rc6). They were read in the MRC of the stock firmware of
+  the W541 (GNET94WW), step by step:
+  - the **write to read turnaround between ranks**: one clock under the
+    JEDEC sum if the turnaround test passes with the read and write eyes
+    squeezed by 7 to each side (4 to 3 here, as with `mrc.bin`). rc3 and
+    rc4 tried a scan for the shortest value that passes (patches 0298,
+    0300, out of the series): the test passes down to 0, and the MRC does
+    not scan;
+  - the **write and command Vref** centred with the margin search after
+    their scans (the write Vref on three write timings, all ranks at
+    once), where one test per value let the result move by up to 3 steps
+    between trainings;
+  - the **read Vref**: the offset of every bit's receiver centred on the
+    read data, then the reference of every byte on three read timings;
+    the sense amplifier training had set the bits from one sample each;
+  - the **signal settings of each byte** (write drive strength and
+    equalisation, read termination and receiver bias), each byte at the
+    value with the widest eye: the MRC gives the narrow bytes of channel
+    1 a stronger termination, where the native RAM init set the same for
+    all;
+  - a **summary** of what these steps decided, in the part of the log of
+    a training boot that is kept (`sudo cbmem -1 | grep -A20 'NRI
+    summary'`).
+
+  With rc5 channel 1 of the W541 came out of one training in three with
+  margins 5 to 9 steps narrower; rc6 is to show whether the spread is
+  gone (MEM-19 to MEM-21). A boot that trains takes some seconds longer.
 - **`tools/ddr-report.py` shows the per-bit deskew** (`RxPerBit`,
   `TxPerBit`, one nibble per bit), and **`tools/hw-report.py` knows the
   report of the margins of the native RAM init**: margins below the

@@ -1,0 +1,288 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 21:20:57 +0100
+Subject: [PATCH 303/306] nb/intel/haswell/native_raminit: Shorten tWRRD
+ between ranks as the MRC does
+
+After a write to one rank the controller waits tWRRD_dr or tWRRD_dd
+clocks before a read from another rank. refresh_timings() sets both to
+the sum of the JEDEC times; on a ThinkPad W541 with four dual-rank
+DIMMs that is 4, where mrc.bin ends at 3.
+
+A scan for the shortest value that passes cannot find it: on this
+controller the turnaround test of the REUT passes down to 0 (measured
+in v1.7.0-rc3 and rc4), the controller keeping a spacing of its own.
+The turnaround step of the MRC in the Lenovo firmware of the W541 does
+not scan: it tries the JEDEC value minus one clock and keeps it if the
+turnaround test passes with the read and write eyes squeezed, the read
+and write timing moved by 7 PI ticks and the read and write voltage by
+7 Vref steps, to each side, one at a time.
+
+Add HASWELL_NRI_TURNAROUND, which does that after the round trip step.
+A note of the result goes to the summary. Not run in the training that
+is done again after a failure.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: I7cee625f9e04fd8cba2d3fd851f14e13d757e07e
+---
+ src/northbridge/intel/haswell/Kconfig         |  10 +
+ .../intel/haswell/native_raminit/Makefile.mk  |   1 +
+ .../haswell/native_raminit/raminit_main.c     |   1 +
+ .../haswell/native_raminit/raminit_native.h   |   1 +
+ .../haswell/native_raminit/train_turnaround.c | 190 ++++++++++++++++++
+ 5 files changed, 203 insertions(+)
+ create mode 100644 src/northbridge/intel/haswell/native_raminit/train_turnaround.c
+
+diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
+index 3cea56aa76..0f5615a7a7 100644
+--- a/src/northbridge/intel/haswell/Kconfig
++++ b/src/northbridge/intel/haswell/Kconfig
+@@ -77,6 +77,16 @@ config HASWELL_NRI_2D_TIMING
+ 	  training that is done again after a failure. Best with
+ 	  HASWELL_NRI_MEMORY_TEST and HASWELL_NRI_MARGIN_CHECK.
+ 
++config HASWELL_NRI_TURNAROUND
++	bool "Shorten the write to read turnaround between ranks as the MRC does"
++	depends on USE_NATIVE_RAMINIT
++	help
++	  After the round trip step, try the write to read turnaround
++	  between ranks one clock shorter than the JEDEC sum and keep it if
++	  the turnaround test of the REUT passes with the read and write
++	  timing and voltage moved by 7 steps to each side, as the MRC does.
++	  Not run in the training that is done again after a failure.
++
+ config HASWELL_NRI_WRITE_VREF
+ 	bool "Centre the write Vref of the DIMMs after training"
+ 	depends on USE_NATIVE_RAMINIT
+diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+index 25ce12c420..ab72d82c67 100644
+--- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
++++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+@@ -33,6 +33,7 @@ romstage-y += train_read_mpr.c
+ romstage-y += train_receive_enable.c
+ romstage-y += train_round_trip.c
+ romstage-y += train_sense_amp_offset.c
++romstage-y += train_turnaround.c
+ romstage-y += train_write_vref.c
+ 
+ romstage-$(CONFIG_DEBUG_RAM_SETUP) += info_dumps.c
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index 89b9a613ef..9967243817 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -138,6 +138,7 @@ static const struct task_entry cold_boot[] = {
+ 	{ train_write_timing_centering_2d,                        true, "WRTC2D",     },
+ 	{ train_read_timing_centering_2d,                         true, "RDTC2D",     },
+ 	{ optimise_round_trip,                                    true, "RTL",        },
++	{ optimise_turnaround,                                    true, "TAT",        },
+ 	{ retrain_margin_check,                                   true, "RMC",        },
+ 	{ print_nri_summary,                                      true, "SUMMARY",    },
+ 	{ activate_mc,                                            true, "ACTIVATE",   },
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index f9b9874982..1443a70434 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -750,6 +750,7 @@ enum nri_status memory_test(struct sysinfo *ctrl);
+ enum nri_status optimise_round_trip(struct sysinfo *ctrl);
+ enum nri_status train_command_vref(struct sysinfo *ctrl);
+ enum nri_status train_write_vref(struct sysinfo *ctrl);
++enum nri_status optimise_turnaround(struct sysinfo *ctrl);
+ enum nri_status print_nri_summary(struct sysinfo *ctrl);
+ void nri_note(struct sysinfo *ctrl, const char *fmt, ...) __printf(2, 3);
+ enum nri_status alias_check(struct sysinfo *ctrl);
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_turnaround.c b/src/northbridge/intel/haswell/native_raminit/train_turnaround.c
+new file mode 100644
+index 0000000000..143c47db40
+--- /dev/null
++++ b/src/northbridge/intel/haswell/native_raminit/train_turnaround.c
+@@ -0,0 +1,190 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <console/console.h>
++#include <lib.h>
++#include <northbridge/intel/haswell/haswell.h>
++#include <types.h>
++
++#include "raminit_native.h"
++
++/*
++ * Write to read turnaround between ranks, as the MRC does it.
++ *
++ * After a write to one rank, the controller waits tWRRD_dr (the other rank of
++ * the DIMM) or tWRRD_dd (a rank of the other DIMM) clocks before a read from
++ * another rank. refresh_timings() sets both to the sum of the JEDEC times; on
++ * a ThinkPad W541 with four DIMMs mrc.bin ends one clock below that.
++ *
++ * The MRC of the Lenovo firmware of the W541 (its turnaround step) does not
++ * look for the shortest value that passes: on these controllers the test of
++ * the turnaround passes down to 0, as the controller keeps a spacing of its
++ * own between a write and a read of another rank. It tries the JEDEC value
++ * minus one clock and keeps it if the turnaround test passes with the read
++ * and write eyes squeezed: the read and write timing moved by 7 PI ticks and
++ * the read and write voltage by 7 Vref steps, to each side, one at a time
++ * (its test list RdV, RdT, WrV, WrT with offsets -7 and +7). So does this.
++ *
++ * The test is the turnaround test of the REUT: a write of every rank of the
++ * channel in turn, rounds of a read and a write that move to the next rank
++ * after each pair, so that every read follows a write to another rank, and a
++ * read of everything. With the read latency final, after the round trip step.
++ * Not run in the training that is done again after a failure.
++ */
++
++#define TAT_NUM_CL	128
++/* The offsets of the MRC: PI ticks for the timings, Vref steps for the voltages */
++#define TAT_SQUEEZE	7
++
++static const enum margin_param tat_params[] = { RdV, RdT, WrV, WrT };
++
++static void setup_io_test_wr_rd_ta(struct sysinfo *ctrl, const uint8_t chanmask)
++{
++	/* A rank and a column for each cacheline: run_io_test() sets the rates */
++	const struct reut_box reut_addr = {
++		.rank = {
++			.start    = 0,
++			.stop     = 0,
++			.inc_rate = 32,
++			.inc_val  = 1,
++		},
++		.col = {
++			.start    = 0,
++			.stop     = 1023,
++			.inc_rate = 0,
++			.inc_val  = 1,
++		},
++	};
++	/* One line of the WDB, so that a read and a write of a pair use the same */
++	const struct wdb_pat pattern = {
++		.start_ptr  = 0,
++		.stop_ptr   = 0,
++		.inc_rate   = 0,
++		.dq_pattern = TURN_AROUND_WR,
++	};
++	setup_io_test(
++		ctrl,
++		chanmask,
++		PAT_WR_RD_TA,
++		TAT_NUM_CL,
++		0,
++		&reut_addr,
++		NSOE,
++		&pattern,
++		0,
++		0);
++
++	ctrl->dq_pat_lc = 1;
++	ctrl->dq_pat = TURN_AROUND_WR;
++}
++
++static void program_wrrd(struct sysinfo *ctrl, const uint8_t channel, const uint8_t value,
++			 const bool update_ctrl)
++{
++	union tc_bank_rank_b_reg tc_bank_rank_b = ctrl->tc_bankrank_b[channel];
++	tc_bank_rank_b.tWRRD_dr = value;
++	tc_bank_rank_b.tWRRD_dd = value;
++	mchbar_write32(TC_BANK_RANK_B_ch(channel), tc_bank_rank_b.raw);
++	if (update_ctrl)
++		ctrl->tc_bankrank_b[channel] = tc_bank_rank_b;
++}
++
++/* Channels of chanmask with errors in the turnaround test, as set and squeezed */
++static uint8_t test_squeezed(struct sysinfo *ctrl, const uint8_t chanmask)
++{
++	uint8_t failed = run_io_test(ctrl, chanmask, ctrl->dq_pat, true) & chanmask;
++	for (size_t i = 0; i < ARRAY_SIZE(tat_params); i++) {
++		const enum margin_param param = tat_params[i];
++		for (int sign = -1; sign <= 1; sign += 2) {
++			change_1d_margin_multicast(ctrl, param, sign * TAT_SQUEEZE, 0, false,
++						   REG_FILE_USE_START);
++			const uint8_t errors =
++				run_io_test(ctrl, chanmask, ctrl->dq_pat, true) & chanmask;
++			if (errors)
++				printk(BIOS_DEBUG, "TAT: fails with %s %+d (0x%x)\n",
++				       get_margin_name(param), sign * TAT_SQUEEZE,
++				       errors);
++			failed |= errors;
++		}
++		change_1d_margin_multicast(ctrl, param, 0, 0, false, REG_FILE_USE_START);
++	}
++	return failed;
++}
++
++enum nri_status optimise_turnaround(struct sysinfo *ctrl)
++{
++	if (!CONFIG(HASWELL_NRI_TURNAROUND) || ctrl->lpddr)
++		return NRI_STATUS_SUCCESS;
++
++	if (ctrl->no_latency_optimisation) {
++		printk(BIOS_INFO, "Turnarounds left as set\n");
++		return NRI_STATUS_SUCCESS;
++	}
++
++	/* The channels with more than one rank, where the two times are equal */
++	uint8_t before[NUM_CHANNELS] = { 0 };
++	uint8_t all = 0;
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		const union tc_bank_rank_b_reg tc_bank_rank_b = ctrl->tc_bankrank_b[channel];
++		if (!does_ch_exist(ctrl, channel) || popcnt(ctrl->rankmap[channel]) < 2)
++			continue;
++
++		if (tc_bank_rank_b.tWRRD_dr != tc_bank_rank_b.tWRRD_dd ||
++		    tc_bank_rank_b.tWRRD_dr < 2)
++			continue;
++
++		before[channel] = tc_bank_rank_b.tWRRD_dr;
++		all |= BIT(channel);
++	}
++	if (!all)
++		return NRI_STATUS_SUCCESS;
++
++	setup_wdb(ctrl);
++	setup_io_test_wr_rd_ta(ctrl, all);
++	uint8_t chanmask = 0;
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (all & BIT(channel))
++			chanmask |= select_reut_ranks(ctrl, channel, 0xf);
++	}
++	clear_data_offset_train_all(ctrl);
++
++	/* The test has to pass squeezed as set, or it tells nothing */
++	const uint8_t failing = test_squeezed(ctrl, chanmask);
++	if (failing)
++		printk(BIOS_WARNING, "TAT: test fails squeezed as set (0x%x)\n", failing);
++
++	const uint8_t trying = chanmask & ~failing;
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (trying & BIT(channel))
++			program_wrrd(ctrl, channel, before[channel] - 1, false);
++	}
++	const uint8_t failed = trying ? test_squeezed(ctrl, trying) : 0;
++
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		const bool shorter = (trying & ~failed) & BIT(channel);
++		const uint8_t value = shorter ? before[channel] - 1 : before[channel];
++		program_wrrd(ctrl, channel, value, true);
++		const char *const why = !(trying & BIT(channel)) ? ", test fails as set" :
++					shorter ? "" : ", fails squeezed one clock shorter";
++		printk(BIOS_INFO, "TAT: C%u write to read, other rank: %u (was %u)%s\n",
++		       channel, value, before[channel], why);
++		nri_note(ctrl, "  TAT C%u: tWRRD_dr/dd %u (was %u)%s\n", channel, value,
++			 before[channel], why);
++	}
++
++	/* The result has to pass, or it is not kept */
++	const uint8_t errors = run_io_test(ctrl, chanmask, ctrl->dq_pat, true) & chanmask;
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(errors & BIT(channel)))
++			continue;
++
++		printk(BIOS_WARNING, "TAT: C%u fails with the result, back to %u\n",
++		       channel, before[channel]);
++		program_wrrd(ctrl, channel, before[channel], true);
++		nri_note(ctrl, "  TAT C%u: fails with the result, back to %u\n", channel,
++			 before[channel]);
++	}
++	return NRI_STATUS_SUCCESS;
++}
