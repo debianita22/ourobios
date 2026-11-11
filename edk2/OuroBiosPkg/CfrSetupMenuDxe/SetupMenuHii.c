@@ -193,15 +193,16 @@ SetupMenuExtractConfig (
 }
 
 /**
-  Whether the payload has armed coreboot's lock of the setup options
-  (SMMSTORE_OPTION_LOCK): at ReadyToBoot it publishes what coreboot answered
-  in the volatile variable OptionLockStatus. Once armed, coreboot refuses the
-  writes of the options until the next boot, those of this setup included,
-  which is entered again when a boot option returns.
+  Whether a boot was started and the setup options are locked until the next
+  one. At ReadyToBoot the payload arms coreboot's lock of the options
+  (SMMSTORE_OPTION_LOCK) and publishes what coreboot answered in the volatile
+  variable OptionLockStatus, and this driver sets the trigger of the options
+  with CFR_OPTFLAG_LOCK_AT_BOOT (CfrLockAtBoot), which the variable driver
+  then refuses to write. Either refuses the writes of this setup too, which is
+  entered again when a boot option returns.
 
-  @retval  TRUE   The lock was asked for and coreboot has one.
-  @retval  FALSE  No boot was started yet, or coreboot has no lock (or BIOS
-                  Lock is off).
+  @retval  TRUE   A lock of the options is in force.
+  @retval  FALSE  No boot was started yet, or nothing locks the options.
 **/
 STATIC
 BOOLEAN
@@ -210,8 +211,15 @@ OptionLockArmed (
   )
 {
   UINT64      LockStatus;
+  UINT8       Trigger;
   UINTN       Size;
   EFI_STATUS  Status;
+
+  Size   = sizeof (Trigger);
+  Status = gRT->GetVariable (L"CfrLockAtBoot", &gEficorebootNvDataGuid, NULL, &Size, &Trigger);
+  if (!EFI_ERROR (Status) && (Size == sizeof (Trigger)) && (Trigger == 1)) {
+    return TRUE;
+  }
 
   Size   = sizeof (LockStatus);
   Status = gRT->GetVariable (L"OptionLockStatus", &gEficorebootNvDataGuid, NULL, &Size, &LockStatus);

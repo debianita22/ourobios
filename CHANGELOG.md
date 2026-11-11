@@ -26,8 +26,8 @@ whose changes below are still to run on a machine.
   boots. The locks now refuse a write past the store while armed; the
   store is reclaimed before the lock is armed (EndOfDxe) so a runtime
   reclaim, which uses those blocks, is rare and fails safely. This closes
-  the bypass on every release with the lock (v1.6.1 and later); a v1.6.x
-  backport is still to be decided.
+  the bypass, which every release with the lock has (v1.6.1 to v1.6.3):
+  those are not corrected, the fix comes with v1.7.0.
 - **M920x: the option lock is for every setup option** (patch 0282,
   `SMMSTORE_OPTION_LOCK_ALL`): once the payload has armed it, a program
   of the OS can no longer write the variable store with the raw SMMSTORE
@@ -44,7 +44,10 @@ whose changes below are still to run on a machine.
   returns and the setup is opened again, a change cannot be saved until
   the next restart; the setup now says so (*The settings are locked
   until the next restart: a boot was started. Restart and open the setup
-  again to change them.*) instead of *Submit Fail For Form*. Not seen on
+  again to change them.*) instead of *Submit Fail For Form*. On the
+  M920x the payload's variable driver also refuses those writes itself
+  from that moment (patch 0284: every option has
+  `CFR_OPTFLAG_LOCK_AT_BOOT`), before they reach the flash. Not seen on
   a machine yet: it needs someone at the setup.
 - **A variable write no longer fails at the end of a flash block**
   (patch 0283): with the MOR lock holding a request, or the option lock

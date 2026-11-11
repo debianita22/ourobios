@@ -5,24 +5,26 @@ Subject: [PATCH] UefiPayloadPkg/CfrSetupMenuDxe: Say that the settings are
  locked
 
 coreboot's lock of the setup options (SMMSTORE_OPTION_LOCK) is armed at
-ReadyToBoot. A boot option that returns leaves the user in the boot
-menu, and the setup can be entered again: its writes of the options are
-then refused by coreboot until the next boot, for every option with
-SMMSTORE_OPTION_LOCK_ALL. The browser only reported that the form could
-not be submitted; and for an option locked by the variable driver
-(CFR_OPTFLAG_LOCK_AT_BOOT) RouteConfig returned success for a write that
-was refused, so that the setup seemed to save.
+ReadyToBoot, where this driver also sets the trigger of the options
+with CFR_OPTFLAG_LOCK_AT_BOOT. A boot option that returns leaves the
+user in the boot menu, and the setup can be entered again: its writes
+of the options are then refused until the next boot, by coreboot or by
+the variable driver. The browser only reported that the form could not
+be submitted; and for an option locked by the variable driver
+RouteConfig returned success for a write that was refused, so that the
+setup seemed to save.
 
-When a write of an option fails and the payload has armed the lock
-(OptionLockStatus is there and says so), say once what happened and
-what to do, and return EFI_ACCESS_DENIED, so that the browser does not
-take the value for saved. An option that is read-only from the start
-keeps its EFI_WRITE_PROTECTED taken as success, as before.
+When a write of an option fails and a lock is in force (OptionLockStatus
+says that coreboot's is armed, or CfrLockAtBoot is set), say once what
+happened and what to do, and return EFI_ACCESS_DENIED, so that the
+browser does not take the value for saved. An option that is read-only
+from the start keeps its EFI_WRITE_PROTECTED taken as success, as
+before.
 ---
  .../CfrSetupMenuDxe/CfrSetupMenuDxe.inf       |  1 +
- UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c | 90 ++++++++++++++++++-
+ UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c | 98 ++++++++++++++++++-
  .../CfrSetupMenuDxe/SetupMenuStrings.uni      |  2 +
- 3 files changed, 91 insertions(+), 2 deletions(-)
+ 3 files changed, 99 insertions(+), 2 deletions(-)
 
 diff --git a/UefiPayloadPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf b/UefiPayloadPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf
 index f35eb2b5e..f2c2d8521 100644
@@ -37,7 +39,7 @@ index f35eb2b5e..f2c2d8521 100644
  [Depex]
    gEfiVariableArchProtocolGuid  AND
 diff --git a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c
-index e725894a4..08af5c026 100644
+index e725894a4..e5b6d0e6d 100644
 --- a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c
 +++ b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c
 @@ -18,6 +18,7 @@
@@ -48,20 +50,21 @@ index e725894a4..08af5c026 100644
  
  SETUP_MENU_CALLBACK_DATA  mSetupMenuPrivate = {
    SETUP_MENU_CALLBACK_DATA_SIGNATURE,
-@@ -191,6 +192,82 @@ SetupMenuExtractConfig (
+@@ -191,6 +192,90 @@ SetupMenuExtractConfig (
    return Status;
  }
  
 +/**
-+  Whether the payload has armed coreboot's lock of the setup options
-+  (SMMSTORE_OPTION_LOCK): at ReadyToBoot it publishes what coreboot answered
-+  in the volatile variable OptionLockStatus. Once armed, coreboot refuses the
-+  writes of the options until the next boot, those of this setup included,
-+  which is entered again when a boot option returns.
++  Whether a boot was started and the setup options are locked until the next
++  one. At ReadyToBoot the payload arms coreboot's lock of the options
++  (SMMSTORE_OPTION_LOCK) and publishes what coreboot answered in the volatile
++  variable OptionLockStatus, and this driver sets the trigger of the options
++  with CFR_OPTFLAG_LOCK_AT_BOOT (CfrLockAtBoot), which the variable driver
++  then refuses to write. Either refuses the writes of this setup too, which is
++  entered again when a boot option returns.
 +
-+  @retval  TRUE   The lock was asked for and coreboot has one.
-+  @retval  FALSE  No boot was started yet, or coreboot has no lock (or BIOS
-+                  Lock is off).
++  @retval  TRUE   A lock of the options is in force.
++  @retval  FALSE  No boot was started yet, or nothing locks the options.
 +**/
 +STATIC
 +BOOLEAN
@@ -70,8 +73,15 @@ index e725894a4..08af5c026 100644
 +  )
 +{
 +  UINT64      LockStatus;
++  UINT8       Trigger;
 +  UINTN       Size;
 +  EFI_STATUS  Status;
++
++  Size   = sizeof (Trigger);
++  Status = gRT->GetVariable (L"CfrLockAtBoot", &gEficorebootNvDataGuid, NULL, &Size, &Trigger);
++  if (!EFI_ERROR (Status) && (Size == sizeof (Trigger)) && (Trigger == 1)) {
++    return TRUE;
++  }
 +
 +  Size   = sizeof (LockStatus);
 +  Status = gRT->GetVariable (L"OptionLockStatus", &gEficorebootNvDataGuid, NULL, &Size, &LockStatus);
@@ -131,7 +141,7 @@ index e725894a4..08af5c026 100644
  /**
    This function processes the results of changes in configuration.
  
-@@ -258,11 +335,20 @@ SetupMenuRouteConfig (
+@@ -258,11 +343,20 @@ SetupMenuRouteConfig (
                    DataSize,
                    VariableOption
                    );

@@ -149,6 +149,12 @@ CONFIG_SMMSTORE_OPTION_LOCK=y
 # dispositivo spento nel setup. Il W541 resta col lock delle due opzioni
 # finche' non l'ha provato (docs/dev-v1.7.0-m920x.md)
 CONFIG_SMMSTORE_OPTION_LOCK_ALL=y
+# Lo stesso lock un livello sopra (patch 0284): ogni opzione ha
+# CFR_OPTFLAG_LOCK_AT_BOOT, e da ReadyToBoot il driver delle variabili del
+# payload ne rifiuta la scrittura, prima che arrivi al flash. Il setup le
+# cambia come prima; riaperto dopo una voce di avvio tornata indietro dice
+# che sono bloccate fino al riavvio (edk2/0062)
+CONFIG_DRIVERS_OPTION_CFR_LOCK_AT_BOOT=y
 
 # Le opzioni del setup tornano ai default quando la RTC perde
 # l'alimentazione (pila scarica, jumper della CMOS), come col BIOS Lenovo:

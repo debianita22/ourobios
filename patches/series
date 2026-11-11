@@ -275,4 +275,5 @@
 0281-drivers-smmstore-Lock-the-fault-tolerant-write-block.patch
 0282-drivers-smmstore-The-option-lock-for-every-setup-opti.patch
 0283-drivers-smmstore-Check-a-write-split-at-the-end-of-a-.patch
+0284-drivers-option-Optionally-lock-every-CFR-option-befor.patch
 0290-nb-intel-haswell-native_raminit-Centre-the-command-V.patch

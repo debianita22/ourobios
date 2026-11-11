@@ -39,8 +39,9 @@ too (decision 6).
 
 The owner's answers (2026-11-10): the fault tolerant write is covered
 **inside stage 2**, with the lock for every option, in one candidate,
-not before it; the fix stays on the v1.7.0 branch for now, a v1.6.x
-backport decided after the tests on the machine.
+not before it; the fix stays on the v1.7.0 branch, and after the run
+on rc2 the owner decided that a v1.6.x backport is not needed
+(2026-11-11).
 
 ## Stage 1: the time of a write
 
@@ -236,6 +237,33 @@ and `RouteConfig` returns `EFI_ACCESS_DENIED`. The write is still tried:
 the payload cannot tell the lock of every option from the lock of the
 two (the W541, or the fallback), where the other options are saved.
 Each refused try leaves a dead header in the store, 60 bytes and a name.
+
+**Decision 3, left to the agent by the owner: the lock of the variable
+driver for every option, on the M920x (patch 0284).**
+`DRIVERS_OPTION_CFR_LOCK_AT_BOOT` gives `CFR_OPTFLAG_LOCK_AT_BOOT` to
+every option that is not read-only when coreboot writes the CFR
+records; the payload registers a rule for each before EndOfDxe and sets
+the trigger at ReadyToBoot (`edk2/0058`). Taken because it is the
+standard half of the same lock and costs nothing where the SMM lock
+already holds: a write after ReadyToBoot is refused by the variable
+services with `EFI_WRITE_PROTECTED`, before it becomes SMIs and a dead
+record in the flash; it also holds for code that runs between
+ReadyToBoot and the OS, and when the SMM lock is not armed (*BIOS Lock*
+off) or fell back to the two options. Nothing of the firmware writes an
+option through the variable services after ReadyToBoot (F3: coreboot
+writes its own from romstage and ramstage, straight to the flash). A
+Kconfig and not a flag on each option of `cfr.c`: an option added later
+is locked without anyone remembering it. Not on the W541, whose lock
+stays as it is until decision 4. `edk2/0062` takes the trigger as a lock
+in force too, so that with *BIOS Lock* off the refused write is not
+reported as saved.
+
+The lock of the variable driver has not run on a machine before (no
+option had the flag). What the next candidate must show, at the setup:
+an option changed before any boot is kept (the rules must not lock
+early); after a boot option that returned, the message. From the OS:
+`tools/cfr-dump.sh` shows the flag on every option; LOCK-01 to LOCK-09
+again.
 
 Built by the CI; EDK II's PatchCheck passes. Not run: it needs a boot
 option that returns and someone at the setup, the owner's row.

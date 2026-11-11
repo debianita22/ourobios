@@ -1,0 +1,87 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 11:17:32 +0100
+Subject: [PATCH] drivers/option: Optionally lock every CFR option before a
+ boot
+
+CFR_OPTFLAG_LOCK_AT_BOOT lets the setup change an option and has the
+payload's variable driver refuse to write it once a boot is started. A
+board sets it option by option; none does.
+
+DRIVERS_OPTION_CFR_LOCK_AT_BOOT gives the flag to every option that is
+not read-only, when the CFR records are written. With the SMMSTORE
+option lock for every option it is the same lock one layer up: a write
+after ReadyToBoot is refused by the variable services, before it becomes
+SMIs and a dead record in the flash, and for code that runs between
+ReadyToBoot and the OS as well.
+---
+ src/drivers/option/Kconfig | 11 +++++++++++
+ src/drivers/option/cfr.c   | 22 ++++++++++++++++------
+ 2 files changed, 27 insertions(+), 6 deletions(-)
+
+diff --git a/src/drivers/option/Kconfig b/src/drivers/option/Kconfig
+index 2d005cc11f7..7c76c3563f1 100644
+--- a/src/drivers/option/Kconfig
++++ b/src/drivers/option/Kconfig
+@@ -5,3 +5,14 @@ config DRIVERS_OPTION_CFR
+ 	bool "Support generating a CFR list of options"
+ 	select DRIVERS_EFI_VARIABLE_STORE if PAYLOAD_EDK2 && SMMSTORE
+ 	default y if DRIVERS_OPTION_CFR_ENABLED
++
++config DRIVERS_OPTION_CFR_LOCK_AT_BOOT
++	bool "Lock every setup option before a boot is started"
++	depends on DRIVERS_OPTION_CFR
++	help
++	  Give every CFR option that the setup can change the flag
++	  CFR_OPTFLAG_LOCK_AT_BOOT: the payload's variable driver then refuses
++	  to write the option once a boot is started (ReadyToBoot), until the
++	  next boot. The setup changes the options as before. With
++	  SMMSTORE_OPTION_LOCK_ALL this is the same lock at the variable
++	  services, where a write is refused before it reaches the flash.
+diff --git a/src/drivers/option/cfr.c b/src/drivers/option/cfr.c
+index 1a5f1d67d71..31c8145ada9 100644
+--- a/src/drivers/option/cfr.c
++++ b/src/drivers/option/cfr.c
+@@ -138,6 +138,20 @@ static bool override_matches_numeric_tag(enum sm_object_kind override_kind, uint
+ 	}
+ }
+ 
++/*
++ * DRIVERS_OPTION_CFR_LOCK_AT_BOOT: every option that the setup can change is
++ * locked by the payload's variable driver before a boot is started. An option
++ * that is read-only already (or becomes so below) is locked from the start.
++ */
++static uint32_t option_flags(uint32_t flags)
++{
++	if (flags & (CFR_OPTFLAG_INACTIVE | CFR_OPTFLAG_VOLATILE))
++		flags |= CFR_OPTFLAG_READONLY;
++	if (CONFIG(DRIVERS_OPTION_CFR_LOCK_AT_BOOT) && !(flags & CFR_OPTFLAG_READONLY))
++		flags |= CFR_OPTFLAG_LOCK_AT_BOOT;
++	return flags;
++}
++
+ static uint32_t write_numeric_option(char *current, uint32_t tag, const uint64_t object_id,
+ 		const char *opt_name, const char *ui_name, const char *ui_helptext,
+ 		uint32_t flags, uint32_t default_value, uint32_t min, uint32_t max, uint32_t step,
+@@ -159,9 +173,7 @@ static uint32_t write_numeric_option(char *current, uint32_t tag, const uint64_t
+ 	option->tag = tag;
+ 	option->object_id = object_id;
+ 	option->dependency_id = dep_id;
+-	option->flags = flags;
+-	if (option->flags & (CFR_OPTFLAG_INACTIVE | CFR_OPTFLAG_VOLATILE))
+-		option->flags |= CFR_OPTFLAG_READONLY;
++	option->flags = option_flags(flags);
+ 	option->default_value = default_value;
+ 	option->min = (min <= max) ? min : 0;
+ 	option->max = (min == 0 && max == 0) ? UINT32_MAX : max;
+@@ -246,9 +258,7 @@ static uint32_t sm_write_opt_varchar(char *current, const struct sm_obj_varchar
+ 	option->tag = CFR_TAG_OPTION_VARCHAR;
+ 	option->object_id = object_id;
+ 	option->dependency_id = dep_id;
+-	option->flags = sm_varchar->flags;
+-	if (option->flags & (CFR_OPTFLAG_INACTIVE | CFR_OPTFLAG_VOLATILE))
+-		option->flags |= CFR_OPTFLAG_READONLY;
++	option->flags = option_flags(sm_varchar->flags);
+ 	option->size = sizeof(*option);
+ 
+ 	current += option->size;
