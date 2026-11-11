@@ -71,8 +71,31 @@ state shows that they ran (the bytes, the next boots' lines), but MEM-11
 and MEM-12 expect to read them: a larger pre-CBMEM console for the `nri`
 variant, or the decision logged again after CBMEM, would keep them.
 
+## v1.7.0-rc2: the command Vref (MEM-15)
+
+rc2 (`01a3449`: the patches of rc1 with 0278 and 0280 revised, 0290, and
+the option lock patches 0281-0283) as a capsule from rc1, 2026-11-11:
+slot A, over v1.6.3-rc4; rc1 stays in slot B ([files](rc2/)).
+
+| ID | Result | Notes |
+|---|---|---|
+| UPD-01, UPD-02 | PASS | the capsule (`SHA256SUMS` OK, signature valid) written by the payload of rc1; rc2 from slot A, *riuscito* |
+| MEM-15 | PASS | *CMDV: eye -40 to 30, width 70, centre -5, Vref 0*, *CMDV: command Vref -5 (was 0)*: closed on both sides, wider than 20 (`mrc.bin` leaves -3); `vref_ca_ctrl=-5` in `ddr-report.py`, the same after a reboot, a cold boot, a resume and the stress; *Memory test passed*; RAM init of the training boot 1.10 s (0.98 s with rc1), 0.11 s from the cache |
+| MEM-14 again | PASS | the *WRV:* lines after the *CMDV:* ones: C0 eye -20 to 23, Vref 1; C1 eye -17 to 17, Vref 0 (rc1: 3 and -1, 4 and 1, 2 and -1); no *failed to converge*, no *did not settle* (patch 0280 revised) |
+| MEM-10 | PASS | one training at the first boot, then the cache; no *Memory profile* line; bytes 0x7d and 0x7e `0xa0`; the timings of rc1 |
+| MEM-04 | PASS | `stress-ng --vm 4 --vm-bytes 75% --verify` for 30 minutes after a resume: 0 failed, no machine check ([log](rc2/stress-30m.txt)) |
+| FLASH-06, VAR-01 | PASS | `OptionLockStatus` `06 00 00 00` and eight zeros; twenty writes of `Timeout`, all done: median 0.139 s, worst 0.139 s (0.27 s up to v1.6.3-rc3, before patch 0273); back at 3 s ([numbers](rc2/optlock.txt)) |
+| report | PASS but the known ones | [the first boot](rc2/hw-w541-nri-boot1.md): 19 PASS, BOOT-03 PASS, ME-01 and EC-01 WARN, MEM-01 INFO (the training boot) |
+| MEM-11, MEM-12 again | not run yet, needs the owner | for the lines that patch 0278 now says again after CBMEM: two setup visits |
+
+Against rc1, the command timings of the training boot moved by one or
+two steps (CLK, CTL and CMD PI of the two channels), as between two
+trainings of rc1 ([compare](rc2/ddr-compare-boot1.txt)). Against the
+training boot, the reboot, the cold boot, the resume and the state after
+the stress differ only in compensation codes and in the output code of
+the Vref circuit, which follow the temperature: nothing trained.
+
 ## The machine after the run
 
-v1.7.0-rc1 in slot B, rc4 in slot A; *Memory profile* back on *SPD*,
-byte 0x7d `0xa0`; *BIOS Lock* and *Firmware protection* on; no helper
-left.
+v1.7.0-rc2 in slot A, rc1 in slot B; *Memory profile* on *SPD*, byte 0x7d
+`0xa0`; *BIOS Lock* and *Firmware protection* on; no helper left.

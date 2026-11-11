@@ -1,0 +1,15 @@
+# after-s3 2026-11-11T06:47:30+01:00 boot_id=397bd3d8-9f93-4114-848d-a98b73e7cbb4 uptime=101.38
+versione:  v1.7.0-rc2, minima per una capsula v1.3.9
+ultimo:    v1.7.0-rc2, riuscito
+CMOS 0x7d=0xa0 0x7e=0xa0
+CMOS 0x7d=0xa0 0x7e=0xa0
+CMOS 0x7d=0xa0 0x7e=0xa0
+console overflow lines: 0
+[INFO ]  Using cached memory parameters
+[DEBUG]  S3 Resume
+[DEBUG]  S3 Resume
+[DEBUG]  S3 Resume
+   2:before RAM initialization                         468,615 (25,003)
+   3:after RAM initialization                          579,127 (110,511)
+Total Time: 860,631
+  VREF_ADJUST  vref_ca_ctrl=-5 vref_dq_ch1_ctrl=0 vref_dq_ch0_ctrl=1 en_dimm_vref_ca=1 en_dimm_vref_ch1=1 en_dimm_vref_ch0=1 hi_z_timer_ctrl=3 vccddq_hi_qnnn_h=0 ca_slow_bw=1 ch0_slow_bw=1 ch1_slow_bw=1
