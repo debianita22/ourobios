@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 21:36:12 +0100
+Subject: [PATCH] mb/lenovo/m720q_m920q: Double the DRAM refresh when hot
+
+FSP-M leaves REFRESH_2X_MODE off. JEDEC asks for twice the refresh rate
+of DDR4 above 85 C; the SO-DIMMs of the M720q/M920q have no thermal
+sensor of their own and sit next to the processor in a small case, and
+the M920x of ouroBIOS runs as a server around the clock. Mode 2 doubles
+the refresh only when the memory controller finds the DIMMs hot, so
+nothing changes at normal temperatures.
+
+The UPD is part of the memory settings, so the version of ouroBIOS's
+memory settings goes up and the first boot trains again.
+---
+ src/mainboard/lenovo/m720q_m920q/romstage.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/mainboard/lenovo/m720q_m920q/romstage.c b/src/mainboard/lenovo/m720q_m920q/romstage.c
+index b2ffa7193fe..5228f6bef11 100644
+--- a/src/mainboard/lenovo/m720q_m920q/romstage.c
++++ b/src/mainboard/lenovo/m720q_m920q/romstage.c
+@@ -128,6 +128,15 @@ void mainboard_memory_init_params(FSPM_UPD *memupd)
+ 
+ 	memupd->FspmConfig.Peg0Enable = peg_enable(memupd);
+ 
++	/*
++	 * Double the refresh of the DIMMs when the memory controller finds them
++	 * hot: JEDEC asks for it above 85 C, and the SO-DIMMs of this small
++	 * case, with no thermal sensor of their own, sit next to the processor
++	 * of a machine that is often a server. FSP-M leaves it off; at normal
++	 * temperatures nothing changes.
++	 */
++	memupd->FspmConfig.Refresh2X = 2;
++
+ 	/*
+ 	 * With the ME disabled (Security > Management Engine), FSP-M's HECI
+ 	 * messages get no answer on some boots: FspMemoryInit then takes

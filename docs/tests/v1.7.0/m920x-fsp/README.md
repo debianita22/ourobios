@@ -357,3 +357,21 @@ The store has 80 KiB free of 192 after four candidates and their tests
 since the last reclaim; the time of a write has grown with the dead
 records to about 0.12 s, and the next reclaim at the start of the
 payload brings it back to 0.03 s.
+
+## After rc5: what the FSP and the platform can still give
+
+Asked by the owner after rc5: not only the boot time, the system as a
+whole. Measured on rc5, with the monitor connected and then
+disconnected.
+
+| Area | Found | Done |
+|---|---|---|
+| FSP time | FspMemoryInit 0.25 s, FspSiliconInit 0.06 s of 10.75 s to the payload | nothing to gain |
+| Memory, FSP-M defaults | read from the UPD defaults of the `fspm.bin` of rc5 (`CFLUPD_M`, header of FSP commit `98426bfd958e`): scrambler on, row hammer prevention on (hardware, probability 1/2^11), exit on failure on, `Refresh2X` off | patch 0285: `Refresh2X` 2, doubled refresh when the DIMMs are hot; memory settings version 1 |
+| CPU | HWP on, package C-states not limited (`PKG_CST_CONFIG_CONTROL` limit C10), cores reach C10; the i3-8100 has no turbo, so power limits and governor change nothing | nothing to do |
+| Package C-states at idle | PC9 89 %, PC10 0 %, also with no monitor (DC6 reached, pipes off). Not the LTR: with the PMC told to ignore the Gigabit Ethernet's (189 µs) and SATA's, still 0 % (`intel_pmc_core`, restored after). SLP_S0 residency 0, the CSME's power-gated blocks on (the ME is disabled by HECI, not power gated) | not pursued: PC9 to PC10 is a few tenths of a watt on a desktop |
+| PCIe | ASPM L1 with L1.1 and L1.2 on the NVMe, the Wi-Fi and their root ports; the NVMe at Gen3 x4 | nothing to do |
+| Kernel warning `hpet_acpi_add: no address or irqs in _CRS` | from `/dev/hpet`, the legacy character driver, which wants interrupts in the HPET's `_CRS` (coreboot's common `lpc.asl` gives the address only); the HPET as clocksource comes from the ACPI HPET table and works | not changed: giving it IRQ 0 and 8 would take the PIT's and the RTC's lines for a driver nothing uses |
+| Wake on LAN from off | the firmware side is set: `GEN_PMCON_B` 0x00062210 with `WOL_EN_OVRD`, `ethtool`: `Wake-on: g`, GLAN armed | NET-02 needs a second machine to send the packet while this one is off: the owner's |
+| Serial console, 6.1 s a boot | the saved options are *Serial Console* on and *Console Log Level* Debug; the firmware's defaults are off and Info. coreboot writes up to Debug to the CBMEM log whatever the level (`console_log_level()`, `CONSOLE_LOG_FAST`), so *Info* costs ~1.5 s and loses nothing of `cbmem -1` or `hw-report.py`; off costs nothing | the owner's, in the setup |
+| Memory cleared at every boot, ~2 s | the Proxmox kernel has `CONFIG_RESET_ATTACK_MITIGATION=y` and sets MOR at every boot (`MemoryOverwriteRequestControl` 1); with *Clear memory at power-on* on *When the OS asks* the firmware clears the 40 GB | the owner's: it is a protection, against a reboot made to read what is left in the memory |

@@ -60,7 +60,7 @@ CONFIG_VALIDATE_INTEL_DESCRIPTOR=y
 # training. tools/fspm-settings.sh, in check.yml, ferma un cambio dei file di
 # quelle UPD finche' boards/m920x/fspm-settings.txt non dice che e' stato
 # guardato.
-CONFIG_FSP_MEMORY_SETTINGS_SOC_VERSION=0
+CONFIG_FSP_MEMORY_SETTINGS_SOC_VERSION=1
 
 # Memoria azzerata a ogni avvio (non alla ripresa da S3); si spegne dal
 # menu, Security -> Memory protection.

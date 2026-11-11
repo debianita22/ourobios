@@ -39,6 +39,11 @@ whose changes below are still to run on a machine.
   store fails until the next boot, which reclaims. The decisions are
   unit tests of coreboot, which the CI now runs. The W541 keeps the lock
   of the two security options.
+- **M920x: the DDR4 refresh doubled when the memory is hot** (patch
+  0285): FSP-M's `Refresh2X` on, for the hot range only, as JEDEC asks
+  above 85 C; at normal temperatures nothing changes. The memory
+  settings version goes up, so the first boot after the update trains
+  the memory again (a few seconds more, once).
 - **The setup says when the settings are locked** (`edk2/0062`): the
   option lock is armed when a boot is started. If the boot option
   returns and the setup is opened again, a change cannot be saved until
