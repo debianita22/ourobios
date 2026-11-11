@@ -2,14 +2,19 @@
 # The flags of every option in the live CFR record of the coreboot table
 import struct, sys
 t = open(sys.argv[1], "rb").read()
-hdr_bytes, = struct.unpack_from("<I", t, 4)
-table_bytes, = struct.unpack_from("<I", t, 8)
+# struct lb_header: signature, header_bytes, header_checksum, table_bytes,
+# table_checksum, table_entries
+hdr_bytes, _, table_bytes, _, entries = struct.unpack_from("<IIIII", t, 4)
 pos, end = hdr_bytes, hdr_bytes + table_bytes
 cfr = None
-while pos < end:
+for _ in range(entries):
+    if pos + 8 > end:
+        break
     tag, size = struct.unpack_from("<II", t, pos)
     if tag == 0x47:
         cfr = (pos, size)
+    if size < 8:
+        break
     pos += size
 assert cfr, "no LB_TAG_CFR_ROOT"
 FLAG = {1: "READONLY", 2: "INACTIVE", 4: "SUPPRESS", 8: "VOLATILE", 16: "RUNTIME", 32: "LOCK_AT_BOOT"}

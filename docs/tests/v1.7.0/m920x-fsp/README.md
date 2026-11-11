@@ -329,3 +329,31 @@ kept in slot B, both protections on. A regression run. Files in
 The store has 104 KiB free of 192 after three candidates and their
 tests: the next reclaim, at the start of the payload when less than one
 variable fits, is still far.
+
+## rc5 on the machine
+
+v1.7.0-rc5 (`3a5d77c`: rc4 with the W541's patch 0301, its patches 0298
+and 0300 taken out; nothing of the M920x or of the option lock changed)
+as a capsule from rc4 with the lock armed, 2026-11-11: slot B over rc3,
+rc4 kept in slot A, both protections on. A regression run. Files in
+[rc5](rc5).
+
+| ID | Result | Notes |
+|---|---|---|
+| LOCK-05, UPD-02 | PASS | staged and written with rc4's lock armed; rc5 from slot B, *ultimo: v1.7.0-rc5, riuscito*; the only new live variable is the capsule's result (`Capsule0021`) |
+| LOCK-01, 0284 | PASS | armed for every option; 35 options with `CFR_OPTFLAG_LOCK_AT_BOOT`, 9 read-only |
+| LOCK-02 | PASS | 0.095 s a write (14.5 ms an SMI) with 592 records at the start; 0.123 s after the tests and three resumes (821 records) |
+| LOCK-03, LOCK-04 | PASS | a boot entry and the test's variable; three resumes, the lock armed, PR0 and PR1 back, the writes work |
+| LOCK-06 | PASS | the 36 options before the capsule and at the end: the same |
+| LOCK-07, LOCK-08 | PASS | report 22 PASS, 25 PASS with a copy of the flash; 10.75 s to the payload, FspMemoryInit 0.25 s; fwts 43 passed, 0 failed; chipsec as before |
+
+`scripts/cfrflags.py` read the size of the coreboot table from the
+header checksum, the field before it; with rc3 and rc4 the walk still
+reached the CFR record, which comes first, with rc5 it ran past the
+table. Corrected (the fields of `struct lb_header`, and the count of
+entries as a bound); the results of rc3 and rc4 are the same with it.
+
+The store has 80 KiB free of 192 after four candidates and their tests
+since the last reclaim; the time of a write has grown with the dead
+records to about 0.12 s, and the next reclaim at the start of the
+payload brings it back to 0.03 s.
