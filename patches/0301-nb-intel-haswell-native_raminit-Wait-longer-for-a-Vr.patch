@@ -1,0 +1,88 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 16:43:42 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: Wait longer for a Vref move
+ that is late
+
+update_vref_and_wait() waits 50 us for the done bit of the Vref circuit
+and warns if it has not come. Most moves are done by then, the steps
+of one of the training scans and the moves of 8 of the command
+training. A move of several steps is not always: the 2D centring moves
+the write Vref of a channel by up to 18 steps between its points, and
+on a ThinkPad W541 the circuit of channel 1 missed the 50 us three
+times in one training, so that some margins of that channel may have
+been measured at a reference still moving.
+
+When the done bit has not come in 50 us, wait for it up to 10 ms, as
+set_dimm_vref() does for a long move, then 1 ms more for what is
+between the circuit and the DIMMs; warn only if it does not come at
+all. A move done in time costs nothing more.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: I036b53fcb0e7e4abcea455bd6bb709948ea2cd3c
+---
+ .../haswell/native_raminit/change_margin.c    | 30 ++++++++++++++-----
+ 1 file changed, 23 insertions(+), 7 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/change_margin.c b/src/northbridge/intel/haswell/native_raminit/change_margin.c
+index 107e12769d..cf0aeb58c2 100644
+--- a/src/northbridge/intel/haswell/native_raminit/change_margin.c
++++ b/src/northbridge/intel/haswell/native_raminit/change_margin.c
+@@ -126,6 +126,11 @@ static uint32_t get_vref_done_bit(const enum dimm_vref_type vref_type)
+ 	}
+ }
+ 
++/* For a move of more than one step: how long to wait for the circuit */
++#define DIMM_VREF_FAR_TIMEOUT_MS	10
++/* And then for what is between it and the DIMMs */
++#define DIMM_VREF_FAR_SETTLE_MS		1
++
+ void update_vref_and_wait(
+ 	struct sysinfo *ctrl,
+ 	const enum dimm_vref_type vref_type,
+@@ -158,7 +163,14 @@ void update_vref_and_wait(
+ 	}
+ 	mchbar_write32(vref_reg, ddr_vref_adjust.raw);
+ 
+-	/* Wait for Vref to settle (note: CA Vref takes longer to settle) */
++	/*
++	 * Wait for Vref to settle (note: CA Vref takes longer to settle). Most
++	 * moves are done within 50 us. One that is not, a move of several steps
++	 * (the 2D centring moves the write Vref by up to 18), gets more time, and
++	 * then as long again for what is between the circuit and the DIMMs, as
++	 * set_dimm_vref() gives a long move; the moves that were done in time
++	 * cost nothing more.
++	 */
+ 	if (!skip_wait) {
+ 		struct stopwatch timer;
+ 		stopwatch_init_usecs_expire(&timer, 50);
+@@ -166,15 +178,19 @@ void update_vref_and_wait(
+ 			if (mchbar_read32(vref_reg) & done_bit)
+ 				return;
+ 		} while (!stopwatch_expired(&timer));
+-		printk(BIOS_WARNING, "Vref circuit %u failed to converge\n", vref_type);
++
++		stopwatch_init_msecs_expire(&timer, DIMM_VREF_FAR_TIMEOUT_MS);
++		while (!(mchbar_read32(vref_reg) & done_bit)) {
++			if (stopwatch_expired(&timer)) {
++				printk(BIOS_WARNING, "Vref circuit %u failed to converge\n",
++				       vref_type);
++				return;
++			}
++		}
++		mdelay(DIMM_VREF_FAR_SETTLE_MS);
+ 	}
+ }
+ 
+-/* For a move of more than one step: how long to wait for the circuit */
+-#define DIMM_VREF_FAR_TIMEOUT_MS	10
+-/* And then for what is between it and the DIMMs */
+-#define DIMM_VREF_FAR_SETTLE_MS		1
+-
+ /*
+  * Set a DIMM Vref to a value of its range, not to an offset from the saved
+  * one, as a scan of the whole range needs; saved as the new value or not.
+-- 
+2.56.0
+

@@ -188,11 +188,6 @@ EVENT_FW_LOG = (
      "w541",
      "margini della memoria sotto i limiti di retrain dell'MRC: il controllo dei margini li riporta e il "
      "training resta (la tabella in cbmem -1 dopo 'Margin: RdT', MEM-17 di docs/testing.md)"),
-    # W541 nri dalla v1.7.0 (patch 0298): il passo del turnaround non cambia
-    # niente se il suo test passa fino a 1 clock (MEM-16)
-    (r"TAT: C\d no value fails, test not usable, left at \d+", "w541",
-     "turnaround tra rank lasciato com'era: il test del REUT passa fino a 1 clock e il passo non lo usa "
-     "(MEM-16 di docs/testing.md; le righe TATD: con HASWELL_NRI_TURNAROUND_DIAG)"),
 )
 
 # Il kernel: messaggi che riguardano il firmware (tabelle ACPI, PCI, VT-d,

@@ -62,14 +62,6 @@ modules (2026-11-10,
   centre with the reference 8 steps to each side. `sudo cbmem -1 |
   grep 'CMDV:'` has the range. On the W541 with rc2: -5, and -4 at a
   second training, in a range of 70 steps (MEM-15).
-- **W541 (`nri`): the write to read turnaround between ranks** (patch
-  0298): 4 clocks with the native RAM init, 3 with `mrc.bin`, the one
-  turnaround that differed. After the training, a test that writes one
-  rank and reads another tries it one clock shorter each time; it
-  becomes 3 only if 3 and 2 pass and a shorter one fails. On the W541
-  with rc3 the test passed down to 1 clock and the turnaround stayed at
-  4; rc4 logs the test in several forms, without changing any timing,
-  to see whether it sees the turnaround at all (patch 0300, MEM-16).
 - **W541 (`nri`): the margins of the memory in the log** (patches
   0291-0297): after the training, how far the read and the write timing
   and voltage of every rank can move before errors, with a warning below
@@ -82,14 +74,21 @@ modules (2026-11-10,
 - **W541 (`nri`): the read and write timing centred in two dimensions**
   (patches 0295, 0299, from rc4): the upstream author's 2D centring,
   with the per-bit deskew, on top of the 1D training, with a correction
-  of its units. **Not tried on a machine yet** (MEM-18): its measure is
-  the margin table of rc3.
+  of its units, and from rc5 the time for a Vref move that is late
+  (patch 0301). On the W541 with rc4 (MEM-18): channel 0 wider on every
+  rank, channel 1's first DIMM narrower in the read timing; rc5 is
+  measured with two trainings.
+- **Not in v1.7.0: the turnaround between ranks.** rc3 and rc4 tried to
+  shorten the write to read turnaround between ranks (4 clocks here, 3
+  with `mrc.bin`) with a test of the memory controller (patches 0298,
+  0300): it passes at every value down to 0, as the controller keeps a
+  minimum of its own. The value of `mrc.bin` comes from the trained
+  delays, by a rule still to learn; 4 stays.
 - **`tools/ddr-report.py` shows the per-bit deskew** (`RxPerBit`,
   `TxPerBit`, one nibble per bit), and **`tools/hw-report.py` knows the
-  two reports of the native RAM init**: the margins below the retrain
-  limits and the turnaround left as it was are events (INFO) of BOOT-03
-  on the W541, not unknown errors; a search that does not end and a
-  turnaround test that fails as set still are.
+  report of the margins of the native RAM init**: margins below the
+  retrain limits are an event (INFO) of BOOT-03 on the W541, not an
+  unknown error; a search that does not end still is one.
 - **W541 (`nri`): the lines about an XMP profile are in the log of a
   boot that trains** (patch 0278, from rc2): such a boot overflows the
   console of romstage and loses its start, with the lines that say a

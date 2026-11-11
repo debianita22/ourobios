@@ -18,7 +18,7 @@ is here. None of it is a promise of a date.
 | [Top Swap and the Protected Range test](#top-swap-and-the-protected-range-test) | M920x | the read-only part is never written by an update | FLASH-04 with the protection on; a map with room for a second bootblock |
 | [Settings reset on the W541](#settings-reset-on-the-w541) | both | on from v1.6.1: the OS can set the RTC power loss bit (checked on a W541), so the reset also needs the CMOS to have lost its contents (patch 0256); OPT-05 passed on a W541 with a simulated loss (2026-11-08); the M920x has the same read-write bit (OPT-06, 2026-11-10): patch 0270 | a real loss (the coin cell out) when convenient; OPT-05 on the M920x with 0270 (the stray bit passed with rc2) |
 | [Memory training across updates on the W541](#memory-training-across-updates-on-the-w541) | W541 | built for v1.6.1 (patches 0250-0252): the version of the cache is a tag and a key from the code (`nri`) or from the inputs of `mrc.bin`; the capsules and *Go back to* keep the cache; MEM-03 passed on a W541 (2026-11-08) | a capsule update and a fallback to an older slot on a W541; `mrc` |
-| [Native RAM init: XMP, and the steps still missing](#native-ram-init-xmp-and-the-steps-still-missing) | W541 | built for v1.7.0 (patches 0275-0280, 0290-0300): an XMP profile of the modules as an option, off by default, given up by itself when it does not train or does not reach the payload; the decoder of XMP 1.3 corrected, with a unit test; the write Vref of the modules centred, and their command Vref. On the W541 with rc1 (2026-11-10): the default, the refusal of a profile that is not there, the giving up and the write Vref passed; its modules have no XMP profile | MEM-15 (the command Vref) and MEM-11, MEM-12 again for their lines, on a W541 with rc2; MEM-13 with DDR3L SO-DIMMs that have a profile at 1.35 V; then the write to read turnaround |
+| [Native RAM init: XMP, and the steps still missing](#native-ram-init-xmp-and-the-steps-still-missing) | W541 | built for v1.7.0 (patches 0275-0280, 0290-0297, 0299, 0301): an XMP profile of the modules as an option, off by default, given up by itself when it does not train or does not reach the payload; the decoder of XMP 1.3 corrected, with a unit test; the write Vref of the modules centred, and their command Vref. On the W541 with rc1 (2026-11-10): the default, the refusal of a profile that is not there, the giving up and the write Vref passed; its modules have no XMP profile | MEM-15 (the command Vref) and MEM-11, MEM-12 again for their lines, on a W541 with rc2; MEM-13 with DDR3L SO-DIMMs that have a profile at 1.35 V; then the write to read turnaround |
 | [The option lock for every setup option](#the-option-lock-for-every-setup-option) | both | the lock of v1.6.1 keeps two options from being turned off; the others can still be changed for the next boot through the SMMSTORE commands by a program with root. The plan is written ([docs/dev-v1.7.0-m920x.md](dev-v1.7.0-m920x.md)), with the time of a variable write under the lock (0.29 s on the M920x) | on the M920x first: the facts of its stage 0, then the two stages; the W541 after it |
 | [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | done in v1.6.0 (patch 0222): a Kconfig for the version, and `tools/fspm-settings.sh` stops CI when the files of those settings change | the first bump, with the release that changes them |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
@@ -461,15 +461,17 @@ reference and `ddr-report.py --compare` as the measure:
    the test passes with it 8 steps to each side of the new value, as that
    training finds its timings.
 3. **The write to read turnaround between ranks** (3 with `mrc.bin`, 4
-   here): written for v1.7.0 (patch 0298). The turnaround test of the
-   REUT was in the code and no step ran it; the step tries the value one
-   clock shorter each time until the test fails, and keeps the shortest
-   that passes plus one clock, one clock shorter than it was at most, and
-   only if a value did fail. On the W541 with rc3 (MEM-16) the test
-   passed down to 1 clock and the step changed nothing. rc4 logs the test
-   in seven forms, down to 0 and with two controls (patch 0300), to
-   choose the form that sees the turnaround, or to learn that the bus
-   takes 1 clock and that `mrc.bin`'s 3 is a guard band, not a limit.
+   here): tried in v1.7.0-rc3 and rc4 with the turnaround test of the
+   REUT (patches 0298, 0300, out from rc5). Every form of the test passed
+   down to 0 clocks, a control with tWTR violated failed: the controller
+   keeps its own spacing between a write and a read of another rank, and
+   the field is an increment over it, as on Sandy Bridge, whose native
+   init chooses it from the spread of the trained delays of the ranks
+   (MEM-16). What is left: the rule `mrc.bin` follows on Haswell, which
+   one machine cannot give (one value, 3, for one spread). To read in a
+   dump of `mrc.bin` on boards with other modules, or in the upstream
+   author's tree when he publishes it; until then 4 stays, the larger
+   one, which costs at most a clock per write to read between ranks.
 4. **2D centring, power training, per-bit deskew**: the bulk of what the
    MRC does more, from the upstream author's tree
    ([coreboot ticket 461](https://ticket.coreboot.org/issues/461)), not
@@ -490,7 +492,9 @@ reference and `ddr-report.py --compare` as the measure:
      units (patch 0299), measured against the margins of rc3, with the
      memory test and a `ddr-report.py --compare`. It trains the per-bit
      deskew, which the 1D training leaves at 0 for the reads and neutral
-     for the writes;
+     for the writes. With rc4: channel 0 wider everywhere, channel 1's
+     first DIMM narrower in the read timing, and three Vref moves of
+     channel 1 late; rc5 waits for them (patch 0301) and trains twice;
    - the rest (the 2D voltage centring, the power training) when he
      publishes it. To report to him: the fixes of 0296 and 0299.
 
