@@ -16,6 +16,14 @@ Two pieces of work on the lock of the setup options
    microphone, Ethernet, Thunderbolt, the USB ports), or change
    `dma_untrusted_ports`, `clear_dram_on_boot`, the boot switches.
 
+**Status (2026-11-11):** stages 0 to 2 done on the M920x, with v1.7.0-rc2
+and -rc3: patches 0281-0284, `edk2/0061`, `edk2/0062`; decisions 1, 2, 3
+and 6 taken (the owner left 2 and 3 to the agent, and decided that the
+fix of the fault tolerant write is not backported). The record is
+[docs/tests/v1.7.0/m920x-fsp](tests/v1.7.0/m920x-fsp/README.md); left:
+LOCK-10 at the setup, the W541 (decision 4), and when the branch goes to
+`next` (decision 5).
+
 Written for an agent that works on the machine by itself, under Linux
 (Proxmox), as root, and that also writes the code. What the owner has to
 decide is in [Decisions for the owner](#decisions-for-the-owner): the

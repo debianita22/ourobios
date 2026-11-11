@@ -19,7 +19,7 @@ is here. None of it is a promise of a date.
 | [Settings reset on the W541](#settings-reset-on-the-w541) | both | on from v1.6.1: the OS can set the RTC power loss bit (checked on a W541), so the reset also needs the CMOS to have lost its contents (patch 0256); OPT-05 passed on a W541 with a simulated loss (2026-11-08); the M920x has the same read-write bit (OPT-06, 2026-11-10): patch 0270 | a real loss (the coin cell out) when convenient; OPT-05 on the M920x with 0270 (the stray bit passed with rc2) |
 | [Memory training across updates on the W541](#memory-training-across-updates-on-the-w541) | W541 | built for v1.6.1 (patches 0250-0252): the version of the cache is a tag and a key from the code (`nri`) or from the inputs of `mrc.bin`; the capsules and *Go back to* keep the cache; MEM-03 passed on a W541 (2026-11-08) | a capsule update and a fallback to an older slot on a W541; `mrc` |
 | [Native RAM init: XMP, and the steps still missing](#native-ram-init-xmp-and-the-steps-still-missing) | W541 | built for v1.7.0 (patches 0275-0280, 0290-0298): an XMP profile of the modules as an option, off by default, given up by itself when it does not train or does not reach the payload; the decoder of XMP 1.3 corrected, with a unit test; the write Vref of the modules centred, and their command Vref. On the W541 with rc1 (2026-11-10): the default, the refusal of a profile that is not there, the giving up and the write Vref passed; its modules have no XMP profile | MEM-15 (the command Vref) and MEM-11, MEM-12 again for their lines, on a W541 with rc2; MEM-13 with DDR3L SO-DIMMs that have a profile at 1.35 V; then the write to read turnaround |
-| [The option lock for every setup option](#the-option-lock-for-every-setup-option) | both | the lock of v1.6.1 keeps two options from being turned off; the others can still be changed for the next boot through the SMMSTORE commands by a program with root. The plan is written ([docs/dev-v1.7.0-m920x.md](dev-v1.7.0-m920x.md)), with the time of a variable write under the lock (0.29 s on the M920x) | on the M920x first: the facts of its stage 0, then the two stages; the W541 after it |
+| [The option lock for every setup option](#the-option-lock-for-every-setup-option) | both | built for v1.7.0 on the M920x (patches 0281-0284, `edk2/0061`, `edk2/0062`): the lock of the whole set of options, the fault tolerant write blocks closed (a way around the lock of v1.6.1 to v1.6.3, not backported), a header split at a block end, the variable driver's lock on every option; LOCK-01 to LOCK-09 passed with rc2 and rc3 (2026-11-11), a write takes 0.03 to 0.1 s | the setup rows of LOCK-10 (the owner); the W541 (decision 4) |
 | [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | done in v1.6.0 (patch 0222): a Kconfig for the version, and `tools/fspm-settings.sh` stops CI when the files of those settings change | the first bump, with the release that changes them |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
 | [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | built for v1.6.1 (patches 0247-0249, 0258); CPU-06 passed on a W541 (2026-11-08): off, locked, kept across S3, the training cache kept | `mrc` (this machine boots only `nri` slots) |
@@ -504,12 +504,40 @@ the owner turned off could be on again at the next boot.
   pending fault tolerant write all have to be part of what is checked,
   and the reclaim of the store at runtime, which erases it, cannot run
   under such a lock. None of that can be settled without a machine.
-- **Next step**: [docs/dev-v1.7.0-m920x.md](dev-v1.7.0-m920x.md), on the
-  M920x: the facts first (how a variable write and a reclaim reach the
-  flash, what the payload does with a pending write at its start), then
-  the time of a write, then the lock, behind a Kconfig of its own that
-  the W541 turns on after it has run it. The proof that it refuses is in
-  unit tests; no tool writes the options of a machine from the OS.
+- **The plan**: [docs/dev-v1.7.0-m920x.md](dev-v1.7.0-m920x.md), on the
+  M920x: the facts first, then the time of a write, then the lock,
+  behind a Kconfig of its own. The proof that it refuses is in unit
+  tests; no tool writes the options of a machine from the OS.
+- **Done for v1.7.0 on the M920x**
+  ([docs/tests/v1.7.0/m920x-fsp](tests/v1.7.0/m920x-fsp/README.md)):
+  - stage 0 found that the payload restarts a pending fault tolerant
+    write at its start, before the lock is armed, from blocks past the
+    variable store that the check did not read: a way around the lock
+    of v1.6.1 to v1.6.3. Patch 0281 refuses, while a lock is armed, any
+    write past the store (the MOR lock too); `edk2/0061` reclaims the
+    store at EndOfDxe, before the arm, so a runtime reclaim, now
+    refused, is rare and leaves the store intact. Not backported to
+    v1.6.x (the owner's decision);
+  - patch 0282, `SMMSTORE_OPTION_LOCK_ALL`: the set of every live
+    variable of the options GUID, kept as a count and a SHA-256 and
+    taken from the flash at the arm and after a resume; a write or an
+    erase that changes it or leaves the store unreadable is refused.
+    The check no longer reads the erased tail of the store: a write
+    takes 0.03 s after a reclaim and about 0.1 s with some hundred dead
+    records, against 0.29 s with v1.6.3 (stage 1, without the store in
+    SMRAM);
+  - patch 0283: a variable header that the payload's driver splits at
+    the end of a flash block is checked and written as one write, in
+    the handler (decision 2);
+  - patch 0284 and `edk2/0062`: `CFR_OPTFLAG_LOCK_AT_BOOT` on every
+    option (decision 3), and the setup says that the settings are
+    locked when it is opened again after a boot option that returned;
+  - unit tests of the decisions with and without the option and of the
+    reader (`tools/build.sh coreboot-unit-test`, in the CI); on the
+    machine LOCK-01 to LOCK-09 with rc2 and rc3 (testing.md).
+- **Next step**: LOCK-10 at the setup (the owner); then the W541 with the
+  same Kconfigs (decision 4), after FLASH-06 and the regressions there,
+  with macOS, whose NVRAM goes through the same store.
 
 ## Cache version for coreboot's memory settings
 

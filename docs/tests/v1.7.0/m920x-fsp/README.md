@@ -278,7 +278,7 @@ both protections on, no guest running. Files in [rc3](rc3).
 | ID | Result | Notes |
 |---|---|---|
 | LOCK-05, UPD-02 | PASS | the capsule staged and written with rc2's lock armed; rc3 from slot B, *ultimo: v1.7.0-rc3, riuscito*; the only new live variable is the capsule's result (`Capsule001F`), written by the payload before the arm |
-| 0284 | PASS | the CFR record of the live coreboot table ([rc3/cfrflags.py](rc3/cfrflags.py), [rc3/cfrflags-rc3.txt](rc3/cfrflags-rc3.txt)): the 35 options that the setup can change have `CFR_OPTFLAG_LOCK_AT_BOOT`; the 9 others are the read-only rows of information (volatile) |
+| 0284 | PASS | the CFR record of the live coreboot table ([scripts/cfrflags.py](scripts/cfrflags.py), [rc3/cfrflags-rc3.txt](rc3/cfrflags-rc3.txt)): the 35 options that the setup can change have `CFR_OPTFLAG_LOCK_AT_BOOT`; the 9 others are the read-only rows of information (volatile) |
 | LOCK-01 | PASS | `OptionLockStatus` `06 00 00 00` and eight zeros; ramstage: *option lock for every setup option* |
 | LOCK-02 | PASS | 0.031 s a write, 4.9 ms an SMI, with 132 records at the start; 0.059 s after three resumes and the tests (363 records) |
 | LOCK-03 | PASS | a boot entry created and deleted, the entries as before; the test's variable created, changed, deleted |
@@ -296,3 +296,15 @@ returned. From the OS the variable driver's lock cannot be tried: the
 options are boot-service variables, invisible to it, and the only one
 with the runtime attribute (`me_state_counter`) would be a setup option
 changed from the OS, which the rules of the run forbid.
+
+## The scripts of the run
+
+In [scripts](scripts), run as root on the machine: `var01.py` (LOCK-02,
+twenty writes of `Timeout` with `MSR_SMI_COUNT` around each),
+`lock03.sh` (LOCK-03, a boot entry and a variable of a test GUID),
+`storeinfo.py` (F2, the variable store of a copy of the flash, read
+only), `lock09.py` (LOCK-09, writes of the test variable until one
+fails), `cfrflags.py` (the flags of the options in the live CFR record,
+from `cbmem -r 43425442`). They write only the test's own variable, the
+boot entries and `Timeout`, through the UEFI variable services; none
+sends SMMSTORE commands.
