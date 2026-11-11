@@ -1,0 +1,11 @@
+A: CBET4000 ouroBIOS-v1.7.0-rc6-nri
+B: CBET4000 ouroBIOS-v1.7.0-rc6-nri
+
+5 campi diversi
+  DATA_COMP_0.tco_comp                                   23 -> 24
+  CMD_COMP.tco_comp                                      23 -> 24
+  CTL_COMP.tco_comp                                      23 -> 24
+  COMP_VSSHI_CONTROL.output_code                         65 -> 62
+  VREF_CONTROL.output_code                               94 -> 93
+
+76 registri a 32 bit diversi nel dump grezzo, chiave dello scrambler esclusa

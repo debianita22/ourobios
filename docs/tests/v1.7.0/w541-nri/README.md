@@ -256,8 +256,50 @@ higher write Vref for channel 1 (3, against 0 in the other two) and a
 lower command Vref (-6 against -4): which of the trainings of the NRI
 decide the spread is still to see.
 
+## v1.7.0-rc6: the steps of the MRC (MEM-19, MEM-20, MEM-21)
+
+rc6 (`2f1246a`: rc5 with the NRI patches 0302-0306, read in the MRC of
+the stock firmware of the W541, and the M920x work to `638e640`) as a
+capsule from rc5, 2026-11-12: slot A, over rc4; rc5 stays in slot B
+([files](rc6/)). One training so far.
+
+| ID | Result | Notes |
+|---|---|---|
+| UPD-01, UPD-02 | PASS | the capsule (`SHA256SUMS` OK, signature valid) written by the payload of rc5; rc6 from slot A |
+| MEM-19 | PASS | *TAT C0/C1: tWRRD_dr/dd 3 (was 4)*: `tWRRD 20/3/3`, as with `mrc.bin`; the turnaround test passed with the read and write timing and voltage at ±7 |
+| MEM-20 | write and command Vref PASS, read FAIL of the margins | command Vref -5 (scan centre -4, margins 37.0 / 36.0); write Vref 4 and 0 (scan centres 5 and 2, then the three-timing margins: channel 1 low 23.6-25.7, high 18.0-23.0); per-bit receiver offsets centred on the data (4 to d, none at 0 or f), the byte references not moved (+0); but every read timing margin 2 to 4 ticks narrower than with rc5 (below) |
+| MEM-21 | FAIL, a bug found | the per-byte choices go the way of `mrc.bin` on channel 1 (read termination +2 and +4 on bytes 6 and 7, transmit equalisation 3 to 5, `mrc.bin` 51-56), but `optimise_comp()` then moved the read termination into the global code: static legs off, global code 8 to 24, the offsets of most bytes clamped to -16, that is a much weaker termination than trained. Patch 0307 for rc7 |
+| MEM-10 | PASS | one training, 3.74 s (rc5: 2.3-2.5 s), then the cache (0.11 s) |
+| MEM-04 | PASS | `stress-ng --vm 4 --vm-bytes 75% --verify`, 30 minutes after a resume: 0 failed, no machine check; the same after a reboot, a cold boot and a resume |
+| FLASH-06, VAR-01 | PASS | `OptionLockStatus` armed; twenty writes of `Timeout`: median 0.153 s |
+
+The margins after the training (time in PI ticks, voltage in Vref steps;
+retrain limits 9 and 16), rc5's three trainings for comparison:
+
+| Rank | RdT left / right | WrT left / right | RdV low / high | WrV low / high |
+|---|---|---|---|---|
+| C0R0 | 17/16 (rc5 19-20) | 18/19 | 27/29 | 20/27 |
+| C0R1 | 17/16 (rc5 19-20) | 19/20 | 30/33 | 27/26 |
+| C0R2 | 17/16 (rc5 20-21) | 20/21 | 26/27 | 40/28 |
+| C0R3 | 16/17 (rc5 20-21) | 19/19 | 27/28 | 30/32 |
+| C1R0 | 10/10 (rc5 13-15) | 15/16 | **16**/19 | 21/23 |
+| C1R1 | 11/12 (rc5 13-16) | 15/17 | 19/17 | 22/21 |
+| C1R2 | 14/14 | 17/17 | 22/25 | 25/35 |
+| C1R3 | 12/16 | 18/18 | 20/28 | 23/33 |
+
+The write margins are as good as rc5's best training and even on both
+sides; every read margin is narrower, on both channels. `ddr-report.py`
+says why: `DATA_COMP_1 rcomp_odt_up=24` (rc5: 8), `disable_odt_static=1`,
+and the read termination offsets of 14 of the 16 bytes at -16. The
+per-byte training had measured its choices (-4 to +4) with the static
+legs on; `optimise_comp()`, run after it, moved the mean of the offsets
+(-1) into the global code, which turned the static legs off, and
+recomputed the offsets as differences of codes, clamped to their field.
+Patch 0307 moves the mean only when an offset is near the end of its
+field, which is what the move is for.
+
 ## The machine after the run
 
-v1.7.0-rc5 in slot B, rc4 in slot A, with the training of the third boot;
+v1.7.0-rc6 in slot A, rc5 in slot B, with the training of its first boot;
 *Memory profile* on *SPD*, byte 0x7d
 `0xa0`; *BIOS Lock* and *Firmware protection* on; no helper left.
