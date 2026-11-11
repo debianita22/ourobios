@@ -1,0 +1,298 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 11:38:44 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: Shorten tWRRD between ranks
+
+After a write to one rank the controller waits tWRRD_dr or tWRRD_dd
+clocks before a read from another rank. refresh_timings() sets both to
+the sum of the JEDEC times and nothing shortened them: on a ThinkPad
+W541 with four dual-rank DIMMs they are 4, where mrc.bin ends at 3,
+the only turnaround that differs between the two.
+
+Add HASWELL_NRI_TURNAROUND: after the round trip step, run the
+turnaround test of the REUT (PAT_WR_RD_TA, which setup_io_test() and
+run_io_test() had and no step used) on all the ranks of each channel,
+with the turnaround one clock shorter each time until it fails. The
+result is the shortest value that passes plus one clock, and at most
+one clock shorter than it was. It changes only if a value did fail:
+the tests of the other steps work on one rank at a time, and a test
+that passes down to one clock has not seen the turnaround either. Not
+run in the training that is done again after a failure.
+
+Not tried on a machine.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: I86146c42542f23117c07ade66ad2688afe54a0ed
+---
+ src/northbridge/intel/haswell/Kconfig         |  10 +
+ .../intel/haswell/native_raminit/Makefile.mk  |   1 +
+ .../haswell/native_raminit/raminit_main.c     |   1 +
+ .../haswell/native_raminit/raminit_native.h   |   1 +
+ .../haswell/native_raminit/train_turnaround.c | 197 ++++++++++++++++++
+ 5 files changed, 210 insertions(+)
+ create mode 100644 src/northbridge/intel/haswell/native_raminit/train_turnaround.c
+
+diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
+index 3cea56aa76..ab751253aa 100644
+--- a/src/northbridge/intel/haswell/Kconfig
++++ b/src/northbridge/intel/haswell/Kconfig
+@@ -51,6 +51,16 @@ config HASWELL_NRI_COMMAND_VREF
+ 	  values that pass. Best with HASWELL_NRI_MEMORY_TEST, which trains
+ 	  again without this when the memory test fails.
+ 
++config HASWELL_NRI_TURNAROUND
++	bool "Shorten the write to read turnaround between ranks"
++	depends on USE_NATIVE_RAMINIT
++	help
++	  After the training, try the write to read turnaround between
++	  ranks one clock at a time below the sum of the JEDEC times, with
++	  the turnaround test of the REUT, and leave it one clock above the
++	  shortest that passes, one clock shorter than it was at most. Best
++	  with HASWELL_NRI_MEMORY_TEST and HASWELL_NRI_MARGIN_CHECK.
++
+ config HASWELL_NRI_MARGIN_CHECK
+ 	bool "Measure the read and write margins after training"
+ 	depends on USE_NATIVE_RAMINIT
+diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+index fc17f32af2..baaf227653 100644
+--- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
++++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+@@ -32,6 +32,7 @@ romstage-y += train_read_mpr.c
+ romstage-y += train_receive_enable.c
+ romstage-y += train_round_trip.c
+ romstage-y += train_sense_amp_offset.c
++romstage-y += train_turnaround.c
+ romstage-y += train_write_vref.c
+ 
+ romstage-$(CONFIG_DEBUG_RAM_SETUP) += info_dumps.c
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index 70900a2c7e..6c2b6f3c18 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -138,6 +138,7 @@ static const struct task_entry cold_boot[] = {
+ 	{ train_write_timing_centering_2d,                        true, "WRTC2D",     },
+ 	{ train_read_timing_centering_2d,                         true, "RDTC2D",     },
+ 	{ optimise_round_trip,                                    true, "RTL",        },
++	{ optimise_turnaround,                                    true, "TAT",        },
+ 	{ retrain_margin_check,                                   true, "RMC",        },
+ 	{ activate_mc,                                            true, "ACTIVATE",   },
+ 	{ save_training_values,                                   true, "SAVE_TRAIN", },
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index 266943eb0f..2984cbf93e 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -744,6 +744,7 @@ enum nri_status activate_mc(struct sysinfo *ctrl);
+ enum nri_status ecc_scrub(struct sysinfo *ctrl);
+ enum nri_status memory_test(struct sysinfo *ctrl);
+ enum nri_status optimise_round_trip(struct sysinfo *ctrl);
++enum nri_status optimise_turnaround(struct sysinfo *ctrl);
+ enum nri_status train_command_vref(struct sysinfo *ctrl);
+ enum nri_status train_write_vref(struct sysinfo *ctrl);
+ enum nri_status alias_check(struct sysinfo *ctrl);
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_turnaround.c b/src/northbridge/intel/haswell/native_raminit/train_turnaround.c
+new file mode 100644
+index 0000000000..6455d8f711
+--- /dev/null
++++ b/src/northbridge/intel/haswell/native_raminit/train_turnaround.c
+@@ -0,0 +1,197 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <console/console.h>
++#include <lib.h>
++#include <northbridge/intel/haswell/haswell.h>
++#include <types.h>
++
++#include "raminit_native.h"
++
++/*
++ * Write to read turnaround between ranks.
++ *
++ * After a write to one rank, the controller waits tWRRD_dr (the other rank of
++ * the DIMM) or tWRRD_dd (a rank of the other DIMM) clocks before a read from
++ * another rank: the write data and its ODT must be off the bus before the
++ * read preamble. refresh_timings() sets both to the sum of the JEDEC times,
++ * and nothing shortens them: on a ThinkPad W541 with four DIMMs, mrc.bin ends
++ * one clock below that, and it is the only turnaround of the two that differs.
++ *
++ * The test is the turnaround test of the REUT, which no step used: a write of
++ * every rank of the channel in turn, six rounds of a read and a write that
++ * move to the next rank after each pair, so that every read follows a write to
++ * another rank, and a read of everything. The data and memory tests of the
++ * other steps work on one rank at a time and would not see a turnaround that
++ * is too short.
++ *
++ * With the read latency final: try each value from the one set downwards,
++ * until one fails. The turnaround becomes the shortest value that passes plus
++ * one clock of guard, and at most one clock shorter than it was, which is as
++ * far as mrc.bin goes. It moves only if a value did fail: a test that passes
++ * down to one clock has not seen the turnaround, and tells nothing. Not run in
++ * the training that is done again after a failure.
++ */
++
++#define TAT_NUM_CL	128
++#define TAT_MIN_WRRD	1
++
++static void setup_io_test_wr_rd_ta(struct sysinfo *ctrl, const uint8_t chanmask)
++{
++	/* A rank and a column for each cacheline: run_io_test() sets the rates */
++	const struct reut_box reut_addr = {
++		.rank = {
++			.start    = 0,
++			.stop     = 0,
++			.inc_rate = 32,
++			.inc_val  = 1,
++		},
++		.col = {
++			.start    = 0,
++			.stop     = 1023,
++			.inc_rate = 0,
++			.inc_val  = 1,
++		},
++	};
++	/* One line of the WDB, so that a read and a write of a pair use the same */
++	const struct wdb_pat pattern = {
++		.start_ptr  = 0,
++		.stop_ptr   = 0,
++		.inc_rate   = 0,
++		.dq_pattern = TURN_AROUND_WR,
++	};
++	setup_io_test(
++		ctrl,
++		chanmask,
++		PAT_WR_RD_TA,
++		TAT_NUM_CL,
++		0,
++		&reut_addr,
++		NSOE,
++		&pattern,
++		0,
++		0);
++
++	ctrl->dq_pat_lc = 1;
++	ctrl->dq_pat = TURN_AROUND_WR;
++}
++
++static void program_wrrd(struct sysinfo *ctrl, const uint8_t channel, const uint8_t value)
++{
++	union tc_bank_rank_b_reg tc_bank_rank_b = ctrl->tc_bankrank_b[channel];
++	tc_bank_rank_b.tWRRD_dr = value;
++	tc_bank_rank_b.tWRRD_dd = value;
++	mchbar_write32(TC_BANK_RANK_B_ch(channel), tc_bank_rank_b.raw);
++}
++
++enum nri_status optimise_turnaround(struct sysinfo *ctrl)
++{
++	if (!CONFIG(HASWELL_NRI_TURNAROUND) || ctrl->lpddr)
++		return NRI_STATUS_SUCCESS;
++
++	if (ctrl->no_latency_optimisation) {
++		printk(BIOS_INFO, "Turnarounds left as set\n");
++		return NRI_STATUS_SUCCESS;
++	}
++
++	/* The channels with more than one rank, where the two times are equal */
++	uint8_t before[NUM_CHANNELS] = { 0 };
++	uint8_t all = 0;
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		const union tc_bank_rank_b_reg tc_bank_rank_b = ctrl->tc_bankrank_b[channel];
++		if (!does_ch_exist(ctrl, channel) || popcnt(ctrl->rankmap[channel]) < 2)
++			continue;
++
++		if (tc_bank_rank_b.tWRRD_dr != tc_bank_rank_b.tWRRD_dd)
++			continue;
++
++		before[channel] = tc_bank_rank_b.tWRRD_dr;
++		all |= BIT(channel);
++	}
++	if (!all)
++		return NRI_STATUS_SUCCESS;
++
++	setup_wdb(ctrl);
++	setup_io_test_wr_rd_ta(ctrl, all);
++	uint8_t chanmask = 0;
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (all & BIT(channel))
++			chanmask |= select_reut_ranks(ctrl, channel, 0xf);
++	}
++
++	/* The shortest value that passed, and whether one below it failed */
++	uint8_t shortest[NUM_CHANNELS] = { 0 };
++	uint8_t failed = 0;
++	uint8_t testing = chanmask;
++	for (uint8_t step = 0; testing; step++) {
++		uint8_t now = 0;
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(testing & BIT(channel)))
++				continue;
++
++			if (before[channel] < TAT_MIN_WRRD + step) {
++				testing &= ~BIT(channel);
++				continue;
++			}
++			program_wrrd(ctrl, channel, before[channel] - step);
++			now |= BIT(channel);
++		}
++		if (!now)
++			break;
++
++		const uint8_t errors = run_io_test(ctrl, now, ctrl->dq_pat, true) & now;
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(now & BIT(channel)))
++				continue;
++
++			const uint8_t value = before[channel] - step;
++			const bool pass = !(errors & BIT(channel));
++			printk(BIOS_DEBUG, "TAT: C%u write to read, other rank, %u: %s\n",
++			       channel, value, pass ? "pass" : "fail");
++			if (pass) {
++				shortest[channel] = value;
++			} else {
++				/* A shorter one need not be tried */
++				failed |= BIT(channel);
++				testing &= ~BIT(channel);
++				program_wrrd(ctrl, channel, before[channel]);
++			}
++		}
++	}
++
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		uint8_t value = before[channel];
++		if (!shortest[channel]) {
++			printk(BIOS_WARNING, "TAT: C%u turnaround test fails as set, "
++			       "left at %u\n", channel, value);
++		} else if (!(failed & BIT(channel))) {
++			printk(BIOS_WARNING, "TAT: C%u no value fails, test not usable, "
++			       "left at %u\n", channel, value);
++		} else {
++			/* One clock of guard, and one clock shorter at most */
++			value = MAX(shortest[channel] + 1, before[channel] - 1);
++			value = MIN(value, before[channel]);
++		}
++		ctrl->tc_bankrank_b[channel].tWRRD_dr = value;
++		ctrl->tc_bankrank_b[channel].tWRRD_dd = value;
++		mchbar_write32(TC_BANK_RANK_B_ch(channel), ctrl->tc_bankrank_b[channel].raw);
++		printk(BIOS_INFO, "TAT: C%u write to read, other rank: %u (was %u)\n",
++		       channel, value, before[channel]);
++	}
++
++	/* The result has to pass, or it is not kept */
++	const uint8_t errors = run_io_test(ctrl, chanmask, ctrl->dq_pat, true) & chanmask;
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(errors & BIT(channel)))
++			continue;
++
++		printk(BIOS_WARNING, "TAT: C%u fails with the result, back to %u\n",
++		       channel, before[channel]);
++		ctrl->tc_bankrank_b[channel].tWRRD_dr = before[channel];
++		ctrl->tc_bankrank_b[channel].tWRRD_dd = before[channel];
++		mchbar_write32(TC_BANK_RANK_B_ch(channel), ctrl->tc_bankrank_b[channel].raw);
++	}
++	return NRI_STATUS_SUCCESS;
++}
+-- 
+2.56.0
+

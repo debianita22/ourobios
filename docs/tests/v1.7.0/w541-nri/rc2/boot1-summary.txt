@@ -1,0 +1,21 @@
+# boot1 2026-11-11T06:40:42+01:00 boot_id=82b7d99d-5a4a-4e11-ae6c-b84b4ba53aaa uptime=53.13
+versione:  v1.7.0-rc2, minima per una capsula v1.3.9
+ultimo:    v1.7.0-rc2, riuscito
+CMOS 0x7d=0xa0 0x7e=0xa0
+CMOS 0x7d=0xa0 0x7e=0xa0
+CMOS 0x7d=0xa0 0x7e=0xa0
+console overflow lines: 1
+[DEBUG]  CMDV: eye -40 to 30, width 70, centre -5, Vref 0
+[INFO ]  CMDV: command Vref -5 (was 0)
+[DEBUG]  WRV: C0 eye -20 to 23, width 43, centre 1, Vref 0
+[DEBUG]  WRV: C1 eye -17 to 17, width 34, centre 0, Vref 0
+[INFO ]  WRV: C0 write Vref 1 (was 0)
+[INFO ]  WRV: C1 write Vref 0 (was 0)
+[INFO ]  Memory test passed
+[DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+[DEBUG]  MRC: cache data 'RW_MRC_CACHE' needs update.
+[DEBUG]  MRC: updated 'RW_MRC_CACHE'.
+   2:before RAM initialization                         479,499 (27,267)
+   3:after RAM initialization                          1,581,907 (1,102,408)
+Total Time: 2,435,462
+  VREF_ADJUST  vref_ca_ctrl=-5 vref_dq_ch1_ctrl=0 vref_dq_ch0_ctrl=1 en_dimm_vref_ca=1 en_dimm_vref_ch1=1 en_dimm_vref_ch0=1 hi_z_timer_ctrl=3 vccddq_hi_qnnn_h=0 ca_slow_bw=1 ch0_slow_bw=1 ch1_slow_bw=1

@@ -142,11 +142,65 @@ channels pass. It stays as it was unless the passing range holds it,
 ends within the range on both sides and is at least 20 steps wide, and
 the test passes at the centre with the reference 8 steps to each side,
 as the timings were found. A training redone after a failure does not
-run it. `mrc.bin` ends at -3. **Not tried on a machine yet** (MEM-15):
+run it. `mrc.bin` ends at -3. On the W541 with v1.7.0-rc2 (MEM-15): eye
+-40 to 30, 70 steps, reference -5, and -4 at a second training; the same
+after a reboot, a cold boot and a resume; the RAM init of a boot that
+trains 1.10 s:
 
 ```sh
 sudo cbmem -1 | grep 'CMDV:'    # on the boot that trained
 sudo python3 tools/ddr-report.py | grep VREF_ADJUST   # vref_ca_ctrl
+```
+
+And **patch 0298**, the write to read turnaround between ranks, the third
+of the missing steps. After a write to one rank the controller waits
+before a read from another rank (`tWRRD_dr`, `tWRRD_dd`), so that the
+write data and its termination are off the bus before the read preamble;
+the NRI sets the sum of the JEDEC times, 4 clocks at DDR3-1600 CL11, and
+`mrc.bin` ends at 3. The step uses the turnaround test of the REUT, which
+the code had and no step ran: a write of every rank of the channel in
+turn, six rounds of a read and a write that move to the next rank after
+each pair, a read of everything. After the round trip step it tries each
+value from the one set downwards until one fails, and leaves the shortest
+that passes plus one clock, at most one clock shorter than it was. It
+changes nothing unless a value did fail: a test that passes down to one
+clock has not seen the turnaround. A training redone after a failure does
+not run it. **Not tried on a machine yet** (MEM-16):
+
+```sh
+sudo cbmem -1 | grep 'TAT:'     # on the boot that trained
+sudo python3 tools/ddr-report.py | grep tWRRD   # sr/dr/dd per channel
+```
+
+And the first of the upstream author's unpublished steps, which he put on
+Gerrit on 2026-11-06 and 10 as work in progress (CB:97117, 97118, 97119,
+97246, 97267; **patches 0291-0295**, his, as they are there): the
+parameters and the library that measure a margin (how far a timing or a
+voltage can move before the test of the REUT sees errors), the retrain
+margin check and the 2D centring of the read and write timing with the
+per-bit deskew. As uploaded, `get_ber_margin_ch()` never returned (his
+own comment on CB:97118: the margin check hangs in its first test): the
+check that ends a search was reached only by the search of the command
+Vref. **Patch 0296** lets every search reach it, starts each within the
+range, and bounds the three searches of the file, so that one that does
+not end says so instead of hanging the boot. **Patch 0297** puts the two
+steps behind options, off by default:
+
+- `HASWELL_NRI_MARGIN_CHECK`, on in the `nri` variant: after the other
+  steps, the read and write margins of every rank, in time (PI ticks,
+  64 per bit) and in voltage (steps of the reference), each side, in the
+  log, with a warning for those below the retrain limits of the MRC (9
+  ticks, 16 steps). Only a report, 1 to 2 s in a boot that trains: it is
+  the measure for every later step, the 2D centring first. **Not tried on
+  a machine yet** (MEM-17);
+- `HASWELL_NRI_2D_TIMING`, **off**: it rewrites the read and write timing
+  and the per-bit deskew, which this series keeps neutral on purpose
+  (patch 0008), with code that nobody has run to the end yet. To turn on
+  in a candidate of its own, with the margins of MEM-17 as the measure
+  before and after.
+
+```sh
+sudo cbmem -1 | grep -A8 'Margin: RdT'   # on the boot that trained
 ```
 
 And, for both variants, **patch 0187**: SMBIOS (type 17) takes the size
@@ -173,10 +227,9 @@ each of them in the registers:
   zero on purpose, so as not to use up the range of the read strobe delay,
   and the write ones neutral);
 - turnaround optimisation. On the W541 only one turnaround differs: write
-  to read between ranks, 3 clocks with `mrc.bin` and 4 here. It stays at 4:
-  the memory test of patch 0087 works on one rank at a time and would not
-  see a turnaround too short, and the NRI does not run the turnaround
-  patterns of the REUT yet.
+  to read between ranks, 3 clocks with `mrc.bin` and 4 here; patch 0298
+  shortens it with the turnaround test of the REUT (above). The other
+  turnarounds are not tried: they are the same with both.
 
 With two DIMMs per channel the NRI runs the commands at 2N, by a TODO in
 `lookup_timings.c` written before the late command training existed;
@@ -222,7 +275,7 @@ The registers after `mrc.bin` (v1.3.9-rc1) and after the NRI (rc3), from
 | tXP (power down exit) | 6 | 5, the JEDEC minimum |
 | Round trip, channel 0 / 1 (qclk) | 44 / 45 | 44 / 45; 49 / 49 without patch 0088 |
 | IO latency + rt_iocomp | 4 + 21 | 4 + 21; 7 / 6 + 23 without patch 0088 |
-| Write Vref channel 0 / 1, command Vref | +3 / +2, -3 | 0, 0; from v1.7.0-rc1 the write Vref is trained, 3 / -1 and 4 / 1 in two trainings (patch 0280); the command Vref from rc2 (patch 0290), not measured yet |
+| Write Vref channel 0 / 1, command Vref | +3 / +2, -3 | 0, 0; from v1.7.0-rc1 the write Vref is trained, 3 / -1 and 4 / 1 in two trainings (patch 0280); the command Vref from rc2 (patch 0290), -5 and -4 in two trainings |
 | Transmit equalisation | 51-56 per byte | 59 |
 | Read ODT offsets, drive offsets per byte | -6..+1, -3..+3 | 0, 0 |
 | Per bit deskew, read and write | trained | none |

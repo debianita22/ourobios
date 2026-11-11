@@ -1,0 +1,421 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Angel Pons <th3fanbus@gmail.com>
+Date: Fri, 6 Nov 2026 16:59:02 +0100
+Subject: [PATCH] Haswell NRI: Add Retrain Margin Check
+
+This is a test that measures the eye width/height of the read and write
+margins, to ensure they are big enough for proper operation. Currently,
+since we do not do any power or performance training, we should have no
+problems achieving the minimum margins. However, power optimisation can
+trade off margin for power savings, and if it is too aggressive, it may
+reduce margins too much for stable operation.
+
+Change-Id: If1685f9ba7ebbb3d09f2350c9e9a86d343fbca46
+Signed-off-by: Angel Pons <th3fanbus@gmail.com>
+(cherry picked from commit f96cfb21210c3062a4ffc255c46816ebbab56084)
+---
+ .../intel/haswell/native_raminit/Makefile.mk  |   1 +
+ .../haswell/native_raminit/change_margin.c    |  25 +++
+ .../haswell/native_raminit/raminit_main.c     |  21 ++
+ .../haswell/native_raminit/raminit_native.h   |  32 +++
+ .../native_raminit/retrain_margin_check.c     | 202 ++++++++++++++++++
+ 5 files changed, 281 insertions(+)
+ create mode 100644 src/northbridge/intel/haswell/native_raminit/retrain_margin_check.c
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+index f1e8461de2..8c22d1d5d6 100644
+--- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
++++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+@@ -17,6 +17,7 @@ romstage-y += memory_test.c
+ romstage-y += raminit_main.c
+ romstage-y += raminit_native.c
+ romstage-y += ranges.c
++romstage-y += retrain_margin_check.c
+ romstage-y += reut.c
+ romstage-y += save_restore.c
+ romstage-y += setup_wdb.c
+diff --git a/src/northbridge/intel/haswell/native_raminit/change_margin.c b/src/northbridge/intel/haswell/native_raminit/change_margin.c
+index ed0e242848..eb1a2c1a7c 100644
+--- a/src/northbridge/intel/haswell/native_raminit/change_margin.c
++++ b/src/northbridge/intel/haswell/native_raminit/change_margin.c
+@@ -492,6 +492,31 @@ uint32_t get_max_margin_for_param(const enum margin_param param)
+ 	}
+ }
+ 
++const char *get_margin_name(const enum margin_param param)
++{
++	static const char *const margin_names[] = {
++		"RcvEna",
++		"RdT",
++		"WrT",
++		"WrDqsT",
++		"RdV",
++		"WrV",
++		"WrLevel",
++		"WrTBit",
++		"RdTBit",
++		"RdVBit",
++		"RcvEnaX",
++		"CmdT",
++		"CmdV",
++	};
++	_Static_assert(ARRAY_SIZE(margin_names) == INVALID_MARGIN, "Margin names need update");
++
++	if (param >= ARRAY_SIZE(margin_names))
++		die("%s: Margin parameter %u out of range\n", __func__, param);
++
++	return margin_names[param];
++}
++
+ void change_margin(
+ 	struct sysinfo *ctrl,
+ 	const enum margin_param param,
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index 40478cd6d1..7748270309 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -136,6 +136,7 @@ static const struct task_entry cold_boot[] = {
+ 	{ train_command_vref,                                     true, "CMDVC1D",    },
+ 	{ train_write_vref,                                       true, "WRVC1D",     },
+ 	{ optimise_round_trip,                                    true, "RTL",        },
++	{ retrain_margin_check,                                   true, "RMC",        },
+ 	{ activate_mc,                                            true, "ACTIVATE",   },
+ 	{ save_training_values,                                   true, "SAVE_TRAIN", },
+ 	{ save_non_training,                                      true, "SAVE_NONT",  },
+@@ -194,6 +195,10 @@ static void initialize_ctrl(struct sysinfo *ctrl)
+ 	const struct northbridge_intel_haswell_config *cfg = config_of_soc();
+ 	const enum raminit_boot_mode bootmode = ctrl->bootmode;
+ 
++	/* Preserve increased UPM / PWR limits when retraining */
++	struct margin_limits limits[NUM_UPM_PWR_RETRAIN_MARGINS] = {};
++	memcpy(limits, ctrl->limits, sizeof(limits));
++
+ 	memset(ctrl, 0, sizeof(*ctrl));
+ 
+ 	ctrl->cpu_model = cpu_family_model();
+@@ -205,6 +210,7 @@ static void initialize_ctrl(struct sysinfo *ctrl)
+ 	ctrl->restore_mrs = false;
+ 	ctrl->bootmode = bootmode;
+ 	ctrl->memory_profile = nri_memory_profile();
++	memcpy(ctrl->limits, limits, sizeof(limits));
+ }
+ 
+ /** TODO: Adjust unit scale dynamically? **/
+@@ -272,6 +278,20 @@ static enum nri_status try_raminit(
+ 	return status;
+ }
+ 
++/* UPM, PWR, retrain limits (x10) */
++static const struct margin_limits initial_limits[NUM_UPM_PWR_RETRAIN_MARGINS] = {
++	{RdT, {{240, 320,  90}}},
++	{WrT, {{220, 280,  90}}},
++	{RdV, {{400, 520, 160}}},
++	/* For ULT DDR3L rcF the values are increased by 20 ticks, see upm_pwr_limit_value() */
++	{WrV, {{400, 520, 160}}},
++};
++
++static void program_initial_upm_pwr_limits(struct sysinfo *ctrl)
++{
++	memcpy(ctrl->limits, initial_limits, sizeof(initial_limits));
++}
++
+ void raminit_main(const enum raminit_boot_mode bootmode)
+ {
+ 	/*
+@@ -281,6 +301,7 @@ void raminit_main(const enum raminit_boot_mode bootmode)
+ 	static struct sysinfo mighty_ctrl;
+ 
+ 	mighty_ctrl.bootmode = bootmode;
++	program_initial_upm_pwr_limits(&mighty_ctrl);
+ 	initialize_ctrl(&mighty_ctrl);
+ 
+ 	enum nri_status status = NRI_STATUS_UNSPECIFIED_ERROR;
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index a860b93020..9140131148 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -224,6 +224,28 @@ enum dimm_vref_type {
+ };
+ #define NUM_DIMM_VREF_TYPES (VREF_CA + 1)
+ 
++enum margin_limit_type {
++	UPM_LIMIT,
++	POWER_LIMIT,
++	RETRAIN_LIMIT,
++};
++#define NUM_MARGIN_LIMITS (RETRAIN_LIMIT + 1)
++
++/* RdT, WrT, RdV, WrV */
++#define NUM_UPM_PWR_RETRAIN_MARGINS	4
++
++struct margin_limits {
++	enum margin_param param;
++	union {
++		struct {
++			uint16_t upm;
++			uint16_t power;
++			uint16_t retrain;
++		};
++		uint16_t l[NUM_MARGIN_LIMITS];
++	};
++};
++
+ struct register_save_frame;
+ 
+ struct wdb_pat {
+@@ -330,6 +352,7 @@ enum nri_status {
+ 	NRI_STATUS_LCT_FAILURE,
+ 	NRI_STATUS_SCRUB_ERROR,
+ 	NRI_STATUS_MEMTEST_FAILURE,
++	NRI_STATUS_RETRAIN_REQUIRED,
+ 	NRI_STATUS_UNSPECIFIED_ERROR, /** TODO: Deprecated in favor of specific values **/
+ };
+ 
+@@ -501,6 +524,8 @@ struct sysinfo {
+ 	 */
+ 	union last_margin results[MAX_RESULT_TYPE][NUM_SLOTRANKS][NUM_CHANNELS][NUM_LANES];
+ 
++	struct margin_limits limits[NUM_UPM_PWR_RETRAIN_MARGINS];
++
+ 	union tc_bank_reg tc_bank[NUM_CHANNELS];
+ 	union tc_bank_rank_a_reg tc_bankrank_a[NUM_CHANNELS];
+ 	union tc_bank_rank_b_reg tc_bankrank_b[NUM_CHANNELS];
+@@ -702,6 +727,7 @@ enum nri_status train_write_timing_centering(struct sysinfo *ctrl);
+ enum nri_status train_read_voltage_centering(struct sysinfo *ctrl);
+ enum nri_status optimise_comp(struct sysinfo *ctrl);
+ enum nri_status train_late_command(struct sysinfo *ctrl);
++enum nri_status retrain_margin_check(struct sysinfo *ctrl);
+ enum nri_status save_training_values(struct sysinfo *ctrl);
+ enum nri_status restore_training_values(struct sysinfo *ctrl);
+ enum nri_status save_non_training(struct sysinfo *ctrl);
+@@ -765,6 +791,11 @@ void get_ber_margin_ch(
+ 	const bool en_ber,
+ 	const uint8_t max_margin);
+ 
++uint16_t upm_pwr_limit_value(
++	struct sysinfo *ctrl,
++	const enum margin_param param,
++	const enum margin_limit_type lim_type);
++
+ enum nri_status io_reset(void);
+ enum nri_status wait_for_first_rcomp(void);
+ void force_rcomp_and_wait_us(unsigned int usecs);
+@@ -859,6 +890,7 @@ void download_regfile(
+ 
+ enum last_margin_param get_margin_result_type(const enum margin_param param);
+ uint32_t get_max_margin_for_param(const enum margin_param param);
++const char *get_margin_name(const enum margin_param param);
+ 
+ void update_vref_and_wait(
+ 	struct sysinfo *ctrl,
+diff --git a/src/northbridge/intel/haswell/native_raminit/retrain_margin_check.c b/src/northbridge/intel/haswell/native_raminit/retrain_margin_check.c
+new file mode 100644
+index 0000000000..9eb22357a7
+--- /dev/null
++++ b/src/northbridge/intel/haswell/native_raminit/retrain_margin_check.c
+@@ -0,0 +1,202 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <commonlib/bsd/clamp.h>
++#include <console/console.h>
++#include <delay.h>
++#include <northbridge/intel/haswell/haswell.h>
++#include <northbridge/intel/haswell/raminit.h>
++#include <string.h>
++#include <types.h>
++
++#include "raminit_native.h"
++
++static bool have_cardf(struct sysinfo *ctrl)
++{
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!ctrl->dpc[channel])
++			continue;
++
++		for (uint8_t slot = 0; slot < NUM_SLOTS; slot++) {
++			const struct raminit_dimm_info *dimm = &ctrl->dimms[channel][slot];
++			if (dimm->valid && dimm->data.reference_card == 5)
++				return true;
++		}
++	}
++	return false;
++}
++
++static struct margin_limits *get_margin_limits(struct sysinfo *ctrl, enum margin_param param)
++{
++	for (uint32_t index = 0; index < NUM_UPM_PWR_RETRAIN_MARGINS; index++) {
++		if (param == ctrl->limits[index].param) {
++			return &ctrl->limits[index];
++		}
++	}
++	die("%s: Invalid margin param %u\n", __func__, param);
++}
++
++uint16_t upm_pwr_limit_value(
++	struct sysinfo *ctrl,
++	const enum margin_param param,
++	const enum margin_limit_type lim_type)
++{
++	uint16_t limit = get_margin_limits(ctrl, param)->l[lim_type];
++
++	/* Add 20 ticks for WrV on ULT with DDR3L and raw card F */
++	if (is_hsw_ult() && !ctrl->lpddr && param == WrV && lim_type != RETRAIN_LIMIT) {
++		if (have_cardf(ctrl))
++			limit += 20 * 10;
++	}
++	/* TODO: For Broadwell and DDR3, add 8 ticks to UPM and 12 to PWR limits for CmdT */
++	return limit;
++}
++
++static uint16_t raise_limits(
++	struct sysinfo *ctrl,
++	const enum margin_param param,
++	const enum margin_limit_type lim_type)
++{
++	/* Increase UPM/PWR limits by 4 ticks every time training fails */
++	const uint32_t upm_pwr_inc = 4 * 10;
++
++	struct margin_limits *limits = get_margin_limits(ctrl, param);
++	uint16_t new_value = clamp_u32(0, limits->l[lim_type] + upm_pwr_inc, UINT16_MAX);
++	limits->l[lim_type] = new_value;
++	return new_value;
++}
++
++struct test_schedule {
++	enum margin_param param;
++	uint8_t max_margin;
++	enum wdb_dq_pattern dq_pat;
++};
++
++#define RMC_DEBUG	BIOS_DEBUG//BIOS_INFO
++
++enum nri_status retrain_margin_check(struct sysinfo *ctrl)
++{
++	const struct test_schedule test_list[] = {
++		{
++			.param      = RdT,
++			.max_margin = MAX_POSSIBLE_TIME,
++			.dq_pat     = RD_RD_TA,
++		},
++		{
++			.param      = WrT,
++			.max_margin = MAX_POSSIBLE_TIME,
++			.dq_pat     = RD_RD_TA,
++		},
++		{
++			.param      = RdV,
++			.max_margin = MAX_POSSIBLE_VREF,
++			.dq_pat     = BASIC_VA,
++		},
++		{
++			.param      = WrV,
++			.max_margin = MAX_POSSIBLE_VREF,
++			.dq_pat     = BASIC_VA,
++		},
++	};
++	const uint8_t loopcount = 17;
++	const bool stop_on_first_error = false;
++	setup_io_test_basic_va(ctrl, ctrl->chanmap, loopcount, NSOE);
++	for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
++		uint8_t chanmask = 0;
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++)
++			chanmask |= select_reut_ranks(ctrl, channel, BIT(rank));
++
++		if (!chanmask)
++			continue;
++
++		clear_data_offset_train_all(ctrl);
++		for (uint32_t test = 0; test < ARRAY_SIZE(test_list); test++) {
++			ctrl->dq_pat = test_list[test].dq_pat;
++			get_ber_margin_ch(
++				ctrl,
++				ctrl->results,
++				chanmask,
++				rank,
++				0xff,
++				test_list[test].param,
++				1,
++				test_list[test].max_margin);
++		}
++	}
++	printk(RMC_DEBUG,
++		"Results are always unsigned. A minus sign only denotes a failed margin.\n\n");
++
++	printk(RMC_DEBUG, "Margin: RdT     WrT     RdV     WrV\n");
++	printk(RMC_DEBUG, "        Lft Rgt Lft Rgt Low Hi  Low Hi");
++
++	bool need_retrain_rd = false;
++	bool need_retrain_wr = false;
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
++			printk(RMC_DEBUG, "\nC%uR%u:  ", channel, rank);
++			if (!rank_in_ch(ctrl, rank, channel))
++				continue;
++
++			bool need_retrain = false;
++			for (uint32_t test = 0; test < ARRAY_SIZE(test_list); test++) {
++				const enum margin_param param = test_list[test].param;
++				const uint8_t res = get_margin_result_type(param);
++				const uint16_t limit =
++					upm_pwr_limit_value(ctrl, param, RETRAIN_LIMIT) / 10;
++
++				need_retrain = false;
++				union last_margin *m = &ctrl->results[res][rank][channel][0];
++				for (uint8_t sign = 0; sign < NUM_SIGN; sign++) {
++					const uint16_t mgn = m->m[sign] / 10;
++					const bool fail = mgn <= limit;
++					if (fail)
++						need_retrain = true;
++
++					/*
++					 * Prefix subpar results with a minus sign for visual
++					 * emphasis. The displayed margin values are unsigned.
++					 */
++					printk(RMC_DEBUG, "%c%2u ", fail ? '-' : ' ', mgn);
++				}
++				if (need_retrain) {
++					if (param == RdT || param == RdV)
++						need_retrain_rd = true;
++					else if (param == WrT || param == WrV)
++						need_retrain_wr = true;
++
++					if (stop_on_first_error) {
++						rank = NUM_SLOTRANKS;
++						channel = NUM_CHANNELS;
++						break;
++					}
++				}
++			}
++			if (need_retrain)
++				printk(RMC_DEBUG, "*** FAILED ***");
++		}
++		printk(RMC_DEBUG, "\n");
++	}
++	printk(RMC_DEBUG, "\n");
++	if (!need_retrain_rd && !need_retrain_wr)
++		return NRI_STATUS_SUCCESS;
++
++	printk(BIOS_ERR, "***** Margin limit check failed! *****\n");
++	printk(RMC_DEBUG, "New limits:\nParam\tUPM\tPWR\n");
++	for (unsigned int test = 0; test < ARRAY_SIZE(test_list); test++) {
++		const enum margin_param param = test_list[test].param;
++
++		if ((param == RdT || param == RdV) && !need_retrain_rd)
++			continue;
++
++		if ((param == WrT || param == WrV) && !need_retrain_wr)
++			continue;
++
++		printk(RMC_DEBUG, "%s", get_margin_name(param));
++		for (uint8_t lim_type = UPM_LIMIT; lim_type <= POWER_LIMIT; lim_type++) {
++			const uint16_t new_lim = raise_limits(ctrl, param, lim_type);
++			printk(RMC_DEBUG, "\t%u", new_lim);
++		}
++		printk(RMC_DEBUG, "\n");
++	}
++	printk(RMC_DEBUG, "\n");
++	return NRI_STATUS_RETRAIN_REQUIRED;
++}
+-- 
+2.56.0
+

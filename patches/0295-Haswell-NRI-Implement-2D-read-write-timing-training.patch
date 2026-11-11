@@ -1,0 +1,750 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Angel Pons <th3fanbus@gmail.com>
+Date: Tue, 10 Nov 2026 16:34:36 +0100
+Subject: [PATCH] Haswell NRI: Implement 2D read/write timing training
+
+Change-Id: Icac129b7000775e6deca6e3422c30cbe63bffa3a
+Signed-off-by: Angel Pons <th3fanbus@gmail.com>
+(cherry picked from commit 7a878cd3698057ba965fb62b868548c9b95bbf75)
+---
+ .../intel/haswell/native_raminit/Makefile.mk  |   1 +
+ .../haswell/native_raminit/raminit_main.c     |   2 +
+ .../haswell/native_raminit/raminit_native.h   |  25 +-
+ .../haswell/native_raminit/train_2d_margins.c | 648 ++++++++++++++++++
+ 4 files changed, 672 insertions(+), 4 deletions(-)
+ create mode 100644 src/northbridge/intel/haswell/native_raminit/train_2d_margins.c
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+index 8c22d1d5d6..fc17f32af2 100644
+--- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
++++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+@@ -25,6 +25,7 @@ romstage-y += spd_bitmunching.c
+ romstage-y += testing_io.c
+ romstage-y += timings_refresh.c
+ romstage-y += train_1d_margins.c
++romstage-y += train_2d_margins.c
+ romstage-y += train_jedec_write_leveling.c
+ romstage-y += train_late_command.c
+ romstage-y += train_read_mpr.c
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index 7748270309..70900a2c7e 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -135,6 +135,8 @@ static const struct task_entry cold_boot[] = {
+ 	{ train_late_command,                                     true, "LCT",        },
+ 	{ train_command_vref,                                     true, "CMDVC1D",    },
+ 	{ train_write_vref,                                       true, "WRVC1D",     },
++	{ train_write_timing_centering_2d,                        true, "WRTC2D",     },
++	{ train_read_timing_centering_2d,                         true, "RDTC2D",     },
+ 	{ optimise_round_trip,                                    true, "RTL",        },
+ 	{ retrain_margin_check,                                   true, "RMC",        },
+ 	{ activate_mc,                                            true, "ACTIVATE",   },
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index 7ef5641fd6..266943eb0f 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -621,12 +621,16 @@ static inline bool rank_in_ch(const struct sysinfo *ctrl, uint8_t rank, uint8_t
+ }
+ 
+ /** TODO: Handling of data_offset_train could be improved, also coupled with reg updates **/
++static inline void clear_data_offset_train(struct sysinfo *ctrl, uint8_t channel)
++{
++	struct channel_data *ch = &ctrl->ch[channel];
++	memset(ch->offset_train, 0, sizeof(ch->offset_train));
++}
++
+ static inline void clear_data_offset_train_all(struct sysinfo *ctrl)
+ {
+-	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
+-		struct channel_data *ch = &ctrl->ch[channel];
+-		memset(ch->offset_train, 0, sizeof(ch->offset_train));
+-	}
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++)
++		clear_data_offset_train(ctrl, channel);
+ }
+ 
+ static inline void reut_disable_cadb_deselects(void)
+@@ -725,6 +729,8 @@ enum nri_status train_jedec_write_leveling(struct sysinfo *ctrl);
+ enum nri_status train_read_timing_centering(struct sysinfo *ctrl);
+ enum nri_status train_write_timing_centering(struct sysinfo *ctrl);
+ enum nri_status train_read_voltage_centering(struct sysinfo *ctrl);
++enum nri_status train_read_timing_centering_2d(struct sysinfo *ctrl);
++enum nri_status train_write_timing_centering_2d(struct sysinfo *ctrl);
+ enum nri_status optimise_comp(struct sysinfo *ctrl);
+ enum nri_status train_late_command(struct sysinfo *ctrl);
+ enum nri_status retrain_margin_check(struct sysinfo *ctrl);
+@@ -800,6 +806,17 @@ void get_ber_margin_ch(
+ 	const bool en_ber,
+ 	const uint8_t max_margin);
+ 
++void data_time_centering_2d(
++	struct sysinfo *ctrl,
++	union last_margin results[MAX_RESULT_TYPE][NUM_SLOTRANKS][NUM_CHANNELS][NUM_LANES],
++	const uint8_t chanmask_in,
++	const enum margin_param param,
++	const bool en_per_bit,
++	const bool en_rx_duty_cycle_in,
++	const bool reset_per_bit,
++	const uint8_t loopcount,
++	const bool en_2d);
++
+ uint16_t upm_pwr_limit_value(
+ 	struct sysinfo *ctrl,
+ 	const enum margin_param param,
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_2d_margins.c b/src/northbridge/intel/haswell/native_raminit/train_2d_margins.c
+new file mode 100644
+index 0000000000..3f05ddbb04
+--- /dev/null
++++ b/src/northbridge/intel/haswell/native_raminit/train_2d_margins.c
+@@ -0,0 +1,648 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <commonlib/bsd/clamp.h>
++#include <console/console.h>
++#include <delay.h>
++#include <lib.h>
++#include <string.h>
++
++#include "raminit_native.h"
++#include <northbridge/intel/haswell/raminit.h>
++#include <northbridge/intel/haswell/haswell.h>
++
++static void dq_time_center_eh(
++	struct sysinfo *ctrl,
++	const uint8_t chanmask,
++	const uint8_t rank,
++	const uint8_t param_v,
++	const uint8_t max_v_scale,
++	uint8_t *const b_map,
++	uint32_t eh[NUM_CHANNELS][NUM_LANES],
++	uint32_t vref_scale[NUM_CHANNELS][NUM_LANES])
++{
++	get_ber_margin_byte(
++		ctrl,
++		ctrl->results,
++		chanmask,
++		rank,
++		rank,
++		param_v,
++		b_map,
++		true,
++		MAX_POSSIBLE_VREF);
++
++	//const uint8_t result = scale_margin_byte(ctrl, ctrl->results, param_v, rank);
++	const uint8_t result = get_margin_result_type(param_v);
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		uint32_t min_v_scale = max_v_scale;
++		for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++			union last_margin *mgn = &ctrl->results[result][rank][channel][byte];
++			uint32_t *const vref_s = &vref_scale[channel][byte];
++
++			eh[channel][byte] = (mgn->start + mgn->end) / 10;
++			*vref_s = eh[channel][byte] / 2;
++			if (*vref_s > max_v_scale)
++				*vref_s = max_v_scale;
++
++			if (min_v_scale > *vref_s)
++				min_v_scale = *vref_s;
++
++			//scale_margin_byte(ctrl, ctrl->results, param_v, rank);
++			if (param_v == WrV) {
++				/* For WrV, use the same Vref limit for all bytes */
++				for (uint8_t cur_byte = 0; cur_byte < ctrl->lanes; cur_byte++)
++					vref_scale[channel][cur_byte] = min_v_scale;
++			}
++		}
++	}
++}
++
++static void update_timing(
++	struct sysinfo *ctrl,
++	const uint8_t channel,
++	const uint8_t rank,
++	const uint8_t byte,
++	const enum margin_param param,
++	const int32_t center,
++	const uint8_t strobe,
++	const bool en_rx_duty_cycle)
++{
++	if (param == RdT) {
++		if (strobe == 0) {
++			const int32_t new_dqs = ctrl->rxdqsp[channel][rank][byte] + center;
++			ctrl->rxdqsp[channel][rank][byte] = clamp_s32(0, new_dqs, 63);
++		}
++		if (strobe == 1 || !en_rx_duty_cycle) {
++			const int32_t new_dqs = ctrl->rxdqsn[channel][rank][byte] + center;
++			ctrl->rxdqsn[channel][rank][byte] = clamp_s32(0, new_dqs, 63);
++			update_rxt(ctrl, channel, rank, byte, RXT_RESTORE, 0);
++		}
++	} else {
++		const int32_t new_dq = ctrl->tx_dq[channel][rank][byte] + center;
++		ctrl->tx_dq[channel][rank][byte] = clamp_s32(0, new_dq, 511);
++		update_txt(ctrl, channel, rank, byte, TXT_RESTORE, 0);
++	}
++}
++
++#define NUM_VREF_POINTS	7
++
++void data_time_centering_2d(
++	struct sysinfo *ctrl,
++	union last_margin results[MAX_RESULT_TYPE][NUM_SLOTRANKS][NUM_CHANNELS][NUM_LANES],
++	const uint8_t chanmask_in,
++	const enum margin_param param,
++	const bool en_per_bit,
++	const bool en_rx_duty_cycle_in,
++	const bool reset_per_bit,
++	const uint8_t loopcount,
++	const bool en_2d)
++{
++	const uint8_t max_v_scale = 24;
++	const uint32_t eh_weights[NUM_VREF_POINTS] = { 6,  2,   1,   0,  2,  1,  0 };
++	const uint32_t ew_weights[NUM_VREF_POINTS] = { 0,  1,   2,   3,  1,  2,  3 };
++	const int32_t vref_points[NUM_VREF_POINTS] = { 0, -6, -12, -18,  6, 12, 18 };
++
++	if (param != RdT && param != WrT)
++		die("%s: Incorrect margin parameter %d\n", __func__, param);
++
++	const char *const rdwr = param == RdT ? "Rd" : "Wr";
++	printk(BIOS_DEBUG, "Parameter: %sT\n", rdwr);
++
++	uint8_t b_map[NUM_LANES];
++	for (uint8_t byte = 0; byte < ARRAY_SIZE(b_map); byte++)
++		b_map[byte] = byte;
++
++	/* Repeat EH measurement after byte training, before bit training */
++	const bool en_per_bit_eh = true;
++
++	setup_io_test_basic_va(ctrl, chanmask_in, loopcount - 1, NSOE);
++	ctrl->dq_pat = RD_RD_TA;
++
++	/* Duty cycle is only valid for Rx */
++	const bool en_rx_duty_cycle = en_rx_duty_cycle_in && param == RdT;
++	const uint8_t result = get_margin_result_type(param);
++	const uint8_t strobes = 1 + en_rx_duty_cycle;
++	uint32_t sum_eh = 0;
++	uint32_t sum_ew = 0;
++	for (uint8_t vref = 0; vref < ARRAY_SIZE(vref_points); vref++) {
++		sum_eh += eh_weights[vref];
++		sum_ew += ew_weights[vref];
++		if (!en_2d)
++			break;
++	}
++	enum margin_param param_v;
++	enum margin_param param_b;
++	if (param == RdT) {
++		param_v = RdV;
++		param_b = RdTBit;
++	} else {
++		param_v = WrV;
++		param_b = WrTBit;
++	}
++	for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
++		uint32_t eye_shape[NUM_VREF_POINTS][NUM_CHANNELS][NUM_LANES][NUM_SIGN] = {};
++		uint32_t vref_scale[NUM_CHANNELS][NUM_LANES] = {};
++		uint32_t eh[NUM_CHANNELS][NUM_LANES] = {};
++		uint32_t ew[NUM_CHANNELS][NUM_LANES] = {};
++		uint8_t chanmask = 0;
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++)
++			chanmask |= select_reut_ranks(ctrl, channel, BIT(rank));
++
++		if (!chanmask)
++			continue;
++
++		clear_data_offset_train_all(ctrl);
++		if (reset_per_bit) {
++			change_margin(
++				ctrl,
++				param_b,
++				0x88888888,
++				true,
++				0,
++				rank,
++				0,
++				true,
++				false,
++				REG_FILE_USE_RANK);
++		}
++		if (en_2d) {
++			dq_time_center_eh(
++				ctrl,
++				chanmask,
++				rank,
++				param_v,
++				max_v_scale,
++				b_map,
++				eh,
++				vref_scale);
++		} else {
++			for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++				for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++					eh[channel][byte] = 1;
++					vref_scale[channel][byte] = 1;
++				}
++			}
++		}
++		printk(BIOS_DEBUG, "### Rank = %u ###\n", rank);
++		for (uint8_t strobe = 0; strobe < strobes; strobe++) {
++			printk(BIOS_DEBUG, "### Strobe = %u ###\n", strobe);
++			printk(BIOS_DEBUG, "\nChannel\t\t");
++			for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++				if (!(chanmask & BIT(channel)))
++					continue;
++
++				printk(BIOS_DEBUG, "%u", channel);
++				if (channel > 0)
++					break;
++
++				for (uint8_t byte = 0; byte < ctrl->lanes; byte++)
++					printk(BIOS_DEBUG, "\t");
++			}
++			printk(BIOS_DEBUG, "\nByte\t");
++			for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++				if (!(chanmask & BIT(channel)))
++					continue;
++
++				for (uint8_t byte = 0; byte < ctrl->lanes; byte++)
++					printk(BIOS_DEBUG, "\t%u", byte);
++			}
++			printk(BIOS_DEBUG, "\nEdges L/R");
++			for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++				if (!en_rx_duty_cycle)
++					break;
++
++				if (!(chanmask & BIT(channel)))
++					continue;
++
++				/* Program selective error checking for rx */
++				union reut_err_ctl_reg reut_err_ctl = {
++					.raw = mchbar_read32(REUT_ch_ERR_CONTROL(channel)),
++				};
++				reut_err_ctl.selective_err_enable_chunk = 0x55 << strobe;
++				mchbar_write32(REUT_ch_ERR_CONTROL(channel), reut_err_ctl.raw);
++			}
++			int32_t center_sum[NUM_CHANNELS][NUM_LANES] = {};
++			for (uint8_t vref = 0; vref < ARRAY_SIZE(vref_points); vref++) {
++				for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++					if (!(chanmask & BIT(channel)))
++						continue;
++
++					const bool skip_wait = chanmask >> (channel + 1);
++					for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++						int32_t value = vref_points[vref];
++						value *= vref_scale[channel][byte];
++						value /= max_v_scale;
++						change_margin(
++							ctrl,
++							param_v,
++							value,
++							false,
++							channel,
++							rank,
++							byte,
++							false,
++							skip_wait,
++							REG_FILE_USE_RANK);
++
++						if (param_v == WrV)
++							break;
++					}
++				}
++				printk(BIOS_DEBUG, "\n%sVref: %d", rdwr, vref_points[vref]);
++				get_ber_margin_byte(
++					ctrl,
++					results,
++					chanmask,
++					rank,
++					rank,
++					param,
++					b_map,
++					true,
++					MAX_POSSIBLE_TIME);
++
++				for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++					if (!(chanmask & BIT(channel)))
++						continue;
++
++					for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++						union last_margin *mgn = &results[result][rank]
++									[channel][byte];
++
++						const uint32_t start = mgn->start;
++						const uint32_t end = mgn->end;
++						printk(BIOS_DEBUG, "\t%3u %3u", start, end);
++						const int32_t center = end - start;
++						if (!vref) {
++							ew[channel][byte] =
++								(start + end) / 10;
++						}
++						uint32_t weight = 0;
++						weight += eh_weights[vref] * eh[channel][byte];
++						weight += ew_weights[vref] * ew[channel][byte];
++						center_sum[channel][byte] += weight * center;
++
++						/* Store edges for per-bit deskew */
++						uint32_t *eye = eye_shape[vref][channel][byte];
++						for (uint8_t sign = 0; sign < NUM_SIGN; sign++)
++							eye[sign] = mgn->m[sign];
++
++						/*
++						 * Runtime improvement:
++						 * Set margin back to Vref = 0 point when
++						 * the sign of the Vref point changes.
++						 */
++						if (vref == 0)
++							continue;
++						int32_t point_a = vref_points[vref - 1];
++						int32_t point_b = vref_points[vref];
++						if (point_a * point_b >= 0)
++							continue;
++
++						eye = eye_shape[0][channel][byte];
++						for (uint8_t edge = 0; edge < NUM_SIGN; edge++)
++							mgn->m[edge] = eye[edge];
++					}
++				}
++				if (!en_2d)
++					break;
++			}
++			printk(BIOS_DEBUG, "\n\nWeighted center\t");
++			for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++				if (!(chanmask & BIT(channel)))
++					continue;
++
++				for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++					int32_t div_by = 0;
++					div_by += sum_eh * eh[channel][byte];
++					div_by += sum_ew * ew[channel][byte];
++					if (!div_by)
++						div_by = 1;
++
++					int32_t *c_sum = &center_sum[channel][byte];
++					const int8_t div_by_sign = sign_of(*c_sum);
++					*c_sum += div_by * 10 * div_by_sign;
++					*c_sum /= div_by * 20;
++					printk(BIOS_DEBUG, "%d\t", *c_sum);
++					update_timing(
++						ctrl,
++						channel,
++						rank,
++						byte,
++						param,
++						*c_sum,
++						strobe,
++						en_rx_duty_cycle);
++					for (uint8_t vref = 0; vref < ARRAY_SIZE(vref_points);
++										vref++) {
++						const int32_t calc = *c_sum * 10;
++						const int32_t max = MAX_POSSIBLE_TIME * 10;
++						uint32_t *eye = eye_shape[vref][channel][byte];
++						eye[0] = clamp_s32(0, eye[0] + calc * 10, max);
++						eye[1] = clamp_s32(0, eye[1] - calc * 10, max);
++						if (!en_2d)
++							break;
++					}
++					for (uint8_t sign = 0; sign < NUM_SIGN; sign++) {
++						union last_margin *m = &results[result][rank]
++									[channel][byte];
++						m->m[sign] = eye_shape[0][channel][byte][sign];
++					}
++				}
++				clear_data_offset_train(ctrl, channel);
++			}
++			printk(BIOS_DEBUG, "\nFinal center");
++			for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++				if (!(chanmask & BIT(channel)))
++					continue;
++
++				for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++					int16_t ct = 0;
++					if (param == RdT) {
++						if (strobe == 0) {
++							ct = ctrl->rxdqsp[channel][rank][byte];
++							ct -= 32;
++						}
++						if (strobe == 1 || !en_rx_duty_cycle) {
++							ct = ctrl->rxdqsn[channel][rank][byte];
++							ct -= 32;
++						}
++					} else {
++						ct = ctrl->tx_dq[channel][rank][byte];
++						ct -= ctrl->txdqs[channel][rank][byte] + 32;
++					}
++					printk(BIOS_DEBUG, "\t%d", ct);
++				}
++			}
++			printk(BIOS_DEBUG, "\n");
++		}
++		if (en_per_bit) {
++			printk(BIOS_DEBUG, "\n\n### Measure Eye Width Per BIT\n");
++			if (en_per_bit_eh && en_2d) {
++				/* Recalculate the eye height after the byte centering */
++				dq_time_center_eh(
++					ctrl,
++					chanmask,
++					rank,
++					param_v,
++					max_v_scale,
++					b_map,
++					eh,
++					vref_scale);
++			}
++			for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++				if (!(chanmask & BIT(channel)))
++					continue;
++
++				printk(BIOS_DEBUG, "Channel %u          ", channel);
++				if (channel == 0) {
++					for (uint8_t byte = 1; byte < ctrl->lanes; byte++)
++						printk(BIOS_DEBUG, "                   ");
++				}
++				const union reut_err_ctl_reg reut_err_ctl = {
++					.selective_err_enable_cacheline = 0xff,
++					.selective_err_enable_chunk     = 0xff,
++					.stop_on_error_control          = ALSOE,
++					.stop_on_nth_error              = 1,
++				};
++				mchbar_write32(REUT_ch_ERR_CONTROL(channel), reut_err_ctl.raw);
++			}
++			printk(BIOS_DEBUG, "\n          ");
++			for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++				if (!(chanmask & BIT(channel)))
++					continue;
++
++				for (uint8_t byte = 0; byte < ctrl->lanes; byte++)
++					printk(BIOS_DEBUG, "byte      % 8d ", byte);
++			}
++			printk(BIOS_DEBUG, "\n");
++
++			/*
++			 * Loop through all the Vref points to test
++			 */
++			uint32_t margin_bit[NUM_CHANNELS][NUM_LANES][NUM_BITS][NUM_SIGN] = {};
++			int32_t center_sum_bit[NUM_CHANNELS][NUM_LANES][NUM_BITS] = {};
++			for (uint8_t vref = 0; vref < ARRAY_SIZE(vref_points); vref++) {
++				printk(BIOS_DEBUG, "Vref:\t%d", vref_points[vref]);
++				for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++					if (!(chanmask & BIT(channel)))
++						continue;
++
++					const bool skip_wait = chanmask >> (channel + 1);
++					for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++						int32_t value = vref_points[vref];
++						value *= vref_scale[channel][byte];
++						value /= max_v_scale;
++						change_margin(
++							ctrl,
++							param_v,
++							value,
++							false,
++							channel,
++							rank,
++							byte,
++							false,
++							skip_wait,
++							REG_FILE_USE_RANK);
++
++						if (param_v == WrV)
++							break;
++					}
++					for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++						for (uint8_t bit = 0; bit < NUM_BITS; bit++) {
++							margin_bit[channel][byte][bit][0] = 8;
++							margin_bit[channel][byte][bit][1] = 8;
++						}
++					}
++				}
++				get_margin_bit(
++					ctrl,
++					chanmask,
++					rank,
++					margin_bit,
++					eye_shape[vref],
++					param_b,
++					15);
++
++				for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++					if (!(chanmask & BIT(channel)))
++						continue;
++
++					for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++						uint32_t weight = 0;
++						weight += eh_weights[vref] * eh[channel][byte];
++						weight += ew_weights[vref] * ew[channel][byte];
++						int32_t *c_sum = center_sum_bit[channel][byte];
++						for (uint8_t bit = 0; bit < NUM_BITS; bit++) {
++							uint32_t *mgn =
++								margin_bit[channel][byte][bit];
++							const int32_t center =
++								(mgn[1] - 8) - (8 - mgn[0]);
++							c_sum[bit] += weight * center;
++						}
++					}
++				}
++				if (!en_2d)
++					break;
++			}
++
++			/*
++			 * Center result per bit
++			 */
++			printk(BIOS_DEBUG, "\nWtdCntr  ");
++			for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++				if (!(chanmask & BIT(channel)))
++					continue;
++
++				/* Go back to the per-byte setup */
++				const union reut_err_ctl_reg reut_err_ctl = {
++					.selective_err_enable_cacheline = 0xff,
++					.selective_err_enable_chunk     = 0xff,
++					.stop_on_error_control          = NSOE,
++					.stop_on_nth_error              = 1,
++				};
++				mchbar_write32(REUT_ch_ERR_CONTROL(channel), reut_err_ctl.raw);
++
++				for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++					int32_t div_by = 0;
++					div_by += sum_eh * eh[channel][byte];
++					div_by += sum_ew * ew[channel][byte];
++					if (!div_by)
++						div_by = 1;
++
++					int32_t *c_sum = center_sum_bit[channel][byte];
++					uint32_t per_bit_rank = 0;
++					for (uint8_t bit = 0; bit < NUM_BITS; bit++) {
++						uint8_t *rx_dq_pb_center = &ctrl->rxdqpb
++							[channel][rank][byte][bit].center;
++
++						uint8_t *tx_dq_pb_center = &ctrl->txdqpb
++							[channel][rank][byte][bit].center;
++
++						const int8_t sign = sign_of(c_sum[bit]);
++						c_sum[bit] += div_by * sign;
++						c_sum[bit] /= div_by * 2;
++
++						c_sum[bit] += (param == RdT
++							? *rx_dq_pb_center
++							: *tx_dq_pb_center);
++
++						c_sum[bit] = clamp_s32(0, c_sum[bit], 15);
++						printk(BIOS_DEBUG, " %x", c_sum[bit]);
++						if (param == RdT)
++							*rx_dq_pb_center = c_sum[bit];
++						else
++							*tx_dq_pb_center = c_sum[bit];
++
++						per_bit_rank |= c_sum[bit] << (4 * bit);
++					}
++					printk(BIOS_DEBUG, "   ");
++					change_margin(
++						ctrl,
++						param_b,
++						per_bit_rank,
++						false,
++						channel,
++						rank,
++						byte,
++						false,
++						false,
++						REG_FILE_USE_RANK);
++				}
++				clear_data_offset_train(ctrl, channel);
++			}
++			printk(BIOS_DEBUG, "\n");
++		}
++	}
++	change_1d_margin_multicast(ctrl, param_v, 0, 0, false, REG_FILE_USE_CURRENT);
++}
++
++enum nri_status train_read_timing_centering_2d(struct sysinfo *ctrl)
++{
++	const uint8_t loopcount = 15;
++
++	bool en_per_bit;
++	bool en_rx_duty_cycle;
++	bool reset_per_bit;
++	bool en_2d;
++
++	en_per_bit       = true;
++	en_rx_duty_cycle = false;
++	reset_per_bit    = true;
++	en_2d            = false;
++	printk(BIOS_DEBUG, "\n### Center read timing (1D) ###\n");
++	data_time_centering_2d(
++		ctrl,
++		ctrl->results,
++		ctrl->chanmap,
++		RdT,
++		en_per_bit,
++		en_rx_duty_cycle,
++		reset_per_bit,
++		loopcount,
++		en_2d);
++
++	en_per_bit       = false;
++	en_rx_duty_cycle = true;
++	reset_per_bit    = false;
++	en_2d            = true;
++	printk(BIOS_DEBUG, "\n### Center read timing (2D) ###\n");
++	data_time_centering_2d(
++		ctrl,
++		ctrl->results,
++		ctrl->chanmap,
++		RdT,
++		en_per_bit,
++		en_rx_duty_cycle,
++		reset_per_bit,
++		loopcount,
++		en_2d);
++
++	return NRI_STATUS_SUCCESS;
++}
++
++enum nri_status train_write_timing_centering_2d(struct sysinfo *ctrl)
++{
++	const uint8_t loopcount = 15;
++
++	bool en_per_bit;
++	bool en_rx_duty_cycle;
++	bool reset_per_bit;
++	bool en_2d;
++
++	en_per_bit       = true;
++	reset_per_bit    = true;
++	en_rx_duty_cycle = false;
++	en_2d            = false;
++	printk(BIOS_DEBUG, "\n### Center write timing (1D) ###\n");
++	data_time_centering_2d(
++		ctrl,
++		ctrl->results,
++		ctrl->chanmap,
++		WrT,
++		en_per_bit,
++		en_rx_duty_cycle,
++		reset_per_bit,
++		loopcount,
++		en_2d);
++
++	en_per_bit       = false;
++	reset_per_bit    = false;
++	en_rx_duty_cycle = false;
++	en_2d            = true;
++	printk(BIOS_DEBUG, "\n### Center write timing (2D) ###\n");
++	data_time_centering_2d(
++		ctrl,
++		ctrl->results,
++		ctrl->chanmap,
++		WrT,
++		en_per_bit,
++		en_rx_duty_cycle,
++		reset_per_bit,
++		loopcount,
++		en_2d);
++
++	return NRI_STATUS_SUCCESS;
++}
+-- 
+2.56.0
+

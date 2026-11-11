@@ -1,0 +1,1007 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Angel Pons <th3fanbus@gmail.com>
+Date: Thu, 5 Nov 2026 14:54:12 +0100
+Subject: [PATCH] Haswell NRI: Add library to measure margins/BER
+
+This will be used in subsequent commits. These functions are quite
+similar and could potentially be unified but they have differences
+which would need to be taken into account somehow.
+
+Also, refactor the handling of `last_margin` a bit to simplify the
+new code populating the array, which works with indices.
+
+Only RMT (Rank Margin Tool) enables BER (Bit Error Rate) measuring
+and interpolation. The other tests only care about margins.
+
+Change-Id: Ia68659344840bb05a068862ebb34a2c78c0fa880
+Signed-off-by: Angel Pons <th3fanbus@gmail.com>
+(cherry picked from commit 131ed83f301ea24321eb912000d2ae0d2685798a)
+---
+ .../intel/haswell/native_raminit/Makefile.mk  |   1 +
+ .../haswell/native_raminit/get_ber_margin.c   | 781 ++++++++++++++++++
+ .../haswell/native_raminit/raminit_native.h   |  54 +-
+ .../haswell/native_raminit/reg_structs.h      |   9 +
+ .../haswell/native_raminit/train_1d_margins.c |   2 +-
+ .../native_raminit/train_late_command.c       |   4 +-
+ .../intel/haswell/registers/mchbar.h          |   3 +
+ 7 files changed, 842 insertions(+), 12 deletions(-)
+ create mode 100644 src/northbridge/intel/haswell/native_raminit/get_ber_margin.c
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+index cbe8241b6e..f1e8461de2 100644
+--- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
++++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+@@ -5,6 +5,7 @@ romstage-y += change_margin.c
+ romstage-y += configure_mc.c
+ romstage-y += ddr3.c
+ romstage-y += ddrio_helper.c
++romstage-y += get_ber_margin.c
+ romstage-y += init_mpll.c
+ romstage-y += io_comp_control.c
+ romstage-y += jedec_reset.c
+diff --git a/src/northbridge/intel/haswell/native_raminit/get_ber_margin.c b/src/northbridge/intel/haswell/native_raminit/get_ber_margin.c
+new file mode 100644
+index 0000000000..44211052b4
+--- /dev/null
++++ b/src/northbridge/intel/haswell/native_raminit/get_ber_margin.c
+@@ -0,0 +1,781 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <assert.h>
++#include <commonlib/bsd/clamp.h>
++#include <console/console.h>
++#include <delay.h>
++#include <string.h>
++#include <timer.h>
++#include <types.h>
++
++#include "raminit_native.h"
++#include <northbridge/intel/haswell/raminit.h>
++#include <northbridge/intel/haswell/haswell.h>
++
++#define BER_TARGET		4
++#define BER_LOG_TARGET		7 /* 10 * log8(BER_TARGET) */
++
++static uint32_t get_reut_errors(const uint8_t channel, const uint8_t byte)
++{
++	return mchbar_read32(REUT_ch_ERR_COUNTER_STATUS_x(channel, byte)) & 0x7fffff;
++}
++
++static uint8_t calc_max_rx_margin(
++	struct sysinfo *const ctrl,
++	const enum margin_param param,
++	const uint8_t channel,
++	const uint8_t rank_in,
++	const uint8_t byte,
++	const uint8_t sign,
++	const uint8_t max_margin_in)
++{
++	if (param != RdT)
++		return max_margin_in;
++
++	const bool all_ranks = rank_in >= NUM_SLOTRANKS;
++	uint8_t max_margin = max_margin_in;
++	for (uint8_t rank = all_ranks ? 0 : rank_in; rank < NUM_SLOTRANKS; rank++) {
++		if (ctrl->rankmap[channel] & BIT(rank)) {
++			uint8_t rx_dqs_p = ctrl->rxdqsp[channel][rank][byte];
++			uint8_t rx_dqs_n = ctrl->rxdqsn[channel][rank][byte];
++			if (sign) {
++				rx_dqs_p = 63 - rx_dqs_p;
++				rx_dqs_n = 63 - rx_dqs_n;
++			}
++			max_margin = MIN(max_margin, rx_dqs_p);
++			max_margin = MIN(max_margin, rx_dqs_n);
++		}
++		if (!all_ranks)
++			break;
++	}
++	return max_margin;
++}
++
++/* Returns an integer approximation of log8(value) * 10 */
++static uint32_t hsw_log8(uint32_t value)
++{
++	const uint8_t mantissa[18] = {0, 0, 1, 2, 3, 4, 5, 6, 7, 7, 8, 8, 9, 9, 9, 10, 10, 10};
++	uint32_t whole = 0;
++	uint32_t m_idx = 2 * value;
++	while (value > 8) {
++		m_idx = value >> 2;
++		value = value >> 3;
++		whole += 10;
++	}
++	assert(m_idx < ARRAY_SIZE(mantissa));
++	return whole + mantissa[m_idx];
++}
++
++/* Returns a (vref * 10) interpolation/extrapolation */
++static uint32_t interpolate_vref(
++	const uint32_t vref_pass,
++	const uint32_t err_log_1,
++	const uint32_t err_log_2,
++	const uint32_t err_log_target,
++	uint32_t ber_stats[4])
++{
++	const uint32_t vref = vref_pass * 10;
++	if (err_log_2 <= err_log_1) {
++		/* Non-monotonic case */
++		ber_stats[3]++;
++		return vref + 10;
++	}
++	const uint32_t err_log_diff = err_log_2 - err_log_1;
++	if (err_log_2 < err_log_target) {
++		/* Error target above err_log_2 -> extrapolate, at most 1 tick */
++		ber_stats[2]++;
++		return vref + 20 + MIN(10, 10 * (err_log_target - err_log_2) / err_log_diff);
++	} else if (err_log_1 <= err_log_target) {
++		/* Error target between err_log_1 and err_log_2 -> interpolate */
++		ber_stats[1]++;
++		return vref + 10 + 10 * (err_log_target - err_log_1) / err_log_diff;
++	} else {
++		/* Error target below err_log_1 -> extrapolate */
++		ber_stats[0]++;
++		const uint32_t slope = MAX(err_log_diff, err_log_1);
++		return !slope ? 0 : vref + 10 * err_log_target / slope;
++	}
++}
++
++void get_margin_byte(
++	struct sysinfo *ctrl,
++	union last_margin margin[MAX_RESULT_TYPE][NUM_SLOTRANKS][NUM_CHANNELS][NUM_LANES],
++	const enum margin_param param,
++	const uint8_t rank_in,
++	const uint8_t ranks)
++{
++	const uint8_t result = get_margin_result_type(param);
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!does_ch_exist(ctrl, channel))
++			continue;
++
++		for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++			union last_margin *mgn_a = &margin[result][rank_in][channel][byte];
++			for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
++				if (!((BIT(rank) & ctrl->rankmap[channel]) & ranks))
++					continue;
++
++				union last_margin *mgn_b = &margin[result][rank][channel][byte];
++				for (uint8_t sign = 0; sign < NUM_SIGN; sign++) {
++					if (mgn_a->m[sign] > mgn_b->m[sign])
++						mgn_a->m[sign] = mgn_b->m[sign];
++				}
++			}
++		}
++	}
++}
++
++enum ber_test_result {
++	MAX_POINT_PASS,
++	MIN_POINT_PASS,
++	MAX_POINT_FAIL,
++	MIN_POINT_FAIL,
++	INVALID_POINT,
++};
++
++/*
++ * NOTE: errors is log8(err_count) at [last_pass + 2, last_pass + 1]
++ * MRC also stores 2 other values but never uses them. Also, it does
++ * cursed bit manipulation to pack 4 bytes in a 32-bit value. Yikes.
++ */
++static bool update_ber_margin(
++	struct sysinfo *ctrl,
++	const uint8_t channel,
++	const uint8_t bit_mask,
++	const uint8_t margin,
++	const uint32_t err_count,
++	uint16_t *const two_pass,
++	uint16_t *const two_fail,
++	const uint8_t max_tested,
++	const uint8_t min_tested,
++	uint8_t *const byte_max,
++	uint8_t *const last_pass_vref,
++	uint8_t errors[2])
++{
++	if (bit_mask & *two_pass & *two_fail)
++		return true;
++
++	enum ber_test_result test_result;
++	if (margin == max_tested)
++		test_result = err_count ? MAX_POINT_FAIL : MAX_POINT_PASS;
++	else if (margin == min_tested)
++		test_result = err_count ? MIN_POINT_FAIL : MIN_POINT_PASS;
++	else
++		test_result = INVALID_POINT;
++
++	const uint8_t log_err = err_count ? hsw_log8(err_count) : 0;
++	const int8_t delta = margin - *last_pass_vref;
++
++	/* Update pass/fail variables */
++	switch (test_result) {
++	case MAX_POINT_PASS:
++		/* Passing while walking up */
++		if (delta < 0) {
++			/* First passing point */
++			*last_pass_vref = margin;
++			if (min_tested != max_tested) {
++				printk(BIOS_ERR, "%s: max tested < last pass for first point\n",
++					__func__);
++			}
++		} else if (delta == 1) {
++			/* Normal, walk to fail */
++			errors[0] = errors[1];
++			errors[1] = 0;
++			*last_pass_vref = margin;
++			*two_pass |= bit_mask;
++		} else if (delta == 2) {
++			/* Speckling in response, consider point as error */
++			errors[1] = log_err;
++			*two_fail |= bit_mask;
++		} else {
++			printk(BIOS_ERR, "%s: Tested point twice or > 2 above last pass\n",
++				__func__);
++		}
++		break;
++	case MIN_POINT_PASS:
++		/* Passing while walking down */
++		if (*two_pass & bit_mask) {
++			return true;
++		} else if (delta == -1) {
++			/* Found second pass */
++			*two_pass |= bit_mask;
++		} else {
++			/* First passing point */
++			*two_pass &= ~bit_mask;
++			/* Don't shift errors. Fail points already assumed correct. */
++			*last_pass_vref = margin;
++		}
++		break;
++	case MAX_POINT_FAIL:
++		/* Failing while walking up */
++		if (delta < 2) {
++			/* First failing point */
++			*two_fail &= ~bit_mask;
++			errors[0] = log_err;
++		} else if (delta == 2) {
++			/* Second failing point */
++			*two_fail |= bit_mask;
++			errors[1] = log_err;
++		} else {
++			printk(BIOS_ERR, "%s: Tested >2 above last_pass\n", __func__);
++		}
++		break;
++	case MIN_POINT_FAIL:
++		/* Failing while walking down */
++		if (delta > 0) {
++			printk(BIOS_ERR, "%s: Unexpected case for channel: %u, delta: %d\n",
++				__func__, channel, delta);
++		}
++		/* Adjust last_pass_vref and error count to be below this failure point */
++		if (delta >= -1 && delta <= 0)
++			*last_pass_vref = margin - 1;
++
++		errors[1] = errors[0];
++		errors[0] = log_err;
++		if (delta <= 0)
++			*two_pass &= ~bit_mask;
++
++		if (min_tested < max_tested)
++			*two_fail |= bit_mask;
++		break;
++	case INVALID_POINT:
++	default:
++		printk(BIOS_ERR, "%s: Tested points other than Max/Min\n", __func__);
++	}
++
++	/* Handle max saturation */
++	if (margin == *byte_max)
++		*two_fail |= bit_mask;
++
++	if (!err_count && *byte_max == *last_pass_vref && *two_pass & bit_mask) {
++		errors[0] = 0xfe;
++		errors[1] = 0xff;
++	}
++
++	/* Handle min saturation */
++	if (margin == 0) {
++		*two_pass |= bit_mask;
++		if (err_count > 0) {
++			*two_fail |= bit_mask;
++			*last_pass_vref = 0;
++			errors[0] = BER_LOG_TARGET;
++			errors[1] = BER_LOG_TARGET;
++		}
++	}
++	return false;
++}
++
++static void get_ber_margin_byte_sign(
++	struct sysinfo *ctrl,
++	union last_margin margin_byte[MAX_RESULT_TYPE][NUM_SLOTRANKS][NUM_CHANNELS][NUM_LANES],
++	const uint8_t chanmask,
++	const uint8_t rank,
++	const uint8_t rank_rx,
++	const enum margin_param param,
++	const uint8_t b_map[NUM_LANES],
++	const bool en_ber,
++	const uint8_t max_margin,
++	const uint8_t sign)
++{
++	const uint8_t result = get_margin_result_type(param);
++	const uint16_t done_mask = BIT(ctrl->lanes) - 1;
++	const bool per_ch = param == WrV;
++	const int32_t r_sign = 2 * sign - 1;
++	uint8_t last_pass_vref[NUM_CHANNELS][NUM_LANES] = {};
++	uint16_t two_pass[NUM_CHANNELS] = {};
++	uint16_t two_fail[NUM_CHANNELS] = {};
++	uint8_t max_tested[NUM_CHANNELS][NUM_LANES] = {};
++	uint8_t min_tested[NUM_CHANNELS][NUM_LANES] = {};
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel))) {
++			two_pass[channel] = done_mask;
++			two_fail[channel] = done_mask;
++			continue;
++		}
++		min_tested[channel][0] = 0x7f;
++		for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++			/* Start with a "huge" unsigned number */
++			last_pass_vref[channel][byte] = 0x7f;
++			const uint8_t byte_max = calc_max_rx_margin(
++				ctrl,
++				param,
++				channel,
++				rank_rx,
++				byte,
++				sign,
++				max_margin);
++
++			uint32_t *margin = &margin_byte[result][rank][channel][byte].m[sign];
++			*margin = MIN(*margin / 10, byte_max);
++			if (per_ch) {
++				if (*margin < min_tested[channel][0]) {
++					max_tested[channel][0] = *margin;
++					min_tested[channel][0] = *margin;
++				}
++			} else {
++				max_tested[channel][byte] = *margin;
++				min_tested[channel][byte] = *margin;
++			}
++
++			/* Set up REUT error counters to count errors per byte lane */
++			const union reut_err_counter_ctl_reg counter_ctl = {
++				.counter_pointer = b_map[byte],
++				.counter_control = COUNT_ERRORS_PER_BYTE_GROUP,
++			};
++			mchbar_write32(REUT_ch_ERR_COUNTER_CTL_x(channel, byte),
++				counter_ctl.raw);
++		}
++		if (!per_ch)
++			continue;
++
++		for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++			uint32_t *mgn = &margin_byte[result][rank][channel][byte].m[sign];
++			*mgn = min_tested[channel][0];
++		}
++	}
++
++	/*
++	 * log8(error count) at two different Vref points. Note that moving the log
++	 * calculations out of the main loop does not noticeably improve runtime.
++	 */
++	uint8_t errors[NUM_CHANNELS][NUM_LANES][2] = {};
++
++	/*
++	 * Search algorithm:
++	 * If we start with a passing point, walk to hit 2 failing points
++	 *    Return as needed to hit a second passing point
++	 * If we start with a failing point, walk to hit 2 passing points
++	 *    Return as needed to hit a second failing point
++	 * Keep testing until all ch/bytes find 2 passes and 2 fails
++	 */
++	while (true) {
++		mchbar_write32(REUT_GLOBAL_CTL, (union reut_seq_ctl_reg) {
++			.clear_errors = 1,
++		}.raw);
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			const bool skip_wait = chanmask >> (channel + 1);
++			for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++				int32_t value0 = margin_byte[result][rank]
++						[channel][byte].m[sign] * r_sign;
++
++				change_margin(
++					ctrl,
++					param,
++					value0,
++					false,
++					channel,
++					rank,
++					byte,
++					false,
++					skip_wait,
++					REG_FILE_USE_START);
++
++				if (per_ch)
++					break;
++			}
++		}
++		run_io_test(ctrl, chanmask, ctrl->dq_pat, true);
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++				const uint16_t bit_mask = BIT(byte);
++				if (bit_mask & two_pass[channel] & two_fail[channel])
++					continue;
++
++				uint32_t err_count = get_reut_errors(channel, byte);
++				uint32_t *margin = &margin_byte[result][rank]
++								[channel][byte].m[sign];
++
++				uint8_t byte_max = calc_max_rx_margin(
++					ctrl,
++					param,
++					channel,
++					rank,
++					byte,
++					sign,
++					max_margin);
++
++				const uint8_t ch_byte = per_ch ? 0 : byte;
++				const bool skip = update_ber_margin(
++					ctrl,
++					channel,
++					bit_mask,
++					*margin,
++					err_count,
++					&two_pass[channel],
++					&two_fail[channel],
++					max_tested[channel][ch_byte],
++					min_tested[channel][ch_byte],
++					&byte_max,
++					&last_pass_vref[channel][byte],
++					errors[channel][byte]);
++
++				if (skip)
++					continue;
++
++				if (per_ch)
++					continue;
++
++				if (bit_mask & two_pass[channel] & two_fail[channel])
++					continue;
++
++				uint32_t *mgn = &margin_byte[result][rank]
++						[channel][byte].m[sign];
++
++				if (err_count) {
++					if (two_pass[channel] & bit_mask)
++						*mgn = ++max_tested[channel][ch_byte];
++					else
++						*mgn = --min_tested[channel][ch_byte];
++				} else {
++					if (two_fail[channel] & bit_mask)
++						*mgn = --min_tested[channel][ch_byte];
++					else
++						*mgn = ++max_tested[channel][ch_byte];
++				}
++			}
++			if (!per_ch)
++				continue;
++
++			if ((two_pass[channel] & two_fail[channel]) == done_mask)
++				continue;
++
++			uint32_t *mgn = &margin_byte[result][rank][channel][0].m[sign];
++
++			if (two_pass[channel] != done_mask)
++				*mgn = --min_tested[channel][0];
++			else
++				*mgn = ++max_tested[channel][0];
++
++			/* All bytes must use the same margin point */
++			for (uint8_t byte = 0; byte < ctrl->lanes; byte++)
++				margin_byte[result][rank][channel][byte].m[sign] = *mgn;
++		}
++		bool done = true;
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if ((two_pass[channel] & two_fail[channel]) != done_mask) {
++				done = false;
++				break;
++			}
++		}
++		if (done)
++			break;
++	}
++
++	/* Update margin with extrapolated BER margin */
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++			uint32_t *mgn = &margin_byte[result][rank][channel][byte].m[sign];
++
++			if (en_ber) {
++				*mgn = interpolate_vref(
++					last_pass_vref[channel][byte],
++					errors[channel][byte][0],
++					errors[channel][byte][1],
++					BER_LOG_TARGET,
++					ctrl->ber_stats);
++			} else {
++				*mgn = 10 * last_pass_vref[channel][byte];
++			}
++		}
++	}
++}
++
++static void get_ber_margin_ch_sign(
++	struct sysinfo *ctrl,
++	union last_margin margin_ch[MAX_RESULT_TYPE][NUM_SLOTRANKS][NUM_CHANNELS][NUM_LANES],
++	const uint8_t chanmask,
++	const uint8_t rank,
++	const uint8_t rank_rx,
++	const enum margin_param param,
++	const bool en_ber,
++	const uint8_t max_margin,
++	const uint8_t sign)
++{
++	const uint8_t result = get_margin_result_type(param);
++	const uint16_t done_mask = 1;
++	const bool per_ch = param == WrV || param == CmdV;
++	const bool per_mc = param == CmdV && chanmask >= 0x3;
++	const int32_t r_sign = 2 * sign - 1;
++	uint8_t byte_max[NUM_CHANNELS] = {};
++	uint8_t max_tested[NUM_CHANNELS] = {};
++	uint8_t min_tested[NUM_CHANNELS] = {};
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		byte_max[channel] = max_margin;
++		if (param == RdT) {
++			for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++				byte_max[channel] = calc_max_rx_margin(
++					ctrl,
++					param,
++					channel,
++					rank_rx,
++					byte,
++					sign,
++					byte_max[channel]);
++			}
++		}
++		uint32_t *margin = &margin_ch[result][rank][channel][0].m[sign];
++		*margin = MAX(*margin / 10, byte_max[channel]);
++		if (per_mc) {
++			uint32_t *m_ch = &margin_ch[result][rank][0][0].m[sign];
++			*m_ch = MIN(*m_ch, *margin);
++		}
++		min_tested[channel] = *margin;
++		max_tested[channel] = *margin;
++
++		/* Set up REUT error counters to count errors per channel */
++		const union reut_err_counter_ctl_reg counter_ctl = {
++			.counter_control = COUNT_ERRORS_PER_CHANNEL,
++		};
++		mchbar_write32(REUT_ch_ERR_COUNTER_CTL_x(channel, 0), counter_ctl.raw);
++	}
++	if (per_mc) {
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			const uint32_t val = margin_ch[result][rank][0][0].m[sign];
++			margin_ch[result][rank][channel][0].m[sign] = val;
++			min_tested[channel] = val;
++			max_tested[channel] = val;
++		}
++	}
++
++	/*
++	 * log8(error count) at two different Vref points. Note that moving the log
++	 * calculations out of the main loop does not noticeably improve runtime.
++	 */
++	uint8_t errors[NUM_CHANNELS][2] = {};
++	uint16_t two_pass[NUM_CHANNELS] = {};
++	uint16_t two_fail[NUM_CHANNELS] = {};
++	uint8_t last_pass_vref[NUM_CHANNELS];
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		last_pass_vref[channel] = 0x7f;
++		if (!(chanmask & BIT(channel))) {
++			two_pass[channel] = done_mask;
++			two_fail[channel] = done_mask;
++		}
++	}
++
++	/*
++	 * Search algorithm:
++	 * If we start with a passing point, walk to hit 2 failing points
++	 *    Return as needed to hit a second passing point
++	 * If we start with a failing point, walk to hit 2 passing points
++	 *    Return as needed to hit a second failing point
++	 * Keep testing until all ch/bytes find 2 passes and 2 fails
++	 */
++	while (true) {
++		mchbar_write32(REUT_GLOBAL_CTL, (union reut_seq_ctl_reg) {
++			.clear_errors = 1,
++		}.raw);
++		uint8_t ch_error = 0;
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			const int32_t v0 = r_sign * margin_ch[result][rank][channel][0].m[sign];
++			/* Skip wait if there are more channels that need a Vref update */
++			const bool skip_wait = !per_mc && (chanmask >> (channel + 1));
++			for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++				change_margin(
++					ctrl,
++					param,
++					v0,
++					false,
++					channel,
++					rank,
++					byte,
++					false,
++					skip_wait,
++					REG_FILE_USE_START);
++
++				if (per_ch)
++					break;
++			}
++			if (param == CmdV)
++				do_jedec_init(ctrl);
++
++			if (per_mc)
++				break;
++		}
++		ch_error |= run_io_test(ctrl, chanmask, ctrl->dq_pat, true);
++		if (!en_ber && ch_error == chanmask)
++			break;
++
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			if ((two_pass[channel] & two_fail[channel]) == done_mask)
++				continue;
++
++			const uint8_t mc_channel = per_mc ? 0 : channel;
++			uint32_t err_count = get_reut_errors(channel, 0);
++			uint32_t *margin = &margin_ch[result][rank][channel][0].m[sign];
++
++			const bool skip = update_ber_margin(
++				ctrl,
++				channel,
++				BIT(0),
++				*margin,
++				err_count,
++				&two_pass[channel],
++				&two_fail[channel],
++				max_tested[mc_channel],
++				min_tested[mc_channel],
++				&byte_max[channel],
++				&last_pass_vref[channel],
++				errors[channel]);
++
++			if (skip)
++				continue;
++
++			if (!per_mc) {
++				if ((two_pass[channel] & two_fail[channel]) == done_mask)
++					continue;
++
++				if (two_pass[channel] != done_mask)
++					*margin = --min_tested[channel];
++				else
++					*margin = ++max_tested[channel];
++			}
++		}
++		if (!per_mc)
++			continue;
++
++		uint32_t *mgn = &margin_ch[result][rank][0][0].m[sign];
++		const uint16_t two_pass_mc = two_pass[0] & two_pass[1];
++		const uint16_t two_fail_mc = two_fail[0] & two_fail[1];
++		if (two_pass_mc == done_mask) {
++			if (two_fail_mc == done_mask)
++				break;
++
++			*mgn = ++max_tested[0];
++		} else {
++			*mgn = --min_tested[0];
++		}
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			margin_ch[result][rank][channel][0].m[sign] = *mgn;
++			min_tested[channel] = min_tested[0];
++			max_tested[channel] = max_tested[0];
++		}
++		bool done = true;
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if ((two_pass[channel] & two_fail[channel]) != done_mask) {
++				done = false;
++				break;
++			}
++		}
++		if (done)
++			break;
++	}
++
++	/* Update margin with extrapolated BER margin */
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		uint32_t *mgn = &margin_ch[result][rank][channel][0].m[sign];
++		if (en_ber) {
++			*mgn = interpolate_vref(
++				last_pass_vref[channel],
++				errors[channel][0],
++				errors[channel][1],
++				BER_LOG_TARGET,
++				ctrl->ber_stats);
++		} else {
++			*mgn = 10 * last_pass_vref[channel];
++		}
++	}
++}
++
++void get_ber_margin_byte(
++	struct sysinfo *ctrl,
++	union last_margin margin_byte[MAX_RESULT_TYPE][NUM_SLOTRANKS][NUM_CHANNELS][NUM_LANES],
++	const uint8_t chanmask,
++	const uint8_t rank,
++	const uint8_t rank_rx,
++	const enum margin_param param,
++	const uint8_t b_map[NUM_LANES],
++	const bool en_ber,
++	const uint8_t max_margin)
++{
++	assert(rank < NUM_SLOTRANKS);
++	for (uint8_t sign = 0; sign < NUM_SIGN; sign++) {
++		get_ber_margin_byte_sign(
++			ctrl,
++			margin_byte,
++			chanmask,
++			rank,
++			rank_rx,
++			param,
++			b_map,
++			en_ber,
++			max_margin,
++			sign);
++	}
++	if (param == RcvEnaX) {
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			for (uint8_t byte = 0; byte < ctrl->lanes; byte++)
++				update_rxt(ctrl, channel, rank, byte, RXT_RESTORE, 0);
++
++			union sc_io_latency_reg sc_io_latency = {
++				.raw = mchbar_read32(SC_IO_LATENCY_ch(channel)),
++			};
++			sc_io_latency.rt_iocomp = ctrl->rt_io_comp[channel];
++			mchbar_write32(SC_IO_LATENCY_ch(channel), sc_io_latency.raw);
++		}
++	}
++	change_1d_margin_multicast(ctrl, param, false, 0, false, REG_FILE_USE_CURRENT);
++
++	/* Reset error counter settings */
++	for (uint8_t byte = 0; byte < ctrl->lanes; byte++)
++		mchbar_write32(REUT_ERR_COUNTER_CTL_x(byte), 0);
++}
++
++void get_ber_margin_ch(
++	struct sysinfo *ctrl,
++	union last_margin margin_ch[MAX_RESULT_TYPE][NUM_SLOTRANKS][NUM_CHANNELS][NUM_LANES],
++	const uint8_t chanmask,
++	const uint8_t rank,
++	const uint8_t rank_rx,
++	const enum margin_param param,
++	const bool en_ber,
++	const uint8_t max_margin)
++{
++	assert(rank < NUM_SLOTRANKS);
++	for (uint8_t sign = 0; sign < NUM_SIGN; sign++) {
++		get_ber_margin_ch_sign(
++			ctrl,
++			margin_ch,
++			chanmask,
++			rank,
++			rank_rx,
++			param,
++			en_ber,
++			max_margin,
++			sign);
++	}
++	change_1d_margin_multicast(ctrl, param, false, 0, false, REG_FILE_USE_CURRENT);
++
++	/* Reset error counter settings */
++	mchbar_write32(REUT_ERR_COUNTER_CTL_x(0), 0);
++}
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index 1f7ea11269..a860b93020 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -22,6 +22,8 @@
+ 
+ #define NUM_BITS		8
+ 
++#define NUM_SIGN		2
++
+ #define COMP_INT		10
+ 
+ /* Always use 12 legs for emphasis (not trained) */
+@@ -132,11 +134,12 @@ enum {
+ };
+ 
+ /* REUT error counter control */
+-enum {
+-	COUNT_ERRORS_PER_CHANNEL	= 0,
+-	COUNT_ERRORS_PER_LANE		= 1,
+-	COUNT_ERRORS_PER_BYTE_GROUP	= 2,
+-	COUNT_ERRORS_PER_CHUNK		= 3,
++/** TODO: Figure out what the difference between lane / byte group / chunk is **/
++enum reut_err_counter_mode {
++	COUNT_ERRORS_PER_CHANNEL	= 0, /* Count errors for all lanes */
++	COUNT_ERRORS_PER_LANE		= 1, /* Count errors for a particular lane */
++	COUNT_ERRORS_PER_BYTE_GROUP	= 2, /* Count errors for a particular byte group */
++	COUNT_ERRORS_PER_CHUNK		= 3, /* Count errors for a particular chunk */
+ };
+ 
+ enum wdb_dq_pattern {
+@@ -350,9 +353,12 @@ struct raminit_dimm_info {
+ 	bool valid;
+ };
+ 
+-struct last_margin {
+-	uint32_t start;
+-	uint32_t end;
++union last_margin {
++	struct {
++		uint32_t start;
++		uint32_t end;
++	};
++	uint32_t m[NUM_SIGN];
+ };
+ 
+ struct time_margin {
+@@ -493,7 +499,7 @@ struct sysinfo {
+ 	/*
+ 	 * BIG WARNING: The slotrank comes before the channel!
+ 	 */
+-	struct last_margin results[MAX_RESULT_TYPE][NUM_SLOTRANKS][NUM_CHANNELS][NUM_LANES];
++	union last_margin results[MAX_RESULT_TYPE][NUM_SLOTRANKS][NUM_CHANNELS][NUM_LANES];
+ 
+ 	union tc_bank_reg tc_bank[NUM_CHANNELS];
+ 	union tc_bank_rank_a_reg tc_bankrank_a[NUM_CHANNELS];
+@@ -506,6 +512,8 @@ struct sysinfo {
+ 	uint16_t mr2[NUM_CHANNELS][NUM_SLOTRANKS];
+ 	uint16_t mr3[NUM_CHANNELS][NUM_SLOTRANKS];
+ 
++	uint32_t ber_stats[4]; /* TODO: This might be unused */
++
+ 	uint8_t dq_pat;
+ 
+ 	uint8_t dq_pat_lc;
+@@ -729,6 +737,34 @@ uint32_t get_tXS_offset(uint32_t mem_clock_mhz);
+ uint32_t get_tZQOPER(uint32_t mem_clock_mhz, bool lpddr);
+ uint32_t get_tZQCS(uint32_t mem_clock_mhz, bool lpddr);
+ 
++void get_margin_byte(
++	struct sysinfo *ctrl,
++	union last_margin margin[MAX_RESULT_TYPE][NUM_SLOTRANKS][NUM_CHANNELS][NUM_LANES],
++	const enum margin_param param,
++	const uint8_t rank_in,
++	const uint8_t ranks);
++
++void get_ber_margin_byte(
++	struct sysinfo *ctrl,
++	union last_margin margin_byte[MAX_RESULT_TYPE][NUM_SLOTRANKS][NUM_CHANNELS][NUM_LANES],
++	const uint8_t chanmask,
++	const uint8_t rank,
++	const uint8_t rank_rx,
++	const enum margin_param param,
++	const uint8_t b_map[NUM_LANES],
++	const bool en_ber,
++	const uint8_t max_margin);
++
++void get_ber_margin_ch(
++	struct sysinfo *ctrl,
++	union last_margin margin_ch[MAX_RESULT_TYPE][NUM_SLOTRANKS][NUM_CHANNELS][NUM_LANES],
++	const uint8_t chanmask,
++	const uint8_t rank,
++	const uint8_t rank_rx,
++	const enum margin_param param,
++	const bool en_ber,
++	const uint8_t max_margin);
++
+ enum nri_status io_reset(void);
+ enum nri_status wait_for_first_rcomp(void);
+ void force_rcomp_and_wait_us(unsigned int usecs);
+diff --git a/src/northbridge/intel/haswell/native_raminit/reg_structs.h b/src/northbridge/intel/haswell/native_raminit/reg_structs.h
+index 20fe3db548..e406a0bad5 100644
+--- a/src/northbridge/intel/haswell/native_raminit/reg_structs.h
++++ b/src/northbridge/intel/haswell/native_raminit/reg_structs.h
+@@ -639,6 +639,15 @@ union reut_err_ctl_reg {
+ 	uint32_t raw;
+ };
+ 
++union reut_err_counter_ctl_reg {
++	struct __packed {
++		uint32_t counter_pointer :  7; // Bits  6:0
++		uint32_t counter_control :  2; // Bits  8:7
++		uint32_t                 : 23; // Bits 31:9
++	};
++	uint32_t raw;
++};
++
+ union reut_pat_cadb_mux_ctrl_reg {
+ 	struct __packed {
+ 		uint32_t mux_0_ctrl     : 2; // Bits  1:0
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_1d_margins.c b/src/northbridge/intel/haswell/native_raminit/train_1d_margins.c
+index 9f8d2edbe6..e915bd3f31 100644
+--- a/src/northbridge/intel/haswell/native_raminit/train_1d_margins.c
++++ b/src/northbridge/intel/haswell/native_raminit/train_1d_margins.c
+@@ -56,7 +56,7 @@ static enum nri_status apply_dq_offsets(
+ 		} else {
+ 			printk(BIOS_DEBUG, "\n");
+ 		}
+-		const struct last_margin margin = {
++		const union last_margin margin = {
+ 			.start = ABS(curr_data->largest.start - center) * 10,
+ 			.end   = ABS(curr_data->largest.end   - center) * 10,
+ 		};
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_late_command.c b/src/northbridge/intel/haswell/native_raminit/train_late_command.c
+index 0db7fd918e..2045e6a4df 100644
+--- a/src/northbridge/intel/haswell/native_raminit/train_late_command.c
++++ b/src/northbridge/intel/haswell/native_raminit/train_late_command.c
+@@ -470,7 +470,7 @@ enum nri_status cmd_find_edges_linear(
+ 			if (!rank_in_mask(rank, rankmask))
+ 				continue;
+ 
+-			struct last_margin *margin = &ctrl->results[LastCmdT][rank][channel][0];
++			union last_margin *margin = &ctrl->results[LastCmdT][rank][channel][0];
+ 			if (iteration == CT_ITERATION_CLOCK) {
+ 				margin->start = 10 * ABS(curr_data->largest.start);
+ 				margin->end = 10 * ABS(curr_data->largest.end);
+@@ -824,7 +824,7 @@ static enum nri_status center_ctl_clk_2d(
+ 			}
+ 
+ 			const uint8_t rank = first_rank[channel];
+-			struct last_margin *margin = &ctrl->results[LastCmdT][rank][channel][0];
++			union last_margin *margin = &ctrl->results[LastCmdT][rank][channel][0];
+ 			const uint8_t lwidth = margin->end / 10 - margin->start / 10;
+ 			printk(LCT_PLOT, "\t%u", lwidth);
+ 			if (lwidth > best[channel].width) {
+diff --git a/src/northbridge/intel/haswell/registers/mchbar.h b/src/northbridge/intel/haswell/registers/mchbar.h
+index 44f8c600b5..a92efab370 100644
+--- a/src/northbridge/intel/haswell/registers/mchbar.h
++++ b/src/northbridge/intel/haswell/registers/mchbar.h
+@@ -154,6 +154,7 @@
+ #define REUT_ch_ERR_MISC_STATUS(ch)		_MCMAIN_C(0x40e8, ch)
+ 
+ #define REUT_ch_ERR_COUNTER_CTL_x(ch, byte)	_MCMAIN_C_X(0x40f0, ch, byte)
++#define REUT_ch_ERR_COUNTER_STATUS_x(ch, byte)	_MCMAIN_C_X(0x4114, ch, byte)
+ 
+ #define REUT_ch_MISC_CKE_CTRL(ch)		_MCMAIN_C(0x4190, ch)
+ #define REUT_ch_MISC_ODT_CTRL(ch)		_MCMAIN_C(0x4194, ch)
+@@ -214,6 +215,8 @@
+ 
+ #define REUT_ERR_DATA_STATUS	0x4ce0
+ 
++#define REUT_ERR_COUNTER_CTL_x(byte)		_MCMAIN_C_X(0x4cf0, 0, byte)
++
+ #define REUT_MISC_CKE_CTRL	0x4d90
+ #define REUT_MISC_ODT_CTRL	0x4d94
+ 
+-- 
+2.56.0
+

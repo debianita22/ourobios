@@ -1,0 +1,379 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Angel Pons <th3fanbus@gmail.com>
+Date: Tue, 10 Nov 2026 15:58:52 +0100
+Subject: [PATCH] Haswell NRI: Add function to get per-bit margins
+
+Change-Id: Ie99d4ce5dded71a8ca5da7d42f73c9310dbd19ef
+Signed-off-by: Angel Pons <th3fanbus@gmail.com>
+(cherry picked from commit 7c48fa7fd2a3a805c35f9a7d6f5e2d5f3c57c217)
+---
+ .../haswell/native_raminit/change_margin.c    |   2 +-
+ .../haswell/native_raminit/get_ber_margin.c   | 303 ++++++++++++++++++
+ .../haswell/native_raminit/raminit_native.h   |  17 +
+ 3 files changed, 321 insertions(+), 1 deletion(-)
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/change_margin.c b/src/northbridge/intel/haswell/native_raminit/change_margin.c
+index eb1a2c1a7c..107e12769d 100644
+--- a/src/northbridge/intel/haswell/native_raminit/change_margin.c
++++ b/src/northbridge/intel/haswell/native_raminit/change_margin.c
+@@ -260,7 +260,7 @@ void download_regfile(
+ 	mchbar_write32(reg, ddr_data_control_0.raw);
+ }
+ 
+-static uint16_t get_per_bit_reg(
++uint16_t get_per_bit_reg(
+ 	const struct sysinfo *ctrl,
+ 	const enum margin_param param,
+ 	const bool multicast,
+diff --git a/src/northbridge/intel/haswell/native_raminit/get_ber_margin.c b/src/northbridge/intel/haswell/native_raminit/get_ber_margin.c
+index 44211052b4..b581944004 100644
+--- a/src/northbridge/intel/haswell/native_raminit/get_ber_margin.c
++++ b/src/northbridge/intel/haswell/native_raminit/get_ber_margin.c
+@@ -51,6 +51,309 @@ static uint8_t calc_max_rx_margin(
+ 	return max_margin;
+ }
+ 
++static bool is_everyone_failing(
++	const struct sysinfo *ctrl,
++	const uint8_t chanmask,
++	const uint8_t one_pass[NUM_CHANNELS][NUM_LANES],
++	const uint8_t one_fail[NUM_CHANNELS][NUM_LANES])
++{
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++			if (one_pass[channel][byte] != 0xff)
++				return false;
++			if (one_fail[channel][byte] != 0xff)
++				return false;
++		}
++	}
++	return true;
++}
++
++static void print_per_bit_reg(
++	const struct sysinfo *ctrl,
++	const enum margin_param param,
++	const uint8_t channel,
++	const uint8_t rank,
++	const uint8_t byte)
++{
++	const uint16_t offset = get_per_bit_reg(ctrl, param, false, channel, rank, byte);
++	printk(BIOS_DEBUG, "0x%08x", mchbar_read32(offset));
++}
++
++static void get_margin_bit_sign(
++	struct sysinfo *ctrl,
++	const uint8_t chanmask,
++	const uint8_t rank,
++	uint32_t marginbit[NUM_CHANNELS][NUM_LANES][NUM_BITS][NUM_SIGN],
++	uint32_t ab_margin[NUM_CHANNELS][NUM_LANES],
++	const enum margin_param param,
++	const enum margin_param pbyte,
++	const uint8_t max_margin,
++	const uint8_t sign)
++{
++	const int32_t r_sign = 2 * sign - 1;
++	printk(BIOS_DEBUG, "\n+-- %s, r_sign = %d\n", __func__, r_sign);
++	uint8_t one_pass[NUM_CHANNELS][NUM_LANES] = {};
++	uint8_t one_fail[NUM_CHANNELS][NUM_LANES] = {};
++	uint32_t c_margin[NUM_CHANNELS][NUM_LANES][NUM_BITS] = {};
++	uint32_t min_tested[NUM_CHANNELS][NUM_LANES][NUM_BITS] = {};
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++			uint32_t *const c_mgn = c_margin[channel][byte];
++
++			/* Start from a definite pass for all bytes/bits */
++			c_mgn[0] = ab_margin[channel][byte] - 2; // Why?
++			if (param == RdTBit || param == WrTBit) {
++				/* Special case for per-bit timing */
++				int32_t v0 = r_sign * (c_mgn[0] + 0);
++				change_margin(
++					ctrl,
++					pbyte,
++					v0,
++					false,
++					channel,
++					rank,
++					byte,
++					false,
++					false,
++					REG_FILE_USE_START);
++			} else if (param == RdVBit) {
++				/* Special case for per-bit voltage */
++				int32_t v0 = r_sign * (c_mgn[0] + 4); // Why?
++				change_margin(
++					ctrl,
++					pbyte,
++					v0,
++					false,
++					channel,
++					rank,
++					byte,
++					false,
++					false,
++					REG_FILE_USE_START);
++			}
++			for (uint8_t bit = 0; bit < NUM_BITS; bit++) {
++				c_mgn[bit] = marginbit[channel][byte][bit][sign];
++				if (c_mgn[bit] > max_margin)
++					c_mgn[bit] = max_margin;
++			}
++			for (uint8_t bit = 0; bit < NUM_BITS; bit++) {
++				min_tested[channel][byte][bit] = c_mgn[bit];
++				marginbit[channel][byte][bit][sign] = c_mgn[bit];
++			}
++		}
++	}
++
++	/*
++	 * Search algorithm:
++	 * Walk up until everybody fails. Then walk down until everybody passes.
++	 */
++	while (!is_everyone_failing(ctrl, chanmask, one_pass, one_fail)) {
++		mchbar_write32(REUT_GLOBAL_CTL, (union reut_seq_ctl_reg) {
++			.clear_errors = 1,
++		}.raw);
++
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++				uint32_t *mgn = c_margin[channel][byte];
++				uint32_t value0 = 0;
++				for (uint8_t bit = 0; bit < NUM_BITS; bit++) {
++					uint32_t v0;
++					if ((param != RdTBit) == !sign)
++						v0 = max_margin - mgn[bit];
++					else
++						v0 = mgn[bit];
++
++					if (v0 > max_margin)
++						v0 = max_margin;
++
++					value0 |= v0 << (4 * bit);
++				}
++				change_margin(
++					ctrl,
++					param,
++					value0,
++					false,
++					channel,
++					rank,
++					byte,
++					false,
++					false,
++					REG_FILE_USE_START);
++			}
++		}
++		run_io_test(ctrl, chanmask, ctrl->dq_pat, true);
++
++		printk(BIOS_DEBUG, "          ");
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			const union raw_bitlane_errors raw_errors = get_bitlane_errors(channel);
++			uint8_t ch_pass = 0xff;
++			uint8_t ch_fail = 0xff;
++			for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++				const uint8_t err_byte = raw_errors.per_byte[byte];
++				print_per_bit_reg(ctrl, param, channel, rank, byte);
++				uint8_t *const o_pass = &one_pass[channel][byte];
++				uint8_t *const o_fail = &one_fail[channel][byte];
++				uint32_t *const c_mgn = c_margin[channel][byte];
++				for (uint8_t bit = 0; bit < NUM_BITS; bit++) {
++					if (*o_pass & *o_fail & BIT(bit)) {
++						/* Bit is done */
++						printk(BIOS_DEBUG, "$");
++						continue;
++					}
++					uint32_t *m_bit = marginbit[channel][byte][bit];
++					if (err_byte & BIT(bit)) {
++						/* Bit fails */
++						*o_fail |= BIT(bit);
++						printk(BIOS_DEBUG, "#");
++						if (m_bit[sign] >= c_mgn[bit]) {
++							/* Handle speckling */
++							m_bit[sign] = c_mgn[bit] - 1;
++							*o_pass &= ~BIT(bit);
++						}
++					} else {
++						/* Bit passes */
++						*o_pass |= BIT(bit);
++						printk(BIOS_DEBUG, ".");
++						if (m_bit[sign] < c_mgn[bit])
++							m_bit[sign] = c_mgn[bit];
++					}
++				}
++				printk(BIOS_DEBUG, " ");
++				/* FIXME: This does nothing because param is per-bit */
++				const uint8_t byte_max = calc_max_rx_margin(
++					ctrl,
++					param,
++					channel,
++					rank,
++					byte,
++					sign,
++					max_margin);
++
++				/* Handle saturation */
++				for (uint8_t bit = 0; bit < NUM_BITS; bit++) {
++					if (c_mgn[bit] >= byte_max)
++						*o_fail |= BIT(bit);
++					else if (c_mgn[bit] == 0)
++						*o_pass |= BIT(bit);
++				}
++
++				/* Decide what to test next */
++				ch_pass &= *o_pass;
++				ch_fail &= *o_fail;
++				for (uint8_t bit = 0; bit < NUM_BITS; bit++) {
++					if (*o_pass & *o_fail & BIT(bit)) {
++						/* Bit is done, nothing to do */
++					} else if (!(*o_fail & BIT(bit))) {
++						c_mgn[bit] += 1;
++					} else if (!(*o_pass & BIT(bit))) {
++						min_tested[channel][byte][bit] -= 1;
++						c_mgn[bit] = min_tested[channel][byte][bit];
++					} else {
++						printk(BIOS_ERR, "%s: Bad case\n", __func__);
++					}
++				}
++			}
++		}
++		printk(BIOS_DEBUG, "\n");
++	}
++
++	/* Update marginbit to have the correct result */
++	if ((param != RdTBit) == !sign) {
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++				for (uint8_t bit = 0; bit < NUM_BITS; bit++) {
++					uint32_t *const mgn = marginbit[channel][byte][bit];
++					mgn[sign] = max_margin - mgn[sign];
++				}
++			}
++		}
++	}
++	change_1d_margin_multicast(ctrl, pbyte, 0, rank, false, REG_FILE_USE_CURRENT);
++
++	/* Correct for 1 tick error in per bit deskew right edge */
++	const int8_t rdt_adjust = (param == RdTBit ? -1 : 1) * r_sign;
++
++	/* Print how much margin we gained after adjusting the per-bit settings */
++	printk(BIOS_DEBUG, "\nGains    ");
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++			for (uint8_t bit = 0; bit < NUM_BITS; bit++) {
++				uint32_t *m = marginbit[channel][byte][bit];
++				printk(BIOS_DEBUG, "% 1d", rdt_adjust * (m[sign] - 8));
++			}
++			printk(BIOS_DEBUG, "   ");
++		}
++	}
++	printk(BIOS_DEBUG, "\n");
++}
++
++void get_margin_bit(
++	struct sysinfo *ctrl,
++	const uint8_t chanmask,
++	const uint8_t rank,
++	uint32_t marginbit[NUM_CHANNELS][NUM_LANES][NUM_BITS][NUM_SIGN],
++	uint32_t marginbyte[NUM_CHANNELS][NUM_LANES][NUM_SIGN],
++	const enum margin_param param,
++	const uint8_t max_margin)
++{
++	enum margin_param pbyte;
++	if (param == RdTBit) {
++		pbyte = RdT;
++	} else if (param == WrTBit) {
++		pbyte = WrT;
++	} else if (param == RdVBit) {
++		pbyte = RdV;
++	} else {
++		printk(BIOS_ERR, "%s: Invalid per-bit param %d\n", __func__, param);
++		return;
++	}
++
++	/* Average byte margin */
++	uint32_t ab_margin[NUM_CHANNELS][NUM_LANES] = { 0 };
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++			ab_margin[channel][byte] = (marginbyte[channel][byte][0] +
++						    marginbyte[channel][byte][1]) / 20;
++		}
++	}
++	for (uint8_t sign = 0; sign < NUM_SIGN; sign++) {
++		get_margin_bit_sign(
++			ctrl,
++			chanmask,
++			rank,
++			marginbit,
++			ab_margin,
++			param,
++			pbyte,
++			max_margin,
++			sign);
++	}
++
++	/* @todo Restore per-bit margins to last saved value */
++	change_1d_margin_multicast(ctrl, param, 0x88888888, rank, false, REG_FILE_USE_CURRENT);
++}
++
+ /* Returns an integer approximation of log8(value) * 10 */
+ static uint32_t hsw_log8(uint32_t value)
+ {
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index 9140131148..7ef5641fd6 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -763,6 +763,15 @@ uint32_t get_tXS_offset(uint32_t mem_clock_mhz);
+ uint32_t get_tZQOPER(uint32_t mem_clock_mhz, bool lpddr);
+ uint32_t get_tZQCS(uint32_t mem_clock_mhz, bool lpddr);
+ 
++void get_margin_bit(
++	struct sysinfo *ctrl,
++	const uint8_t chanmask,
++	const uint8_t rank,
++	uint32_t marginbit[NUM_CHANNELS][NUM_LANES][NUM_BITS][NUM_SIGN],
++	uint32_t marginbyte[NUM_CHANNELS][NUM_LANES][NUM_SIGN],
++	const enum margin_param param,
++	const uint8_t max_margin);
++
+ void get_margin_byte(
+ 	struct sysinfo *ctrl,
+ 	union last_margin margin[MAX_RESULT_TYPE][NUM_SLOTRANKS][NUM_CHANNELS][NUM_LANES],
+@@ -888,6 +897,14 @@ void download_regfile(
+ 	bool read_rf_rd,
+ 	bool read_rf_wr);
+ 
++uint16_t get_per_bit_reg(
++	const struct sysinfo *ctrl,
++	const enum margin_param param,
++	const bool multicast,
++	const uint8_t channel,
++	const uint8_t rank,
++	const uint8_t byte);
++
+ enum last_margin_param get_margin_result_type(const enum margin_param param);
+ uint32_t get_max_margin_for_param(const enum margin_param param);
+ const char *get_margin_name(const enum margin_param param);
+-- 
+2.56.0
+
