@@ -60,6 +60,7 @@
   gEfiDevicePathProtocolGuid        ## PRODUCES
   gEfiHiiConfigAccessProtocolGuid   ## PRODUCES
   gEdkiiVariablePolicyProtocolGuid  ## SOMETIMES_CONSUMES
+  gEfiHiiPopupProtocolGuid          ## SOMETIMES_CONSUMES
 
 [Depex]
   gEfiVariableArchProtocolGuid  AND

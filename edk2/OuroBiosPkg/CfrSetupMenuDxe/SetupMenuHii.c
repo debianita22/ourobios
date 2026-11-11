@@ -18,6 +18,7 @@
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiRuntimeServicesTableLib.h>
 #include <Guid/VariableFormat.h>
+#include <Protocol/HiiPopup.h>
 
 SETUP_MENU_CALLBACK_DATA  mSetupMenuPrivate = {
   SETUP_MENU_CALLBACK_DATA_SIGNATURE,
@@ -192,6 +193,82 @@ SetupMenuExtractConfig (
 }
 
 /**
+  Whether the payload has armed coreboot's lock of the setup options
+  (SMMSTORE_OPTION_LOCK): at ReadyToBoot it publishes what coreboot answered
+  in the volatile variable OptionLockStatus. Once armed, coreboot refuses the
+  writes of the options until the next boot, those of this setup included,
+  which is entered again when a boot option returns.
+
+  @retval  TRUE   The lock was asked for and coreboot has one.
+  @retval  FALSE  No boot was started yet, or coreboot has no lock (or BIOS
+                  Lock is off).
+**/
+STATIC
+BOOLEAN
+OptionLockArmed (
+  VOID
+  )
+{
+  UINT64      LockStatus;
+  UINTN       Size;
+  EFI_STATUS  Status;
+
+  Size   = sizeof (LockStatus);
+  Status = gRT->GetVariable (L"OptionLockStatus", &gEficorebootNvDataGuid, NULL, &Size, &LockStatus);
+  if (EFI_ERROR (Status) || (Size != sizeof (LockStatus))) {
+    return FALSE;
+  }
+
+  return ((EFI_STATUS)LockStatus != EFI_UNSUPPORTED) && ((EFI_STATUS)LockStatus != EFI_NO_MEDIA);
+}
+
+/**
+  Say, once, why the settings are not saved: the browser only reports that
+  the form could not be submitted.
+**/
+STATIC
+VOID
+ShowOptionsLocked (
+  VOID
+  )
+{
+  STATIC BOOLEAN           Shown = FALSE;
+  EFI_HII_POPUP_PROTOCOL   *HiiPopup;
+  EFI_HII_POPUP_SELECTION  Selection;
+  EFI_INPUT_KEY            Key;
+
+  if (Shown) {
+    return;
+  }
+
+  Shown = TRUE;
+  if (!EFI_ERROR (gBS->LocateProtocol (&gEfiHiiPopupProtocolGuid, NULL, (VOID **)&HiiPopup)) &&
+      !EFI_ERROR (
+         HiiPopup->CreatePopup (
+                     HiiPopup,
+                     EfiHiiPopupStyleError,
+                     EfiHiiPopupTypeOk,
+                     mSetupMenuPrivate.HiiHandle,
+                     STRING_TOKEN (STR_OPTIONS_LOCKED),
+                     &Selection
+                     )
+         ))
+  {
+    return;
+  }
+
+  CreatePopUp (
+    EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE,
+    &Key,
+    L"The settings are locked until the next restart: a boot was started.",
+    L"Restart and open the setup again to change them.",
+    L"",
+    L"Press any key to continue",
+    NULL
+    );
+}
+
+/**
   This function processes the results of changes in configuration.
 
 
@@ -258,11 +335,20 @@ SetupMenuRouteConfig (
                   DataSize,
                   VariableOption
                   );
-  if (Status == EFI_WRITE_PROTECTED) {
+  if (EFI_ERROR (Status) && OptionLockArmed ()) {
+    //
+    // The lock of the options is armed: coreboot refused the write (or the
+    // variable driver did, for an option with CFR_OPTFLAG_LOCK_AT_BOOT). The
+    // browser must not take the value for saved.
+    //
+    DEBUG ((DEBUG_WARN, "CFR: %s not saved, the options are locked: %r\n", VariableName, Status));
+    ShowOptionsLocked ();
+    Status = EFI_ACCESS_DENIED;
+  } else if (Status == EFI_WRITE_PROTECTED) {
     Status = EFI_SUCCESS;
   }
 
-  ASSERT_EFI_ERROR (Status);
+  ASSERT (!EFI_ERROR (Status) || (Status == EFI_ACCESS_DENIED));
 
   FreePool (VariableName);
   if (VariableOption != NULL) {

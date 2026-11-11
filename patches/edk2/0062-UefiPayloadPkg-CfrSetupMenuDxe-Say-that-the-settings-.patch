@@ -1,0 +1,169 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 11:11:55 +0100
+Subject: [PATCH] UefiPayloadPkg/CfrSetupMenuDxe: Say that the settings are
+ locked
+
+coreboot's lock of the setup options (SMMSTORE_OPTION_LOCK) is armed at
+ReadyToBoot. A boot option that returns leaves the user in the boot
+menu, and the setup can be entered again: its writes of the options are
+then refused by coreboot until the next boot, for every option with
+SMMSTORE_OPTION_LOCK_ALL. The browser only reported that the form could
+not be submitted; and for an option locked by the variable driver
+(CFR_OPTFLAG_LOCK_AT_BOOT) RouteConfig returned success for a write that
+was refused, so that the setup seemed to save.
+
+When a write of an option fails and the payload has armed the lock
+(OptionLockStatus is there and says so), say once what happened and
+what to do, and return EFI_ACCESS_DENIED, so that the browser does not
+take the value for saved. An option that is read-only from the start
+keeps its EFI_WRITE_PROTECTED taken as success, as before.
+---
+ .../CfrSetupMenuDxe/CfrSetupMenuDxe.inf       |  1 +
+ UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c | 90 ++++++++++++++++++-
+ .../CfrSetupMenuDxe/SetupMenuStrings.uni      |  2 +
+ 3 files changed, 91 insertions(+), 2 deletions(-)
+
+diff --git a/UefiPayloadPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf b/UefiPayloadPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf
+index f35eb2b5e..f2c2d8521 100644
+--- a/UefiPayloadPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf
++++ b/UefiPayloadPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf
+@@ -59,6 +59,7 @@
+   gEfiDevicePathProtocolGuid        ## PRODUCES
+   gEfiHiiConfigAccessProtocolGuid   ## PRODUCES
+   gEdkiiVariablePolicyProtocolGuid  ## SOMETIMES_CONSUMES
++  gEfiHiiPopupProtocolGuid          ## SOMETIMES_CONSUMES
+ 
+ [Depex]
+   gEfiVariableArchProtocolGuid  AND
+diff --git a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c
+index e725894a4..08af5c026 100644
+--- a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c
++++ b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c
+@@ -18,6 +18,7 @@
+ #include <Library/UefiBootServicesTableLib.h>
+ #include <Library/UefiRuntimeServicesTableLib.h>
+ #include <Guid/VariableFormat.h>
++#include <Protocol/HiiPopup.h>
+ 
+ SETUP_MENU_CALLBACK_DATA  mSetupMenuPrivate = {
+   SETUP_MENU_CALLBACK_DATA_SIGNATURE,
+@@ -191,6 +192,82 @@ SetupMenuExtractConfig (
+   return Status;
+ }
+ 
++/**
++  Whether the payload has armed coreboot's lock of the setup options
++  (SMMSTORE_OPTION_LOCK): at ReadyToBoot it publishes what coreboot answered
++  in the volatile variable OptionLockStatus. Once armed, coreboot refuses the
++  writes of the options until the next boot, those of this setup included,
++  which is entered again when a boot option returns.
++
++  @retval  TRUE   The lock was asked for and coreboot has one.
++  @retval  FALSE  No boot was started yet, or coreboot has no lock (or BIOS
++                  Lock is off).
++**/
++STATIC
++BOOLEAN
++OptionLockArmed (
++  VOID
++  )
++{
++  UINT64      LockStatus;
++  UINTN       Size;
++  EFI_STATUS  Status;
++
++  Size   = sizeof (LockStatus);
++  Status = gRT->GetVariable (L"OptionLockStatus", &gEficorebootNvDataGuid, NULL, &Size, &LockStatus);
++  if (EFI_ERROR (Status) || (Size != sizeof (LockStatus))) {
++    return FALSE;
++  }
++
++  return ((EFI_STATUS)LockStatus != EFI_UNSUPPORTED) && ((EFI_STATUS)LockStatus != EFI_NO_MEDIA);
++}
++
++/**
++  Say, once, why the settings are not saved: the browser only reports that
++  the form could not be submitted.
++**/
++STATIC
++VOID
++ShowOptionsLocked (
++  VOID
++  )
++{
++  STATIC BOOLEAN           Shown = FALSE;
++  EFI_HII_POPUP_PROTOCOL   *HiiPopup;
++  EFI_HII_POPUP_SELECTION  Selection;
++  EFI_INPUT_KEY            Key;
++
++  if (Shown) {
++    return;
++  }
++
++  Shown = TRUE;
++  if (!EFI_ERROR (gBS->LocateProtocol (&gEfiHiiPopupProtocolGuid, NULL, (VOID **)&HiiPopup)) &&
++      !EFI_ERROR (
++         HiiPopup->CreatePopup (
++                     HiiPopup,
++                     EfiHiiPopupStyleError,
++                     EfiHiiPopupTypeOk,
++                     mSetupMenuPrivate.HiiHandle,
++                     STRING_TOKEN (STR_OPTIONS_LOCKED),
++                     &Selection
++                     )
++         ))
++  {
++    return;
++  }
++
++  CreatePopUp (
++    EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE,
++    &Key,
++    L"The settings are locked until the next restart: a boot was started.",
++    L"Restart and open the setup again to change them.",
++    L"",
++    L"Press any key to continue",
++    NULL
++    );
++}
++
+ /**
+   This function processes the results of changes in configuration.
+ 
+@@ -258,11 +335,20 @@ SetupMenuRouteConfig (
+                   DataSize,
+                   VariableOption
+                   );
+-  if (Status == EFI_WRITE_PROTECTED) {
++  if (EFI_ERROR (Status) && OptionLockArmed ()) {
++    //
++    // The lock of the options is armed: coreboot refused the write (or the
++    // variable driver did, for an option with CFR_OPTFLAG_LOCK_AT_BOOT). The
++    // browser must not take the value for saved.
++    //
++    DEBUG ((DEBUG_WARN, "CFR: %s not saved, the options are locked: %r\n", VariableName, Status));
++    ShowOptionsLocked ();
++    Status = EFI_ACCESS_DENIED;
++  } else if (Status == EFI_WRITE_PROTECTED) {
+     Status = EFI_SUCCESS;
+   }
+ 
+-  ASSERT_EFI_ERROR (Status);
++  ASSERT (!EFI_ERROR (Status) || (Status == EFI_ACCESS_DENIED));
+ 
+   FreePool (VariableName);
+   if (VariableOption != NULL) {
+diff --git a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuStrings.uni b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuStrings.uni
+index 75ccfab8e..a1cb5a7b0 100644
+--- a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuStrings.uni
++++ b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuStrings.uni
+@@ -64,3 +64,5 @@
+                             #language fr-FR  "Enabled"
+ #string STR_BOOL_DISABLED   #language en-US  "Disabled"
+                             #language fr-FR  "Disabled"
++#string STR_OPTIONS_LOCKED  #language en-US  "The settings are locked until the next restart: a boot was started. Restart and open the setup again to change them."
++                            #language fr-FR  "The settings are locked until the next restart: a boot was started. Restart and open the setup again to change them."
+-- 
+2.47.3
+

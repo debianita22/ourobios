@@ -64,3 +64,5 @@
                             #language fr-FR  "Enabled"
 #string STR_BOOL_DISABLED   #language en-US  "Disabled"
                             #language fr-FR  "Disabled"
+#string STR_OPTIONS_LOCKED  #language en-US  "The settings are locked until the next restart: a boot was started. Restart and open the setup again to change them."
+                            #language fr-FR  "The settings are locked until the next restart: a boot was started. Restart and open the setup again to change them."

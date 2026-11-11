@@ -218,3 +218,24 @@ Left for the owner: LOCK-05 with the next candidate; the rows of the
 setup (an option changed and kept, the setup after a boot option that
 came back, *Go back to*); VAR-01 with *BIOS Lock* off; the W541 with its
 lock unchanged, which rc2 also is.
+
+## After rc2: the setup with the lock armed
+
+The plan's row *the setup after a boot attempt*: a boot option that
+returns leaves the lock armed, and with the lock for every option no
+setting can be saved until the next restart. As rc2 is, the browser
+shows *Submit Fail For Form* and the choice to discard, which keeps the
+store right but explains nothing; an option locked by the variable
+driver (`CFR_OPTFLAG_LOCK_AT_BOOT`, no option of the boards yet) would
+even be reported as saved.
+
+`edk2/0062`, for the next candidate: when the write of an option fails
+and `OptionLockStatus` says that the payload armed the lock, the setup
+says once that the settings are locked until the next restart and why,
+and `RouteConfig` returns `EFI_ACCESS_DENIED`. The write is still tried:
+the payload cannot tell the lock of every option from the lock of the
+two (the W541, or the fallback), where the other options are saved.
+Each refused try leaves a dead header in the store, 60 bytes and a name.
+
+Built by the CI; EDK II's PatchCheck passes. Not run: it needs a boot
+option that returns and someone at the setup, the owner's row.

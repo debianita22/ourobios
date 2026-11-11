@@ -39,6 +39,13 @@ whose changes below are still to run on a machine.
   store fails until the next boot, which reclaims. The decisions are
   unit tests of coreboot, which the CI now runs. The W541 keeps the lock
   of the two security options.
+- **The setup says when the settings are locked** (`edk2/0062`): the
+  option lock is armed when a boot is started. If the boot option
+  returns and the setup is opened again, a change cannot be saved until
+  the next restart; the setup now says so (*The settings are locked
+  until the next restart: a boot was started. Restart and open the setup
+  again to change them.*) instead of *Submit Fail For Form*. Not seen on
+  a machine yet: it needs someone at the setup.
 - **A variable write no longer fails at the end of a flash block**
   (patch 0283): with the MOR lock holding a request, or the option lock
   armed, a variable whose header crossed the end of a 64 KiB block of
