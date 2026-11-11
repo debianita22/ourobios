@@ -86,7 +86,7 @@ slot A, over v1.6.3-rc4; rc1 stays in slot B ([files](rc2/)).
 | MEM-04 | PASS | `stress-ng --vm 4 --vm-bytes 75% --verify` for 30 minutes after a resume: 0 failed, no machine check ([log](rc2/stress-30m.txt)) |
 | FLASH-06, VAR-01 | PASS | `OptionLockStatus` `06 00 00 00` and eight zeros; twenty writes of `Timeout`, all done: median 0.139 s, worst 0.139 s (0.27 s up to v1.6.3-rc3, before patch 0273); back at 3 s ([numbers](rc2/optlock.txt)) |
 | report | PASS but the known ones | [the first boot](rc2/hw-w541-nri-boot1.md): 19 PASS, BOOT-03 PASS, ME-01 and EC-01 WARN, MEM-01 INFO (the training boot) |
-| MEM-11, MEM-12 again | not run yet, needs the owner | for the lines that patch 0278 now says again after CBMEM: two setup visits |
+| MEM-11, MEM-12 again | PASS | with the owner's two setup visits ([log](rc2/mem11-mem12.log)): on the boot that trains, *Memory profile: XMP profile 1 requested* and *CH0S0 has no XMP profile 1, using the SPD timings* are in the log, said again after CBMEM ([log of that boot](rc2/cbmem-mem11-training.txt)), byte `0xb0`; the same on the cache boot and after a resume; `0xb2` written: *2 boots in a row with XMP profile 1 did not reach the payload, using the SPD timings from now on* on the boot that gives up and trains, byte `0xa4`; then *XMP profile 1 failed before*; *SPD* again: `0xa0`, no line, the cache; `0xb6` written on *SPD*: `0xa0` after a reboot; the clock right after each write |
 
 Against rc1, the command timings of the training boot moved by one or
 two steps (CLK, CTL and CMD PI of the two channels), as between two
