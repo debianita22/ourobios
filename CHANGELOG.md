@@ -66,17 +66,30 @@ modules (2026-11-10,
   0298): 4 clocks with the native RAM init, 3 with `mrc.bin`, the one
   turnaround that differed. After the training, a test that writes one
   rank and reads another tries it one clock shorter each time; it
-  becomes 3 only if 3 and 2 pass and a shorter one fails. **Not tried on
-  a machine yet** (MEM-16).
+  becomes 3 only if 3 and 2 pass and a shorter one fails. On the W541
+  with rc3 the test passed down to 1 clock and the turnaround stayed at
+  4; rc4 logs the test in several forms, without changing any timing,
+  to see whether it sees the turnaround at all (patch 0300, MEM-16).
 - **W541 (`nri`): the margins of the memory in the log** (patches
   0291-0297): after the training, how far the read and the write timing
   and voltage of every rank can move before errors, with a warning below
   the retrain limits of the MRC. A report, 1 to 2 s in a boot that
   trains. It comes from the upstream author's code, which he put on
   Gerrit as work in progress in these days (CB:97117 to 97267), with a
-  fix for a search that never ended there; his 2D centring of the read
-  and write timing is built and off, for a candidate of its own. **Not
-  tried on a machine yet** (MEM-17).
+  fix for a search that never ended there. On the W541 with rc3: every
+  search ended, and three voltage margins of channel 1 are one or two
+  steps below the limit (MEM-17).
+- **W541 (`nri`): the read and write timing centred in two dimensions**
+  (patches 0295, 0299, from rc4): the upstream author's 2D centring,
+  with the per-bit deskew, on top of the 1D training, with a correction
+  of its units. **Not tried on a machine yet** (MEM-18): its measure is
+  the margin table of rc3.
+- **`tools/ddr-report.py` shows the per-bit deskew** (`RxPerBit`,
+  `TxPerBit`, one nibble per bit), and **`tools/hw-report.py` knows the
+  two reports of the native RAM init**: the margins below the retrain
+  limits and the turnaround left as it was are events (INFO) of BOOT-03
+  on the W541, not unknown errors; a search that does not end and a
+  turnaround test that fails as set still are.
 - **W541 (`nri`): the lines about an XMP profile are in the log of a
   boot that trains** (patch 0278, from rc2): such a boot overflows the
   console of romstage and loses its start, with the lines that say a

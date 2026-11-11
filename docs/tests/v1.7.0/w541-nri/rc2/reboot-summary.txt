@@ -1,0 +1,14 @@
+# reboot 2026-11-11T06:42:28+01:00 boot_id=84f2a22d-93d6-4fd7-9d4f-138e61756785 uptime=55.46
+versione:  v1.7.0-rc2, minima per una capsula v1.3.9
+ultimo:    v1.7.0-rc2, riuscito
+CMOS 0x7d=0xa0 0x7e=0xa0
+CMOS 0x7d=0xa0 0x7e=0xa0
+CMOS 0x7d=0xa0 0x7e=0xa0
+console overflow lines: 0
+[INFO ]  Using cached memory parameters
+[DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+[DEBUG]  MRC: 'RW_MRC_CACHE' does not need update.
+   2:before RAM initialization                         483,141 (28,566)
+   3:after RAM initialization                          595,462 (112,321)
+Total Time: 1,430,131
+  VREF_ADJUST  vref_ca_ctrl=-5 vref_dq_ch1_ctrl=0 vref_dq_ch0_ctrl=1 en_dimm_vref_ca=1 en_dimm_vref_ch1=1 en_dimm_vref_ch0=1 hi_z_timer_ctrl=3 vccddq_hi_qnnn_h=0 ca_slow_bw=1 ch0_slow_bw=1 ch1_slow_bw=1

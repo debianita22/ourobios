@@ -165,10 +165,19 @@ value from the one set downwards until one fails, and leaves the shortest
 that passes plus one clock, at most one clock shorter than it was. It
 changes nothing unless a value did fail: a test that passes down to one
 clock has not seen the turnaround. A training redone after a failure does
-not run it. **Not tried on a machine yet** (MEM-16):
+not run it. On the W541 with v1.7.0-rc3 (MEM-16) the test passed at 4, 3,
+2 and 1 on both channels, and the step left 4. At 1 clock the read burst
+follows the write burst with no gap, the read preamble over the end of
+the write, which may pass on a short bus; at 0 they overlap. **Patch
+0300** (`HASWELL_NRI_TURNAROUND_DIAG`, on in rc4) logs, before the step,
+the test in seven forms from the value set down to 0, with two controls
+on one rank: no turnaround between ranks there, so every value should
+pass; and the write to read time of the same rank short of tWTR, which
+should fail and so says that the test sees errors at all. It changes no
+timing. Its lines decide how the step tests:
 
 ```sh
-sudo cbmem -1 | grep 'TAT:'     # on the boot that trained
+sudo cbmem -1 | grep 'TAT:\|TATD:'   # on the boot that trained
 sudo python3 tools/ddr-report.py | grep tWRRD   # sr/dr/dd per channel
 ```
 
@@ -190,14 +199,25 @@ steps behind options, off by default:
   steps, the read and write margins of every rank, in time (PI ticks,
   64 per bit) and in voltage (steps of the reference), each side, in the
   log, with a warning for those below the retrain limits of the MRC (9
-  ticks, 16 steps). Only a report, 1 to 2 s in a boot that trains: it is
-  the measure for every later step, the 2D centring first. **Not tried on
-  a machine yet** (MEM-17);
-- `HASWELL_NRI_2D_TIMING`, **off**: it rewrites the read and write timing
-  and the per-bit deskew, which this series keeps neutral on purpose
-  (patch 0008), with code that nobody has run to the end yet. To turn on
-  in a candidate of its own, with the margins of MEM-17 as the measure
-  before and after.
+  ticks, 16 steps). Only a report: it is the measure for every later
+  step, the 2D centring first. On the W541 with v1.7.0-rc3 (MEM-17,
+  [docs/tests/v1.7.0/w541-nri](tests/v1.7.0/w541-nri/README.md)): every search ended, the training took 1.93 s with
+  the turnaround test (1.10 s with rc2), and channel 1 came out the
+  narrower one, its first DIMM most: three voltage margins at 14 and 15
+  steps, below the limit of 16, and the read timing of C1R0 off centre,
+  16 ticks to the left and 11 to the right;
+- `HASWELL_NRI_2D_TIMING`, on in the `nri` variant from v1.7.0-rc4: it
+  centres the read and the write timing again, first in one dimension
+  with the per-bit deskew, then at seven reference voltages around the
+  trained one, weighted by the height and the width of the eye. It
+  rewrites the per-bit deskew, which the 1D training of the NRI leaves
+  at 0 for the reads (so as not to use up the range of the read strobe
+  delay) and neutral for the writes; the registers are in the saved
+  training, so the fast path restores them. **Patch 0299** corrects its
+  units: after the centring of a byte it moved the stored margins by ten
+  times the shift. Its own measure is MEM-18: the margins of MEM-17
+  before and after, the memory test, `ddr-report.py --compare`. Not run
+  in a training that is done again after a failure.
 
 ```sh
 sudo cbmem -1 | grep -A8 'Margin: RdT'   # on the boot that trained
@@ -223,9 +243,10 @@ each of them in the registers:
   equalisation, receive bias, ODT and sense amplifier windows per byte (at
   rest the two variants draw the same, as far as the battery reading can
   tell: [On the W541](#on-the-w541));
-- the deskew of each bit within a byte (the NRI keeps the read offsets at
-  zero on purpose, so as not to use up the range of the read strobe delay,
-  and the write ones neutral);
+- the deskew of each bit within a byte (the 1D training of the NRI keeps
+  the read offsets at zero on purpose, so as not to use up the range of
+  the read strobe delay, and the write ones neutral; the 2D centring of
+  patch 0295 trains them, from v1.7.0-rc4);
 - turnaround optimisation. On the W541 only one turnaround differs: write
   to read between ranks, 3 clocks with `mrc.bin` and 4 here; patch 0298
   shortens it with the turnaround test of the REUT (above). The other

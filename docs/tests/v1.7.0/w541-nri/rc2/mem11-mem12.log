@@ -1,0 +1,38 @@
+== m1-cache-boot 2026-11-11T11:10:46+01:00 uptime=54.46 0x7d: 0xb0 0xb0 0xb0 
+  [DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+  [DEBUG]  MRC: 'RW_MRC_CACHE' does not need update.
+  [INFO ]  Memory profile: XMP profile 1 requested
+  [INFO ]  Using cached memory parameters
+  [WARN ]  Memory profile: CH0S0 has no XMP profile 1, using the SPD timings
+     2:before RAM initialization                         483,724 (28,596)
+     3:after RAM initialization                          596,138 (112,414)
+  after S3: 0x7d 0xb0 0xb0 0xb0  1 resumes
+  wrote 0xb2, reads 0xb2 0xb2 0xb2 
+  time: sys 10:11:39 rtc 10:11:39 net 10:11:36 ntp=yes
+== m2-after-b2 2026-11-11T11:12:50+01:00 uptime=52.95 0x7d: 0xa4 0xa4 0xa4 
+  [DEBUG]  MRC: cache data 'RW_MRC_CACHE' needs update.
+  [DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+  [DEBUG]  MRC: updated 'RW_MRC_CACHE'.
+  [ERROR]  Memory profile: 2 boots in a row with XMP profile 1 did not reach the payload, using the SPD timings from now on
+  [INFO ]  Memory test passed
+  *** Pre-CBMEM romstage console overflowed, log truncated! ***
+     2:before RAM initialization                         478,476 (28,598)
+     3:after RAM initialization                          1,577,633 (1,099,156)
+== m3-second-reboot 2026-11-11T11:14:05+01:00 uptime=55.15 0x7d: 0xa4 0xa4 0xa4 
+  [DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+  [DEBUG]  MRC: 'RW_MRC_CACHE' does not need update.
+  [ERROR]  Memory profile: XMP profile 1 failed before, using the SPD timings. Select the SPD timings once to try it again
+  [INFO ]  Using cached memory parameters
+     2:before RAM initialization                         479,562 (28,607)
+     3:after RAM initialization                          592,013 (112,451)
+== spd-back 2026-11-11T11:24:18+01:00 0x7d: 0xa0 0xa0 0xa0
+  [INFO ]  Using cached memory parameters
+  [DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+  [DEBUG]  MRC: 'RW_MRC_CACHE' does not need update.
+  wrote 0xb6, reads 0xb6 0xb6 0xb6 
+  time: sys 10:24:22 rtc 10:24:22 ntp=yes
+== b6-after 2026-11-11T11:25:42+01:00 0x7d: 0xa0 0xa0 0xa0 
+  [INFO ]  Using cached memory parameters
+  [DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+  [DEBUG]  MRC: 'RW_MRC_CACHE' does not need update.
+     3:after RAM initialization                          595,393 (112,734)

@@ -71,8 +71,76 @@ state shows that they ran (the bytes, the next boots' lines), but MEM-11
 and MEM-12 expect to read them: a larger pre-CBMEM console for the `nri`
 variant, or the decision logged again after CBMEM, would keep them.
 
+## v1.7.0-rc2: the command Vref (MEM-15)
+
+rc2 (`01a3449`: the patches of rc1 with 0278 and 0280 revised, 0290, and
+the option lock patches 0281-0283) as a capsule from rc1, 2026-11-11:
+slot A, over v1.6.3-rc4; rc1 stays in slot B ([files](rc2/)).
+
+| ID | Result | Notes |
+|---|---|---|
+| UPD-01, UPD-02 | PASS | the capsule (`SHA256SUMS` OK, signature valid) written by the payload of rc1; rc2 from slot A, *riuscito* |
+| MEM-15 | PASS | *CMDV: eye -40 to 30, width 70, centre -5, Vref 0*, *CMDV: command Vref -5 (was 0)*: closed on both sides, wider than 20 (`mrc.bin` leaves -3); `vref_ca_ctrl=-5` in `ddr-report.py`, the same after a reboot, a cold boot, a resume and the stress; *Memory test passed*; RAM init of the training boot 1.10 s (0.98 s with rc1), 0.11 s from the cache |
+| MEM-14 again | PASS | the *WRV:* lines after the *CMDV:* ones: C0 eye -20 to 23, Vref 1; C1 eye -17 to 17, Vref 0 (rc1: 3 and -1, 4 and 1, 2 and -1); no *failed to converge*, no *did not settle* (patch 0280 revised) |
+| MEM-10 | PASS | one training at the first boot, then the cache; no *Memory profile* line; bytes 0x7d and 0x7e `0xa0`; the timings of rc1 |
+| MEM-04 | PASS | `stress-ng --vm 4 --vm-bytes 75% --verify` for 30 minutes after a resume: 0 failed, no machine check ([log](rc2/stress-30m.txt)) |
+| FLASH-06, VAR-01 | PASS | `OptionLockStatus` `06 00 00 00` and eight zeros; twenty writes of `Timeout`, all done: median 0.139 s, worst 0.139 s (0.27 s up to v1.6.3-rc3, before patch 0273); back at 3 s ([numbers](rc2/optlock.txt)) |
+| report | PASS but the known ones | [the first boot](rc2/hw-w541-nri-boot1.md): 19 PASS, BOOT-03 PASS, ME-01 and EC-01 WARN, MEM-01 INFO (the training boot) |
+| MEM-11, MEM-12 again | PASS | with the owner's two setup visits ([log](rc2/mem11-mem12.log)): on the boot that trains, *Memory profile: XMP profile 1 requested* and *CH0S0 has no XMP profile 1, using the SPD timings* are in the log, said again after CBMEM ([log of that boot](rc2/cbmem-mem11-training.txt)), byte `0xb0`; the same on the cache boot and after a resume; `0xb2` written: *2 boots in a row with XMP profile 1 did not reach the payload, using the SPD timings from now on* on the boot that gives up and trains, byte `0xa4`; then *XMP profile 1 failed before*; *SPD* again: `0xa0`, no line, the cache; `0xb6` written on *SPD*: `0xa0` after a reboot; the clock right after each write |
+
+Against rc1, the command timings of the training boot moved by one or
+two steps (CLK, CTL and CMD PI of the two channels), as between two
+trainings of rc1 ([compare](rc2/ddr-compare-boot1.txt)). Against the
+training boot, the reboot, the cold boot, the resume and the state after
+the stress differ only in compensation codes and in the output code of
+the Vref circuit, which follow the temperature: nothing trained.
+
+## v1.7.0-rc3: the margins measured, the turnaround test (MEM-17, MEM-16)
+
+rc3 (`f9dedc6`: rc2 with the option lock patch 0284, `edk2/0062` and
+the NRI patches 0291-0298) as a capsule from rc2, 2026-11-11: slot B, over
+rc1; rc2 stays in slot A ([files](rc3/)).
+
+| ID | Result | Notes |
+|---|---|---|
+| UPD-01, UPD-02 | PASS | the capsule (`SHA256SUMS` OK, signature valid) written by the payload of rc2; rc3 from slot B, *riuscito* |
+| MEM-17 | PASS, three margins below the limits | the table below, complete: every search of the margin library ended (no *giving up*; patch 0296); *Margin limit check failed* and *Margins below the retrain limits, training kept*: the check only reports |
+| MEM-16 | FAIL of the step, nothing changed | *TAT: Cn write to read, other rank, N: pass* for 4, 3, 2 and 1 on both channels, then *no value fails, test not usable, left at 4*: the turnaround test as patch 0298 sets it up does not see the turnaround (one clock cannot pass). `tWRRD` stays `20/4/4`, as the step is written to do |
+| MEM-15, MEM-14 again | PASS | command Vref -6 (rc2: -5, -4), write Vref 2 and 1; no *failed to converge*; the same after a reboot, a cold boot, a resume and the stress |
+| MEM-10 | PASS | one training (1.93 s: 1.10 s with rc2, the margin check and the turnaround test take 0.83 s), then the cache (0.11 s); bytes 0x7d and 0x7e `0xa0` |
+| MEM-04 | PASS | `stress-ng --vm 4 --vm-bytes 75% --verify`, 30 minutes after a resume: 0 failed, no machine check |
+| FLASH-06, VAR-01 | PASS | `OptionLockStatus` `06 00 00 00` and eight zeros; twenty writes of `Timeout`: median 0.139 s; back at 3 s |
+| report | BOOT-03 FAIL for the new lines | [the first boot](rc3/hw-w541-nri-boot1.md): 18 PASS; BOOT-03 counts the error and the warnings of the two new steps, which `hw-report.py` does not know yet; ME-01 and EC-01 WARN, MEM-01 INFO (the training boot) |
+
+The margins of each rank after the training, each side: time in PI ticks
+(64 per bit), voltage in steps of the reference. The retrain limits of
+the MRC are 9 ticks and 16 steps.
+
+| Rank | RdT left / right | WrT left / right | RdV low / high | WrV low / high |
+|---|---|---|---|---|
+| C0R0 | 18 / 18 | 17 / 17 | 26 / 26 | 21 / 22 |
+| C0R1 | 18 / 19 | 15 / 17 | 24 / 27 | 21 / 18 |
+| C0R2 | 18 / 19 | 19 / 20 | 36 / 37 | 36 / 22 |
+| C0R3 | 18 / 19 | 17 / 19 | 36 / 37 | 35 / 24 |
+| C1R0 | 16 / 11 | 14 / 14 | **14** / 20 | **15** / 17 |
+| C1R1 | 14 / 13 | 14 / 14 | 17 / 18 | **15** / 20 |
+| C1R2 | 16 / 14 | 15 / 15 | 26 / 28 | 20 / 29 |
+| C1R3 | 16 / 14 | 15 / 16 | 27 / 29 | 22 / 29 |
+
+Channel 1 is the narrower one, and its first DIMM (ranks 0 and 1) the
+narrowest: three voltage margins there are one or two steps below the
+limit of 16, the read timing of C1R0 is off centre (16 left, 11 right),
+and the write Vref of a channel is one for its four ranks (ranks 2 and 3
+of channel 0 would take a reference some 6 steps lower than ranks 0 and
+1). This is what the 2D centring and the per-rank steps of the MRC work
+on; with these numbers as the measure of before, the 2D centring can be
+tried in a candidate of its own.
+
+Against the training boot, the later states differ only in compensation
+codes. `mrc.bin` on the same machine was not measured with this check: it
+has its own.
+
 ## The machine after the run
 
-v1.7.0-rc1 in slot B, rc4 in slot A; *Memory profile* back on *SPD*,
-byte 0x7d `0xa0`; *BIOS Lock* and *Firmware protection* on; no helper
-left.
+v1.7.0-rc3 in slot B, rc2 in slot A; *Memory profile* on *SPD*, byte 0x7d
+`0xa0`; *BIOS Lock* and *Firmware protection* on; no helper left.

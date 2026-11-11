@@ -1,0 +1,7 @@
+A: CBET4000 ouroBIOS-v1.7.0-rc2-nri
+B: CBET4000 ouroBIOS-v1.7.0-rc2-nri
+
+1 campi diversi
+  COMP_VSSHI_CONTROL.output_code                         64 -> 66
+
+40 registri a 32 bit diversi nel dump grezzo, chiave dello scrambler esclusa

@@ -422,6 +422,12 @@ def report(v, info, out):
                 vals = [v["C%d.R%d.B%d %s.%s" % (ch, r, b, reg, f)] for b in range(BYTES)]
                 print("  C%d.R%d %-7s %s" % (ch, r, label, " ".join("%4d" % x for x in vals)),
                       file=out)
+            # il deskew per bit, un nibble per bit (bit 7..0): RX 0 e TX 8 come li lascia
+            # il training 1D, allenati dalla centratura 2D (HASWELL_NRI_2D_TIMING)
+            for label, reg in (("RxPerBit", "RX_PER_BIT"), ("TxPerBit", "TX_PER_BIT")):
+                vals = [v["C%d.R%d.B%d %s" % (ch, r, b, reg)] for b in range(BYTES)]
+                print("  C%d.R%d %-8s %s" % (ch, r, label, " ".join("%08x" % x for x in vals)),
+                      file=out)
 
     print("\nI/O per byte: offset di comp, ODT, sense amp (B0..B7)", file=out)
     for ch in chs:
