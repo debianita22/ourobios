@@ -140,7 +140,70 @@ Against the training boot, the later states differ only in compensation
 codes. `mrc.bin` on the same machine was not measured with this check: it
 has its own.
 
+## v1.7.0-rc4: the 2D centring, the turnaround test in several forms (MEM-18, MEM-16)
+
+rc4 (`ab61309`: rc3 with the 2D centring on, patches 0299 and 0300, and
+the option lock work of the M920x branch to `c0dd6aa`) as a capsule from
+rc3, 2026-11-11: slot A, over rc2; rc3 stays in slot B ([files](rc4/)).
+
+| ID | Result | Notes |
+|---|---|---|
+| UPD-01, UPD-02 | PASS | the capsule (`SHA256SUMS` OK, signature valid) written by the payload of rc3; rc4 from slot A, *riuscito* |
+| MEM-18 | mixed | the 2D centring ran to the end and the memory test passed; channel 0 wider on every rank, channel 1 ranks 2 and 3 wider, its first DIMM narrower in the read timing (below); per-bit codes trained, from 4 to c, none at 0 or f (`RxPerBit`, `TxPerBit`); *Vref circuit 1 failed to converge* three times during the 2D centring of the writes (the only unknown line of BOOT-03) |
+| MEM-16 | the test sees errors, the turnaround is not measurable this way | the `TATD:` lines below: every form between ranks passes at every value down to 0, the control on one rank passes, the same-rank control fails below 16; *no value fails, test not usable, left at 4* |
+| MEM-17 | PASS, the table of rc4 | *Margin limit check failed*, the training kept: C1R0 WrV low 16, C1R1 RdV low 12 and WrV low 15 at or below the limit |
+| MEM-15, MEM-14 again | PASS | command Vref -4, write Vref 2 and -1; the same after a reboot, a cold boot, a resume and the stress |
+| MEM-10 | PASS | one training (2.50 s: 1.93 s with rc3, the 2D centring takes 0.57 s), then the cache (0.11 s) |
+| MEM-04 | PASS | `stress-ng --vm 4 --vm-bytes 75% --verify`, 30 minutes after a resume: 0 failed, no machine check |
+| FLASH-06, VAR-01 | PASS | `OptionLockStatus` armed; twenty writes of `Timeout`: median 0.153 s; back at 3 s |
+| report | BOOT-03 WARN | [the first boot](rc4/hw-w541-nri-boot1.md): 18 PASS; the margin report and the turnaround left as it was as events (INFO), the *failed to converge* lines as the one unknown |
+
+The margins after the training, rc3 then rc4 (time in PI ticks, voltage
+in Vref steps; retrain limits 9 and 16):
+
+| Rank | RdT left / right | WrT left / right | RdV low / high | WrV low / high |
+|---|---|---|---|---|
+| C0R0 | 18/18 → 19/20 | 17/17 → 18/17 | 26/26 → 29/28 | 21/22 → 20/25 |
+| C0R1 | 18/19 → 20/20 | 15/17 → 18/18 | 24/27 → 29/30 | 21/18 → 22/25 |
+| C0R2 | 18/19 → 20/21 | 19/20 → 19/20 | 36/37 → 38/38 | 36/22 → 35/32 |
+| C0R3 | 18/19 → 21/21 | 17/19 → 18/19 | 36/37 → 36/38 | 35/24 → 33/33 |
+| C1R0 | 16/11 → **11/12** | 14/14 → 15/14 | 14/20 → 18/18 | 15/17 → 16/21 |
+| C1R1 | 14/13 → **12/14** | 14/14 → 15/14 | 17/18 → **12/19** | 15/20 → 15/22 |
+| C1R2 | 16/14 → 17/16 | 15/15 → 16/17 | 26/28 → 24/31 | 20/29 → 20/33 |
+| C1R3 | 16/14 → 17/18 | 15/16 → 16/16 | 27/29 → 25/28 | 22/29 → 18/33 |
+
+On channel 0 every eye is wider, and the write voltage margins, which
+were lopsided on ranks 2 and 3 (36/22, 35/24), are now even. On channel
+1 the read timing of the first DIMM lost width (C1R0 27 to 23 ticks in
+all, C1R1 27 to 26) and C1R1 its low read voltage margin (17 to 12),
+while its write margins grew. One training each: part of the difference
+can be the spread between two trainings, and the three *failed to
+converge* lines say that some of the write Vref moves of channel 1 did
+not settle in the 50 µs that `update_vref_and_wait()` waits, so some
+points of that DIMM may have been measured at a reference still moving.
+
+The turnaround test, rc4 (`TATD:`, each value from the one set, P pass, F fail):
+
+```
+C0 20/4/4 C1 20/4/4 as set (sr/dr/dd)
+4 ranks, 1 line   dr+dd  4P 3P 2P 1P 0P   (both channels)
+4 ranks, 8 lines  dr+dd  4P 3P 2P 1P 0P
+4 ranks, ODT      dr+dd  4P 3P 2P 1P 0P
+ranks 0+1         dr     4P 3P 2P 1P 0P
+ranks 0+2         dd     4P 3P 2P 1P 0P
+rank 0 alone      dr+dd  4P 3P 2P 1P 0P   (control: no turnaround between ranks)
+rank 0 alone      sr     20P 16P 12F 8F 4F (control: tWTR violated)
+```
+
+The test sees errors (the same-rank control fails as soon as tWTR is
+violated), and no form between ranks fails even at 0, where the bursts
+would overlap: the memory controller keeps a spacing of its own between
+a write and a read of another rank, and the register below that does not
+change it. The turnaround between ranks cannot be found by a scan; what
+`mrc.bin` sets (3) has to come from the trained delays of the ranks, and
+the step of patch 0298 changes nothing, as written.
+
 ## The machine after the run
 
-v1.7.0-rc3 in slot B, rc2 in slot A; *Memory profile* on *SPD*, byte 0x7d
+v1.7.0-rc4 in slot A, rc3 in slot B; *Memory profile* on *SPD*, byte 0x7d
 `0xa0`; *BIOS Lock* and *Firmware protection* on; no helper left.

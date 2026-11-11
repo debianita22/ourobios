@@ -1,0 +1,171 @@
+A: CBET4000 ouroBIOS-v1.7.0-rc3-nri
+B: CBET4000 ouroBIOS-v1.7.0-rc4-nri
+
+508 campi diversi
+  COMP_VSSHI_CONTROL.output_code                         67 -> 65
+  VREF_ADJUST.vref_ca_ctrl                               -6 -> -4
+  VREF_ADJUST.vref_dq_ch1_ctrl                            1 -> -1
+  VREF_CONTROL.output_code                               93 -> 95
+  C0 CLK_PI.pi_0                                          6 -> 5
+  C0 CLK_PI.pi_1                                          6 -> 5
+  C0 CLK_PI.pi_2                                          6 -> 5
+  C0 CLK_PI.pi_3                                          6 -> 5
+  C0 CTL_PI.pi_1                                          9 -> 8
+  C0 CTL_PI.pi_2                                          1 -> 0
+  C0 CTL_PI.pi_3                                          1 -> 0
+  C0 CKE_CTL_PI.pi_1                                      9 -> 8
+  C0 CKE_CTL_PI.pi_2                                      1 -> 0
+  C0 CKE_CMD_PI.pi_0                                      8 -> 6
+  C0 CKE_CMD_PI.pi_1                                      8 -> 6
+  C0 CMD_N_PI.pi_0                                        3 -> 2
+  C0 CMD_N_PI.pi_1                                        3 -> 2
+  C0 CMD_S_PI.pi_0                                        8 -> 6
+  C0 CMD_S_PI.pi_1                                        8 -> 6
+  C0 DQ_CONTROL_1.sdll_segment_disable A      4      2      4      4      2      4      2      4
+                                     B      2      2      2      2      2      2      2      2
+  C0 RX_OFFSET_VDQ                   A 0x78876797 0x99997998 0x99986688 0x77878777 0x77a89898 0x76496767 0x97a9a786 0x87766767
+                                     B 0x78876786 0x77675777 0x99886788 0x76868876 0x87989898 0x76496767 0x97a9a786 0x87766778
+  C0.R0 RX_TRAIN.rcven               A    230    196    236    171    310    259    286    282
+                                     B    229    195    235    171    309    258    285    279
+  C0.R0 RX_TRAIN.dqs_p               A     29     35     30     28     32     26     34     28
+                                     B     38     42     39     37     40     36     42     40
+  C0.R0 RX_TRAIN.dqs_n               A     29     35     30     28     32     26     34     28
+                                     B     38     42     39     38     40     38     42     39
+  C0.R0 TX_TRAIN.dqs_delay           A    138    134    168    112    270    192    244    224
+                                     B    137    133    167    111    269    191    243    223
+  C0.R0 RX_PER_BIT                   A    0x0    0x0    0x0    0x0    0x0    0x0    0x0    0x0
+                                     B 0x599a9777 0x9a76aa74 0xa98a5555 0x9a45b967 0x676669b9 0x6655aa9b 0x669baa66 0x86baa966
+  C0.R0 TX_PER_BIT                   A 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888
+                                     B 0x6aaa9678 0x9a75b966 0xaabb6767 0x9b55aa67 0x685659aa 0x6475babb 0x66aa9b66 0x76aaa965
+  C0.R1 RX_TRAIN.dqs_p               A     27     34     31     27     31     26     35     29
+                                     B     40     42     40     37     41     36     42     40
+  C0.R1 RX_TRAIN.dqs_n               A     27     34     31     27     31     26     35     29
+                                     B     38     42     40     38     40     38     42     40
+  C0.R1 RX_TRAIN.vref                A      0      0      0      1      1      1      0      1
+                                     B      1      1      0      1      0      1      0      1
+  C0.R1 TX_TRAIN.dq_delay            A    173    166    195    143    295    228    267    248
+                                     B    172    166    193    140    295    227    266    247
+  C0.R1 TX_TRAIN.dqs_delay           A    142    144    170    114    272    198    244    222
+                                     B    141    143    169    111    271    197    243    221
+  C0.R1 RX_PER_BIT                   A    0x0    0x0    0x0    0x0    0x0    0x0    0x0    0x0
+                                     B 0x7bab9789 0xa966a864 0x997b6655 0x9b66b866 0x79656ac8 0x6665aaab 0x659a8955 0x85bb9777
+  C0.R1 TX_PER_BIT                   A 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888
+                                     B 0x5a996665 0xaa86bb85 0xaabb5676 0x9b55ba77 0x59567ab9 0x7555baaa 0x659a9a66 0x85aaba67
+  C0.R2 RX_TRAIN.rcven               A    248    216    261    193    325    280    308    302
+                                     B    247    215    259    192    324    279    307    300
+  C0.R2 RX_TRAIN.dqs_p               A     29     31     31     28     29     29     31     29
+                                     B     38     41     40     39     39     38     42     41
+  C0.R2 RX_TRAIN.dqs_n               A     29     31     31     28     29     29     31     29
+                                     B     40     41     40     37     38     39     41     40
+  C0.R2 TX_TRAIN.dq_delay            A    169    159    196    135    294    224    268    252
+                                     B    168    158    195    134    293    224    268    251
+  C0.R2 TX_TRAIN.dqs_delay           A    140    130    172    106    268    196    242    224
+                                     B    139    129    171    105    267    195    241    223
+  C0.R2 RX_PER_BIT                   A    0x0    0x0    0x0    0x0    0x0    0x0    0x0    0x0
+                                     B 0x7a8a9777 0x9a87a976 0x778a6666 0x7b67a878 0x68677aa7 0x8866b99b 0x879aab77 0x96baa897
+  C0.R2 TX_PER_BIT                   A 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888
+                                     B 0x7aaa88aa 0x67668664 0xab9b6978 0x7b67a978 0x7b787aba 0x6676a89b 0x777a8a66 0x96a98777
+  C0.R3 RX_TRAIN.rcven               A    251    223    263    198    335    279    310    305
+                                     B    250    222    261    197    334    278    310    304
+  C0.R3 RX_TRAIN.dqs_p               A     30     31     31     28     29     27     31     30
+                                     B     39     41     40     37     38     36     42     41
+  C0.R3 RX_TRAIN.dqs_n               A     30     31     31     28     29     27     31     30
+                                     B     39     42     41     38     39     39     41     41
+  C0.R3 TX_TRAIN.dq_delay            A    172    164    202    144    293    227    273    257
+                                     B    171    162    202    144    294    226    272    257
+  C0.R3 TX_TRAIN.dqs_delay           A    144    136    176    116    266    196    246    230
+                                     B    143    135    175    115    267    195    245    229
+  C0.R3 RX_PER_BIT                   A    0x0    0x0    0x0    0x0    0x0    0x0    0x0    0x0
+                                     B 0x7a896677 0x9b98aa77 0x999a7757 0x8966a767 0x676569a6 0x55559889 0x88abab77 0x97bba799
+  C0.R3 TX_PER_BIT                   A 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888
+                                     B 0x79899988 0x89879876 0x879a6766 0x8b77b997 0x78777ab9 0x6545878a 0x668a9977 0x95a99778
+  C0.R0 RX_TRAIN.vref                A      0      0      1      0      0      1      0      2
+                                     B      0      2      1      1      0      1      0      2
+  C0.R1 RX_TRAIN.rcven               A    231    201    240    175    311    258    291    286
+                                     B    231    200    241    173    309    257    290    285
+  C0.R2 RX_TRAIN.vref                A      0      0      1      0      0      1      0      1
+                                     B      0      1      0      0     -1      1      0      1
+  C0.R3 RX_TRAIN.vref                A      0      0      0      0      0      1      0      2
+                                     B      0      1      0      0      0      1      0      2
+  C0.R0 TX_TRAIN.dq_delay            A    165    157    195    141    294    220    266    251
+                                     B    165    157    192    140    294    220    265    249
+  C1 CLK_PI.pi_0                                          4 -> 3
+  C1 CLK_PI.pi_1                                          4 -> 3
+  C1 CLK_PI.pi_2                                          4 -> 3
+  C1 CLK_PI.pi_3                                          4 -> 3
+  C1 CKE_CMD_PI.pi_0                                      9 -> 7
+  C1 CKE_CMD_PI.pi_1                                      9 -> 7
+  C1 CMD_N_PI.pi_0                                        9 -> 6
+  C1 CMD_N_PI.pi_1                                        9 -> 6
+  C1 CMD_S_PI.pi_0                                        9 -> 7
+  C1 CMD_S_PI.pi_1                                        9 -> 7
+  C1 DQ_CONTROL_1.sdll_segment_disable A      4      4      4      2      4      4      2      2
+                                     B      2      2      2      2      2      2      2      2
+  C1 RX_OFFSET_VDQ                   A 0x88789888 0x68578865 0x87876658 0x798ab9ab 0x68565568 0x79868999 0x78777777 0x79569899
+                                     B 0x98789888 0x57578865 0x98988879 0x67789889 0x68566568 0x69768999 0x9a999999 0x89679999
+  C1.R0 RX_TRAIN.rcven               A    223    190    224    154    300    249    286    278
+                                     B    221    189    224    155    301    247    285    277
+  C1.R0 RX_TRAIN.dqs_p               A     30     29     30     30     31     29     34     36
+                                     B     42     40     40     39     41     38     44     45
+  C1.R0 RX_TRAIN.dqs_n               A     30     29     30     30     31     29     34     36
+                                     B     40     39     39     39     40     40     43     45
+  C1.R0 TX_TRAIN.dq_delay            A    170    159    205    147    293    228    269    244
+                                     B    169    158    205    148    292    225    268    242
+  C1.R0 TX_TRAIN.dqs_delay           A    142    132    178    118    268    200    242    218
+                                     B    141    131    177    117    267    199    241    217
+  C1.R0 RX_PER_BIT                   A    0x0    0x0    0x0    0x0    0x0    0x0    0x0    0x0
+                                     B 0xa9a98998 0x7787998a 0x79797766 0x77677766 0x77779767 0x77667798 0x999aa89a 0x976999aa
+  C1.R0 TX_PER_BIT                   A 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888
+                                     B 0x77a96697 0x97a998aa 0x996a7769 0x777a8777 0x97a9b989 0x778999a8 0x78786679 0xaa9986aa
+  C1.R1 RX_TRAIN.rcven               A    221    192    232    160    304    248    289    281
+                                     B    220    191    231    160    303    246    287    279
+  C1.R1 RX_TRAIN.dqs_p               A     30     29     30     30     30     30     35     35
+                                     B     42     40     41     40     40     40     43     44
+  C1.R1 RX_TRAIN.dqs_n               A     30     29     30     30     30     30     35     35
+                                     B     40     39     40     40     40     39     43     44
+  C1.R1 TX_TRAIN.dq_delay            A    167    165    206    146    297    232    263    247
+                                     B    166    164    206    146    296    231    264    244
+  C1.R1 TX_TRAIN.dqs_delay           A    140    138    180    118    272    204    238    222
+                                     B    139    137    179    117    271    203    237    219
+  C1.R1 RX_PER_BIT                   A    0x0    0x0    0x0    0x0    0x0    0x0    0x0    0x0
+                                     B 0x98ba79a9 0x77769779 0x9a7a9978 0x897a9776 0x77769767 0x79679799 0x9799978a 0xa978a79b
+  C1.R1 TX_PER_BIT                   A 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888
+                                     B 0x77986797 0x8999a799 0x8a8a7869 0x79697755 0x7798ba79 0x67677888 0x89999779 0xa78a769a
+  C1.R2 RX_TRAIN.rcven               A    230    204    236    169    318    254    302    291
+                                     B    229    204    236    168    316    253    301    289
+  C1.R2 RX_TRAIN.dqs_p               A     29     25     29     32     29     31     30     36
+                                     B     39     36     38     41     40     40     41     45
+  C1.R2 RX_TRAIN.dqs_n               A     29     25     29     32     29     31     30     36
+                                     B     39     35     38     41     38     39     41     43
+  C1.R2 TX_TRAIN.dq_delay            A    173    160    203    145    300    230    268    247
+                                     B    171    159    202    144    299    229    267    246
+  C1.R2 TX_TRAIN.dqs_delay           A    144    130    174    118    272    202    240    224
+                                     B    143    129    173    117    271    201    239    223
+  C1.R2 RX_PER_BIT                   A    0x0    0x0    0x0    0x0    0x0    0x0    0x0    0x0
+                                     B 0x79a96a97 0x6785777a 0x87577599 0xa857b6a9 0x99979659 0x59796677 0x76aa75aa 0x7567979a
+  C1.R2 TX_PER_BIT                   A 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888
+                                     B 0x8aaa6a96 0x79a7a97a 0xa868a7ab 0x9657a5a9 0x99a8976a 0x5aaa667a 0x67b975b9 0x765799ab
+  C1.R3 RX_TRAIN.rcven               A    232    205    239    165    313    255    298    289
+                                     B    231    204    238    164    314    253    299    288
+  C1.R3 RX_TRAIN.dqs_p               A     29     26     28     32     30     31     31     36
+                                     B     42     36     40     41     39     41     40     44
+  C1.R3 RX_TRAIN.dqs_n               A     29     26     28     32     30     31     31     36
+                                     B     40     36     39     40     40     40     41     43
+  C1.R3 TX_TRAIN.dq_delay            A    166    158    200    145    296    228    270    245
+                                     B    165    157    199    144    295    227    269    244
+  C1.R3 TX_TRAIN.dqs_delay           A    140    128    172    118    268    202    240    222
+                                     B    139    127    171    117    267    201    239    221
+  C1.R3 RX_PER_BIT                   A    0x0    0x0    0x0    0x0    0x0    0x0    0x0    0x0
+                                     B 0x9aba6b99 0x6786777a 0xa969b7bb 0x97569698 0x99a9968a 0x5989669a 0x76aa86aa 0x8657aa8a
+  C1.R3 TX_PER_BIT                   A 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888 0x88888888
+                                     B 0x8aa96a96 0x6ab6797b 0x975996ab 0x9657a6ba 0xaaa7988a 0x6a99579a 0x54997488 0x667999bb
+  C1.R0 RX_TRAIN.vref                A      0      1      2      0      1      0      0      2
+                                     B      0      2      0      1      1      0     -1      2
+  C1.R1 RX_TRAIN.vref                A      0      1      1      0      1      0      0      3
+                                     B      0      2      0      1      1      0     -1      1
+  C1.R2 RX_TRAIN.vref                A      0      1      2     -1      2      0      0      1
+                                     B      0      2      1      0      1      0     -1      0
+  C1.R3 RX_TRAIN.vref                A      0      1      1     -1      2      0      0      1
+                                     B      0      1      0      0      2      1      0      0
+
+337 registri a 32 bit diversi nel dump grezzo, chiave dello scrambler esclusa

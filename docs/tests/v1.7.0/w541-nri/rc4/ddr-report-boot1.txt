@@ -1,0 +1,163 @@
+CBET4000 ouroBIOS-v1.7.0-rc4-nri, MCHBAR 0xfed10000
+DDR3-1600 (800 MHz, refclk 133 MHz), 1.35 V
+C0: 8 GiB dual rank, 8 GiB dual rank
+C1: 8 GiB dual rank, 8 GiB dual rank
+
+Timing (clock DDR)                  C0        C1
+  comando                           2N        2N
+  tAA (CL)                          11        11
+  tCWL                               8         8
+  tRCD                              11        11
+  tRP                               11        11
+  tRAS                              28        28
+  tRRD                               5         5
+  tFAW                              24        24
+  tRDPRE                             6         6
+  tWRPRE                            24        24
+  tCKE                               4         4
+  tXP                                5         5
+  tXPDLL                            20        20
+  tREFI                           3120      3120
+  tRFC                             208       208
+
+Turnaround (sr/dr/dd)               C0        C1
+  tRDRD                          4/6/6     4/6/6
+  tWRWR                          4/7/7     4/7/7
+  tRDWR                       11/11/11  11/11/11
+  tWRRD                         20/4/4    20/4/4
+
+ODT (ritardo/durata)                C0        C1
+  lettura                          3/0       3/0
+  scrittura                        0/0       0/0
+
+Andata e ritorno per rank: RTL (qclk) / IO latency
+  C0  R0 44/4  R1 44/4  R2 44/4  R3 44/4   rt_iocomp 21
+  C1  R0 45/4  R1 45/4  R2 45/4  R3 45/4   rt_iocomp 21
+
+CLK/CTL per rank, CMD per gruppo (PI, 1/128 di clock)
+  C0  CLK 5/5/5/5  CTL 0/8/0/0  CMD N 2/2  CMD S 6/6  CKE 6/6
+  C1  CLK 3/3/3/3  CTL 0/2/6/6  CMD N 6/6  CMD S 7/7  CKE 7/7
+
+Addestramento per byte (B0..B7)
+  C0.R0 RcvEn    229  195  235  171  309  258  285  279
+  C0.R0 RxDqsP    38   42   39   37   40   36   42   40
+  C0.R0 RxDqsN    38   42   39   38   40   38   42   39
+  C0.R0 RxVref     0    2    1    1    0    1    0    2
+  C0.R0 RxEq       1    1    1    1    1    1    1    1
+  C0.R0 TxDq     165  157  192  140  294  220  265  249
+  C0.R0 TxDqs    137  133  167  111  269  191  243  223
+  C0.R0 TxEq      59   59   59   59   59   59   59   59
+  C0.R0 RxPerBit 599a9777 9a76aa74 a98a5555 9a45b967 676669b9 6655aa9b 669baa66 86baa966
+  C0.R0 TxPerBit 6aaa9678 9a75b966 aabb6767 9b55aa67 685659aa 6475babb 66aa9b66 76aaa965
+  C0.R1 RcvEn    231  200  241  173  309  257  290  285
+  C0.R1 RxDqsP    40   42   40   37   41   36   42   40
+  C0.R1 RxDqsN    38   42   40   38   40   38   42   40
+  C0.R1 RxVref     1    1    0    1    0    1    0    1
+  C0.R1 RxEq       1    1    1    1    1    1    1    1
+  C0.R1 TxDq     172  166  193  140  295  227  266  247
+  C0.R1 TxDqs    141  143  169  111  271  197  243  221
+  C0.R1 TxEq      59   59   59   59   59   59   59   59
+  C0.R1 RxPerBit 7bab9789 a966a864 997b6655 9b66b866 79656ac8 6665aaab 659a8955 85bb9777
+  C0.R1 TxPerBit 5a996665 aa86bb85 aabb5676 9b55ba77 59567ab9 7555baaa 659a9a66 85aaba67
+  C0.R2 RcvEn    247  215  259  192  324  279  307  300
+  C0.R2 RxDqsP    38   41   40   39   39   38   42   41
+  C0.R2 RxDqsN    40   41   40   37   38   39   41   40
+  C0.R2 RxVref     0    1    0    0   -1    1    0    1
+  C0.R2 RxEq       1    1    1    1    1    1    1    1
+  C0.R2 TxDq     168  158  195  134  293  224  268  251
+  C0.R2 TxDqs    139  129  171  105  267  195  241  223
+  C0.R2 TxEq      59   59   59   59   59   59   59   59
+  C0.R2 RxPerBit 7a8a9777 9a87a976 778a6666 7b67a878 68677aa7 8866b99b 879aab77 96baa897
+  C0.R2 TxPerBit 7aaa88aa 67668664 ab9b6978 7b67a978 7b787aba 6676a89b 777a8a66 96a98777
+  C0.R3 RcvEn    250  222  261  197  334  278  310  304
+  C0.R3 RxDqsP    39   41   40   37   38   36   42   41
+  C0.R3 RxDqsN    39   42   41   38   39   39   41   41
+  C0.R3 RxVref     0    1    0    0    0    1    0    2
+  C0.R3 RxEq       1    1    1    1    1    1    1    1
+  C0.R3 TxDq     171  162  202  144  294  226  272  257
+  C0.R3 TxDqs    143  135  175  115  267  195  245  229
+  C0.R3 TxEq      59   59   59   59   59   59   59   59
+  C0.R3 RxPerBit 7a896677 9b98aa77 999a7757 8966a767 676569a6 55559889 88abab77 97bba799
+  C0.R3 TxPerBit 79899988 89879876 879a6766 8b77b997 78777ab9 6545878a 668a9977 95a99778
+  C1.R0 RcvEn    221  189  224  155  301  247  285  277
+  C1.R0 RxDqsP    42   40   40   39   41   38   44   45
+  C1.R0 RxDqsN    40   39   39   39   40   40   43   45
+  C1.R0 RxVref     0    2    0    1    1    0   -1    2
+  C1.R0 RxEq       1    1    1    1    1    1    1    1
+  C1.R0 TxDq     169  158  205  148  292  225  268  242
+  C1.R0 TxDqs    141  131  177  117  267  199  241  217
+  C1.R0 TxEq      59   59   59   59   59   59   59   59
+  C1.R0 RxPerBit a9a98998 7787998a 79797766 77677766 77779767 77667798 999aa89a 976999aa
+  C1.R0 TxPerBit 77a96697 97a998aa 996a7769 777a8777 97a9b989 778999a8 78786679 aa9986aa
+  C1.R1 RcvEn    220  191  231  160  303  246  287  279
+  C1.R1 RxDqsP    42   40   41   40   40   40   43   44
+  C1.R1 RxDqsN    40   39   40   40   40   39   43   44
+  C1.R1 RxVref     0    2    0    1    1    0   -1    1
+  C1.R1 RxEq       1    1    1    1    1    1    1    1
+  C1.R1 TxDq     166  164  206  146  296  231  264  244
+  C1.R1 TxDqs    139  137  179  117  271  203  237  219
+  C1.R1 TxEq      59   59   59   59   59   59   59   59
+  C1.R1 RxPerBit 98ba79a9 77769779 9a7a9978 897a9776 77769767 79679799 9799978a a978a79b
+  C1.R1 TxPerBit 77986797 8999a799 8a8a7869 79697755 7798ba79 67677888 89999779 a78a769a
+  C1.R2 RcvEn    229  204  236  168  316  253  301  289
+  C1.R2 RxDqsP    39   36   38   41   40   40   41   45
+  C1.R2 RxDqsN    39   35   38   41   38   39   41   43
+  C1.R2 RxVref     0    2    1    0    1    0   -1    0
+  C1.R2 RxEq       1    1    1    1    1    1    1    1
+  C1.R2 TxDq     171  159  202  144  299  229  267  246
+  C1.R2 TxDqs    143  129  173  117  271  201  239  223
+  C1.R2 TxEq      59   59   59   59   59   59   59   59
+  C1.R2 RxPerBit 79a96a97 6785777a 87577599 a857b6a9 99979659 59796677 76aa75aa 7567979a
+  C1.R2 TxPerBit 8aaa6a96 79a7a97a a868a7ab 9657a5a9 99a8976a 5aaa667a 67b975b9 765799ab
+  C1.R3 RcvEn    231  204  238  164  314  253  299  288
+  C1.R3 RxDqsP    42   36   40   41   39   41   40   44
+  C1.R3 RxDqsN    40   36   39   40   40   40   41   43
+  C1.R3 RxVref     0    1    0    0    2    1    0    0
+  C1.R3 RxEq       1    1    1    1    1    1    1    1
+  C1.R3 TxDq     165  157  199  144  295  227  269  244
+  C1.R3 TxDqs    139  127  171  117  267  201  239  221
+  C1.R3 TxEq      59   59   59   59   59   59   59   59
+  C1.R3 RxPerBit 9aba6b99 6786777a a969b7bb 97569698 99a9968a 5989669a 76aa86aa 8657aa8a
+  C1.R3 TxPerBit 8aa96a96 6ab6797b 975996ab 9657a6ba aaa7988a 6a99579a 54997488 667999bb
+
+I/O per byte: offset di comp, ODT, sense amp (B0..B7)
+  C0 drv up         0    0    0    0    0    0    0    0
+  C0 drv down       0    0    0    0    0    0    0    0
+  C0 odt up         0    0    0    0    0    0    0    0
+  C0 odt down       0    0    0    0    0    0    0    0
+  C0 slew           0    0    0    0    0    0    0    0
+  C0 tco            0    0    0    0    0    0    0    0
+  C0 odt delay     -2   -2   -2   -2   -2   -2   -2   -2
+  C0 odt durata     7    7    7    7    7    7    7    7
+  C0 samp delay    -2   -2   -2   -2   -2   -2   -2   -2
+  C0 samp durata    7    7    7    7    7    7    7    7
+  C0 rx bias        3    3    3    3    3    3    3    3
+  C0 dqs ctle       0    0    0    0    0    0    0    0
+  C0 amp offset     0    0    0    0    0    0    0    0
+  C0 tx eq off      0    0    0    0    0    0    0    0
+  C1 drv up         0    0    0    0    0    0    0    0
+  C1 drv down       0    0    0    0    0    0    0    0
+  C1 odt up         0    0    0    0    0    0    0    0
+  C1 odt down       0    0    0    0    0    0    0    0
+  C1 slew           0    0    0    0    0    0    0    0
+  C1 tco            0    0    0    0    0    0    0    0
+  C1 odt delay     -2   -2   -2   -2   -2   -2   -2   -2
+  C1 odt durata     7    7    7    7    7    7    7    7
+  C1 samp delay    -2   -2   -2   -2   -2   -2   -2   -2
+  C1 samp durata    7    7    7    7    7    7    7    7
+  C1 rx bias        3    3    3    3    3    3    3    3
+  C1 dqs ctle       0    0    0    0    0    0    0    0
+  C1 amp offset     0    0    0    0    0    0    0    0
+  C1 tx eq off      0    0    0    0    0    0    0    0
+
+Comp globale e Vref
+  DATA_COMP_0  rcomp_drv_up=13 rcomp_drv_down=10 vt_comp=6 tco_comp=22 slew_rate_comp=6
+  DATA_COMP_1  rcomp_odt_up=8 rcomp_odt_down=6 panic_drv_down=22 panic_drv_up=14 ls_comp=2
+  CMD_COMP     slew_rate_comp=14 tco_comp=22 rcomp_drv_up=14 rcomp_drv_down=12 ls_comp=2
+  CTL_COMP     slew_rate_comp=6 tco_comp=22 rcomp_drv_up=14 rcomp_drv_down=12 ls_comp=2
+  CLK_COMP     slew_rate_comp=6 tco_comp=23 rcomp_drv_up=17 rcomp_drv_down=14 ls_comp=2
+  COMP_CTL_0   disable_odt_static=0 odt_up_down_off=62 fixed_odt_offset=1 dq_drv_vref=-4 dq_odt_vref=-4 cmd_drv_vref=0 ctl_drv_vref=0 clk_drv_vref=-2
+  COMP_CTL_1   dq_scomp=26 cmd_scomp=22 ctl_scomp=5 clk_scomp=27 tco_cmd_offset=0 comp_clk_on=0 vccddq_hi=0 dis_quick_comp=0 sin_step=0 sin_step_adv=0
+  VREF_ADJUST  vref_ca_ctrl=-4 vref_dq_ch1_ctrl=-1 vref_dq_ch0_ctrl=2 en_dimm_vref_ca=1 en_dimm_vref_ch1=1 en_dimm_vref_ch0=1 hi_z_timer_ctrl=3 vccddq_hi_qnnn_h=0 ca_slow_bw=1 ch0_slow_bw=1 ch1_slow_bw=1
+  VREF_CONTROL hi_bw_divider=3 lo_bw_divider=3 sample_divider=3 open_loop=0 slow_bw_error=1 hi_bw_enable=1 vt_slope_b=6 vt_slope_a=6 vt_offset=0 sel_code=0 output_code=94
+  potenza      PM_PDWN_CONFIG=0x6040 PM_SREF_CONFIG=0x10200 PTM_CTL=0x60

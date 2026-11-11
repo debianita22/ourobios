@@ -1,0 +1,78 @@
+# boot1 2026-11-11T14:09:24+01:00 boot_id=8cf5baa0-499e-48ca-a9e8-8760d993fd9f uptime=53.42
+versione:  v1.7.0-rc4, minima per una capsula v1.3.9
+ultimo:    v1.7.0-rc4, riuscito
+CMOS 0x7d=0xa0 0x7e=0xa0
+CMOS 0x7d=0xa0 0x7e=0xa0
+CMOS 0x7d=0xa0 0x7e=0xa0
+console overflow lines: 1
+[DEBUG]  ### Center read timing (2D) ###
+[DEBUG]  TAT: C0 write to read, other rank, 4: pass
+[DEBUG]  TAT: C1 write to read, other rank, 4: pass
+[DEBUG]  TAT: C0 write to read, other rank, 3: pass
+[DEBUG]  TAT: C1 write to read, other rank, 3: pass
+[DEBUG]  TAT: C0 write to read, other rank, 2: pass
+[DEBUG]  TAT: C1 write to read, other rank, 2: pass
+[DEBUG]  TAT: C0 write to read, other rank, 1: pass
+[DEBUG]  TAT: C1 write to read, other rank, 1: pass
+[WARN ]  TAT: C0 no value fails, test not usable, left at 4
+[INFO ]  TAT: C0 write to read, other rank: 4 (was 4)
+[WARN ]  TAT: C1 no value fails, test not usable, left at 4
+[INFO ]  TAT: C1 write to read, other rank: 4 (was 4)
+[WARN ]  Vref circuit 1 failed to converge
+[WARN ]  Vref circuit 1 failed to converge
+[WARN ]  Vref circuit 1 failed to converge
+[ERROR]  ***** Margin limit check failed! *****
+[WARN ]  Margins below the retrain limits, training kept
+[INFO ]  Memory test passed
+[DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+[DEBUG]  MRC: cache data 'RW_MRC_CACHE' needs update.
+[DEBUG]  MRC: updated 'RW_MRC_CACHE'.
+[DEBUG]  Margin: RdT     WrT     RdV     WrV
+[DEBUG]          Lft Rgt Lft Rgt Low Hi  Low Hi
+[DEBUG]  C0R0:   19  20  18  17  29  28  20  25 
+[DEBUG]  C0R1:   20  20  18  18  29  30  22  25 
+[DEBUG]  C0R2:   20  21  19  20  38  38  35  32 
+[DEBUG]  C0R3:   21  21  18  19  36  38  33  33 
+
+[DEBUG]  C1R0:   11  12  15  14  18  18 -16  21 *** FAILED ***
+[DEBUG]  C1R1:   12  14  15  14 -12  19 -15  22 *** FAILED ***
+[DEBUG]  C1R2:   17  16  16  17  24  31  20  33 
+[DEBUG]  C1R3:   17  18  16  16  25  28  18  33 
+
+[INFO ]  TATD: write to read turnarounds as set, sr/dr/dd: C0 20/4/4 C1 20/4/4
+[INFO ]  TATD: C0 4 ranks, 1 line  dr+dd 4P 3P 2P 1P 0P
+[INFO ]  TATD: C1 4 ranks, 1 line  dr+dd 4P 3P 2P 1P 0P
+[INFO ]  TATD: C0 4 ranks, 8 lines dr+dd 4P 3P 2P 1P 0P
+[INFO ]  TATD: C1 4 ranks, 8 lines dr+dd 4P 3P 2P 1P 0P
+[INFO ]  TATD: C0 4 ranks, ODT     dr+dd 4P 3P 2P 1P 0P
+[INFO ]  TATD: C1 4 ranks, ODT     dr+dd 4P 3P 2P 1P 0P
+[INFO ]  TATD: C0 ranks 0+1        dr    4P 3P 2P 1P 0P
+[INFO ]  TATD: C1 ranks 0+1        dr    4P 3P 2P 1P 0P
+[INFO ]  TATD: C0 ranks 0+2        dd    4P 3P 2P 1P 0P
+[INFO ]  TATD: C1 ranks 0+2        dd    4P 3P 2P 1P 0P
+[INFO ]  TATD: C0 rank 0 alone     dr+dd 4P 3P 2P 1P 0P
+[INFO ]  TATD: C1 rank 0 alone     dr+dd 4P 3P 2P 1P 0P
+[INFO ]  TATD: C0 rank 0 alone     sr    20P 16P 12F 8F 4F
+[INFO ]  TATD: C1 rank 0 alone     sr    20P 16P 12F 8F 4F
+2D: 8 weighted centres, 1 per-bit centrings, 1 passes
+  C0.R0 RxPerBit 599a9777 9a76aa74 a98a5555 9a45b967 676669b9 6655aa9b 669baa66 86baa966
+  C0.R0 TxPerBit 6aaa9678 9a75b966 aabb6767 9b55aa67 685659aa 6475babb 66aa9b66 76aaa965
+  C0.R1 RxPerBit 7bab9789 a966a864 997b6655 9b66b866 79656ac8 6665aaab 659a8955 85bb9777
+  C0.R1 TxPerBit 5a996665 aa86bb85 aabb5676 9b55ba77 59567ab9 7555baaa 659a9a66 85aaba67
+  C0.R2 RxPerBit 7a8a9777 9a87a976 778a6666 7b67a878 68677aa7 8866b99b 879aab77 96baa897
+  C0.R2 TxPerBit 7aaa88aa 67668664 ab9b6978 7b67a978 7b787aba 6676a89b 777a8a66 96a98777
+  C0.R3 RxPerBit 7a896677 9b98aa77 999a7757 8966a767 676569a6 55559889 88abab77 97bba799
+  C0.R3 TxPerBit 79899988 89879876 879a6766 8b77b997 78777ab9 6545878a 668a9977 95a99778
+  C1.R0 RxPerBit a9a98998 7787998a 79797766 77677766 77779767 77667798 999aa89a 976999aa
+  C1.R0 TxPerBit 77a96697 97a998aa 996a7769 777a8777 97a9b989 778999a8 78786679 aa9986aa
+  C1.R1 RxPerBit 98ba79a9 77769779 9a7a9978 897a9776 77769767 79679799 9799978a a978a79b
+  C1.R1 TxPerBit 77986797 8999a799 8a8a7869 79697755 7798ba79 67677888 89999779 a78a769a
+  C1.R2 RxPerBit 79a96a97 6785777a 87577599 a857b6a9 99979659 59796677 76aa75aa 7567979a
+  C1.R2 TxPerBit 8aaa6a96 79a7a97a a868a7ab 9657a5a9 99a8976a 5aaa667a 67b975b9 765799ab
+  C1.R3 RxPerBit 9aba6b99 6786777a a969b7bb 97569698 99a9968a 5989669a 76aa86aa 8657aa8a
+  C1.R3 TxPerBit 8aa96a96 6ab6797b 975996ab 9657a6ba aaa7988a 6a99579a 54997488 667999bb
+  tWRRD                         20/4/4    20/4/4
+   2:before RAM initialization                         474,013 (22,296)
+   3:after RAM initialization                          2,972,769 (2,498,755)
+Total Time: 3,871,599
+  VREF_ADJUST  vref_ca_ctrl=-4 vref_dq_ch1_ctrl=-1 vref_dq_ch0_ctrl=2 en_dimm_vref_ca=1 en_dimm_vref_ch1=1 en_dimm_vref_ch0=1 hi_z_timer_ctrl=3 vccddq_hi_qnnn_h=0 ca_slow_bw=1 ch0_slow_bw=1 ch1_slow_bw=1
