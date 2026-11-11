@@ -86,9 +86,6 @@ CONFIG_HASWELL_NRI_MARGIN_CHECK=y
 # la centratura 2D di lettura e scrittura con il deskew per bit (patch 0295,
 # 0299, 0301): accesa dalla v1.7.0-rc4, misurata con i margini di rc3 (MEM-18)
 CONFIG_HASWELL_NRI_2D_TIMING=y
-# la console prima di CBMEM a 32 KiB (16 di default): i grafici del training la
-# riempiono; il riepilogo della patch 0302 resta comunque nella parte tenuta
-CONFIG_PRERAM_CBMEM_CONSOLE_SIZE=0x8000
 # i profili XMP dei DIMM come opzione (Hardware -> Memory), spenta di default:
 # con il profilo, i timing e il clock sono quelli del profilo, e uno che non
 # porta al payload due volte di fila viene lasciato da solo (patch 0275-0279)
