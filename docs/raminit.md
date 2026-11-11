@@ -152,34 +152,21 @@ sudo cbmem -1 | grep 'CMDV:'    # on the boot that trained
 sudo python3 tools/ddr-report.py | grep VREF_ADJUST   # vref_ca_ctrl
 ```
 
-And **patch 0298**, the write to read turnaround between ranks, the third
-of the missing steps. After a write to one rank the controller waits
-before a read from another rank (`tWRRD_dr`, `tWRRD_dd`), so that the
-write data and its termination are off the bus before the read preamble;
-the NRI sets the sum of the JEDEC times, 4 clocks at DDR3-1600 CL11, and
-`mrc.bin` ends at 3. The step uses the turnaround test of the REUT, which
-the code had and no step ran: a write of every rank of the channel in
-turn, six rounds of a read and a write that move to the next rank after
-each pair, a read of everything. After the round trip step it tries each
-value from the one set downwards until one fails, and leaves the shortest
-that passes plus one clock, at most one clock shorter than it was. It
-changes nothing unless a value did fail: a test that passes down to one
-clock has not seen the turnaround. A training redone after a failure does
-not run it. On the W541 with v1.7.0-rc3 (MEM-16) the test passed at 4, 3,
-2 and 1 on both channels, and the step left 4. At 1 clock the read burst
-follows the write burst with no gap, the read preamble over the end of
-the write, which may pass on a short bus; at 0 they overlap. **Patch
-0300** (`HASWELL_NRI_TURNAROUND_DIAG`, on in rc4) logs, before the step,
-the test in seven forms from the value set down to 0, with two controls
-on one rank: no turnaround between ranks there, so every value should
-pass; and the write to read time of the same rank short of tWTR, which
-should fail and so says that the test sees errors at all. It changes no
-timing. Its lines decide how the step tests:
-
-```sh
-sudo cbmem -1 | grep 'TAT:\|TATD:'   # on the boot that trained
-sudo python3 tools/ddr-report.py | grep tWRRD   # sr/dr/dd per channel
-```
+The third of the missing steps, the write to read turnaround between
+ranks (`tWRRD_dr`, `tWRRD_dd`: 4 clocks here, the sum of the JEDEC
+times, 3 with `mrc.bin`), was tried in v1.7.0-rc3 and rc4 and is not in
+the series. A step that shortened it with the turnaround test of the
+REUT (patches 0298 and 0300, out from rc5) found nothing to measure: on
+the W541 every form of the test passed at every value down to 0, where
+the bursts would overlap, while a control on one rank with tWTR violated
+failed at once (MEM-16, [docs/tests/v1.7.0/w541-nri](tests/v1.7.0/w541-nri/README.md)). The memory controller keeps
+a spacing of its own between a write and a read of another rank, which
+the register below that does not change. Sandy Bridge, whose native
+init coreboot has, works the same way: its fields are small increments
+over the controller's minimum, chosen from the spread of the trained
+delays of the ranks (`set_read_write_timings()`: no increment when the
+spread is above 51 PI ticks, the offset of the raw card otherwise). The
+3 of `mrc.bin` is that kind of choice, not a limit a test can find.
 
 And the first of the upstream author's unpublished steps, which he put on
 Gerrit on 2026-11-06 and 10 as work in progress (CB:97117, 97118, 97119,
@@ -201,8 +188,7 @@ steps behind options, off by default:
   log, with a warning for those below the retrain limits of the MRC (9
   ticks, 16 steps). Only a report: it is the measure for every later
   step, the 2D centring first. On the W541 with v1.7.0-rc3 (MEM-17,
-  [docs/tests/v1.7.0/w541-nri](tests/v1.7.0/w541-nri/README.md)): every search ended, the training took 1.93 s with
-  the turnaround test (1.10 s with rc2), and channel 1 came out the
+  [docs/tests/v1.7.0/w541-nri](tests/v1.7.0/w541-nri/README.md)): every search ended, and channel 1 came out the
   narrower one, its first DIMM most: three voltage margins at 14 and 15
   steps, below the limit of 16, and the read timing of C1R0 off centre,
   16 ticks to the left and 11 to the right;
@@ -217,7 +203,13 @@ steps behind options, off by default:
   units: after the centring of a byte it moved the stored margins by ten
   times the shift. Its own measure is MEM-18: the margins of MEM-17
   before and after, the memory test, `ddr-report.py --compare`. Not run
-  in a training that is done again after a failure.
+  in a training that is done again after a failure. With rc4 every eye of
+  channel 0 got wider and the write voltage margins of its ranks 2 and 3
+  even, channel 1's first DIMM lost some read width, and the write Vref of
+  channel 1 missed its 50 µs to settle three times during the scan: from
+  rc5 **patch 0301** waits for a late move up to 10 ms and 1 ms more, and
+  a second training of the same candidate tells the spread from the
+  effect.
 
 ```sh
 sudo cbmem -1 | grep -A8 'Margin: RdT'   # on the boot that trained
@@ -248,9 +240,9 @@ each of them in the registers:
   the read strobe delay, and the write ones neutral; the 2D centring of
   patch 0295 trains them, from v1.7.0-rc4);
 - turnaround optimisation. On the W541 only one turnaround differs: write
-  to read between ranks, 3 clocks with `mrc.bin` and 4 here; patch 0298
-  shortens it with the turnaround test of the REUT (above). The other
-  turnarounds are not tried: they are the same with both.
+  to read between ranks, 3 clocks with `mrc.bin` and 4 here. A test of the
+  REUT cannot find it (above): the controller keeps its own minimum, and
+  `mrc.bin` chooses the increment over it from the trained delays.
 
 With two DIMMs per channel the NRI runs the commands at 2N, by a TODO in
 `lookup_timings.c` written before the late command training existed;

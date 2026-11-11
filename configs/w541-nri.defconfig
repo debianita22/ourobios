@@ -64,19 +64,13 @@ CONFIG_HASWELL_NRI_WRITE_VREF=y
 # il Vref dei comandi dei DIMM (uno per i due canali) centrato allo stesso modo,
 # con il test del training dei comandi e un JEDEC init a ogni valore (patch 0290)
 CONFIG_HASWELL_NRI_COMMAND_VREF=y
-# il turnaround scrittura-lettura tra rank accorciato di un clock al massimo, se
-# il test dedicato del REUT passa un clock sotto e fallisce piu' giu' (patch 0298)
-CONFIG_HASWELL_NRI_TURNAROUND=y
 # i margini di lettura e scrittura di ogni rank misurati e scritti nel log dopo
 # il training, 1-2 s in un avvio che fa il training; solo un rapporto (patch
 # 0291-0297, dal codice dell'autore upstream su Gerrit)
 CONFIG_HASWELL_NRI_MARGIN_CHECK=y
 # la centratura 2D di lettura e scrittura con il deskew per bit (patch 0295,
-# 0299): accesa dalla v1.7.0-rc4, misurata con i margini di rc3 (MEM-18)
+# 0299, 0301): accesa dalla v1.7.0-rc4, misurata con i margini di rc3 (MEM-18)
 CONFIG_HASWELL_NRI_2D_TIMING=y
-# il test del turnaround in sette forme nel log, prima del passo (patch 0300):
-# per capire perche' su rc3 passava fino a 1 clock; non cambia nessun timing
-CONFIG_HASWELL_NRI_TURNAROUND_DIAG=y
 # i profili XMP dei DIMM come opzione (Hardware -> Memory), spenta di default:
 # con il profilo, i timing e il clock sono quelli del profilo, e uno che non
 # porta al payload due volte di fila viene lasciato da solo (patch 0275-0279)
