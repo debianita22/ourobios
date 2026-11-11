@@ -488,6 +488,9 @@ if extract config "${TMP}/config"; then
 	# il W541 ha un TPM 1.2, un banco solo
 	if [ "${BOARD}" = m920x ]; then
 		want CONFIG_TPM_MEASURED_BOOT_SHA1_BANK=y
+		# la MSDM solo dalla VPD (patch 0287): nessuna ricerca del file
+		# CBFS slic, e nessun avviso a ogni avvio
+		want "# CONFIG_ACPI_SLIC_CBFS is not set"
 	fi
 	never CONFIG_VBOOT_MOCK_SECDATA_NO_TPM=y "il verstage non avvierebbe il TPM: niente measured boot"
 	want CONFIG_BOOTMEDIA_LOCK_CONTROLLER=y

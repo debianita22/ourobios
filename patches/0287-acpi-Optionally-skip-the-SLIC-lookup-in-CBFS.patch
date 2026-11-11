@@ -1,0 +1,58 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 22:04:56 +0100
+Subject: [PATCH] acpi: Optionally skip the SLIC lookup in CBFS
+
+write_acpi_tables() looks for the CBFS file slic on every boot, and
+cbfs_map() warns "CBFS: 'fallback/slic' not found." when the image has
+none. On a board whose images never carry that file, it is a warning
+on every boot for a file that is not meant to be there.
+
+Add ACPI_SLIC_CBFS, default y as before. With N, coreboot does not
+look for the file. The MSDM table from a product key in the VPD does
+not depend on it.
+
+TEST=Built lenovo/m920x with ACPI_SLIC_CBFS=n: no CBFS warning for
+slic in the ramstage log, and the MSDM table built from the VPD is
+still among the ACPI tables.
+---
+ src/acpi/Kconfig | 10 ++++++++++
+ src/acpi/acpi.c  |  4 +++-
+ 2 files changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/src/acpi/Kconfig b/src/acpi/Kconfig
+index ef1dde89fcb..884f128d2d7 100644
+--- a/src/acpi/Kconfig
++++ b/src/acpi/Kconfig
+@@ -100,6 +100,16 @@ config ACPI_LPIT
+ 	help
+ 	  Selected by platforms that support and fill Intel Low Power Idle Table.
+ 
++config ACPI_SLIC_CBFS
++	bool "Add a SLIC or MSDM table from the CBFS file slic"
++	depends on HAVE_ACPI_TABLES
++	default y
++	help
++	  Look for the CBFS file slic and add the SLIC or MSDM table it holds.
++	  Say N on a board whose images never carry that file: coreboot then
++	  does not look for it, and does not warn on every boot that it is
++	  missing. A product key in the VPD still gives the MSDM table.
++
+ menu "Windows SMM Security Mitigations Table"
+ 	depends on HAVE_ACPI_TABLES && HAVE_SMI_HANDLER
+ 
+diff --git a/src/acpi/acpi.c b/src/acpi/acpi.c
+index 6dd578a063a..d10a1963c9f 100644
+--- a/src/acpi/acpi.c
++++ b/src/acpi/acpi.c
+@@ -1751,7 +1751,9 @@ static unsigned long write_acpi_tables(const unsigned long start)
+ 		return start;
+ 	}
+ 
+-	slic_file = cbfs_map(CONFIG_CBFS_PREFIX "/slic", &slic_size);
++	slic_file = NULL;
++	if (CONFIG(ACPI_SLIC_CBFS))
++		slic_file = cbfs_map(CONFIG_CBFS_PREFIX "/slic", &slic_size);
+ 	if (slic_file
+ 	    && (slic_file->length > slic_size
+ 		|| slic_file->length < sizeof(acpi_header_t)

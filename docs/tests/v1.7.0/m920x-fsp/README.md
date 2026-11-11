@@ -371,7 +371,35 @@ disconnected.
 | CPU | HWP on, package C-states not limited (`PKG_CST_CONFIG_CONTROL` limit C10), cores reach C10; the i3-8100 has no turbo, so power limits and governor change nothing | nothing to do |
 | Package C-states at idle | PC9 89 %, PC10 0 %, also with no monitor (DC6 reached, pipes off). Not the LTR: with the PMC told to ignore the Gigabit Ethernet's (189 µs) and SATA's, still 0 % (`intel_pmc_core`, restored after). SLP_S0 residency 0, the CSME's power-gated blocks on (the ME is disabled by HECI, not power gated) | not pursued: PC9 to PC10 is a few tenths of a watt on a desktop |
 | PCIe | ASPM L1 with L1.1 and L1.2 on the NVMe, the Wi-Fi and their root ports; the NVMe at Gen3 x4 | nothing to do |
-| Kernel warning `hpet_acpi_add: no address or irqs in _CRS` | from `/dev/hpet`, the legacy character driver, which wants interrupts in the HPET's `_CRS` (coreboot's common `lpc.asl` gives the address only); the HPET as clocksource comes from the ACPI HPET table and works | not changed: giving it IRQ 0 and 8 would take the PIT's and the RTC's lines for a driver nothing uses |
+| Kernel warning `hpet_acpi_add: no address or irqs in _CRS` | not the firmware: the kernel turns the HPET off itself, the processor being able to enter PC10, and the legacy `/dev/hpet` driver then finds no interrupt in the device's `_CRS` ([below](#the-warnings-of-the-logs); this row first said the HPET worked as a clocksource, which was wrong) | no firmware change; on this host, `initcall_blacklist=hpet_init` |
 | Wake on LAN from off | the firmware side is set: `GEN_PMCON_B` 0x00062210 with `WOL_EN_OVRD`, `ethtool`: `Wake-on: g`, GLAN armed | NET-02 needs a second machine to send the packet while this one is off: the owner's |
 | Serial console, 6.1 s a boot | the saved options are *Serial Console* on and *Console Log Level* Debug; the firmware's defaults are off and Info. coreboot writes up to Debug to the CBMEM log whatever the level (`console_log_level()`, `CONSOLE_LOG_FAST`), so *Info* costs ~1.5 s and loses nothing of `cbmem -1` or `hw-report.py`; off costs nothing | the owner's, in the setup |
 | Memory cleared at every boot, ~2 s | the Proxmox kernel has `CONFIG_RESET_ATTACK_MITIGATION=y` and sets MOR at every boot (`MemoryOverwriteRequestControl` 1); with *Clear memory at power-on* on *When the OS asks* the firmware clears the 40 GB | the owner's: it is a protection, against a reboot made to read what is left in the memory |
+
+## The warnings of the logs
+
+Asked by the owner after rc5: the kernel's `hpet_acpi_add` warning and
+any other error. Every `[ERROR]` and `[WARN ]` line of `cbmem -1`, and
+every kernel line from warning up, of the rc5 boot of 2026-11-11 (with
+three S3 resumes), and the errors of the services:
+
+| Message | Where it comes from | Done |
+|---|---|---|
+| `[WARN ] HECI: CSE device 16.0 is disabled`, at every S3 resume | with the ME disabled (*Soft Temporary Disable*) the end of the boot disables HECI1; after S3 the device is still off, the enumeration disables it (`Static device PCI: 00:00:16.0 not found, disabling it`) and `dump_me_status()` warns at the end of `BS_OS_RESUME_CHECK` | patch 0286: on a resume, a debug line instead; a normal boot still prints the ME status |
+| `[WARN ] CBFS: 'fallback/slic' not found.`, at every boot | `write_acpi_tables()` always looks for an optional SLIC or MSDM table in CBFS; the images never carry it, and the M920x's MSDM comes from the product key in the VPD (patch 0159) | patch 0287: `ACPI_SLIC_CBFS`, off on the M920x, checked by `verify-rom.sh`; the MSDM from the VPD stays |
+| `hpet_acpi_add: no address or irqs in _CRS` | `hpet: HPET dysfunctional in PC10. Force disabled.` comes first: the kernel turns the HPET off on a processor that can enter PC10 (`PKG_CST_CONFIG_CONTROL` limit 8 here, `hpet_is_pc10_damaged()`), so it never hands it to `/dev/hpet`. That driver (`drivers/char/hpet.c`) then probes the PNP0103 device by itself, and takes interrupts only from `Interrupt()` descriptors. The firmware cannot do better: `IRQNoFlags` in the `_CRS` (the old vendor layout) is ignored by that driver, while with `Interrupt()` it would start the HPET counter the kernel left stopped and offer programs a timer that stops in PC10; a package limit of PC9 would keep the HPET at the cost of PC10 for all the OSes. Any firmware whose HPET `_CRS` has no `Interrupt()` gets the line under this kernel | no firmware change; on this host `initcall_blacklist=hpet_init` on the kernel command line: the driver has nothing to drive, and `/dev/hpet` goes |
+| `x86/cpu: SGX disabled or unsupported by BIOS.` (err) | the processor has SGX (CPUID 7 EBX bit 2) and the firmware leaves it off (`IA32_FEATURE_CONTROL` 0x5); the kernel says so because KVM could give it to guests. The i3-8100 has no Flexible Launch Control (CPUID 7 ECX bit 30 is 0): with SGX on, the host could not run enclaves (`/dev/sgx_enclave` needs it), only KVM guests could, at the cost of 32 to 128 MiB of PRMRR (`PRMRR_VALID_CONFIG` 0xe1) and of the SGX attack surface | SGX stays off; on this host `nosgx` on the kernel command line, so the kernel no longer looks for it |
+| `faux_driver regulatory: Direct firmware load for regulatory.db failed`, `cfg80211: failed to load regulatory.db` | the Wi-Fi card (Wireless-AC 3165) and no `wireless-regdb` on the host | `wireless-regdb` installed |
+| `spi-nor spi0.0` and `spi0.1: supply vcc not found, using dummy regulator` | `spi_intel_pci`, loaded at boot for the SPI controller: the spi-nor core asks every flash chip for a regulator and ACPI describes none | `spi_intel_pci` blacklisted on this host (`/etc/modprobe.d/ourobios-spi-intel.conf`, initramfs updated): nothing uses the MTD devices, and `update.py` wants the controller free for `flashrom -r` |
+| `blkmapd: open pipe file /run/rpc_pipefs/nfs/blocklayout failed` (err, a service) | nfs-common's pNFS block layout daemon, started without the block layout module; no storage of this host is NFS | `nfs-blkmap.service` disabled |
+| `Warning: PCIe ACS overrides enabled; ...` | `pcie_acs_override=downstream,multifunction` on the command line; no VM has a `hostpci` device | the owner's: without passthrough it only weakens the isolation of the IOMMU groups |
+| `nvme nvme0: using unchecked data buffer` | `smartd`'s passthrough commands, on an SSD without SGL: the kernel cannot bound the device's writes to the buffer | not the firmware; kept for the SMART monitoring |
+| `intel_pmc_core: Invalid LTR scale factor.` | only when `/sys/kernel/debug/pmc_core/ltr_show` is read (the PC10 work above): the driver decodes the PMC's `AGGREGATED_SYSTEM` register (0x0174ba5d, scale 6) as a PCIe LTR | not a boot message |
+| `Chipsec module loaded`, the module taint | the chipsec runs of the tests; the module is unloaded | none |
+| `zfs` and `spl` taint, `kauditd_printk_skb: 110 callbacks suppressed` | Proxmox's ZFS module; AppArmor profile loads that the kernel prints without auditd | not errors |
+
+The firmware patches come with the next candidate. On the host, the
+kernel options (`/etc/default/grub`, saved first as
+`grub.bak-ourobios-20261111`, then `update-grub`) and the blacklist take
+effect at the next boot; the service is already stopped. Each is undone
+by removing it.

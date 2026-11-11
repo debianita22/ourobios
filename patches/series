@@ -277,6 +277,8 @@
 0283-drivers-smmstore-Check-a-write-split-at-the-end-of-a-.patch
 0284-drivers-option-Optionally-lock-every-CFR-option-befor.patch
 0285-mb-lenovo-m720q_m920q-Double-the-DRAM-refresh-when-h.patch
+0286-soc-intel-common-cse-No-warning-for-a-HECI1-disabled.patch
+0287-acpi-Optionally-skip-the-SLIC-lookup-in-CBFS.patch
 0290-nb-intel-haswell-native_raminit-Centre-the-command-V.patch
 0291-Haswell-NRI-Extend-support-for-margin-parameters.patch
 0292-Haswell-NRI-Add-library-to-measure-margins-BER.patch

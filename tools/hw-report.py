@@ -146,8 +146,11 @@ SPCR_TABLE = "/sys/firmware/acpi/tables/SPCR"
 # quarto elemento il messaggio e' noto solo su quella release e le precedenti,
 # mai su una build della CI (una regressione va vista)
 KNOWN_FW_LOG = (
-    (r"CBFS: 'fallback/slic' not found", None,
+    (r"CBFS: 'fallback/slic' not found", "w541",
      "la tabella SLIC e' facoltativa: acpi.c la cerca sempre in CBFS"),
+    (r"CBFS: 'fallback/slic' not found", "m920x",
+     "la tabella SLIC e' facoltativa: acpi.c la cercava sempre in CBFS; dalla patch 0287 il M920x non la "
+     "cerca piu' (ACPI_SLIC_CBFS, la MSDM viene dalla VPD)", (1, 7, 0)),
     (r"SPI Transaction Error at Flash Offset [0-9a-f]+ HSFSTS = 0x0[c8]04f803", "m920x",
      "fino a v1.5.0 la protezione in scrittura del BIOS (FLOCKDN, FCERR) precede i due eventi di "
      "fine ramstage; da v1.6.0 la applica il finalize in SMM (patch 0209)", (1, 5, 0)),
@@ -155,7 +158,8 @@ KNOWN_FW_LOG = (
      "fino a v1.5.0 il registro perde il 'boot' e il 'System reset' di ogni avvio: vedi l'errore SPI; "
      "corretto da v1.6.0 (patch 0209)", (1, 5, 0)),
     (r"HECI: CSE device 16\.0 is disabled", "m920x",
-     "alla ripresa da S3 con il ME spento (me_state): la ramstage lo cerca e lo trova nascosto"),
+     "alla ripresa da S3 con il ME spento (me_state): la ramstage lo cerca e lo trova nascosto; dalla "
+     "patch 0286 lo dice al livello debug", (1, 7, 0)),
     (r"PMC: Duplicate GPE DW register values detected", "m920x",
      "dal bootblock di una parte RO di prima della patch 0166 (una capsula non la riscrive); "
      "il ramstage con la 0166 non lo stampa piu'"),
@@ -199,9 +203,15 @@ KNOWN_KERNEL = (
      "un file di linux-firmware del driver, non il BIOS"),
     (r"PCIe ACS overrides enabled", None, "pcie_acs_override sulla riga di comando del kernel"),
     (r"SGX disabled or unsupported by BIOS", None,
-     "SGX non e' attivato (SOC_INTEL_COMMON_BLOCK_SGX_ENABLE, default n)"),
+     "il firmware non attiva SGX (SOC_INTEL_COMMON_BLOCK_SGX_ENABLE, default n) e il kernel lo dice "
+     "perche' KVM potrebbe usarlo; 'nosgx' sulla riga di comando del kernel lo toglie"),
+    # drivers/char/hpet.c prende gli IRQ solo da Interrupt() e, se ne trova,
+    # accende il contatore dell'HPET: dargliene sarebbe peggio del messaggio
     (r"hpet_acpi_add: no address or irqs in _CRS", "m920x",
-     "il _CRS dell'HPET (soc/intel/common/block/acpi/acpi/lpc.asl) ha solo l'indirizzo, senza IRQ"),
+     "il kernel spegne l'HPET perche' il processore puo' andare in PC10 ('HPET dysfunctional in PC10. "
+     "Force disabled'), poi il driver di /dev/hpet prova da solo il dispositivo ACPI e non trova un "
+     "Interrupt() nel _CRS: non e' il firmware; 'initcall_blacklist=hpet_init' sulla riga di comando lo "
+     "toglie"),
     (r"i915 .*DPLL [0-9]+ not locked", None,
      "intermittente all'avvio con un monitor HDMI collegato (M920x: 2 avvii su 6 di ci-244, anche su ci-209, "
      "ci-211 e v1.5.x): i915 e l'init del display del firmware, da capire a parte (docs/roadmap.md)"),

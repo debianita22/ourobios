@@ -115,6 +115,10 @@ CONFIG_VPD=y
 CONFIG_SMBIOS_SERIAL_FROM_VPD=y
 CONFIG_SMBIOS_UUID_FROM_VPD=y
 CONFIG_SMBIOS_SYSTEM_DATA_FROM_VPD=y
+# La tabella MSDM viene solo dalla chiave nella VPD (patch 0159): le
+# immagini non hanno il file CBFS slic, e senza la ricerca (patch 0287)
+# coreboot non avvisa a ogni avvio che manca.
+# CONFIG_ACPI_SLIC_CBFS is not set
 
 # BIOS Lock e Firmware protection nel menu (Security -> Flash protection),
 # come sul W541: BIOS Lock acceso di default dalla v1.6.0 (spento fino alla

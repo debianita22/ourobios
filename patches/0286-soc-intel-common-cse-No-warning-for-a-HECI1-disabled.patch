@@ -1,0 +1,58 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 22:04:41 +0100
+Subject: [PATCH] soc/intel/common/cse: No warning for a HECI1 disabled before
+ S3
+
+With the ME in soft temporary disable, or with the
+disable_heci1_at_pre_boot option, the end of the boot disables HECI1.
+On an S3 resume the device is still disabled, the PCI enumeration
+disables it in the device tree, and dump_me_status() at the end of
+BS_OS_RESUME_CHECK warns "HECI: CSE device 16.0 is disabled" on every
+resume, for the state that the boot before the suspend chose.
+
+On resume, when the device of HECI1 is disabled, say why there is no
+ME status at the debug level instead.
+
+TEST=On a Lenovo ThinkCentre M920x with the ME in soft temporary
+disable, the ramstage of an S3 resume has no warning, and a normal
+boot still reports the ME status.
+---
+ src/soc/intel/common/block/cse/cse_spec.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/src/soc/intel/common/block/cse/cse_spec.c b/src/soc/intel/common/block/cse/cse_spec.c
+index af64255514d..d5fd9350220 100644
+--- a/src/soc/intel/common/block/cse/cse_spec.c
++++ b/src/soc/intel/common/block/cse/cse_spec.c
+@@ -1,9 +1,12 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++#include <acpi/acpi.h>
+ #include <bootstate.h>
++#include <device/device.h>
+ #include <intelblocks/cse.h>
+ #include <intelblocks/me.h>
+ #include <console/console.h>
++#include <soc/pci_devs.h>
+ #include <stdint.h>
+ 
+ /*
+@@ -39,6 +42,17 @@ static void dump_me_status(void *unused)
+ 	union me_hfsts6 hfsts6;
+ 	bool manufacturing_mode;
+ 
++	/*
++	 * HECI1 disabled at the end of the boot before an S3 suspend (the
++	 * disable_heci1_at_pre_boot option, or the ME in soft temporary disable)
++	 * stays disabled on resume, and the enumeration disables its device:
++	 * the expected state, not a warning.
++	 */
++	if (acpi_is_wakeup_s3() && !is_devfn_enabled(PCH_DEVFN_CSE)) {
++		printk(BIOS_DEBUG, "ME: HECI1 disabled before the suspend, no status\n");
++		return;
++	}
++
+ 	if (!is_cse_enabled())
+ 		return;
+ 

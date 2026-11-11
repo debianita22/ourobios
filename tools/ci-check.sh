@@ -449,14 +449,28 @@ hw.check_boot_time(firmware("m920x", valid + ["[INFO ]  DRAM clear: option alway
 assert "Clear memory at power-on: Always: memoria cancellata (~0.5 s ogni 10 GB)" in rep.checks[0]["details"], \
     rep.checks[0]["details"]
 rep = hw.Report()
-hw.check_fw_log(firmware("m920x", ["[WARN ]  CBFS: 'fallback/slic' not found.",
+hw.check_fw_log(firmware("m920x", ["[WARN ]  PMC: Duplicate GPE DW register values detected",
                                    "[ERROR]  EC: the CPU fan does not turn (0 rpm): fan failure"], []), rep)
 assert rep.checks[0]["status"] == "FAIL" and "noto" in rep.checks[0]["details"][0]
+# patch 0286 e 0287: sul M920x i due avvisi sono noti fino alla v1.7.0, mai
+# su una build della CI; il file slic resta noto sul W541
+for line, board, bios, want in (
+        ("[WARN ]  CBFS: 'fallback/slic' not found.", "m920x", "ouroBIOS-ci-150-ecbf45d-m920x-fsp", "WARN"),
+        ("[WARN ]  CBFS: 'fallback/slic' not found.", "m920x", "ouroBIOS-v1.7.0-rc5-m920x-fsp", "PASS"),
+        ("[WARN ]  CBFS: 'fallback/slic' not found.", "m920x", "ouroBIOS-v1.7.1-m920x-fsp", "WARN"),
+        ("[WARN ]  CBFS: 'fallback/slic' not found.", "w541", "ouroBIOS-ci-150-ecbf45d-nri", "PASS"),
+        ("[WARN ]  HECI: CSE device 16.0 is disabled", "m920x", "ouroBIOS-ci-150-ecbf45d-m920x-fsp", "WARN"),
+        ("[WARN ]  HECI: CSE device 16.0 is disabled", "m920x", "ouroBIOS-v1.6.3-m920x-fsp", "PASS")):
+    fw = firmware(board, [line], [])
+    fw.bios = bios
+    rep = hw.Report()
+    hw.check_fw_log(fw, rep)
+    assert rep.checks[0]["status"] == want, (line, bios, rep.checks[0])
 assert hw.separator_pcr("sha256").startswith("3D458CFE55CC03EA")
 assert hw.redact("PC0ZK26") == "****ZK26" and hw.redact("ab") == "****"
 rep = hw.Report()
 hw.check_fw_log(firmware("m920x", ["[WARN ]  Setup options: 31 reset to defaults (RTC power lost)",
-                                   "[WARN ]  CBFS: 'fallback/slic' not found."], []), rep)
+                                   "[WARN ]  PMC: Duplicate GPE DW register values detected"], []), rep)
 assert rep.checks[0]["status"] == "INFO" and "evento" in rep.checks[0]["details"][0], rep.checks[0]
 
 

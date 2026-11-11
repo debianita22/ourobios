@@ -44,6 +44,15 @@ whose changes below are still to run on a machine.
   above 85 C; at normal temperatures nothing changes. The memory
   settings version goes up, so the first boot after the update trains
   the memory again (a few seconds more, once).
+- **Two warnings fewer in the coreboot log of the M920x** (patches 0286
+  and 0287): with the ME disabled, an S3 resume no longer warns that
+  the ME's interface is disabled (the boot before the suspend turned
+  it off), and a boot no longer warns that the optional `slic` file is
+  missing from CBFS (the MSDM table comes from the VPD). The kernel's
+  `hpet_acpi_add` and `SGX disabled` lines are not the firmware's: the
+  kernel turns the HPET off itself on a processor that can enter PC10,
+  and SGX is off on purpose
+  ([docs/tests/v1.7.0/m920x-fsp](docs/tests/v1.7.0/m920x-fsp/README.md#the-warnings-of-the-logs)).
 - **The setup says when the settings are locked** (`edk2/0062`): the
   option lock is armed when a boot is started. If the boot option
   returns and the setup is opened again, a change cannot be saved until

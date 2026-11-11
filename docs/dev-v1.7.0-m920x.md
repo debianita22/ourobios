@@ -22,7 +22,9 @@ and 6 taken (the owner left 2 and 3 to the agent, and decided that the
 fix of the fault tolerant write is not backported). The record is
 [docs/tests/v1.7.0/m920x-fsp](tests/v1.7.0/m920x-fsp/README.md); left:
 LOCK-10 at the setup, the W541 (decision 4), and when the branch goes to
-`next` (decision 5).
+`next` (decision 5). Also on the branch, outside the option lock, after
+rc5: patch 0285 (the DRAM refresh doubled when hot), 0286 and 0287 (two
+warnings of the coreboot log), still to run on a machine.
 
 Written for an agent that works on the machine by itself, under Linux
 (Proxmox), as root, and that also writes the code. What the owner has to
