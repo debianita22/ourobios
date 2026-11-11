@@ -1,0 +1,77 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 12 Nov 2026 00:12:30 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: Move the comp offsets only
+ near their limits
+
+optimise_comp() moves the mean of the per-byte compensation offsets into
+the global code whenever it is not zero, and recomputes the offsets as
+differences of codes. For the read termination the move can turn the
+static legs off (rcomp_odt_up below 16), after which a code is another
+strength, and the offsets are clamped to their field.
+
+On a ThinkPad W541 with the per-byte training of the read termination
+(offsets -4 to 4, mean -1) the global code went from 8 to 24 with the
+static legs off and the offsets of most bytes to -16: their termination
+much weaker than trained, every read margin 2 to 4 ticks narrower
+(v1.7.0-rc6).
+
+Move the mean only when an offset is within 4 of the end of its field,
+which is what the move is for.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: Ie67f8d54deb64433f349bdfc0a669f5add64344f
+---
+ .../haswell/native_raminit/io_comp_control.c   | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/io_comp_control.c b/src/northbridge/intel/haswell/native_raminit/io_comp_control.c
+index f7fcad4075..dd99aa814d 100644
+--- a/src/northbridge/intel/haswell/native_raminit/io_comp_control.c
++++ b/src/northbridge/intel/haswell/native_raminit/io_comp_control.c
+@@ -65,6 +65,18 @@ static int8_t get_comp(union ddr_data_offset_comp_reg data_offset_comp, enum opt
+ 	}
+ }
+ 
++/*
++ * The per-byte offsets are moved into the global code only when one of them
++ * is this close to the end of its field: the move is there so that they do
++ * not saturate. Moving it otherwise does harm: the offsets are recomputed as
++ * differences of codes, and a move of the read termination can turn its
++ * static legs off (rcomp_odt_up below 16), after which a code is a different
++ * strength. On a ThinkPad W541 the offsets of the per-byte training (-4 to 4)
++ * went to -16 with the static legs off, the termination of most bytes much
++ * weaker than trained, and every read margin 2 to 4 ticks narrower.
++ */
++#define OFFSET_GUARD	4
++
+ static void optimise_comp_offset(struct sysinfo *ctrl, const enum opt_param optparam)
+ {
+ 	const uint8_t reserved_codes = 3;
+@@ -117,6 +129,7 @@ static void optimise_comp_offset(struct sysinfo *ctrl, const enum opt_param optp
+ 	uint8_t comp_codes[NUM_CHANNELS][NUM_LANES] = {0};
+ 	int16_t avg_offset = 0;
+ 	uint8_t num_ch = 0;
++	bool near_limit = false;
+ 	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
+ 		if (!does_ch_exist(ctrl, channel)) {
+ 			continue;
+@@ -126,6 +139,9 @@ static void optimise_comp_offset(struct sysinfo *ctrl, const enum opt_param optp
+ 		const struct channel_data *ch = &ctrl->ch[channel];
+ 		for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
+ 			int8_t off = get_comp(ch->offset_comp[byte], optparam);
++			if (ABS(off) > (optparam == OptWrDS ? 31 : 15) - OFFSET_GUARD)
++				near_limit = true;
++
+ 			avg_offset += off;
+ 			comp_codes[channel][byte] = current_comp + off;
+ 		}
+@@ -135,7 +151,7 @@ static void optimise_comp_offset(struct sysinfo *ctrl, const enum opt_param optp
+ 	}
+ 
+ 	avg_offset = DIV_ROUND_CLOSEST(avg_offset, num_ch * ctrl->lanes);
+-	if (!avg_offset) {
++	if (!avg_offset || !near_limit) {
+ 		return;
+ 	}
+ 

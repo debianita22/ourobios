@@ -80,7 +80,7 @@ modules (2026-11-10,
   measured with two trainings.
 - **W541 (`nri`): the training steps that the native RAM init lacked
   against the MRC, as the MRC of the Lenovo firmware does them** (patches
-  0302-0306, from rc6). They were read in the MRC of the stock firmware of
+  0302-0307, from rc6). They were read in the MRC of the stock firmware of
   the W541 (GNET94WW), step by step:
   - the **write to read turnaround between ranks**: one clock under the
     JEDEC sum if the turnaround test passes with the read and write eyes
@@ -104,9 +104,14 @@ modules (2026-11-10,
     a training boot that is kept (`sudo cbmem -1 | grep -A20 'NRI
     summary'`).
 
-  With rc5 channel 1 of the W541 came out of one training in three with
-  margins 5 to 9 steps narrower; rc6 is to show whether the spread is
-  gone (MEM-19 to MEM-21). A boot that trains takes some seconds longer.
+  With rc6 on the W541 the turnaround went to 3 and the write margins
+  came out even; the read margins were narrower, as the global
+  compensation step moved the per-byte read termination with its static
+  legs off: patch 0307 (from rc7) moves it only near the end of the
+  offsets' field. With rc5 channel 1 came out of one training in three
+  with margins 5 to 9 steps narrower: rc7 is to show whether the spread
+  is gone (MEM-20, MEM-21). A boot that trains takes 3.7 s in the RAM
+  init (2.3-2.5 s with rc5).
 - **`tools/ddr-report.py` shows the per-bit deskew** (`RxPerBit`,
   `TxPerBit`, one nibble per bit), and **`tools/hw-report.py` knows the
   report of the margins of the native RAM init**: margins below the
