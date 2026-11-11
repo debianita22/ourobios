@@ -1,0 +1,284 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 13:32:20 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: Log the turnaround test in
+ several forms
+
+On the ThinkPad W541 with four dual-rank DIMMs the turnaround test of
+HASWELL_NRI_TURNAROUND passed at every value down to 1 clock on both
+channels, and the step left the turnaround as it was. At 1 clock the
+read burst follows the write burst with no gap and the read preamble
+falls on the end of the write, which may well pass; the test may also
+not see the turnaround at all. The log of one boot says which.
+
+Add HASWELL_NRI_TURNAROUND_DIAG: before the step, its test in seven
+forms, each from the value set down to 0, where the bursts overlap by
+one clock: all the ranks with one line of the WDB, with eight, with the
+ODT turnaround pattern; the two ranks of a DIMM (tWRRD_dr alone); a
+rank of each DIMM (tWRRD_dd alone); and two controls on one rank, with
+no turnaround between ranks, which should pass at every value, and
+with the write to read time of the same rank in steps of 4 below
+tCWL + BL/2 + tWTR, which should fail and so says that the test sees
+errors at all. One TATD: line per form and channel. What it changes
+is put back, and a JEDEC init follows, as after the command training.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: Iaf86c525d11cdb369456caec60c8ebadcb529977
+---
+ src/northbridge/intel/haswell/Kconfig         |   9 +
+ .../haswell/native_raminit/train_turnaround.c | 179 +++++++++++++++++-
+ 2 files changed, 182 insertions(+), 6 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
+index ab751253aa..3010cecf1c 100644
+--- a/src/northbridge/intel/haswell/Kconfig
++++ b/src/northbridge/intel/haswell/Kconfig
+@@ -61,6 +61,15 @@ config HASWELL_NRI_TURNAROUND
+ 	  shortest that passes, one clock shorter than it was at most. Best
+ 	  with HASWELL_NRI_MEMORY_TEST and HASWELL_NRI_MARGIN_CHECK.
+ 
++config HASWELL_NRI_TURNAROUND_DIAG
++	bool "Log the turnaround test in several forms"
++	depends on HASWELL_NRI_TURNAROUND
++	help
++	  Before the turnaround step, run its test in several forms, with
++	  the turnaround from the value set down to 0 clocks and with two
++	  controls, and log which form passes and fails at which value. For
++	  the development of that step: nothing it changes stays.
++
+ config HASWELL_NRI_MARGIN_CHECK
+ 	bool "Measure the read and write margins after training"
+ 	depends on USE_NATIVE_RAMINIT
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_turnaround.c b/src/northbridge/intel/haswell/native_raminit/train_turnaround.c
+index 6455d8f711..dc7d2d9ac5 100644
+--- a/src/northbridge/intel/haswell/native_raminit/train_turnaround.c
++++ b/src/northbridge/intel/haswell/native_raminit/train_turnaround.c
+@@ -3,6 +3,7 @@
+ #include <console/console.h>
+ #include <lib.h>
+ #include <northbridge/intel/haswell/haswell.h>
++#include <stdio.h>
+ #include <types.h>
+ 
+ #include "raminit_native.h"
+@@ -35,7 +36,13 @@
+ #define TAT_NUM_CL	128
+ #define TAT_MIN_WRRD	1
+ 
+-static void setup_io_test_wr_rd_ta(struct sysinfo *ctrl, const uint8_t chanmask)
++/*
++ * The turnaround test of the REUT: PAT_WR_RD_TA (a write of every rank in turn,
++ * six rounds of a read and a write that move to the next rank after each pair,
++ * a read of everything), or PAT_ODT_TA, with one line of the WDB or eight.
++ */
++static void setup_io_test_ta(struct sysinfo *ctrl, const uint8_t chanmask, const bool odt,
++			     const bool many_lines)
+ {
+ 	/* A rank and a column for each cacheline: run_io_test() sets the rates */
+ 	const struct reut_box reut_addr = {
+@@ -55,14 +62,14 @@ static void setup_io_test_wr_rd_ta(struct sysinfo *ctrl, const uint8_t chanmask)
+ 	/* One line of the WDB, so that a read and a write of a pair use the same */
+ 	const struct wdb_pat pattern = {
+ 		.start_ptr  = 0,
+-		.stop_ptr   = 0,
+-		.inc_rate   = 0,
+-		.dq_pattern = TURN_AROUND_WR,
++		.stop_ptr   = many_lines ? 7 : 0,
++		.inc_rate   = many_lines ? 4 : 0,
++		.dq_pattern = odt ? TURN_AROUND_ODT : TURN_AROUND_WR,
+ 	};
+ 	setup_io_test(
+ 		ctrl,
+ 		chanmask,
+-		PAT_WR_RD_TA,
++		odt ? PAT_ODT_TA : PAT_WR_RD_TA,
+ 		TAT_NUM_CL,
+ 		0,
+ 		&reut_addr,
+@@ -72,7 +79,12 @@ static void setup_io_test_wr_rd_ta(struct sysinfo *ctrl, const uint8_t chanmask)
+ 		0);
+ 
+ 	ctrl->dq_pat_lc = 1;
+-	ctrl->dq_pat = TURN_AROUND_WR;
++	ctrl->dq_pat = odt ? TURN_AROUND_ODT : TURN_AROUND_WR;
++}
++
++static void setup_io_test_wr_rd_ta(struct sysinfo *ctrl, const uint8_t chanmask)
++{
++	setup_io_test_ta(ctrl, chanmask, false, false);
+ }
+ 
+ static void program_wrrd(struct sysinfo *ctrl, const uint8_t channel, const uint8_t value)
+@@ -83,6 +95,157 @@ static void program_wrrd(struct sysinfo *ctrl, const uint8_t channel, const uint
+ 	mchbar_write32(TC_BANK_RANK_B_ch(channel), tc_bank_rank_b.raw);
+ }
+ 
++#if CONFIG(HASWELL_NRI_TURNAROUND_DIAG)
++enum tat_field {
++	TAT_DR_DD,	/* tWRRD_dr and tWRRD_dd together */
++	TAT_DR,		/* the other rank of the DIMM */
++	TAT_DD,		/* a rank of the other DIMM */
++	TAT_SR,		/* the same rank */
++};
++
++struct tat_form {
++	const char *name;
++	uint8_t rankmask;
++	bool odt;
++	bool many_lines;
++	enum tat_field field;
++};
++
++static const char *tat_field_name(const enum tat_field field)
++{
++	switch (field) {
++	case TAT_DR:	return "dr";
++	case TAT_DD:	return "dd";
++	case TAT_SR:	return "sr";
++	default:	return "dr+dd";
++	}
++}
++
++static int tat_value(const union tc_bank_rank_b_reg set, const enum tat_field field,
++		     const uint8_t step)
++{
++	switch (field) {
++	case TAT_SR:	return set.tWRRD_sr - 4 * step;
++	case TAT_DD:	return set.tWRRD_dd - step;
++	default:	return set.tWRRD_dr - step;
++	}
++}
++
++static void program_tat_field(struct sysinfo *ctrl, const uint8_t channel,
++			      const enum tat_field field, const uint8_t value)
++{
++	union tc_bank_rank_b_reg tc_bank_rank_b = ctrl->tc_bankrank_b[channel];
++	if (field == TAT_DR_DD || field == TAT_DR)
++		tc_bank_rank_b.tWRRD_dr = value;
++	if (field == TAT_DR_DD || field == TAT_DD)
++		tc_bank_rank_b.tWRRD_dd = value;
++	if (field == TAT_SR)
++		tc_bank_rank_b.tWRRD_sr = value;
++	mchbar_write32(TC_BANK_RANK_B_ch(channel), tc_bank_rank_b.raw);
++}
++
++/*
++ * The turnaround test in several forms, for the log: which of them sees the
++ * write to read turnaround between ranks. At 1 clock the read burst follows
++ * the write burst on the bus with no gap, the read preamble over the end of
++ * the write; at 0 they overlap by one clock. A form that sees the turnaround
++ * passes as set and fails at 0 at the latest. Two controls: one rank alone has
++ * no turnaround between ranks and should pass at every value; one rank with
++ * the write to read time of the same rank short of tWTR should fail, which
++ * says that the test sees errors at all. What it changes is put back, and a
++ * JEDEC init follows, as after the command training.
++ */
++static void diagnose_turnaround(struct sysinfo *ctrl, const uint8_t all)
++{
++	static const struct tat_form forms[] = {
++		{ "4 ranks, 1 line",  0xf, false, false, TAT_DR_DD },
++		{ "4 ranks, 8 lines", 0xf, false, true,  TAT_DR_DD },
++		{ "4 ranks, ODT",     0xf, true,  false, TAT_DR_DD },
++		{ "ranks 0+1",        0x3, false, false, TAT_DR    },
++		{ "ranks 0+2",        0x5, false, false, TAT_DD    },
++		{ "rank 0 alone",     0x1, false, false, TAT_DR_DD },
++		{ "rank 0 alone",     0x1, false, false, TAT_SR    },
++	};
++
++	printk(BIOS_INFO, "TATD: write to read turnarounds as set, sr/dr/dd:");
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(all & BIT(channel)))
++			continue;
++
++		const union tc_bank_rank_b_reg set = ctrl->tc_bankrank_b[channel];
++		printk(BIOS_INFO, " C%u %u/%u/%u", channel, set.tWRRD_sr, set.tWRRD_dr,
++		       set.tWRRD_dd);
++	}
++	printk(BIOS_INFO, "\n");
++
++	setup_wdb(ctrl);
++	for (size_t f = 0; f < ARRAY_SIZE(forms); f++) {
++		const struct tat_form *const form = &forms[f];
++		setup_io_test_ta(ctrl, all, form->odt, form->many_lines);
++		uint8_t chanmask = 0;
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (all & BIT(channel))
++				chanmask |= select_reut_ranks(ctrl, channel, form->rankmask);
++		}
++		if (!chanmask)
++			continue;
++
++		char line[NUM_CHANNELS][96];
++		size_t len[NUM_CHANNELS] = { 0 };
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			len[channel] = snprintf(line[channel], sizeof(line[channel]),
++						"C%u %-16s %-5s", channel, form->name,
++						tat_field_name(form->field));
++		}
++
++		/* From the value set down to 0, or down to 4 in steps of 4 for sr */
++		for (uint8_t step = 0; step < 16; step++) {
++			uint8_t now = 0;
++			uint8_t value[NUM_CHANNELS] = { 0 };
++			for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++				if (!(chanmask & BIT(channel)))
++					continue;
++
++				const int v = tat_value(ctrl->tc_bankrank_b[channel],
++							form->field, step);
++				if (v < (form->field == TAT_SR ? 4 : 0))
++					continue;
++
++				value[channel] = v;
++				program_tat_field(ctrl, channel, form->field, v);
++				now |= BIT(channel);
++			}
++			if (!now)
++				break;
++
++			const uint8_t errors = run_io_test(ctrl, now, ctrl->dq_pat, true) & now;
++			for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++				if (!(now & BIT(channel)))
++					continue;
++
++				mchbar_write32(TC_BANK_RANK_B_ch(channel),
++					       ctrl->tc_bankrank_b[channel].raw);
++				if (len[channel] < sizeof(line[channel])) {
++					len[channel] += snprintf(line[channel] + len[channel],
++						sizeof(line[channel]) - len[channel], " %u%c",
++						value[channel], errors & BIT(channel) ? 'F' : 'P');
++				}
++			}
++		}
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (chanmask & BIT(channel))
++				printk(BIOS_INFO, "TATD: %s\n", line[channel]);
++		}
++	}
++
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (all & BIT(channel))
++			mchbar_write32(TC_BANK_RANK_B_ch(channel), ctrl->tc_bankrank_b[channel].raw);
++	}
++	do_jedec_init(ctrl);
++}
++#endif
++
+ enum nri_status optimise_turnaround(struct sysinfo *ctrl)
+ {
+ 	if (!CONFIG(HASWELL_NRI_TURNAROUND) || ctrl->lpddr)
+@@ -110,6 +273,10 @@ enum nri_status optimise_turnaround(struct sysinfo *ctrl)
+ 	if (!all)
+ 		return NRI_STATUS_SUCCESS;
+ 
++#if CONFIG(HASWELL_NRI_TURNAROUND_DIAG)
++	diagnose_turnaround(ctrl, all);
++#endif
++
+ 	setup_wdb(ctrl);
+ 	setup_io_test_wr_rd_ta(ctrl, all);
+ 	uint8_t chanmask = 0;
+-- 
+2.56.0
+

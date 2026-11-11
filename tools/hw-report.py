@@ -181,6 +181,18 @@ EVENT_FW_LOG = (
      r"RTC power lost: setup options not reset, the CMOS kept its contents", "w541",
      "il bit RTC_PWR_STS era acceso ma la CMOS no (il sistema operativo puo' accenderlo, o la RTC ha perso "
      "l'alimentazione lasciando il segno dei banchi valido): le opzioni del setup restano come erano"),
+    # W541 nri dalla v1.7.0 (patch 0291-0297): il controllo dei margini dopo il
+    # training e' un rapporto; con HASWELL_NRI_MARGIN_CHECK_RETRAIN rifarebbe
+    # il training, qui no. Solo nei boot che fanno il training
+    (r"\*\*\*\*\* Margin limit check failed! \*\*\*\*\*|Margins below the retrain limits, training kept",
+     "w541",
+     "margini della memoria sotto i limiti di retrain dell'MRC: il controllo dei margini li riporta e il "
+     "training resta (la tabella in cbmem -1 dopo 'Margin: RdT', MEM-17 di docs/testing.md)"),
+    # W541 nri dalla v1.7.0 (patch 0298): il passo del turnaround non cambia
+    # niente se il suo test passa fino a 1 clock (MEM-16)
+    (r"TAT: C\d no value fails, test not usable, left at \d+", "w541",
+     "turnaround tra rank lasciato com'era: il test del REUT passa fino a 1 clock e il passo non lo usa "
+     "(MEM-16 di docs/testing.md; le righe TATD: con HASWELL_NRI_TURNAROUND_DIAG)"),
 )
 
 # Il kernel: messaggi che riguardano il firmware (tabelle ACPI, PCI, VT-d,
@@ -818,7 +830,13 @@ def check_fw_log(fw, rep):
             new += 1
             status = worst(status, LOG_BAD[lvl])
             details.append("[%-5s] %s%s" % (lvl, text, times))
-    if any("console overflowed" in l for l in fw.log):
+    for stage in ("bootblock", "verstage", "romstage"):
+        if any("Pre-CBMEM %s console overflowed" % stage in l for l in fw.log):
+            details.append("la console prima di CBMEM e' traboccata: l'inizio della %s non c'e'%s" % (
+                stage, " (i boot che fanno il training della RAM ne scrivono di piu')"
+                if stage == "romstage" else ""))
+    if any("console overflowed" in l for l in fw.log) and \
+            not any(re.search(r"Pre-CBMEM \w+ console overflowed", l) for l in fw.log):
         details.append("la console prima di CBMEM e' traboccata: l'inizio del bootblock non c'e'")
     errors = sum(1 for (l, _) in seen if LOG_BAD[l] == "FAIL")
     summary = "%d messaggi diversi (%d errori), %d non noti" % (len(seen), errors, new) if seen else \

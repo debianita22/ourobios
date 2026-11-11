@@ -1,0 +1,46 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 13:32:20 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: The eye after the 2D
+ centring in its units
+
+data_time_centering_2d() keeps the margins of each Vref point in
+tenths of a tick, as get_ber_margin_byte() gives them, and after the
+centring of a byte it moves them by the shift it applied: calc, the
+shift in ticks times 10, is already in those units, and the code added
+calc * 10, ten times the shift. The margins of one side then reach the
+clamp at 0, which changes their sum, the average margin with which the
+per-bit pass places the byte before it walks each bit, and the margins
+stored in the results.
+
+Add calc itself.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: Ief828bbfdf12221d426e90f5708a7e17745533d1
+---
+ .../intel/haswell/native_raminit/train_2d_margins.c          | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_2d_margins.c b/src/northbridge/intel/haswell/native_raminit/train_2d_margins.c
+index 979e3e0f10..4d7a196910 100644
+--- a/src/northbridge/intel/haswell/native_raminit/train_2d_margins.c
++++ b/src/northbridge/intel/haswell/native_raminit/train_2d_margins.c
+@@ -337,11 +337,12 @@ void data_time_centering_2d(
+ 						en_rx_duty_cycle);
+ 					for (uint8_t vref = 0; vref < ARRAY_SIZE(vref_points);
+ 										vref++) {
++						/* The margins are in tenths of a tick, as calc */
+ 						const int32_t calc = *c_sum * 10;
+ 						const int32_t max = MAX_POSSIBLE_TIME * 10;
+ 						uint32_t *eye = eye_shape[vref][channel][byte];
+-						eye[0] = clamp_s32(0, eye[0] + calc * 10, max);
+-						eye[1] = clamp_s32(0, eye[1] - calc * 10, max);
++						eye[0] = clamp_s32(0, eye[0] + calc, max);
++						eye[1] = clamp_s32(0, eye[1] - calc, max);
+ 						if (!en_2d)
+ 							break;
+ 					}
+-- 
+2.56.0
+
