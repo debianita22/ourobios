@@ -1,0 +1,45 @@
+?                          0x09 READONLY VOLATILE
+?                          0x09 READONLY VOLATILE
+?                          0x09 READONLY VOLATILE
+?                          0x0d READONLY SUPPRESS VOLATILE
+?                          0x09 READONLY VOLATILE
+?                          0x09 READONLY VOLATILE
+?                          0x09 READONLY VOLATILE
+?                          0x09 READONLY VOLATILE
+?                          0x09 READONLY VOLATILE
+ipxe_boot                  0x20 LOCK_AT_BOOT
+csmwrap_boot               0x20 LOCK_AT_BOOT
+option_roms                0x20 LOCK_AT_BOOT
+usb_boot                   0x20 LOCK_AT_BOOT
+boot_menu_prompt           0x20 LOCK_AT_BOOT
+firmware_watchdog          0x20 LOCK_AT_BOOT
+eist                       0x20 LOCK_AT_BOOT
+turbo_mode                 0x24 SUPPRESS LOCK_AT_BOOT
+hyper_threading            0x24 SUPPRESS LOCK_AT_BOOT
+tdp_pl1_override           0x20 LOCK_AT_BOOT
+tdp_pl2_override           0x20 LOCK_AT_BOOT
+pkg_power_limit_lock       0x20 LOCK_AT_BOOT
+power_on_after_fail        0x20 LOCK_AT_BOOT
+wake_on_lan                0x20 LOCK_AT_BOOT
+igd_dvmt_prealloc          0x20 LOCK_AT_BOOT
+igd_aperture_size          0x20 LOCK_AT_BOOT
+ice_mode                   0x20 LOCK_AT_BOOT
+tcc_offset                 0x20 LOCK_AT_BOOT
+onboard_ethernet           0x20 LOCK_AT_BOOT
+onboard_audio              0x20 LOCK_AT_BOOT
+onboard_wlan               0x20 LOCK_AT_BOOT
+peg_slot                   0x20 LOCK_AT_BOOT
+front_usb                  0x20 LOCK_AT_BOOT
+rear_usb                   0x20 LOCK_AT_BOOT
+bootmedia_lock             0x20 LOCK_AT_BOOT
+bios_lock                  0x20 LOCK_AT_BOOT
+clear_dram_on_boot         0x20 LOCK_AT_BOOT
+vtd                        0x20 LOCK_AT_BOOT
+me_state                   0x20 LOCK_AT_BOOT
+me_state_counter           0x24 SUPPRESS LOCK_AT_BOOT
+acpi_cpu_objects           0x20 LOCK_AT_BOOT
+cfg_lock                   0x20 LOCK_AT_BOOT
+legacy_8254_timer          0x20 LOCK_AT_BOOT
+debug_level                0x20 LOCK_AT_BOOT
+serial_console             0x20 LOCK_AT_BOOT
+options 44: LOCK_AT_BOOT 35, READONLY 9, neither 0

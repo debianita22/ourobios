@@ -267,3 +267,32 @@ again.
 
 Built by the CI; EDK II's PatchCheck passes. Not run: it needs a boot
 option that returns and someone at the setup, the owner's row.
+
+## rc3 on the machine
+
+v1.7.0-rc3 (`f9dedc6`: rc2 with patch 0284, `edk2/0062` and the W541's
+patches 0291-0298) as a capsule from rc2, 2026-11-11, **with the lock
+of every option armed** (LOCK-05): slot B over rc1, rc2 kept in slot A,
+both protections on, no guest running. Files in [rc3](rc3).
+
+| ID | Result | Notes |
+|---|---|---|
+| LOCK-05, UPD-02 | PASS | the capsule staged and written with rc2's lock armed; rc3 from slot B, *ultimo: v1.7.0-rc3, riuscito*; the only new live variable is the capsule's result (`Capsule001F`), written by the payload before the arm |
+| 0284 | PASS | the CFR record of the live coreboot table ([rc3/cfrflags.py](rc3/cfrflags.py), [rc3/cfrflags-rc3.txt](rc3/cfrflags-rc3.txt)): the 35 options that the setup can change have `CFR_OPTFLAG_LOCK_AT_BOOT`; the 9 others are the read-only rows of information (volatile) |
+| LOCK-01 | PASS | `OptionLockStatus` `06 00 00 00` and eight zeros; ramstage: *option lock for every setup option* |
+| LOCK-02 | PASS | 0.031 s a write, 4.9 ms an SMI, with 132 records at the start; 0.059 s after three resumes and the tests (363 records) |
+| LOCK-03 | PASS | a boot entry created and deleted, the entries as before; the test's variable created, changed, deleted |
+| LOCK-04 | PASS | three resumes, `suspend_stats/fail` 0; the lock armed, PR0 and PR1 back, LOCK-03 and the twenty writes again |
+| LOCK-06 | PASS | the 36 options before the capsule and at the end: the same, name by name |
+| LOCK-07 | PASS | report 22 PASS at the first boot, 24 PASS and 3 INFO with a copy of the flash at the end (the third INFO the ME's wait after a resume); 10.80 s to the payload, FspMemoryInit 0.25 s |
+| LOCK-08 | PASS | fwts 43 passed, 0 failed; chipsec as on rc2 |
+| LOCK-09 | as rc2 | not repeated: nothing of the store's handling changed since rc2 |
+
+What only someone at the setup can see, for the owner: an option
+changed before any boot is kept after a restart (the variable driver's
+rules of 0284 must not lock before ReadyToBoot), and the message of
+`edk2/0062` in the setup opened again after a boot option that
+returned. From the OS the variable driver's lock cannot be tried: the
+options are boot-service variables, invisible to it, and the only one
+with the runtime attribute (`me_state_counter`) would be a setup option
+changed from the OS, which the rules of the run forbid.

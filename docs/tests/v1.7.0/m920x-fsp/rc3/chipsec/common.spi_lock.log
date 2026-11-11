@@ -1,0 +1,63 @@
+
+################################################################
+##                                                            ##
+##  CHIPSEC: Platform Hardware Security Assessment Framework  ##
+##                                                            ##
+################################################################
+[CHIPSEC] Version  : 1.13.16
+[CHIPSEC] Arguments: -m common.spi_lock
+
+
+[CHIPSEC] OS      : Linux 7.0.14-15-pve #1 SMP PREEMPT_DYNAMIC PMX 7.0.14-15 (2026-08-26T14:21Z) x86_64
+[CHIPSEC] Python  : 3.13.5 (64-bit) - Enabled GIL
+[CHIPSEC] Helper  : LinuxHelper (/root/chipsec-venv/lib/python3.13/site-packages/chipsec/helper/linux/chipsec.ko)
+[CHIPSEC] Platform: Desktop 8th Generation Core Processor (Coffeelake S 4 Cores)
+[CHIPSEC]    CPUID: 906EB
+[CHIPSEC]      VID: 8086
+[CHIPSEC]      DID: 3E1F
+[CHIPSEC]      RID: 08
+[CHIPSEC] PCH     : Intel Q370 (300 series) PCH
+[CHIPSEC]      VID: 8086
+[CHIPSEC]      DID: A306
+[CHIPSEC]      RID: 10
+
+ 
+[+] loaded chipsec.modules.common.spi_lock
+[*] running loaded modules ..
+
+[*] Running module: chipsec.modules.common.spi_lock
+[*] Metadata tags: ['OPENSOURCE', 'IA', 'COMMON', 'SPI_LOCK']
+[x][ =======================================================================
+[x][ Module: SPI Flash Controller Configuration Locks
+[x][ =======================================================================
+[*] HSFS = 0x0004F801 << Hardware Sequencing Flash Status Register (SPIBAR + 0x4)
+    [00] FDONE            = 1 << Flash Cycle Done 
+    [01] FCERR            = 0 << Flash Cycle Error 
+    [02] AEL              = 0 << Access Error Log 
+    [03] BERASE           = 0 << Block/Sector Erase Size 
+    [05] SCIP             = 0 << SPI cycle in progress 
+    [11] WRSDIS           = 1 << Write status disable 
+    [12] PR34LKD          = 1 << PRR3 PRR4 Lock-Down 
+    [13] FDOPSS           = 1 << Flash Descriptor Override Pin-Strap Status 
+    [14] FDV              = 1 << Flash Descriptor Valid 
+    [15] FLOCKDN          = 1 << Flash Configuration Lock-Down 
+    [16] FGO              = 0 << Flash cycle go 
+    [17] FCYCLE           = 2 << Flash Cycle Type 
+    [21] WET              = 0 << Write Enable Type 
+    [24] FDBC             = 0 << Flash Data Byte Count 
+    [31] FSMIE            = 0 << Flash SPI SMI# Enable 
+[+] SPI write status disable set.
+[+] SPI Flash Controller configuration is locked
+[+] PASSED: SPI Flash Controller locked correctly.
+
+[CHIPSEC] ***************************  SUMMARY  ***************************
+[CHIPSEC] Time elapsed            0.002
+[CHIPSEC] Modules failed to run   0:
+[CHIPSEC] Modules passed          1:
+[+] PASSED: chipsec.modules.common.spi_lock
+[CHIPSEC] Modules information     0:
+[CHIPSEC] Modules failed          0:
+[CHIPSEC] Modules with warnings   0:
+[CHIPSEC] Modules not applicable  0:
+[CHIPSEC] Modules total           1
+[CHIPSEC] *****************************************************************
