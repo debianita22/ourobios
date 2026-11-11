@@ -273,3 +273,11 @@
 0279-mb-lenovo-haswell-Put-the-memory-profile-in-the-setu.patch
 0280-nb-intel-haswell-native_raminit-Centre-the-write-Vre.patch
 0290-nb-intel-haswell-native_raminit-Centre-the-command-V.patch
+0291-Haswell-NRI-Extend-support-for-margin-parameters.patch
+0292-Haswell-NRI-Add-library-to-measure-margins-BER.patch
+0293-Haswell-NRI-Add-Retrain-Margin-Check.patch
+0294-Haswell-NRI-Add-function-to-get-per-bit-margins.patch
+0295-Haswell-NRI-Implement-2D-read-write-timing-training.patch
+0296-nb-intel-haswell-native_raminit-Let-the-margin-searc.patch
+0297-nb-intel-haswell-native_raminit-Options-for-the-marg.patch
+0298-nb-intel-haswell-native_raminit-Shorten-tWRRD-betwee.patch

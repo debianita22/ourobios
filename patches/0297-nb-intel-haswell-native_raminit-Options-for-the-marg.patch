@@ -1,0 +1,145 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 11:38:44 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: Options for the margin check
+ and the 2D timing
+
+The retrain margin check and the 2D centring of the read and write
+timing ran in every training. Put each behind an option, off by
+default: HASWELL_NRI_MARGIN_CHECK, which measures and logs the margins
+of every rank and warns about those below the retrain limits, and
+HASWELL_NRI_2D_TIMING.
+
+The margin check only reports, unless HASWELL_NRI_MARGIN_CHECK_RETRAIN
+says that margins below the limits make the training run again: how
+the margins of a board stand against the limits is to be seen first,
+and the code that ran the training again on its status was a TODO.
+With that option the training runs again once, without the
+optimisations, as after a failed step or memory test, and there the
+check only reports.
+
+The 2D centring is left out of the training that is done again after
+a failure, as the other steps that come after the basic training.
+
+TEST=Build of the ThinkPad W541 with the native RAM init, each option
+on and off.
+
+Change-Id: I449d92f51913f5b9659c51912ee65463552acaf0
+---
+ src/northbridge/intel/haswell/Kconfig         | 26 +++++++++++++++++++
+ .../native_raminit/retrain_margin_check.c     | 15 +++++++++++
+ .../haswell/native_raminit/train_2d_margins.c | 19 ++++++++++++++
+ 3 files changed, 60 insertions(+)
+
+diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
+index 9c2ad84e33..3cea56aa76 100644
+--- a/src/northbridge/intel/haswell/Kconfig
++++ b/src/northbridge/intel/haswell/Kconfig
+@@ -51,6 +51,32 @@ config HASWELL_NRI_COMMAND_VREF
+ 	  values that pass. Best with HASWELL_NRI_MEMORY_TEST, which trains
+ 	  again without this when the memory test fails.
+ 
++config HASWELL_NRI_MARGIN_CHECK
++	bool "Measure the read and write margins after training"
++	depends on USE_NATIVE_RAMINIT
++	help
++	  After the training, measure the read and write margins of every
++	  rank, in time and in voltage, and log them (the retrain margin
++	  check), with a warning for those below the retrain limits. It
++	  takes one to two seconds in a boot that trains.
++
++config HASWELL_NRI_MARGIN_CHECK_RETRAIN
++	bool "Train again when the margins are below the retrain limits"
++	depends on HASWELL_NRI_MARGIN_CHECK
++	help
++	  Margins below the retrain limits make the training run again,
++	  once, without its optimisations, where they are only logged.
++
++config HASWELL_NRI_2D_TIMING
++	bool "Centre the read and write timing in two dimensions"
++	depends on USE_NATIVE_RAMINIT
++	help
++	  After the command training, centre the write and the read timing
++	  again at several reference voltages, weighted by the height and
++	  the width of the eye, with the per-bit deskew. Not run in the
++	  training that is done again after a failure. Best with
++	  HASWELL_NRI_MEMORY_TEST and HASWELL_NRI_MARGIN_CHECK.
++
+ config HASWELL_NRI_WRITE_VREF
+ 	bool "Centre the write Vref of the DIMMs after training"
+ 	depends on USE_NATIVE_RAMINIT
+diff --git a/src/northbridge/intel/haswell/native_raminit/retrain_margin_check.c b/src/northbridge/intel/haswell/native_raminit/retrain_margin_check.c
+index 9eb22357a7..7b79078405 100644
+--- a/src/northbridge/intel/haswell/native_raminit/retrain_margin_check.c
++++ b/src/northbridge/intel/haswell/native_raminit/retrain_margin_check.c
+@@ -97,6 +97,9 @@ enum nri_status retrain_margin_check(struct sysinfo *ctrl)
+ 			.dq_pat     = BASIC_VA,
+ 		},
+ 	};
++	if (!CONFIG(HASWELL_NRI_MARGIN_CHECK))
++		return NRI_STATUS_SUCCESS;
++
+ 	const uint8_t loopcount = 17;
+ 	const bool stop_on_first_error = false;
+ 	setup_io_test_basic_va(ctrl, ctrl->chanmap, loopcount, NSOE);
+@@ -180,6 +183,18 @@ enum nri_status retrain_margin_check(struct sysinfo *ctrl)
+ 		return NRI_STATUS_SUCCESS;
+ 
+ 	printk(BIOS_ERR, "***** Margin limit check failed! *****\n");
++
++	/*
++	 * Only a report unless asked otherwise: how the margins of a board
++	 * stand against these limits is to be seen first. And the training that
++	 * is done again after a failure runs without the optimisations: its
++	 * margins are what the training gives, with nothing left to leave out.
++	 */
++	if (!CONFIG(HASWELL_NRI_MARGIN_CHECK_RETRAIN) || ctrl->no_latency_optimisation) {
++		printk(BIOS_WARNING, "Margins below the retrain limits, training kept\n");
++		return NRI_STATUS_SUCCESS;
++	}
++
+ 	printk(RMC_DEBUG, "New limits:\nParam\tUPM\tPWR\n");
+ 	for (unsigned int test = 0; test < ARRAY_SIZE(test_list); test++) {
+ 		const enum margin_param param = test_list[test].param;
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_2d_margins.c b/src/northbridge/intel/haswell/native_raminit/train_2d_margins.c
+index 3f05ddbb04..979e3e0f10 100644
+--- a/src/northbridge/intel/haswell/native_raminit/train_2d_margins.c
++++ b/src/northbridge/intel/haswell/native_raminit/train_2d_margins.c
+@@ -559,8 +559,24 @@ void data_time_centering_2d(
+ 	change_1d_margin_multicast(ctrl, param_v, 0, 0, false, REG_FILE_USE_CURRENT);
+ }
+ 
++/* Not in the training that is done again after a failure */
++static bool skip_2d_timing(const struct sysinfo *ctrl)
++{
++	if (!CONFIG(HASWELL_NRI_2D_TIMING))
++		return true;
++
++	if (ctrl->no_latency_optimisation) {
++		printk(BIOS_INFO, "2D timing centring left out\n");
++		return true;
++	}
++	return false;
++}
++
+ enum nri_status train_read_timing_centering_2d(struct sysinfo *ctrl)
+ {
++	if (skip_2d_timing(ctrl))
++		return NRI_STATUS_SUCCESS;
++
+ 	const uint8_t loopcount = 15;
+ 
+ 	bool en_per_bit;
+@@ -605,6 +621,9 @@ enum nri_status train_read_timing_centering_2d(struct sysinfo *ctrl)
+ 
+ enum nri_status train_write_timing_centering_2d(struct sysinfo *ctrl)
+ {
++	if (skip_2d_timing(ctrl))
++		return NRI_STATUS_SUCCESS;
++
+ 	const uint8_t loopcount = 15;
+ 
+ 	bool en_per_bit;
+-- 
+2.56.0
+

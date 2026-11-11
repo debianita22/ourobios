@@ -60,8 +60,23 @@ modules (2026-11-10,
   the values that pass, unless their range is not closed on both
   sides, is narrower than 20 steps, or the test does not pass at the
   centre with the reference 8 steps to each side. `sudo cbmem -1 |
-  grep 'CMDV:'` has the range. **Not tried on a machine**: MEM-15 of
-  [docs/testing.md](docs/testing.md).
+  grep 'CMDV:'` has the range. On the W541 with rc2: -5, and -4 at a
+  second training, in a range of 70 steps (MEM-15).
+- **W541 (`nri`): the write to read turnaround between ranks** (patch
+  0298): 4 clocks with the native RAM init, 3 with `mrc.bin`, the one
+  turnaround that differed. After the training, a test that writes one
+  rank and reads another tries it one clock shorter each time; it
+  becomes 3 only if 3 and 2 pass and a shorter one fails. **Not tried on
+  a machine yet** (MEM-16).
+- **W541 (`nri`): the margins of the memory in the log** (patches
+  0291-0297): after the training, how far the read and the write timing
+  and voltage of every rank can move before errors, with a warning below
+  the retrain limits of the MRC. A report, 1 to 2 s in a boot that
+  trains. It comes from the upstream author's code, which he put on
+  Gerrit as work in progress in these days (CB:97117 to 97267), with a
+  fix for a search that never ended there; his 2D centring of the read
+  and write timing is built and off, for a candidate of its own. **Not
+  tried on a machine yet** (MEM-17).
 - **W541 (`nri`): the lines about an XMP profile are in the log of a
   boot that trains** (patch 0278, from rc2): such a boot overflows the
   console of romstage and loses its start, with the lines that say a

@@ -1,0 +1,172 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Wed, 11 Nov 2026 11:36:03 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: Let the margin searches end
+
+get_ber_margin_ch() never returned for a parameter other than the
+command Vref of both channels: the check that every channel has its
+two passing and two failing points came after an "if (!per_mc)
+continue", so only the per-controller search reached it, and the
+retrain margin check hung in its first test. Do the per-controller
+update in its own block and let every search reach the check.
+
+The same function started each search from the larger of the last
+margin and the largest one, where get_ber_margin_byte() takes the
+smaller: start within the range.
+
+Bound the three searches of the file: each walks one point at a time
+within the range of its parameter, so one that tests more than twice
+the range of points has a bug, and says so instead of hanging the
+boot.
+
+Drop two variables that were set and never read, on which the build
+fails with -Werror=unused-but-set-variable.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: I60b3dbb97ce689e7d30f4c0d99bcb59536c54b06
+---
+ .../haswell/native_raminit/get_ber_margin.c   | 71 +++++++++++++------
+ 1 file changed, 48 insertions(+), 23 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/native_raminit/get_ber_margin.c b/src/northbridge/intel/haswell/native_raminit/get_ber_margin.c
+index b581944004..302aa69db7 100644
+--- a/src/northbridge/intel/haswell/native_raminit/get_ber_margin.c
++++ b/src/northbridge/intel/haswell/native_raminit/get_ber_margin.c
+@@ -15,6 +15,22 @@
+ #define BER_TARGET		4
+ #define BER_LOG_TARGET		7 /* 10 * log8(BER_TARGET) */
+ 
++/*
++ * Each search below walks one point at a time, up and then down or the other
++ * way round, within a margin of max_margin: twice the range and some more is
++ * longer than any search that ends. One that does not is a bug, and must not
++ * hang the boot.
++ */
++static bool search_overran(const char *const func, uint32_t *const points,
++			   const uint8_t max_margin)
++{
++	if (++(*points) <= 2 * (uint32_t)max_margin + 16)
++		return false;
++
++	printk(BIOS_ERR, "%s: no end after %u points, giving up\n", func, *points);
++	return true;
++}
++
+ static uint32_t get_reut_errors(const uint8_t channel, const uint8_t byte)
+ {
+ 	return mchbar_read32(REUT_ch_ERR_COUNTER_STATUS_x(channel, byte)) & 0x7fffff;
+@@ -153,7 +169,11 @@ static void get_margin_bit_sign(
+ 	 * Search algorithm:
+ 	 * Walk up until everybody fails. Then walk down until everybody passes.
+ 	 */
++	uint32_t points = 0;
+ 	while (!is_everyone_failing(ctrl, chanmask, one_pass, one_fail)) {
++		if (search_overran(__func__, &points, max_margin))
++			break;
++
+ 		mchbar_write32(REUT_GLOBAL_CTL, (union reut_seq_ctl_reg) {
+ 			.clear_errors = 1,
+ 		}.raw);
+@@ -198,8 +218,6 @@ static void get_margin_bit_sign(
+ 				continue;
+ 
+ 			const union raw_bitlane_errors raw_errors = get_bitlane_errors(channel);
+-			uint8_t ch_pass = 0xff;
+-			uint8_t ch_fail = 0xff;
+ 			for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
+ 				const uint8_t err_byte = raw_errors.per_byte[byte];
+ 				print_per_bit_reg(ctrl, param, channel, rank, byte);
+@@ -250,8 +268,6 @@ static void get_margin_bit_sign(
+ 				}
+ 
+ 				/* Decide what to test next */
+-				ch_pass &= *o_pass;
+-				ch_fail &= *o_fail;
+ 				for (uint8_t bit = 0; bit < NUM_BITS; bit++) {
+ 					if (*o_pass & *o_fail & BIT(bit)) {
+ 						/* Bit is done, nothing to do */
+@@ -651,7 +667,11 @@ static void get_ber_margin_byte_sign(
+ 	 *    Return as needed to hit a second failing point
+ 	 * Keep testing until all ch/bytes find 2 passes and 2 fails
+ 	 */
++	uint32_t points = 0;
+ 	while (true) {
++		if (search_overran(__func__, &points, max_margin))
++			break;
++
+ 		mchbar_write32(REUT_GLOBAL_CTL, (union reut_seq_ctl_reg) {
+ 			.clear_errors = 1,
+ 		}.raw);
+@@ -829,7 +849,7 @@ static void get_ber_margin_ch_sign(
+ 			}
+ 		}
+ 		uint32_t *margin = &margin_ch[result][rank][channel][0].m[sign];
+-		*margin = MAX(*margin / 10, byte_max[channel]);
++		*margin = MIN(*margin / 10, byte_max[channel]);
+ 		if (per_mc) {
+ 			uint32_t *m_ch = &margin_ch[result][rank][0][0].m[sign];
+ 			*m_ch = MIN(*m_ch, *margin);
+@@ -879,7 +899,11 @@ static void get_ber_margin_ch_sign(
+ 	 *    Return as needed to hit a second failing point
+ 	 * Keep testing until all ch/bytes find 2 passes and 2 fails
+ 	 */
++	uint32_t points = 0;
+ 	while (true) {
++		if (search_overran(__func__, &points, max_margin))
++			break;
++
+ 		mchbar_write32(REUT_GLOBAL_CTL, (union reut_seq_ctl_reg) {
+ 			.clear_errors = 1,
+ 		}.raw);
+@@ -955,28 +979,29 @@ static void get_ber_margin_ch_sign(
+ 					*margin = ++max_tested[channel];
+ 			}
+ 		}
+-		if (!per_mc)
+-			continue;
++		if (per_mc) {
++			uint32_t *mgn = &margin_ch[result][rank][0][0].m[sign];
++			const uint16_t two_pass_mc = two_pass[0] & two_pass[1];
++			const uint16_t two_fail_mc = two_fail[0] & two_fail[1];
++			if (two_pass_mc == done_mask) {
++				if (two_fail_mc == done_mask)
++					break;
+ 
+-		uint32_t *mgn = &margin_ch[result][rank][0][0].m[sign];
+-		const uint16_t two_pass_mc = two_pass[0] & two_pass[1];
+-		const uint16_t two_fail_mc = two_fail[0] & two_fail[1];
+-		if (two_pass_mc == done_mask) {
+-			if (two_fail_mc == done_mask)
+-				break;
++				*mgn = ++max_tested[0];
++			} else {
++				*mgn = --min_tested[0];
++			}
++			for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++				if (!(chanmask & BIT(channel)))
++					continue;
+ 
+-			*mgn = ++max_tested[0];
+-		} else {
+-			*mgn = --min_tested[0];
++				margin_ch[result][rank][channel][0].m[sign] = *mgn;
++				min_tested[channel] = min_tested[0];
++				max_tested[channel] = max_tested[0];
++			}
+ 		}
+-		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
+-			if (!(chanmask & BIT(channel)))
+-				continue;
+ 
+-			margin_ch[result][rank][channel][0].m[sign] = *mgn;
+-			min_tested[channel] = min_tested[0];
+-			max_tested[channel] = max_tested[0];
+-		}
++		/* Every channel has two passing and two failing points */
+ 		bool done = true;
+ 		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
+ 			if ((two_pass[channel] & two_fail[channel]) != done_mask) {
+-- 
+2.56.0
+
