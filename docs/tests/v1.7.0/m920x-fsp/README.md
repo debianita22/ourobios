@@ -308,3 +308,24 @@ fails), `cfrflags.py` (the flags of the options in the live CFR record,
 from `cbmem -r 43425442`). They write only the test's own variable, the
 boot entries and `Timeout`, through the UEFI variable services; none
 sends SMMSTORE commands.
+
+## rc4 on the machine
+
+v1.7.0-rc4 (`ab61309`: rc3 with the W541's patches 0299-0300 and
+changes of `hw-report.py`; nothing of the option lock changed) as a
+capsule from rc3 with the lock armed, 2026-11-11: slot A over rc2, rc3
+kept in slot B, both protections on. A regression run. Files in
+[rc4](rc4).
+
+| ID | Result | Notes |
+|---|---|---|
+| LOCK-05, UPD-02 | PASS | staged and written with rc3's lock armed; rc4 from slot A, *ultimo: v1.7.0-rc4, riuscito*; the only new live variable is the capsule's result (`Capsule0020`) |
+| LOCK-01, 0284 | PASS | armed for every option; the live CFR record: 35 options with `CFR_OPTFLAG_LOCK_AT_BOOT`, 9 read-only |
+| LOCK-02 | PASS | 0.063 s a write (10 ms an SMI) with 363 records at the start; 0.091 s after the tests and three resumes (592 records): the time follows the dead records, as on rc2 and rc3 |
+| LOCK-03, LOCK-04 | PASS | a boot entry and the test's variable; three resumes, the lock armed, PR0 and PR1 back, the writes work |
+| LOCK-06 | PASS | the 36 options before the capsule and at the end: the same |
+| LOCK-07, LOCK-08 | PASS | report 22 PASS, 24 PASS and 3 INFO with a copy of the flash (the ME's wait after a resume, PCI-09, ME-01 from SMBIOS after S3); 10.78 s to the payload, FspMemoryInit 0.25 s; fwts 43 passed, 0 failed; chipsec as before |
+
+The store has 104 KiB free of 192 after three candidates and their
+tests: the next reclaim, at the start of the payload when less than one
+variable fits, is still far.

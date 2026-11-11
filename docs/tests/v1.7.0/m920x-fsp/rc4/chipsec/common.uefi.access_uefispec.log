@@ -1,0 +1,132 @@
+
+################################################################
+##                                                            ##
+##  CHIPSEC: Platform Hardware Security Assessment Framework  ##
+##                                                            ##
+################################################################
+[CHIPSEC] Version  : 1.13.16
+[CHIPSEC] Arguments: -m common.uefi.access_uefispec
+
+
+[CHIPSEC] OS      : Linux 7.0.14-15-pve #1 SMP PREEMPT_DYNAMIC PMX 7.0.14-15 (2026-08-26T14:21Z) x86_64
+[CHIPSEC] Python  : 3.13.5 (64-bit) - Enabled GIL
+[CHIPSEC] Helper  : LinuxHelper (/root/chipsec-venv/lib/python3.13/site-packages/chipsec/helper/linux/chipsec.ko)
+[CHIPSEC] Platform: Desktop 8th Generation Core Processor (Coffeelake S 4 Cores)
+[CHIPSEC]    CPUID: 906EB
+[CHIPSEC]      VID: 8086
+[CHIPSEC]      DID: 3E1F
+[CHIPSEC]      RID: 08
+[CHIPSEC] PCH     : Intel Q370 (300 series) PCH
+[CHIPSEC]      VID: 8086
+[CHIPSEC]      DID: A306
+[CHIPSEC]      RID: 10
+
+ 
+[+] loaded chipsec.modules.common.uefi.access_uefispec
+[*] running loaded modules ..
+
+[*] Running module: chipsec.modules.common.uefi.access_uefispec
+[*] Metadata tags: ['OPENSOURCE', 'IA', 'COMMON', 'UEFI', 'ACCESS_UEFISPEC']
+[x][ =======================================================================
+[x][ Module: Access Control of EFI Variables
+[x][ =======================================================================
+[*] Testing UEFI variables ..
+[*] Variable MemoryOverwriteRequestControl (NV+BS+RT) Guid e20939be-32d4-41be-a150-897f85d49829 Size 0x1 
+[*] Variable MTC (NV+BS+RT) Guid eb704011-1402-11d3-8e77-00a0c969723b Size 0x4 
+[*] Variable CapsuleLast (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x16 
+[*] Variable Capsule0020 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable OsIndications (NV+BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x8 
+[*] Variable Timeout (NV+BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x2 
+[*] Variable BootOrder (NV+BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0xa 
+[*] Variable Capsule001F (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable VarErrorFlag (NV+BS+RT) Guid 04b37fe8-f6ae-480b-bdd5-37d98c5e89aa Size 0x1 
+[*] Variable Capsule001E (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule001D (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule001C (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule001B (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule001A (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0019 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0018 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0017 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0016 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0015 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable RTCALARM (NV+BS+RT) Guid 378d7b65-8da9-4773-b6e4-a47826a833e1 Size 0x10 
+[*] Variable certdb (NV+BS+RT+TBAWS) Guid d9bee56e-75dc-49d9-b4d7-b534210f637a Size 0x4 
+[*] Variable Capsule0014 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0013 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0012 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0011 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0010 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule000F (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule000E (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule000D (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule000C (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule000B (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule000A (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0009 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0008 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0007 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0006 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0005 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0004 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0003 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0002 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable MemoryOverwriteRequestControlLock (NV+BS+RT) Guid bb983ccf-151d-40e1-a07b-4a17be168292 Size 0x1 
+[*] Variable Capsule0001 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable Capsule0000 (NV+BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x48 
+[*] Variable me_state_counter (NV+BS+RT) Guid ceae4c1d-335b-4685-a4a0-fc4a94eea085 Size 0x4 
+[*] Variable Boot0005 (NV+BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x7a 
+[*] Variable Boot0004 (NV+BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x5a 
+[*] Variable Boot0003 (NV+BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x56 
+[*] Variable Boot0001 (NV+BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x86 
+[*] Variable ConIn (NV+BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x31 
+[*] Variable ConOut (NV+BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x1e 
+[*] Variable Key0001 (NV+BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0xe 
+[*] Variable Key0000 (NV+BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0xe 
+[*] Variable Lang (NV+BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x4 
+[*] Variable PlatformLang (NV+BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x3 
+[*] Variable HwErrRecSupport (NV+BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x2 
+[*] Variable Boot0000 (NV+BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x4a 
+[*] Variable BootSplashType (NV+BS+RT) Guid 8a7c3e21-4f5b-4d91-9c2e-1a3b5d7f8e90 Size 0x1 
+[*] Variable BootSplashEnable (NV+BS+RT) Guid 8a7c3e21-4f5b-4d91-9c2e-1a3b5d7f8e90 Size 0x1 
+[*] Variable PK (NV+BS+RT+TBAWS) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x627 
+[*] Variable KEK (NV+BS+RT+TBAWS) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0xbfa 
+[*] Variable db (NV+BS+RT+TBAWS) Guid d719b2cb-3d3a-4596-a3bc-dad00e67656f Size 0x1dd4 
+[*] Variable dbx (NV+BS+RT+TBAWS) Guid d719b2cb-3d3a-4596-a3bc-dad00e67656f Size 0x53a8 
+[*] Variable LoaderDevicePartUUID (BS+RT) Guid 4a67b082-0a4c-41cf-b6c7-440b29bb8c4f Size 0x4a 
+[*] Variable LoaderInfo (BS+RT) Guid 4a67b082-0a4c-41cf-b6c7-440b29bb8c4f Size 0x22 
+[*] Variable MokListTrustedRT (BS+RT) Guid 605dab50-e046-4300-abb6-3dd810dd8b23 Size 0x1 
+[*] Variable SbatLevelRT (BS+RT) Guid 605dab50-e046-4300-abb6-3dd810dd8b23 Size 0x12 
+[*] Variable MokListXRT (BS+RT) Guid 605dab50-e046-4300-abb6-3dd810dd8b23 Size 0x4c 
+[*] Variable MokListRT (BS+RT) Guid 605dab50-e046-4300-abb6-3dd810dd8b23 Size 0x69e 
+[*] Variable OptionLockStatus (BS+RT) Guid ceae4c1d-335b-4685-a4a0-fc4a94eea085 Size 0x8 
+[*] Variable BootCurrent (BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x2 
+[*] Variable PlatformRecovery0000 (BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x6c 
+[*] Variable PlatformLangCodes (BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x12 
+[*] Variable LangCodes (BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0xd 
+[*] Variable BootOptionSupport (BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x4 
+[*] Variable OsIndicationsSupported (BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x8 
+[*] Variable CapsuleMax (BS+RT) Guid 39b68c46-f7fb-441b-b6ec-16b0f69821f3 Size 0x16 
+[*] Variable dbxDefault (BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x53a8 
+[*] Variable dbDefault (BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x1dd4 
+[*] Variable KEKDefault (BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0xbfa 
+[*] Variable PKDefault (BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x627 
+[*] Variable VendorKeys (BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x1 
+[*] Variable certdbv (BS+RT+TBAWS) Guid d9bee56e-75dc-49d9-b4d7-b534210f637a Size 0x4 
+[*] Variable SecureBoot (BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x1 
+[*] Variable SignatureSupport (BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x60 
+[*] Variable SetupMode (BS+RT) Guid 8be4df61-93ca-11d2-aa0d-00e098032b8c Size 0x1 
+
+[+] PASSED: All checked EFI variables are protected according to spec.
+
+[CHIPSEC] ***************************  SUMMARY  ***************************
+[CHIPSEC] Time elapsed            0.007
+[CHIPSEC] Modules failed to run   0:
+[CHIPSEC] Modules passed          1:
+[+] PASSED: chipsec.modules.common.uefi.access_uefispec
+[CHIPSEC] Modules information     0:
+[CHIPSEC] Modules failed          0:
+[CHIPSEC] Modules with warnings   0:
+[CHIPSEC] Modules not applicable  0:
+[CHIPSEC] Modules total           1
+[CHIPSEC] *****************************************************************
