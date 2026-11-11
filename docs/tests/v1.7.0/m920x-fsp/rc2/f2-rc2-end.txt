@@ -1,0 +1,1 @@
+store 196536 bytes: used 47792, free 148716, next record at 0xbb14; records 112 {'valida': 107, 'cancellata': 5}; options 36

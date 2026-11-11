@@ -161,16 +161,60 @@ tests) and without it (5), and `efivars-test` (33).
 | the set unreadable at the arm | the lock of the two options, `SMMSTORE_RET_FAILURE`, the blocks past the store refused | `test_no_latch` |
 | the Kconfig off: another option changed; a security option turned off; one deleted | allowed; refused; allowed (it reads as its default) | `test_two_options` |
 
-The rows of the machine, to run on rc2:
+## rc2 on the machine
 
-| ID | Check | Expected |
+v1.7.0-rc2 (`01a3449`: patches 0281 to 0283, `edk2/0061`,
+`SMMSTORE_OPTION_LOCK_ALL`, with the W541's work of the same candidate)
+as a capsule from rc1, 2026-11-11: slot A, rc1 kept in slot B, both
+protections on, no guest running. Files in [rc2](rc2).
+
+| ID | Result | Notes |
 |---|---|---|
-| UPD-02 | rc2 as a capsule from rc1, slot A; rc1 kept in slot B | installed |
-| LOCK-01 | `OptionLockStatus`; `cbmem -1 \| grep -i "option lock"` | armed; ramstage: *option lock for every setup option* |
-| LOCK-02 | 20 writes of `Timeout`, `MSR_SMI_COUNT` around each | against F1 (0.285 s, 45 ms an SMI) |
-| LOCK-03 | a boot entry created and deleted; a variable of the test's GUID created, changed, deleted through efivarfs | each works, the entries as before |
-| LOCK-04 | three resumes, then LOCK-01 and LOCK-03 | the lock still armed, the writes work |
-| LOCK-05 | the next candidate as a capsule, with the lock armed | installed |
-| LOCK-06 | the 36 options before and after the run | the same, name by name |
-| LOCK-07, LOCK-08 | `hw-report.py`, `cbmem -t`; fwts, chipsec | the baseline of v1.6.3; no new failure |
-| LOCK-09 | a variable written until a write fails, a reboot, one more write, the variable deleted | how much a boot can write; after the reboot the write works and the space is back |
+| UPD-02 | PASS | signature valid, rc2 from slot A, *ultimo: v1.7.0-rc2, riuscito*; the training kept |
+| LOCK-01 | PASS | `OptionLockStatus` `06 00 00 00` and eight zeros: armed for the whole set (the arm answers an error when it falls back to the two options); ramstage: *SMMSTORE: option lock for every setup option, armed by the payload* |
+| LOCK-02 | PASS | 20 writes of `Timeout`: median **0.100 s**, 6 to 8 SMIs a write, **15 ms an SMI** (F1 on rc1: 0.285 s, 45 ms), with the store at 117 KiB used and 855 records; after three resumes 0.129 s. After the reclaim of LOCK-09 (48 KiB used, 112 records): **0.026 s, 4 ms an SMI** ([rc2/lock02-rc2.txt](rc2/lock02-rc2.txt), [rc2/lock02-rc2-after.txt](rc2/lock02-rc2-after.txt)) |
+| LOCK-03 | PASS | a boot entry created (`Boot0002`) and deleted, the entries as before; a variable of the test's GUID created, changed and deleted through efivarfs |
+| LOCK-04 | PASS | three `rtcwake -m mem -s 30`, `suspend_stats/fail` 0; then the lock armed, PR0 and PR1 back, LOCK-03 again and the twenty writes: all work (the set taken from the flash again after the resume) |
+| LOCK-05 | not run | needs the next candidate |
+| LOCK-06 | PASS | the 36 options from a copy of the flash before the capsule (rc1), before LOCK-09 and at the end: the same, name by name |
+| LOCK-07 | PASS | report 22 PASS at the first boot, 25 with a copy of the flash at the end ([rc2/hw-rc2-end.md](rc2/hw-rc2-end.md)); 10.75 s and 10.31 s to the payload (rc1: 10.43 s), FspMemoryInit 0.25 s |
+| LOCK-08 | PASS | fwts `acpitables mcfg wsmt uefirtvariable` 43 passed, 0 failed (its variable stress test runs with the lock armed); chipsec `bios_wp`, `spi_lock`, `smm`, `smrr`, `bios_ts`, `uefi.access_uefispec` PASSED, `spi_desc` FAILED by design |
+| LOCK-09 | PASS | below |
+
+**A header across the end of a block, on the machine (patch 0283).**
+Before LOCK-09 the records ended at 0x1ca0c. One write of the test's
+variable with 13698 bytes of data took them to 0x1ffec, 20 bytes before
+the block end at 0x20000; the next write (100 bytes) then has its
+60-byte header across that end, in two raw writes. It went through
+(0.160 s); in a copy of the flash the record at 0x1ffec is valid and
+coreboot's reader reads the store. Without 0283 the lock refuses the
+first piece and that write fails.
+
+**LOCK-09.** Then writes of 1000 bytes of the same variable until one
+failed: 55 went through (60280 bytes of records), the 56th failed with
+`ENOMEM` (`EFI_OUT_OF_RESOURCES`) with 5080 bytes free of 196536, the
+5 KiB that Linux keeps back; `efibootmgr -t` failed the same way. The
+runtime reclaim did not run: the working block has the 148 bytes of
+before, the spare area is erased, the store reads with coreboot's
+reader, the 36 options are there. From the 79 KiB free at the start of
+the test, a boot can write about 74 KiB of records before writes fail;
+after a reclaim, 148 KiB. After a reboot: 47792 bytes used, 148716 free,
+112 records (the reclaim at EndOfDxe of `edk2/0061`), the lock armed,
+`efibootmgr -t 3` and a write of the test's variable work; the variable
+deleted, the boot entries and `Timeout` as at the start, Secure Boot as
+it was (off).
+
+**Stage 1, closed.** With the erased tail no longer read, an SMI of an
+armed write costs what the walk of the records costs: 15 ms with 855
+records, 4 ms with 112. The payload reclaims only when the store is
+nearly full, so the number of dead records, and the time, grows between
+two reclaims: from 0.026 s to about 0.13 s a write. That is within
+"a few milliseconds an SMI of the flash write" after a reclaim and 3
+times better than v1.6.3 before one; step 2, the store in SMRAM, would
+take the rest and is not built: it needs 192 KiB of SMRAM and a copy
+kept in step, for 10 ms an SMI at most.
+
+Left for the owner: LOCK-05 with the next candidate; the rows of the
+setup (an option changed and kept, the setup after a boot option that
+came back, *Go back to*); VAR-01 with *BIOS Lock* off; the W541 with its
+lock unchanged, which rc2 also is.

@@ -1,0 +1,2 @@
+write 56 FAILED after 0.034 s: [Errno 12] Cannot allocate memory
+55 writes of 1000 bytes went through before one failed: 55000 bytes of data, 60280 of records
