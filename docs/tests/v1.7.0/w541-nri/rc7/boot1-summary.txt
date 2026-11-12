@@ -1,0 +1,93 @@
+# boot1 2026-11-12T08:37:29+01:00 boot_id=eb50503e-412a-4e64-89e5-bdab79b40b12 uptime=52.96
+versione:  v1.7.0-rc7, minima per una capsula v1.3.9
+ultimo:    v1.7.0-rc7, riuscito
+CMOS 0x7d=0xa0 0x7e=0xa0
+CMOS 0x7d=0xa0 0x7e=0xa0
+CMOS 0x7d=0xa0 0x7e=0xa0
+console overflow lines: 1
+[DEBUG]  ### Center read timing (2D) ###
+[INFO ]  TAT: C0 write to read, other rank: 3 (was 4)
+[INFO ]  TAT: C1 write to read, other rank: 3 (was 4)
+[ERROR]  ***** Margin limit check failed! *****
+[WARN ]  Margins below the retrain limits, training kept
+[INFO ]  Memory test passed
+[DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+[DEBUG]  MRC: cache data 'RW_MRC_CACHE' needs update.
+[DEBUG]  MRC: updated 'RW_MRC_CACHE'.
+[DEBUG]  Margin: RdT     WrT     RdV     WrV
+[DEBUG]          Lft Rgt Lft Rgt Low Hi  Low Hi
+[DEBUG]  C0R0:   19  18  19  20  28  32  29  29 
+[DEBUG]  C0R1:   19  19  19  20  29  31  28  28 
+[DEBUG]  C0R2:   20  20  21  22  38  36  41  35 
+[DEBUG]  C0R3:   21  20  21  21  37  35  37  39 
+
+[DEBUG]  C1R0:   12  12  17  16  18 -16  23  22 
+[DEBUG]  C1R1:   13  13  15  16 -15  20  22  21 
+[DEBUG]  C1R2:   16  17  17  18  29  28  25  34 
+[DEBUG]  C1R3:   16  16  17  18  25  31  24  32 
+
+[INFO ]  NRI summary:
+[INFO ]    OPT WrDS: C0 4 0 4 0 0 4 0 0 C1 0 -2 0 4 0 0 0 0
+[INFO ]    OPT TxEq: C0 3 3 3 3 3 3 3 3 C1 5 3 3 3 3 3 5 5
+[INFO ]    OPT RdOdt: C0 0 -4 -4 -4 -4 -4 -4 -2 C1 0 0 0 0 0 0 0 0
+[INFO ]    OPT RxBias: C0 3 5 3 3 3 3 5 3 C1 3 3 3 3 3 3 3 5
+[INFO ]    CMDV: scan -38 to 30, centre -4
+[INFO ]    CMDV: at -4 low 37.0 high 35.0
+[INFO ]    WRV C0: scan -24 to 29, centre 2
+[INFO ]    WRV C1: scan -21 to 23, centre 1
+[INFO ]    WRV C0: WrT -4 low 26.5 high 29.4
+[INFO ]    WRV C1: WrT -4 low 23.6 high 26.0
+[INFO ]    WRV C0: WrT +0 low 27.0 high 29.0
+[INFO ]    WRV C1: WrT +0 low 23.8 high 24.0
+[INFO ]    WRV C0: WrT +4 low 22.0 high 27.5
+[INFO ]    WRV C1: WrT +4 low 20.0 high 24.7
+[INFO ]    RDV C0: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    RDV C1: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    TAT C0: tWRRD_dr/dd 3 (was 4)
+[INFO ]    TAT C1: tWRRD_dr/dd 3 (was 4)
+[DEBUG]  Testing DIMM 0
+[DEBUG]  Testing DIMM 1
+[INFO ]  Testing the memory after training
+[INFO ]  Testing rank 0
+[INFO ]  Testing rank 1
+[INFO ]  Testing rank 2
+[INFO ]  Testing rank 3
+[INFO ]  Memory test passed
+[DEBUG]  Waiting for mc_init_done acknowledgement... DONE!
+[DEBUG]  memcfg DDR3 ref clock 133 MHz
+[DEBUG]  memcfg DDR3 clock 800 MHz
+[DEBUG]  memcfg channel assignment: A: 0, B: 1, C: 2
+[DEBUG]  memcfg channel[0] config (00662020):
+[DEBUG]     ECC inactive
+[DEBUG]     enhanced interleave mode on
+[DEBUG]     rank interleave on
+[DEBUG]     DIMMA 8192 MB width x8 or x32 dual rank, selected
+[DEBUG]     DIMMB 8192 MB width x8 or x32 dual rank
+[DEBUG]  memcfg channel[1] config (00662020):
+[DEBUG]     ECC inactive
+[DEBUG]     enhanced interleave mode on
+[DEBUG]     rank interleave on
+0
+failed to converge: 0
+2D: 8 weighted centres, 1 per-bit centrings, 1 passes
+  C0.R0 RxPerBit 7aaba778 9a76aa74 ba9b5565 9a44a967 565558a7 7666bbab 679baa76 75b99755
+  C0.R0 TxPerBit 6abaa787 9a86b967 aaaa5665 ab65ba67 79566aba 6465aaba 679a9b65 75bba965
+  C0.R1 RxPerBit 7bab9879 a975a864 ab8b6764 9a56b977 79756ab8 6565aaab 659a8965 85cb9777
+  C0.R1 TxPerBit 6bab7676 9a97aa95 a9ab4666 9a54ba76 59557ab9 7555baaa 679b9a67 84abb966
+  C0.R2 RxPerBit 6a7a8666 9a86a976 777a7665 7a66a877 69677aa8 8967ba9b 779bab77 87b9a887
+  C0.R2 TxPerBit 7bab779a 77768774 abab6978 7b67a999 6a876aba 6566989a 888a8a66 85989766
+  C0.R3 RxPerBit 7a797677 9b88aa87 989a6656 9a77a777 676679a6 65669899 98abbb77 96cbb799
+  C0.R3 TxPerBit 7a899989 9a98a997 879a5766 8b77ba98 68767ab8 6556989a 668a7977 95b9a878
+  C1.R0 RxPerBit 98a98998 8798998a 78797666 77777666 7797a867 77767898 a99ab9aa 8987999a
+  C1.R0 TxPerBit 66976697 869996a9 8a7a7868 767a9667 8699a989 77787996 79796579 997766ac
+  C1.R1 RxPerBit a8ba79a9 7776977a 99799977 89799677 77879767 7977989a 978aa79a a999a9bb
+  C1.R1 TxPerBit 97a88998 8998a7b9 799b7869 79697666 7797ba89 67777997 9a999789 96686499
+  C1.R2 RxPerBit 89a97aa7 6786777a 87577599 a758a6a9 a9a7a769 58796668 76aa75aa 7557a8ab
+  C1.R2 TxPerBit 8a996996 69a7997a a75797ab a767a6aa a9b9976a 6baa677a 66aa84b9 766799ac
+  C1.R3 RxPerBit 9acb6b99 6786776a b969b7aa 97569698 99a9977a 5a89769a 76aa86aa 7656a99b
+  C1.R3 TxPerBit 9ab97a96 7ab7798a 966795ab 865795a9 a997967a 7a9a689a 56aa8599 667999bb
+  tWRRD                         20/3/3    20/3/3
+   2:before RAM initialization                         475,953 (22,875)
+   3:after RAM initialization                          4,094,325 (3,618,372)
+Total Time: 4,991,142
+  VREF_ADJUST  vref_ca_ctrl=-5 vref_dq_ch1_ctrl=2 vref_dq_ch0_ctrl=4 en_dimm_vref_ca=1 en_dimm_vref_ch1=1 en_dimm_vref_ch0=1 hi_z_timer_ctrl=3 vccddq_hi_qnnn_h=0 ca_slow_bw=1 ch0_slow_bw=1 ch1_slow_bw=1

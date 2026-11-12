@@ -298,8 +298,43 @@ recomputed the offsets as differences of codes, clamped to their field.
 Patch 0307 moves the mean only when an offset is near the end of its
 field, which is what the move is for.
 
+## v1.7.0-rc7: the termination kept as trained (MEM-20, MEM-21)
+
+rc7 (`9d02341`: rc6 with patch 0307) as a capsule from rc6, 2026-11-12:
+slot B, over rc5; rc6 stays in slot A ([files](rc7/)). One training so
+far: the second and the third (the *XMP profile 1* and *SPD* visits)
+when the owner is at the machine.
+
+| ID | Result | Notes |
+|---|---|---|
+| UPD-01, UPD-02 | PASS | the capsule (`SHA256SUMS` OK, signature valid) written by the payload of rc6; rc7 from slot B |
+| MEM-21 | PASS of the fix | `DATA_COMP_1 rcomp_odt_up=8`, `disable_odt_static=0`, the read termination offsets as trained (channel 0: 0, -4 x6, -2; channel 1: all 0), drive -2 to +4, transmit equalisation 3 to 5 (`mrc.bin` 51-56: the same range), receiver bias 3 or 5. Against rc6 the choices of channel 1 differ (rc6: termination +2 and +4 on bytes 6 and 7): one more training to see whether they are measured or noise |
+| MEM-19 | PASS | `tWRRD 20/3/3` again |
+| MEM-20 | PASS, two read margins of channel 1 one step below | command Vref -5 (margins 37.0 / 35.0), write Vref 4 and 2 (margins at the three write timings within 2 steps of even); read margins back to rc5's best on channel 0 (RdT 18-21), the write voltage margins of both channels the widest yet (channel 1 21-34, rc5 15-33); C1R0 RdV high 16 and C1R1 RdV low 15, at and one below the retrain limit, the margin check only reports |
+| MEM-10 | PASS | one training, 3.62 s, then the cache (0.11 s) |
+| MEM-04 | PASS | `stress-ng --vm 4 --vm-bytes 75% --verify`, 30 minutes after a resume: 0 failed, no machine check; the same after a reboot, a cold boot and a resume |
+| FLASH-06, VAR-01 | PASS | `OptionLockStatus` armed; twenty writes of `Timeout`: median 0.153 s |
+| report | PASS but the known ones | [the first boot](rc7/hw-w541-nri-boot1.md): 19 PASS, BOOT-03 INFO (the margin report), no unknown line |
+
+| Rank | RdT left / right | WrT left / right | RdV low / high | WrV low / high |
+|---|---|---|---|---|
+| C0R0 | 19/18 | 19/20 | 28/32 | 29/29 |
+| C0R1 | 19/19 | 19/20 | 29/31 | 28/28 |
+| C0R2 | 20/20 | 21/22 | 38/36 | 41/35 |
+| C0R3 | 21/20 | 21/21 | 37/35 | 37/39 |
+| C1R0 | 12/12 | 17/16 | 18/**16** | 23/22 |
+| C1R1 | 13/13 | 15/16 | **15**/20 | 22/21 |
+| C1R2 | 16/17 | 17/18 | 29/28 | 25/34 |
+| C1R3 | 16/16 | 17/18 | 25/31 | 24/32 |
+
+Against rc5's three trainings: channel 0 as wide in the reads and wider
+in the writes; channel 1 wider in the writes on every rank, and its
+first DIMM (C1R0, C1R1) still the narrow one in the reads, as in rc5's
+first training. Whether that is still a spread between trainings is
+what the second and third trainings of rc7 are for.
+
 ## The machine after the run
 
-v1.7.0-rc6 in slot A, rc5 in slot B, with the training of its first boot;
+v1.7.0-rc7 in slot B, rc6 in slot A, with the training of its first boot;
 *Memory profile* on *SPD*, byte 0x7d
 `0xa0`; *BIOS Lock* and *Firmware protection* on; no helper left.

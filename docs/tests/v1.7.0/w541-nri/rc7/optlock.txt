@@ -1,0 +1,4 @@
+OptionLockStatus:  06 00 00 00 00 00 00 00 00 00 00 00
+Timeout before: Timeout: 3 seconds
+n=20 median=0.153 s worst=0.154 s best=0.152 s
+Timeout: 3 seconds
