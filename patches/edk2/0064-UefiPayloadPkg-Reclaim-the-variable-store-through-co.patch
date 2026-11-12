@@ -111,7 +111,7 @@ index d87fd6e31..a55b4b937 100644
    gEdkIIUsbEthProtocolGuid = { 0x8d8969cc, 0xfeb0, 0x4303, { 0xb2, 0x1a, 0x1f, 0x11, 0x6f, 0x38, 0x56, 0x43 } }
  
 diff --git a/MdeModulePkg/Universal/Variable/RuntimeDxe/Reclaim.c b/MdeModulePkg/Universal/Variable/RuntimeDxe/Reclaim.c
-index fe64d0a2b..8763c8d05 100644
+index fe64d0a2b..4aa38ada3 100644
 --- a/MdeModulePkg/Universal/Variable/RuntimeDxe/Reclaim.c
 +++ b/MdeModulePkg/Universal/Variable/RuntimeDxe/Reclaim.c
 @@ -9,6 +9,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
@@ -133,12 +133,12 @@ index fe64d0a2b..8763c8d05 100644
 +  // tolerant write at all.
 +  //
 +  if (mPlatformVariableReclaim != NULL) {
-+    Status = GetLbaAndOffsetByAddress (VariableBase, &VarLba, &VarOffset);
-+    if (EFI_ERROR (Status)) {
-+      return EFI_ABORTED;
-+    }
-+
-+    Status = mPlatformVariableReclaim (VarLba, VarOffset, VariableBuffer->Size, VariableBuffer);
++    //
++    // Not GetLbaAndOffsetByAddress(): it locates the FVB with boot services.
++    // The store follows the firmware volume header at the start of the FV
++    // (FtwNotificationEvent()), in the cache whose pointer is converted.
++    //
++    Status = mPlatformVariableReclaim (0, mNvFvHeaderCache->HeaderLength, VariableBuffer->Size, VariableBuffer);
 +    if (Status != EFI_UNSUPPORTED) {
 +      return Status;
 +    }

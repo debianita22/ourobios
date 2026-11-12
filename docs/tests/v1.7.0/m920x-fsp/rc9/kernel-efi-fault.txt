@@ -1,0 +1,102 @@
+[   69.714170] pve kernel: [Firmware Bug]: Page fault caused by firmware at PA: 0x44af4ad8
+[   69.714192] pve kernel: WARNING: arch/x86/platform/efi/quirks.c:797 at efi_crash_gracefully_on_page_fault+0x67/0xf0, CPU#1: kworker/u16:3/157
+[   69.716518] pve kernel: CPU: 1 UID: 0 PID: 157 Comm: kworker/u16:3 Tainted: P           O        7.0.14-15-pve #1 PREEMPT(lazy) 
+[   69.716538] pve kernel: Tainted: [P]=PROPRIETARY_MODULE, [O]=OOT_MODULE
+[   69.716558] pve kernel: Hardware name: LENOVO 10S2S00V00/ThinkCentre M920x Tiny, BIOS ouroBIOS-v1.7.0-rc9-m920x-fsp 11/11/2026
+[   69.716577] pve kernel: Workqueue: efi_rts_wq efi_call_rts
+[   69.716594] pve kernel: RIP: 0010:efi_crash_gracefully_on_page_fault+0x6a/0xf0
+[   69.716609] pve kernel: Code: 0f 00 00 76 08 48 3d f0 37 36 90 74 13 5b 41 5c 5d 31 c0 31 d2 31 c9 31 f6 31 ff c3 cc cc cc cc 48 8d 3d 29 0c 61 02 48 89 de <67> 48 0f b9 3a 83 3d 2a 77 d7 02 0a 0f 84 ba 36 e2 ff 41 f6 84 24
+[   69.716634] pve kernel: RSP: 0018:ffffd24b007d75c0 EFLAGS: 00010046
+[   69.716655] pve kernel: RAX: ffffffff903637f0 RBX: 0000000044af4ad8 RCX: ffffffff8d201268
+[   69.716678] pve kernel: RDX: 0000000000000000 RSI: 0000000044af4ad8 RDI: ffffffff8fbfcd00
+[   69.716696] pve kernel: RBP: ffffd24b007d75d0 R08: 0000000000000000 R09: 0000000000000000
+[   69.716713] pve kernel: R10: 0000000000000000 R11: 0000000000000000 R12: ffffd24b007d7718
+[   69.716731] pve kernel: R13: 0000000000000000 R14: 0000000000000000 R15: 0000000000000000
+[   69.716747] pve kernel: FS:  0000000000000000(0000) GS:ffff8e334458e000(0000) knlGS:0000000000000000
+[   69.716767] pve kernel: CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+[   69.716784] pve kernel: CR2: 0000000044af4ad8 CR3: 000000010034e003 CR4: 00000000003726f0
+[   69.716801] pve kernel: Call Trace:
+[   69.716816] pve kernel:  <TASK>
+[   69.716835] pve kernel:  page_fault_oops+0x6f/0x310
+[   69.716851] pve kernel:  ? __pfx_autoremove_wake_function+0x10/0x10
+[   69.716868] pve kernel:  do_user_addr_fault+0x4bf/0x820
+[   69.716884] pve kernel:  ? blk_mq_submit_bio+0x695/0x8c0
+[   69.716903] pve kernel:  exc_page_fault+0x81/0x1c0
+[   69.716920] pve kernel:  asm_exc_page_fault+0x27/0x30
+[   69.716935] pve kernel: RIP: 0010:0xfffffffefcbd14cd
+[   69.716950] pve kernel: Code: 41 55 4c 8d 4d c0 49 89 f5 41 54 49 89 fc 53 48 83 ec 50 48 89 55 c8 48 8d 15 2f d9 0b 00 50 48 8b 05 bf ad 0e 00 48 83 ec 20 <ff> 90 38 01 00 00 48 83 c4 30 48 85 c0 79 0f 49 bf 0e 00 00 00 00
+[   69.716966] pve kernel: RSP: 0018:ffffd24b007d77c0 EFLAGS: 00010286
+[   69.716982] pve kernel: RAX: 0000000044af49a0 RBX: fffffffeffe10048 RCX: 0000000000000002
+[   69.716998] pve kernel: RDX: fffffffefcc8edf0 RSI: 0000000000000000 RDI: fffffffeffe10048
+[   69.717039] pve kernel: RBP: ffffd24b007d7860 R08: 0000000000000000 R09: ffffd24b007d7820
+[   69.717056] pve kernel: R10: ffff8e2990a059e0 R11: fffffffeffb68070 R12: fffffffeffe10048
+[   69.717073] pve kernel: R13: 0000000000000000 R14: ffffd24b007d7870 R15: 0000000000000448
+[   69.717091] pve kernel:  ? irqentry_exit+0x34/0x710
+[   69.717112] pve kernel:  ? update_load_avg+0x79/0x230
+[   69.717126] pve kernel:  ? __efi_call+0x28/0x30
+[   69.717142] pve kernel:  ? efi_call_rts+0xa1/0x370
+[   69.717158] pve kernel:  ? process_one_work+0x1a9/0x3c0
+[   69.717176] pve kernel:  ? worker_thread+0x1b8/0x360
+[   69.717190] pve kernel:  ? __pfx_worker_thread+0x10/0x10
+[   69.717398] pve kernel:  ? kthread+0xf7/0x130
+[   69.717421] pve kernel:  ? __pfx_kthread+0x10/0x10
+[   69.717441] pve kernel:  ? ret_from_fork+0x2da/0x3a0
+[   69.717456] pve kernel:  ? __pfx_kthread+0x10/0x10
+[   69.717470] pve kernel:  ? ret_from_fork_asm+0x1a/0x30
+[   69.717484] pve kernel:  </TASK>
+[   69.717499] pve kernel: ---[ end trace 0000000000000000 ]---
+[   69.717516] pve kernel: efi: Froze efi_rts_wq and disabled EFI Runtime Services
+[   69.717532] pve kernel: ------------[ cut here ]------------
+[   69.717870] pve kernel: WARNING: drivers/firmware/efi/runtime-wrappers.c:346 at __efi_queue_work+0x11e/0x130, CPU#0: python3/1276
+[   69.718318] pve kernel: CPU: 0 UID: 0 PID: 1276 Comm: python3 Tainted: P        W  O        7.0.14-15-pve #1 PREEMPT(lazy) 
+[   69.718338] pve kernel: Tainted: [P]=PROPRIETARY_MODULE, [W]=WARN, [O]=OOT_MODULE
+[   69.718352] pve kernel: Hardware name: LENOVO 10S2S00V00/ThinkCentre M920x Tiny, BIOS ouroBIOS-v1.7.0-rc9-m920x-fsp 11/11/2026
+[   69.718364] pve kernel: RIP: 0010:__efi_queue_work+0x11e/0x130
+[   69.718385] pve kernel: Code: 27 cc 0b ff 48 c7 c7 18 38 36 90 e8 5c ac 39 00 48 8b 05 0d 6a f2 01 48 ba 15 00 00 00 00 00 00 80 48 39 d0 0f 85 4a ff ff ff <0f> 0b e9 43 ff ff ff 66 66 2e 0f 1f 84 00 00 00 00 00 90 90 90 90
+[   69.718403] pve kernel: RSP: 0018:ffffd24b083af7f8 EFLAGS: 00010246
+[   69.718418] pve kernel: RAX: 8000000000000015 RBX: ffff8e2990a04000 RCX: 0000000000000000
+[   69.718443] pve kernel: RDX: 8000000000000015 RSI: 0000000000000000 RDI: 0000000000000000
+[   69.718457] pve kernel: RBP: ffffd24b083af800 R08: 0000000000000000 R09: 0000000000000000
+[   69.718472] pve kernel: R10: 0000000000000000 R11: 0000000000000000 R12: 00000000000019e0
+[   69.718487] pve kernel: R13: 0000000000000007 R14: ffffd24b083af8d0 R15: ffffffff8e810e50
+[   69.718506] pve kernel: FS:  00007ea8e0483780(0000) GS:ffff8e334450e000(0000) knlGS:0000000000000000
+[   69.718524] pve kernel: CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+[   69.718539] pve kernel: CR2: 000072e5f0dd5000 CR3: 0000000117488001 CR4: 00000000003726f0
+[   69.718556] pve kernel: Call Trace:
+[   69.718570] pve kernel:  <TASK>
+[   69.718586] pve kernel:  virt_efi_set_variable+0x7a/0xd0
+[   69.718603] pve kernel:  ? virt_efi_query_variable_info+0xa6/0xe0
+[   69.718621] pve kernel:  efi_query_variable_store+0x120/0x220
+[   69.718640] pve kernel:  efivar_set_variable_locked+0xc0/0x110
+[   69.718654] pve kernel:  efivar_entry_set_get_size+0x97/0x110
+[   69.718674] pve kernel:  efivarfs_file_write+0x11b/0x1c0
+[   69.718691] pve kernel:  vfs_write+0xd4/0x490
+[   69.718706] pve kernel:  ? call_rcu+0x34/0x50
+[   69.718721] pve kernel:  ? __pfx_delayed_put_task_struct+0x10/0x10
+[   69.718738] pve kernel:  ksys_write+0x6f/0xf0
+[   69.718755] pve kernel:  __x64_sys_write+0x19/0x30
+[   69.718776] pve kernel:  x64_sys_call+0x22f/0x2390
+[   69.718789] pve kernel:  do_syscall_64+0x10b/0x14e0
+[   69.718807] pve kernel:  ? ima_file_check+0x7c/0xb0
+[   69.718827] pve kernel:  ? dput.part.0+0x39/0x110
+[   69.718846] pve kernel:  ? mntput+0x39/0x70
+[   69.718860] pve kernel:  ? terminate_walk+0xd0/0x120
+[   69.718875] pve kernel:  ? path_openat+0x534/0x13f0
+[   69.718887] pve kernel:  ? do_file_open+0xe0/0x1b0
+[   69.718902] pve kernel:  ? putname+0x41/0x90
+[   69.718920] pve kernel:  ? do_sys_openat2+0x9e/0xf0
+[   69.718936] pve kernel:  ? __x64_sys_openat+0x52/0xa0
+[   69.718951] pve kernel:  ? x64_sys_call+0x1f4c/0x2390
+[   69.718966] pve kernel:  ? do_syscall_64+0x148/0x14e0
+[   69.718983] pve kernel:  entry_SYSCALL_64_after_hwframe+0x76/0x7e
+[   69.718997] pve kernel: RIP: 0033:0x7ea8e05173a7
+[   69.719023] pve kernel: Code: 48 89 fa 4c 89 df e8 78 b3 00 00 8b 93 08 03 00 00 59 5e 48 83 f8 fc 74 1a 5b c3 0f 1f 84 00 00 00 00 00 48 8b 44 24 10 0f 05 <5b> c3 0f 1f 80 00 00 00 00 83 e2 39 83 fa 08 75 de e8 23 ff ff ff
+[   69.719037] pve kernel: RSP: 002b:00007ffcbad16d60 EFLAGS: 00000202 ORIG_RAX: 0000000000000001
+[   69.719056] pve kernel: RAX: ffffffffffffffda RBX: 00007ea8e0483780 RCX: 00007ea8e05173a7
+[   69.719071] pve kernel: RDX: 00000000000003ec RSI: 0000000019fa66f0 RDI: 0000000000000003
+[   69.719087] pve kernel: RBP: 00007ea8e0483700 R08: 0000000000000000 R09: 0000000000000000
+[   69.719102] pve kernel: R10: 0000000000000000 R11: 0000000000000202 R12: 0000000019fa66f0
+[   69.719121] pve kernel: R13: 0000000000000003 R14: 0000000000a84590 R15: 00007ea8e031d098
+[   69.719135] pve kernel:  </TASK>
+[   69.719150] pve kernel: ---[ end trace 0000000000000000 ]---
+[   69.719164] pve kernel: efi: EFI Runtime Services are disabled!

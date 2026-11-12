@@ -454,3 +454,39 @@ image refused, or the swap failed); and the checks of the handler read
 the store as the CPU maps it, as the locks do, the copy being read back
 through the writable device. The store of this machine was left with
 5.5 KiB free, which the next boot reclaims (`edk2/0061`).
+
+## rc9 on the machine
+
+v1.7.0-rc9 (`f43fafe`: rc8 with the notes of the reclaim and a status
+for each step) as a capsule from rc8 with the lock armed, 2026-11-12:
+slot A over rc7, rc8 kept in slot B. The capsule could not be staged at
+first: LOCK-11 on rc8 had left the store with 5.5 KiB free, and the
+capsule's variables need a reclaim, the very thing that failed; a plain
+reboot reclaimed at the start of the payload (`edk2/0061`), 145 KiB free,
+and the capsule went in. Files in [rc9](rc9).
+
+| ID | Result | Notes |
+|---|---|---|
+| LOCK-05, UPD-02 | PASS | rc9 from slot A, *riuscito*; coreboot log clean, `HstiTable` there |
+| LOCK-11 | **FAIL** | the 130th write of 1000 bytes failed with `EIO` at 5600 bytes free; no note in the commit block, the staging area erased |
+
+The kernel log has the cause ([kernel-efi-fault.txt](rc9/kernel-efi-fault.txt)):
+`[Firmware Bug]: Page fault caused by firmware at PA: 0x44af4ad8`, then
+*Froze efi_rts_wq and disabled EFI Runtime Services*, in the
+`set_variable` of the dummy variable that Linux writes when less than
+5 KiB would be left (`efi_query_variable_store()`, to make the firmware
+collect its garbage): every write after it fails with `EIO`, the runtime
+services being off. The firmware ran into a physical address in virtual
+mode. `edk2/0064` called `GetLbaAndOffsetByAddress()` before asking the
+platform to reclaim, and that function finds the FVB with
+`GetFvbInfoByAddress()`, which locates handles with the boot services:
+in the variable driver it only ever served the fault tolerant write, at
+boot. At runtime `gBS` is gone. The SMM side was never reached, which is
+why there was no note, and on rc8 the same. The `EIO` of rc8 was this
+same fault.
+
+Corrected in `edk2/0064`: the store's offset is the length of the
+firmware volume header in the variable driver's cache, whose pointer is
+converted at the switch to virtual mode, at block 0 of the FV, as
+`FtwNotificationEvent()` placed it. With the runtime services off for the
+rest of that boot, the next candidate is staged after a reboot.
