@@ -429,7 +429,11 @@ are those of the arm.
    (`CFR_OPTFLAG_LOCK_AT_BOOT`), and the message of the setup.
 4. **The W541**: the same Kconfig in its defconfigs, after FLASH-06 and
    the regressions there, with macOS (the NVRAM that OpenCore uses is
-   written through the same store).
+   written through the same store). Taken by the owner on 2026-11-12:
+   `SMMSTORE_OPTION_LOCK_ALL`, `SMMSTORE_RECLAIM` and
+   `DRIVERS_OPTION_CFR_LOCK_AT_BOOT` in both W541 defconfigs from
+   v1.7.0-rc11; the LOCK tests of docs/testing.md are for both boards,
+   and on a W541 with macOS, its NVRAM writes too.
 5. **The candidates** (rule 11), and when the branch goes to `next`.
 6. What stage 0 finds about the fault tolerant write, if it concerns
    the releases already out.

@@ -28,23 +28,31 @@ whose changes below are still to run on a machine.
   reclaim, which uses those blocks, is rare and fails safely. This closes
   the bypass, which every release with the lock has (v1.6.1 to v1.6.3):
   those are not corrected, the fix comes with v1.7.0.
-- **M920x: the option lock is for every setup option** (patch 0282,
+- **The option lock is for every setup option** (patch 0282,
   `SMMSTORE_OPTION_LOCK_ALL`): once the payload has armed it, a program
   of the OS can no longer write the variable store with the raw SMMSTORE
   commands so that coreboot reads another option at the next boot: a
   device turned off in the setup stays off, as *BIOS Lock* and
   *Firmware protection* stayed on. The variables of the OS (boot
   entries, the capsule variables) are written as before. One thing
-  changes for the OS: a variable write that needs a reclaim of a full
-  store fails until the next boot, which reclaims. The decisions are
-  unit tests of coreboot, which the CI now runs. The W541 keeps the lock
-  of the two security options.
+  changes for the OS: a write that needs a reclaim of a full store
+  takes about two seconds while coreboot checks and swaps the store
+  (below), and after four of them in a boot fails until the next boot.
+  The decisions are unit tests of coreboot, which the CI now runs. On
+  both boards (the W541 from rc11).
 - **M920x: the DDR4 refresh doubled when the memory is hot** (patch
   0285): FSP-M's `Refresh2X` on, for the hot range only, as JEDEC asks
   above 85 C; at normal temperatures nothing changes. The memory
   settings version goes up, so the first boot after the update trains
   the memory again (a few seconds more, once).
-- **M920x: the variable store is reclaimed while the lock is armed**
+- **W541: the lock of every setup option and the reclaim of the store**
+  (from rc11): the same `SMMSTORE_OPTION_LOCK_ALL`, `SMMSTORE_RECLAIM`
+  and `DRIVERS_OPTION_CFR_LOCK_AT_BOOT` as the M920x. Once a boot option
+  or an OS starts, no program can change a setup option of the W541
+  (camera, microphone, Ethernet, card reader, fingerprint reader, the
+  boot switches) through the raw SMMSTORE commands; the setup changes
+  them as before. Tested on the M920x; on a W541 still to run.
+- **The variable store is reclaimed while the lock is armed**
   (patch 0288, `edk2/0064`): with the option lock armed, a store full
   of old records was cleaned up only at the next boot; meanwhile each
   variable write took longer, and once the store was full the writes of

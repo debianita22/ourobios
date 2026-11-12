@@ -475,17 +475,13 @@ if extract config "${TMP}/config"; then
 	# il lock di TCG Secure MOR in SMM (patch 0207), con lo stack di SMM da
 	# 4 KiB per il giro dello store delle variabili nell'SMI handler
 	want CONFIG_SMMSTORE_MOR_LOCK=y
-	# il lock di tutte le opzioni del setup (patch 0282), per ora solo sul
-	# M920x: calcola uno SHA-256 dentro quel giro, stack di SMM da 8 KiB
-	if [ "${BOARD}" = m920x ]; then
-		want CONFIG_SMMSTORE_OPTION_LOCK_ALL=y
-		# e il reclaim dello store in SMM con il lock armato (patch 0288)
-		want CONFIG_SMMSTORE_RECLAIM=y
-		want CONFIG_DRIVERS_OPTION_CFR_LOCK_AT_BOOT=y
-		want CONFIG_SMM_MODULE_STACK_SIZE=0x2000
-	else
-		want CONFIG_SMM_MODULE_STACK_SIZE=0x1000
-	fi
+	# il lock di tutte le opzioni del setup (patch 0282) sulle due board dalla
+	# v1.7.0 (il W541 da rc11): calcola uno SHA-256 dentro quel giro, stack di
+	# SMM da 8 KiB; il reclaim dello store in SMM con il lock armato (0288)
+	want CONFIG_SMMSTORE_OPTION_LOCK_ALL=y
+	want CONFIG_DRIVERS_OPTION_CFR_LOCK_AT_BOOT=y
+	want CONFIG_SMM_MODULE_STACK_SIZE=0x2000
+	want CONFIG_SMMSTORE_RECLAIM=y
 	# il TPM 2.0 del M920x ha allocato anche il banco SHA-1 (patch 0201);
 	# il W541 ha un TPM 1.2, un banco solo
 	if [ "${BOARD}" = m920x ]; then

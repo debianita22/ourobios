@@ -150,8 +150,7 @@ CONFIG_SMMSTORE_OPTION_LOCK=y
 # Il lock per tutte le opzioni del setup (patch 0282): armato, il flash non
 # tiene mai uno store da cui coreboot leggerebbe al prossimo avvio opzioni
 # diverse da quelle dell'arm. Un programma dell'OS non puo' riaccendere un
-# dispositivo spento nel setup. Il W541 resta col lock delle due opzioni
-# finche' non l'ha provato (docs/dev-v1.7.0-m920x.md)
+# dispositivo spento nel setup. Il W541 lo ha dalla v1.7.0-rc11
 CONFIG_SMMSTORE_OPTION_LOCK_ALL=y
 # Il reclaim dello store in SMM con il lock armato (patch 0288, edk2/0064):
 # il driver delle variabili scrive lo store compattato nell'area di appoggio

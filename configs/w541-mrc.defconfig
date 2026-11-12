@@ -141,6 +141,20 @@ CONFIG_BOOTMEDIA_LOCK_SI_ALL=y
 # bootmedia_lock con la SMI raw di SMMSTORE e ripartire senza protezioni.
 # Il setup le cambia ancora, prima dell'arm. Richiede BIOS Lock.
 CONFIG_SMMSTORE_OPTION_LOCK=y
+# Il lock per tutte le opzioni del setup (patch 0282), come sul M920x dalla
+# v1.7.0: armato, il flash non tiene mai uno store da cui coreboot leggerebbe
+# al prossimo avvio opzioni diverse da quelle dell'arm. Un programma dell'OS
+# non puo' riaccendere un dispositivo spento nel setup (camera, microfono,
+# Ethernet, lettore di schede, impronte). Stack di SMM da 8 KiB (cpu/x86)
+CONFIG_SMMSTORE_OPTION_LOCK_ALL=y
+# Il reclaim dello store in SMM con il lock armato (patch 0288, edk2/0064):
+# senza, lo store si riempie fino al riavvio e le scritture dell'OS (anche la
+# NVRAM di OpenCore per macOS) falliscono
+CONFIG_SMMSTORE_RECLAIM=y
+# Ogni opzione con CFR_OPTFLAG_LOCK_AT_BOOT (patch 0284): da ReadyToBoot il
+# driver delle variabili del payload ne rifiuta la scrittura; il setup dice
+# che sono bloccate fino al riavvio (edk2/0062)
+CONFIG_DRIVERS_OPTION_CFR_LOCK_AT_BOOT=y
 
 # Le opzioni del setup ai default quando la RTC perde l'alimentazione, come
 # sul M920x: romstage le cancella da SMMSTORE prima di leggerle. Dalla
