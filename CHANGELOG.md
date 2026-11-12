@@ -51,7 +51,19 @@ whose changes below are still to run on a machine.
   or an OS starts, no program can change a setup option of the W541
   (camera, microphone, Ethernet, card reader, fingerprint reader, the
   boot switches) through the raw SMMSTORE commands; the setup changes
-  them as before. Tested on the M920x; on a W541 still to run.
+  them as before. On a W541 with rc11 the lock passed its tests, and the
+  reclaim at runtime did not: the store in the flash was not in the
+  runtime memory map of the W541 (coreboot on Haswell does not report
+  the flash as reserved, and the payload set the runtime attribute on a
+  hole of its map), so the first reclaim asked by the OS faulted in the
+  firmware and Linux turned the EFI runtime services off until the next
+  boot. `edk2/0065` adds the store as runtime MMIO, and makes the
+  variable driver refuse a reclaim at runtime where the store is not
+  mapped, on any board.
+- **W541: the TSEG base reads as locked** (patch 0308): the lock bit of
+  `TSEGMB` was written after `D_LCK`, when the host bridge no longer
+  takes it. The base could not be moved, but the HSTI below and
+  chipsec reported the SMRAM as not locked. Now set before `D_LCK`.
 - **The variable store is reclaimed while the lock is armed**
   (patch 0288, `edk2/0064`): with the option lock armed, a store full
   of old records was cleaned up only at the next boot; meanwhile each

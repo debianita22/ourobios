@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 12 Nov 2026 20:47:38 +0100
+Subject: [PATCH] cpu/intel/haswell: Lock the TSEG base before D_LCK
+
+northbridge_final() sets the lock bits of the memory map registers of
+the host bridge, TSEGMB among them. On a ThinkPad W541 every one of
+them reads back set but that of TSEGMB (0x7f800000): smm_lock() set
+D_LCK long before, and with D_LCK the host bridge no longer takes
+writes to TSEGMB, the lock bit included (a write of the bit from the
+OS does not take either). The base cannot be moved, but the HSTI of the
+payload and chipsec's smm_dma read the bit and report the TSEG as not
+locked.
+
+Set the bit in smm_lock(), just before D_LCK. Nothing writes the base
+after the SMM relocation.
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+Change-Id: Id500722e70d6e32b156d536d33c821ef265be6fb
+---
+ src/cpu/intel/haswell/smmrelocate.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/src/cpu/intel/haswell/smmrelocate.c b/src/cpu/intel/haswell/smmrelocate.c
+index 6ce41965d1..fc88fdfeec 100644
+--- a/src/cpu/intel/haswell/smmrelocate.c
++++ b/src/cpu/intel/haswell/smmrelocate.c
+@@ -265,5 +265,16 @@ void smm_lock(void)
+ 	 * make the SMM registers writable again.
+ 	 */
+ 	printk(BIOS_DEBUG, "Locking SMM.\n");
++
++	/*
++	 * The lock of the TSEG base first. Once D_LCK is set the host bridge
++	 * no longer takes writes to TSEGMB, its lock bit included: the write
++	 * of northbridge_final(), which comes later, left it clear (read on a
++	 * ThinkPad W541: 0x7f800000 with the other locks of that function set,
++	 * and a write of the bit from the OS does not take either). The base
++	 * cannot move then, but what checks the platform reads the bit (HSTI,
++	 * chipsec smm_dma).
++	 */
++	pci_or_config32(pcidev_on_root(0, 0), TSEG, 1 << 0);
+ 	pci_write_config8(pcidev_on_root(0, 0), SMRAM, D_LCK | G_SMRAME | C_BASE_SEG);
+ }

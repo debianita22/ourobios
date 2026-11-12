@@ -1,0 +1,117 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 12 Nov 2026 20:45:28 +0100
+Subject: [PATCH] UefiPayloadPkg: The mapped store as runtime MMIO where the
+ GCD has a hole
+
+[ouroBIOS: patches/edk2/0065, as it is]
+
+SmmStoreLibInitialize() marks the memory mapped store as runtime, for
+the code that reads it at runtime: with the reclaim by the platform,
+the variable driver walks the store there in a reclaim after
+ExitBootServices(). It asked the GCD for the descriptor of the store and
+added the range only if that failed. GetMemorySpaceDescriptor() does not
+fail on a hole of the map: it returns EfiGcdMemoryTypeNonExistent, and
+the capabilities and attributes then set on the hole never reach the
+memory map. coreboot on Haswell does not report the flash as reserved
+(on Cannon Lake it does, and the payload makes it MMIO), so on a
+ThinkPad W541 the store was not in the runtime memory map, the pointer
+to it was not converted, and the first reclaim at runtime read the
+physical address: "[Firmware Bug]: Page fault caused by firmware at PA:
+0xff910048", and Linux turned the EFI runtime services off until the
+next boot.
+
+Add the range as runtime MMIO when the GCD has it as non-existent, and
+set the attribute. If that fails the store still works through SMM: say
+so and go on.
+
+And in the variable driver: when the store in the flash cannot be
+converted at SetVirtualAddressMap(), no reclaim at runtime, by the
+platform either. A full store then fails the write, as before the
+platform's reclaim, where the read would fault.
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+---
+ .../Variable/RuntimeDxe/VariableDxe.c         | 10 +++++-
+ UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c | 34 ++++++++++++++++---
+ 2 files changed, 39 insertions(+), 5 deletions(-)
+
+diff --git a/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableDxe.c b/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableDxe.c
+index 441e872e6..d06760321 100644
+--- a/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableDxe.c
++++ b/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableDxe.c
+@@ -292,7 +292,15 @@ VariableClassAddressChangeEvent (
+   EfiConvertPointer (0x0, (VOID **)&mVariableModuleGlobal->PlatformLangCodes);
+   EfiConvertPointer (0x0, (VOID **)&mVariableModuleGlobal->LangCodes);
+   EfiConvertPointer (0x0, (VOID **)&mVariableModuleGlobal->PlatformLang);
+-  EfiConvertPointer (0x0, (VOID **)&mVariableModuleGlobal->VariableGlobal.NonVolatileVariableBase);
++  if (EFI_ERROR (EfiConvertPointer (0x0, (VOID **)&mVariableModuleGlobal->VariableGlobal.NonVolatileVariableBase))) {
++    //
++    // The store in the flash is not in the runtime memory map: a reclaim
++    // reads it there (Reclaim() walks the store at this address), so none at
++    // runtime, by the platform either. A full store then fails the write, as
++    // without the platform's reclaim, where the read would fault.
++    //
++    mPlatformVariableReclaim = NULL;
++  }
+   EfiConvertPointer (0x0, (VOID **)&mVariableModuleGlobal->VariableGlobal.VolatileVariableBase);
+   EfiConvertPointer (0x0, (VOID **)&mVariableModuleGlobal->VariableGlobal.HobVariableBase);
+   EfiConvertPointer (0x0, (VOID **)&mVariableModuleGlobal);
+diff --git a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+index f80a21b0b..8573f56ec 100644
+--- a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
++++ b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+@@ -839,15 +839,21 @@ SmmStoreLibInitialize (
+   // Mark the memory mapped store as MMIO memory
+   //
+   Status = gDS->GetMemorySpaceDescriptor (mSmmStoreInfo->MmioAddress, &GcdDescriptor);
+-  if (EFI_ERROR (Status)) {
++  if (EFI_ERROR (Status) || (GcdDescriptor.GcdMemoryType == EfiGcdMemoryTypeNonExistent)) {
+     DEBUG ((
+       DEBUG_INFO,
+-      "%a: No memory space descriptor for com buffer found\n",
++      "%a: No memory space descriptor for the mapped store found\n",
+       __func__
+       ));
+ 
+     //
+-    // Add a new entry if not covered by existing mapping
++    // Add a new entry if not covered by existing mapping, and mark it as
++    // runtime. GetMemorySpaceDescriptor() succeeds on a hole of the map too,
++    // with EfiGcdMemoryTypeNonExistent: the capabilities and attributes set
++    // on a hole never reach the memory map of the OS, and what reads the
++    // store there at runtime (the variable driver, in a reclaim) then reads
++    // an address that is not mapped. Where coreboot does not report the
++    // flash as reserved (Haswell), the store is in such a hole.
+     //
+     Status = gDS->AddMemorySpace (
+                     EfiGcdMemoryTypeMemoryMappedIo,
+@@ -855,7 +861,27 @@ SmmStoreLibInitialize (
+                     mSmmStoreInfo->NumBlocks * mSmmStoreInfo->BlockSize,
+                     EFI_MEMORY_UC | EFI_MEMORY_RUNTIME
+                     );
+-    ASSERT_EFI_ERROR (Status);
++    if (!EFI_ERROR (Status)) {
++      Status = gDS->SetMemorySpaceAttributes (
++                      mSmmStoreInfo->MmioAddress,
++                      mSmmStoreInfo->NumBlocks * mSmmStoreInfo->BlockSize,
++                      EFI_MEMORY_RUNTIME
++                      );
++    }
++
++    if (EFI_ERROR (Status)) {
++      //
++      // The store works without, through SMM: only its runtime mapping is
++      // missing, and the variable driver does not reclaim at runtime then.
++      //
++      DEBUG ((
++        DEBUG_WARN,
++        "%a: mapped store at 0x%lx not runtime MMIO: %r\n",
++        __func__,
++        mSmmStoreInfo->MmioAddress,
++        Status
++        ));
++    }
+   } else {
+     Status = gDS->SetMemorySpaceCapabilities (
+       mSmmStoreInfo->MmioAddress,

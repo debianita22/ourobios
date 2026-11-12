@@ -296,3 +296,4 @@
 0305-nb-intel-haswell-native_raminit-Centre-the-read-Vref.patch
 0306-nb-intel-haswell-native_raminit-Train-the-signal-set.patch
 0307-nb-intel-haswell-native_raminit-Move-the-comp-offset.patch
+0308-cpu-intel-haswell-Lock-the-TSEG-base-before-D_LCK.patch
