@@ -355,27 +355,57 @@ flashrom reads 8 of the 12 MiB.
 | **LOCK-11** | **FAIL: the EFI runtime services lost** | from a store with 131 KiB free, 115 writes of 1000 bytes went through, the store at 5.8 KiB free, with no slow write; the 116th, the one that needed the reclaim, failed with `EIO`, and the kernel logged `[Firmware Bug]: Page fault caused by firmware at PA: 0xff910048`, *Froze efi_rts_wq and disabled EFI Runtime Services* ([log](rc11/lock11-kernel-fault.txt)). Until the reboot every variable read failed too (`efibootmgr`: *Skipping unreadable variable "Boot0000": Input/output error*). No commit record and no note of the handler in the flash (the SMI never came) |
 | LOCK-06, after the reboot | PASS | the payload reclaimed at its start: 145 KiB free, 199 records, the same 68 options as before the run; no record to finish |
 | LOCK-04 | PASS | three resumes from S3: the lock armed, PR0 and PR1 back, LOCK-02 and LOCK-03 work |
-| CONF-08 | WARN, one failure not known | 8 of 13; the known limits (descriptor and ME region writable by the host, Secure Boot off, no pre-boot DMA protection) and *SMM: the TSEG base is not locked*: `TSEGMB` (00:00.0 0xb8) reads `0x7f800000`, lock bit clear, where every other lock of `northbridge_final()` is set (BDSM, BGSM, TOLUD, TOUUD, REMAP, DPR, `SMRAMC` D_LCK) and that function writes it with them. Not new in rc11: the HSTI is the first to look |
+| CONF-08 | WARN, one failure not known | 8 of 13; the known limits (descriptor and ME region writable by the host, Secure Boot off, no pre-boot DMA protection) and *SMM: the TSEG base is not locked*: `TSEGMB` (00:00.0 0xb8) reads `0x7f800000`, lock bit clear, where every other lock of `northbridge_final()` is set (BDSM, BGSM, TOLUD, TOUUD, REMAP, DPR, `SMRAMC` D_LCK) and that function writes it with them. Not new in rc11: the HSTI is the first to look (patch 0308, below) |
 | MEM-04 | PASS | `stress-ng --vm 4 --vm-bytes 75% --verify`, 30 minutes after the resumes: 0 failed, no machine check |
 | LOCK-05, LOCK-09, LOCK-10 | not run | LOCK-05 with the next capsule; LOCK-10 needs the setup; LOCK-09 is the behaviour before the reclaim |
 
-**Why LOCK-11 fails on the W541.** 0xff910048 is the store as the flash
-is mapped (the 12 MiB flash ends at 4 GiB, so it starts at 0xff400000;
-`SMMSTORE` is at 0x510000 of it, plus 0x48, the firmware volume header
-that `SmmStoreFvbReclaim()` reads below the store). The fault is at the
-physical address in virtual mode: `EfiConvertPointer()` did not convert
-`MmioAddress`, because the memory map that the OS got has no runtime
-region for the flash. The only `EfiMemoryMappedIO` with
-`EFI_MEMORY_RUNTIME` is 17 pages at 0x7f5e9000
-([runtime map](rc11/efi-runtime-map.txt)); `/proc/iomem` has nothing at
-0xff400000. `SmmStoreLib` adds the mapped store as runtime MMIO to the
-GCD (`AddMemorySpace`, `SetMemorySpaceAttributes`), so on the W541 one
-of the two calls does not take (the asserts are off in a release
-build), or the range is already in the GCD as another type. On the
-M920x the same path passed (rc10): its map is to be compared. Until
-then, on the W541 a store filled from the OS turns the runtime services
-off instead of refusing the write, which is worse than rc7, where the
-write failed with `ENOMEM`. Not to release for the W541 like this.
+**Why LOCK-11 fails on the W541.** 0xff910048 is the variable store as
+the flash is mapped (the 12 MiB flash ends at 4 GiB, so it starts at
+0xff400000; `SMMSTORE` is at 0x510000 of it, and the store follows the
+0x48 bytes of the firmware volume header): `Reclaim()` of the variable
+driver walks the store there, at `NonVolatileVariableBase`. The fault is
+at the physical address in virtual mode: the pointer was not converted
+at `SetVirtualAddressMap()`, because the memory map that the OS got has
+no runtime region for the flash. The only `EfiMemoryMappedIO` with
+`EFI_MEMORY_RUNTIME` is 17 pages at 0x7f5e9000, the com buffer
+([runtime map](rc11/efi-runtime-map.txt)); the M920x with rc10 has a
+second one, 128 pages at 0xff410000, its store.
+
+The cause, read in the sources: the memory table of coreboot on Haswell
+has no entry for the flash (the last one below 4 GiB is
+0xfed90000-0xfed91fff; Cannon Lake reserves the BIOS region, and the
+payload makes every reserved range above the memory an MMIO range of
+its GCD), so on the W541 the store is in a hole of the GCD.
+`SmmStoreLibInitialize()` asks for the descriptor of the store and adds
+the range only if that fails; `GetMemorySpaceDescriptor()` succeeds on a
+hole, as `EfiGcdMemoryTypeNonExistent`, and
+`SetMemorySpaceCapabilities()` and `SetMemorySpaceAttributes()` succeed
+on it too, with no effect on the memory map, which lists only MMIO
+ranges. Until rc10 nothing read the store at runtime; the reclaim of
+`edk2/0064` does. On the W541 a store filled from the OS so turns the
+runtime services off instead of refusing the write, which is worse than
+rc7, where the write failed with `ENOMEM`: rc11 is not to release for
+the W541.
+
+**Fixed for the next candidate** (`e2337c6` on
+`ci-test/v1.7.0-m920x-option-lock`; the CI build ci-375 is green, and
+not on a machine yet: the CI builds have no capsule):
+
+- `edk2/0065`: `SmmStoreLib` adds the store as runtime MMIO when the GCD
+  has it as non-existent, and the variable driver does not reclaim at
+  runtime when the store in the flash could not be converted at
+  `SetVirtualAddressMap()`: on any board a full store then fails the
+  write, as before `edk2/0064`, where rc11 faults;
+- patch 0308, for CONF-08: a write of the lock bit of `TSEGMB` from the
+  OS does not take (`setpci -s 00:00.0 b8.l=7f800001` reads back
+  `7f800000`): with `D_LCK` set the host bridge no longer takes writes
+  to the register, and `northbridge_final()` runs after `smm_lock()`.
+  The patch sets the bit in `smm_lock()`, before `D_LCK`; whether it
+  takes there is what the next candidate shows.
+
+To run on it: LOCK-11 (the first reclaim in SMM on a Lynx Point), the
+runtime map with the store, CONF-08 with 9 of 13, `TSEGMB` after a
+resume.
 
 ## The machine after the run
 
