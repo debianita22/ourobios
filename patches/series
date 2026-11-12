@@ -279,6 +279,7 @@
 0285-mb-lenovo-m720q_m920q-Double-the-DRAM-refresh-when-h.patch
 0286-soc-intel-common-cse-No-warning-for-a-HECI1-disabled.patch
 0287-acpi-Optionally-skip-the-SLIC-lookup-in-CBFS.patch
+0288-drivers-smmstore-Reclaim-the-variable-store-in-SMM-w.patch
 0290-nb-intel-haswell-native_raminit-Centre-the-command-V.patch
 0291-Haswell-NRI-Extend-support-for-margin-parameters.patch
 0292-Haswell-NRI-Add-library-to-measure-margins-BER.patch

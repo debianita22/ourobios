@@ -311,101 +311,108 @@ after a boot option that came back; *Go back to*; VAR-01 with *BIOS
 Lock* off; a boot of the W541 with the same candidate, with its lock
 unchanged.
 
-## Stage 3: a reclaim of the store in SMM (design, not built)
+## Stage 3: a reclaim of the store in SMM
 
-Asked by the owner on 2026-11-12, after rc7. With the lock armed the
-store is reclaimed only at the start of the payload (`edk2/0061`):
-between two boots every write appends a record, the time of a write
-grows with the dead records (0.03 s after a reclaim, 0.127 s on rc7
-with 862 records), and once the store is full a write of the OS fails
-until the next boot. The payload's reclaim cannot run while armed: it
-erases the store and copies it back through the fault tolerant write,
-whose blocks the lock refuses (patch 0281, the F6 bypass), and an
-erase of a store block leaves a store without the options, which the
-rule refuses (0282). This stage moves the one step that the rule
-cannot allow piece by piece, the swap of the old store for the new one,
-into SMM, where it is checked whole.
+Asked by the owner on 2026-11-12, after rc7, and built the same day
+(patch 0288, `edk2/0064`). With the lock armed the store was reclaimed
+only at the start of the payload (`edk2/0061`): between two boots every
+write appends a record, the time of a write grows with the dead records
+(0.03 s after a reclaim, 0.127 s on rc7 with 862 records), and once the
+store is full a write of the OS fails until the next boot. The payload's
+reclaim cannot run while armed: it erases the store and copies it back
+through the fault tolerant write, whose blocks the lock refuses (patch
+0281, the F6 bypass), and an erase of a store block leaves a store
+without the options, which the rule refuses (0282). This stage moves the
+one step that the rule cannot allow piece by piece, the swap of the old
+store for the new one, into SMM, where it is checked whole.
 
 ### The flow
 
 1. The variable driver of the payload builds the reclaimed store in
-   memory, as now (`Reclaim()` of `VariableRuntimeDxe`, the valid
-   records in order).
-2. Instead of the fault tolerant write, it writes that image with raw
-   SMMSTORE writes into the **staging area**, the first 192 KiB of the
-   FTW spare area (0x40000 to 0x70000 of the region). While armed, raw
-   writes there are allowed again; the FTW working block, the last
-   64 KiB of the spare area (the **commit block**) and the store keep
-   the rules they have.
-3. It sends a new command, `SMMSTORE_CMD_RECLAIM`, with the size and
-   the SHA-256 of the image. SMM reads the image back from the flash
-   (never from the buffer of the caller) and checks it as a store:
-   the same firmware volume and store headers as the store it
-   replaces, every record well formed up to the erased tail, and the
-   rule of the lock applied to it whole: the set of the options GUID
-   (`option_set_of()`) equal to the latched one, and the MOR request
-   as the MOR lock holds it.
-4. SMM writes the commit record into the commit block (a magic, the
-   size, the SHA-256 of the image, the SHA-256 of the store it
-   replaces): from here the swap completes, also across a power loss.
-5. SMM erases the store and copies the image over it, one 64 KiB block
-   per call (decision 8), reads it back, and erases the commit block.
-   The walk of the lock is redone on the new store and the erased-tail
-   mark moved to its end.
-6. The variable driver takes the image as its cache, as after its own
-   reclaim.
+   memory, as before (`Reclaim()` of `VariableRuntimeDxe`, the valid
+   records in order, in its cache: nothing allocated, so it works at
+   runtime too).
+2. `FtwVariableSpace()` first asks the platform
+   (`EDKII_PLATFORM_VARIABLE_RECLAIM_PROTOCOL`, installed by
+   `SmmStoreFvbRuntimeDxe`). With no lock armed coreboot answers
+   `SMMSTORE_RECLAIM_STATUS` with *unsupported* and the fault tolerant
+   write reclaims as before; at runtime, where there is no fault
+   tolerant write, the variable driver now reclaims only through the
+   platform.
+3. With a lock armed, the FVB driver writes the image, the first
+   `store_end` bytes of the region (the firmware volume header from the
+   flash, then the reclaimed store), into the **staging area**, the
+   `store_end` bytes before the last block of the region (0x40000 to
+   0x70000 on the M920x), with raw writes. While armed, raw writes and
+   erases all inside the staging area are allowed; the last block, the
+   **commit block**, is refused; the store and the working block keep
+   their rules.
+4. `SMMSTORE_RECLAIM_COMMIT`: the handler reads the image back from the
+   flash (never from memory the OS can change), compares the firmware
+   volume and store headers with the store's, walks it, and asks each
+   lock about the image whole: the set of the options GUID equal to the
+   latched one (or the two security options on), the MOR request kept.
+5. It writes the commit record (a magic, `store_end`, the staging offset,
+   the SHA-256 of the image) into the commit block, erases the store and
+   copies the image over it block by block, reads it back, and erases
+   the commit block. The option lock takes its set and erased tail from
+   the flash again at the next check.
+
+All of it in one SMI: about a second for 192 KiB on this flash with the
+OS stopped (decision 8).
 
 ### A power loss
 
-The recovery is in coreboot's ramstage, before the payload runs and
-before the lock is armed: with a valid commit record (magic, and the
-SHA-256 of the staging area equal to the one it holds), a store that
-is not the image is erased and written from the staging area; then
-the commit block is erased. Without a commit record nothing happens:
-a staging area without a record is inert, for coreboot and for
-EDK2's fault tolerant write, which acts only on a record of its
-working block. The cases:
+The recovery is in coreboot's ramstage, at `BS_PRE_DEVICE`, before the
+payload runs and before any lock is armed (not on an S3 resume). With a
+valid commit record (the magic, a layout that fits the region, and the
+SHA-256 of the staging area equal to the one it holds), a store that is
+not the image is erased and written from the staging area; then the
+commit block is erased. A record whose image does not match is dropped.
+The layout comes from the record and the size of the region, not from
+the store, whose first block a power loss may have left erased. Without
+a commit record nothing happens: a staging area without a record is
+inert, for coreboot and for EDK2's fault tolerant write, which acts only
+on a record of its working block.
 
 | Power lost | Next boot |
 |---|---|
-| before the commit record | the old store, intact; the staging area is overwritten by the next reclaim |
-| after the record, during the erase or the copy | ramstage finishes the copy from the staging area |
+| before the commit record | the old store, intact |
+| after the record, during the erase or the copy | ramstage finishes the copy from the staging area (`SMMSTORE: finishing a reclaim cut by a power loss`, an event for `hw-report.py`) |
 | after the copy, before the record is erased | ramstage finds the store equal to the image and erases the record |
 
-Only SMM writes the commit block (refused to raw writes, armed or
-not, after the payload starts), so a staging area written by the OS
-cannot be committed without the check of step 3. This keeps the
-property that closed F6: nothing that the OS writes outside the store
-reaches the store without the rule.
+The options that romstage reads in the boot after such a power loss can
+be the defaults, if the first block of the store was erased: ramstage
+mends the store, and the next boot reads it again.
 
-### What it costs
+Only SMM writes the commit block while a lock is armed, so a staging
+area written by the OS cannot be committed without the check of step 4:
+nothing that the OS writes outside the store reaches the store without
+the rule, the property that closed F6.
 
-- coreboot: the command, the check of a whole image (the walk of
-  0282 on another region), the copy, the recovery in ramstage, and the
-  rules for the two new areas; unit tests for every decision and for
-  each power-loss point (a store image and a staging image built in
-  the test).
-- payload: a patch of `VariableRuntimeDxe` (TianoCore code, in
-  `patches/tianocore`): when the option lock is armed, `Reclaim()` takes
-  the SMM path instead of `FtwVariableSpace()`.
-- flash wear: one reclaim erases three blocks of the store, three of
-  the staging area and the commit block; the per-boot limit of
-  decision 7 bounds it.
-- time: the copy of 192 KiB is about 1 to 2 s of SMM on this flash;
-  in one call the OS stands still that long (decision 8).
+### The tests
 
-On the machine: LOCK-09 again (fill the store with the lock armed: the
-write that fills it now triggers the reclaim and succeeds), the
-regression, and the recovery, with a test build that stops the swap
-after each step and is rebooted there (Kconfig of the test only, not
-in a release).
+coreboot's unit tests (`tools/build.sh coreboot-unit-test`, in the CI):
+`smmstore_reclaim` on a flash that the test builds, with the layout, the
+areas, the limits, a commit, an image refused by the locks, unreadable or
+with other headers, the limit per boot, a power loss after each flash
+operation of the commit followed by the recovery, and records with a
+wrong image or layout; `smmstore_options_lock` with the image rules of
+the option lock, with and without `SMMSTORE_OPTION_LOCK_ALL`. A power
+loss on the machine is not tried: the unit test cuts the flash after
+every one of its operations.
+
+On the machine (LOCK-11 of [docs/testing.md](testing.md)): fill the store
+from the OS with the lock armed until a write would fail; with the
+reclaim the write succeeds, the store has room again, and the options
+are those of the arm.
 
 ## Decisions for the owner
 
 1. **No reclaim of the store at runtime while the lock is armed**, with
    the reclaim at the start of the payload instead: the numbers of
    LOCK-09 say what it costs. Taken for v1.7.0; reopened by the owner
-   on 2026-11-12 for a reclaim in SMM (stage 3, decisions 7 to 9).
+   on 2026-11-12: the reclaim in SMM of stage 3, built.
 2. **The reader and an unfinished last record**, only if F4 says an
    ordinary write needs it.
 3. **The lock of the variable driver for every option**
@@ -416,19 +423,20 @@ in a release).
 5. **The candidates** (rule 11), and when the branch goes to `next`.
 6. What stage 0 finds about the fault tolerant write, if it concerns
    the releases already out.
-7. **Who may start the reclaim in SMM.** The command commits only an
-   image that passes the rule of the lock, so it gives a caller nothing
-   that a raw write does not; what it costs a caller who calls it in a
-   loop is flash wear and stalls. Proposed: any caller (the variable
-   driver runs in the OS's context, at runtime), refused while the store
-   has more than a quarter free, at most four per boot.
-8. **How long SMM may hold the machine.** One call for the whole swap
-   (1 to 2 s with the OS stopped) or one call per 64 KiB block (about
-   0.3 to 0.6 s each, the variable driver calls again until done).
-   Proposed: one block per call.
-9. **Which release.** Proposed: not v1.7.0, whose candidates are
-   tested; a v1.7.x or v1.8.0, first on the M920x, then the W541 with
-   decision 4.
+7. **Who may start the reclaim in SMM.** Taken by the agent (the owner
+   left 7 to 9 to it, 2026-11-12): any caller, since the command commits
+   only an image that passes the rule of the lock and gives a caller
+   nothing that a raw write does not; against wear and stalls, at most
+   four a boot (`SMMSTORE_RECLAIM_PER_BOOT`), none while the store is
+   more than a quarter free.
+8. **How long SMM may hold the machine.** Taken: one SMI for the whole
+   swap, about a second. The proposal was one block a call; a swap over
+   several SMIs leaves a half-written store between them, which an S3
+   resume (the latch of the option lock is taken from the flash again)
+   or another write would meet, and that costs more code to make safe
+   than the second it saves, at most four times a boot.
+9. **Which release.** Taken by the owner: in the next candidate of
+   v1.7.0, after this work.
 
 ## Risks
 

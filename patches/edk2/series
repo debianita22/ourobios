@@ -61,3 +61,4 @@
 0061-UefiPayloadPkg-Reclaim-the-variable-store-before-the.patch
 0062-UefiPayloadPkg-CfrSetupMenuDxe-Say-that-the-settings-.patch
 0063-UefiPayloadPkg-The-HSTI-of-the-platform.patch
+0064-UefiPayloadPkg-Reclaim-the-variable-store-through-co.patch

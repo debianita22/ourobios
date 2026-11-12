@@ -1,0 +1,528 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 12 Nov 2026 12:55:49 +0100
+Subject: [PATCH] UefiPayloadPkg: Reclaim the variable store through coreboot
+ while locked
+
+While coreboot keeps its option lock or MOR lock armed, the fault
+tolerant write cannot reclaim the variable store: the locks refuse its
+writes past the store and the erase of the store. Until the next boot
+every write appends a record, and a full store fails the writes of the
+OS; at runtime the variable driver without SMM never reclaims, since the
+fault tolerant write is a boot service.
+
+Add EDKII_PLATFORM_VARIABLE_RECLAIM_PROTOCOL, which the variable driver
+without SMM tries before its fault tolerant write in FtwVariableSpace(),
+and which lets it reclaim at runtime as well. SmmStoreFvbRuntimeDxe
+installs it: with coreboot's SMMSTORE_CMD_RECLAIM available (a lock
+armed), it writes the reclaimed store with the firmware volume header
+into the staging area before the last block of the region and asks
+coreboot to commit it, which checks the image whole before it replaces
+the store. Otherwise it answers EFI_UNSUPPORTED and the fault tolerant
+write reclaims as before; at runtime the write then fails as before.
+---
+ .../Protocol/PlatformVariableReclaim.h        |  53 ++++++++
+ MdeModulePkg/MdeModulePkg.dec                 |   4 +
+ .../Universal/Variable/RuntimeDxe/Reclaim.c   |  23 ++++
+ .../Universal/Variable/RuntimeDxe/Variable.c  |   5 +-
+ .../Universal/Variable/RuntimeDxe/Variable.h  |   6 +
+ .../Variable/RuntimeDxe/VariableDxe.c         |  14 +++
+ .../RuntimeDxe/VariableRuntimeDxe.inf         |   1 +
+ UefiPayloadPkg/Include/Library/SmmStoreLib.h  |  27 ++++
+ UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c |  32 +++++
+ UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h |  11 ++
+ .../SmmStoreFvb/SmmStoreFvbRuntime.c          | 117 ++++++++++++++++++
+ .../SmmStoreFvb/SmmStoreFvbRuntimeDxe.inf     |   3 +
+ 12 files changed, 295 insertions(+), 1 deletion(-)
+ create mode 100644 MdeModulePkg/Include/Protocol/PlatformVariableReclaim.h
+
+diff --git a/MdeModulePkg/Include/Protocol/PlatformVariableReclaim.h b/MdeModulePkg/Include/Protocol/PlatformVariableReclaim.h
+new file mode 100644
+index 000000000..dfa8e9c08
+--- /dev/null
++++ b/MdeModulePkg/Include/Protocol/PlatformVariableReclaim.h
+@@ -0,0 +1,53 @@
++/** @file
++  The reclaim of the variable store by the platform, for the variable driver
++  that runs outside SMM.
++
++  A platform whose firmware locks the variable store against writes that
++  would change what it protects (on a coreboot payload, the option lock and
++  the MOR lock kept in coreboot's SMM) can refuse the fault tolerant write of
++  a reclaim, which erases the store and copies it back from its spare blocks.
++  Such a platform installs this protocol: the variable driver hands it the
++  reclaimed store, and the platform puts it in place of the store once it has
++  checked it whole, also at runtime, where the fault tolerant write is not
++  available. Every function is callable at runtime.
++
++  Copyright (c) 2026, Domenico D'Arrigo. All rights reserved.<BR>
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++
++#ifndef PLATFORM_VARIABLE_RECLAIM_H_
++#define PLATFORM_VARIABLE_RECLAIM_H_
++
++#define EDKII_PLATFORM_VARIABLE_RECLAIM_PROTOCOL_GUID \
++  { 0xe71102e1, 0xf37e, 0x4c09, { 0xa9, 0x39, 0x5e, 0xff, 0x3e, 0x95, 0xc1, 0xb9 } }
++
++/**
++  Put the reclaimed store in place of the store: NumBytes of Buffer at Offset
++  of block Lba of the firmware volume of the variables, where the store is.
++
++  @param[in] Lba       The block of the firmware volume where the store begins.
++  @param[in] Offset    The offset of the store in that block.
++  @param[in] NumBytes  The size of the store.
++  @param[in] Buffer    The reclaimed store.
++
++  @retval EFI_SUCCESS       The store is the reclaimed one.
++  @retval EFI_UNSUPPORTED   Not by the platform now: the fault tolerant write
++                            reclaims, when it is available.
++  @retval Others            Refused or failed: the store is as it was.
++**/
++typedef
++EFI_STATUS
++(EFIAPI *EDKII_PLATFORM_VARIABLE_RECLAIM_RECLAIM)(
++  IN EFI_LBA     Lba,
++  IN UINTN       Offset,
++  IN UINTN       NumBytes,
++  IN CONST VOID  *Buffer
++  );
++
++typedef struct {
++  EDKII_PLATFORM_VARIABLE_RECLAIM_RECLAIM    Reclaim;
++} EDKII_PLATFORM_VARIABLE_RECLAIM_PROTOCOL;
++
++extern EFI_GUID  gEdkiiPlatformVariableReclaimProtocolGuid;
++
++#endif
+diff --git a/MdeModulePkg/MdeModulePkg.dec b/MdeModulePkg/MdeModulePkg.dec
+index d87fd6e31..a55b4b937 100644
+--- a/MdeModulePkg/MdeModulePkg.dec
++++ b/MdeModulePkg/MdeModulePkg.dec
+@@ -775,6 +775,10 @@
+   # Include/Protocol/PlatformMorLock.h
+   gEdkiiPlatformMorLockProtocolGuid = { 0xf1dba97f, 0xa870, 0x4608, { 0x9a, 0x90, 0x3d, 0x93, 0x51, 0xa7, 0x0d, 0x3b } }
+ 
++  ## The reclaim of the variable store by the platform, for the variable driver without SMM.
++  # Include/Protocol/PlatformVariableReclaim.h
++  gEdkiiPlatformVariableReclaimProtocolGuid = { 0xe71102e1, 0xf37e, 0x4c09, { 0xa9, 0x39, 0x5e, 0xff, 0x3e, 0x95, 0xc1, 0xb9 } }
++
+   ## Include/Protocol/UsbEthernetProtocol.h
+   gEdkIIUsbEthProtocolGuid = { 0x8d8969cc, 0xfeb0, 0x4303, { 0xb2, 0x1a, 0x1f, 0x11, 0x6f, 0x38, 0x56, 0x43 } }
+ 
+diff --git a/MdeModulePkg/Universal/Variable/RuntimeDxe/Reclaim.c b/MdeModulePkg/Universal/Variable/RuntimeDxe/Reclaim.c
+index fe64d0a2b..8763c8d05 100644
+--- a/MdeModulePkg/Universal/Variable/RuntimeDxe/Reclaim.c
++++ b/MdeModulePkg/Universal/Variable/RuntimeDxe/Reclaim.c
+@@ -9,6 +9,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ 
+ #include "Variable.h"
+ 
++EDKII_PLATFORM_VARIABLE_RECLAIM_RECLAIM  mPlatformVariableReclaim = NULL;
++
+ /**
+   Gets LBA of block and offset by given address.
+ 
+@@ -113,6 +115,27 @@ FtwVariableSpace (
+   UINTN                              FtwBufferSize;
+   EFI_FAULT_TOLERANT_WRITE_PROTOCOL  *FtwProtocol;
+ 
++  //
++  // The platform first: while its lock of the store is armed it refuses the
++  // writes of the fault tolerant write, and at runtime there is no fault
++  // tolerant write at all.
++  //
++  if (mPlatformVariableReclaim != NULL) {
++    Status = GetLbaAndOffsetByAddress (VariableBase, &VarLba, &VarOffset);
++    if (EFI_ERROR (Status)) {
++      return EFI_ABORTED;
++    }
++
++    Status = mPlatformVariableReclaim (VarLba, VarOffset, VariableBuffer->Size, VariableBuffer);
++    if (Status != EFI_UNSUPPORTED) {
++      return Status;
++    }
++
++    if (AtRuntime ()) {
++      return EFI_OUT_OF_RESOURCES;
++    }
++  }
++
+   //
+   // Locate fault tolerant write protocol.
+   //
+diff --git a/MdeModulePkg/Universal/Variable/RuntimeDxe/Variable.c b/MdeModulePkg/Universal/Variable/RuntimeDxe/Variable.c
+index 10fb4a366..083be84da 100644
+--- a/MdeModulePkg/Universal/Variable/RuntimeDxe/Variable.c
++++ b/MdeModulePkg/Universal/Variable/RuntimeDxe/Variable.c
+@@ -2120,7 +2120,10 @@ UpdateVariable (
+        || (IsCommonVariable && AtRuntime () && ((VarSize + mVariableModuleGlobal->CommonVariableTotalSize) > mVariableModuleGlobal->CommonRuntimeVariableSpace))
+        || (IsCommonUserVariable && ((VarSize + mVariableModuleGlobal->CommonUserVariableTotalSize) > mVariableModuleGlobal->CommonMaxUserVariableSpace)))
+     {
+-      if (AtRuntime ()) {
++      //
++      // At runtime only the platform can reclaim (no fault tolerant write)
++      //
++      if (AtRuntime () && (mPlatformVariableReclaim == NULL)) {
+         if (IsCommonUserVariable && ((VarSize + mVariableModuleGlobal->CommonUserVariableTotalSize) > mVariableModuleGlobal->CommonMaxUserVariableSpace)) {
+           RecordVarErrorFlag (VAR_ERROR_FLAG_USER_ERROR, VariableName, VendorGuid, Attributes, VarSize);
+         }
+diff --git a/MdeModulePkg/Universal/Variable/RuntimeDxe/Variable.h b/MdeModulePkg/Universal/Variable/RuntimeDxe/Variable.h
+index 0e46a7676..9ee3ce99e 100644
+--- a/MdeModulePkg/Universal/Variable/RuntimeDxe/Variable.h
++++ b/MdeModulePkg/Universal/Variable/RuntimeDxe/Variable.h
+@@ -15,6 +15,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Protocol/FirmwareVolumeBlock.h>
+ #include <Protocol/Variable.h>
+ #include <Protocol/VariableLock.h>
++#include <Protocol/PlatformVariableReclaim.h>
+ #include <Protocol/VarCheck.h>
+ #include <Library/PcdLib.h>
+ #include <Library/HobLib.h>
+@@ -707,6 +708,11 @@ InitializeVariableQuota (
+ extern VARIABLE_MODULE_GLOBAL      *mVariableModuleGlobal;
+ extern EFI_FIRMWARE_VOLUME_HEADER  *mNvFvHeaderCache;
+ extern VARIABLE_STORE_HEADER       *mNvVariableCache;
++//
++// The reclaim by the platform (EDKII_PLATFORM_VARIABLE_RECLAIM_PROTOCOL), set
++// only by the variable driver without SMM; NULL elsewhere.
++//
++extern EDKII_PLATFORM_VARIABLE_RECLAIM_RECLAIM  mPlatformVariableReclaim;
+ extern VARIABLE_INFO_ENTRY         *gVariableInfo;
+ extern BOOLEAN                     mEndOfDxe;
+ extern VAR_CHECK_REQUEST_SOURCE    mRequestSource;
+diff --git a/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableDxe.c b/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableDxe.c
+index 6e379a764..441e872e6 100644
+--- a/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableDxe.c
++++ b/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableDxe.c
+@@ -298,6 +298,9 @@ VariableClassAddressChangeEvent (
+   EfiConvertPointer (0x0, (VOID **)&mVariableModuleGlobal);
+   EfiConvertPointer (0x0, (VOID **)&mNvVariableCache);
+   EfiConvertPointer (0x0, (VOID **)&mNvFvHeaderCache);
++  if (mPlatformVariableReclaim != NULL) {
++    EfiConvertPointer (0x0, (VOID **)&mPlatformVariableReclaim);
++  }
+ 
+   if (mAuthContextOut.AddressPointer != NULL) {
+     for (Index = 0; Index < mAuthContextOut.AddressPointerCount; Index++) {
+@@ -496,6 +499,17 @@ FtwNotificationEvent (
+ 
+   mVariableModuleGlobal->FvbInstance = FvbProtocol;
+ 
++  //
++  // The reclaim by the platform, where it offers one (installed before its FVB)
++  //
++  {
++    EDKII_PLATFORM_VARIABLE_RECLAIM_PROTOCOL  *PlatformReclaim;
++
++    if (!EFI_ERROR (gBS->LocateProtocol (&gEdkiiPlatformVariableReclaimProtocolGuid, NULL, (VOID **)&PlatformReclaim))) {
++      mPlatformVariableReclaim = PlatformReclaim->Reclaim;
++    }
++  }
++
+   //
+   // Store the boot time values of the function pointers so we can compare
+   // them later. This is needed to avoid double conversion during the call
+diff --git a/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf b/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
+index ccd135c96..ca0ef671f 100644
+--- a/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
++++ b/MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
+@@ -86,6 +86,7 @@
+   gEdkiiVariableLockProtocolGuid                ## PRODUCES
+   gEdkiiVariablePolicyProtocolGuid              ## PRODUCES
+   gEdkiiVarCheckProtocolGuid                    ## PRODUCES
++  gEdkiiPlatformVariableReclaimProtocolGuid     ## SOMETIMES_CONSUMES # The reclaim by the platform (Reclaim.c)
+   gEdkiiPlatformMorLockProtocolGuid             ## SOMETIMES_CONSUMES # The MOR lock of the platform (TcgMorLockDxe.c)
+ 
+ [Guids]
+diff --git a/UefiPayloadPkg/Include/Library/SmmStoreLib.h b/UefiPayloadPkg/Include/Library/SmmStoreLib.h
+index 021444a38..6a5178822 100644
+--- a/UefiPayloadPkg/Include/Library/SmmStoreLib.h
++++ b/UefiPayloadPkg/Include/Library/SmmStoreLib.h
+@@ -265,6 +265,33 @@ SmmStoreLibMorLock (
+   IN CONST UINT8   *Key OPTIONAL
+   );
+ 
++//
++// SmmStoreLibReclaim(): the operations of SMMSTORE_CMD_RECLAIM
++//
++#define SMMSTORE_RECLAIM_STATUS  0
++#define SMMSTORE_RECLAIM_COMMIT  1
++
++/**
++  The reclaim of the variable store that coreboot does in SMM while a lock is
++  armed: STATUS asks whether one would be considered now, COMMIT puts the image
++  written into the staging area (the bytes of the store, the firmware volume
++  header included, just before the last block of the region) in place of the
++  store, once coreboot has checked it whole.
++
++  @param[in] Op   SMMSTORE_RECLAIM_STATUS or SMMSTORE_RECLAIM_COMMIT.
++
++  @retval EFI_SUCCESS       Would be considered (STATUS); done (COMMIT).
++  @retval EFI_NO_MEDIA      SmmStore is not initialized.
++  @retval EFI_UNSUPPORTED   No lock armed, or no such reclaim in coreboot.
++  @retval EFI_DEVICE_ERROR  Refused: four a boot, the store more than a quarter
++                            free, or the image.
++
++**/
++EFI_STATUS
++SmmStoreLibReclaim (
++  IN UINT32  Op
++  );
++
+ typedef EFI_STATUS EFIAPI (*CONVERT_POINTER_CALLBACK) (
+   IN UINTN     DebugDisposition,
+   IN OUT VOID  **Address
+diff --git a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+index 5b502e77f..f80a21b0b 100644
+--- a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
++++ b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c
+@@ -549,6 +549,38 @@ SmmStoreLibMorLock (
+   return Status;
+ }
+ 
++/**
++  The reclaim of the variable store that coreboot does in SMM while a lock is
++  armed (SMMSTORE_CMD_RECLAIM): STATUS asks whether one would be considered
++  now, COMMIT puts the image that the caller wrote into the staging area in
++  place of the store, once coreboot has checked it whole. Allocates nothing.
++
++  @param[in] Op   SMMSTORE_RECLAIM_STATUS or SMMSTORE_RECLAIM_COMMIT.
++
++  @retval EFI_SUCCESS       Would be considered (STATUS); done (COMMIT).
++  @retval EFI_NO_MEDIA      SmmStore is not initialized.
++  @retval EFI_UNSUPPORTED   No lock armed, or no reclaim in this coreboot: the
++                            fault tolerant write reclaims.
++  @retval EFI_DEVICE_ERROR  Refused (the limits, or the image).
++
++**/
++EFI_STATUS
++SmmStoreLibReclaim (
++  IN UINT32  Op
++  )
++{
++  EFI_STATUS  Status;
++
++  if (mSmmStoreInfo == NULL) {
++    return EFI_NO_MEDIA;
++  }
++
++  mArgComBuf->Reclaim.Op = Op;
++  Status                 = CallSmm (mSmmStoreInfo->ApmCmd, SMMSTORE_CMD_RECLAIM, mArgComBufPhys);
++  ZeroMem (&mArgComBuf->Reclaim, sizeof (mArgComBuf->Reclaim));
++  return Status;
++}
++
+ /**
+   Fixup internal data so that EFI can be called in virtual mode.
+   Converts any pointers in lib to virtual mode. This function is meant to
+diff --git a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h
+index 8d8dd5daa..63d0ecb98 100644
+--- a/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h
++++ b/UefiPayloadPkg/Library/SmmStoreLib/SmmStore.h
+@@ -42,6 +42,12 @@
+ //
+ #define SMMSTORE_CMD_OPTION_LOCK  12
+ 
++//
++// coreboot with SMMSTORE_RECLAIM: the reclaim of the variable store while a
++// lock is armed, from the staging area, checked whole in SMM.
++//
++#define SMMSTORE_CMD_RECLAIM  13
++
+ /* Used by capsule updates as a standalone command or modifier to v2 commands */
+ #define SMMSTORE_CMD_USE_FULL_FLASH  0x80
+ 
+@@ -98,11 +104,16 @@ typedef struct {
+   UINT8     Key[8];
+ } SMM_STORE_PARAMS_MOR_LOCK;
+ 
++typedef struct {
++  UINT32    Op;
++} SMM_STORE_PARAMS_RECLAIM;
++
+ typedef union {
+   SMM_STORE_PARAMS_WRITE       Write;
+   SMM_STORE_PARAMS_READ        Read;
+   SMM_STORE_PARAMS_CLEAR       Clear;
+   SMM_STORE_PARAMS_MOR_LOCK    MorLock;
++  SMM_STORE_PARAMS_RECLAIM     Reclaim;
+ } SMM_STORE_COM_BUF;
+ 
+ #pragma pack(0)
+diff --git a/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c b/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c
+index 53d2557b5..921f01c03 100644
+--- a/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c
++++ b/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c
+@@ -14,11 +14,17 @@
+ #include <Library/UefiBootServicesTableLib.h>
+ #include <Library/PcdLib.h>
+ #include <Library/SmmStoreLib.h>
++#include <Protocol/PlatformVariableReclaim.h>
+ 
+ #include "SmmStoreFvbRuntime.h"
+ 
+ STATIC EFI_EVENT  mSmmStoreVirtualAddrChangeEvent;
+ 
++//
++// One block, to build each block of the staging area of a reclaim
++//
++STATIC UINT8  *mReclaimBlock;
++
+ //
+ // Global variable declarations
+ //
+@@ -121,6 +127,96 @@ SmmStoreInitInstance (
+   return Status;
+ }
+ 
++/**
++  The reclaim of the variable store while coreboot keeps a lock armed
++  (SMMSTORE_CMD_RECLAIM): the reclaimed store, with the firmware volume header
++  before it, written into the staging area, the store_end bytes before the
++  last block of the region, then put in place of the store by coreboot once
++  it has checked it whole. The fault tolerant write cannot do it then: the
++  locks refuse its writes past the store.
++
++  @retval EFI_UNSUPPORTED  No lock armed, or no such reclaim in coreboot, or
++                           no room for the staging area: the fault tolerant
++                           write reclaims, when it is available.
++**/
++STATIC
++EFI_STATUS
++EFIAPI
++SmmStoreFvbReclaim (
++  IN EFI_LBA     Lba,
++  IN UINTN       Offset,
++  IN UINTN       NumBytes,
++  IN CONST VOID  *Buffer
++  )
++{
++  UINTN       BlockSize;
++  UINTN       RegionSize;
++  UINTN       Start;
++  UINTN       StoreEnd;
++  UINTN       Staging;
++  UINTN       Block;
++  UINTN       Header;
++  UINTN       Size;
++  EFI_STATUS  Status;
++
++  if ((mSmmStoreInstance == NULL) || (mReclaimBlock == NULL)) {
++    return EFI_UNSUPPORTED;
++  }
++
++  BlockSize  = mSmmStoreInstance->BlockSize;
++  RegionSize = (mSmmStoreInstance->LastBlock + 1) * BlockSize;
++  Start      = (UINTN)Lba * BlockSize + Offset;
++  StoreEnd   = Start + NumBytes;
++  if ((StoreEnd % BlockSize != 0) || (RegionSize < 2 * StoreEnd + 2 * BlockSize)) {
++    return EFI_UNSUPPORTED;
++  }
++
++  Staging = RegionSize - BlockSize - StoreEnd;
++
++  Status = SmmStoreLibReclaim (SMMSTORE_RECLAIM_STATUS);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  for (Block = 0; Block < StoreEnd / BlockSize; Block++) {
++    //
++    // Below the store, the firmware volume header as the flash has it
++    //
++    Header = 0;
++    if (Block * BlockSize < Start) {
++      Header = MIN (Start - Block * BlockSize, BlockSize);
++      Size   = Header;
++      Status = SmmStoreLibRead (Block, 0, &Size, mReclaimBlock);
++      if (EFI_ERROR (Status) || (Size != Header)) {
++        return EFI_DEVICE_ERROR;
++      }
++    }
++
++    CopyMem (
++      mReclaimBlock + Header,
++      (CONST UINT8 *)Buffer + Block * BlockSize + Header - Start,
++      BlockSize - Header
++      );
++
++    Status = SmmStoreLibEraseBlock ((Staging / BlockSize) + Block);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++
++    Size   = BlockSize;
++    Status = SmmStoreLibWrite ((Staging / BlockSize) + Block, 0, &Size, mReclaimBlock);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++  }
++
++  return SmmStoreLibReclaim (SMMSTORE_RECLAIM_COMMIT);
++}
++
++STATIC EDKII_PLATFORM_VARIABLE_RECLAIM_PROTOCOL  mPlatformVariableReclaim = {
++  SmmStoreFvbReclaim
++};
++
+ /**
+   Fixup internal data so that EFI can be call in virtual mode.
+   Call the passed in Child Notify event and convert any pointers in
+@@ -149,6 +245,10 @@ SmmStoreVirtualNotifyEvent (
+   EfiConvertPointer (0x0, (VOID **)&mSmmStoreInstance->FvbProtocol.Write);
+   EfiConvertPointer (0x0, (VOID **)&mSmmStoreInstance->MmioAddress);
+   EfiConvertPointer (0x0, (VOID **)&mSmmStoreInstance);
++  EfiConvertPointer (0x0, (VOID **)&mPlatformVariableReclaim.Reclaim);
++  if (mReclaimBlock != NULL) {
++    EfiConvertPointer (0x0, (VOID **)&mReclaimBlock);
++  }
+ 
+   return;
+ }
+@@ -254,6 +354,23 @@ SmmStoreInitialize (
+   Status = PcdSet64S (PcdFlashNvStorageFtwSpareBase64, NvStorageBase + NvVariableSize + FtwWorkingSize);
+   ASSERT_EFI_ERROR (Status);
+ 
++  //
++  // Before the FVB, which the variable driver waits for: the reclaim by
++  // coreboot, when it keeps a lock of the store armed
++  //
++  mReclaimBlock = AllocateRuntimePool (BlockSize);
++  if (mReclaimBlock != NULL) {
++    Status = gBS->InstallMultipleProtocolInterfaces (
++                    &ImageHandle,
++                    &gEdkiiPlatformVariableReclaimProtocolGuid,
++                    &mPlatformVariableReclaim,
++                    NULL
++                    );
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_WARN, "%a: no reclaim by the platform: %r\n", __func__, Status));
++    }
++  }
++
+   mSmmStoreInstance = AllocateRuntimeCopyPool (sizeof (SMMSTORE_INSTANCE), &mSmmStoreInstanceTemplate);
+   if (mSmmStoreInstance == NULL) {
+     SmmStoreLibDeinitialize ();
+diff --git a/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntimeDxe.inf b/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntimeDxe.inf
+index 003f829a1..cbead31f1 100644
+--- a/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntimeDxe.inf
++++ b/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntimeDxe.inf
+@@ -28,7 +28,9 @@
+ 
+ [LibraryClasses]
+   BaseLib
++  BaseMemoryLib
+   DebugLib
++  MemoryAllocationLib
+   HobLib
+   SmmStoreLib
+   UefiLib
+@@ -47,6 +49,7 @@
+ [Protocols]
+   gEfiDevicePathProtocolGuid          ## BY_START
+   gEfiFirmwareVolumeBlockProtocolGuid ## BY_START
++  gEdkiiPlatformVariableReclaimProtocolGuid ## PRODUCES
+ 
+ [Pcd]
+   gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageVariableBase

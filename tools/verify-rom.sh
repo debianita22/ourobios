@@ -479,6 +479,8 @@ if extract config "${TMP}/config"; then
 	# M920x: calcola uno SHA-256 dentro quel giro, stack di SMM da 8 KiB
 	if [ "${BOARD}" = m920x ]; then
 		want CONFIG_SMMSTORE_OPTION_LOCK_ALL=y
+		# e il reclaim dello store in SMM con il lock armato (patch 0288)
+		want CONFIG_SMMSTORE_RECLAIM=y
 		want CONFIG_DRIVERS_OPTION_CFR_LOCK_AT_BOOT=y
 		want CONFIG_SMM_MODULE_STACK_SIZE=0x2000
 	else

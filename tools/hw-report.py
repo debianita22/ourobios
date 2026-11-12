@@ -176,6 +176,11 @@ KNOWN_FW_LOG = (
 # Avvisi del log di coreboot che raccontano un evento atteso: INFO, non un
 # problema (drivers/efi/option.c, DRIVERS_EFI_RESET_OPTIONS_ON_RTC_FAILURE)
 EVENT_FW_LOG = (
+    # patch 0288: la ramstage finisce un reclaim dello store in SMM che una
+    # caduta di corrente ha interrotto (drivers/smmstore/reclaim.c)
+    (r"SMMSTORE: finishing a reclaim cut by a power loss", None,
+     "un reclaim dello store in SMM era stato interrotto (corrente persa durante la copia): la ramstage "
+     "lo ha finito dall'area di appoggio"),
     (r"Setup options: \d+ reset to defaults \(RTC power lost\)", None,
      "la RTC ha perso l'alimentazione (pila, jumper della CMOS): le opzioni del setup sono ai default, "
      "Firmware protection compresa"),

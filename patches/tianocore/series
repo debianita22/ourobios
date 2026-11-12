@@ -90,3 +90,4 @@
 0118-UefiPayloadPkg-UefiPayloadEntry-Fix-MMCONF-resource-.patch
 0120-UefiPayloadPkg-Leave-SdhciNonPciDxe-out-of-the-paylo.patch
 0121-UefiPayloadPkg-Arm-coreboot-s-lock-of-the-security-o.patch
+0125-UefiPayloadPkg-Reclaim-the-variable-store-through-co.patch

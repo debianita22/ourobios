@@ -44,6 +44,15 @@ whose changes below are still to run on a machine.
   above 85 C; at normal temperatures nothing changes. The memory
   settings version goes up, so the first boot after the update trains
   the memory again (a few seconds more, once).
+- **M920x: the variable store is reclaimed while the lock is armed**
+  (patch 0288, `edk2/0064`): with the option lock armed, a store full
+  of old records was cleaned up only at the next boot; meanwhile each
+  variable write took longer, and once the store was full the writes of
+  the OS failed. Now the payload builds the cleaned-up store and
+  coreboot checks it whole in SMM with the rules of the lock before it
+  replaces the old one, behind a commit record, so that a power loss
+  during the swap is finished at the next boot. At most four times a
+  boot, only when the store is nearly full; about a second each.
 - **The firmware reports its security tests (HSTI)** (`edk2/0063`):
   when a boot starts, the payload reads the protections of the flash,
   SMRAM, the debug interface, Secure Boot, the TPM and the setup and MOR

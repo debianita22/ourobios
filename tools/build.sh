@@ -2511,7 +2511,8 @@ EDK2_PARITY_READY=no
 # Le prove unitarie di coreboot del progetto (tests/drivers, tests/device): il
 # make di coreboot le compila per l'host e le esegue, e fallisce se una non passa
 COREBOOT_UNIT_TESTS=(tests/drivers/efivars-test tests/drivers/smmstore_options_lock-test
-	tests/drivers/smmstore_options_lock_two-test tests/device/ddr3-test)
+	tests/drivers/smmstore_options_lock_two-test tests/drivers/smmstore_reclaim-test
+	tests/device/ddr3-test)
 cmd_coreboot_unit_test() {
 	need_prepared
 	local t log="${WORK}/coreboot-unit-test.log"

@@ -153,6 +153,13 @@ CONFIG_SMMSTORE_OPTION_LOCK=y
 # dispositivo spento nel setup. Il W541 resta col lock delle due opzioni
 # finche' non l'ha provato (docs/dev-v1.7.0-m920x.md)
 CONFIG_SMMSTORE_OPTION_LOCK_ALL=y
+# Il reclaim dello store in SMM con il lock armato (patch 0288, edk2/0064):
+# il driver delle variabili scrive lo store compattato nell'area di appoggio
+# prima dell'ultimo blocco della regione, il gestore lo controlla tutto con
+# le regole dei lock e lo mette al posto dello store dietro un record di
+# commit; la ramstage finisce una copia interrotta da una caduta di corrente.
+# Senza, lo store si riempie fino al riavvio e le scritture dell'OS falliscono
+CONFIG_SMMSTORE_RECLAIM=y
 # Lo stesso lock un livello sopra (patch 0284): ogni opzione ha
 # CFR_OPTFLAG_LOCK_AT_BOOT, e da ReadyToBoot il driver delle variabili del
 # payload ne rifiuta la scrittura, prima che arrivi al flash. Il setup le

@@ -1,0 +1,1297 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Thu, 12 Nov 2026 12:51:25 +0100
+Subject: [PATCH] drivers/smmstore: Reclaim the variable store in SMM while a
+ lock is armed
+
+With the option lock or the MOR lock armed, the payload cannot reclaim
+the variable store: its fault tolerant write erases the store and copies
+it back from the spare blocks, and the locks refuse both (an erase leaves
+a store without the options, a write past the store is the bypass that
+the store end check closed). Every write then appends a record until the
+next boot, the writes slow down with the dead records, and a full store
+fails the writes of the OS.
+
+Add SMMSTORE_RECLAIM and SMMSTORE_CMD_RECLAIM. The payload writes the
+reclaimed store into a staging area, the store_end bytes before the last
+block of the region, with raw writes, which a lock allows there while
+armed. On COMMIT the handler reads the image back from the flash, checks
+the headers, walks it, and asks each lock whether the image keeps what it
+holds: the set of the options (or the security options) and the MOR
+request. It then writes a commit record with the SHA-256 of the image
+into the last block, which raw writes may not touch while armed, copies
+the image over the store, reads it back and erases the record. Ramstage
+finds a record left by a power loss before the payload and finishes the
+copy from the staging area, or drops a record whose image does not match;
+it takes the layout from the record, since the store's own header may be
+erased. At most four reclaims a boot, and none while the store is more
+than a quarter free. The swap takes one SMI: split over several, a half
+written store would meet an S3 resume or another write between them.
+
+TEST=Unit tests: the layout, the areas, the limits, a commit, an image
+refused by the locks or unreadable or with other headers, the limit per
+boot, a power loss after each flash operation of the commit followed by
+the recovery, records with a wrong image or layout, and the image rules
+of the option lock with and without SMMSTORE_OPTION_LOCK_ALL.
+---
+ src/drivers/smmstore/Kconfig          |  16 ++
+ src/drivers/smmstore/Makefile.mk      |   2 +
+ src/drivers/smmstore/mor_lock.c       |  12 +
+ src/drivers/smmstore/options_lock.c   |  56 ++++
+ src/drivers/smmstore/reclaim.c        | 369 +++++++++++++++++++++++++
+ src/drivers/smmstore/smi.c            |  13 +
+ src/drivers/smmstore/store.c          |  34 +++
+ src/include/smmstore.h                |  76 +++++
+ tests/drivers/Makefile.mk             |  20 ++
+ tests/drivers/smmstore_options_lock.c | 134 +++++++++
+ tests/drivers/smmstore_reclaim.c      | 382 ++++++++++++++++++++++++++
+ 11 files changed, 1114 insertions(+)
+ create mode 100644 src/drivers/smmstore/reclaim.c
+ create mode 100644 tests/drivers/smmstore_reclaim.c
+
+diff --git a/src/drivers/smmstore/Kconfig b/src/drivers/smmstore/Kconfig
+index 93e0496c27c..c4d4356d8f1 100644
+--- a/src/drivers/smmstore/Kconfig
++++ b/src/drivers/smmstore/Kconfig
+@@ -94,9 +94,25 @@ config SMMSTORE_OPTION_LOCK_ALL
+ 	  kept as a SHA-256 (vboot's library in SMM). The setup still changes
+ 	  the options, before the lock is armed.
+ 
++config SMMSTORE_RECLAIM
++	bool "Reclaim the variable store in SMM while a lock is armed"
++	depends on (SMMSTORE_OPTION_LOCK || SMMSTORE_MOR_LOCK) && VBOOT_LIB
++	# vboot's SHA-256 in C: its SHA extension code would use XMM registers in SMM
++	depends on !VBOOT_X86_SHA256_ACCELERATION
++	help
++	  SMMSTORE_CMD_RECLAIM: with the option lock or the MOR lock armed the
++	  payload cannot reclaim the variable store through its fault tolerant
++	  write, so the store fills up until the next boot. With this, the
++	  payload writes the reclaimed store into a staging area at the end of
++	  the region and the handler checks it whole with the rules of the
++	  locks, then puts it in place of the store behind a commit record;
++	  ramstage finishes a swap that a power loss cut. Needs the payload's
++	  side (the variable driver of ouroBIOS's EDK II).
++
+ endif
+ 
+ # Outside "if SMMSTORE": a board selects it whatever its payload
++
+ config SMMSTORE_VBOOT_SWITCH_KEEPS_MRC_CACHE
+ 	bool
+ 	help
+diff --git a/src/drivers/smmstore/Makefile.mk b/src/drivers/smmstore/Makefile.mk
+index d6f801aab67..ef42d82767f 100644
+--- a/src/drivers/smmstore/Makefile.mk
++++ b/src/drivers/smmstore/Makefile.mk
+@@ -3,10 +3,12 @@
+ all-$(CONFIG_SMMSTORE) += store.c
+ 
+ ramstage-$(CONFIG_SMMSTORE) += ramstage.c
++ramstage-$(CONFIG_SMMSTORE_RECLAIM) += reclaim.c
+ 
+ smm-$(CONFIG_SMMSTORE) += store.c smi.c
+ smm-$(CONFIG_SMMSTORE_MOR_LOCK) += mor_lock.c
+ smm-$(CONFIG_SMMSTORE_OPTION_LOCK) += options_lock.c
++smm-$(CONFIG_SMMSTORE_RECLAIM) += reclaim.c
+ ifneq ($(CONFIG_SMMSTORE_MOR_LOCK)$(CONFIG_SMMSTORE_OPTION_LOCK),)
+ smm-y += split.c
+ endif
+diff --git a/src/drivers/smmstore/mor_lock.c b/src/drivers/smmstore/mor_lock.c
+index e64e9808109..9a4465ad784 100644
+--- a/src/drivers/smmstore/mor_lock.c
++++ b/src/drivers/smmstore/mor_lock.c
+@@ -198,6 +198,18 @@ bool smmstore_mor_write_allowed(size_t offset, const void *data, size_t size)
+ 	return requested;
+ }
+ 
++/* The image of a whole store that SMMSTORE_CMD_RECLAIM would put in place of the store */
++bool smmstore_mor_image_allowed(const struct region_device *image)
++{
++	if (!smmstore_mor_protecting())
++		return true;
++	if (!mor_requested(image)) {
++		printk(BIOS_WARNING, "MOR lock: refused a reclaim that clears the request of the OS\n");
++		return false;
++	}
++	return true;
++}
++
+ uint32_t smmstore_mor_lock(const struct smmstore_params_mor_lock *params)
+ {
+ 	struct mor_lock_state *state = mor_state();
+diff --git a/src/drivers/smmstore/options_lock.c b/src/drivers/smmstore/options_lock.c
+index e5693cee08d..59c119e0e93 100644
+--- a/src/drivers/smmstore/options_lock.c
++++ b/src/drivers/smmstore/options_lock.c
+@@ -409,6 +409,62 @@ bool smmstore_options_write_allowed(size_t offset, const void *data, size_t size
+ 	return true;
+ }
+ 
++/*
++ * The image of a whole store that SMMSTORE_CMD_RECLAIM would put in place of
++ * the store: the same rule as a write, on the image instead of the store as a
++ * write would leave it. The caller has walked the image already.
++ */
++bool smmstore_options_image_allowed(const struct region_device *image)
++{
++	struct option_lock_state *state = option_state();
++	uint32_t after[ARRAY_SIZE(protected_options)];
++
++	if (!state || !state->armed)
++		return true;
++
++#if CONFIG(SMMSTORE_OPTION_LOCK_ALL)
++	if (state->all) {
++		struct region_device store;
++		uint8_t digest[OPTION_SET_DIGEST_SIZE];
++		uint32_t count;
++
++		if (!option_set.fresh &&
++		    (variable_store(&store) || !option_set_latch(&store))) {
++			printk(BIOS_ERR, "Option lock: the options cannot be read, reclaim refused\n");
++			return false;
++		}
++		if (!option_set_of(image, &count, digest, NULL)) {
++			printk(BIOS_WARNING, "Option lock: refused a reclaim to an unreadable store\n");
++			return false;
++		}
++		if (count != option_set.count ||
++		    memcmp(digest, option_set.digest, sizeof(digest))) {
++			printk(BIOS_WARNING, "Option lock: refused a reclaim that changes a setup option\n");
++			return false;
++		}
++		return true;
++	}
++#endif
++
++	option_values(image, after);
++	for (size_t i = 0; i < ARRAY_SIZE(protected_options); i++) {
++		if (state->on[i] && !after[i]) {
++			printk(BIOS_WARNING, "Option lock: refused a reclaim that turns '%s' off\n",
++			       protected_options[i].name);
++			return false;
++		}
++	}
++	return true;
++}
++
++/* The store was replaced whole: the set and its erased tail from the flash again */
++void smmstore_options_store_replaced(void)
++{
++#if CONFIG(SMMSTORE_OPTION_LOCK_ALL)
++	option_set.fresh = false;
++#endif
++}
++
+ uint32_t smmstore_options_lock(void)
+ {
+ 	struct option_lock_state *state = option_state();
+diff --git a/src/drivers/smmstore/reclaim.c b/src/drivers/smmstore/reclaim.c
+new file mode 100644
+index 00000000000..a5eff69851e
+--- /dev/null
++++ b/src/drivers/smmstore/reclaim.c
+@@ -0,0 +1,369 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * SMMSTORE_RECLAIM (smmstore.h): the reclaim of the variable store while a
++ * lock is armed. The payload reclaims the store through its fault tolerant
++ * write, which erases the store and copies it back from the spare blocks; the
++ * locks refuse both while armed (an erase leaves a store without the options,
++ * and a write past the store is the bypass that patch 0281 closed), so until
++ * the next boot every write appends a record, and a full store fails the
++ * writes of the OS.
++ *
++ * Here the one step that the rules of the locks cannot allow piece by piece,
++ * putting a new store in place of the old one, is checked whole. The payload
++ * writes the reclaimed store into the staging area; the handler reads it back
++ * from the flash, never from memory the OS can change, and checks it with the
++ * rules of the locks as if it were the store. Then:
++ *
++ *   1. the commit record, with the SHA-256 of the image, into the commit block;
++ *   2. the store erased and the image copied over it, read back;
++ *   3. the commit block erased.
++ *
++ * A power loss after 1 leaves a record that ramstage finds at the next boot,
++ * before the payload and before any lock: it checks the staging area against
++ * the hash of the record and finishes the copy, then erases the record. Before
++ * 1 the old store is intact, and a staging area without a record is inert,
++ * for coreboot and for the payload's fault tolerant write, which acts only on
++ * a record of its working block. Only SMM writes the commit block while a lock
++ * is armed, so nothing the OS writes outside the store reaches the store
++ * without the check.
++ *
++ * The swap takes one SMI: about a second for 192 KiB, with the OS stopped, at
++ * most SMMSTORE_RECLAIM_PER_BOOT times a boot and only while the store is
++ * nearly full. A swap split over several SMIs would leave a half-written store
++ * between them that an S3 resume (the latch of the option lock is taken from
++ * the flash again) or another write would meet.
++ */
++
++#include <acpi/acpi.h>
++#include <boot_device.h>
++#include <bootstate.h>
++#include <commonlib/helpers.h>
++#include <commonlib/region.h>
++#include <console/console.h>
++#include <drivers/efi/efivars.h>
++#include <fmap.h>
++#include <smmstore.h>
++#include <string.h>
++#include <types.h>
++#include <vb2_sha.h>
++
++#define RECLAIM_MAGIC "OBRCLM01"
++
++struct reclaim_record {
++	char magic[8];
++	uint32_t store_end;
++	uint32_t staging;
++	uint8_t digest[VB2_SHA256_DIGEST_SIZE];
++} __packed;
++
++/* One SMI, or ramstage, at a time: static, not on the small stack of SMM */
++static uint8_t chunk[4 * KiB];
++static uint8_t chunk2[4 * KiB];
++
++/* The SMMSTORE region, writable */
++static bool region_rw(struct region_device *rdev)
++{
++	struct region region;
++
++	return !fmap_locate_area(SMMSTORE_REGION, &region) &&
++	       !boot_device_rw_subregion(&region, rdev);
++}
++
++static bool hash_area(const struct region_device *rdev, size_t offset, size_t size,
++		      uint8_t digest[VB2_SHA256_DIGEST_SIZE])
++{
++	struct vb2_sha256_context ctx;
++
++	vb2_sha256_init(&ctx, VB2_HASH_SHA256);
++	for (size_t done = 0; done < size; done += sizeof(chunk)) {
++		const size_t n = MIN(sizeof(chunk), size - done);
++
++		if (rdev_readat(rdev, chunk, offset + done, n) != n)
++			return false;
++		vb2_sha256_update(&ctx, chunk, n);
++	}
++	vb2_sha256_finalize(&ctx, digest, VB2_HASH_SHA256);
++	return true;
++}
++
++/* Whether the store holds the image of the staging area: -1 on a read error */
++static int store_is_image(const struct region_device *rdev, const struct smmstore_reclaim_layout *l)
++{
++	for (size_t done = 0; done < l->store_end; done += sizeof(chunk)) {
++		const size_t n = MIN(sizeof(chunk), l->store_end - done);
++
++		if (rdev_readat(rdev, chunk, done, n) != n ||
++		    rdev_readat(rdev, chunk2, l->staging + done, n) != n)
++			return -1;
++		if (memcmp(chunk, chunk2, n))
++			return 0;
++	}
++	return 1;
++}
++
++/* The image over the store, block by block, and read back */
++static bool copy_image(const struct region_device *rdev, const struct smmstore_reclaim_layout *l)
++{
++	for (size_t block = 0; block < l->store_end; block += SMM_BLOCK_SIZE) {
++		if (rdev_eraseat(rdev, block, SMM_BLOCK_SIZE) != SMM_BLOCK_SIZE)
++			return false;
++		for (size_t done = 0; done < SMM_BLOCK_SIZE; done += sizeof(chunk)) {
++			if (rdev_readat(rdev, chunk, l->staging + block + done, sizeof(chunk))
++			    != sizeof(chunk) ||
++			    rdev_writeat(rdev, chunk, block + done, sizeof(chunk)) != sizeof(chunk))
++				return false;
++		}
++	}
++	return store_is_image(rdev, l) == 1;
++}
++
++static bool erase_commit(const struct region_device *rdev, const struct smmstore_reclaim_layout *l)
++{
++	return rdev_eraseat(rdev, l->commit, SMM_BLOCK_SIZE) == SMM_BLOCK_SIZE;
++}
++
++#if ENV_SMM
++/* The coreboot options GUID: any GUID gives the walk of the whole store */
++static const EFI_GUID walk_guid = {
++	0xceae4c1d, 0x335b, 0x4685, { 0xa4, 0xa0, 0xfc, 0x4a, 0x94, 0xee, 0xa0, 0x85 } };
++
++static enum cb_err no_var(const struct efi_fv_var *var, void *arg)
++{
++	return CB_SUCCESS;
++}
++
++/* The region and its areas, from the store's own header */
++static bool reclaim_region(struct region_device *rdev, struct smmstore_reclaim_layout *l)
++{
++	size_t store_end;
++
++	if (!region_rw(rdev) || efi_fv_store_end(rdev, &store_end) != CB_SUCCESS)
++		return false;
++	return smmstore_reclaim_layout(region_device_sz(rdev), SMM_BLOCK_SIZE, store_end, l);
++}
++
++static unsigned int reclaims;
++
++static bool locks_armed(void)
++{
++#if CONFIG(SMMSTORE_MOR_LOCK)
++	if (smmstore_mor_protecting())
++		return true;
++#endif
++#if CONFIG(SMMSTORE_OPTION_LOCK)
++	if (smmstore_options_protecting())
++		return true;
++#endif
++	return false;
++}
++
++int smmstore_reclaim_area(size_t offset, size_t size)
++{
++	struct region_device rdev;
++	struct smmstore_reclaim_layout l;
++
++	if (!reclaim_region(&rdev, &l))
++		return 0;
++	if (offset + size > l.commit && offset < l.commit + SMM_BLOCK_SIZE)
++		return -1;
++	if (offset >= l.staging && offset + size <= l.staging + l.store_end)
++		return 1;
++	return 0;
++}
++
++/*
++ * The region as it would be with the image in place of the store: the reader
++ * checks the firmware volume against the length of the whole region, so the
++ * image is read through a device of that size, the store from the staging
++ * area and the rest from the region itself (past the store the reader reads
++ * nothing). A static context, as the overlays of the locks: one SMI at a time.
++ */
++static const struct region_device *image_parent;
++static size_t image_staging, image_store_end;
++
++static ssize_t image_readat(const struct region_device *rd, void *b, size_t offset, size_t size)
++{
++	uint8_t *buf = b;
++	size_t done = 0;
++
++	while (done < size) {
++		const size_t at = offset + done;
++		size_t n = size - done, from = at;
++
++		if (at < image_store_end) {
++			n = MIN(n, image_store_end - at);
++			from = image_staging + at;
++		}
++		if (rdev_readat(image_parent, buf + done, from, n) != n)
++			return -1;
++		done += n;
++	}
++	return size;
++}
++
++static void *image_mmap(const struct region_device *rd, size_t offset, size_t size)
++{
++	return NULL;
++}
++
++static int image_munmap(const struct region_device *rd, void *mapping)
++{
++	return 0;
++}
++
++static const struct region_device_ops image_ops = {
++	.mmap = image_mmap,
++	.munmap = image_munmap,
++	.readat = image_readat,
++};
++
++/* The image is a store the reader can walk, with the headers of the store, that the locks keep */
++static bool image_allowed(const struct region_device *rdev, const struct smmstore_reclaim_layout *l)
++{
++	struct region_device image_root, image;
++	size_t header;
++	uint16_t fv_header;
++
++	image_parent = rdev;
++	image_staging = l->staging;
++	image_store_end = l->store_end;
++	/* The reader gets a child, never the root: see the overlays of the locks */
++	region_device_init(&image_root, &image_ops, 0, region_device_sz(rdev));
++	if (rdev_chain(&image, &image_root, 0, region_device_sz(rdev)))
++		return false;
++
++	/* The firmware volume header (its length at 0x30) and the 28 bytes of the store header */
++	if (rdev_readat(rdev, &fv_header, 0x30, sizeof(fv_header)) != sizeof(fv_header))
++		return false;
++	header = fv_header + 28;
++	if (header > sizeof(chunk) ||
++	    rdev_readat(rdev, chunk, 0, header) != header ||
++	    rdev_readat(&image, chunk2, 0, header) != header ||
++	    memcmp(chunk, chunk2, header)) {
++		printk(BIOS_WARNING, "SMMSTORE: reclaim refused, the headers differ\n");
++		return false;
++	}
++
++	if (efi_fv_walk_guid(&image, &walk_guid, no_var, NULL, NULL) != CB_SUCCESS) {
++		printk(BIOS_WARNING, "SMMSTORE: reclaim refused, the image cannot be read\n");
++		return false;
++	}
++
++#if CONFIG(SMMSTORE_MOR_LOCK)
++	if (!smmstore_mor_image_allowed(&image))
++		return false;
++#endif
++#if CONFIG(SMMSTORE_OPTION_LOCK)
++	if (!smmstore_options_image_allowed(&image))
++		return false;
++#endif
++	return true;
++}
++
++static void store_replaced(void)
++{
++#if CONFIG(SMMSTORE_OPTION_LOCK)
++	smmstore_options_store_replaced();
++#endif
++}
++
++uint32_t smmstore_reclaim(const struct smmstore_params_reclaim *params)
++{
++	struct region_device rdev;
++	struct smmstore_reclaim_layout l;
++	struct reclaim_record record;
++	size_t tail;
++
++	if (!locks_armed() || !reclaim_region(&rdev, &l))
++		return SMMSTORE_RET_UNSUPPORTED;
++	if (reclaims >= SMMSTORE_RECLAIM_PER_BOOT)
++		return SMMSTORE_RET_FAILURE;
++	if (efi_fv_walk_guid(&rdev, &walk_guid, no_var, NULL, &tail) != CB_SUCCESS ||
++	    l.store_end - tail > l.store_end / 4)
++		return SMMSTORE_RET_FAILURE;
++	if (params->op == SMMSTORE_RECLAIM_STATUS)
++		return SMMSTORE_RET_SUCCESS;
++	if (params->op != SMMSTORE_RECLAIM_COMMIT)
++		return SMMSTORE_RET_FAILURE;
++
++	smmstore_locked_write_reset();
++	if (!image_allowed(&rdev, &l))
++		return SMMSTORE_RET_FAILURE;
++
++	memset(&record, 0, sizeof(record));
++	memcpy(record.magic, RECLAIM_MAGIC, sizeof(record.magic));
++	record.store_end = l.store_end;
++	record.staging = l.staging;
++	if (!hash_area(&rdev, l.staging, l.store_end, record.digest) ||
++	    !erase_commit(&rdev, &l) ||
++	    rdev_writeat(&rdev, &record, l.commit, sizeof(record)) != sizeof(record))
++		return SMMSTORE_RET_FAILURE;
++
++	reclaims++;
++	/* From here the swap completes: now, or at the next boot from the record */
++	if (!copy_image(&rdev, &l)) {
++		printk(BIOS_ERR, "SMMSTORE: reclaim copy failed, the next boot finishes it\n");
++		store_replaced();
++		return SMMSTORE_RET_FAILURE;
++	}
++	erase_commit(&rdev, &l);
++	store_replaced();
++	return SMMSTORE_RET_SUCCESS;
++}
++#endif
++
++#if ENV_RAMSTAGE || ENV_TEST
++void smmstore_reclaim_recover(void)
++{
++	struct region_device rdev;
++	struct smmstore_reclaim_layout l;
++	struct reclaim_record record;
++	uint8_t digest[VB2_SHA256_DIGEST_SIZE];
++	int same;
++
++	/*
++	 * Not from the store's header: a power loss in the copy can leave the
++	 * first block of the store erased. The commit block is the last block of
++	 * the region, and the record says where the store ends.
++	 */
++	if (!region_rw(&rdev) || region_device_sz(&rdev) < SMM_BLOCK_SIZE ||
++	    rdev_readat(&rdev, &record, region_device_sz(&rdev) - SMM_BLOCK_SIZE,
++			sizeof(record)) != sizeof(record) ||
++	    memcmp(record.magic, RECLAIM_MAGIC, sizeof(record.magic)))
++		return;
++
++	if (!smmstore_reclaim_layout(region_device_sz(&rdev), SMM_BLOCK_SIZE, record.store_end,
++				     &l) || record.staging != l.staging ||
++	    !hash_area(&rdev, l.staging, l.store_end, digest) ||
++	    memcmp(digest, record.digest, sizeof(digest))) {
++		printk(BIOS_ERR, "SMMSTORE: a reclaim record without its image, dropped\n");
++		rdev_eraseat(&rdev, region_device_sz(&rdev) - SMM_BLOCK_SIZE, SMM_BLOCK_SIZE);
++		return;
++	}
++
++	same = store_is_image(&rdev, &l);
++	if (same < 0)
++		return;
++	if (!same) {
++		printk(BIOS_WARNING, "SMMSTORE: finishing a reclaim cut by a power loss\n");
++		if (!copy_image(&rdev, &l)) {
++			printk(BIOS_ERR, "SMMSTORE: the reclaim could not be finished\n");
++			return;
++		}
++	}
++	erase_commit(&rdev, &l);
++	printk(BIOS_INFO, "SMMSTORE: reclaim record cleared\n");
++}
++
++#endif
++
++#if ENV_RAMSTAGE && !ENV_TEST
++static void reclaim_recover(void *unused)
++{
++	if (!acpi_is_wakeup_s3())
++		smmstore_reclaim_recover();
++}
++
++BOOT_STATE_INIT_ENTRY(BS_PRE_DEVICE, BS_ON_ENTRY, reclaim_recover, NULL);
++#endif
+diff --git a/src/drivers/smmstore/smi.c b/src/drivers/smmstore/smi.c
+index 17f0bd84f12..8cd6e89d954 100644
+--- a/src/drivers/smmstore/smi.c
++++ b/src/drivers/smmstore/smi.c
+@@ -395,6 +395,19 @@ uint32_t smmstore_exec(uint8_t command, void *param)
+ 		}
+ 		ret = smmstore_options_lock();
+ 		break;
++	case SMMSTORE_CMD_RECLAIM: {
++		struct smmstore_params_reclaim *params = param;
++
++		if (!CONFIG(SMMSTORE_RECLAIM)) {
++			ret = SMMSTORE_RET_UNSUPPORTED;
++			break;
++		}
++		if (range_check(params, sizeof(*params)) != 0)
++			break;
++
++		ret = smmstore_reclaim(params);
++		break;
++	}
+ 	default:
+ 		printk(BIOS_DEBUG, "Unknown SMM store command: 0x%02x\n", command);
+ 		ret = SMMSTORE_RET_UNSUPPORTED;
+diff --git a/src/drivers/smmstore/store.c b/src/drivers/smmstore/store.c
+index 4c981b7ebce..3d2ab5b3cfc 100644
+--- a/src/drivers/smmstore/store.c
++++ b/src/drivers/smmstore/store.c
+@@ -104,9 +104,43 @@ static bool locks_protecting(void)
+ 	return false;
+ }
+ 
++#if CONFIG(SMMSTORE_RECLAIM)
++/*
++ * The areas of SMMSTORE_CMD_RECLAIM: 1 for a write or an erase all inside the
++ * staging area, which only the check of a reclaim reads; -1 for one that
++ * touches the commit block, which only the handler writes while a lock is
++ * armed; 0 for the others, which the locks decide.
++ */
++static int reclaim_area(size_t store_offset, size_t size)
++{
++	struct region store, vars;
++	size_t start;
++
++	if (lookup_store_region(&store) != CB_SUCCESS ||
++	    fmap_locate_area(SMMSTORE_REGION, &vars))
++		return -1;
++	start = region_offset(&store) + store_offset;
++	if (start + size <= region_offset(&vars) ||
++	    start >= region_offset(&vars) + region_sz(&vars))
++		return 0;
++	if (start < region_offset(&vars) ||
++	    start + size > region_offset(&vars) + region_sz(&vars))
++		return -1;
++	return smmstore_reclaim_area(start - region_offset(&vars), size);
++}
++#endif
++
+ /* A write (or, @data NULL, an erase) at @store_offset of the store, for every lock */
+ static bool locks_allow(size_t store_offset, const void *data, size_t size)
+ {
++#if CONFIG(SMMSTORE_RECLAIM)
++	if (locks_protecting()) {
++		const int area = reclaim_area(store_offset, size);
++
++		if (area)
++			return area > 0;
++	}
++#endif
+ #if CONFIG(SMMSTORE_MOR_LOCK)
+ 	if (!mor_lock_allows(store_offset, data, size))
+ 		return false;
+diff --git a/src/include/smmstore.h b/src/include/smmstore.h
+index 4a365c54206..d6d7a23168c 100644
+--- a/src/include/smmstore.h
++++ b/src/include/smmstore.h
+@@ -99,6 +99,33 @@
+  */
+ #define SMMSTORE_CMD_OPTION_LOCK 12
+ 
++/*
++ * SMMSTORE_RECLAIM: the reclaim of the variable store while a lock is armed,
++ * when the payload's fault tolerant write may not write past the store.
++ * The variable driver writes the reclaimed store, a byte image of the first
++ * store_end bytes of the region (the firmware volume header included), into
++ * the staging area with raw writes, then sends SMMSTORE_RECLAIM_COMMIT. The
++ * handler reads the image back from the flash, checks it whole with the rules
++ * of the locks, writes a commit record into the commit block, copies the image
++ * over the store and erases the record; ramstage finishes a copy cut by a
++ * power loss (smmstore_reclaim_recover()). The two areas are the last ones of
++ * the region (smmstore_reclaim_layout()), in the spare area of the payload's
++ * fault tolerant write; while a lock is armed, raw writes and erases inside
++ * the staging area are allowed and those of the commit block refused.
++ *
++ * STATUS: SMMSTORE_RET_SUCCESS when a commit would be considered now;
++ * SMMSTORE_RET_UNSUPPORTED with no lock armed (the payload uses its fault
++ * tolerant write) or no room for the areas; SMMSTORE_RET_FAILURE over the
++ * limits: four reclaims a boot, and none while the store is more than a
++ * quarter free. COMMIT: SMMSTORE_RET_SUCCESS when the store is the image;
++ * SMMSTORE_RET_FAILURE when refused, the store as it was.
++ */
++#define SMMSTORE_CMD_RECLAIM 13
++
++#define SMMSTORE_RECLAIM_STATUS		0
++#define SMMSTORE_RECLAIM_COMMIT		1
++#define SMMSTORE_RECLAIM_PER_BOOT	4
++
+ /*
+  * Used by capsule updates as a standalone command or modifier to v2 commands.
+  *
+@@ -205,6 +232,55 @@ bool smmstore_mor_protecting(void);
+  */
+ bool smmstore_mor_write_allowed(size_t offset, const void *data, size_t size);
+ 
++/*
++ * The areas of SMMSTORE_CMD_RECLAIM in a region of @region_size bytes whose
++ * variable store ends at @store_end: the commit block is the last block, the
++ * staging area the @store_end bytes before it. False when they do not fit
++ * above the store and the fault tolerant write's working block that follows
++ * it, or the sizes are not whole blocks.
++ */
++struct smmstore_reclaim_layout {
++	size_t store_end;
++	size_t staging;
++	size_t commit;
++};
++
++static inline bool smmstore_reclaim_layout(size_t region_size, size_t block_size,
++					   size_t store_end, struct smmstore_reclaim_layout *l)
++{
++	if (!block_size || !store_end || store_end % block_size ||
++	    region_size % block_size || region_size < 2 * store_end + 2 * block_size)
++		return false;
++	l->store_end = store_end;
++	l->commit = region_size - block_size;
++	l->staging = l->commit - store_end;
++	return true;
++}
++
++/* SMMSTORE_CMD_RECLAIM (reclaim.c) */
++struct smmstore_params_reclaim {
++	uint32_t op;
++} __packed;
++
++uint32_t smmstore_reclaim(const struct smmstore_params_reclaim *params);
++/*
++ * For the rules of the raw writes while a lock is armed: 1 when
++ * [@offset, @offset + @size) of the SMMSTORE region is inside the staging
++ * area, -1 when it touches the commit block, 0 otherwise.
++ */
++int smmstore_reclaim_area(size_t offset, size_t size);
++/* ramstage: finish a reclaim that a power loss cut, before the payload */
++void smmstore_reclaim_recover(void);
++
++/*
++ * Whether the image of a whole store, which SMMSTORE_CMD_RECLAIM would put in
++ * place of the store, keeps what each lock holds; then, once it is in place.
++ */
++struct region_device;
++bool smmstore_mor_image_allowed(const struct region_device *image);
++bool smmstore_options_image_allowed(const struct region_device *image);
++void smmstore_options_store_replaced(void);
++
+ /* SMMSTORE_CMD_OPTION_LOCK (options_lock.c) */
+ uint32_t smmstore_options_lock(void);
+ /* Whether the option lock is armed: writes of the variable store are checked */
+diff --git a/tests/drivers/Makefile.mk b/tests/drivers/Makefile.mk
+index 056fb579c04..20514a1331f 100644
+--- a/tests/drivers/Makefile.mk
++++ b/tests/drivers/Makefile.mk
+@@ -41,3 +41,23 @@ smmstore_options_lock_two-test-config += CONFIG_SMMSTORE_OPTION_LOCK=1 \
+ 	CONFIG_BOOTMEDIA_SMM_BWP_RUNTIME_OPTION=0 \
+ 	CONFIG_SMM_OPTION_LOCK_STATE_SMRAM=1 \
+ 	CONFIG_SMMSTORE_BLOCK_SIZE=0x1000
++
++tests-y += smmstore_reclaim-test
++
++smmstore_reclaim-test-srcs += tests/drivers/smmstore_reclaim.c
++smmstore_reclaim-test-srcs += src/drivers/efi/efivars.c
++smmstore_reclaim-test-srcs += tests/stubs/console.c
++smmstore_reclaim-test-srcs += src/commonlib/region.c
++smmstore_reclaim-test-srcs += 3rdparty/vboot/firmware/2lib/2sha256.c
++smmstore_reclaim-test-srcs += 3rdparty/vboot/firmware/2lib/2sha_utility.c
++smmstore_reclaim-test-stage := smm
++
++smmstore_reclaim-test-cflags += -I src/vendorcode/intel/edk2/UDK2017/MdePkg/Include/
++smmstore_reclaim-test-cflags += -I src/vendorcode/intel/edk2/UDK2017/MdePkg/Include/Ia32/
++smmstore_reclaim-test-cflags += -I src/vendorcode/intel/edk2/UDK2017/MdePkg/Include/Pi/
++smmstore_reclaim-test-cflags += -I src/vendorcode/intel/edk2/UDK2017/MdeModulePkg/Include/
++smmstore_reclaim-test-cflags += -I tests/include/tests/lib
++smmstore_reclaim-test-cflags += -I 3rdparty/vboot/firmware/2lib/include
++
++smmstore_reclaim-test-config += CONFIG_SMMSTORE_RECLAIM=1 CONFIG_SMMSTORE_OPTION_LOCK=1 \
++	CONFIG_SMMSTORE_MOR_LOCK=0 CONFIG_SMMSTORE_BLOCK_SIZE=0x1000
+diff --git a/tests/drivers/smmstore_options_lock.c b/tests/drivers/smmstore_options_lock.c
+index e45f82d77a6..8bd643b21d9 100644
+--- a/tests/drivers/smmstore_options_lock.c
++++ b/tests/drivers/smmstore_options_lock.c
+@@ -616,6 +616,131 @@ static void test_two_options(void **state)
+ 
+ #endif
+ 
++/* SMMSTORE_CMD_RECLAIM: the image of a whole store, in place of the store */
++static uint8_t image[BLOCKS * BLOCK];
++static struct region_device image_rw;
++
++/* The store as it is now, as the image */
++static void image_of_store(void)
++{
++	memcpy(image, flash, sizeof(image));
++	rdev_chain_mem_rw(&image_rw, image, sizeof(image));
++}
++
++/* A reclaimed store: a new one with these options, in this order */
++static void image_with(const char *const names[], const uint32_t values[], size_t count)
++{
++	memset(image, 0xff, sizeof(image));
++	rdev_chain_mem_rw(&image_rw, image, sizeof(image));
++	assert_int_equal(efi_fv_initialize(&image_rw, BLOCK), CB_SUCCESS);
++	for (size_t i = 0; i < count; i++) {
++		uint32_t value = values[i];
++
++		assert_int_equal(efi_fv_set_option(&image_rw, &EficorebootNvDataGuid, names[i],
++						   &value, sizeof(value)), CB_SUCCESS);
++	}
++}
++
++static void test_reclaim_layout(void **state)
++{
++	struct smmstore_reclaim_layout l;
++
++	/* The M920x: 512 KiB, the store to 0x30000, 64 KiB blocks */
++	assert_true(smmstore_reclaim_layout(0x80000, 0x10000, 0x30000, &l));
++	assert_int_equal(l.staging, 0x40000);
++	assert_int_equal(l.commit, 0x70000);
++	/* No room above the store and the working block */
++	assert_false(smmstore_reclaim_layout(0x70000, 0x10000, 0x30000, &l));
++	assert_false(smmstore_reclaim_layout(0x40000, 0x10000, 0x30000, &l));
++	/* Not whole blocks */
++	assert_false(smmstore_reclaim_layout(0x80000, 0x10000, 0x2fff8, &l));
++	assert_false(smmstore_reclaim_layout(0x80000, 0, 0x30000, &l));
++}
++
++/* Not armed: any image */
++static void test_reclaim_not_armed(void **state)
++{
++	static const char *const names[] = { "bios_lock" };
++	static const uint32_t off[] = { 0 };
++
++	three_options();
++	image_with(names, off, 1);
++	assert_true(smmstore_options_image_allowed(&image_rw));
++}
++
++/* The store itself, and the store reclaimed: the dead records gone */
++static void test_reclaim_same(void **state)
++{
++	static const char *const names[] = { "bios_lock", "bootmedia_lock", "onboard_audio" };
++	static const uint32_t values[] = { 1, 1, 1 };
++
++	three_options();
++	/* Before the arm, the setup changes one: its old record is dead */
++	set_option("onboard_audio", 1);
++	arm(SMMSTORE_RET_SUCCESS);
++
++	image_of_store();
++	assert_true(smmstore_options_image_allowed(&image_rw));
++	image_with(names, values, ARRAY_SIZE(names));
++	assert_true(smmstore_options_image_allowed(&image_rw));
++}
++
++/* An image with a security option off, or none at all of the options */
++static void test_reclaim_security(void **state)
++{
++	static const char *const names[] = { "bios_lock", "bootmedia_lock", "onboard_audio" };
++	static const uint32_t off[] = { 0, 1, 0 };
++
++	three_options();
++	arm(SMMSTORE_RET_SUCCESS);
++	image_with(names, off, ARRAY_SIZE(names));
++	assert_false(smmstore_options_image_allowed(&image_rw));
++}
++
++/* An image with another value of an option that is not a security one */
++static void test_reclaim_other_option(void **state)
++{
++	static const char *const names[] = { "bios_lock", "bootmedia_lock", "onboard_audio" };
++	static const uint32_t on[] = { 1, 1, 1 };
++
++	three_options();
++	arm(SMMSTORE_RET_SUCCESS);
++	image_with(names, on, ARRAY_SIZE(names));
++#if CONFIG(SMMSTORE_OPTION_LOCK_ALL)
++	assert_false(smmstore_options_image_allowed(&image_rw));
++#else
++	assert_true(smmstore_options_image_allowed(&image_rw));
++#endif
++}
++
++#if CONFIG(SMMSTORE_OPTION_LOCK_ALL)
++/* The options in another order: another set, as the reader sees it */
++static void test_reclaim_order(void **state)
++{
++	static const char *const names[] = { "bootmedia_lock", "bios_lock", "onboard_audio" };
++	static const uint32_t values[] = { 1, 1, 0 };
++
++	three_options();
++	arm(SMMSTORE_RET_SUCCESS);
++	image_with(names, values, ARRAY_SIZE(names));
++	assert_false(smmstore_options_image_allowed(&image_rw));
++}
++
++/* Once the store is replaced, the next check takes the set from the flash again */
++static void test_reclaim_replaced(void **state)
++{
++	const uint16_t timeout = 3;
++	struct record r;
++
++	three_options();
++	arm(SMMSTORE_RET_SUCCESS);
++	smmstore_options_store_replaced();
++	make_record(&r, &other_guid, "Timeout", 7, &timeout, sizeof(timeout));
++	assert_int_equal(append_record(&r, store_tail()), 4);
++	assert_true(option_set.fresh);
++}
++#endif
++
+ int main(void)
+ {
+ 	const struct CMUnitTest tests[] = {
+@@ -635,6 +760,15 @@ int main(void)
+ 		cmocka_unit_test(test_no_latch),
+ #else
+ 		cmocka_unit_test(test_two_options),
++#endif
++		cmocka_unit_test(test_reclaim_layout),
++		cmocka_unit_test(test_reclaim_not_armed),
++		cmocka_unit_test(test_reclaim_same),
++		cmocka_unit_test(test_reclaim_security),
++		cmocka_unit_test(test_reclaim_other_option),
++#if CONFIG(SMMSTORE_OPTION_LOCK_ALL)
++		cmocka_unit_test(test_reclaim_order),
++		cmocka_unit_test(test_reclaim_replaced),
+ #endif
+ 	};
+ 
+diff --git a/tests/drivers/smmstore_reclaim.c b/tests/drivers/smmstore_reclaim.c
+new file mode 100644
+index 00000000000..7166175739d
+--- /dev/null
++++ b/tests/drivers/smmstore_reclaim.c
+@@ -0,0 +1,382 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * SMMSTORE_CMD_RECLAIM on a flash that the test builds: the limits, the check
++ * of the image, the swap, and what the next boot does after a power loss at
++ * each step (the flash stops taking writes and erases after a number of them).
++ * The rules of the locks themselves are tested in smmstore_options_lock.c:
++ * here their answer on the image is a switch.
++ */
++
++#include <tests/test.h>
++
++#include <commonlib/region.h>
++#include <drivers/efi/efivars.h>
++#include <smmstore.h>
++#include <string.h>
++#include <types.h>
++
++#include "../../src/drivers/smmstore/reclaim.c"
++
++#define BLOCK 0x1000
++#define BLOCKS 8
++
++static uint8_t flash[BLOCKS * BLOCK];
++static struct region_device build_rw;
++static struct smmstore_reclaim_layout layout;
++
++/* The flash of the handler: writes and erases fail once ops_left is spent */
++static int ops_left = -1;
++
++static bool op_allowed(void)
++{
++	if (ops_left == 0)
++		return false;
++	if (ops_left > 0)
++		ops_left--;
++	return true;
++}
++
++static ssize_t flash_readat(const struct region_device *rd, void *b, size_t offset, size_t size)
++{
++	memcpy(b, flash + offset, size);
++	return size;
++}
++
++static ssize_t flash_writeat(const struct region_device *rd, const void *b, size_t offset,
++			     size_t size)
++{
++	const uint8_t *src = b;
++
++	if (!op_allowed())
++		return -1;
++	/* Programming clears bits only */
++	for (size_t i = 0; i < size; i++)
++		flash[offset + i] &= src[i];
++	return size;
++}
++
++static ssize_t flash_eraseat(const struct region_device *rd, size_t offset, size_t size)
++{
++	if (!op_allowed())
++		return -1;
++	memset(flash + offset, 0xff, size);
++	return size;
++}
++
++static void *flash_mmap(const struct region_device *rd, size_t offset, size_t size)
++{
++	return NULL;
++}
++
++static int flash_munmap(const struct region_device *rd, void *mapping)
++{
++	return 0;
++}
++
++static const struct region_device_ops flash_ops = {
++	.mmap = flash_mmap,
++	.munmap = flash_munmap,
++	.readat = flash_readat,
++	.writeat = flash_writeat,
++	.eraseat = flash_eraseat,
++};
++
++static struct region_device flash_root;
++
++int fmap_locate_area(const char *name, struct region *ar)
++{
++	*ar = region_create(0, sizeof(flash));
++	return 0;
++}
++
++int boot_device_rw_subregion(const struct region *sub, struct region_device *subrd)
++{
++	return rdev_chain(subrd, &flash_root, region_offset(sub), region_sz(sub));
++}
++
++/* The locks, as switches */
++static bool armed, image_ok;
++static int replaced;
++
++bool smmstore_options_protecting(void)
++{
++	return armed;
++}
++
++bool smmstore_options_image_allowed(const struct region_device *image)
++{
++	return image_ok;
++}
++
++void smmstore_options_store_replaced(void)
++{
++	replaced++;
++}
++
++void smmstore_locked_write_reset(void)
++{
++}
++
++static const EFI_GUID test_guid = {
++	0x8be4df61, 0x93ca, 0x11d2, { 0xaa, 0x0d, 0x00, 0xe0, 0x98, 0x03, 0x2b, 0x8c } };
++
++/* The store of a new boot, with one option */
++static void new_store(void)
++{
++	uint32_t on = 1;
++
++	memset(flash, 0xff, sizeof(flash));
++	ops_left = -1;
++	armed = true;
++	image_ok = true;
++	replaced = 0;
++	reclaims = 0;
++	region_device_init(&flash_root, &flash_ops, 0, sizeof(flash));
++	rdev_chain_mem_rw(&build_rw, flash, sizeof(flash));
++	assert_int_equal(efi_fv_initialize(&build_rw, BLOCK), CB_SUCCESS);
++	assert_int_equal(efi_fv_set_option(&build_rw, &walk_guid, "bios_lock", &on, sizeof(on)),
++			 CB_SUCCESS);
++	assert_int_equal(efi_fv_store_end(&build_rw, &layout.store_end), CB_SUCCESS);
++	assert_true(smmstore_reclaim_layout(sizeof(flash), BLOCK, layout.store_end, &layout));
++}
++
++static size_t store_free(void)
++{
++	size_t tail;
++
++	assert_int_equal(efi_fv_walk_guid(&build_rw, &walk_guid, no_var, NULL, &tail),
++			 CB_SUCCESS);
++	return layout.store_end - tail;
++}
++
++/* Updates of a variable until less than a quarter of the store is free */
++static void fill_store(void)
++{
++	uint32_t value = 0;
++
++	while (store_free() > layout.store_end / 4) {
++		value++;
++		assert_int_equal(efi_fv_set_option(&build_rw, &test_guid, "Timeout", &value,
++						   sizeof(value)), CB_SUCCESS);
++	}
++}
++
++/*
++ * The reclaimed store, as the payload's variable driver writes it into the
++ * staging area: the live variables only, the same headers. Returns a copy.
++ */
++static uint8_t image[BLOCKS * BLOCK];
++
++static void stage_image(void)
++{
++	struct region_device rw;
++	uint32_t on = 1, last = 7;
++
++	memset(image, 0xff, sizeof(image));
++	rdev_chain_mem_rw(&rw, image, sizeof(image));
++	assert_int_equal(efi_fv_initialize(&rw, BLOCK), CB_SUCCESS);
++	assert_int_equal(efi_fv_set_option(&rw, &walk_guid, "bios_lock", &on, sizeof(on)),
++			 CB_SUCCESS);
++	assert_int_equal(efi_fv_set_option(&rw, &test_guid, "Timeout", &last, sizeof(last)),
++			 CB_SUCCESS);
++	memset(flash + layout.staging, 0xff, layout.store_end);
++	memcpy(flash + layout.staging, image, layout.store_end);
++}
++
++static bool store_is(const uint8_t *what)
++{
++	return !memcmp(flash, what, layout.store_end);
++}
++
++static bool commit_erased(void)
++{
++	for (size_t i = 0; i < BLOCK; i++)
++		if (flash[layout.commit + i] != 0xff)
++			return false;
++	return true;
++}
++
++static uint32_t reclaim(uint32_t op)
++{
++	const struct smmstore_params_reclaim params = { .op = op };
++
++	return smmstore_reclaim(&params);
++}
++
++static void test_areas(void **state)
++{
++	new_store();
++	assert_int_equal(layout.staging, 4 * BLOCK);
++	assert_int_equal(layout.commit, 7 * BLOCK);
++	assert_int_equal(smmstore_reclaim_area(layout.staging, BLOCK), 1);
++	assert_int_equal(smmstore_reclaim_area(layout.staging + layout.store_end - 16, 16), 1);
++	assert_int_equal(smmstore_reclaim_area(layout.commit, 16), -1);
++	assert_int_equal(smmstore_reclaim_area(layout.commit - 8, 16), -1);
++	assert_int_equal(smmstore_reclaim_area(0, BLOCK), 0);
++	/* The working block of the fault tolerant write: the locks decide */
++	assert_int_equal(smmstore_reclaim_area(layout.store_end, 16), 0);
++	assert_int_equal(smmstore_reclaim_area(layout.staging - 8, 16), 0);
++}
++
++static void test_limits(void **state)
++{
++	new_store();
++	armed = false;
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_STATUS), SMMSTORE_RET_UNSUPPORTED);
++	armed = true;
++	/* Nearly empty: nothing to gain */
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_STATUS), SMMSTORE_RET_FAILURE);
++	fill_store();
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_STATUS), SMMSTORE_RET_SUCCESS);
++	assert_int_equal(reclaim(7), SMMSTORE_RET_FAILURE);
++}
++
++static void test_commit(void **state)
++{
++	new_store();
++	fill_store();
++	stage_image();
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_SUCCESS);
++	assert_true(store_is(image));
++	assert_true(commit_erased());
++	assert_int_equal(replaced, 1);
++	/* The store reclaimed has room again: no second reclaim now */
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_STATUS), SMMSTORE_RET_FAILURE);
++}
++
++static void test_refused(void **state)
++{
++	static uint8_t before[BLOCKS * BLOCK];
++
++	new_store();
++	fill_store();
++	stage_image();
++	memcpy(before, flash, sizeof(before));
++
++	/* The locks refuse the image */
++	image_ok = false;
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_FAILURE);
++	assert_true(store_is(before));
++	assert_true(commit_erased());
++
++	/* Other headers */
++	image_ok = true;
++	flash[layout.staging + 0x10] ^= 0x01;
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_FAILURE);
++	assert_true(store_is(before));
++
++	/* An image the reader cannot walk: the name of its first record past the store */
++	stage_image();
++	memset(flash + layout.staging + 0x48 + 28 + 36, 0xff, 4);
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_FAILURE);
++	assert_true(store_is(before));
++	assert_true(commit_erased());
++	assert_int_equal(replaced, 0);
++}
++
++static void test_per_boot(void **state)
++{
++	new_store();
++	for (int i = 0; i < SMMSTORE_RECLAIM_PER_BOOT; i++) {
++		fill_store();
++		stage_image();
++		assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_SUCCESS);
++		/* The next fill starts from the reclaimed store */
++		rdev_chain_mem_rw(&build_rw, flash, sizeof(flash));
++	}
++	fill_store();
++	stage_image();
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_STATUS), SMMSTORE_RET_FAILURE);
++}
++
++/*
++ * A power loss after each flash operation of the commit, then the next boot:
++ * the store is either the old one (before the record) or the image, and the
++ * record is gone.
++ */
++static void test_power_loss(void **state)
++{
++	static uint8_t before[BLOCKS * BLOCK];
++	int ops;
++
++	for (ops = 0; ; ops++) {
++		uint32_t ret;
++
++		new_store();
++		fill_store();
++		stage_image();
++		memcpy(before, flash, sizeof(before));
++
++		ops_left = ops;
++		ret = reclaim(SMMSTORE_RECLAIM_COMMIT);
++		ops_left = -1;
++
++		/* The next boot */
++		smmstore_reclaim_recover();
++		assert_true(commit_erased());
++		if (ret == SMMSTORE_RET_SUCCESS) {
++			assert_true(store_is(image));
++			break;
++		}
++		assert_true(store_is(before) || store_is(image));
++		/* Past the record, the swap always completes */
++		if (ops >= 2)
++			assert_true(store_is(image));
++	}
++	/* Erase and record, three blocks erased and written, the record erased */
++	assert_true(ops > 3);
++}
++
++/* A record whose staging area is not its image: dropped, the store left as it is */
++static void test_bad_record(void **state)
++{
++	static uint8_t before[BLOCKS * BLOCK];
++
++	new_store();
++	fill_store();
++	stage_image();
++	ops_left = 2;
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_FAILURE);
++	ops_left = -1;
++	memcpy(before, flash, sizeof(before));
++	flash[layout.staging + layout.store_end - 1] ^= 0x01;
++	smmstore_reclaim_recover();
++	assert_true(commit_erased());
++	assert_true(!memcmp(flash, before, layout.store_end));
++}
++
++/* A record with another layout: dropped too */
++static void test_record_layout(void **state)
++{
++	static uint8_t before[BLOCKS * BLOCK];
++	uint32_t store_end = 2 * BLOCK;
++
++	new_store();
++	fill_store();
++	stage_image();
++	ops_left = 2;
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_FAILURE);
++	ops_left = -1;
++	memcpy(flash + layout.commit + 8, &store_end, sizeof(store_end));
++	memcpy(before, flash, sizeof(before));
++	smmstore_reclaim_recover();
++	assert_true(commit_erased());
++	assert_true(!memcmp(flash, before, layout.store_end));
++}
++
++int main(void)
++{
++	const struct CMUnitTest tests[] = {
++		cmocka_unit_test(test_areas),
++		cmocka_unit_test(test_limits),
++		cmocka_unit_test(test_commit),
++		cmocka_unit_test(test_refused),
++		cmocka_unit_test(test_per_boot),
++		cmocka_unit_test(test_power_loss),
++		cmocka_unit_test(test_bad_record),
++		cmocka_unit_test(test_record_layout),
++	};
++
++	return cb_run_group_tests(tests, NULL, NULL);
++}
