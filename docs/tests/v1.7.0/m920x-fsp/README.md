@@ -428,3 +428,29 @@ the same boot. Files in [rc7](rc7).
 | LOCK-07, LOCK-08 | PASS | report 25 PASS and 2 INFO with a copy of the flash (BOOT-03 *nessun errore ne' avviso*); fwts 43 passed, 0 failed |
 
 No defect found: no new candidate is needed for the M920x.
+
+## rc8 on the machine
+
+v1.7.0-rc8 (`7d683c6`: rc7 with the HSTI, `edk2/0063`, and the reclaim
+of the store in SMM, patch 0288 and `edk2/0064`) as a capsule from rc7
+with the lock armed, 2026-11-12: slot B over rc5, rc7 kept in slot A.
+Files in [rc8](rc8).
+
+| ID | Result | Notes |
+|---|---|---|
+| LOCK-05, UPD-02 | PASS | staged and written with rc7's lock armed; rc8 from slot B, *ultimo: v1.7.0-rc8, riuscito*, PR0 and PR1 on |
+| CONF-08 | PASS | `HstiTable` published after the arm of the option lock: 9 of 13 tests passed; failed only the known limits (the descriptor and the ME region writable by the host, Secure Boot off, no pre-boot DMA protection), each with its line and code in the error string |
+| Logs | PASS | coreboot: no `[ERROR]` or `[WARN ]` line; kernel: as on rc7 |
+| LOCK-01, 0284, LOCK-02, LOCK-03 | PASS | 35 options with `CFR_OPTFLAG_LOCK_AT_BOOT`; 24.7 ms an SMI (the check of the reclaim areas adds a few per write); a boot entry and the test's variable |
+| LOCK-11 | **FAIL** | writes of 1000 bytes of the test variable from a store with 60 KiB free: the 49th failed with `EIO` after 0.077 s, at 5596 bytes free, where the variable driver asks for a reclaim (`PcdHwErrStorageSize` is kept out of the space of the common variables). Before rc8 that write failed with `ENOSPC`: the new path ran, and something in it answered `EFI_DEVICE_ERROR`. The staging area and the commit block were erased before and after: no image was written, no record. The time, less than a plain write (0.166 s) and about one SMI that walks the store, points at the `STATUS` of the handler; coreboot's code run on a copy of this store answers `STATUS` with success and puts the staging area in the allowed one, so the difference is on the machine, where SMM has no console |
+
+What rc9 changes for LOCK-11 (patch 0288 and `edk2/0064` amended):
+each refusal of the handler leaves a note in the commit block, once
+until the next reclaim erases it (`storeinfo.py` on a copy of the flash
+prints it); each step of the payload's side fails with its own status,
+seen by the OS as `EIO` (the handler's `STATUS`), `EINTR` (the header
+not read), `EROFS` (the staging area not written) or `EACCES` (the
+image refused, or the swap failed); and the checks of the handler read
+the store as the CPU maps it, as the locks do, the copy being read back
+through the writable device. The store of this machine was left with
+5.5 KiB free, which the next boot reclaims (`edk2/0061`).

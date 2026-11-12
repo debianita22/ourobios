@@ -1,0 +1,133 @@
+misura degli stati C per 3 s, non usare la macchina...
+ouroBIOS hw-report - ThinkCentre M920x (board m920x), 2026-11-12 13:54
+firmware ouroBIOS-v1.7.0-rc8-m920x-fsp, kernel 7.0.14-15-pve, acceso da 1 min
+
+[PASS] BOOT-01  Firmware: ouroBIOS-v1.7.0-rc8-m920x-fsp (release)
+         SMBIOS: coreboot, ouroBIOS-v1.7.0-rc8-m920x-fsp (11/11/2026)
+         romstage  26.09-607-g524189e299-ouroBIOS-v1.7.0-rc8-m920x-fsp, log level 7
+         ramstage  26.09-607-g524189e299-ouroBIOS-v1.7.0-rc8-m920x-fsp, log level 7
+         il banner del bootblock (parte RO) non e' nel log: la console prima di CBMEM e' traboccata
+         console: 6.1 s negli stage (righe BS:, processore di avvio), livello 7
+         seriale, COM1 a 115200 baud: ~6.1 s agli stage dello slot (romstage, postcar, ramstage, AP compresi) al livello 7 (Debug); a Info ~1.5 s, a Notice ~0.1 s, a Error ~0.1 s; spenta (Console > Serial Console) 0. Il log di CBMEM resta fino a DEBUG a ogni livello
+[PASS] BOOT-02  Tempo di avvio: 10.69 s dal reset al payload (soglie 12/20 s per ThinkCentre M920x)
+         fino a romstage (bootblock, verstage)    0.98 s
+         romstage                                 0.64 s
+           di cui FspMemoryInit                   0.25 s
+         postcar e caricamento di ramstage        0.07 s
+         ramstage                                 7.99 s
+           di cui FspSiliconInit                  0.06 s
+         caricamento del payload                  0.52 s
+         dal payload caricato al salto            0.50 s
+         i passi piu' lunghi: 2.57 s fino a 'started elog init'; 1.25 s fino a 'calling FspNotify(AfterPciEnumeration)'; 0.86 s fino a 'finalize chips'; 0.64 s fino a 'device configuration'; 0.62 s fino a 'device enable'
+         Clear memory at power-on: When the OS asks, richiesta del sistema operativo (MOR) si': memoria cancellata (~0.5 s ogni 10 GB)
+[PASS] BOOT-03  Log di coreboot: nessun errore ne' avviso
+         la console prima di CBMEM e' traboccata: l'inizio della romstage non c'e' (i boot che fanno il training della RAM ne scrivono di piu')
+[PASS] BOOT-04  Log del kernel: 1 messaggi del firmware su 7 avvisi (journalctl), 0 non noti
+         [warn] Warning: PCIe ACS overrides enabled; This may allow non-IOMMU protected peer-to-peer DMA  -- noto: pcie_acs_override sulla riga di comando del kernel
+[PASS] MEM-01   RAM init: FspMemoryInit 0.25 s con la cache valida (soglie 2/5 s)
+         cache del training: 'RW_MRC_CACHE' valida, usata
+[PASS] MEM-02   Memoria: 2 moduli, 40 GB; Linux vede 39.0 GB
+         Channel-0-DIMM-0: 32 GB DDR4 SODIMM, 2400 MT/s (configurata 2400 MT/s), Crucial CT32G4SFD8266.C16FE, rank 2
+         Channel-1-DIMM-0: 8 GB DDR4 SODIMM, 2400 MT/s (configurata 2400 MT/s), Hynix/Hyundai HMA81GS6JJR8N-VK, rank 1
+         log di coreboot: 2 DIMM trovati
+[PASS] CPU-01   CPU: Intel(R) Core(TM) i3-8100 CPU @ 3.60GHz, PL1 65 W, PL2 65 W
+         microcode: Linux 0xf6, coreboot 0xf6 (il log dice 0xf5: con PRMRR la patch del FIT riporta la revisione meno uno, noto)
+         MSR 0x610: PL1 65.0 W attivo, PL2 65.0 W attivo
+         rapporto base 36 (3600 MHz), turbo a 1 core 36, TjMax 100 C
+         offset TCC programmabile: si' (PLATFORM_INFO bit 30), offset attuale 0 (MSR 0x1A2 bit 29:24)
+         EC: platform 42 42 07, classe della CPU 65 W
+         coreboot: Turbo non disponibile su questa CPU
+[PASS] IDLE-01  Stati C del package: PC6 e oltre 87.8% (soglie 50/10%), il piu' frequente PC9 85.3%, package 0.36 W
+         package: PC2 3.7%  PC3 6.0%  PC6 1.4%  PC7 0.0%  PC8 1.1%  PC9 85.3%  PC10 0.0%
+         potenza (RAPL): package 0.36 W, core 0.33 W, grafica 0.00 W, RAM 0.74 W
+         core occupati in media 0.3%; cpuidle: C6 0.9%  C8 1.0%  C10 97.8%
+         interrupt/s: Local timer interrupts 167, nic0 14, Function call interrupts 13, TLB shootdowns 4
+         processi (% di un core): 2.1.312 0.7
+[INFO] S3-01    Sospensione: S3 offerto (default); nessuna sospensione in questo avvio (prova: systemctl suspend)
+         mem_sleep: s2idle [deep]
+         sospensioni riuscite 0, fallite 0
+[PASS] PCI-01   PCIe ASPM e LTR: ASPM L1 e LTR accesi su ogni link che li supporta (criterio del kernel: default)
+         00:1b.0  8086:a32c pcieport     rp  ASPM L0sL1/L1 LTR +/+ 8GT/s x4
+         00:1c.0  8086:a33d pcieport     rp  ASPM L0sL1/L1 LTR +/+ 2.5GT/s x1
+         01:00.0  144d:a808 nvme         ep  ASPM L1/L1 LTR +/+ 8GT/s x4
+         02:00.0  8086:3166 iwlwifi      ep  ASPM L1/L1 LTR +/+ 2.5GT/s x1
+[PASS] PCI-02   Porta PEG del riser: porta PEG spenta (nessuna scheda sul riser)
+         log: PEG: PCIe flags 0x0142, slot status 0x0000, link status 0x1001
+         log: PEG: no card on the riser slot, port off (a card there not seen: Hardware > Devices > PCIe riser slot > Enabled)
+[INFO] PCI-09   Aperture PCI del payload: 1 BAR fuori dall'apertura del payload, di dispositivi che i suoi driver non usano
+         apertura del root bridge sotto i 4 GiB 0xbecb9000-0xdfffffff, sopra 0xa7c800000-0xa7c800fff (16 BAR di memoria sul bus 0)
+         00:1f.5 8086:a324 -            BAR0 0xfe010000-0xfe010fff fuori: tra la BAR e l'apertura c'e' ECAM 0xe0000000-0xefffffff
+[PASS] FAN-01   Ventola e temperature: CPU 49 C (soglie 80/95 C), ventola 824 rpm
+         nct6686: PECI 0.0 52 C, PCH CHIP 45 C, Diode 0 (curr) 45 C, Diode 1 (curr) 14 C, Diode 2 (curr) 44 C
+         nvme: Composite 39 C, Sensor 1 39 C, Sensor 2 40 C
+         pch_cannonlake: temp1 45 C
+         nct6686 fan2: 824 rpm
+[PASS] TPM-01   TPM: TPM 2.x, tabella TPM2
+         registro delle misure del firmware: 69556 byte
+[PASS] TPM-03   Measured boot: measured boot: 11 misure di coreboot e 3 di vboot, il registro da' i PCR 0-7 (sha1, sha256)
+         120 eventi nel registro; 11 misure di coreboot in PCR 2, 3 di vboot in PCR 1
+[PASS] ME-01    Intel ME: spento (soft temporary disable) come chiesto, HECI nascosto
+         HFSTS1: working state 4, operation mode 3, error code 2
+         opzione me_state: 1 (Disabled)
+         HECI 00:16.0 nel sistema: no
+[PASS] VB-01    vboot: slot B, avvio prima slot A -
+         contesto: FW_SLOT_B
+         avvio prima: slot A, -
+         RW_NVRAM in verstage: prossimo slot B, 1 tentativo; corrente slot B in prova
+         slot in prova (una capsula, update.py other-slot o rollback): il payload lo conferma quando arriva alla sua console
+[PASS] UPD-01   Aggiornamenti: v1.7.0-rc8, variante m920x-fsp
+         variante m920x-fsp, GUID ceef6456-ca3b-4cf3-a784-4895efaf1bde
+         versione v1.7.0-rc8, minima per una capsula v1.3.9
+         ultimo aggiornamento: v1.7.0-rc8, riuscito
+[PASS] FLASH-01 Protezione del flash: WP_RO protetto (PR0) e SI_ALL (PR1), registri bloccati
+         log: BM-LOCKDOWN: Enabled bootmedia protection
+         log: BM-LOCKDOWN: Enabled bootmedia protection for SI_ALL
+         option lock: armato: bios_lock e bootmedia_lock di sola lettura per l'OS (OptionLockStatus del payload)
+         fast SPI 00:1f.5: BIOS_CNTL 0xaa (BIOSWE 0, BLE 1, EISS 1), FLOCKDN si'
+         PR0 0x1700000-0x17fffff scrittura protetta (WP_RO)
+         PR1 0x0000000-0x0bfffff scrittura protetta (SI_ALL)
+         WP_RO: protetta fino al prossimo reset o ripresa da S3 (PR0)
+         SI_ALL: protetta fino al prossimo reset o ripresa da S3 (PR1)
+         BIOS Lock: acceso: scrive solo il firmware in SMM
+         slot RW: scrivibili con la capsula; flashrom no (BIOS Lock)
+[PASS] WDT-01   Firmware watchdog: spento (opzione firmware_watchdog Off)
+         OC_WDT_CTL 0x00002000: enable 0, timeout 1 s, stato di reset 0
+[SKIP] ELOG-01  Registro degli eventi: nessuna copia del flash (--dump, da sudo flashrom -p internal -r flash.bin)
+[PASS] ID-01    SMBIOS e VPD: LENOVO 10S2S00V00, S/N ****ZK26
+         system-manufacturer: LENOVO
+         system-product-name: 10S2S00V00
+         system-version: ThinkCentre M920x
+         baseboard-product-name: ThinkCentre M920x Tiny
+         bios-vendor: coreboot
+         bios-version: ouroBIOS-v1.7.0-rc8-m920x-fsp
+         bios-release-date: 11/11/2026
+         system-serial-number: ****ZK26
+         system-uuid: ****1800
+         baseboard-serial-number: (vuoto)
+[PASS] ID-02    Tabelle ACPI: DMAR, HPET, TPM2 presenti; MSDM presente
+         tabelle: APIC DMAR DSDT FACP FACS HPET LPIT MCFG MSDM SPCR SSDT TPM2 WSMT
+         MSDM: presente, chiave nel formato giusto (non stampata)
+[PASS] CONF-01  WSMT: WSMT revisione 1, flag 0x7
+         flag: FIXED_COMM_BUFFERS COMM_BUFFER_NESTED_PTR_PROTECTION SYSTEM_RESOURCE_PROTECTION
+[PASS] CONF-07  ECAM: ECAM riservata nella mappa della memoria e tra le risorse della scheda madre
+         segmento 0, bus 00-ff: 0xe0000000-0xefffffff, 256 MiB; riservati nella mappa della memoria 256 MiB; tra le risorse della scheda madre (pnp) 256 MiB
+[PASS] CONF-08  HSTI: 9 di 13 test superati, 0 mancati non noti
+         si': configurazione del flash bloccata (FLOCKDN)
+         si': regione BIOS protetta (BIOS_CNTL)
+         si': Protected Range bloccato
+         no: descrittore non scrivibile dall'host  -- noto: regioni sbloccate (ifdtool)
+         no: regione ME non scrivibile dall'host  -- noto: regioni sbloccate (ifdtool)
+         si': TSEG bloccato
+         si': interfaccia di debug bloccata
+         si': microcode caricato
+         no: Secure Boot  -- noto: una scelta del proprietario
+         si': TPM
+         si': lock delle opzioni del setup
+         si': lock MOR
+         no: protezione DMA prima dell'avvio  -- noto: l'FSP-M non ha i dati dei PMR
+         errore: 0x00010003 Flash: the host can write the flash descriptor (FRAP) https://github.com/debianita22/ourobios/blob/main/docs/hsti.md
+         errore: 0x00010004 Flash: the host can write the ME region (FRAP) https://github.com/debianita22/ourobios/blob/main/docs/hsti.md
+         errore: 0x00010008 Secure Boot: Secure Boot is off https://github.com/debianita22/ourobios/blob/main/docs/hsti.md
+         errore: 0x0001000C DMA: no pre-boot DMA protection https://github.com/debianita22/ourobios/blob/main/docs/hsti.md
+
+Esito: SKIP - 23 PASS, 2 INFO, 1 SKIP (uscita 0)

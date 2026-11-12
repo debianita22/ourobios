@@ -338,7 +338,7 @@ index 8d8dd5daa..63d0ecb98 100644
  
  #pragma pack(0)
 diff --git a/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c b/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c
-index 53d2557b5..921f01c03 100644
+index 53d2557b5..dc61e81ed 100644
 --- a/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c
 +++ b/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c
 @@ -14,11 +14,17 @@
@@ -359,7 +359,7 @@ index 53d2557b5..921f01c03 100644
  //
  // Global variable declarations
  //
-@@ -121,6 +127,96 @@ SmmStoreInitInstance (
+@@ -121,6 +127,104 @@ SmmStoreInitInstance (
    return Status;
  }
  
@@ -371,9 +371,16 @@ index 53d2557b5..921f01c03 100644
 +  it has checked it whole. The fault tolerant write cannot do it then: the
 +  locks refuse its writes past the store.
 +
-+  @retval EFI_UNSUPPORTED  No lock armed, or no such reclaim in coreboot, or
-+                           no room for the staging area: the fault tolerant
-+                           write reclaims, when it is available.
++  Each step that fails gives its own status, which the OS sees as the error of
++  the write that needed the reclaim (efivarfs: EIO, EINTR, EROFS, EACCES).
++
++  @retval EFI_UNSUPPORTED        No lock armed, or no such reclaim in coreboot,
++                                 or no room for the staging area: the fault
++                                 tolerant write reclaims, when it is available.
++  @retval EFI_DEVICE_ERROR       coreboot refused the reclaim now (its limits).
++  @retval EFI_ABORTED            The header of the firmware volume not read.
++  @retval EFI_WRITE_PROTECTED    The staging area could not be written.
++  @retval EFI_SECURITY_VIOLATION coreboot refused the image, or failed the swap.
 +**/
 +STATIC
 +EFI_STATUS
@@ -424,7 +431,7 @@ index 53d2557b5..921f01c03 100644
 +      Size   = Header;
 +      Status = SmmStoreLibRead (Block, 0, &Size, mReclaimBlock);
 +      if (EFI_ERROR (Status) || (Size != Header)) {
-+        return EFI_DEVICE_ERROR;
++        return EFI_ABORTED;
 +      }
 +    }
 +
@@ -436,17 +443,18 @@ index 53d2557b5..921f01c03 100644
 +
 +    Status = SmmStoreLibEraseBlock ((Staging / BlockSize) + Block);
 +    if (EFI_ERROR (Status)) {
-+      return Status;
++      return EFI_WRITE_PROTECTED;
 +    }
 +
 +    Size   = BlockSize;
 +    Status = SmmStoreLibWrite ((Staging / BlockSize) + Block, 0, &Size, mReclaimBlock);
 +    if (EFI_ERROR (Status)) {
-+      return Status;
++      return EFI_WRITE_PROTECTED;
 +    }
 +  }
 +
-+  return SmmStoreLibReclaim (SMMSTORE_RECLAIM_COMMIT);
++  Status = SmmStoreLibReclaim (SMMSTORE_RECLAIM_COMMIT);
++  return EFI_ERROR (Status) ? EFI_SECURITY_VIOLATION : EFI_SUCCESS;
 +}
 +
 +STATIC EDKII_PLATFORM_VARIABLE_RECLAIM_PROTOCOL  mPlatformVariableReclaim = {
@@ -456,7 +464,7 @@ index 53d2557b5..921f01c03 100644
  /**
    Fixup internal data so that EFI can be call in virtual mode.
    Call the passed in Child Notify event and convert any pointers in
-@@ -149,6 +245,10 @@ SmmStoreVirtualNotifyEvent (
+@@ -149,6 +253,10 @@ SmmStoreVirtualNotifyEvent (
    EfiConvertPointer (0x0, (VOID **)&mSmmStoreInstance->FvbProtocol.Write);
    EfiConvertPointer (0x0, (VOID **)&mSmmStoreInstance->MmioAddress);
    EfiConvertPointer (0x0, (VOID **)&mSmmStoreInstance);
@@ -467,7 +475,7 @@ index 53d2557b5..921f01c03 100644
  
    return;
  }
-@@ -254,6 +354,23 @@ SmmStoreInitialize (
+@@ -254,6 +362,23 @@ SmmStoreInitialize (
    Status = PcdSet64S (PcdFlashNvStorageFtwSpareBase64, NvStorageBase + NvVariableSize + FtwWorkingSize);
    ASSERT_EFI_ERROR (Status);
  

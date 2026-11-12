@@ -361,6 +361,13 @@ store for the new one, into SMM, where it is checked whole.
 All of it in one SMI: about a second for 192 KiB on this flash with the
 OS stopped (decision 8).
 
+The checks read the store as the CPU maps it, as the locks do; the commit
+block, the copy and its read back go through the writable device. SMM has
+no console in a release, so a refusal leaves a note in the commit block
+(a magic, a code, a value), once until the next reclaim erases the block,
+and each step of the payload's side fails with its own status (rc8 failed
+LOCK-11 with no way to tell which step refused: the record of rc8).
+
 ### A power loss
 
 The recovery is in coreboot's ramstage, at `BS_PRE_DEVICE`, before the

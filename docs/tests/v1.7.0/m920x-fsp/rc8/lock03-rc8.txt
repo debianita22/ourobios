@@ -1,0 +1,5 @@
+entry created: Boot0002
+entries as before
+variable created:  \a \0 \0 \0 o n e
+variable changed:  \a \0 \0 \0 t w o !
+variable deleted

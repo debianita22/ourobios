@@ -34,18 +34,18 @@ boot, a power loss after each flash operation of the commit followed by
 the recovery, records with a wrong image or layout, and the image rules
 of the option lock with and without SMMSTORE_OPTION_LOCK_ALL.
 ---
- src/drivers/smmstore/Kconfig          |  16 ++
+ src/drivers/smmstore/Kconfig          |  16 +
  src/drivers/smmstore/Makefile.mk      |   2 +
  src/drivers/smmstore/mor_lock.c       |  12 +
  src/drivers/smmstore/options_lock.c   |  56 ++++
- src/drivers/smmstore/reclaim.c        | 369 +++++++++++++++++++++++++
+ src/drivers/smmstore/reclaim.c        | 452 ++++++++++++++++++++++++++
  src/drivers/smmstore/smi.c            |  13 +
- src/drivers/smmstore/store.c          |  34 +++
+ src/drivers/smmstore/store.c          |  34 ++
  src/include/smmstore.h                |  76 +++++
  tests/drivers/Makefile.mk             |  20 ++
- tests/drivers/smmstore_options_lock.c | 134 +++++++++
- tests/drivers/smmstore_reclaim.c      | 382 ++++++++++++++++++++++++++
- 11 files changed, 1114 insertions(+)
+ tests/drivers/smmstore_options_lock.c | 134 ++++++++
+ tests/drivers/smmstore_reclaim.c      | 433 ++++++++++++++++++++++++
+ 11 files changed, 1248 insertions(+)
  create mode 100644 src/drivers/smmstore/reclaim.c
  create mode 100644 tests/drivers/smmstore_reclaim.c
 
@@ -188,10 +188,10 @@ index e5693cee08d..59c119e0e93 100644
  	struct option_lock_state *state = option_state();
 diff --git a/src/drivers/smmstore/reclaim.c b/src/drivers/smmstore/reclaim.c
 new file mode 100644
-index 00000000000..a5eff69851e
+index 00000000000..5752eb2aab5
 --- /dev/null
 +++ b/src/drivers/smmstore/reclaim.c
-@@ -0,0 +1,369 @@
+@@ -0,0 +1,452 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +/*
@@ -296,20 +296,24 @@ index 00000000000..a5eff69851e
 +	return 1;
 +}
 +
-+/* The image over the store, block by block, and read back */
-+static bool copy_image(const struct region_device *rdev, const struct smmstore_reclaim_layout *l)
++/*
++ * The image over the store, block by block, and read back through @rw: the
++ * staging area, which nothing writes meanwhile, is read through @src.
++ */
++static bool copy_image(const struct region_device *src, const struct region_device *rw,
++		       const struct smmstore_reclaim_layout *l)
 +{
 +	for (size_t block = 0; block < l->store_end; block += SMM_BLOCK_SIZE) {
-+		if (rdev_eraseat(rdev, block, SMM_BLOCK_SIZE) != SMM_BLOCK_SIZE)
++		if (rdev_eraseat(rw, block, SMM_BLOCK_SIZE) != SMM_BLOCK_SIZE)
 +			return false;
 +		for (size_t done = 0; done < SMM_BLOCK_SIZE; done += sizeof(chunk)) {
-+			if (rdev_readat(rdev, chunk, l->staging + block + done, sizeof(chunk))
++			if (rdev_readat(src, chunk, l->staging + block + done, sizeof(chunk))
 +			    != sizeof(chunk) ||
-+			    rdev_writeat(rdev, chunk, block + done, sizeof(chunk)) != sizeof(chunk))
++			    rdev_writeat(rw, chunk, block + done, sizeof(chunk)) != sizeof(chunk))
 +				return false;
 +		}
 +	}
-+	return store_is_image(rdev, l) == 1;
++	return store_is_image(rw, l) == 1;
 +}
 +
 +static bool erase_commit(const struct region_device *rdev, const struct smmstore_reclaim_layout *l)
@@ -327,17 +331,72 @@ index 00000000000..a5eff69851e
 +	return CB_SUCCESS;
 +}
 +
-+/* The region and its areas, from the store's own header */
-+static bool reclaim_region(struct region_device *rdev, struct smmstore_reclaim_layout *l)
++/* The SMMSTORE region as the CPU maps it, which the locks read too */
++static bool region_ro(struct region_device *rdev)
++{
++	struct region region;
++
++	return !fmap_locate_area(SMMSTORE_REGION, &region) &&
++	       !boot_device_ro_subregion(&region, rdev);
++}
++
++/* The region as the CPU maps it, and its areas, from the store's own header */
++static bool reclaim_region(struct region_device *ro, struct smmstore_reclaim_layout *l)
 +{
 +	size_t store_end;
 +
-+	if (!region_rw(rdev) || efi_fv_store_end(rdev, &store_end) != CB_SUCCESS)
++	if (!region_ro(ro) || efi_fv_store_end(ro, &store_end) != CB_SUCCESS)
 +		return false;
-+	return smmstore_reclaim_layout(region_device_sz(rdev), SMM_BLOCK_SIZE, store_end, l);
++	return smmstore_reclaim_layout(region_device_sz(ro), SMM_BLOCK_SIZE, store_end, l);
 +}
 +
 +static unsigned int reclaims;
++
++/*
++ * Why the handler refused, for whoever reads the flash: SMM has no console in
++ * a release. Written into the commit block, after where a record goes, only
++ * when that place is erased: once until the next reclaim erases the block.
++ */
++#define RECLAIM_NOTE_MAGIC "OBRCLMNT"
++#define RECLAIM_NOTE_OFFSET 0x800
++
++enum reclaim_note {
++	NOTE_WALK = 1,		/* the store cannot be walked */
++	NOTE_FREE,		/* more than a quarter free: a = free bytes */
++	NOTE_LIMIT,		/* the reclaims of this boot are used */
++	NOTE_HEADERS,		/* the image has other headers */
++	NOTE_IMAGE,		/* the image cannot be walked */
++	NOTE_MOR,		/* the image clears the MOR request */
++	NOTE_OPTIONS,		/* the image has other options */
++	NOTE_RECORD,		/* the commit record could not be written */
++	NOTE_COPY,		/* the copy failed: the next boot finishes it */
++	NOTE_OP,		/* an unknown operation: a = op */
++};
++
++struct reclaim_note_rec {
++	char magic[8];
++	uint32_t code;
++	uint32_t a;
++	uint32_t reclaims;
++} __packed;
++
++static void note(const struct region_device *ro, const struct region_device *rw,
++		 const struct smmstore_reclaim_layout *l, enum reclaim_note code, uint32_t a)
++{
++	struct reclaim_note_rec rec;
++	uint8_t old[sizeof(rec)];
++
++	if (rdev_readat(ro, old, l->commit + RECLAIM_NOTE_OFFSET, sizeof(old)) != sizeof(old))
++		return;
++	for (size_t i = 0; i < sizeof(old); i++)
++		if (old[i] != 0xff)
++			return;
++	memcpy(rec.magic, RECLAIM_NOTE_MAGIC, sizeof(rec.magic));
++	rec.code = code;
++	rec.a = a;
++	rec.reclaims = reclaims;
++	rdev_writeat(rw, &rec, l->commit + RECLAIM_NOTE_OFFSET, sizeof(rec));
++}
 +
 +static bool locks_armed(void)
 +{
@@ -354,10 +413,10 @@ index 00000000000..a5eff69851e
 +
 +int smmstore_reclaim_area(size_t offset, size_t size)
 +{
-+	struct region_device rdev;
++	struct region_device ro;
 +	struct smmstore_reclaim_layout l;
 +
-+	if (!reclaim_region(&rdev, &l))
++	if (!reclaim_region(&ro, &l))
 +		return 0;
 +	if (offset + size > l.commit && offset < l.commit + SMM_BLOCK_SIZE)
 +		return -1;
@@ -412,8 +471,12 @@ index 00000000000..a5eff69851e
 +	.readat = image_readat,
 +};
 +
-+/* The image is a store the reader can walk, with the headers of the store, that the locks keep */
-+static bool image_allowed(const struct region_device *rdev, const struct smmstore_reclaim_layout *l)
++/*
++ * The image is a store the reader can walk, with the headers of the store, that
++ * the locks keep: 0, or the note of why not.
++ */
++static enum reclaim_note image_allowed(const struct region_device *rdev,
++				       const struct smmstore_reclaim_layout *l)
 +{
 +	struct region_device image_root, image;
 +	size_t header;
@@ -425,34 +488,34 @@ index 00000000000..a5eff69851e
 +	/* The reader gets a child, never the root: see the overlays of the locks */
 +	region_device_init(&image_root, &image_ops, 0, region_device_sz(rdev));
 +	if (rdev_chain(&image, &image_root, 0, region_device_sz(rdev)))
-+		return false;
++		return NOTE_IMAGE;
 +
 +	/* The firmware volume header (its length at 0x30) and the 28 bytes of the store header */
 +	if (rdev_readat(rdev, &fv_header, 0x30, sizeof(fv_header)) != sizeof(fv_header))
-+		return false;
++		return NOTE_HEADERS;
 +	header = fv_header + 28;
 +	if (header > sizeof(chunk) ||
 +	    rdev_readat(rdev, chunk, 0, header) != header ||
 +	    rdev_readat(&image, chunk2, 0, header) != header ||
 +	    memcmp(chunk, chunk2, header)) {
 +		printk(BIOS_WARNING, "SMMSTORE: reclaim refused, the headers differ\n");
-+		return false;
++		return NOTE_HEADERS;
 +	}
 +
 +	if (efi_fv_walk_guid(&image, &walk_guid, no_var, NULL, NULL) != CB_SUCCESS) {
 +		printk(BIOS_WARNING, "SMMSTORE: reclaim refused, the image cannot be read\n");
-+		return false;
++		return NOTE_IMAGE;
 +	}
 +
 +#if CONFIG(SMMSTORE_MOR_LOCK)
 +	if (!smmstore_mor_image_allowed(&image))
-+		return false;
++		return NOTE_MOR;
 +#endif
 +#if CONFIG(SMMSTORE_OPTION_LOCK)
 +	if (!smmstore_options_image_allowed(&image))
-+		return false;
++		return NOTE_OPTIONS;
 +#endif
-+	return true;
++	return 0;
 +}
 +
 +static void store_replaced(void)
@@ -462,46 +525,66 @@ index 00000000000..a5eff69851e
 +#endif
 +}
 +
++/*
++ * The checks read the flash as the CPU maps it, as the locks do; the commit
++ * block, the copy and its read back go through the writable device.
++ */
 +uint32_t smmstore_reclaim(const struct smmstore_params_reclaim *params)
 +{
-+	struct region_device rdev;
++	struct region_device ro, rw;
 +	struct smmstore_reclaim_layout l;
 +	struct reclaim_record record;
++	enum reclaim_note why;
 +	size_t tail;
 +
-+	if (!locks_armed() || !reclaim_region(&rdev, &l))
++	if (!locks_armed() || !reclaim_region(&ro, &l) || !region_rw(&rw))
 +		return SMMSTORE_RET_UNSUPPORTED;
-+	if (reclaims >= SMMSTORE_RECLAIM_PER_BOOT)
++	if (reclaims >= SMMSTORE_RECLAIM_PER_BOOT) {
++		note(&ro, &rw, &l, NOTE_LIMIT, 0);
 +		return SMMSTORE_RET_FAILURE;
-+	if (efi_fv_walk_guid(&rdev, &walk_guid, no_var, NULL, &tail) != CB_SUCCESS ||
-+	    l.store_end - tail > l.store_end / 4)
++	}
++	if (efi_fv_walk_guid(&ro, &walk_guid, no_var, NULL, &tail) != CB_SUCCESS) {
++		note(&ro, &rw, &l, NOTE_WALK, 0);
 +		return SMMSTORE_RET_FAILURE;
++	}
++	if (l.store_end - tail > l.store_end / 4) {
++		note(&ro, &rw, &l, NOTE_FREE, l.store_end - tail);
++		return SMMSTORE_RET_FAILURE;
++	}
 +	if (params->op == SMMSTORE_RECLAIM_STATUS)
 +		return SMMSTORE_RET_SUCCESS;
-+	if (params->op != SMMSTORE_RECLAIM_COMMIT)
++	if (params->op != SMMSTORE_RECLAIM_COMMIT) {
++		note(&ro, &rw, &l, NOTE_OP, params->op);
 +		return SMMSTORE_RET_FAILURE;
++	}
 +
 +	smmstore_locked_write_reset();
-+	if (!image_allowed(&rdev, &l))
++	why = image_allowed(&ro, &l);
++	if (why) {
++		note(&ro, &rw, &l, why, 0);
 +		return SMMSTORE_RET_FAILURE;
++	}
 +
 +	memset(&record, 0, sizeof(record));
 +	memcpy(record.magic, RECLAIM_MAGIC, sizeof(record.magic));
 +	record.store_end = l.store_end;
 +	record.staging = l.staging;
-+	if (!hash_area(&rdev, l.staging, l.store_end, record.digest) ||
-+	    !erase_commit(&rdev, &l) ||
-+	    rdev_writeat(&rdev, &record, l.commit, sizeof(record)) != sizeof(record))
++	if (!hash_area(&ro, l.staging, l.store_end, record.digest) ||
++	    !erase_commit(&rw, &l) ||
++	    rdev_writeat(&rw, &record, l.commit, sizeof(record)) != sizeof(record)) {
++		note(&ro, &rw, &l, NOTE_RECORD, 0);
 +		return SMMSTORE_RET_FAILURE;
++	}
 +
 +	reclaims++;
 +	/* From here the swap completes: now, or at the next boot from the record */
-+	if (!copy_image(&rdev, &l)) {
++	if (!copy_image(&ro, &rw, &l)) {
 +		printk(BIOS_ERR, "SMMSTORE: reclaim copy failed, the next boot finishes it\n");
++		note(&ro, &rw, &l, NOTE_COPY, 0);
 +		store_replaced();
 +		return SMMSTORE_RET_FAILURE;
 +	}
-+	erase_commit(&rdev, &l);
++	erase_commit(&rw, &l);
 +	store_replaced();
 +	return SMMSTORE_RET_SUCCESS;
 +}
@@ -541,7 +624,7 @@ index 00000000000..a5eff69851e
 +		return;
 +	if (!same) {
 +		printk(BIOS_WARNING, "SMMSTORE: finishing a reclaim cut by a power loss\n");
-+		if (!copy_image(&rdev, &l)) {
++		if (!copy_image(&rdev, &rdev, &l)) {
 +			printk(BIOS_ERR, "SMMSTORE: the reclaim could not be finished\n");
 +			return;
 +		}
@@ -909,10 +992,10 @@ index e45f82d77a6..8bd643b21d9 100644
  
 diff --git a/tests/drivers/smmstore_reclaim.c b/tests/drivers/smmstore_reclaim.c
 new file mode 100644
-index 00000000000..7166175739d
+index 00000000000..d2830d4a5ff
 --- /dev/null
 +++ b/tests/drivers/smmstore_reclaim.c
-@@ -0,0 +1,382 @@
+@@ -0,0 +1,433 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +/*
@@ -1006,6 +1089,12 @@ index 00000000000..7166175739d
 +}
 +
 +int boot_device_rw_subregion(const struct region *sub, struct region_device *subrd)
++{
++	return rdev_chain(subrd, &flash_root, region_offset(sub), region_sz(sub));
++}
++
++/* The mapping of the CPU reads the same flash */
++int boot_device_ro_subregion(const struct region *sub, struct region_device *subrd)
 +{
 +	return rdev_chain(subrd, &flash_root, region_offset(sub), region_sz(sub));
 +}
@@ -1104,6 +1193,15 @@ index 00000000000..7166175739d
 +	return !memcmp(flash, what, layout.store_end);
 +}
 +
++/* No commit record (a note of a refusal may be there) */
++static bool no_record(void)
++{
++	for (size_t i = 0; i < sizeof(struct reclaim_record); i++)
++		if (flash[layout.commit + i] != 0xff)
++			return false;
++	return true;
++}
++
 +static bool commit_erased(void)
 +{
 +	for (size_t i = 0; i < BLOCK; i++)
@@ -1173,7 +1271,7 @@ index 00000000000..7166175739d
 +	image_ok = false;
 +	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_FAILURE);
 +	assert_true(store_is(before));
-+	assert_true(commit_erased());
++	assert_true(no_record());
 +
 +	/* Other headers */
 +	image_ok = true;
@@ -1186,7 +1284,7 @@ index 00000000000..7166175739d
 +	memset(flash + layout.staging + 0x48 + 28 + 36, 0xff, 4);
 +	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_FAILURE);
 +	assert_true(store_is(before));
-+	assert_true(commit_erased());
++	assert_true(no_record());
 +	assert_int_equal(replaced, 0);
 +}
 +
@@ -1229,7 +1327,7 @@ index 00000000000..7166175739d
 +
 +		/* The next boot */
 +		smmstore_reclaim_recover();
-+		assert_true(commit_erased());
++		assert_true(no_record());
 +		if (ret == SMMSTORE_RET_SUCCESS) {
 +			assert_true(store_is(image));
 +			break;
@@ -1257,8 +1355,43 @@ index 00000000000..7166175739d
 +	memcpy(before, flash, sizeof(before));
 +	flash[layout.staging + layout.store_end - 1] ^= 0x01;
 +	smmstore_reclaim_recover();
-+	assert_true(commit_erased());
++	assert_true(no_record());
 +	assert_true(!memcmp(flash, before, layout.store_end));
++}
++
++/* A refusal leaves a note in the commit block, once until the next reclaim erases it */
++static void test_note(void **state)
++{
++	struct reclaim_note_rec rec;
++
++	new_store();
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_STATUS), SMMSTORE_RET_FAILURE);
++	memcpy(&rec, flash + layout.commit + RECLAIM_NOTE_OFFSET, sizeof(rec));
++	assert_memory_equal(rec.magic, RECLAIM_NOTE_MAGIC, sizeof(rec.magic));
++	assert_int_equal(rec.code, NOTE_FREE);
++	assert_true(rec.a > layout.store_end / 4);
++
++	/* Another refusal does not write over it */
++	fill_store();
++	stage_image();
++	image_ok = false;
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_FAILURE);
++	memcpy(&rec, flash + layout.commit + RECLAIM_NOTE_OFFSET, sizeof(rec));
++	assert_int_equal(rec.code, NOTE_FREE);
++
++	/* A reclaim erases it; the record goes elsewhere */
++	image_ok = true;
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_SUCCESS);
++	assert_true(commit_erased());
++
++	/* Refused by the locks: the note says so */
++	fill_store();
++	stage_image();
++	image_ok = false;
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_FAILURE);
++	memcpy(&rec, flash + layout.commit + RECLAIM_NOTE_OFFSET, sizeof(rec));
++	assert_int_equal(rec.code, NOTE_OPTIONS);
++	assert_int_equal(rec.reclaims, 1);
 +}
 +
 +/* A record with another layout: dropped too */
@@ -1276,7 +1409,7 @@ index 00000000000..7166175739d
 +	memcpy(flash + layout.commit + 8, &store_end, sizeof(store_end));
 +	memcpy(before, flash, sizeof(before));
 +	smmstore_reclaim_recover();
-+	assert_true(commit_erased());
++	assert_true(no_record());
 +	assert_true(!memcmp(flash, before, layout.store_end));
 +}
 +
@@ -1291,6 +1424,7 @@ index 00000000000..7166175739d
 +		cmocka_unit_test(test_power_loss),
 +		cmocka_unit_test(test_bad_record),
 +		cmocka_unit_test(test_record_layout),
++		cmocka_unit_test(test_note),
 +	};
 +
 +	return cb_run_group_tests(tests, NULL, NULL);
