@@ -1,0 +1,55 @@
+## @file
+#  The Hardware Security Testability Interface (HSTI) of the platform: the
+#  state of the flash, SMRAM, debug and boot protections, read from the
+#  hardware when a boot is started, for Windows and, as a volatile variable,
+#  for the OS.
+#
+#  Copyright (c) 2026, Domenico D'Arrigo. All rights reserved.<BR>
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = PlatformHstiDxe
+  FILE_GUID                      = 3A1F0B6E-6D2C-4F7B-9E61-0C5B8A2D47F3
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = PlatformHstiDxeEntryPoint
+
+[Sources]
+  PlatformHstiDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  UefiPayloadPkg/UefiPayloadPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  HstiLib
+  IoLib
+  MemoryAllocationLib
+  PciLib
+  PrintLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+  UefiRuntimeServicesTableLib
+  VariablePolicyHelperLib
+
+[Guids]
+  gAdapterInfoPlatformSecurityGuid           ## PRODUCES ## Variable:L"HstiTable"
+  gEfiGlobalVariableGuid                     ## CONSUMES ## Variable:L"SecureBoot"
+  gEficorebootNvDataGuid                     ## CONSUMES ## Variable:L"OptionLockStatus"
+  gEfiMemoryOverwriteRequestControlLockGuid  ## CONSUMES ## Variable:L"MemoryOverwriteRequestControlLock"
+
+[Protocols]
+  gEfiTcg2ProtocolGuid                       ## SOMETIMES_CONSUMES
+  gEfiTcgProtocolGuid                        ## SOMETIMES_CONSUMES
+  gEdkiiVariablePolicyProtocolGuid           ## CONSUMES
+  gEfiVariableWriteArchProtocolGuid          ## CONSUMES
+
+[Depex]
+  gEdkiiVariablePolicyProtocolGuid AND gEfiVariableWriteArchProtocolGuid

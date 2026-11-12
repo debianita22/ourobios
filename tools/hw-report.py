@@ -2243,6 +2243,61 @@ def ecam_status(mcfg, memmap, iomem):
     return "WARN", "ECAM " + " e ".join(what) + " (fino alla v1.5.x e' cosi')", details, data
 
 
+# La tabella HSTI del payload (edk2/0063, PlatformHstiDxe): la copia che il
+# driver lascia nella variabile volatile HstiTable del GUID della tabella, con
+# i bit nell'ordine di HSTI_FEATURE
+HSTI_VAR = "/sys/firmware/efi/efivars/HstiTable-6be272c7-1320-4ccd-9017-d4612c012b25"
+HSTI_FEATURES = ("configurazione del flash bloccata (FLOCKDN)", "regione BIOS protetta (BIOS_CNTL)",
+                 "Protected Range bloccato", "descrittore non scrivibile dall'host",
+                 "regione ME non scrivibile dall'host", "TSEG bloccato", "interfaccia di debug bloccata",
+                 "microcode caricato", "Secure Boot", "TPM", "lock delle opzioni del setup", "lock MOR",
+                 "protezione DMA prima dell'avvio")
+# i limiti noti delle due board (README): descrittore e ME sbloccati con
+# ifdtool, nessuna protezione DMA prima del sistema; Secure Boot e' una scelta
+HSTI_KNOWN = {3: "regioni sbloccate (ifdtool)", 4: "regioni sbloccate (ifdtool)",
+              8: "una scelta del proprietario", 12: "l'FSP-M non ha i dati dei PMR"}
+
+
+def check_hsti(fw, rep):
+    """CONF-08: la tabella HSTI che il payload pubblica all'avvio di un boot."""
+    if not os.path.exists(HSTI_VAR):
+        rep.add("CONF-08", "HSTI", "INFO", "nessuna tabella HSTI (le release prima della patch edk2/0063)")
+        return
+    try:
+        with open(HSTI_VAR, "rb") as f:
+            raw = f.read()[4:]
+    except OSError as e:
+        rep.add("CONF-08", "HSTI", "WARN", "HstiTable non letta: %s" % e)
+        return
+    head = 4 + 4 + 512 + 4
+    if len(raw) < head:
+        rep.add("CONF-08", "HSTI", "FAIL", "HstiTable di %d byte" % len(raw))
+        return
+    size = struct.unpack_from("<I", raw, head - 4)[0]
+    if len(raw) < head + 3 * size:
+        rep.add("CONF-08", "HSTI", "FAIL", "HstiTable piu' corta dei suoi tre campi di bit")
+        return
+    req, impl, ver = (raw[head + i * size:head + (i + 1) * size] for i in range(3))
+    bit = lambda a, n: n // 8 < len(a) and bool(a[n // 8] & (1 << (n % 8)))
+    details, unknown, passed = [], 0, 0
+    for n, name in enumerate(HSTI_FEATURES):
+        if not bit(req, n):
+            continue
+        if bit(ver, n):
+            passed += 1
+            details.append("si': %s" % name)
+        elif n in HSTI_KNOWN:
+            details.append("no: %s  -- noto: %s" % (name, HSTI_KNOWN[n]))
+        else:
+            unknown += 1
+            details.append("NO: %s%s" % (name, "" if bit(impl, n) else " (non verificabile)"))
+    errors = raw[head + 3 * size:].decode("utf-16-le", "replace").split("\0")[0]
+    details += ["errore: %s" % l.strip() for l in errors.splitlines() if l.strip()]
+    status = "WARN" if unknown else "PASS"
+    rep.add("CONF-08", "HSTI", status, "%d di %d test superati, %d mancati non noti" % (
+        passed, sum(bit(req, n) for n in range(len(HSTI_FEATURES))), unknown), details)
+
+
 def check_ecam(fw, rep):
     """CONF-07: la finestra ECAM della tabella MCFG riservata nella mappa della
     memoria e tra le risorse della scheda madre (ecam_status)."""
@@ -2517,6 +2572,7 @@ def main():
     guard(check_acpi, "ID-02", "Tabelle ACPI", fw, rep)
     guard(check_wsmt, "CONF-01", "WSMT", fw, rep)
     guard(check_ecam, "CONF-07", "ECAM", fw, rep)
+    guard(check_hsti, "CONF-08", "HSTI", fw, rep)
     head = header()
     if args.json:
         print(json.dumps({"tool": "hw-report", "format": 1, "board": fw.board, "firmware": fw.bios,

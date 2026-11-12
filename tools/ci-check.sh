@@ -467,6 +467,25 @@ for line, board, bios, want in (
     hw.check_fw_log(fw, rep)
     assert rep.checks[0]["status"] == want, (line, bios, rep.checks[0])
 assert hw.separator_pcr("sha256").startswith("3D458CFE55CC03EA")
+# CONF-08: la tabella HSTI di edk2/0063 dalla variabile HstiTable
+import os
+import struct
+import tempfile
+def hsti_var(verified, errors=""):
+    body = struct.pack("<II", 3, 2) + "ouroBIOS".encode("utf-16-le").ljust(512, b"\0") + struct.pack("<I", 2)
+    body += bytes([0xff, 0x1f]) + bytes([0xe7, 0x0f]) + struct.pack("<H", verified)
+    body += (errors + "\0").encode("utf-16-le")
+    f = tempfile.NamedTemporaryFile(delete=False)
+    f.write(b"\x07\0\0\0" + body)
+    f.close()
+    return f.name
+for verified, errors, want in ((0x0ee7, "0x00010003 Flash: x\r\n", "PASS"), (0x0ee6, "", "WARN")):
+    hw.HSTI_VAR = hsti_var(verified, errors)
+    rep = hw.Report()
+    hw.check_hsti(None, rep)
+    assert rep.checks[0]["status"] == want, rep.checks[0]
+    os.unlink(hw.HSTI_VAR)
+assert any("noto: regioni sbloccate" in d for d in rep.checks[0]["details"]), rep.checks[0]["details"]
 assert hw.redact("PC0ZK26") == "****ZK26" and hw.redact("ab") == "****"
 rep = hw.Report()
 hw.check_fw_log(firmware("m920x", ["[WARN ]  Setup options: 31 reset to defaults (RTC power lost)",

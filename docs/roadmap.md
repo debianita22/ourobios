@@ -20,6 +20,7 @@ is here. None of it is a promise of a date.
 | [Memory training across updates on the W541](#memory-training-across-updates-on-the-w541) | W541 | built for v1.6.1 (patches 0250-0252): the version of the cache is a tag and a key from the code (`nri`) or from the inputs of `mrc.bin`; the capsules and *Go back to* keep the cache; MEM-03 passed on a W541 (2026-11-08) | a capsule update and a fallback to an older slot on a W541; `mrc` |
 | [Native RAM init: XMP, and the steps still missing](#native-ram-init-xmp-and-the-steps-still-missing) | W541 | built for v1.7.0 (patches 0275-0280, 0290-0297, 0299, 0301-0307): an XMP profile of the modules as an option, off by default, given up by itself when it does not train or does not reach the payload; the decoder of XMP 1.3 corrected, with a unit test; the write Vref of the modules centred, and their command Vref. On the W541 with rc1 (2026-11-10): the default, the refusal of a profile that is not there, the giving up and the write Vref passed; its modules have no XMP profile | MEM-15 (the command Vref) and MEM-11, MEM-12 again for their lines, on a W541 with rc2; MEM-13 with DDR3L SO-DIMMs that have a profile at 1.35 V; MEM-19 to MEM-21 with rc6 (the turnaround, the Vrefs and the per-byte settings of the MRC) |
 | [The option lock for every setup option](#the-option-lock-for-every-setup-option) | both | built for v1.7.0 on the M920x (patches 0281-0284, `edk2/0061`, `edk2/0062`): the lock of the whole set of options, the fault tolerant write blocks closed (a way around the lock of v1.6.1 to v1.6.3, not backported), a header split at a block end, the variable driver's lock on every option; LOCK-01 to LOCK-09 passed with rc2 and rc3 (2026-11-11), a write takes 0.03 to 0.1 s | the setup rows of LOCK-10 (the owner); the W541 (decision 4) |
+| [A reclaim of the store in SMM](dev-v1.7.0-m920x.md#stage-3-a-reclaim-of-the-store-in-smm-design-not-built) | both | designed on 2026-11-12: with the lock armed the store is reclaimed only at boot, so writes slow down and fail once it is full; the swap checked whole in SMM, with a recovery in ramstage | decisions 7 to 9 of the owner, then the build |
 | [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | done in v1.6.0 (patch 0222): a Kconfig for the version, and `tools/fspm-settings.sh` stops CI when the files of those settings change | the first bump, with the release that changes them |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
 | [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | built for v1.6.1 (patches 0247-0249, 0258); CPU-06 passed on a W541 (2026-11-08): off, locked, kept across S3, the training cache kept | `mrc` (this machine boots only `nri` slots) |
@@ -34,7 +35,7 @@ is here. None of it is a promise of a date.
 | [EDK II from TianoCore](#edk-ii-from-tianocore) | both | moved in v1.6.0: the payload of the ROMs is TianoCore's tag with the package [`edk2/OuroBiosPkg`](../edk2/README.md) and `patches/tianocore`, the same payload as MrChromebox's tree with `patches/edk2`; what is left is the carried series, 100 patches | the series shorter: the *drop* commits decided after v1.6.2-rc1 (`d7597bb` and `4373c47` reverted by `edk2/0059` and `edk2/0060`, the others kept as carry or upstream); then the *package* ones (after rc1: what only the package uses out of TianoCore's packages, its declarations in `OuroBiosPkg.dec`, 11 patches less; the commits whose rest changes TianoCore's own modules moved to carry or upstream); next the *upstream* ones proposed: where each stands, [docs/upstream/edk2-series.md](upstream/edk2-series.md) (2026-11-09: none merged, four open pull requests of MrChromebox's; they go from their authors), and the project's results on the open ones ([docs/edk2-migration.md](edk2-migration.md)) |
 | [LVGL v10](#lvgl-v10) | both | not out yet (v9.6, in the setup from v1.6.0, is the last of v9); LvglPkg calls the setters of v9.6 in place of the flag functions that v10 removes (`lvglpkg/0021`) | the pin |
 | [The _OSI queries of the DSDT](#the-_osi-queries-of-the-dsdt) | both | no Windows requirement asks for them, and a query of "Windows 2012" or later changes the backlight Linux picks | none planned |
-| [HSTI](#hsti) | both | the only honest answer to its tests is partly "no", and Windows reads it for a report only | none planned |
+| [HSTI](#hsti) | both | built for v1.7.0 (`edk2/0063`): the table with the tests failed as well as passed, and its copy in `HstiTable` | CONF-08 on both boards; on Windows, *Device Encryption Support* in *System Information* |
 | [Openness score](#openness-score) | both | already in `tools/sbom.py`; compared with Dasharo's tool after rc5: the descriptor, GbE and VBT are data there too now, the ME region is counted whole by Dasharo and by its bytes here | none planned |
 | [Clearing the memory on every core](#clearing-the-memory-on-every-core) | both | measured on both: on the W541 one core already fills the memory, on the M920x the clear is bound by its unequal DIMMs; the loop is `rep stosl` already | decided on 2026-11-06: not made; a test build only for a machine with two equal DIMMs |
 | [The UEFI Shell in the payload](#the-uefi-shell-in-the-payload) | both | done in v1.6.0 (`edk2/0053`, patch 0227): the boards' payload leaves the Shell out, and the smoke test writes its variables with `tools/efi/setvar.c` from a disk image | none planned |
@@ -1107,14 +1108,14 @@ pin, when v10 is out (`tools/upstream.sh lvgl` opens an issue).
 
 ## HSTI
 
-The Hardware Security Testability Interface is a UEFI protocol with the
-result of the security tests of the platform's own firmware, which
-Windows reads for its device security report. The tests ask for what
-these machines do not have (a locked descriptor, boot guard, pre-boot
-DMA protection) next to what they do (BIOS Lock, Secure Boot, the WSMT):
-a protocol that reports part "no" tells Windows what the known limits
-of the README already say. Not planned; the WSMT (patches 0211-0215)
-covers what Windows acts on.
+Built for v1.7.0 (`edk2/0063`, [docs/hsti.md](hsti.md)): the payload
+reads the protections when a boot starts and publishes the HSTI table,
+with a line for each test that fails, and a copy in the variable
+`HstiTable` that `tools/hw-report.py` checks (CONF-08). The table says
+what the known limits of the README say (the descriptor and the ME
+region writable by the host, no pre-boot DMA protection); Windows reads
+it for its report, and the WSMT (patches 0211-0215) stays what it acts
+on.
 
 ## The _OSI queries of the DSDT
 

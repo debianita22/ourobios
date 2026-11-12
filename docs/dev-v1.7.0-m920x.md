@@ -311,11 +311,101 @@ after a boot option that came back; *Go back to*; VAR-01 with *BIOS
 Lock* off; a boot of the W541 with the same candidate, with its lock
 unchanged.
 
+## Stage 3: a reclaim of the store in SMM (design, not built)
+
+Asked by the owner on 2026-11-12, after rc7. With the lock armed the
+store is reclaimed only at the start of the payload (`edk2/0061`):
+between two boots every write appends a record, the time of a write
+grows with the dead records (0.03 s after a reclaim, 0.127 s on rc7
+with 862 records), and once the store is full a write of the OS fails
+until the next boot. The payload's reclaim cannot run while armed: it
+erases the store and copies it back through the fault tolerant write,
+whose blocks the lock refuses (patch 0281, the F6 bypass), and an
+erase of a store block leaves a store without the options, which the
+rule refuses (0282). This stage moves the one step that the rule
+cannot allow piece by piece, the swap of the old store for the new one,
+into SMM, where it is checked whole.
+
+### The flow
+
+1. The variable driver of the payload builds the reclaimed store in
+   memory, as now (`Reclaim()` of `VariableRuntimeDxe`, the valid
+   records in order).
+2. Instead of the fault tolerant write, it writes that image with raw
+   SMMSTORE writes into the **staging area**, the first 192 KiB of the
+   FTW spare area (0x40000 to 0x70000 of the region). While armed, raw
+   writes there are allowed again; the FTW working block, the last
+   64 KiB of the spare area (the **commit block**) and the store keep
+   the rules they have.
+3. It sends a new command, `SMMSTORE_CMD_RECLAIM`, with the size and
+   the SHA-256 of the image. SMM reads the image back from the flash
+   (never from the buffer of the caller) and checks it as a store:
+   the same firmware volume and store headers as the store it
+   replaces, every record well formed up to the erased tail, and the
+   rule of the lock applied to it whole: the set of the options GUID
+   (`option_set_of()`) equal to the latched one, and the MOR request
+   as the MOR lock holds it.
+4. SMM writes the commit record into the commit block (a magic, the
+   size, the SHA-256 of the image, the SHA-256 of the store it
+   replaces): from here the swap completes, also across a power loss.
+5. SMM erases the store and copies the image over it, one 64 KiB block
+   per call (decision 8), reads it back, and erases the commit block.
+   The walk of the lock is redone on the new store and the erased-tail
+   mark moved to its end.
+6. The variable driver takes the image as its cache, as after its own
+   reclaim.
+
+### A power loss
+
+The recovery is in coreboot's ramstage, before the payload runs and
+before the lock is armed: with a valid commit record (magic, and the
+SHA-256 of the staging area equal to the one it holds), a store that
+is not the image is erased and written from the staging area; then
+the commit block is erased. Without a commit record nothing happens:
+a staging area without a record is inert, for coreboot and for
+EDK2's fault tolerant write, which acts only on a record of its
+working block. The cases:
+
+| Power lost | Next boot |
+|---|---|
+| before the commit record | the old store, intact; the staging area is overwritten by the next reclaim |
+| after the record, during the erase or the copy | ramstage finishes the copy from the staging area |
+| after the copy, before the record is erased | ramstage finds the store equal to the image and erases the record |
+
+Only SMM writes the commit block (refused to raw writes, armed or
+not, after the payload starts), so a staging area written by the OS
+cannot be committed without the check of step 3. This keeps the
+property that closed F6: nothing that the OS writes outside the store
+reaches the store without the rule.
+
+### What it costs
+
+- coreboot: the command, the check of a whole image (the walk of
+  0282 on another region), the copy, the recovery in ramstage, and the
+  rules for the two new areas; unit tests for every decision and for
+  each power-loss point (a store image and a staging image built in
+  the test).
+- payload: a patch of `VariableRuntimeDxe` (TianoCore code, in
+  `patches/tianocore`): when the option lock is armed, `Reclaim()` takes
+  the SMM path instead of `FtwVariableSpace()`.
+- flash wear: one reclaim erases three blocks of the store, three of
+  the staging area and the commit block; the per-boot limit of
+  decision 7 bounds it.
+- time: the copy of 192 KiB is about 1 to 2 s of SMM on this flash;
+  in one call the OS stands still that long (decision 8).
+
+On the machine: LOCK-09 again (fill the store with the lock armed: the
+write that fills it now triggers the reclaim and succeeds), the
+regression, and the recovery, with a test build that stops the swap
+after each step and is rebooted there (Kconfig of the test only, not
+in a release).
+
 ## Decisions for the owner
 
 1. **No reclaim of the store at runtime while the lock is armed**, with
    the reclaim at the start of the payload instead: the numbers of
-   LOCK-09 say what it costs.
+   LOCK-09 say what it costs. Taken for v1.7.0; reopened by the owner
+   on 2026-11-12 for a reclaim in SMM (stage 3, decisions 7 to 9).
 2. **The reader and an unfinished last record**, only if F4 says an
    ordinary write needs it.
 3. **The lock of the variable driver for every option**
@@ -326,6 +416,19 @@ unchanged.
 5. **The candidates** (rule 11), and when the branch goes to `next`.
 6. What stage 0 finds about the fault tolerant write, if it concerns
    the releases already out.
+7. **Who may start the reclaim in SMM.** The command commits only an
+   image that passes the rule of the lock, so it gives a caller nothing
+   that a raw write does not; what it costs a caller who calls it in a
+   loop is flash wear and stalls. Proposed: any caller (the variable
+   driver runs in the OS's context, at runtime), refused while the store
+   has more than a quarter free, at most four per boot.
+8. **How long SMM may hold the machine.** One call for the whole swap
+   (1 to 2 s with the OS stopped) or one call per 64 KiB block (about
+   0.3 to 0.6 s each, the variable driver calls again until done).
+   Proposed: one block per call.
+9. **Which release.** Proposed: not v1.7.0, whose candidates are
+   tested; a v1.7.x or v1.8.0, first on the M920x, then the W541 with
+   decision 4.
 
 ## Risks
 

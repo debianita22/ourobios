@@ -19,6 +19,7 @@ it, it has the same sources, file for file, as MrChromebox's EDK II at
 | `EnrollDefaultKeys/` | the default Secure Boot keys at the first boot: Microsoft's *Windows OEM Devices PK*, the two KEKs, the five db certificates and Microsoft's dbx; `keys/` with the files and `UpdateMicrosoftDbx.py`, which refreshes the dbx |
 | `FirmwareUpdateDxe/`, `Library/UpdateScreenLib/` | the *Firmware Update* page of the setup (`edk2/0013`, `0020`, `0038`) and the screen of a capsule update (`edk2/0026`); `UpdateScreenFont.c` is made by `tools/ui-font.py` from LvglPkg's fonts when the package is staged |
 | `MorControlDxe/`, `MorLockSmmStoreDxe/` | TCG MOR and its lock in SMM (`edk2/0040`, `0043`) |
+| `PlatformHstiDxe/` | the HSTI table of the platform, read from the hardware when a boot starts, and its copy in the variable `HstiTable` (`edk2/0063`, [docs/hsti.md](../docs/hsti.md)) |
 | `Library/Tcg*PhysicalPresence*/` | the physical presence libraries of the TPM 1.2 and 2.0 (MrChromebox's `c111515`) |
 | `Library/CsmWrapSecureBootLib/` | CSMWrap refused while Secure Boot is on (`edk2/0025`) |
 | `EcAcpiBatteryStatusDxe/`, `Library/CbfsLib/` | the battery on the front page, files read from coreboot's CBFS |

@@ -44,6 +44,14 @@ whose changes below are still to run on a machine.
   above 85 C; at normal temperatures nothing changes. The memory
   settings version goes up, so the first boot after the update trains
   the memory again (a few seconds more, once).
+- **The firmware reports its security tests (HSTI)** (`edk2/0063`):
+  when a boot starts, the payload reads the protections of the flash,
+  SMRAM, the debug interface, Secure Boot, the TPM and the setup and MOR
+  locks, and publishes the result as the HSTI table that Windows reads
+  and as the variable `HstiTable` for Linux (`tools/hw-report.py`,
+  CONF-08). The tests these machines cannot pass are reported as failed:
+  the descriptor and the ME region writable by the host, no pre-boot DMA
+  protection ([docs/hsti.md](docs/hsti.md)).
 - **Two warnings fewer in the coreboot log of the M920x** (patches 0286
   and 0287): with the ME disabled, an S3 resume no longer warns that
   the ME's interface is disabled (the boot before the suspend turned
