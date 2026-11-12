@@ -1,0 +1,41 @@
+nov 12 19:54:13 Wurtz kernel: [Firmware Bug]: Page fault caused by firmware at PA: 0xff910048
+nov 12 19:54:13 Wurtz kernel: WARNING: arch/x86/platform/efi/quirks.c:798 at efi_crash_gracefully_on_page_fault+0x59/0xd0, CPU#5: kworker/u32:2/73
+nov 12 19:54:13 Wurtz kernel: Modules linked in: snd_seq_dummy snd_hrtimer rfcomm snd_seq snd_seq_device wireguard libcurve25519 ip6_udp_tunnel udp_tunnel nft_ct xfrm_user xfrm_algo xt_set ip_set tcp_dctcp tcp_htcp tcp_bbr ccm xt_CHECKSUM xt_connmark xt_MASQUERADE xt_mark nft_chain_nat udp_diag nf_nat tcp_diag inet_diag tun bridge stp llc overlay algif_hash algif_skcipher af_alg bnep joydev mousedev rmi_smbus rmi_core intel_rapl_msr intel_rapl_common x86_pkg_temp_thermal intel_powerclamp coretemp iwlmvm kvm_intel vfat fat mac80211 snd_hda_codec_alc269 kvm snd_hda_codec_realtek_lib snd_hda_scodec_component libarc4 snd_hda_codec_generic uvcvideo snd_hda_codec_intelhdmi irqbypass snd_hda_codec_hdmi uvc aesni_intel videobuf2_vmalloc btusb videobuf2_memops gf128mul snd_hda_intel btmtk videobuf2_v4l2 rapl at24 snd_hda_codec btbcm videobuf2_common intel_cstate snd_hda_core iwlwifi btintel spi_nor snd_intel_dspcfg memconsole_coreboot i2c_i801 videodev cbmem vpd_sysfs memconsole framebuffer_coreboot btrtl snd_intel_sdw_acpi i2c_smbus
+nov 12 19:54:13 Wurtz kernel:  intel_uncore psmouse mtd i2c_mux gpio_ich pcspkr cfg80211 snd_hwdep mc bluetooth e1000e snd_pcm ptp snd_timer pps_core coreboot_table mac_hid ip6t_REJECT nf_reject_ipv6 xt_hl ip6t_rt ipt_REJECT nf_reject_ipv4 xt_LOG nf_log_syslog nft_limit xt_limit xt_addrtype xt_tcpudp xt_conntrack nf_conntrack nf_defrag_ipv6 nf_defrag_ipv4 nft_compat x_tables nf_tables dm_mod ntsync i2c_dev pkcs8_key_parser crypto_user zram 842_decompress 842_compress lz4hc_compress i915 thinkpad_acpi sdhci_pci rfkill cqhci drm_buddy snd sdhci_uhs2 intel_gtt sdhci ttm soundcore i2c_algo_bit sparse_keymap mmc_core video drm_display_helper cec wmi serio_raw lpc_ich [last unloaded: spi_intel]
+nov 12 19:54:13 Wurtz kernel: CPU: 5 UID: 0 PID: 73 Comm: kworker/u32:2 Tainted: G     U              7.3.0-4-cachyos #1 PREEMPT(full)  005fe599137efffe4a7d64b96bdfc9e422968765
+nov 12 19:54:13 Wurtz kernel: Tainted: [U]=USER
+nov 12 19:54:13 Wurtz kernel: Hardware name: LENOVO 20EGS24J00/20EGS24J00, BIOS CBET4000 ouroBIOS-v1.7.0-rc11-nri 11/11/2026
+nov 12 19:54:13 Wurtz kernel: Workqueue: efi_runtime efi_call_rts
+nov 12 19:54:13 Wurtz kernel: RIP: 0010:efi_crash_gracefully_on_page_fault+0x59/0xd0
+nov 12 19:54:13 Wurtz kernel: Code: 48 3d 20 2c 57 9a 0f 95 c0 49 81 fe 00 10 00 00 0f 92 c1 08 c1 74 09 5b 41 5e c3 cc cc cc cc cc 4c 89 f6 48 8d 3d d7 c5 74 02 <67> 48 0f b9 3a 83 3d db 23 3d 03 0a 75 13 48 c7 c7 74 6c a6 98 e8
+nov 12 19:54:13 Wurtz kernel: RSP: 0018:ffffd254c02c7710 EFLAGS: 00010046
+nov 12 19:54:13 Wurtz kernel: RAX: ffffffff9a572c00 RBX: ffffd254c02c77d8 RCX: 0000000000000100
+nov 12 19:54:13 Wurtz kernel: RDX: 00000000ff910048 RSI: 00000000ff910048 RDI: ffffffff998ece30
+nov 12 19:54:13 Wurtz kernel: RBP: 0000000000000000 R08: ffffffff981fca90 R09: 0000000000000000
+nov 12 19:54:13 Wurtz kernel: R10: 0000000000000000 R11: ffffffff981fca90 R12: 0000000000000000
+nov 12 19:54:13 Wurtz kernel: R13: 0000000000000000 R14: 00000000ff910048 R15: 0000000000000000
+nov 12 19:54:13 Wurtz kernel: FS:  0000000000000000(0000) GS:ffff8da725f88000(0000) knlGS:0000000000000000
+nov 12 19:54:13 Wurtz kernel: CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+nov 12 19:54:13 Wurtz kernel: CR2: 00000000ff910048 CR3: 00000001002b8001 CR4: 00000000001726f0
+nov 12 19:54:13 Wurtz kernel: Call Trace:
+nov 12 19:54:13 Wurtz kernel:  <TASK>
+nov 12 19:54:13 Wurtz kernel:  page_fault_oops+0xa4/0x470
+nov 12 19:54:13 Wurtz kernel:  exc_page_fault+0x66/0xd0
+nov 12 19:54:13 Wurtz kernel:  asm_exc_page_fault+0x26/0x30
+nov 12 19:54:13 Wurtz kernel: RIP: 0010:0xfffffffefcf60125
+nov 12 19:54:13 Wurtz kernel: Code: 0f 1f 44 00 00 56 57 48 89 d6 48 89 cf 4e 8d 4c 06 ff 48 39 fe 48 89 f8 73 05 49 39 f9 73 10 4c 89 c1 49 83 e0 07 48 c1 e9 03 <f3> 48 a5 eb 09 4c 89 ce 4a 8d 7c 07 ff fd 4c 89 c1 f3 a4 fc 5f 5e
+nov 12 19:54:13 Wurtz kernel: RSP: 0018:ffffd254c02c7888 EFLAGS: 00010207
+nov 12 19:54:13 Wurtz kernel: RAX: fffffffefff01060 RBX: 00000000ff910048 RCX: 0000000000000003
+nov 12 19:54:13 Wurtz kernel: RDX: 00000000ff910048 RSI: 00000000ff910048 RDI: fffffffefff01060
+nov 12 19:54:13 Wurtz kernel: RBP: ffffd254c02c79a0 R08: 0000000000000004 R09: 00000000ff910063
+nov 12 19:54:13 Wurtz kernel: R10: ffff8d9fae6b1a98 R11: fffffffeffe6c070 R12: 000000000002ffb8
+nov 12 19:54:13 Wurtz kernel: R13: fffffffefff01060 R14: 000000000000000c R15: fffffffeffef8018
+nov 12 19:54:13 Wurtz kernel:  ? acpi_os_wait_semaphore+0xa2/0x170
+nov 12 19:54:13 Wurtz kernel:  ? sched_clock+0x11/0x30
+nov 12 19:54:13 Wurtz kernel:  ? update_load_avg+0x89/0xcc0
+nov 12 19:54:13 Wurtz kernel:  ? __schedule+0x76e/0x22e0
+nov 12 19:54:13 Wurtz kernel:  ? __efi_call+0x28/0x40
+nov 12 19:54:13 Wurtz kernel:  ? use_temporary_mm+0x43/0x80
+nov 12 19:54:13 Wurtz kernel:  ? arch_efi_call_virt_setup+0x51/0xa0
+nov 12 19:54:13 Wurtz kernel:  ? efi_call_rts+0x1a4/0x3c0
+nov 12 19:54:13 Wurtz kernel:  ? process_scheduled_works+0x21f/0x650

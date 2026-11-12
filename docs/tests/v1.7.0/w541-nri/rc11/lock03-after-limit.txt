@@ -1,0 +1,8 @@
+show_order(): Input/output error
+Skipping unreadable variable "Boot0000": Input/output error
+Skipping unreadable variable "Boot0001": Input/output error
+Skipping unreadable variable "Boot0002": Input/output error
+Skipping unreadable variable "Boot0003": Input/output error
+Skipping unreadable variable "Boot0005": Input/output error
+Could not prepare Boot variable: Input/output error
+rc=5

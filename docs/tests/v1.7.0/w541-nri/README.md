@@ -333,8 +333,52 @@ first DIMM (C1R0, C1R1) still the narrow one in the reads, as in rc5's
 first training. Whether that is still a spread between trainings is
 what the second and third trainings of rc7 are for.
 
+## v1.7.0-rc11: the lock of every option and the reclaim in SMM (LOCK)
+
+rc8 to rc10 changed nothing of the W541's coreboot configuration (the
+HSTI of `edk2/0063` and the reclaim of the M920x): rc8 was checked and
+not installed. rc11 (`e190a98`) gives the W541 what the M920x runs,
+`SMMSTORE_OPTION_LOCK_ALL`, `SMMSTORE_RECLAIM` and
+`DRIVERS_OPTION_CFR_LOCK_AT_BOOT` (the SMM stack at 8 KiB); the RAM init
+is rc7's. As a capsule from rc7, 2026-11-12: slot A, over rc6; rc7 stays
+in slot B ([files](rc11/)). The scripts of the M920x
+(`docs/tests/v1.7.0/m920x-fsp/scripts`), `lock03.sh` with the W541's
+disk; the copies of the flash need `spi_intel_platform` unloaded, or
+flashrom reads 8 of the 12 MiB.
+
+| ID | Result | Notes |
+|---|---|---|
+| UPD-01, UPD-02 | PASS | the capsule (`SHA256SUMS` OK, signature valid) written by the payload of rc7; rc11 from slot A, *riuscito*; the training kept (`Using cached memory parameters`, 0.11 s) |
+| LOCK-01, 0284 | PASS | `OptionLockStatus` `06 00 00 00` and eight zeros; ramstage: *SMMSTORE: option lock for every setup option, armed by the payload*; all 68 options with `CFR_OPTFLAG_LOCK_AT_BOOT` (and 10 read-only ones) |
+| LOCK-02 | PASS | 8 SMIs a write; 0.036 s at boot, 0.027 s after the reclaim at boot (v1.7.0-rc7: 0.153 s) |
+| LOCK-03 | PASS | a boot entry created and deleted, the entries as before; the test variable created, changed, deleted |
+| **LOCK-11** | **FAIL: the EFI runtime services lost** | from a store with 131 KiB free, 115 writes of 1000 bytes went through, the store at 5.8 KiB free, with no slow write; the 116th, the one that needed the reclaim, failed with `EIO`, and the kernel logged `[Firmware Bug]: Page fault caused by firmware at PA: 0xff910048`, *Froze efi_rts_wq and disabled EFI Runtime Services* ([log](rc11/lock11-kernel-fault.txt)). Until the reboot every variable read failed too (`efibootmgr`: *Skipping unreadable variable "Boot0000": Input/output error*). No commit record and no note of the handler in the flash (the SMI never came) |
+| LOCK-06, after the reboot | PASS | the payload reclaimed at its start: 145 KiB free, 199 records, the same 68 options as before the run; no record to finish |
+| LOCK-04 | PASS | three resumes from S3: the lock armed, PR0 and PR1 back, LOCK-02 and LOCK-03 work |
+| CONF-08 | WARN, one failure not known | 8 of 13; the known limits (descriptor and ME region writable by the host, Secure Boot off, no pre-boot DMA protection) and *SMM: the TSEG base is not locked*: `TSEGMB` (00:00.0 0xb8) reads `0x7f800000`, lock bit clear, where every other lock of `northbridge_final()` is set (BDSM, BGSM, TOLUD, TOUUD, REMAP, DPR, `SMRAMC` D_LCK) and that function writes it with them. Not new in rc11: the HSTI is the first to look |
+| MEM-04 | PASS | `stress-ng --vm 4 --vm-bytes 75% --verify`, 30 minutes after the resumes: 0 failed, no machine check |
+| LOCK-05, LOCK-09, LOCK-10 | not run | LOCK-05 with the next capsule; LOCK-10 needs the setup; LOCK-09 is the behaviour before the reclaim |
+
+**Why LOCK-11 fails on the W541.** 0xff910048 is the store as the flash
+is mapped (the 12 MiB flash ends at 4 GiB, so it starts at 0xff400000;
+`SMMSTORE` is at 0x510000 of it, plus 0x48, the firmware volume header
+that `SmmStoreFvbReclaim()` reads below the store). The fault is at the
+physical address in virtual mode: `EfiConvertPointer()` did not convert
+`MmioAddress`, because the memory map that the OS got has no runtime
+region for the flash. The only `EfiMemoryMappedIO` with
+`EFI_MEMORY_RUNTIME` is 17 pages at 0x7f5e9000
+([runtime map](rc11/efi-runtime-map.txt)); `/proc/iomem` has nothing at
+0xff400000. `SmmStoreLib` adds the mapped store as runtime MMIO to the
+GCD (`AddMemorySpace`, `SetMemorySpaceAttributes`), so on the W541 one
+of the two calls does not take (the asserts are off in a release
+build), or the range is already in the GCD as another type. On the
+M920x the same path passed (rc10): its map is to be compared. Until
+then, on the W541 a store filled from the OS turns the runtime services
+off instead of refusing the write, which is worse than rc7, where the
+write failed with `ENOMEM`. Not to release for the W541 like this.
+
 ## The machine after the run
 
-v1.7.0-rc7 in slot B, rc6 in slot A, with the training of its first boot;
+v1.7.0-rc11 in slot A, rc7 in slot B, with the training of rc7's first boot;
 *Memory profile* on *SPD*, byte 0x7d
 `0xa0`; *BIOS Lock* and *Firmware protection* on; no helper left.
