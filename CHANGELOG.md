@@ -52,7 +52,7 @@ whose changes below are still to run on a machine.
   coreboot checks it whole in SMM with the rules of the lock before it
   replaces the old one, behind a commit record, so that a power loss
   during the swap is finished at the next boot. At most four times a
-  boot, only when the store is nearly full; about a second each.
+  boot, only when the store is nearly full; about two seconds each.
 - **The firmware reports its security tests (HSTI)** (`edk2/0063`):
   when a boot starts, the payload reads the protections of the flash,
   SMRAM, the debug interface, Secure Boot, the TPM and the setup and MOR

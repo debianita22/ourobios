@@ -358,8 +358,8 @@ store for the new one, into SMM, where it is checked whole.
    the commit block. The option lock takes its set and erased tail from
    the flash again at the next check.
 
-All of it in one SMI: about a second for 192 KiB on this flash with the
-OS stopped (decision 8).
+All of it in one SMI: about 2.3 s on this flash with the OS stopped,
+measured on rc10 (decision 8).
 
 The checks read the store as the CPU maps it, as the locks do; the commit
 block, the copy and its read back go through the writable device. SMM has
@@ -367,6 +367,9 @@ no console in a release, so a refusal leaves a note in the commit block
 (a magic, a code, a value), once until the next reclaim erases the block,
 and each step of the payload's side fails with its own status (rc8 failed
 LOCK-11 with no way to tell which step refused: the record of rc8).
+rc8 and rc9 failed because the payload's side called a function that
+uses the boot services at runtime (a page fault, the runtime services
+turned off); rc10 passes LOCK-11.
 
 ### A power loss
 
@@ -437,7 +440,7 @@ are those of the arm.
    four a boot (`SMMSTORE_RECLAIM_PER_BOOT`), none while the store is
    more than a quarter free.
 8. **How long SMM may hold the machine.** Taken: one SMI for the whole
-   swap, about a second. The proposal was one block a call; a swap over
+   swap, about 2.3 s on the M920x (rc10). The proposal was one block a call; a swap over
    several SMIs leaves a half-written store between them, which an S3
    resume (the latch of the option lock is taken from the flash again)
    or another write would meet, and that costs more code to make safe

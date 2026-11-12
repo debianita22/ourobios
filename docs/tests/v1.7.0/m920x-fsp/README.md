@@ -490,3 +490,25 @@ firmware volume header in the variable driver's cache, whose pointer is
 converted at the switch to virtual mode, at block 0 of the FV, as
 `FtwNotificationEvent()` placed it. With the runtime services off for the
 rest of that boot, the next candidate is staged after a reboot.
+
+## rc10 on the machine
+
+v1.7.0-rc10 (`9a3a2e8`: rc9 with the runtime path of the reclaim free of
+boot services) as a capsule from rc9 with the lock armed, 2026-11-12,
+staged after a reboot that brought the runtime services back: slot B
+over rc8, rc9 kept in slot A. Files in [rc10](rc10).
+
+| ID | Result | Notes |
+|---|---|---|
+| LOCK-05, UPD-02 | PASS | rc10 from slot B, *riuscito*, PR0 and PR1 on; coreboot log clean |
+| LOCK-11 | PASS | 625 writes of 1000 bytes of the test variable from a store with 145 KiB free, against 129 on rc9: four reclaims through coreboot, at the 130th, 254th, 378th and 502nd write, 2.2 to 2.4 s each (the only slow writes; the median is 0.037 s); the 626th failed with `ENOMEM`, the limit of four a boot, and the handler left its note (*reclaims of the boot used*). No firmware fault in the kernel log, no runtime service turned off, no soft lockup. The 36 options of the copy at the end are those of the start (LOCK-06) |
+| After the limit | PASS | until the reboot a new variable that does not fit fails (`lock03.sh`: the boot entry went in, the test variable not), as before rc8; the reboot reclaims at the start of the payload (146 KiB free), with no record to finish and the same 36 options |
+| LOCK-01, 0284, LOCK-02, LOCK-03, LOCK-04 | PASS | 35 options with `CFR_OPTFLAG_LOCK_AT_BOOT`; 0.029 s a write, 4.5 ms an SMI (the checks read the store as the CPU maps it); three resumes, PR0 and PR1 back, the writes work |
+| CONF-08 | PASS | 9 of 13, the four known limits |
+| LOCK-07, LOCK-08 | PASS | report 26 PASS and 2 INFO with a copy of the flash; fwts 43 passed, 0 failed; kernel log clean |
+
+The note of the limit stays in the commit block until the next reclaim
+erases the block; the recovery of ramstage looks only for a commit
+record, so the note changes nothing at the boots in between.
+
+rc10 is the candidate with the reclaim in SMM working on the M920x.
