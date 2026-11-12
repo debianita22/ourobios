@@ -24,7 +24,8 @@ fix of the fault tolerant write is not backported). The record is
 LOCK-10 at the setup, the W541 (decision 4), and when the branch goes to
 `next` (decision 5). Also on the branch, outside the option lock, after
 rc5: patch 0285 (the DRAM refresh doubled when hot), 0286 and 0287 (two
-warnings of the coreboot log), still to run on a machine.
+warnings of the coreboot log), all three passed with v1.7.0-rc7 on the
+M920x.
 
 Written for an agent that works on the machine by itself, under Linux
 (Proxmox), as root, and that also writes the code. What the owner has to

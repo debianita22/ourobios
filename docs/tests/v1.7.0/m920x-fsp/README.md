@@ -403,3 +403,28 @@ kernel options (`/etc/default/grub`, saved first as
 `grub.bak-ourobios-20261111`, then `update-grub`) and the blacklist take
 effect at the next boot; the service is already stopped. Each is undone
 by removing it.
+
+## rc7 on the machine
+
+v1.7.0-rc7 (`9d02341`; for the M920x, rc5 with patches 0285 to 0287, the
+rest is the W541's) as a capsule from rc5 with the lock armed,
+2026-11-12: slot A over rc4, rc5 kept in slot B, both protections on.
+rc6 did not run here. The nri build failure of `638e640` was already
+mended before rc6 (`ba92e65`). The host changes of
+[the warnings of the logs](#the-warnings-of-the-logs) took effect at
+the same boot. Files in [rc7](rc7).
+
+| ID | Result | Notes |
+|---|---|---|
+| LOCK-05, UPD-02 | PASS | staged and written with rc5's lock armed; rc7 from slot A, *ultimo: v1.7.0-rc7, riuscito* |
+| 0285 | PASS | first boot: `MRC: version mismatch: 7007430 vs 7007431`, the training redone once (FspMemoryInit 26.3 s, 36.8 s to the payload); second boot: the training kept (*does not need update*), FspMemoryInit 0.23 s, 10.4 s to the payload |
+| 0286 | PASS | three S3 resumes: no warning, the debug line *ME: HECI1 disabled before the suspend, no status* after *Static device ... 16.0 not found* |
+| 0287 | PASS | no `fallback/slic` warning; the MSDM table still among the ACPI tables; the coreboot log has no `[ERROR]` or `[WARN ]` line, at a boot and after the resumes |
+| Kernel and services | PASS | the command line has `nosgx initcall_blacklist=hpet_init`; no `hpet_acpi_add`, SGX, `spi-nor` or `regulatory.db` line; from warning up only the ZFS taint, the ACS override, smartd's `unchecked data buffer` and the audit count; `journalctl -p err` empty |
+| LOCK-01, 0284 | PASS | armed for every option; 35 options with `CFR_OPTFLAG_LOCK_AT_BOOT`, 9 read-only, as on rc5 |
+| LOCK-02 | PASS | 0.127 s a write (20.1 ms an SMI), the store at 862 records since the last reclaim |
+| LOCK-03, LOCK-04 | PASS | a boot entry and the test's variable; three resumes, PR0 and PR1 back, the writes work |
+| LOCK-06 | PASS | the 36 options before the capsule and at the end: the same |
+| LOCK-07, LOCK-08 | PASS | report 25 PASS and 2 INFO with a copy of the flash (BOOT-03 *nessun errore ne' avviso*); fwts 43 passed, 0 failed |
+
+No defect found: no new candidate is needed for the M920x.
