@@ -220,7 +220,8 @@ whose changes below are still to run on a machine.
   termination of the modules of each channel is chosen on the read and
   write margins and kept with the saved training, and the window in
   which each byte terminates and samples a read is narrowed where it
-  costs no margin, which saves power.
+  costs no margin, as the MRC does it (it weighs that as less power; on
+  the W541 the power at rest and under load is the same either way).
 - **W541: the memory trained with the dGPU as the board runs it**
   (patch 0309, both variants): the EC powers the NVIDIA dGPU on at
   power-up, and the firmware turned it off (with *Dual graphics* off, the

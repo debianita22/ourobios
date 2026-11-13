@@ -20,9 +20,10 @@ left fixed (the MRC of a ThinkPad W541, read in its code):
   round trip step): the delay of the ODT and of the sense amplifiers
   from the receive enable, then how long they stay on. configure_mc()
   sets -2 and 7 qclks for every byte, the MRC leaves 0 to 3 and 3 to 4
-  on the W541. A later or shorter window saves power and changes little
-  of the eye, so these take the value of least power within one step of
-  the widest eye and of the one that was set.
+  on the W541. The MRC weighs a later or shorter window as less power;
+  these take the narrowest within one step of the widest eye and of the
+  one that was set. On the W541 the package and DRAM power (RAPL) are the
+  same with it as with the wide window, at rest and under load.
 
 Both under HASWELL_NRI_OPT_PARAMS. The saved training changes layout,
 so the boards train once more.
@@ -298,9 +299,9 @@ index bf17379796..a29decb80d 100644
 + * the sense amplifiers of the byte turn on, then how long they stay on, in
 + * qclks (DQ_CONTROL_1). configure_mc() sets -2 and 7 for every byte, a wide
 + * window; the MRC leaves 0 to 3 and 3 to 4 on a ThinkPad W541. A later or
-+ * shorter window saves power and changes little of the eye, so these two
-+ * take the value of least power within OPT_POWER_TOL of the widest eye. After
-+ * the round trip step, as the MRC does.
++ * shorter window is what the MRC weighs as less power (not measurable at the
++ * package on a W541): these two take the narrowest within OPT_POWER_TOL of
++ * the widest eye. After the round trip step, as the MRC does.
 + */
 +static void set_odt_delay(struct sysinfo *ctrl, const uint8_t channel, const uint8_t byte,
 +			  const int8_t value, const bool update)
