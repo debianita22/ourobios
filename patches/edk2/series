@@ -63,3 +63,4 @@
 0063-UefiPayloadPkg-The-HSTI-of-the-platform.patch
 0064-UefiPayloadPkg-Reclaim-the-variable-store-through-co.patch
 0065-UefiPayloadPkg-The-mapped-store-as-runtime-MMIO-wher.patch
+0066-UefiPayloadPkg-PlatformHstiDxe-A-region-under-a-lock.patch

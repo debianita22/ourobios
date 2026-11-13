@@ -79,8 +79,11 @@ whose changes below are still to run on a machine.
   locks, and publishes the result as the HSTI table that Windows reads
   and as the variable `HstiTable` for Linux (`tools/hw-report.py`,
   CONF-08). The tests these machines cannot pass are reported as failed:
-  the descriptor and the ME region writable by the host, no pre-boot DMA
-  protection ([docs/hsti.md](docs/hsti.md)).
+  no pre-boot DMA protection, and Secure Boot when it is off
+  ([docs/hsti.md](docs/hsti.md)). The descriptor and the ME region pass
+  when the *Firmware protection* covers them (`edk2/0066`, from rc14):
+  the regions are unlocked, but a locked Protected Range keeps the host
+  from writing them until the next reset.
 - **Two warnings fewer in the coreboot log of the M920x** (patches 0286
   and 0287): with the ME disabled, an S3 resume no longer warns that
   the ME's interface is disabled (the boot before the suspend turned

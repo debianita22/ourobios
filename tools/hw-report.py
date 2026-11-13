@@ -2259,7 +2259,8 @@ HSTI_FEATURES = ("configurazione del flash bloccata (FLOCKDN)", "regione BIOS pr
                  "protezione DMA prima dell'avvio")
 # i limiti noti delle due board (README): descrittore e ME sbloccati con
 # ifdtool, nessuna protezione DMA prima del sistema; Secure Boot e' una scelta
-HSTI_KNOWN = {3: "regioni sbloccate (ifdtool)", 4: "regioni sbloccate (ifdtool)",
+HSTI_KNOWN = {3: "regioni sbloccate (ifdtool) e Firmware protection spenta",
+              4: "regioni sbloccate (ifdtool) e Firmware protection spenta",
               8: "una scelta del proprietario", 12: "l'FSP-M non ha i dati dei PMR"}
 
 

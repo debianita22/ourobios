@@ -1113,8 +1113,9 @@ Built for v1.7.0 (`edk2/0063`, [docs/hsti.md](hsti.md)): the payload
 reads the protections when a boot starts and publishes the HSTI table,
 with a line for each test that fails, and a copy in the variable
 `HstiTable` that `tools/hw-report.py` checks (CONF-08). The table says
-what the known limits of the README say (the descriptor and the ME
-region writable by the host, no pre-boot DMA protection); Windows reads
+what the known limits of the README say (no pre-boot DMA protection;
+the descriptor and the ME region pass under the Firmware protection's
+locked Protected Range, `edk2/0066`); Windows reads
 it for its report, and the WSMT (patches 0211-0215) stays what it acts
 on.
 

@@ -21,8 +21,8 @@ The features are two bytes; bit *n* is the test below with code
 | `0x00010000` | Flash configuration locked | `FLOCKDN` set in `HSFS` | yes, set by coreboot's finalize |
 | `0x00010001` | BIOS region write-protected | `BIOS_CNTL`: `BLE` and `SMM_BWP` (`EISS`) set, `WPD` (`BIOSWE`) clear | yes with *BIOS Lock* on (the default) |
 | `0x00010002` | Flash range protected | a Protected Range with write protection, and `FLOCKDN` | yes with *Firmware protection* on (`WP_RO`) |
-| `0x00010003` | Descriptor not writable by the host | `FRAP`: the BIOS master has no write access to region 0 | **no**: the regions are unlocked with ifdtool, so that flashrom can write the whole flash |
-| `0x00010004` | ME region not writable by the host | `FRAP`: no write access to region 2 | **no**, for the same reason |
+| `0x00010003` | Descriptor not writable by the host | `FRAP` gives the BIOS master no write access to region 0, or a Protected Range with write protection, locked by `FLOCKDN`, covers all of it (`edk2/0066`) | yes with *Firmware protection* on: the regions are unlocked with ifdtool, so that flashrom can write the whole flash, and `PR1` covers the descriptor, the GbE and the ME until the next reset |
+| `0x00010004` | ME region not writable by the host | the same for region 2 | yes with *Firmware protection* on, as the descriptor |
 | `0x00010005` | SMRAM locked | the lock bit of `TSEGMB` in the host bridge | yes; on the W541 from patch 0308 (before, the bit was written after `D_LCK` and did not take: the base was fixed, the bit read clear) |
 | `0x00010006` | Debug interface locked | `IA32_DEBUG_INTERFACE`: enable clear, lock set (only with `CPUID.1:ECX.SDBG`; without it the test does not apply) | yes on the M920x (`0x40000000`: locked, off); on the W541 as its processor reports it |
 | `0x00010007` | Microcode loaded | `IA32_BIOS_SIGN_ID` not zero | yes |

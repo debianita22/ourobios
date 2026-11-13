@@ -1,0 +1,124 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 13 Nov 2026 21:31:24 +0100
+Subject: [PATCH] UefiPayloadPkg/PlatformHstiDxe: A region under a locked
+ Protected Range
+
+The tests of the descriptor and of the ME region looked only at FRAP,
+which says that the host may write them when the regions are unlocked.
+With the payload's Firmware protection a Protected Range with write
+protection covers both, locked by FLOCKDN until the next reset, so the
+host cannot write them: the tests failed while the regions were
+protected.
+
+A region now passes when FRAP gives the host no write access to it, or a
+locked Protected Range covers all of it; an unused region has nothing to
+protect. With the Firmware protection off, the tests fail as before.
+---
+ .../PlatformHstiDxe/PlatformHstiDxe.c         | 72 +++++++++++++++++--
+ 1 file changed, 68 insertions(+), 4 deletions(-)
+
+diff --git a/UefiPayloadPkg/PlatformHstiDxe/PlatformHstiDxe.c b/UefiPayloadPkg/PlatformHstiDxe/PlatformHstiDxe.c
+index a5ec8f9fb..20a4e3e4c 100644
+--- a/UefiPayloadPkg/PlatformHstiDxe/PlatformHstiDxe.c
++++ b/UefiPayloadPkg/PlatformHstiDxe/PlatformHstiDxe.c
+@@ -57,6 +57,9 @@
+ #define SPI_FRAP          0x50
+ #define FRAP_BRWA_DESC    BIT8              // BIOS master write access, region 0
+ #define FRAP_BRWA_ME      BIT10             // region 2
++#define SPI_FREG0         0x54              // the regions: base and limit in 4 KiB
++#define REGION_DESCRIPTOR 0
++#define REGION_ME         2
+ #define FAST_SPI_PR0      0x84
+ #define LPT_SPI_PR0       0x74
+ #define SPI_PR_COUNT      5
+@@ -104,8 +107,8 @@ STATIC CONST HSTI_TEST  mTests[HstiFeatureCount] = {
+   { L"Flash",          L"the flash configuration is not locked (FLOCKDN)"                                         },
+   { L"Flash",          L"the BIOS region can be written outside SMM (BIOS_CNTL: BLE, SMM_BWP or WPD)"             },
+   { L"Flash",          L"no locked Protected Range write-protects the flash"                                      },
+-  { L"Flash",          L"the host can write the flash descriptor (FRAP)"                                          },
+-  { L"Flash",          L"the host can write the ME region (FRAP)"                                                 },
++  { L"Flash",          L"the host can write the flash descriptor (FRAP, and no locked Protected Range over it)"     },
++  { L"Flash",          L"the host can write the ME region (FRAP, and no locked Protected Range over it)"            },
+   { L"SMM",            L"the TSEG base is not locked"                                                             },
+   { L"Debug",          L"the debug interface is enabled or not locked (IA32_DEBUG_INTERFACE)"                     },
+   { L"CPU",            L"no microcode update is loaded"                                                           },
+@@ -219,6 +222,57 @@ HstiSpiController (
+   return FALSE;
+ }
+ 
++/**
++  Whether the host cannot write a region of the flash: FRAP gives the BIOS
++  master no write access to it, or a Protected Range with write protection,
++  locked by FLOCKDN until the next reset, covers all of it (the payload's
++  Firmware protection over the descriptor and the ME with the regions
++  unlocked). A region that is not used has nothing to protect.
++**/
++STATIC
++BOOLEAN
++HstiRegionProtected (
++  IN UINTN   SpiBar,
++  IN UINTN   Pr0,
++  IN UINT32  Hsfs,
++  IN UINT32  Frap,
++  IN UINTN   Region,
++  IN UINT32  FrapWrite
++  )
++{
++  UINT32  Freg;
++  UINT32  Pr;
++  UINT32  Base;
++  UINT32  Limit;
++  UINTN   Index;
++
++  if ((Frap & FrapWrite) == 0) {
++    return TRUE;
++  }
++
++  Freg  = MmioRead32 (SpiBar + SPI_FREG0 + Region * 4);
++  Base  = (Freg & 0x7FFF) << 12;
++  Limit = (((Freg >> 16) & 0x7FFF) << 12) | 0xFFF;
++  if (Base > Limit) {
++    return TRUE;
++  }
++
++  if ((Hsfs & HSFS_FLOCKDN) == 0) {
++    return FALSE;
++  }
++
++  for (Index = 0; Index < SPI_PR_COUNT; Index++) {
++    Pr = MmioRead32 (SpiBar + Pr0 + Index * 4);
++    if (((Pr & PR_WPE) != 0) && (((Pr & 0x7FFF) << 12) <= Base) &&
++        (((((Pr >> 16) & 0x7FFF) << 12) | 0xFFF) >= Limit))
++    {
++      return TRUE;
++    }
++  }
++
++  return FALSE;
++}
++
+ STATIC
+ VOID
+ HstiTestFlash (
+@@ -263,8 +317,18 @@ HstiTestFlash (
+     ((BiosControl & (BC_BLE | BC_EISS)) == (BC_BLE | BC_EISS)) && ((BiosControl & BC_WPD) == 0)
+     );
+   HstiReport (HstiFlashRangeProtected, TRUE, TRUE, Range && ((Hsfs & HSFS_FLOCKDN) != 0));
+-  HstiReport (HstiDescriptorProtected, TRUE, TRUE, (Frap & FRAP_BRWA_DESC) == 0);
+-  HstiReport (HstiMeRegionProtected, TRUE, TRUE, (Frap & FRAP_BRWA_ME) == 0);
++  HstiReport (
++    HstiDescriptorProtected,
++    TRUE,
++    TRUE,
++    HstiRegionProtected (SpiBar, Pr0, Hsfs, Frap, REGION_DESCRIPTOR, FRAP_BRWA_DESC)
++    );
++  HstiReport (
++    HstiMeRegionProtected,
++    TRUE,
++    TRUE,
++    HstiRegionProtected (SpiBar, Pr0, Hsfs, Frap, REGION_ME, FRAP_BRWA_ME)
++    );
+ }
+ 
+ STATIC
