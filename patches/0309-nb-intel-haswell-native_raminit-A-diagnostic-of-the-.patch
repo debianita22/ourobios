@@ -1,0 +1,190 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 13 Nov 2026 13:43:40 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: A diagnostic of the margins
+ after power-up
+
+Not for a release. On a ThinkPad W541 a training right after a power
+cycle reset or a boot from S5 has the read margins of channel 1
+narrower than one after a warm reset (7 of 7 against 12 of 12).
+
+HASWELL_NRI_POWERUP_DIAG: in every boot that trains, measure the
+margins again after 3 s and after a ZQ calibration of the DIMMs, then
+train a second time with the optimisations, and log the four sets
+together at the end.
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+Change-Id: I2bda9178ea7cbd30faa5861701181fe7f14e9128
+---
+ src/northbridge/intel/haswell/Kconfig         |  9 ++
+ .../intel/haswell/native_raminit/Makefile.mk  |  1 +
+ .../haswell/native_raminit/raminit_main.c     |  5 +-
+ .../haswell/native_raminit/raminit_native.h   |  1 +
+ .../native_raminit/train_powerup_diag.c       | 89 +++++++++++++++++++
+ 5 files changed, 104 insertions(+), 1 deletion(-)
+ create mode 100644 src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c
+
+diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
+index a82f22f675..1b59edab4a 100644
+--- a/src/northbridge/intel/haswell/Kconfig
++++ b/src/northbridge/intel/haswell/Kconfig
+@@ -99,6 +99,15 @@ config HASWELL_NRI_READ_VREF
+ 	  read timings, all the ranks tested at once, as the MRC does. Not
+ 	  run in the training that is done again after a failure.
+ 
++config HASWELL_NRI_POWERUP_DIAG
++	bool "Diagnostic: margins again after a wait, a ZQ calibration, a second training"
++	depends on HASWELL_NRI_MARGIN_CHECK
++	help
++	  Not for a release. Every boot that trains measures the margins
++	  again after 3 s and after a ZQ calibration, then trains a second
++	  time and logs the four sets, to tell why a training right after
++	  power-up has narrower read margins.
++
+ config HASWELL_NRI_TURNAROUND
+ 	bool "Shorten the write to read turnaround between ranks as the MRC does"
+ 	depends on USE_NATIVE_RAMINIT
+diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+index 3a5f08221b..22230b2c7d 100644
+--- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
++++ b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
+@@ -30,6 +30,7 @@ romstage-y += train_2d_margins.c
+ romstage-y += train_jedec_write_leveling.c
+ romstage-y += train_late_command.c
+ romstage-y += train_opt_param.c
++romstage-y += train_powerup_diag.c
+ romstage-y += train_read_mpr.c
+ romstage-y += train_read_vref.c
+ romstage-y += train_receive_enable.c
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index abf696ee1a..8e9cf7a87c 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -143,6 +143,7 @@ static const struct task_entry cold_boot[] = {
+ 	{ optimise_round_trip,                                    true, "RTL",        },
+ 	{ optimise_turnaround,                                    true, "TAT",        },
+ 	{ retrain_margin_check,                                   true, "RMC",        },
++	{ powerup_diag,                                           true, "PWRDIAG",    },
+ 	{ print_nri_summary,                                      true, "SUMMARY",    },
+ 	{ activate_mc,                                            true, "ACTIVATE",   },
+ 	{ save_training_values,                                   true, "SAVE_TRAIN", },
+@@ -333,9 +334,11 @@ void raminit_main(const enum raminit_boot_mode bootmode)
+ 		if (attempt) {
+ 			printk(BIOS_WARNING, "Memory training failed (%u), trying again\n",
+ 			       status);
++			const bool diag = CONFIG(HASWELL_NRI_POWERUP_DIAG) &&
++					  status == NRI_STATUS_RETRAIN_REQUIRED;
+ 			initialize_ctrl(&mighty_ctrl);
+ 			/* As trained: the optimisations are the first suspects */
+-			mighty_ctrl.no_latency_optimisation = true;
++			mighty_ctrl.no_latency_optimisation = !diag;
+ 		}
+ 		mighty_ctrl.summary_len = 0;
+ 		mighty_ctrl.summary[0] = '\0';
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index 8e5cde1f0e..a3c1327781 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -755,6 +755,7 @@ enum nri_status train_read_vref(struct sysinfo *ctrl);
+ enum nri_status train_read_opt_params(struct sysinfo *ctrl);
+ enum nri_status train_write_opt_params(struct sysinfo *ctrl);
+ enum nri_status print_nri_summary(struct sysinfo *ctrl);
++enum nri_status powerup_diag(struct sysinfo *ctrl);
+ void nri_note(struct sysinfo *ctrl, const char *fmt, ...) __printf(2, 3);
+ enum nri_status alias_check(struct sysinfo *ctrl);
+ enum nri_status raminit_done(struct sysinfo *ctrl);
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c b/src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c
+new file mode 100644
+index 0000000000..49abac1748
+--- /dev/null
++++ b/src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c
+@@ -0,0 +1,89 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <commonlib/bsd/helpers.h>
++#include <console/console.h>
++#include <delay.h>
++#include <stdarg.h>
++#include <stdio.h>
++#include <types.h>
++
++#include "raminit_native.h"
++
++/*
++ * A diagnostic, not for a release: on a ThinkPad W541 a training right after
++ * the memory and the processor got their power (a power cycle reset, a boot
++ * from S5) has the read margins of channel 1 narrower than one after a warm
++ * reset, every time. To tell what is narrow, in one boot:
++ *   M1  the margins after the training (the margin check before this step);
++ *   M2  again after 3 s, nothing changed: does time alone widen them?
++ *   M3  again after a ZQ calibration of the DIMMs;
++ *   M4  after a second training in the same boot, with the optimisations:
++ *       this step fails the first pass, and raminit_main() trains again.
++ * The lines are kept here and logged at the end, where the console keeps them.
++ */
++
++static char diag_log[3072];
++static size_t diag_len;
++static uint8_t diag_pass;
++
++static void diag_note(const char *fmt, ...) __printf(1, 2);
++static void diag_note(const char *fmt, ...)
++{
++	const size_t room = sizeof(diag_log) - diag_len;
++	if (room < 2)
++		return;
++
++	va_list args;
++	va_start(args, fmt);
++	const int len = vsnprintf(diag_log + diag_len, room, fmt, args);
++	va_end(args);
++	if (len > 0)
++		diag_len += MIN((size_t)len, room - 1);
++}
++
++static void note_margins(struct sysinfo *ctrl, const char *tag)
++{
++	const uint8_t rdt = get_margin_result_type(RdT);
++	const uint8_t rdv = get_margin_result_type(RdV);
++	const uint8_t wrv = get_margin_result_type(WrV);
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		diag_note("  %s C%u RdT/RdV/WrV:", tag, channel);
++		for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
++			if (!rank_in_ch(ctrl, rank, channel))
++				continue;
++
++			const union last_margin *t = &ctrl->results[rdt][rank][channel][0];
++			const union last_margin *v = &ctrl->results[rdv][rank][channel][0];
++			const union last_margin *w = &ctrl->results[wrv][rank][channel][0];
++			diag_note(" %u-%u,%u-%u,%u-%u", t->m[0] / 10, t->m[1] / 10,
++				  v->m[0] / 10, v->m[1] / 10, w->m[0] / 10, w->m[1] / 10);
++		}
++		diag_note("\n");
++	}
++}
++
++enum nri_status powerup_diag(struct sysinfo *ctrl)
++{
++	if (!CONFIG(HASWELL_NRI_POWERUP_DIAG) || !CONFIG(HASWELL_NRI_MARGIN_CHECK))
++		return NRI_STATUS_SUCCESS;
++
++	if (diag_pass++) {
++		note_margins(ctrl, "M4 second training");
++		printk(BIOS_INFO, "NRI power-up diagnostic:\n%s", diag_log);
++		return NRI_STATUS_SUCCESS;
++	}
++
++	note_margins(ctrl, "M1 first training");
++
++	mdelay(3000);
++	retrain_margin_check(ctrl);
++	note_margins(ctrl, "M2 after 3 s");
++
++	const enum nri_status zq = reut_issue_zq(ctrl, ctrl->chanmap, ZQ_LONG);
++	mdelay(1);
++	retrain_margin_check(ctrl);
++	note_margins(ctrl, zq ? "M3 after ZQCL (failed)" : "M3 after ZQCL");
++
++	printk(BIOS_INFO, "NRI power-up diagnostic: training again in this boot\n");
++	return NRI_STATUS_RETRAIN_REQUIRED;
++}

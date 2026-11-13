@@ -79,6 +79,9 @@ CONFIG_HASWELL_NRI_OPT_PARAMS=y
 # test del turnaround passa con gli occhi stretti di 7 da ogni lato, come fa
 # l'MRC (patch 0303; da 4 a 3 su questo W541, come mrc.bin)
 CONFIG_HASWELL_NRI_TURNAROUND=y
+# DIAGNOSTICA, non per una release (patch 0309): i margini rimisurati dopo 3 s,
+# dopo una calibrazione ZQ e dopo un secondo training nello stesso avvio
+CONFIG_HASWELL_NRI_POWERUP_DIAG=y
 # i margini di lettura e scrittura di ogni rank misurati e scritti nel log dopo
 # il training, 1-2 s in un avvio che fa il training; solo un rapporto (patch
 # 0291-0297, dal codice dell'autore upstream su Gerrit)
