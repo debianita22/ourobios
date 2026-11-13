@@ -16,12 +16,13 @@ together at the end.
 Co-Authored-By: Claude <noreply@anthropic.com>
 Change-Id: I2bda9178ea7cbd30faa5861701181fe7f14e9128
 ---
- src/northbridge/intel/haswell/Kconfig         |  9 ++
- .../intel/haswell/native_raminit/Makefile.mk  |  1 +
- .../haswell/native_raminit/raminit_main.c     |  5 +-
- .../haswell/native_raminit/raminit_native.h   |  1 +
- .../native_raminit/train_powerup_diag.c       | 89 +++++++++++++++++++
- 5 files changed, 104 insertions(+), 1 deletion(-)
+ src/northbridge/intel/haswell/Kconfig         |   9 ++
+ .../intel/haswell/native_raminit/Makefile.mk  |   1 +
+ .../haswell/native_raminit/raminit_main.c     |   5 +-
+ .../haswell/native_raminit/raminit_native.c   |   1 +
+ .../haswell/native_raminit/raminit_native.h   |   2 +
+ .../native_raminit/train_powerup_diag.c       | 125 ++++++++++++++++++
+ 6 files changed, 142 insertions(+), 1 deletion(-)
  create mode 100644 src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c
 
 diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
@@ -81,31 +82,47 @@ index abf696ee1a..8e9cf7a87c 100644
  		}
  		mighty_ctrl.summary_len = 0;
  		mighty_ctrl.summary[0] = '\0';
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.c b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
+index 63f6e942dd..30cf42a8ff 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
+@@ -223,6 +223,7 @@ void perform_raminit(const bool s3resume)
+ 	}
+ 
+ 	report_ignored_dimms();
++	powerup_diag_save();
+ 	if (bootmode == BOOTMODE_COLD)
+ 		nri_memory_profile_report();
+ 
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index 8e5cde1f0e..a3c1327781 100644
+index 8e5cde1f0e..f5979d201f 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-@@ -755,6 +755,7 @@ enum nri_status train_read_vref(struct sysinfo *ctrl);
+@@ -755,6 +755,8 @@ enum nri_status train_read_vref(struct sysinfo *ctrl);
  enum nri_status train_read_opt_params(struct sysinfo *ctrl);
  enum nri_status train_write_opt_params(struct sysinfo *ctrl);
  enum nri_status print_nri_summary(struct sysinfo *ctrl);
 +enum nri_status powerup_diag(struct sysinfo *ctrl);
++void powerup_diag_save(void);
  void nri_note(struct sysinfo *ctrl, const char *fmt, ...) __printf(2, 3);
  enum nri_status alias_check(struct sysinfo *ctrl);
  enum nri_status raminit_done(struct sysinfo *ctrl);
 diff --git a/src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c b/src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c
 new file mode 100644
-index 0000000000..49abac1748
+index 0000000000..b00c6fcb09
 --- /dev/null
 +++ b/src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,125 @@
 +/* SPDX-License-Identifier: GPL-2.0-or-later */
 +
++#include <cbmem.h>
 +#include <commonlib/bsd/helpers.h>
 +#include <console/console.h>
 +#include <delay.h>
++#include <northbridge/intel/haswell/haswell.h>
 +#include <stdarg.h>
 +#include <stdio.h>
++#include <string.h>
 +#include <types.h>
 +
 +#include "raminit_native.h"
@@ -121,7 +138,28 @@ index 0000000000..49abac1748
 + *   M4  after a second training in the same boot, with the optimisations:
 + *       this step fails the first pass, and raminit_main() trains again.
 + * The lines are kept here and logged at the end, where the console keeps them.
++
++ *   M5  after the periodic compensation is turned on, as activate_mc() does
++ *       (the register survives a warm reset).
++ * And a copy of MCHBAR 0 to 0x5fff as it is after the first training, kept
++ * for the OS in CBMEM (cbmem -r 4e524944), to compare a boot after power-up
++ * with one after a warm reset.
 + */
++#define DIAG_CBMEM_ID	0x4e524944	/* "NRID" */
++#define DIAG_MCHBAR_END	0x6000
++
++static uint32_t diag_mchbar[DIAG_MCHBAR_END / 4];
++static bool diag_have_mchbar;
++
++void powerup_diag_save(void)
++{
++	if (!CONFIG(HASWELL_NRI_POWERUP_DIAG) || !diag_have_mchbar)
++		return;
++
++	void *dst = cbmem_add(DIAG_CBMEM_ID, sizeof(diag_mchbar));
++	if (dst)
++		memcpy(dst, diag_mchbar, sizeof(diag_mchbar));
++}
 +
 +static char diag_log[3072];
 +static size_t diag_len;
@@ -175,6 +213,10 @@ index 0000000000..49abac1748
 +	}
 +
 +	note_margins(ctrl, "M1 first training");
++	for (size_t i = 0; i < ARRAY_SIZE(diag_mchbar); i++)
++		diag_mchbar[i] = mchbar_read32(i * 4);
++
++	diag_have_mchbar = true;
 +
 +	mdelay(3000);
 +	retrain_margin_check(ctrl);
@@ -184,6 +226,14 @@ index 0000000000..49abac1748
 +	mdelay(1);
 +	retrain_margin_check(ctrl);
 +	note_margins(ctrl, zq ? "M3 after ZQCL (failed)" : "M3 after ZQCL");
++
++	/* Periodic compensation, as activate_mc() leaves it for the next warm reset */
++	mchbar_write32(M_COMP, (union pcu_comp_reg) {
++		.comp_interval = COMP_INT,
++	}.raw);
++	mdelay(200);
++	retrain_margin_check(ctrl);
++	note_margins(ctrl, "M5 periodic comp on");
 +
 +	printk(BIOS_INFO, "NRI power-up diagnostic: training again in this boot\n");
 +	return NRI_STATUS_RETRAIN_REQUIRED;
