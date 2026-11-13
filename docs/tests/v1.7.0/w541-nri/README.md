@@ -527,6 +527,38 @@ PMH7 0x50 reads `0x70` (dGPU off) in Linux each time. Channel 0 as
 before (RdT 18-21, RdV 27-40), and the writes of both channels too.
 
 
+## The termination of the DIMMs and the read ODT window (MEM-23)
+
+Patch 0310 with the CI build of `21024de` (ci-382, slot A, flashrom),
+2026-11-13 ([files](opt/)): a training at the first boot (warm), one
+after a power cycle reset, a fast boot, three resumes from S3, five
+minutes of `stress-ng --verify`: PASS, no retraining, no margin below
+the limits, the memory test passed.
+
+- The termination of the DIMMs: RTT_NOM 40 ohms on both channels (60
+  before), RTT_WR 120 on channel 0 and 60 on channel 1, the same in the
+  two trainings (scores, the MRC's scale: channel 0 2373 to 2735, channel
+  1 2179 to 2537).
+- The read ODT window: delay 0 to 3 and duration 3 to 4 on nearly every
+  byte (`mrc.bin`: 0 to 3 and 3 to 4; before -2 and 7); on a few bytes of
+  channel 1 the choice moves between the two trainings within the step
+  of tolerance.
+- The fast boot restores the registers of the training (`ddr-report.py
+  --compare`: only compensation codes differ).
+
+| Rank | RdT rc12 / 0310 | RdV rc12 / 0310 | WrV rc12 / 0310 |
+|---|---|---|---|
+| C0R0 | 19/20, 21/21 | 28/30, 33/34 | 30/26, 40/43 |
+| C0R2 | 20/20, 22/21 | 37/40, 42/41 | 43/35, 50/40 |
+| C1R0 | 15/15, 18/17 | 23/24, 31/27 | 24/25, 29/28 |
+| C1R1 | 15/16, 18/19 | 24/23, 30/27 | 26/23, 32/27 |
+| C1R2 | 18/17, 19/19 | 33/36, 42/38 | 28/34, 31/36 |
+| C1R3 | 18/18, 19/19 | 35/34, 43/37 | 25/32, 28/36 |
+
+The termination is most of the gain: every rank 2 to 3 ticks and 4 to 8
+steps wider in the reads, channel 0 10 steps wider in the write voltage.
+A boot that trains takes 3.8 s in the RAM init.
+
 ## The machine after the run
 
 v1.7.0-rc12 in slot B, rc11 in slot A, with its third training;

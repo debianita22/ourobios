@@ -1,0 +1,74 @@
+# t1-powercycle 2026-11-13T18:35:27+01:00 uptime=49.47 temp_now=50000 0x7d=0xb0
+PMH7 0x50 = 0x70
+before: 2026-11-13T18:34:02+01:00 condition=powercycle temp_at_reboot=52000 0x7d was 0xa4, wrote 0xb0
+[DEBUG]  ME: Power Management Event  : Power cycle reset through Moff
+[DEBUG]  Margin: RdT     WrT     RdV     WrV
+[DEBUG]          Lft Rgt Lft Rgt Low Hi  Low Hi
+[DEBUG]  C0R0:   21  21  20  19  34  35  39  44 
+[DEBUG]  C0R1:   21  21  19  20  34  38  43  39 
+[DEBUG]  C0R2:   21  21  19  21  42  42  54  43 
+[DEBUG]  C0R3:   22  21  20  22  41  41  52  45 
+
+[DEBUG]  C1R0:   17  17  16  17  29  26  28  30 
+[DEBUG]  C1R1:   17  16  15  17  26  27  27  30 
+[DEBUG]  C1R2:   20  18  19  20  43  38  29  39 
+[DEBUG]  C1R3:   20  20  20  20  42  40  27  37 
+
+ouroBIOS-ci-382
+0
+[DEBUG]  ME: Power Management Event  : Power cycle reset through Moff
+[INFO ]  Memory test passed
+[INFO ]  Memory profile: XMP profile 1 requested
+[WARN ]  Memory profile: CH0S0 has no XMP profile 1, using the SPD timings
+[DEBUG]  Margin: RdT     WrT     RdV     WrV
+[DEBUG]          Lft Rgt Lft Rgt Low Hi  Low Hi
+[DEBUG]  C0R0:   21  21  20  19  34  35  39  44 
+[DEBUG]  C0R1:   21  21  19  20  34  38  43  39 
+[DEBUG]  C0R2:   21  21  19  21  42  42  54  43 
+[DEBUG]  C0R3:   22  21  20  22  41  41  52  45 
+
+[DEBUG]  C1R0:   17  17  16  17  29  26  28  30 
+[DEBUG]  C1R1:   17  16  15  17  26  27  27  30 
+[DEBUG]  C1R2:   20  18  19  20  43  38  29  39 
+[DEBUG]  C1R3:   20  20  20  20  42  40  27  37 
+
+[INFO ]  NRI summary:
+[INFO ]    DIMMODT C0: RttNom 40 ohm (was 60; 2687, as it was 2316)
+[INFO ]    DIMMODT C1: RttNom 40 ohm (was 60; 2524, as it was 2198)
+[INFO ]    DIMMODT C0: RttWr 120 ohm (was 60; 2805, as it was 2714)
+[INFO ]    DIMMODT C1: RttWr 60 ohm (was 60; 2553, as it was 2553)
+[INFO ]    OPT WrDS: C0 2 4 4 4 4 4 4 4 C1 0 0 4 4 4 4 0 0
+[INFO ]    OPT TxEq: C0 7 3 7 11 11 7 7 11 C1 11 5 3 3 5 11 11 9
+[INFO ]    OPT RdOdt: C0 -4 -4 -4 -4 -4 0 -4 0 C1 -4 -4 -4 0 -4 -4 0 0
+[INFO ]    OPT RxBias: C0 5 3 3 3 3 3 3 5 C1 3 4 4 3 3 3 5 4
+[INFO ]    CMDV: scan -40 to 28, centre -6
+[INFO ]    CMDV: at -6 low 37.0 high 37.0
+[INFO ]    WRV C0: scan -29 to 41, centre 6
+[INFO ]    WRV C1: scan -27 to 25, centre -1
+[INFO ]    WRV C0: WrT -4 low 37.8 high 36.0
+[INFO ]    WRV C1: WrT -4 low 27.0 high 30.7
+[INFO ]    WRV C0: WrT +0 low 37.0 high 36.0
+[INFO ]    WRV C1: WrT +0 low 26.8 high 29.5
+[INFO ]    WRV C0: WrT +4 low 32.0 high 35.7
+[INFO ]    WRV C1: WrT +4 low 26.1 high 29.0
+[INFO ]    RDV C0: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    RDV C1: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    TAT C0: tWRRD_dr/dd 3 (was 4)
+[INFO ]    TAT C1: tWRRD_dr/dd 3 (was 4)
+[INFO ]    OPT OdtDelay: C0 3 3 3 2 3 3 3 3 C1 2 -1 1 -2 3 1 3 1
+[INFO ]    OPT OdtDuration: C0 3 3 3 4 3 3 3 3 C1 3 6 6 3 3 4 3 4
+[DEBUG]  Testing DIMM 0
+[DEBUG]  Testing DIMM 1
+[INFO ]  Testing the memory after training
+[INFO ]  Testing rank 0
+[INFO ]  Testing rank 1
+[INFO ]  Testing rank 2
+[INFO ]  Testing rank 3
+[INFO ]  Memory test passed
+[DEBUG]  Waiting for mc_init_done acknowledgement... DONE!
+[DEBUG]  memcfg DDR3 ref clock 133 MHz
+  C0 odt delay      3    3    3    2    3    3    3    3
+  C0 odt durata     3    3    3    4    3    3    3    3
+  C1 odt delay      2   -1    1   -2    3    1    3    1
+  C1 odt durata     3    6    6    3    3    4    3    4
+   3:after RAM initialization                          4,292,406 (3,811,284)
