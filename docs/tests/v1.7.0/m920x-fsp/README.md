@@ -512,3 +512,21 @@ erases the block; the recovery of ramstage looks only for a commit
 record, so the note changes nothing at the boots in between.
 
 rc10 is the candidate with the reclaim in SMM working on the M920x.
+
+## rc13 on the machine
+
+v1.7.0-rc13 (`21024de`: rc11 with `edk2/0065`, the store mapped as
+runtime MMIO where the GCD lacks it and no reclaim at runtime when the
+store's address was not converted, found on the W541; patches 0308 to
+0310 are Haswell's) as a capsule from rc10 with the lock armed,
+2026-11-13: slot A over rc9, rc10 kept in slot B. rc11 and rc12 did not
+run here. Files in [rc13](rc13).
+
+| ID | Result | Notes |
+|---|---|---|
+| LOCK-05, UPD-02 | PASS | rc13 from slot A, *riuscito*, PR0 and PR1 on; coreboot log clean |
+| LOCK-01, 0284, LOCK-02, LOCK-03 | PASS | 35 options with `CFR_OPTFLAG_LOCK_AT_BOOT`; 9.1 ms an SMI |
+| LOCK-11 | PASS | `edk2/0065` changes the runtime path of the reclaim on every board: 607 writes of 1000 bytes, four reclaims of 2.3 to 2.5 s (at the 112th, 236th, 360th and 484th write), then `ENOMEM` at the limit with the handler's note; the 36 options unchanged; no firmware fault, the runtime services on. A reboot reclaims at boot with no record to finish |
+| LOCK-04 | PASS | three resumes, PR0 and PR1 back, the writes work |
+| CONF-08 | PASS | 9 of 13, the four known limits |
+| LOCK-06, LOCK-07, LOCK-08 | PASS | the 36 options at the end are those of the start; report 26 PASS and 2 INFO with a copy of the flash; fwts 43 passed, 0 failed; kernel log clean; FspMemoryInit 0.23 s |
