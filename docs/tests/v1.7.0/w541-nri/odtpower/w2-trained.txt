@@ -1,0 +1,9 @@
+# w2-trained 2026-11-13T20:20:26+01:00 CBET4000 ouroBIOS-ci-382-21024de-nri
+window: 3/3 3/3 3/3 2/4 3/3 3/3 3/3 3/3 2/3 -1/6 1/6 -2/3 3/3 1/4 3/3 1/4
+cached: 1
+rest 1 pkg 8.5762 dram 1.7921
+load 1 pkg 35.136 dram 4.4648
+rest 2 pkg 8.9637 dram 1.8140
+load 2 pkg 39.321 dram 4.4384
+rest 3 pkg 27.986 dram 1.8839
+load 3 pkg 42.927 dram 4.4684

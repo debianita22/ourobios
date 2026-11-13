@@ -559,6 +559,31 @@ The termination is most of the gain: every rank 2 to 3 ticks and 4 to 8
 steps wider in the reads, channel 0 10 steps wider in the write voltage.
 A boot that trains takes 3.8 s in the RAM init.
 
+## The power of the read ODT window
+
+What patch 0310 said of the window (a shorter one saves power) measured
+on 2026-11-13 ([files](odtpower/)): the DDR I/O registers take no write
+after the RAM init, so the A/B is the saved training of ci-382 with its
+trained window, or the same with the wide one of before (-2/7 on every
+byte) written into `RW_MRC_CACHE` with its hash computed again
+(`mrcedit.py`), over warm reboots (the fast boot restores it; the live
+registers checked each time), A B A B A. RAPL package and DRAM power,
+three minutes at rest and three under `stress-ng --stream 4` a boot. The
+third boot and two samples of the fifth are left out: the owner's
+session ran builds and lints on the machine then (15 and 45 W).
+
+| | Trained window, median of 6 | Wide window, median of 6 |
+|---|---|---|
+| package, at rest | 8.68 W (8.48 to 8.84, one 10.2) | 8.42 W (8.31 to 8.61) |
+| package, under load | 34.92 W (34.65 to 35.47) | 34.94 W (34.79 to 35.11) |
+| DRAM (RAPL estimate), under load | 4.43 to 4.48 W | 4.45 to 4.52 W |
+
+No saving that the package or the DRAM counter shows: under load the
+same within 0.02 W, at rest the trained window not lower. The step stays
+(it sets the window as `mrc.bin` does, at no cost in margin), and the
+patch no longer claims a saving. `RW_MRC_CACHE` was put back as it was
+before the run, byte for byte.
+
 ## The machine after the run
 
 v1.7.0-rc12 in slot B, rc11 in slot A, with its third training;
