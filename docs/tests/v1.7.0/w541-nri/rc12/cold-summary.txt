@@ -1,0 +1,23 @@
+# cold 2026-11-12T22:02:22+01:00 boot_id=2c35ba63-820c-4a6b-aaaf-0cfca4b3bd14 uptime=53.23
+versione:  v1.7.0-rc12, minima per una capsula v1.3.9
+ultimo:    v1.7.0-rc12, riuscito
+WP_RO:     protetta fino al prossimo reset o ripresa da S3 (PR0)
+SI_ALL:    protetta fino al prossimo reset o ripresa da S3 (PR1)
+BIOS Lock: acceso: scrive solo il firmware in SMM
+slot RW:   scrivibili con la capsula; flashrom no (BIOS Lock)
+CMOS 0x7d=0xa0 0x7e=0xa0
+[INFO ]  Using cached memory parameters
+[DEBUG]  FMAP: area SMMSTORE found @ 510000 (524288 bytes)
+[DEBUG]  FMAP: area SMMSTORE found @ 510000 (524288 bytes)
+[DEBUG]  FMAP: area SMMSTORE found @ 510000 (524288 bytes)
+[INFO ]  SMMSTORE: option lock for every setup option, armed by the payload
+2
+      1 [ERROR]  ME: MBP not ready
+      1 [WARN ]  CBFS: 'fallback/slic' not found.
+OptionLockStatus:  06 00 00 00 00 00 00 00 00 00 00 00
+   2:before RAM initialization                         475,677 (22,355)
+   3:after RAM initialization                          587,665 (111,987)
+Total Time: 1,467,265
+TSEGMB (00:00.0 0xb8): 7f800001  SMRAMC (0x88): 1a
+runtime-map 0 type=0xb pa=0xff910000 pages=0x80
+runtime-map 1 type=0xb pa=0x7f5e9000 pages=0x11

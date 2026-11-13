@@ -1,0 +1,13 @@
+stress-ng: info:  [2042] setting to a 30 mins run per stressor
+stress-ng: info:  [2042] dispatching hogs: 4 vm
+stress-ng: info:  [2043] vm: using 5.21GB per stressor instance (total 20.85GB of 27.80GB available memory)
+stress-ng: info:  [2047] vm: x86 movdiri instruction not supported, dropping back to plain 64 bit writes
+stress-ng: metrc: [2042] stressor       bogo ops real time  usr time  sys time   bogo ops/s     bogo ops/s
+stress-ng: metrc: [2042]                           (secs)    (secs)    (secs)   (real time) (usr+sys time)
+stress-ng: metrc: [2042] vm            385298748   1800.07   6265.36    899.32    214045.97       53777.52
+stress-ng: info:  [2042] skipped: 0
+stress-ng: info:  [2042] passed: 4: vm (4)
+stress-ng: info:  [2042] failed: 0
+stress-ng: info:  [2042] metrics untrustworthy: 0
+stress-ng: info:  [2042] successful run completed in 30 mins 2.96 secs
+rc=0

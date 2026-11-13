@@ -407,8 +407,35 @@ To run on it: LOCK-11 (the first reclaim in SMM on a Lynx Point), the
 runtime map with the store, CONF-08 with 9 of 13, `TSEGMB` after a
 resume.
 
+## v1.7.0-rc12: the store mapped at runtime, the TSEG lock bit
+
+rc12 (`e2337c6`: rc11 with `edk2/0065` and patch 0308) as a capsule from
+rc11, 2026-11-12: slot B, over rc7; rc11 stays in slot A
+([files](rc12/)). The same chain as rc11.
+
+| ID | Result | Notes |
+|---|---|---|
+| UPD-01, UPD-02, LOCK-05 | PASS | the capsule (`SHA256SUMS` OK, signature valid) written by the payload of rc11 with the lock of every option armed; rc12 from slot B, *riuscito*; the training kept |
+| `edk2/0065` | PASS | the runtime memory map has the store: `EfiMemoryMappedIO` 0xff910000, 128 pages, next to the com buffer |
+| **LOCK-11** | **PASS** | 600 writes of 1000 bytes from a store with 137 KiB free: four reclaims through coreboot, at the 121st, 241st, 361st and 481st write, 8.9 to 9.2 s each (2.2 to 2.4 s on the M920x: the SPI controller of the Lynx Point is the slower one), the other writes as usual; the 601st failed with `ENOSPC`, the limit of four a boot, and the handler left its note (*reclaims of the boot used*). No firmware fault, no warning in the kernel log, the runtime services on |
+| After the limit | PASS | until the reboot a write that does not fit fails with `ENOSPC` (`efibootmgr`: *Could not prepare Boot variable: No space left on device*), the reads work; the reboot reclaims at the start of the payload (145 KiB free, 200 records), no record to finish |
+| LOCK-06 | PASS | the 68 options of the copy after the reboot are those of before the run |
+| LOCK-01, 0284, LOCK-02, LOCK-03 | PASS | as rc11: the lock armed, 68 options with `CFR_OPTFLAG_LOCK_AT_BOOT`, 8 SMIs and 0.031 s a write |
+| Patch 0308, CONF-08 | PASS | `TSEGMB` reads `0x7f800001` at boot, after the reboot, the cold boot and three resumes: the lock bit takes before `D_LCK`. HSTI 9 of 13, the four known limits, none unknown |
+| LOCK-04 | PASS | three resumes: the lock armed, PR0 and PR1 back, LOCK-02 and LOCK-03 work |
+| MEM-04 | PASS | `stress-ng --vm 4 --vm-bytes 75% --verify`, 30 minutes after the resumes: 0 failed, no machine check |
+| report | PASS but the known ones | [the first boot](rc12/hw-w541-nri-boot1.md): 22 PASS; ME-01 and EC-01 WARN |
+
+One thing to know: a reclaim at runtime is one SMI of 9 s on the W541,
+with every processor in SMM. Linux logged nothing (no soft lockup, no
+clocksource warning), and it happens only when the OS fills the store,
+at most four times a boot.
+
+Still to run on the W541: LOCK-10 (the setup), the second and third
+training of the RAM init of rc7 (*XMP profile 1*, then *SPD*).
+
 ## The machine after the run
 
-v1.7.0-rc11 in slot A, rc7 in slot B, with the training of rc7's first boot;
+v1.7.0-rc12 in slot B, rc11 in slot A, with the training of rc7's first boot;
 *Memory profile* on *SPD*, byte 0x7d
 `0xa0`; *BIOS Lock* and *Firmware protection* on; no helper left.
