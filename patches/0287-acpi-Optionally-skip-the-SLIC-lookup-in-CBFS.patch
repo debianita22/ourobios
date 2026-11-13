@@ -18,27 +18,31 @@ still among the ACPI tables.
 
 Change-Id: I876f41a8356594a39fb7135da15023c80dbede13
 ---
- src/acpi/Kconfig | 10 ++++++++++
+ src/acpi/Kconfig | 14 ++++++++++++++
  src/acpi/acpi.c  |  4 +++-
- 2 files changed, 13 insertions(+), 1 deletion(-)
+ 2 files changed, 17 insertions(+), 1 deletion(-)
 
 diff --git a/src/acpi/Kconfig b/src/acpi/Kconfig
 index ef1dde89fcb..884f128d2d7 100644
 --- a/src/acpi/Kconfig
 +++ b/src/acpi/Kconfig
-@@ -100,6 +100,16 @@ config ACPI_LPIT
+@@ -100,6 +100,20 @@ config ACPI_LPIT
  	help
  	  Selected by platforms that support and fill Intel Low Power Idle Table.
  
++menu "SLIC and MSDM tables"
++	depends on HAVE_ACPI_TABLES
++
 +config ACPI_SLIC_CBFS
 +	bool "Add a SLIC or MSDM table from the CBFS file slic"
-+	depends on HAVE_ACPI_TABLES
 +	default y
 +	help
 +	  Look for the CBFS file slic and add the SLIC or MSDM table it holds.
 +	  Say N on a board whose images never carry that file: coreboot then
 +	  does not look for it, and does not warn on every boot that it is
 +	  missing. A product key in the VPD still gives the MSDM table.
++
++endmenu
 +
  menu "Windows SMM Security Mitigations Table"
  	depends on HAVE_ACPI_TABLES && HAVE_SMI_HANDLER
