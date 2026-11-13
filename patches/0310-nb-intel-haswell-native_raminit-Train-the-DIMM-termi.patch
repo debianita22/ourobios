@@ -1,0 +1,525 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 13 Nov 2026 18:06:30 +0100
+Subject: [PATCH] nb/intel/haswell/native_raminit: Train the DIMM termination
+ and the read ODT window
+
+Two settings that the MRC of the Lenovo firmware trains and the NRI
+left fixed (the MRC of a ThinkPad W541, read in its code):
+
+- the termination of the DIMMs (its DIMM ODT step): with two DIMMs a
+  channel RTT_NOM among 120, 60 and 40 ohms, then RTT_WR among 120 and
+  60, each tried on all the ranks of the channel with the read and
+  write margins measured, the MRC's tests and scale, and kept if it
+  beats the one that was set by twice the threshold of the per-byte
+  settings. Before the per-byte settings, which centre again. The JEDEC
+  init wrote fixed values at every boot, a fast boot included: the
+  chosen ones are now in sysinfo and in the saved training, and the
+  JEDEC init writes those (60 and 60 until a training chooses);
+- the read ODT window of each byte (its turnaround step, after the
+  round trip step): the delay of the ODT and of the sense amplifiers
+  from the receive enable, then how long they stay on. configure_mc()
+  sets -2 and 7 qclks for every byte, the MRC leaves 0 to 3 and 3 to 4
+  on the W541. A later or shorter window saves power and changes little
+  of the eye, so these take the value of least power within one step of
+  the widest eye and of the one that was set.
+
+Both under HASWELL_NRI_OPT_PARAMS. The saved training changes layout,
+so the boards train once more.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: Ib6ad67504025a7b1062a7cf2b13c26f597829e86
+---
+ src/northbridge/intel/haswell/Kconfig         |  16 +-
+ .../intel/haswell/native_raminit/ddr3.c       |  23 +-
+ .../haswell/native_raminit/raminit_main.c     |   2 +
+ .../haswell/native_raminit/raminit_native.h   |  12 +
+ .../haswell/native_raminit/save_restore.c     |  14 +
+ .../haswell/native_raminit/train_opt_param.c  | 272 +++++++++++++++++-
+ 6 files changed, 325 insertions(+), 14 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
+index a82f22f675..42ddd6462a 100644
+--- a/src/northbridge/intel/haswell/Kconfig
++++ b/src/northbridge/intel/haswell/Kconfig
+@@ -81,13 +81,15 @@ config HASWELL_NRI_OPT_PARAMS
+ 	bool "Train the drive, equalisation, termination and bias per byte"
+ 	depends on USE_NATIVE_RAMINIT
+ 	help
+-	  After the 1D centring, try for every byte several values of the
+-	  write drive strength and equalisation and of the read termination
+-	  and receiver bias, measure the write or the read margins at each
+-	  with the margin library, and keep for each byte the one with the
+-	  widest eye, as the MRC does (without weighing the power). It adds
+-	  a few seconds to a boot that trains. Not run in the training that
+-	  is done again after a failure.
++	  After the 1D centring, try the termination of the DIMMs (RTT_NOM,
++	  RTT_WR) for every channel and, for every byte, several values of
++	  the write drive strength and equalisation and of the read
++	  termination and receiver bias; after the round trip step, the
++	  read ODT window of every byte. Measure the margins at each with
++	  the margin library and keep the widest eye, as the MRC does (the
++	  ODT window: the least power within a step of it). It adds a few
++	  seconds to a boot that trains. Not run in the training that is
++	  done again after a failure.
+ 
+ config HASWELL_NRI_READ_VREF
+ 	bool "Centre the read Vref per bit and per byte as the MRC does"
+diff --git a/src/northbridge/intel/haswell/native_raminit/ddr3.c b/src/northbridge/intel/haswell/native_raminit/ddr3.c
+index b8cc0e3a67..36e6e01d2c 100644
+--- a/src/northbridge/intel/haswell/native_raminit/ddr3.c
++++ b/src/northbridge/intel/haswell/native_raminit/ddr3.c
+@@ -82,6 +82,22 @@ static void ddr3_program_mr0(struct sysinfo *ctrl)
+ 	}
+ }
+ 
++/*
++ * The termination of the DIMMs as this code always set it, until the DIMM ODT
++ * step trains it or a fast boot restores what a training chose.
++ */
++void ddr3_default_rtt(struct sysinfo *ctrl)
++{
++	if (ctrl->rtt_set)
++		return;
++
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		ctrl->rtt_nom[channel] = ctrl->dpc[channel] == 2 ? 60 : 0;
++		ctrl->rtt_wr[channel] = is_hsw_ult() ? 120 : 60;
++	}
++	ctrl->rtt_set = true;
++}
++
+ static void ddr3_program_mr1(struct sysinfo *ctrl)
+ {
+ 	union ddr3_mr_1 mr1reg = {
+@@ -96,7 +112,8 @@ static void ddr3_program_mr1(struct sysinfo *ctrl)
+ 		if (!does_ch_exist(ctrl, channel))
+ 			continue;
+ 
+-		ddr3_update_rtt_nom(&mr1reg.raw, ctrl->dpc[channel] == 2 ? 60 : 0);
++		ddr3_default_rtt(ctrl);
++		ddr3_update_rtt_nom(&mr1reg.raw, ctrl->rtt_nom[channel]);
+ 		for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
+ 			if (!rank_in_ch(ctrl, rank, channel))
+ 				continue;
+@@ -119,11 +136,13 @@ static void ddr3_program_mr2(struct sysinfo *ctrl)
+ 		.auto_self_refresh = ctrl->flags.asr,
+ 		.self_refresh_temp = dimm_srt,
+ 	};
+-	ddr3_update_rtt_wr(&mr2reg.raw, is_hsw_ult() ? 120 : 60);
++	ddr3_default_rtt(ctrl);
+ 	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
+ 		if (!does_ch_exist(ctrl, channel))
+ 			continue;
+ 
++		ddr3_update_rtt_wr(&mr2reg.raw, ctrl->rtt_wr[channel]);
++
+ 		for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
+ 			if (!rank_in_ch(ctrl, rank, channel))
+ 				continue;
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index abf696ee1a..43dcfad27d 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -130,6 +130,7 @@ static const struct task_entry cold_boot[] = {
+ 	{ train_write_timing_centering,                           true, "WRTC1D",     },
+ 	{ train_read_timing_centering,                            true, "RDTC1D",     },
+ 	{ train_read_voltage_centering,                           true, "RDVC1D",     },
++	{ train_dimm_odt,                                         true, "DIMMODT",    },
+ 	{ train_write_opt_params,                                 true, "WROPT",      },
+ 	{ train_read_opt_params,                                  true, "RDOPT",      },
+ 	{ optimise_comp,                                          true, "OPTCOMP",    },
+@@ -142,6 +143,7 @@ static const struct task_entry cold_boot[] = {
+ 	{ train_read_timing_centering_2d,                         true, "RDTC2D",     },
+ 	{ optimise_round_trip,                                    true, "RTL",        },
+ 	{ optimise_turnaround,                                    true, "TAT",        },
++	{ train_read_odt_timing,                                  true, "RDODTT",     },
+ 	{ retrain_margin_check,                                   true, "RMC",        },
+ 	{ print_nri_summary,                                      true, "SUMMARY",    },
+ 	{ activate_mc,                                            true, "ACTIVATE",   },
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index 8e5cde1f0e..ee3e886e7b 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -425,6 +425,15 @@ struct sysinfo {
+ 	bool restore_mrs;
+ 	bool no_latency_optimisation;	/* training again after a failure */
+ 
++	/*
++	 * The termination of the DIMMs, in ohms (DDR3 RTT_NOM and RTT_WR), one
++	 * value per channel: the JEDEC init writes these, and a training keeps
++	 * what the DIMM ODT step chose (save_params).
++	 */
++	uint8_t rtt_nom[NUM_CHANNELS];
++	uint8_t rtt_wr[NUM_CHANNELS];
++	bool rtt_set;
++
+ 	/* What the steps decided, logged again at the end of the training */
+ 	char summary[1536];
+ 	size_t summary_len;
+@@ -753,6 +762,9 @@ enum nri_status train_write_vref(struct sysinfo *ctrl);
+ enum nri_status optimise_turnaround(struct sysinfo *ctrl);
+ enum nri_status train_read_vref(struct sysinfo *ctrl);
+ enum nri_status train_read_opt_params(struct sysinfo *ctrl);
++enum nri_status train_dimm_odt(struct sysinfo *ctrl);
++enum nri_status train_read_odt_timing(struct sysinfo *ctrl);
++void ddr3_default_rtt(struct sysinfo *ctrl);
+ enum nri_status train_write_opt_params(struct sysinfo *ctrl);
+ enum nri_status print_nri_summary(struct sysinfo *ctrl);
+ void nri_note(struct sysinfo *ctrl, const char *fmt, ...) __printf(2, 3);
+diff --git a/src/northbridge/intel/haswell/native_raminit/save_restore.c b/src/northbridge/intel/haswell/native_raminit/save_restore.c
+index 385ff5bd2f..50eaf7db93 100644
+--- a/src/northbridge/intel/haswell/native_raminit/save_restore.c
++++ b/src/northbridge/intel/haswell/native_raminit/save_restore.c
+@@ -175,6 +175,10 @@ struct save_params {
+ 
+ 	/* FIXME: ECC support missing */
+ 	bool is_ecc;
++
++	/* The termination of the DIMMs that the training chose, in ohms */
++	uint8_t rtt_nom[NUM_CHANNELS];
++	uint8_t rtt_wr[NUM_CHANNELS];
+ };
+ 
+ /*
+@@ -394,6 +398,11 @@ enum nri_status save_non_training(struct sysinfo *ctrl)
+ 	params->tRC       = ctrl->tRC;
+ 	params->tRFC      = ctrl->tRFC;
+ 	params->tWTR      = ctrl->tWTR;
++	ddr3_default_rtt(ctrl);
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		params->rtt_nom[channel] = ctrl->rtt_nom[channel];
++		params->rtt_wr[channel] = ctrl->rtt_wr[channel];
++	}
+ 	params->tRTP      = ctrl->tRTP;
+ 	params->tFAW      = ctrl->tFAW;
+ 	params->tCWL      = ctrl->tCWL;
+@@ -463,6 +472,11 @@ enum nri_status restore_non_training(struct sysinfo *ctrl)
+ 	ctrl->tRC       = params->tRC;
+ 	ctrl->tRFC      = params->tRFC;
+ 	ctrl->tWTR      = params->tWTR;
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		ctrl->rtt_nom[channel] = params->rtt_nom[channel];
++		ctrl->rtt_wr[channel] = params->rtt_wr[channel];
++	}
++	ctrl->rtt_set = true;
+ 	ctrl->tRTP      = params->tRTP;
+ 	ctrl->tFAW      = params->tFAW;
+ 	ctrl->tCWL      = params->tCWL;
+diff --git a/src/northbridge/intel/haswell/native_raminit/train_opt_param.c b/src/northbridge/intel/haswell/native_raminit/train_opt_param.c
+index bf17379796..a29decb80d 100644
+--- a/src/northbridge/intel/haswell/native_raminit/train_opt_param.c
++++ b/src/northbridge/intel/haswell/native_raminit/train_opt_param.c
+@@ -43,6 +43,8 @@
+ 
+ /* Tenths of a tick or step, in the sum of the margins of the tests */
+ #define OPT_MIN_GAIN	30
++/* What a setting that costs less power may give up, in the same sum */
++#define OPT_POWER_TOL	10
+ #define OPT_MAX_TESTS	2
+ #define OPT_MAX_VALUES	10
+ 
+@@ -56,17 +58,36 @@ struct opt_setting {
+ 	enum margin_param tests[OPT_MAX_TESTS];
+ 	uint8_t num_tests;
+ 	uint8_t loopcount;
++	/* A setting of the DDR I/O outside update_opt_param_offset(), or NULL */
++	void (*set)(struct sysinfo *ctrl, uint8_t channel, uint8_t byte, int8_t value,
++		    bool update);
++	/*
++	 * The values go from the most power to the least: a byte takes the last
++	 * one whose score is within OPT_POWER_TOL of the best and of the one it
++	 * had, as the MRC weighs the power (here only for settings that buy
++	 * power, not margin).
++	 */
++	bool low_power_last;
+ };
+ 
++static void set_byte(struct sysinfo *ctrl, const struct opt_setting *s, const uint8_t channel,
++		     const uint8_t byte, const int8_t value, const bool update)
++{
++	if (s->set)
++		s->set(ctrl, channel, byte, value, update);
++	else
++		update_opt_param_offset(ctrl, channel, 0xf, byte, s->param, value, update);
++}
++
+ static void set_all_bytes(struct sysinfo *ctrl, const uint8_t chanmask,
+-			  const enum opt_param param, const int16_t value, const bool update)
++			  const struct opt_setting *s, const int8_t value, const bool update)
+ {
+ 	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
+ 		if (!(chanmask & BIT(channel)))
+ 			continue;
+ 
+ 		for (uint8_t byte = 0; byte < ctrl->lanes; byte++)
+-			update_opt_param_offset(ctrl, channel, 0xf, byte, param, value, update);
++			set_byte(ctrl, s, channel, byte, value, update);
+ 	}
+ 	/* The compensation offsets reach the pads with the next comp update */
+ 	udelay(10);
+@@ -132,7 +153,7 @@ static void train_opt_setting(struct sysinfo *ctrl, const struct opt_setting *s)
+ 		if (s->values[v] == s->current)
+ 			at_current = v;
+ 
+-		set_all_bytes(ctrl, chanmask, s->param, s->values[v], false);
++		set_all_bytes(ctrl, chanmask, s, s->values[v], false);
+ 		measure(ctrl, chanmask, s, scores[v]);
+ 
+ 		printk(BIOS_DEBUG, "OPT: %s % 3d:", s->name, s->values[v]);
+@@ -170,8 +191,17 @@ static void train_opt_setting(struct sysinfo *ctrl, const struct opt_setting *s)
+ 			if (gain < OPT_MIN_GAIN)
+ 				best = at_current;
+ 
+-			update_opt_param_offset(ctrl, channel, 0xf, byte, s->param,
+-						s->values[best], true);
++			if (s->low_power_last) {
++				const uint32_t top = scores[best][channel][byte];
++				const uint32_t now = scores[at_current][channel][byte];
++				for (uint8_t v = 0; v < s->num_values; v++) {
++					const uint32_t score = scores[v][channel][byte];
++					if (score + OPT_POWER_TOL >= top &&
++					    score + OPT_POWER_TOL >= now)
++						best = v;
++				}
++			}
++			set_byte(ctrl, s, channel, byte, s->values[best], true);
+ 			nri_note(ctrl, " %d", s->values[best]);
+ 			printk(BIOS_DEBUG, "OPT: %s C%u byte %u: %d (%u, as it was %u)\n",
+ 			       s->name, channel, byte, s->values[best],
+@@ -281,3 +311,235 @@ enum nri_status train_write_opt_params(struct sysinfo *ctrl)
+ 	/* The eye moved: centre the writes again, as the MRC does */
+ 	return train_write_timing_centering(ctrl);
+ }
++
++/*
++ * The read termination window of each byte, as the MRC trains it with its
++ * turnaround step: the delay from the receive enable at which the ODT and
++ * the sense amplifiers of the byte turn on, then how long they stay on, in
++ * qclks (DQ_CONTROL_1). configure_mc() sets -2 and 7 for every byte, a wide
++ * window; the MRC leaves 0 to 3 and 3 to 4 on a ThinkPad W541. A later or
++ * shorter window saves power and changes little of the eye, so these two
++ * take the value of least power within OPT_POWER_TOL of the widest eye. After
++ * the round trip step, as the MRC does.
++ */
++static void set_odt_delay(struct sysinfo *ctrl, const uint8_t channel, const uint8_t byte,
++			  const int8_t value, const bool update)
++{
++	union ddr_data_control_1_reg data_control_1 = ctrl->ch[channel].dq_ctrl_1[byte];
++	data_control_1.odt_delay       = value;
++	data_control_1.sense_amp_delay = value;
++	ddrio_write(ctrl, DDRIO_CTRL_1, channel, byte, data_control_1.raw);
++	if (update)
++		ctrl->ch[channel].dq_ctrl_1[byte] = data_control_1;
++}
++
++static void set_odt_duration(struct sysinfo *ctrl, const uint8_t channel, const uint8_t byte,
++			     const int8_t value, const bool update)
++{
++	union ddr_data_control_1_reg data_control_1 = ctrl->ch[channel].dq_ctrl_1[byte];
++	data_control_1.odt_duration       = value;
++	data_control_1.sense_amp_duration = value;
++	ddrio_write(ctrl, DDRIO_CTRL_1, channel, byte, data_control_1.raw);
++	if (update)
++		ctrl->ch[channel].dq_ctrl_1[byte] = data_control_1;
++}
++
++enum nri_status train_read_odt_timing(struct sysinfo *ctrl)
++{
++	if (!CONFIG(HASWELL_NRI_OPT_PARAMS) || ctrl->lpddr)
++		return NRI_STATUS_SUCCESS;
++
++	if (ctrl->no_latency_optimisation) {
++		printk(BIOS_INFO, "Read ODT window left as set\n");
++		return NRI_STATUS_SUCCESS;
++	}
++
++	const struct opt_setting odt_delay = {
++		.name           = "OdtDelay",
++		.current        = -2,
++		.values         = { -2, -1, 0, 1, 2, 3 },
++		.num_values     = 6,
++		.tests          = { RdV, RdT },
++		.num_tests      = 2,
++		.loopcount      = 15,
++		.set            = set_odt_delay,
++		.low_power_last = true,
++	};
++	const struct opt_setting odt_duration = {
++		.name           = "OdtDuration",
++		.current        = 7,
++		.values         = { 7, 6, 5, 4, 3 },
++		.num_values     = 5,
++		.tests          = { RdV, RdT },
++		.num_tests      = 2,
++		.loopcount      = 15,
++		.set            = set_odt_duration,
++		.low_power_last = true,
++	};
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!does_ch_exist(ctrl, channel))
++			continue;
++
++		for (uint8_t byte = 0; byte < ctrl->lanes; byte++) {
++			const union ddr_data_control_1_reg c = ctrl->ch[channel].dq_ctrl_1[byte];
++			if (c.odt_delay != odt_delay.current ||
++			    c.odt_duration != odt_duration.current) {
++				printk(BIOS_WARNING, "Read ODT window not as configure_mc() sets "
++				       "it, left as it is\n");
++				return NRI_STATUS_SUCCESS;
++			}
++		}
++	}
++	train_opt_setting(ctrl, &odt_delay);
++	train_opt_setting(ctrl, &odt_duration);
++	return NRI_STATUS_SUCCESS;
++}
++
++/*
++ * The termination of the DIMMs, as the MRC trains it (its DIMM ODT step):
++ * with two DIMMs a channel, RTT_NOM, the termination of the ranks that are
++ * not written or read, then RTT_WR, that of the rank written, each value
++ * tried on all the ranks of the channel with the read and the write margins
++ * measured (the MRC's tests and scale: read voltage, read timing twice, write
++ * voltage, write timing twice), and kept if it beats the one that was set.
++ * ddr3.c sets RTT_NOM 60 ohms with two DIMMs and RTT_WR 60. RTT_NOM only among
++ * the values that JEDEC allows when it terminates writes (120, 60, 40).
++ * Before the per-byte settings, which centre the reads and the writes again.
++ */
++#define ODT_TESTS	4
++
++static const enum margin_param odt_tests[ODT_TESTS] = { RdV, RdT, WrV, WrT };
++static const uint8_t odt_scale[ODT_TESTS] = { 1, 2, 1, 2 };
++
++static void set_rtt(struct sysinfo *ctrl, const uint8_t channel, const uint8_t rtt_nom,
++		    const uint8_t rtt_wr)
++{
++	ctrl->rtt_nom[channel] = rtt_nom;
++	ctrl->rtt_wr[channel] = rtt_wr;
++	for (uint8_t rank = 0; rank < NUM_SLOTRANKS; rank++) {
++		if (!rank_in_ch(ctrl, rank, channel))
++			continue;
++
++		uint16_t mr1 = ctrl->mr1[channel][rank];
++		uint16_t mr2 = ctrl->mr2[channel][rank];
++		ddr3_update_rtt_nom(&mr1, rtt_nom);
++		ddr3_update_rtt_wr(&mr2, rtt_wr);
++		reut_issue_mrs(ctrl, channel, BIT(rank), 1, mr1);
++		reut_issue_mrs(ctrl, channel, BIT(rank), 2, mr2);
++		ctrl->mr1[channel][rank] = mr1;
++		ctrl->mr2[channel][rank] = mr2;
++	}
++	/* The memory controller issues MR2 itself too (self refresh): its copy */
++	union tc_mr2_shadow_reg shadow = {
++		.raw = mchbar_read32(TC_MR2_SHADOW_ch(channel)),
++	};
++	uint16_t mr2_bits = shadow.mr2_shadow_low | shadow.mr2_shadow_high << 8;
++	ddr3_update_rtt_wr(&mr2_bits, rtt_wr);
++	shadow.mr2_shadow_low = mr2_bits & 0x3f;
++	shadow.mr2_shadow_high = (mr2_bits >> 8) & 0x7;
++	mchbar_write32(TC_MR2_SHADOW_ch(channel), shadow.raw);
++}
++
++static void measure_channels(struct sysinfo *ctrl, uint32_t score[NUM_CHANNELS])
++{
++	setup_io_test_basic_va(ctrl, ctrl->chanmap, 15, NSOE);
++	uint8_t chanmask = 0;
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		score[channel] = 0;
++		if (does_ch_exist(ctrl, channel))
++			chanmask |= select_reut_ranks(ctrl, channel, ctrl->rankmap[channel]);
++	}
++	clear_data_offset_train_all(ctrl);
++	for (uint8_t t = 0; t < ODT_TESTS; t++) {
++		const enum margin_param param = odt_tests[t];
++		const bool voltage = param == RdV || param == WrV;
++		ctrl->dq_pat = voltage ? BASIC_VA : RD_RD_TA;
++		get_ber_margin_ch(ctrl, ctrl->results, chanmask, 0, 0xff, param, true,
++				  voltage ? MAX_POSSIBLE_VREF : MAX_POSSIBLE_TIME);
++		const uint8_t res = get_margin_result_type(param);
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (!(chanmask & BIT(channel)))
++				continue;
++
++			const union last_margin *m = &ctrl->results[res][0][channel][0];
++			score[channel] += odt_scale[t] * (m->start + m->end);
++		}
++	}
++}
++
++/* Try each value of RTT_NOM (wr false) or of RTT_WR (wr true) */
++static void train_rtt(struct sysinfo *ctrl, const uint8_t chanmask, const bool wr,
++		      const uint8_t *values, const uint8_t num_values)
++{
++	uint32_t scores[6][NUM_CHANNELS] = {};
++	uint8_t before[NUM_CHANNELS];
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++)
++		before[channel] = wr ? ctrl->rtt_wr[channel] : ctrl->rtt_nom[channel];
++
++	for (uint8_t v = 0; v < num_values; v++) {
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (chanmask & BIT(channel))
++				set_rtt(ctrl, channel, wr ? ctrl->rtt_nom[channel] : values[v],
++					wr ? values[v] : ctrl->rtt_wr[channel]);
++		}
++		measure_channels(ctrl, scores[v]);
++		printk(BIOS_DEBUG, "DIMMODT: %s %3u ohm:", wr ? "RttWr " : "RttNom", values[v]);
++		for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++			if (chanmask & BIT(channel))
++				printk(BIOS_DEBUG, "  C%u %5u", channel, scores[v][channel]);
++		}
++		printk(BIOS_DEBUG, "\n");
++	}
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (!(chanmask & BIT(channel)))
++			continue;
++
++		uint8_t now = num_values, best = num_values;
++		for (uint8_t v = 0; v < num_values; v++) {
++			if (values[v] == before[channel])
++				now = v;
++		}
++		if (now == num_values)
++			continue;
++
++		best = now;
++		for (uint8_t v = 0; v < num_values; v++) {
++			if (scores[v][channel] > scores[best][channel])
++				best = v;
++		}
++		/* The scale counts six margins: the threshold of the per-byte ones, twice */
++		if (scores[best][channel] < scores[now][channel] + 2 * OPT_MIN_GAIN)
++			best = now;
++
++		set_rtt(ctrl, channel, wr ? ctrl->rtt_nom[channel] : values[best],
++			wr ? values[best] : ctrl->rtt_wr[channel]);
++		nri_note(ctrl, "  DIMMODT C%u: %s %u ohm (was %u; %u, as it was %u)\n", channel,
++			 wr ? "RttWr" : "RttNom", values[best], before[channel],
++			 scores[best][channel], scores[now][channel]);
++	}
++}
++
++enum nri_status train_dimm_odt(struct sysinfo *ctrl)
++{
++	if (!CONFIG(HASWELL_NRI_OPT_PARAMS) || ctrl->lpddr)
++		return NRI_STATUS_SUCCESS;
++
++	if (ctrl->no_latency_optimisation) {
++		printk(BIOS_INFO, "DIMM termination left as set\n");
++		return NRI_STATUS_SUCCESS;
++	}
++
++	ddr3_default_rtt(ctrl);
++	uint8_t two_dimms = 0;
++	for (uint8_t channel = 0; channel < NUM_CHANNELS; channel++) {
++		if (does_ch_exist(ctrl, channel) && ctrl->dpc[channel] == 2)
++			two_dimms |= BIT(channel);
++	}
++	static const uint8_t rtt_nom[] = { 120, 60, 40 };
++	static const uint8_t rtt_wr[] = { 120, 60 };
++	if (two_dimms)
++		train_rtt(ctrl, two_dimms, false, rtt_nom, ARRAY_SIZE(rtt_nom));
++
++	train_rtt(ctrl, ctrl->chanmap, true, rtt_wr, ARRAY_SIZE(rtt_wr));
++	return NRI_STATUS_SUCCESS;
++}

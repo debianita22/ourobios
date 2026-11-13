@@ -298,3 +298,4 @@
 0307-nb-intel-haswell-native_raminit-Move-the-comp-offset.patch
 0308-cpu-intel-haswell-Lock-the-TSEG-base-before-D_LCK.patch
 0309-mb-lenovo-haswell-Set-the-dGPU-power-before-the-RAM-.patch
+0310-nb-intel-haswell-native_raminit-Train-the-DIMM-termi.patch

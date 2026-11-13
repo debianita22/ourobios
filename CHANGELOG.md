@@ -205,6 +205,13 @@ whose changes below are still to run on a machine.
   legs off: patch 0307 (from rc7) moves it only near the end of the
   offsets' field. A boot that trains takes 3.4-3.7 s in the RAM init
   (2.3-2.5 s with rc5).
+- **W541 (`nri`): the termination of the memory modules and the read ODT
+  window trained** (patch 0310), the last two settings that the MRC of
+  the Lenovo firmware trains and the native RAM init left fixed: the
+  termination of the modules of each channel is chosen on the read and
+  write margins and kept with the saved training, and the window in
+  which each byte terminates and samples a read is narrowed where it
+  costs no margin, which saves power.
 - **W541: the memory trained with the dGPU as the board runs it**
   (patch 0309, both variants): the EC powers the NVIDIA dGPU on at
   power-up, and the firmware turned it off (with *Dual graphics* off, the

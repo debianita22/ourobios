@@ -195,6 +195,12 @@ machine ([below](#on-the-w541)) it explains what differed:
   stronger than the others), where the NRI sets the same for all.
   **Patch 0306** (`HASWELL_NRI_OPT_PARAMS`), without the weight of the
   power;
+- the **termination of the DIMMs** (RTT_NOM, RTT_WR), which the MRC
+  tries per channel with the read and write margins, and the **read ODT
+  window** of each byte (when the ODT and the sense amplifiers turn on,
+  and for how long), which it narrows after the round trip step: the
+  NRI wrote fixed values. **Patch 0310**, under the same option; the
+  chosen termination is kept in the saved training;
 - the rest matched: the 2D timing centring of patch 0295 has the MRC's
   weights and points; the sense amplifier training takes one sample
   per value in the MRC too.
