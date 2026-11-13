@@ -511,6 +511,22 @@ a power-up ran with the dGPU powered and every one after a warm reset
 without, and the board runs without. Patch 0309 sets it before the RAM
 init (`b5a44b4` on `ci-test/v1.7.0-m920x-option-lock`); MEM-22 runs it.
 
+MEM-22 with the CI build of `b5a44b4` (ci-381, written to slot B with
+flashrom, BIOS Lock off by the owner), 2026-11-13 ([files](fix/)): PASS.
+
+| Training | Before it | C1R0 RdT / RdV | C1R1 RdT / RdV | Margin check |
+|---|---|---|---|---|
+| f0 | warm reset (the new version of the saved training) | 15/15, 25/22 | 14/16, 26/21 | passed |
+| f1 | power cycle reset | 14/15, 22/22 | 14/15, 23/23 | passed |
+| f2 | power cycle reset | 16/15, 23/24 | 15/16, 25/23 | passed |
+| f3 | boot from off (90 s) | 16/15, 23/24 | 14/14, 24/21 | passed |
+| f4 | warm reset | 15/15, 22/25 | 15/16, 24/24 | passed |
+
+After a power-up as after a warm reset, within a tick and 3 steps;
+PMH7 0x50 reads `0x70` (dGPU off) in Linux each time. Channel 0 as
+before (RdT 18-21, RdV 27-40), and the writes of both channels too.
+
+
 ## The machine after the run
 
 v1.7.0-rc12 in slot B, rc11 in slot A, with its third training;
