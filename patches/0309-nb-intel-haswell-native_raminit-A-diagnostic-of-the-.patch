@@ -18,11 +18,12 @@ Change-Id: I2bda9178ea7cbd30faa5861701181fe7f14e9128
 ---
  src/northbridge/intel/haswell/Kconfig         |   9 ++
  .../intel/haswell/native_raminit/Makefile.mk  |   1 +
+ .../intel/haswell/native_raminit/init_mpll.c  |   4 +-
  .../haswell/native_raminit/raminit_main.c     |   5 +-
- .../haswell/native_raminit/raminit_native.c   |   1 +
- .../haswell/native_raminit/raminit_native.h   |   2 +
- .../native_raminit/train_powerup_diag.c       | 125 ++++++++++++++++++
- 6 files changed, 142 insertions(+), 1 deletion(-)
+ .../haswell/native_raminit/raminit_native.c   |   3 +
+ .../haswell/native_raminit/raminit_native.h   |   3 +
+ .../native_raminit/train_powerup_diag.c       | 153 ++++++++++++++++++
+ 7 files changed, 176 insertions(+), 2 deletions(-)
  create mode 100644 src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c
 
 diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
@@ -57,6 +58,22 @@ index 3a5f08221b..22230b2c7d 100644
  romstage-y += train_read_mpr.c
  romstage-y += train_read_vref.c
  romstage-y += train_receive_enable.c
+diff --git a/src/northbridge/intel/haswell/native_raminit/init_mpll.c b/src/northbridge/intel/haswell/native_raminit/init_mpll.c
+index bfaf46a1c8..5bff124e6a 100644
+--- a/src/northbridge/intel/haswell/native_raminit/init_mpll.c
++++ b/src/northbridge/intel/haswell/native_raminit/init_mpll.c
+@@ -337,8 +337,10 @@ enum nri_status initialise_mpll(struct sysinfo *ctrl)
+ 		/* Verify locked frequency */
+ 		const uint32_t mc_bios_data = mchbar_read32(MC_BIOS_DATA);
+ 		printk(RAM_DEBUG, "MC_BIOS_DATA = 0x%08x\n", mc_bios_data);
+-		if ((mc_bios_data & 0xf) >= ctrl->multiplier)
++		if ((mc_bios_data & 0xf) >= ctrl->multiplier) {
++			powerup_diag_knob(2);
+ 			break;
++		}
+ 
+ 		printk(BIOS_DEBUG, "Retrying at a lower frequency\n\n");
+ 		ctrl->tCK++;
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
 index abf696ee1a..8e9cf7a87c 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
@@ -83,10 +100,19 @@ index abf696ee1a..8e9cf7a87c 100644
  		mighty_ctrl.summary_len = 0;
  		mighty_ctrl.summary[0] = '\0';
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.c b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
-index 63f6e942dd..30cf42a8ff 100644
+index 63f6e942dd..21697960c3 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
-@@ -223,6 +223,7 @@ void perform_raminit(const bool s3resume)
+@@ -176,6 +176,8 @@ void perform_raminit(const bool s3resume)
+ 	 */
+ 	const enum raminit_boot_mode orig_bootmode = get_boot_mode();
+ 
++	powerup_diag_knob(1);
++
+ 	/* Before the saved training is looked up: its version has the profile */
+ 	nri_memory_profile_init(s3resume);
+ 
+@@ -223,6 +225,7 @@ void perform_raminit(const bool s3resume)
  	}
  
  	report_ignored_dimms();
@@ -95,29 +121,32 @@ index 63f6e942dd..30cf42a8ff 100644
  		nri_memory_profile_report();
  
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index 8e5cde1f0e..f5979d201f 100644
+index 8e5cde1f0e..348d1a5a50 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-@@ -755,6 +755,8 @@ enum nri_status train_read_vref(struct sysinfo *ctrl);
+@@ -755,6 +755,9 @@ enum nri_status train_read_vref(struct sysinfo *ctrl);
  enum nri_status train_read_opt_params(struct sysinfo *ctrl);
  enum nri_status train_write_opt_params(struct sysinfo *ctrl);
  enum nri_status print_nri_summary(struct sysinfo *ctrl);
 +enum nri_status powerup_diag(struct sysinfo *ctrl);
 +void powerup_diag_save(void);
++void powerup_diag_knob(uint8_t where);
  void nri_note(struct sysinfo *ctrl, const char *fmt, ...) __printf(2, 3);
  enum nri_status alias_check(struct sysinfo *ctrl);
  enum nri_status raminit_done(struct sysinfo *ctrl);
 diff --git a/src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c b/src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c
 new file mode 100644
-index 0000000000..b00c6fcb09
+index 0000000000..4e2cc10a30
 --- /dev/null
 +++ b/src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c
-@@ -0,0 +1,125 @@
+@@ -0,0 +1,153 @@
 +/* SPDX-License-Identifier: GPL-2.0-or-later */
 +
 +#include <cbmem.h>
 +#include <commonlib/bsd/helpers.h>
 +#include <console/console.h>
++#include <arch/io.h>
++#include <cf9_reset.h>
 +#include <delay.h>
 +#include <northbridge/intel/haswell/haswell.h>
 +#include <stdarg.h>
@@ -159,6 +188,47 @@ index 0000000000..b00c6fcb09
 +	void *dst = cbmem_add(DIAG_CBMEM_ID, sizeof(diag_mchbar));
 +	if (dst)
 +		memcpy(dst, diag_mchbar, sizeof(diag_mchbar));
++}
++
++/*
++ * A knob for the OS, one shot: byte 0xf0 of the extended CMOS bank (ports
++ * 0x72/0x73), which nothing uses. 1: a warm reset before anything of the RAM
++ * init; 2: a warm reset right after the MPLL locked. Cleared before the
++ * reset, and no reset if it does not read back clear.
++ */
++#define DIAG_KNOB	0xf0
++
++static uint8_t knob_read(void)
++{
++	outb(DIAG_KNOB, 0x72);
++	return inb(0x73);
++}
++
++static uint8_t diag_mpll_at_entry = 0xff;
++static uint8_t diag_knob_seen;
++
++void powerup_diag_knob(const uint8_t where)
++{
++	if (!CONFIG(HASWELL_NRI_POWERUP_DIAG))
++		return;
++
++	if (where == 1 && diag_mpll_at_entry == 0xff)
++		diag_mpll_at_entry = mchbar_read32(MC_BIOS_DATA) & 0xf;
++
++	const uint8_t knob = knob_read();
++	if (where == 1)
++		diag_knob_seen = knob;
++
++	if (knob != where)
++		return;
++
++	outb(DIAG_KNOB, 0x72);
++	outb(0, 0x73);
++	if (knob_read() != 0)
++		return;
++
++	printk(BIOS_NOTICE, "NRI power-up diagnostic: warm reset at point %u\n", where);
++	system_reset();
 +}
 +
 +static char diag_log[3072];
@@ -212,28 +282,13 @@ index 0000000000..b00c6fcb09
 +		return NRI_STATUS_SUCCESS;
 +	}
 +
++	diag_note("  MPLL multiplier locked at entry: %u (0: not locked), knob seen %u\n",
++		  diag_mpll_at_entry, diag_knob_seen);
 +	note_margins(ctrl, "M1 first training");
 +	for (size_t i = 0; i < ARRAY_SIZE(diag_mchbar); i++)
 +		diag_mchbar[i] = mchbar_read32(i * 4);
 +
 +	diag_have_mchbar = true;
-+
-+	mdelay(3000);
-+	retrain_margin_check(ctrl);
-+	note_margins(ctrl, "M2 after 3 s");
-+
-+	const enum nri_status zq = reut_issue_zq(ctrl, ctrl->chanmap, ZQ_LONG);
-+	mdelay(1);
-+	retrain_margin_check(ctrl);
-+	note_margins(ctrl, zq ? "M3 after ZQCL (failed)" : "M3 after ZQCL");
-+
-+	/* Periodic compensation, as activate_mc() leaves it for the next warm reset */
-+	mchbar_write32(M_COMP, (union pcu_comp_reg) {
-+		.comp_interval = COMP_INT,
-+	}.raw);
-+	mdelay(200);
-+	retrain_margin_check(ctrl);
-+	note_margins(ctrl, "M5 periodic comp on");
 +
 +	printk(BIOS_INFO, "NRI power-up diagnostic: training again in this boot\n");
 +	return NRI_STATUS_RETRAIN_REQUIRED;
