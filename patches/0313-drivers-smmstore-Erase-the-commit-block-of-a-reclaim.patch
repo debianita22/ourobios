@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 13 Nov 2026 21:24:06 +0100
+Subject: [PATCH] drivers/smmstore: Erase the commit block of a reclaim only
+ when it is not
+
+Measured on a ThinkPad W541 with the option lock armed: a reclaim took
+8.9 to 9.2 s before the previous patch and 8.65 to 8.70 s after it. The
+writes skipped and the read back through the mapping were not where the
+time goes: the erases of blocks of 64 KiB (SMMSTORE_BLOCK_SIZE) are,
+about a second each on that flash, eight of them a reclaim: three of
+the staging area by the payload, three of the store, and the commit
+block before the record and after the copy.
+
+The commit block is erased at the end of every reclaim that completes,
+so the next one finds it erased: read it through the mapping first and
+erase it only if something is there (a record of a cut reclaim is
+handled by ramstage before, a note of a refusal is not erased). One
+erase fewer a reclaim. The comment says where the time goes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: I3e7576c9f82f8d1a28fae9998a2eb30cb611e9d7
+---
+ src/drivers/smmstore/reclaim.c | 24 ++++++++++++++++++++++--
+ 1 file changed, 22 insertions(+), 2 deletions(-)
+
+diff --git a/src/drivers/smmstore/reclaim.c b/src/drivers/smmstore/reclaim.c
+index 6985fa403d..a745ebaff5 100644
+--- a/src/drivers/smmstore/reclaim.c
++++ b/src/drivers/smmstore/reclaim.c
+@@ -34,7 +34,10 @@
+  * back, at most SMMSTORE_RECLAIM_PER_BOOT times a boot and only while the
+  * store is nearly full. With every block written and read back through the
+  * writable device it took 2.3 s for 192 KiB on a ThinkCentre M920x and 9 s on
+- * a ThinkPad W541. A swap split over several SMIs would leave a half-written store
++ * a ThinkPad W541. Most of that is the erase of blocks of 64 KiB, about a
++ * second each on the W541: three of the store, here, and three of the staging
++ * area by the payload before it; the commit block is erased once, at the end,
++ * as the beginning finds it erased. A swap split over several SMIs would leave a half-written store
+  * between them that an S3 resume (the latch of the option lock is taken from
+  * the flash again) or another write would meet.
+  */
+@@ -172,6 +175,23 @@ static bool erase_commit(const struct region_device *rdev, const struct smmstore
+ 	return rdev_eraseat(rdev, l->commit, SMM_BLOCK_SIZE) == SMM_BLOCK_SIZE;
+ }
+ 
++/*
++ * The commit block erased for a record, read through @ro: a reclaim that ended
++ * erased it already, and an erase of a block is the slow part of a reclaim (one
++ * of 64 KiB takes about a second on the flash of a ThinkPad W541).
++ */
++static bool erase_commit_for_record(const struct region_device *ro, const struct region_device *rw,
++				    const struct smmstore_reclaim_layout *l)
++{
++	for (size_t done = 0; done < SMM_BLOCK_SIZE; done += sizeof(chunk)) {
++		if (rdev_readat(ro, chunk, l->commit + done, sizeof(chunk)) != sizeof(chunk))
++			return erase_commit(rw, l);
++		if (!all_erased(chunk, sizeof(chunk)))
++			return erase_commit(rw, l);
++	}
++	return true;
++}
++
+ #if ENV_SMM
+ /* The coreboot options GUID: any GUID gives the walk of the whole store */
+ static const EFI_GUID walk_guid = {
+@@ -421,7 +441,7 @@ uint32_t smmstore_reclaim(const struct smmstore_params_reclaim *params)
+ 	record.store_end = l.store_end;
+ 	record.staging = l.staging;
+ 	if (!hash_area(&ro, l.staging, l.store_end, record.digest) ||
+-	    !erase_commit(&rw, &l) ||
++	    !erase_commit_for_record(&ro, &rw, &l) ||
+ 	    rdev_writeat(&rw, &record, l.commit, sizeof(record)) != sizeof(record)) {
+ 		note(&ro, &rw, &l, NOTE_RECORD, 0);
+ 		return SMMSTORE_RET_FAILURE;

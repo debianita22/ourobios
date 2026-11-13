@@ -301,3 +301,4 @@
 0310-nb-intel-haswell-native_raminit-Train-the-DIMM-termi.patch
 0311-drivers-smmstore-Write-only-the-used-blocks-of-a-rec.patch
 0312-nb-intel-haswell-native_raminit-Train-again-with-the.patch
+0313-drivers-smmstore-Erase-the-commit-block-of-a-reclaim.patch
