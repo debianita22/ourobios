@@ -483,6 +483,34 @@ overwrites), and a retrain when the margin check fails
 (`HASWELL_NRI_MARGIN_CHECK_RETRAIN`, off) would turn a narrow training
 into another draw.
 
+## The reads of channel 1 after a power-up: the dGPU (MEM-22)
+
+With rc5 to rc12 one training in three came out with the reads of
+channel 1 narrower (RdT 2 to 4 ticks, RdV 5 to 9 steps, every rank, two
+margins of C1R0 and C1R1 at or below the retrain limit). Looked into on
+2026-11-13 with rc12's RAM init, the trainings made by *XMP profile 1*
+on modules without one and byte 0x7d written from Linux ([files](heat/)):
+
+| What came before the training | Trainings | C1R0 RdT / RdV, the range |
+|---|---|---|
+| a power-up: a capsule's reset (rc3 to rc7), a power cycle reset (`CF9` `0x0e`), a boot from off | 7, and 3 more with the diagnostic builds | 10-14 / 14-21, two of them below the retrain limit |
+| a warm reset (the setup, `systemctl reboot`), the processor cool (41 C) or hot (79 C) | 12 | 15-16 / 22-26 |
+| a warm reset with the dGPU powered on from Linux (`pmh7.py dgpu on`) | 2 | 11-12 / 14-19 |
+| the same, the dGPU left off | 2 | 16 / 24-26 |
+
+Not the temperature, and nothing within the boot: two diagnostic builds
+(not released, branch `ci-test/w541-nri-powerup-diag`) measured the
+margins again after 3 s, after a ZQ calibration, with the periodic
+compensation on and after a second training in the same boot, all as
+narrow; the registers of the memory controller at the training were the
+same after a power-up and after a warm reset. The dGPU is: the EC powers
+it on at power-up and keeps its state across a warm reset (PMH7 0x50,
+bit 3), and the firmware turned it off, *Dual graphics* being off, in
+`mb_late_romstage_setup()`, after the RAM init. So every training after
+a power-up ran with the dGPU powered and every one after a warm reset
+without, and the board runs without. Patch 0309 sets it before the RAM
+init (`b5a44b4` on `ci-test/v1.7.0-m920x-option-lock`); MEM-22 runs it.
+
 ## The machine after the run
 
 v1.7.0-rc12 in slot B, rc11 in slot A, with its third training;
