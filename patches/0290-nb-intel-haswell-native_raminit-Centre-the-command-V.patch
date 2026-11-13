@@ -33,6 +33,8 @@ measured so far.
 Not tested on hardware.
 
 TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: Idc16ef3a66d9a37d6abcd964cd3da8da1506e25a
 ---
  src/northbridge/intel/haswell/Kconfig         |  11 ++
  .../haswell/native_raminit/raminit_main.c     |   1 +

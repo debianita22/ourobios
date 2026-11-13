@@ -205,6 +205,15 @@ whose changes below are still to run on a machine.
   legs off: patch 0307 (from rc7) moves it only near the end of the
   offsets' field. A boot that trains takes 3.4-3.7 s in the RAM init
   (2.3-2.5 s with rc5).
+- **A reclaim of the variable store with the lock armed is faster**
+  (patch 0311): the firmware writes back only the part of the cleaned-up
+  store that holds variables, and checks the copy through the memory
+  mapping of the flash. A reclaim stops the OS for that time, at most
+  four times a boot when the store fills up: 9 s on the W541 and 2.3 s
+  on the M920x before.
+- **W541 (`nri`): a training with margins below the limits is done again**
+  (patch 0312): once, with all its steps; below the limits a second time
+  it is kept and logged, as before.
 - **W541 (`nri`): the termination of the memory modules and the read ODT
   window trained** (patch 0310), the last two settings that the MRC of
   the Lenovo firmware trains and the native RAM init left fixed: the

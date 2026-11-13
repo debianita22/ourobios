@@ -17,6 +17,8 @@ table from its header.
 
 TEST=Build of the ThinkPad W541 with the native RAM init and of the
 ThinkCentre M920x.
+
+Change-Id: I3adca13b7768be00e189249060dc1e1e5b3fd60f
 ---
  src/arch/x86/include/arch/cbconfig.h | 8 +++++++-
  1 file changed, 7 insertions(+), 1 deletion(-)

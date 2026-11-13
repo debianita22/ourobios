@@ -14,6 +14,8 @@ option lock for every option it is the same lock one layer up: a write
 after ReadyToBoot is refused by the variable services, before it becomes
 SMIs and a dead record in the flash, and for code that runs between
 ReadyToBoot and the OS as well.
+
+Change-Id: Ia806791c9dcc2e5cb6f103abd19d7f4b66fa7f9d
 ---
  src/drivers/option/Kconfig | 11 +++++++++++
  src/drivers/option/cfr.c   | 22 ++++++++++++++++------

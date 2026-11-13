@@ -19,6 +19,8 @@ seen, before the checks of the command itself.
 
 TEST=Build of the ThinkPad W541 with the native RAM init and of the
 ThinkCentre M920x.
+
+Change-Id: I94fd818f0636d21ed753742c03b6bab5180697ef
 ---
  src/drivers/smmstore/smi.c | 15 ++++++++++++---
  src/include/smmstore.h     |  5 ++++-

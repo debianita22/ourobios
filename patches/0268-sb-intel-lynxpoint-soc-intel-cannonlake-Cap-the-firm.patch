@@ -31,6 +31,8 @@ after one. If they are not, the count stays at 0 and nothing changes.
 
 TEST=Build of the ThinkPad W541 with the native RAM init and of the
 ThinkCentre M920x.
+
+Change-Id: I10e681228da65e277759b8694e814c48383f4180
 ---
  src/include/firmware_watchdog.h               | 58 +++++++++++++++++++
  src/soc/intel/cannonlake/firmware_watchdog.c  | 19 ++++--

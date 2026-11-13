@@ -17,6 +17,8 @@ ME status at the debug level instead.
 TEST=On a Lenovo ThinkCentre M920x with the ME in soft temporary
 disable, the ramstage of an S3 resume has no warning, and a normal
 boot still reports the ME status.
+
+Change-Id: I06dbfdb8c605ee3366ccb370bd550d192dd8d541
 ---
  src/soc/intel/common/block/cse/cse_spec.c | 14 ++++++++++++++
  1 file changed, 14 insertions(+)

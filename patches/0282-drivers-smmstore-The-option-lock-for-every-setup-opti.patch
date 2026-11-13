@@ -47,6 +47,8 @@ has no console in a release build.
 TEST=tests/drivers: smmstore_options_lock-test (13 decisions with the
 option), smmstore_options_lock_two-test (the decisions of the two
 options, without it), efivars-test with efi_test_walk_guid.
+
+Change-Id: Id569d967472c54bd93f0cd6b40ddcd124bba2d98
 ---
  src/cpu/x86/Kconfig                   |   4 +-
  src/drivers/efi/efivars.c             |  56 +++

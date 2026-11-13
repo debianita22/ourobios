@@ -12,6 +12,8 @@ nothing changes at normal temperatures.
 
 The UPD is part of the memory settings, so the version of ouroBIOS's
 memory settings goes up and the first boot trains again.
+
+Change-Id: Iadd9016a96ef105c6cd07bb3209e4664db892931
 ---
  src/mainboard/lenovo/m720q_m920q/romstage.c | 9 +++++++++
  1 file changed, 9 insertions(+)

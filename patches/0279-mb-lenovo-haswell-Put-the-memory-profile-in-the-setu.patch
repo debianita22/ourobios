@@ -12,6 +12,8 @@ selected) the menu is as before.
 
 TEST=Build of the ThinkPad W541 with the native RAM init; the menu
 built on the host has the option once, in its card.
+
+Change-Id: I04cbcfe4ddf7b544952a5a80109726e0a6aef8b7
 ---
  src/mainboard/lenovo/haswell/cfr.c | 39 ++++++++++++++++++++++++++++++
  1 file changed, 39 insertions(+)

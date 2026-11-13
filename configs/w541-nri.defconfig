@@ -83,6 +83,9 @@ CONFIG_HASWELL_NRI_TURNAROUND=y
 # il training, 1-2 s in un avvio che fa il training; solo un rapporto (patch
 # 0291-0297, dal codice dell'autore upstream su Gerrit)
 CONFIG_HASWELL_NRI_MARGIN_CHECK=y
+# margini sotto i limiti di retrain dell'MRC: il training rifatto una volta con
+# le ottimizzazioni, poi solo segnalato (patch 0312)
+CONFIG_HASWELL_NRI_MARGIN_CHECK_RETRAIN=y
 # la centratura 2D di lettura e scrittura con il deskew per bit (patch 0295,
 # 0299, 0301): accesa dalla v1.7.0-rc4, misurata con i margini di rc3 (MEM-18)
 CONFIG_HASWELL_NRI_2D_TIMING=y

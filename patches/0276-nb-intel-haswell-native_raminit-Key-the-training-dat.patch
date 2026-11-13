@@ -14,6 +14,8 @@ timings.
 Add the decoder and its headers to the sources of the key.
 
 TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: I3bc866fb1d0c44dadb6a059c052eea6b6d5d864b
 ---
  .../intel/haswell/native_raminit/Makefile.mk          | 11 ++++++++---
  1 file changed, 8 insertions(+), 3 deletions(-)

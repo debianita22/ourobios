@@ -1,0 +1,113 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 13 Nov 2026 19:55:19 +0100
+Subject: [PATCH 312/312] nb/intel/haswell/native_raminit: Train again with the
+ optimisations on low margins
+
+HASWELL_NRI_MARGIN_CHECK_RETRAIN made margins below the retrain limits
+train again without the optimisations, as after a step or the memory
+test that fails. Margins below the limits are a training that went
+badly, not one that is wrong: on a ThinkPad W541 every such training
+recorded was a training with the dGPU powered (patch 0309), and the
+optimisations make the margins wider, not narrower.
+
+Train again once with the optimisations; below the limits a second
+time, keep the training and log it. A step or the memory test that
+fails still trains again without them, now also after such a retry.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: I399ecd7e9034b3043c87398700926a2c084f2864
+---
+ src/northbridge/intel/haswell/Kconfig         |  3 +-
+ .../haswell/native_raminit/raminit_main.c     | 34 +++++++++++++++----
+ .../haswell/native_raminit/raminit_native.h   |  1 +
+ .../native_raminit/retrain_margin_check.c     |  3 +-
+ 4 files changed, 33 insertions(+), 8 deletions(-)
+
+diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
+index 42ddd6462a..d6b32457bc 100644
+--- a/src/northbridge/intel/haswell/Kconfig
++++ b/src/northbridge/intel/haswell/Kconfig
+@@ -65,7 +65,8 @@ config HASWELL_NRI_MARGIN_CHECK_RETRAIN
+ 	depends on HASWELL_NRI_MARGIN_CHECK
+ 	help
+ 	  Margins below the retrain limits make the training run again,
+-	  once, without its optimisations, where they are only logged.
++	  once, with its optimisations, as the MRC does; below them again,
++	  they are only logged.
+ 
+ config HASWELL_NRI_2D_TIMING
+ 	bool "Centre the read and write timing in two dimensions"
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_main.c b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+index 43dcfad27d..93bb5ea512 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_main.c
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_main.c
+@@ -330,14 +330,36 @@ void raminit_main(const enum raminit_boot_mode bootmode)
+ 		}
+ 	}
+ 
+-	/* Train again once if a training step or the memory test fails */
+-	for (uint8_t attempt = 0; attempt < 2; attempt++) {
++	/*
++	 * Train again once if a training step or the memory test fails, without
++	 * the optimisations, the first suspects. Margins below the retrain limits
++	 * (HASWELL_NRI_MARGIN_CHECK_RETRAIN) are a training that went badly, not
++	 * one that is wrong: they train again once with the optimisations, and a
++	 * second time below the limits they are only logged.
++	 */
++	bool margin_retry = false;
++	bool plain_retry = false;
++	for (uint8_t attempt = 0; attempt < 3; attempt++) {
+ 		if (attempt) {
+-			printk(BIOS_WARNING, "Memory training failed (%u), trying again\n",
+-			       status);
++			const bool margins = status == NRI_STATUS_RETRAIN_REQUIRED &&
++					     !margin_retry;
++			if (!margins && plain_retry)
++				break;
++
++			if (margins)
++				printk(BIOS_WARNING, "Margins below the retrain limits, "
++				       "training again\n");
++			else
++				printk(BIOS_WARNING, "Memory training failed (%u), trying again\n",
++				       status);
+ 			initialize_ctrl(&mighty_ctrl);
+-			/* As trained: the optimisations are the first suspects */
+-			mighty_ctrl.no_latency_optimisation = true;
++			if (margins) {
++				margin_retry = true;
++			} else {
++				plain_retry = true;
++				mighty_ctrl.no_latency_optimisation = true;
++			}
++			mighty_ctrl.margin_retried = margin_retry;
+ 		}
+ 		mighty_ctrl.summary_len = 0;
+ 		mighty_ctrl.summary[0] = '\0';
+diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+index ee3e886e7b..64fb67f743 100644
+--- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
++++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
+@@ -424,6 +424,7 @@ struct sysinfo {
+ 	bool dq_pins_interleaved;
+ 	bool restore_mrs;
+ 	bool no_latency_optimisation;	/* training again after a failure */
++	bool margin_retried;		/* training again after margins below the limits */
+ 
+ 	/*
+ 	 * The termination of the DIMMs, in ohms (DDR3 RTT_NOM and RTT_WR), one
+diff --git a/src/northbridge/intel/haswell/native_raminit/retrain_margin_check.c b/src/northbridge/intel/haswell/native_raminit/retrain_margin_check.c
+index 7b79078405..1912565d99 100644
+--- a/src/northbridge/intel/haswell/native_raminit/retrain_margin_check.c
++++ b/src/northbridge/intel/haswell/native_raminit/retrain_margin_check.c
+@@ -190,7 +190,8 @@ enum nri_status retrain_margin_check(struct sysinfo *ctrl)
+ 	 * is done again after a failure runs without the optimisations: its
+ 	 * margins are what the training gives, with nothing left to leave out.
+ 	 */
+-	if (!CONFIG(HASWELL_NRI_MARGIN_CHECK_RETRAIN) || ctrl->no_latency_optimisation) {
++	if (!CONFIG(HASWELL_NRI_MARGIN_CHECK_RETRAIN) || ctrl->no_latency_optimisation ||
++	    ctrl->margin_retried) {
+ 		printk(BIOS_WARNING, "Margins below the retrain limits, training kept\n");
+ 		return NRI_STATUS_SUCCESS;
+ 	}

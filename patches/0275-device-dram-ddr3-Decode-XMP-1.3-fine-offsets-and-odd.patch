@@ -35,6 +35,8 @@ Add a unit test for the decoder, with the SPD of a DDR3L SO-DIMM and
 profiles as described above.
 
 TEST=make run-tests/device/ddr3-test
+
+Change-Id: I56342dcf711b87f4644d49a3d5099dd70475f3f3
 ---
  src/device/dram/ddr3.c   |  92 ++++++++++----
  tests/device/Makefile.mk |   7 ++

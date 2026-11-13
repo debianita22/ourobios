@@ -15,6 +15,8 @@ not depend on it.
 TEST=Built lenovo/m920x with ACPI_SLIC_CBFS=n: no CBFS warning for
 slic in the ramstage log, and the MSDM table built from the VPD is
 still among the ACPI tables.
+
+Change-Id: I876f41a8356594a39fb7135da15023c80dbede13
 ---
  src/acpi/Kconfig | 10 ++++++++++
  src/acpi/acpi.c  |  4 +++-

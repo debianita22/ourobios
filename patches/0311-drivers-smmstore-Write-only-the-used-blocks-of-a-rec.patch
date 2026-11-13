@@ -1,0 +1,148 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 13 Nov 2026 19:52:57 +0100
+Subject: [PATCH 311/312] drivers/smmstore: Write only the used blocks of a
+ reclaim, read it back mapped
+
+A reclaim in SMM took 2.3 s on a ThinkCentre M920x and 9 s on a
+ThinkPad W541, with the OS stopped, where the comment said about a
+second. Two parts of copy_image() did more than they need to:
+
+- after the erase of the store it wrote back every chunk of the image,
+  free space included: a reclaimed store is mostly free space, chunks
+  of 0xff that the erase already left so;
+- the read back read the store and the staging area, twice 192 KiB,
+  through the writable device, one small SPI transaction after the
+  other, where the mapping of the flash is read directly.
+
+Skip the chunks that are all 0xff, and in SMM read back through the
+mapping: at runtime the OS's MTRRs leave the flash uncached, and the
+lines of the mapping are flushed first for a mapping that is cached.
+The recovery in ramstage still reads back through the writable device.
+The comment says what it costs. The unit tests (the power losses at
+each operation among them) pass.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: I03c161a0f800c21739c0f0c4260ecdc69cdab52a
+---
+ src/drivers/smmstore/reclaim.c | 67 ++++++++++++++++++++++++++++------
+ 1 file changed, 56 insertions(+), 11 deletions(-)
+
+diff --git a/src/drivers/smmstore/reclaim.c b/src/drivers/smmstore/reclaim.c
+index 5752eb2aab..6985fa403d 100644
+--- a/src/drivers/smmstore/reclaim.c
++++ b/src/drivers/smmstore/reclaim.c
+@@ -28,9 +28,13 @@
+  * is armed, so nothing the OS writes outside the store reaches the store
+  * without the check.
+  *
+- * The swap takes one SMI: about a second for 192 KiB, with the OS stopped, at
+- * most SMMSTORE_RECLAIM_PER_BOOT times a boot and only while the store is
+- * nearly full. A swap split over several SMIs would leave a half-written store
++ * The swap takes one SMI, with the OS stopped: the erase of the store, the
++ * write of the blocks of the image that hold records (a reclaimed store is
++ * mostly free space, which the erase leaves as it should be) and the read
++ * back, at most SMMSTORE_RECLAIM_PER_BOOT times a boot and only while the
++ * store is nearly full. With every block written and read back through the
++ * writable device it took 2.3 s for 192 KiB on a ThinkCentre M920x and 9 s on
++ * a ThinkPad W541. A swap split over several SMIs would leave a half-written store
+  * between them that an S3 resume (the latch of the option lock is taken from
+  * the flash again) or another write would meet.
+  */
+@@ -41,6 +45,9 @@
+ #include <commonlib/helpers.h>
+ #include <commonlib/region.h>
+ #include <console/console.h>
++#if ENV_SMM
++#include <cpu/x86/cache.h>
++#endif
+ #include <drivers/efi/efivars.h>
+ #include <fmap.h>
+ #include <smmstore.h>
+@@ -102,24 +109,62 @@ static int store_is_image(const struct region_device *rdev, const struct smmstor
+ 	return 1;
+ }
+ 
++#if ENV_SMM
++/*
++ * The lines of the mapping of the store out of the caches, in case the
++ * mapping is cached: the read back through it must see the flash.
++ */
++static void flush_mapping(const struct region_device *ro, size_t size)
++{
++	void *map = rdev_mmap(ro, 0, size);
++
++	if (!map)
++		return;
++	for (size_t line = 0; line < size; line += 64)
++		clflush((uint8_t *)map + line);
++	__asm__ __volatile__("mfence" ::: "memory");
++	rdev_munmap(ro, map);
++}
++
++#endif
++
++static bool all_erased(const uint8_t *buf, size_t size)
++{
++	for (size_t i = 0; i < size; i++)
++		if (buf[i] != 0xff)
++			return false;
++	return true;
++}
++
+ /*
+- * The image over the store, block by block, and read back through @rw: the
+- * staging area, which nothing writes meanwhile, is read through @src.
++ * The image over the store, block by block, and read back through @verify:
++ * the staging area, which nothing writes meanwhile, is read through @src.
++ * A chunk of the image that is all 0xff, free space, is not written: the
++ * erase left it so. @verify reads the flash as it is after the writes: the
++ * writable device, or the mapping of the flash where the CPU does not cache
++ * it (in SMM at runtime, under the uncached MTRR of the OS), much faster.
+  */
+ static bool copy_image(const struct region_device *src, const struct region_device *rw,
+-		       const struct smmstore_reclaim_layout *l)
++		       const struct region_device *verify, const struct smmstore_reclaim_layout *l)
+ {
+ 	for (size_t block = 0; block < l->store_end; block += SMM_BLOCK_SIZE) {
+ 		if (rdev_eraseat(rw, block, SMM_BLOCK_SIZE) != SMM_BLOCK_SIZE)
+ 			return false;
+ 		for (size_t done = 0; done < SMM_BLOCK_SIZE; done += sizeof(chunk)) {
+ 			if (rdev_readat(src, chunk, l->staging + block + done, sizeof(chunk))
+-			    != sizeof(chunk) ||
+-			    rdev_writeat(rw, chunk, block + done, sizeof(chunk)) != sizeof(chunk))
++			    != sizeof(chunk))
++				return false;
++			if (all_erased(chunk, sizeof(chunk)))
++				continue;
++			if (rdev_writeat(rw, chunk, block + done, sizeof(chunk)) != sizeof(chunk))
+ 				return false;
+ 		}
+ 	}
+-	return store_is_image(rw, l) == 1;
++#if ENV_SMM
++	if (verify != rw)
++		flush_mapping(verify, l->staging + l->store_end);
++#endif
++	return store_is_image(verify, l) == 1;
+ }
+ 
+ static bool erase_commit(const struct region_device *rdev, const struct smmstore_reclaim_layout *l)
+@@ -384,7 +429,7 @@ uint32_t smmstore_reclaim(const struct smmstore_params_reclaim *params)
+ 
+ 	reclaims++;
+ 	/* From here the swap completes: now, or at the next boot from the record */
+-	if (!copy_image(&ro, &rw, &l)) {
++	if (!copy_image(&ro, &rw, &ro, &l)) {
+ 		printk(BIOS_ERR, "SMMSTORE: reclaim copy failed, the next boot finishes it\n");
+ 		note(&ro, &rw, &l, NOTE_COPY, 0);
+ 		store_replaced();
+@@ -430,7 +475,7 @@ void smmstore_reclaim_recover(void)
+ 		return;
+ 	if (!same) {
+ 		printk(BIOS_WARNING, "SMMSTORE: finishing a reclaim cut by a power loss\n");
+-		if (!copy_image(&rdev, &rdev, &l)) {
++		if (!copy_image(&rdev, &rdev, &rdev, &l)) {
+ 			printk(BIOS_ERR, "SMMSTORE: the reclaim could not be finished\n");
+ 			return;
+ 		}

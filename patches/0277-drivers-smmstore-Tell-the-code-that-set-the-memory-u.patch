@@ -16,6 +16,8 @@ moment.
 
 TEST=Build of the ThinkPad W541 with the native RAM init and of the
 ThinkCentre M920x.
+
+Change-Id: I44c968486f9d2caa9b0898c7bd0ed7e08e458cbb
 ---
  src/drivers/smmstore/smi.c | 12 +++++++++++-
  src/include/smmstore.h     |  1 +

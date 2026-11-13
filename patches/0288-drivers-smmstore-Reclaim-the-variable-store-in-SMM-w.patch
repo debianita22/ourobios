@@ -33,6 +33,8 @@ refused by the locks or unreadable or with other headers, the limit per
 boot, a power loss after each flash operation of the commit followed by
 the recovery, records with a wrong image or layout, and the image rules
 of the option lock with and without SMMSTORE_OPTION_LOCK_ALL.
+
+Change-Id: I2f158724a69a4a7694ed7bb81631c9e5bb287048
 ---
  src/drivers/smmstore/Kconfig          |  16 +
  src/drivers/smmstore/Makefile.mk      |   2 +

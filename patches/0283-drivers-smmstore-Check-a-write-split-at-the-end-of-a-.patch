@@ -30,6 +30,8 @@ piece kept and the flash unchanged, the header written whole with the
 second piece and the variable completed; a piece dropped by another
 write; two pieces refused together; an option's record still refused
 when it becomes a variable.
+
+Change-Id: If5a94798f3a9bf77777fb80b7de840922e390522
 ---
  src/drivers/smmstore/Makefile.mk      |   3 +
  src/drivers/smmstore/split.c          |  83 ++++++++++++++++

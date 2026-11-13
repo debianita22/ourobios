@@ -19,6 +19,8 @@ The path is still untested on a machine: no reset by the watchdog was
 ever provoked on the ThinkCentre M920x.
 
 TEST=Build of the ThinkCentre M920x.
+
+Change-Id: Ie9063292914cd0b9a68cc1f2bb46aa78c3228c11
 ---
  src/soc/intel/cannonlake/firmware_watchdog.c         |  8 ++++++--
  .../intel/common/block/include/intelblocks/oc_wdt.h  |  1 +

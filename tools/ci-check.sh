@@ -2034,6 +2034,47 @@ if git rev-parse --git-dir > /dev/null 2>&1; then
 	done < <(git log --no-mailmap --format='%h|%an <%ae>|%cn <%ce>' "${range[@]}" 2> /dev/null)
 	ok "${n} commit con autore e committer veri"
 fi
+# I trailer delle patch del progetto (autore Domenico, dalla 0246, quando la
+# serie ha cominciato a prepararle per Gerrit): l'ultimo paragrafo del
+# messaggio fatto solo di trailer, un Change-Id della forma di Gerrit e uno
+# solo, mai lo stesso in due patch della serie. checkpatch.pl non lo
+# controlla, e Gerrit rifiuta una patch senza Change-Id
+t="$(python3 -I - patches <<'PY'
+import collections, os, re, sys
+d = sys.argv[1]
+series = [l.split('#')[0].strip() for l in open(os.path.join(d, 'series'))]
+keys = r'(Signed-off-by|Change-Id|Co-Authored-By|Reviewed-by|Tested-by|Reported-by|Suggested-by)'
+seen = collections.defaultdict(list)
+n = 0
+for p in filter(None, series):
+    t = open(os.path.join(d, p), errors='replace').read()
+    hdr, _, rest = t.partition('\n\n')
+    msg = rest.split('\n---\n')[0].rstrip('\n')
+    for c in re.findall(r'^Change-Id: .*$', msg, re.M):
+        seen[c].append(p)
+    m = re.search(r'^From: (.*)$', hdr, re.M)
+    if not m or 'Domenico' not in m.group(1) or not p[:4].isdigit() or int(p[:4]) < 246:
+        continue
+    n += 1
+    last = msg.split('\n\n')[-1].split('\n')
+    cid = [l for l in last if l.startswith('Change-Id:')]
+    if len(cid) != 1 or not re.match(r'^Change-Id: I[0-9a-f]{40}$', cid[0]):
+        print('NO %s: un Change-Id di Gerrit, uno solo, nell\'ultimo paragrafo' % p)
+    for l in last:
+        if not re.match('^' + keys + ': .+', l):
+            print('NO %s: l\'ultimo paragrafo non e\' fatto di trailer: %s' % (p, l[:60]))
+for c, ps in seen.items():
+    if len(ps) > 1:
+        print('NO %s: lo stesso Change-Id in %s' % (c, ', '.join(ps)))
+print('OK %d' % n)
+PY
+)"
+while IFS= read -r l; do
+	case "${l}" in
+	NO\ *) bad "patches/${l#NO }" ;;
+	OK\ *) ok "${l#OK } patch del progetto con i trailer di Gerrit" ;;
+	esac
+done <<< "${t}"
 # la bozza per una release che riscrive la parte RO: in nessuna serie
 for p in patches/ro-next/*.patch; do
 	[ -e "${p}" ] || continue

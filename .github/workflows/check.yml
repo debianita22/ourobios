@@ -11,12 +11,15 @@
 #             sull'host (tools/build.sh edk2-unit-test); lo stile di
 #             coreboot sulla serie (tools/coreboot-lint.sh: lint-stable e
 #             checkpatch.pl) e quello del codice di EDK II su patches/edk2
-#             (tools/edk2-patchcheck.sh: PatchCheck.py)
+#             (tools/edk2-patchcheck.sh: PatchCheck.py); anche sui rami ci-test/**,
+#             che build.yml compila
 name: Check
 
 on:
   push:
-    branches: [main]
+    # i rami di prova anche: il lint di coreboot e i trailer prima della
+    # candidata, non dopo, quando la serie arriva su main
+    branches: [main, 'ci-test/**']
   pull_request:
   workflow_dispatch:
 

@@ -47,6 +47,8 @@ between two trainings. 30 minutes of stress-ng --vm --verify without
 errors. The RAM init of a boot that trains takes 0.98 s (0.83 s with
 an earlier release on the same machine), 0.11 s from the saved
 training as before.
+
+Change-Id: I77ee364fe722083125c286f5dc2c488f26c173e8
 ---
  src/northbridge/intel/haswell/Kconfig         |  12 ++
  .../intel/haswell/native_raminit/Makefile.mk  |   1 +

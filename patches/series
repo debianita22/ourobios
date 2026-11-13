@@ -299,3 +299,5 @@
 0308-cpu-intel-haswell-Lock-the-TSEG-base-before-D_LCK.patch
 0309-mb-lenovo-haswell-Set-the-dGPU-power-before-the-RAM-.patch
 0310-nb-intel-haswell-native_raminit-Train-the-DIMM-termi.patch
+0311-drivers-smmstore-Write-only-the-used-blocks-of-a-rec.patch
+0312-nb-intel-haswell-native_raminit-Train-again-with-the.patch

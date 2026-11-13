@@ -28,6 +28,8 @@ a refused reclaim leaves the store intact, and the variable write fails
 until the next boot (PcdReclaimVariableSpaceAtEndOfDxe reclaims before the
 lock is armed). Unit tests of efi_fv_store_end() cover a valid and a
 broken firmware volume.
+
+Change-Id: Ie09cde90a5db151802f4c40707c6428ff7c340f2
 ---
  src/drivers/efi/efivars.c           | 24 ++++++++++++++++++++++++
  src/drivers/efi/efivars.h           |  9 +++++++++

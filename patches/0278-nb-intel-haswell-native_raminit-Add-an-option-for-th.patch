@@ -72,6 +72,8 @@ payload confirmed the boot, also after an S3 resume. 0xb2 written to
 the byte: the next boot gives the profile up (0xa4), the one after
 says "failed before"; back at 0 the byte reads 0xa0. 30 minutes of
 stress-ng --vm --verify without errors.
+
+Change-Id: I6fccb40e2956050423aacf45431b5790ba19daa7
 ---
  src/northbridge/intel/haswell/Kconfig         |  18 ++
  src/northbridge/intel/haswell/Makefile.mk     |   2 +

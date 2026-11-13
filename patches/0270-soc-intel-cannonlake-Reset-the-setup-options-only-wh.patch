@@ -34,6 +34,8 @@ from Linux and a reboot logged "Setup options: not reset, RTC power lost
 but the CMOS kept the last boot (POST 0xf8/0x00000000)", cleared the bit
 and kept the 36 options; the CMOS was not zeroed and the next boot had
 no such line. A real CMOS clear not run yet.
+
+Change-Id: I96885e196edbf019700d2c3f550082216d85e98e
 ---
  src/soc/intel/cannonlake/romstage/romstage.c | 35 +++++++++++++++++++-
  1 file changed, 34 insertions(+), 1 deletion(-)
