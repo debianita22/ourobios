@@ -203,10 +203,19 @@ whose changes below are still to run on a machine.
   came out even; the read margins were narrower, as the global
   compensation step moved the per-byte read termination with its static
   legs off: patch 0307 (from rc7) moves it only near the end of the
-  offsets' field. With rc5 channel 1 came out of one training in three
-  with margins 5 to 9 steps narrower: rc7 is to show whether the spread
-  is gone (MEM-20, MEM-21). A boot that trains takes 3.7 s in the RAM
-  init (2.3-2.5 s with rc5).
+  offsets' field. A boot that trains takes 3.4-3.7 s in the RAM init
+  (2.3-2.5 s with rc5).
+- **W541: the memory trained with the dGPU as the board runs it**
+  (patch 0309, both variants): the EC powers the NVIDIA dGPU on at
+  power-up, and the firmware turned it off (with *Dual graphics* off, the
+  default) only after the RAM init. Every training after a power-up (the
+  first boot after an update, or after the saved training was dropped)
+  so ran with the dGPU powered, and came out with the reads of channel 1
+  narrower than the board has with the dGPU off (with the native RAM
+  init: 2 to 4 PI ticks, 5 to 9 Vref steps, two margins at or below the
+  retrain limits), while a training after a warm reset did not. The
+  dGPU power is now set before the RAM init. The W541 `nri` trains once
+  more after the update.
 - **`tools/ddr-report.py` shows the per-bit deskew** (`RxPerBit`,
   `TxPerBit`, one nibble per bit), and **`tools/hw-report.py` knows the
   report of the margins of the native RAM init**: margins below the

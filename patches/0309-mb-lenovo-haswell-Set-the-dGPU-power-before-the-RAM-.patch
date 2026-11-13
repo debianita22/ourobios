@@ -1,0 +1,133 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Fri, 13 Nov 2026 17:01:20 +0100
+Subject: [PATCH] mb/lenovo/haswell: Set the dGPU power before the RAM init
+
+The EC powers the dGPU on at power-up, and its PMH7 keeps the state of
+the boot before across a warm reset. mb_late_romstage_setup() set it as
+the "enable_dual_graphics" option asks only after the RAM init, so with
+the dGPU disabled every training after a power-up ran with the dGPU
+powered, and every training after a warm reset without it, while the
+board always runs with it off.
+
+On a ThinkPad W541 with four DIMMs (native RAM init) the reads of
+channel 1 came out 2 to 4 PI ticks and 5 to 9 Vref steps narrower after
+every power-up than after every warm reset (7 of 7 against 12 of 12),
+two margins at or below the retrain limit; with the dGPU powered on
+from the OS before a warm reset they came out as narrow, with it off as
+wide (4 of 4). Nothing done within the boot recovered them: the dGPU
+stays powered through the whole RAM init.
+
+Add mb_pre_raminit_setup(), right before the RAM init (both the native
+one and mrc.bin), and set the dGPU power there; the dGPU device is
+still hidden after it. The hook is declared in raminit.h, which the
+version of the saved native training follows, so the boards train once
+again in the new conditions.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: Ie108f0b063f364eec3aa1b6091beb31e9d86e573
+---
+ src/mainboard/lenovo/haswell/romstage.c  | 21 ++++++++++++++++-----
+ src/northbridge/intel/haswell/raminit.h  | 10 ++++++++++
+ src/northbridge/intel/haswell/romstage.c |  6 ++++++
+ 3 files changed, 32 insertions(+), 5 deletions(-)
+
+diff --git a/src/mainboard/lenovo/haswell/romstage.c b/src/mainboard/lenovo/haswell/romstage.c
+index f786f68bf5..bf77d97ead 100644
+--- a/src/mainboard/lenovo/haswell/romstage.c
++++ b/src/mainboard/lenovo/haswell/romstage.c
+@@ -6,7 +6,7 @@
+ #include <option.h>
+ #include <ec/lenovo/pmh7/pmh7.h>
+ #include <device/pci_ops.h>
+-#include <romstage_handoff.h>
++#include <northbridge/intel/haswell/raminit.h>
+ 
+ void mainboard_config_rcba(void)
+ {
+@@ -20,7 +20,16 @@ void mainboard_config_rcba(void)
+ 	RCBA16(D20IR) = DIR_ROUTE(PIRQA, PIRQB, PIRQC, PIRQD);
+ }
+ 
+-void mb_late_romstage_setup(void)
++/*
++ * The dGPU as the option wants it before the RAM init, not after it: the EC
++ * powers the dGPU on at power-up and keeps the state of the boot before
++ * across a warm reset. With it powered during the training and turned off
++ * after, the trainings after a power-up were measured with a noise the board
++ * does not run with: on a W541 the reads of channel 1 came out 2 to 4 PI ticks
++ * and 5 to 9 Vref steps narrower than after a warm reset, every time, and as
++ * narrow after a warm reset with the dGPU powered from the OS.
++ */
++void mb_pre_raminit_setup(bool s3resume)
+ {
+ 	u8 enable_peg = get_uint_option("enable_dual_graphics", 0);
+ 
+@@ -29,8 +38,7 @@ void mb_late_romstage_setup(void)
+ 	 * suspending: keep that state on S3 resume, the power resource _STA
+ 	 * reports it and the OS powers the GPU back on when it needs it.
+ 	 */
+-	bool keep_state = CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM) && enable_peg &&
+-			  romstage_handoff_is_resume();
++	bool keep_state = CONFIG(LENOVO_HASWELL_DGPU_RUNTIME_PM) && enable_peg && s3resume;
+ 
+ 	if (!keep_state) {
+ 		bool power_en = pmh7_dgpu_power_state();
+@@ -38,8 +46,11 @@ void mb_late_romstage_setup(void)
+ 		if (enable_peg != power_en)
+ 			pmh7_dgpu_power_enable(!power_en);
+ 	}
++}
+ 
+-	if (!enable_peg) {
++void mb_late_romstage_setup(void)
++{
++	if (!get_uint_option("enable_dual_graphics", 0)) {
+ 		// Hide disabled dGPU device
+ 		pci_and_config32(HOST_BRIDGE, DEVEN, ~DEVEN_D1F0EN);
+ 	}
+diff --git a/src/northbridge/intel/haswell/raminit.h b/src/northbridge/intel/haswell/raminit.h
+index b1f30909e3..6eee092240 100644
+--- a/src/northbridge/intel/haswell/raminit.h
++++ b/src/northbridge/intel/haswell/raminit.h
+@@ -18,6 +18,16 @@ struct spd_info {
+ /* Mainboard callback to fill in the SPD addresses */
+ void mb_get_spd_map(struct spd_info *spdi);
+ 
++/*
++ * Mainboard callback, optional, right before the RAM init: put the board in the
++ * state it runs in, as far as the memory sees it. The training is measured in
++ * the conditions of this moment and kept for every boot after it: on a ThinkPad
++ * W541 a dGPU left powered by the EC at power-up, then turned off after the RAM
++ * init, made every training after a power-up narrower in the reads of channel 1
++ * (2 to 4 PI ticks, 5 to 9 Vref steps) than the board runs with.
++ */
++void mb_pre_raminit_setup(bool s3resume);
++
+ void get_spd_info(struct spd_info *spdi, const struct northbridge_intel_haswell_config *cfg);
+ const uint8_t *get_spd_from_cbfs(struct spd_info *spdi);
+ void report_memory_config(void);
+diff --git a/src/northbridge/intel/haswell/romstage.c b/src/northbridge/intel/haswell/romstage.c
+index 0c4814d6c6..1386eb55c2 100644
+--- a/src/northbridge/intel/haswell/romstage.c
++++ b/src/northbridge/intel/haswell/romstage.c
+@@ -118,6 +118,10 @@ void __weak mb_late_romstage_setup(void)
+ {
+ }
+ 
++void __weak mb_pre_raminit_setup(bool s3resume)
++{
++}
++
+ /* The romstage entry point for this platform is not mainboard-specific, hence the name */
+ void mainboard_romstage_entry(void)
+ {
+@@ -176,6 +180,8 @@ void mainboard_romstage_entry(void)
+ 	if (CONFIG(INTEL_TXT))
+ 		intel_txt_romstage_init();
+ 
++	mb_pre_raminit_setup(s3resume);
++
+ 	perform_raminit(s3resume);
+ 
+ 	post_code(0x3c);

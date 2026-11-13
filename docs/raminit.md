@@ -174,10 +174,7 @@ sudo cbmem -1 | grep 'TAT:'     # on the boot that trained
 `MemoryInit` module of the stock firmware of the W541 (GNET94WW): its
 table of steps, and in each the margin parameters, the tests, the loop
 counts and the ranges. Against the dump of `mrc.bin` on the same
-machine ([below](#on-the-w541)) it explains what differed, and it
-explains the spread of channel 1 between trainings that rc5 measured
-(one training in three with every margin of channel 1 5 to 9 steps
-narrower):
+machine ([below](#on-the-w541)) it explains what differed:
 
 - the **write and command Vref**: the MRC sets them with its margin
   search (edges confirmed and interpolated on the error count), the
@@ -201,6 +198,25 @@ narrower):
 - the rest matched: the 2D timing centring of patch 0295 has the MRC's
   weights and points; the sense amplifier training takes one sample
   per value in the MRC too.
+
+**The narrow reads of channel 1 after a power-up** were not the
+training. With rc5 to rc12 channel 1 came out of some trainings with
+its reads 2 to 4 PI ticks and 5 to 9 Vref steps narrower, two margins
+of its first DIMM at or below the retrain limit: every training right
+after a power-up (a capsule's reset, a power cycle, a boot from off),
+never one after a warm reset (7 of 7 against 12 of 12, 2026-11-13). Not
+the temperature (hot and cool warm resets alike), not time or the ZQ
+calibration (nothing within the boot widened them). The dGPU: the EC
+powers it on at power-up and keeps the state of the boot before across a
+warm reset, and `mb_late_romstage_setup()` turned it off, as the
+*Dual graphics* option (off) asks, only after the RAM init. So the
+trainings after a power-up ran with the dGPU powered, the others
+without, and the board always runs without. With the dGPU powered on
+from Linux before a warm reset the training came out as narrow, with it
+off as wide (4 of 4). **Patch 0309** sets the dGPU power in a new hook
+right before the RAM init (`mb_pre_raminit_setup()`, both RAM inits), so
+the training sees the board as it runs; the version of the saved
+training changes with it, so the W541 trains once more.
 
 The results of these steps are logged again at the end of the training
 (**patch 0302**), as the console before CBMEM loses the lines of the
