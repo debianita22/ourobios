@@ -424,6 +424,7 @@ rc11, 2026-11-12: slot B, over rc7; rc11 stays in slot A
 | Patch 0308, CONF-08 | PASS | `TSEGMB` reads `0x7f800001` at boot, after the reboot, the cold boot and three resumes: the lock bit takes before `D_LCK`. HSTI 9 of 13, the four known limits, none unknown |
 | LOCK-04 | PASS | three resumes: the lock armed, PR0 and PR1 back, LOCK-02 and LOCK-03 work |
 | MEM-04 | PASS | `stress-ng --vm 4 --vm-bytes 75% --verify`, 30 minutes after the resumes: 0 failed, no machine check |
+| LOCK-10 | PASS | by the owner, 2026-11-13: a change saved before any boot is kept (*Memory profile*); after a boot option that returned (iPXE without a network), the setup refused to save a change with the message that the settings are locked until the next restart |
 | report | PASS but the known ones | [the first boot](rc12/hw-w541-nri-boot1.md): 22 PASS; ME-01 and EC-01 WARN |
 
 One thing to know: a reclaim at runtime is one SMI of 9 s on the W541,
@@ -431,11 +432,59 @@ with every processor in SMM. Linux logged nothing (no soft lockup, no
 clocksource warning), and it happens only when the OS fills the store,
 at most four times a boot.
 
-Still to run on the W541: LOCK-10 (the setup), the second and third
-training of the RAM init of rc7 (*XMP profile 1*, then *SPD*).
+
+### The second and third training of the RAM init of rc7 (MEM-20, MEM-21)
+
+The RAM init of rc12 is that of rc7 (patches 0302-0307). Its first
+training is [rc7's](#v170-rc7-the-termination-kept-as-trained-mem-20-mem-21);
+the second by *XMP profile 1* on modules without one (byte 0x7d `0xb0`,
+*using the SPD timings*), the third back on *SPD* (`0xa0`), 2026-11-13,
+each with *Memory test passed* and no training done again
+([logs](rc12/)).
+
+| | Training 1 (rc7) | Training 2 | Training 3 |
+|---|---|---|---|
+| Command Vref | -5 | -5 | -6 |
+| Write Vref, channel 0 / 1 | 4 / 2 | 5 / 1 | 5 / 1 |
+| `tWRRD_dr/dd` | 3 | 3 | 3 |
+| RAM init | 3.62 s | 3.44 s | 3.42 s |
+| C0 RdT, all ranks | 18-21 | 19-20 | 19-21 |
+| C0 RdV | 28-38 | 28-38 | 26-37 |
+| C0 WrV | 28-41 | 26-40 | 26-42 |
+| C1R0 RdT / RdV / WrV | 12/12, 18/**16**, 23/22 | 15/15, 23/25, 23/25 | 16/15, 23/24, 25/26 |
+| C1R1 | 13/13, **15**/20, 22/21 | 15/16, 25/24, 27/23 | 15/15, 24/23, 25/24 |
+| C1R2 | 16/17, 29/28, 25/34 | 18/17, 34/36, 28/34 | 17/17, 33/36, 27/35 |
+| C1R3 | 16/16, 25/31, 24/32 | 18/18, 35/38, 25/34 | 17/19, 35/34, 26/34 |
+
+- MEM-19 PASS: the turnaround 3 in every training.
+- MEM-20, the Vrefs: PASS. The write Vref of each channel within one
+  step in the three trainings (rc5: 3, 0, 0 on channel 1), the command
+  Vref within one (rc5: -6, -4, -4), and the write voltage margins of
+  channel 1 within 3 steps and even on both sides (rc5: 15 to 24).
+- MEM-20, the reads of channel 1: not there yet. Two trainings of three
+  have every margin above the limits, as wide as rc5's best; the first
+  had the reads of channel 1 narrower on every rank (RdV 5 to 9 steps,
+  RdT 2 to 3 ticks), with two margins of its first DIMM at and one below
+  the retrain limit. The same share as rc5 (one narrow training in
+  three), so the steps of 0304 to 0306 did not remove the spread of the
+  reads; the writes they did.
+- MEM-21: the per-byte choices are not the same from one training to
+  the next (the read termination of channel 0 nearly so: -4 on bytes 1
+  and 3 to 6 each time; that of channel 1 and the drive strength change),
+  so on channel 1 the measure is within its noise, and the choices are
+  not what makes the narrow training: training 2 and 3 differ in them
+  and have the same margins.
+
+What the narrow training has that the others have not is still to
+find: the three logs and register dumps are here for it. What is left
+to compare are the steps before the new ones (receive enable, the 1D
+read centring, the sense amplifier offsets that the per-bit step now
+overwrites), and a retrain when the margin check fails
+(`HASWELL_NRI_MARGIN_CHECK_RETRAIN`, off) would turn a narrow training
+into another draw.
 
 ## The machine after the run
 
-v1.7.0-rc12 in slot B, rc11 in slot A, with the training of rc7's first boot;
+v1.7.0-rc12 in slot B, rc11 in slot A, with its third training;
 *Memory profile* on *SPD*, byte 0x7d
 `0xa0`; *BIOS Lock* and *Firmware protection* on; no helper left.
