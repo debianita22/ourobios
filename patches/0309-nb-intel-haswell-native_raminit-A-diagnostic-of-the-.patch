@@ -17,14 +17,18 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 Change-Id: I2bda9178ea7cbd30faa5861701181fe7f14e9128
 ---
  src/northbridge/intel/haswell/Kconfig         |   9 ++
+ src/northbridge/intel/haswell/Makefile.mk     |   2 +
  .../intel/haswell/native_raminit/Makefile.mk  |   1 +
- .../intel/haswell/native_raminit/init_mpll.c  |   4 +-
+ .../intel/haswell/native_raminit/init_mpll.c  |   5 +-
  .../haswell/native_raminit/raminit_main.c     |   5 +-
- .../haswell/native_raminit/raminit_native.c   |   3 +
+ .../haswell/native_raminit/raminit_native.c   |  11 ++
  .../haswell/native_raminit/raminit_native.h   |   3 +
- .../native_raminit/train_powerup_diag.c       | 153 ++++++++++++++++++
- 7 files changed, 176 insertions(+), 2 deletions(-)
+ .../native_raminit/train_powerup_diag.c       | 110 ++++++++++++++++++
+ src/northbridge/intel/haswell/powerup_diag.c  |  79 +++++++++++++
+ src/northbridge/intel/haswell/raminit.h       |  11 ++
+ 10 files changed, 234 insertions(+), 2 deletions(-)
  create mode 100644 src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c
+ create mode 100644 src/northbridge/intel/haswell/powerup_diag.c
 
 diff --git a/src/northbridge/intel/haswell/Kconfig b/src/northbridge/intel/haswell/Kconfig
 index a82f22f675..1b59edab4a 100644
@@ -46,6 +50,19 @@ index a82f22f675..1b59edab4a 100644
  config HASWELL_NRI_TURNAROUND
  	bool "Shorten the write to read turnaround between ranks as the MRC does"
  	depends on USE_NATIVE_RAMINIT
+diff --git a/src/northbridge/intel/haswell/Makefile.mk b/src/northbridge/intel/haswell/Makefile.mk
+index 2c1bad4da1..858cadefd9 100644
+--- a/src/northbridge/intel/haswell/Makefile.mk
++++ b/src/northbridge/intel/haswell/Makefile.mk
+@@ -11,6 +11,8 @@ ramstage-y += gma.c
+ 
+ ramstage-y += acpi.c
+ ramstage-y += minihd.c
++ramstage-$(CONFIG_HASWELL_NRI_POWERUP_DIAG) += powerup_diag.c
++romstage-$(CONFIG_HASWELL_NRI_POWERUP_DIAG) += powerup_diag.c
+ 
+ romstage-y += memmap.c
+ romstage-y += romstage.c
 diff --git a/src/northbridge/intel/haswell/native_raminit/Makefile.mk b/src/northbridge/intel/haswell/native_raminit/Makefile.mk
 index 3a5f08221b..22230b2c7d 100644
 --- a/src/northbridge/intel/haswell/native_raminit/Makefile.mk
@@ -59,10 +76,18 @@ index 3a5f08221b..22230b2c7d 100644
  romstage-y += train_read_vref.c
  romstage-y += train_receive_enable.c
 diff --git a/src/northbridge/intel/haswell/native_raminit/init_mpll.c b/src/northbridge/intel/haswell/native_raminit/init_mpll.c
-index bfaf46a1c8..5bff124e6a 100644
+index bfaf46a1c8..05f1dde61d 100644
 --- a/src/northbridge/intel/haswell/native_raminit/init_mpll.c
 +++ b/src/northbridge/intel/haswell/native_raminit/init_mpll.c
-@@ -337,8 +337,10 @@ enum nri_status initialise_mpll(struct sysinfo *ctrl)
+@@ -9,6 +9,7 @@
+ #include <post.h>
+ #include <types.h>
+ 
++#include <northbridge/intel/haswell/raminit.h>
+ #include "raminit_native.h"
+ 
+ static uint32_t get_mem_multiplier(const struct sysinfo *ctrl)
+@@ -337,8 +338,10 @@ enum nri_status initialise_mpll(struct sysinfo *ctrl)
  		/* Verify locked frequency */
  		const uint32_t mc_bios_data = mchbar_read32(MC_BIOS_DATA);
  		printk(RAM_DEBUG, "MC_BIOS_DATA = 0x%08x\n", mc_bios_data);
@@ -100,19 +125,31 @@ index abf696ee1a..8e9cf7a87c 100644
  		mighty_ctrl.summary_len = 0;
  		mighty_ctrl.summary[0] = '\0';
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.c b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
-index 63f6e942dd..21697960c3 100644
+index 63f6e942dd..403f12d142 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.c
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.c
-@@ -176,6 +176,8 @@ void perform_raminit(const bool s3resume)
+@@ -102,6 +102,8 @@ static enum raminit_boot_mode do_actual_raminit(
+ 	enum raminit_boot_mode bootmode = orig_bootmode;
+ 
+ 	bool save_data_valid = md.buffer && md.buffer_len == reg_frame_size();
++	if (!s3resume && powerup_diag_force_training())
++		save_data_valid = false;
+ 
+ 	if (s3resume) {
+ 		if (bootmode == BOOTMODE_COLD) {
+@@ -176,6 +178,11 @@ void perform_raminit(const bool s3resume)
  	 */
  	const enum raminit_boot_mode orig_bootmode = get_boot_mode();
  
++	if (CONFIG(HASWELL_NRI_POWERUP_DIAG))
++		powerup_diag_note_knob();
++
 +	powerup_diag_knob(1);
 +
  	/* Before the saved training is looked up: its version has the profile */
  	nri_memory_profile_init(s3resume);
  
-@@ -223,6 +225,7 @@ void perform_raminit(const bool s3resume)
+@@ -223,6 +230,7 @@ void perform_raminit(const bool s3resume)
  	}
  
  	report_ignored_dimms();
@@ -120,8 +157,16 @@ index 63f6e942dd..21697960c3 100644
  	if (bootmode == BOOTMODE_COLD)
  		nri_memory_profile_report();
  
+@@ -239,4 +247,7 @@ void perform_raminit(const bool s3resume)
+ 	const uint8_t *spd_data[NUM_CHANNELS][NUM_SLOTS] = { 0 };
+ 	reg_frame_get_spd_data(spd_data);
+ 	setup_sdram_meminfo(spd_data);
++
++	if (!s3resume)
++		powerup_diag_knob(3);
+ }
 diff --git a/src/northbridge/intel/haswell/native_raminit/raminit_native.h b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
-index 8e5cde1f0e..348d1a5a50 100644
+index 8e5cde1f0e..ba381b42c4 100644
 --- a/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 +++ b/src/northbridge/intel/haswell/native_raminit/raminit_native.h
 @@ -755,6 +755,9 @@ enum nri_status train_read_vref(struct sysinfo *ctrl);
@@ -130,25 +175,24 @@ index 8e5cde1f0e..348d1a5a50 100644
  enum nri_status print_nri_summary(struct sysinfo *ctrl);
 +enum nri_status powerup_diag(struct sysinfo *ctrl);
 +void powerup_diag_save(void);
-+void powerup_diag_knob(uint8_t where);
++void powerup_diag_note_knob(void);
  void nri_note(struct sysinfo *ctrl, const char *fmt, ...) __printf(2, 3);
  enum nri_status alias_check(struct sysinfo *ctrl);
  enum nri_status raminit_done(struct sysinfo *ctrl);
 diff --git a/src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c b/src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c
 new file mode 100644
-index 0000000000..4e2cc10a30
+index 0000000000..af5bb7278a
 --- /dev/null
 +++ b/src/northbridge/intel/haswell/native_raminit/train_powerup_diag.c
-@@ -0,0 +1,153 @@
+@@ -0,0 +1,110 @@
 +/* SPDX-License-Identifier: GPL-2.0-or-later */
 +
 +#include <cbmem.h>
 +#include <commonlib/bsd/helpers.h>
 +#include <console/console.h>
-+#include <arch/io.h>
-+#include <cf9_reset.h>
 +#include <delay.h>
 +#include <northbridge/intel/haswell/haswell.h>
++#include <northbridge/intel/haswell/raminit.h>
 +#include <stdarg.h>
 +#include <stdio.h>
 +#include <string.h>
@@ -190,50 +234,15 @@ index 0000000000..4e2cc10a30
 +		memcpy(dst, diag_mchbar, sizeof(diag_mchbar));
 +}
 +
-+/*
-+ * A knob for the OS, one shot: byte 0xf0 of the extended CMOS bank (ports
-+ * 0x72/0x73), which nothing uses. 1: a warm reset before anything of the RAM
-+ * init; 2: a warm reset right after the MPLL locked. Cleared before the
-+ * reset, and no reset if it does not read back clear.
-+ */
-+#define DIAG_KNOB	0xf0
-+
-+static uint8_t knob_read(void)
-+{
-+	outb(DIAG_KNOB, 0x72);
-+	return inb(0x73);
-+}
-+
-+static uint8_t diag_mpll_at_entry = 0xff;
 +static uint8_t diag_knob_seen;
 +
-+void powerup_diag_knob(const uint8_t where)
++void powerup_diag_note_knob(void)
 +{
-+	if (!CONFIG(HASWELL_NRI_POWERUP_DIAG))
-+		return;
-+
-+	if (where == 1 && diag_mpll_at_entry == 0xff)
-+		diag_mpll_at_entry = mchbar_read32(MC_BIOS_DATA) & 0xf;
-+
-+	const uint8_t knob = knob_read();
-+	if (where == 1)
-+		diag_knob_seen = knob;
-+
-+	if (knob != where)
-+		return;
-+
-+	outb(DIAG_KNOB, 0x72);
-+	outb(0, 0x73);
-+	if (knob_read() != 0)
-+		return;
-+
-+	printk(BIOS_NOTICE, "NRI power-up diagnostic: warm reset at point %u\n", where);
-+	system_reset();
++	diag_knob_seen = powerup_diag_knob_value();
 +}
 +
 +static char diag_log[3072];
 +static size_t diag_len;
-+static uint8_t diag_pass;
 +
 +static void diag_note(const char *fmt, ...) __printf(1, 2);
 +static void diag_note(const char *fmt, ...)
@@ -276,20 +285,118 @@ index 0000000000..4e2cc10a30
 +	if (!CONFIG(HASWELL_NRI_POWERUP_DIAG) || !CONFIG(HASWELL_NRI_MARGIN_CHECK))
 +		return NRI_STATUS_SUCCESS;
 +
-+	if (diag_pass++) {
-+		note_margins(ctrl, "M4 second training");
-+		printk(BIOS_INFO, "NRI power-up diagnostic:\n%s", diag_log);
-+		return NRI_STATUS_SUCCESS;
-+	}
-+
-+	diag_note("  MPLL multiplier locked at entry: %u (0: not locked), knob seen %u\n",
-+		  diag_mpll_at_entry, diag_knob_seen);
-+	note_margins(ctrl, "M1 first training");
++	diag_len = 0;
++	diag_note("  knobs at entry (reset<<4 | train): 0x%02x\n", diag_knob_seen);
++	note_margins(ctrl, "M1");
++	printk(BIOS_INFO, "NRI power-up diagnostic:\n%s", diag_log);
 +	for (size_t i = 0; i < ARRAY_SIZE(diag_mchbar); i++)
 +		diag_mchbar[i] = mchbar_read32(i * 4);
 +
 +	diag_have_mchbar = true;
-+
-+	printk(BIOS_INFO, "NRI power-up diagnostic: training again in this boot\n");
-+	return NRI_STATUS_RETRAIN_REQUIRED;
++	return NRI_STATUS_SUCCESS;
 +}
+diff --git a/src/northbridge/intel/haswell/powerup_diag.c b/src/northbridge/intel/haswell/powerup_diag.c
+new file mode 100644
+index 0000000000..037fa2cca9
+--- /dev/null
++++ b/src/northbridge/intel/haswell/powerup_diag.c
+@@ -0,0 +1,79 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <arch/io.h>
++#include <bootstate.h>
++#include <cf9_reset.h>
++#include <console/console.h>
++#include <delay.h>
++#include <northbridge/intel/haswell/raminit.h>
++#include <pc80/mc146818rtc.h>
++#include <post.h>
++#include <types.h>
++
++/*
++ * A diagnostic, not for a release. Knobs for the OS in the extended CMOS
++ * bank (ports 0x72/0x73), which nothing uses:
++ *   0xf0  one shot: a warm reset at a point of the boot.
++ *         1 before the RAM init, 2 after the MPLL lock, 3 at the end of the
++ *         RAM init (romstage), 4 at the end of ramstage, before the payload.
++ *   0xf1  one shot, taken only once 0xf0 is clear: train in this boot, the
++ *         saved training left aside.
++ * So: after a power-up, the boot runs to the point and resets warm, and the
++ * boot after trains: which part of a boot makes the training after it wide?
++ */
++#define KNOB_RESET	0xf0
++#define KNOB_TRAIN	0xf1
++
++static uint8_t ext_read(const uint8_t index)
++{
++	outb(index, 0x72);
++	return inb(0x73);
++}
++
++static void ext_write(const uint8_t index, const uint8_t value)
++{
++	outb(index, 0x72);
++	outb(value, 0x73);
++}
++
++uint8_t powerup_diag_knob_value(void)
++{
++	return ext_read(KNOB_RESET) << 4 | (ext_read(KNOB_TRAIN) & 0xf);
++}
++
++void powerup_diag_knob(const uint8_t where)
++{
++	if (ext_read(KNOB_RESET) != where)
++		return;
++
++	ext_write(KNOB_RESET, 0);
++	if (ext_read(KNOB_RESET) != 0)
++		return;
++
++	printk(BIOS_NOTICE, "NRI power-up diagnostic: warm reset at point %u\n", where);
++	/* A reset the firmware asked for */
++	if (CONFIG(CMOS_POST)) {
++		cmos_post_extra(0x44494147);	/* "DIAG" */
++		cmos_post_code(POSTCODE_RESET_REQUESTED);
++	}
++	mdelay(30);
++	system_reset();
++}
++
++bool powerup_diag_force_training(void)
++{
++	if (ext_read(KNOB_RESET) != 0 || ext_read(KNOB_TRAIN) != 1)
++		return false;
++
++	ext_write(KNOB_TRAIN, 0);
++	printk(BIOS_NOTICE, "NRI power-up diagnostic: training asked for\n");
++	return true;
++}
++
++#if ENV_RAMSTAGE
++static void reset_before_payload(void *unused)
++{
++	powerup_diag_knob(4);
++}
++BOOT_STATE_INIT_ENTRY(BS_PAYLOAD_LOAD, BS_ON_ENTRY, reset_before_payload, NULL);
++#endif
+diff --git a/src/northbridge/intel/haswell/raminit.h b/src/northbridge/intel/haswell/raminit.h
+index b1f30909e3..a56a859ecf 100644
+--- a/src/northbridge/intel/haswell/raminit.h
++++ b/src/northbridge/intel/haswell/raminit.h
+@@ -25,4 +25,15 @@ void setup_sdram_meminfo(const uint8_t *spd_data[NUM_CHANNELS][NUM_SLOTS]);
+ 
+ void perform_raminit(const bool s3resume);
+ 
++/* powerup_diag.c: a diagnostic, not for a release */
++#if CONFIG(HASWELL_NRI_POWERUP_DIAG)
++void powerup_diag_knob(uint8_t where);
++bool powerup_diag_force_training(void);
++uint8_t powerup_diag_knob_value(void);
++#else
++static inline void powerup_diag_knob(uint8_t where) {}
++static inline bool powerup_diag_force_training(void) { return false; }
++static inline uint8_t powerup_diag_knob_value(void) { return 0; }
++#endif
++
+ #endif	/* NORTHBRIDGE_INTEL_HASWELL_RAMINIT_H */
