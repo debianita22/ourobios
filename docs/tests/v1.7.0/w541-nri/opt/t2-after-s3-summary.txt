@@ -1,0 +1,12 @@
+# t2-after-s3 2026-11-13T18:37:53+01:00 uptime=96.33 temp_now=49000 0x7d=0xb0
+[DEBUG]  ME: Power Management Event  : Clean Moff->Mx wake
+ouroBIOS-ci-205
+0
+[DEBUG]  ME: Power Management Event  : Clean Moff->Mx wake
+[INFO ]  Using cached memory parameters
+[WARN ]  Memory profile: CH0S0 has no XMP profile 1, using the SPD timings
+  C0 odt delay      3    3    3    2    3    3    3    3
+  C0 odt durata     3    3    3    4    3    3    3    3
+  C1 odt delay      2   -1    1   -2    3    1    3    1
+  C1 odt durata     3    6    6    3    3    4    3    4
+   3:after RAM initialization                          584,137 (109,965)

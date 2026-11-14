@@ -1,0 +1,52 @@
+# d0-first-warm 2026-11-13T14:15:29+01:00 uptime=48.59 temp_now=48000 0x7d=0xa4
+[DEBUG]  ME: Power Management Event  : Pseudo-global reset
+[INFO ]  Memory test passed
+[ERROR]  Memory profile: XMP profile 1 failed before, using the SPD timings. Select the SPD timings once to try it again
+[INFO ]  NRI power-up diagnostic:
+[INFO ]    M1 first training C0 RdT/RdV/WrV: 20-21,28-29,28-29 20-19,28-31,27-24 20-20,37-37,40-36 20-21,38-35,39-41
+[INFO ]    M1 first training C1 RdT/RdV/WrV: 14-16,23-21,26-25 13-15,24-20,28-22 18-17,34-35,28-33 18-19,33-37,25-32
+[INFO ]    M2 after 3 s C0 RdT/RdV/WrV: 20-21,29-29,28-28 20-19,28-31,28-26 20-20,37-37,40-35 20-21,38-35,38-40
+[INFO ]    M2 after 3 s C1 RdT/RdV/WrV: 14-15,22-21,24-24 13-15,23-21,27-22 18-17,33-34,29-32 18-19,33-37,25-32
+[INFO ]    M3 after ZQCL C0 RdT/RdV/WrV: 20-21,28-29,28-28 20-19,28-31,29-25 20-20,37-36,40-34 21-21,38-35,37-39
+[INFO ]    M3 after ZQCL C1 RdT/RdV/WrV: 15-15,22-22,24-23 14-15,22-21,26-22 18-17,34-35,28-32 18-18,34-37,25-32
+[INFO ]    M4 second training C0 RdT/RdV/WrV: 19-20,27-29,28-29 19-19,27-30,29-27 20-20,36-36,42-31 20-20,37-37,38-36
+[INFO ]    M4 second training C1 RdT/RdV/WrV: 16-15,24-23,21-26 15-14,27-23,25-26 16-17,32-38,27-34 18-18,34-37,25-33
+[INFO ]  NRI summary:
+[INFO ]    OPT WrDS: C0 2 2 2 2 2 2 -4 0 C1 0 0 0 4 0 0 0 0
+[INFO ]    OPT TxEq: C0 3 3 3 7 3 3 5 3 C1 3 5 3 3 3 5 5 5
+[INFO ]    OPT RdOdt: C0 0 -4 0 -4 -4 -4 -4 0 C1 -4 0 0 0 0 0 0 0
+0
+[DEBUG]  Margin: RdT     WrT     RdV     WrV
+[DEBUG]          Lft Rgt Lft Rgt Low Hi  Low Hi
+[DEBUG]  C0R0:   19  20  19  19  27  29  28  29 
+[DEBUG]  C0R1:   19  19  20  21  27  30  29  27 
+[DEBUG]  C0R2:   20  20  21  22  36  36  42  31 
+[DEBUG]  C0R3:   20  20  20  22  37  37  38  36 
+
+[DEBUG]  C1R0:   16  15  16  16  24  23  21  26 
+[DEBUG]  C1R1:   15  14  15  17  27  23  25  26 
+[DEBUG]  C1R2:   16  17  19  19  32  38  27  34 
+[DEBUG]  C1R3:   18  18  20  19  34  37  25  33 
+
+[INFO ]  NRI summary:
+[INFO ]    OPT WrDS: C0 2 2 2 2 2 2 -4 0 C1 0 0 0 4 0 0 0 0
+[INFO ]    OPT TxEq: C0 3 3 3 7 3 3 5 3 C1 3 5 3 3 3 5 5 5
+[INFO ]    OPT RdOdt: C0 0 -4 0 -4 -4 -4 -4 0 C1 -4 0 0 0 0 0 0 0
+[INFO ]    OPT RxBias: C0 3 3 3 3 3 3 3 3 C1 3 4 3 3 3 3 3 5
+[INFO ]    CMDV: scan -38 to 30, centre -4
+[INFO ]    CMDV: at -4 low 37.0 high 35.0
+[INFO ]    WRV C0: scan -21 to 27, centre 3
+[INFO ]    WRV C1: scan -22 to 23, centre 0
+[INFO ]    WRV C0: WrT -4 low 24.7 high 27.4
+[INFO ]    WRV C1: WrT -4 low 23.6 high 27.0
+[INFO ]    WRV C0: WrT +0 low 24.7 high 26.4
+[INFO ]    WRV C1: WrT +0 low 23.5 high 26.5
+[INFO ]    WRV C0: WrT +4 low 21.0 high 25.5
+[INFO ]    WRV C1: WrT +4 low 23.2 high 25.7
+[INFO ]    RDV C0: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    RDV C1: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    TAT C0: tWRRD_dr/dd 3 (was 4)
+[INFO ]    TAT C1: tWRRD_dr/dd 3 (was 4)
+[DEBUG]  Testing DIMM 0
+[DEBUG]  Testing DIMM 1
+   3:after RAM initialization                          10,937,499 (10,456,304)

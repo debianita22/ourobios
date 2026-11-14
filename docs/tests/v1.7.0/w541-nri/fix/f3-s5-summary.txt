@@ -1,0 +1,56 @@
+# f3-s5 2026-11-13T17:35:26+01:00 uptime=49.66 temp_now=49000 0x7d=0xb0
+PMH7 0x50 = 0x70
+before: 2026-11-13T17:31:17+01:00 condition=s5 temp_at_reboot=48000 0x7d was 0xa4, wrote 0xb0
+[DEBUG]  ME: Power Management Event  : Clean Moff->Mx wake
+[DEBUG]  Margin: RdT     WrT     RdV     WrV
+[DEBUG]          Lft Rgt Lft Rgt Low Hi  Low Hi
+[DEBUG]  C0R0:   20  21  18  18  27  31  28  28 
+[DEBUG]  C0R1:   19  19  19  20  29  32  28  27 
+[DEBUG]  C0R2:   20  21  20  22  36  39  41  34 
+[DEBUG]  C0R3:   20  21  19  22  36  37  37  39 
+
+[DEBUG]  C1R0:   16  15  17  17  23  24  24  26 
+[DEBUG]  C1R1:   14  14  15  17  24  21  24  25 
+[DEBUG]  C1R2:   17  17  19  20  33  36  29  34 
+[DEBUG]  C1R3:   17  18  19  20  34  35  26  31 
+
+ouroBIOS-ci-381
+0
+[DEBUG]  ME: Power Management Event  : Clean Moff->Mx wake
+[INFO ]  Memory test passed
+[INFO ]  Memory profile: XMP profile 1 requested
+[WARN ]  Memory profile: CH0S0 has no XMP profile 1, using the SPD timings
+[DEBUG]  Margin: RdT     WrT     RdV     WrV
+[DEBUG]          Lft Rgt Lft Rgt Low Hi  Low Hi
+[DEBUG]  C0R0:   20  21  18  18  27  31  28  28 
+[DEBUG]  C0R1:   19  19  19  20  29  32  28  27 
+[DEBUG]  C0R2:   20  21  20  22  36  39  41  34 
+[DEBUG]  C0R3:   20  21  19  22  36  37  37  39 
+
+[DEBUG]  C1R0:   16  15  17  17  23  24  24  26 
+[DEBUG]  C1R1:   14  14  15  17  24  21  24  25 
+[DEBUG]  C1R2:   17  17  19  20  33  36  29  34 
+[DEBUG]  C1R3:   17  18  19  20  34  35  26  31 
+
+[INFO ]  NRI summary:
+[INFO ]    OPT WrDS: C0 0 0 0 0 0 0 0 0 C1 0 0 4 0 0 0 0 0
+[INFO ]    OPT TxEq: C0 3 3 3 5 3 3 5 5 C1 3 5 3 3 5 3 5 5
+[INFO ]    OPT RdOdt: C0 0 0 0 -4 -4 -4 -4 0 C1 -4 0 0 0 0 0 0 0
+[INFO ]    OPT RxBias: C0 3 4 3 5 3 3 3 5 C1 3 3 3 3 3 3 3 3
+[INFO ]    CMDV: scan -38 to 30, centre -4
+[INFO ]    CMDV: at -4 low 38.0 high 35.0
+[INFO ]    WRV C0: scan -20 to 27, centre 3
+[INFO ]    WRV C1: scan -23 to 23, centre 0
+[INFO ]    WRV C0: WrT -4 low 23.6 high 26.3
+[INFO ]    WRV C1: WrT -4 low 23.5 high 27.6
+[INFO ]    WRV C0: WrT +0 low 23.5 high 26.0
+[INFO ]    WRV C1: WrT +0 low 24.0 high 26.7
+[INFO ]    WRV C0: WrT +4 low 23.0 high 25.5
+[INFO ]    WRV C1: WrT +4 low 22.7 high 26.6
+[INFO ]    RDV C0: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    RDV C1: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    TAT C0: tWRRD_dr/dd 3 (was 4)
+[INFO ]    TAT C1: tWRRD_dr/dd 3 (was 4)
+[DEBUG]  Testing DIMM 0
+[DEBUG]  Testing DIMM 1
+   3:after RAM initialization                          3,961,134 (3,484,347)

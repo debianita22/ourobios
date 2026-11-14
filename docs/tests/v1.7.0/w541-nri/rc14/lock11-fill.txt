@@ -1,0 +1,6 @@
+write 127 slow: 8.796 s (a reclaim?)
+write 248 slow: 7.830 s (a reclaim?)
+write 369 slow: 7.846 s (a reclaim?)
+write 490 slow: 7.810 s (a reclaim?)
+write 611 FAILED after 0.059 s: [Errno 28] No space left on device
+610 writes of 1000 bytes went through before one failed: 610000 bytes of data, 668560 of records

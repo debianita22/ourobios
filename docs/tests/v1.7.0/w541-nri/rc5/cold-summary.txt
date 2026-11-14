@@ -1,0 +1,33 @@
+# cold 2026-11-11T20:02:18+01:00 boot_id=4568afaf-0858-44e6-a77b-f498d536c5ac uptime=54.51
+versione:  v1.7.0-rc5, minima per una capsula v1.3.9
+ultimo:    v1.7.0-rc5, riuscito
+CMOS 0x7d=0xa0 0x7e=0xa0
+CMOS 0x7d=0xa0 0x7e=0xa0
+CMOS 0x7d=0xa0 0x7e=0xa0
+console overflow lines: 0
+[INFO ]  Using cached memory parameters
+[DEBUG]  MRC: Checking cached data update for 'RW_MRC_CACHE'.
+[DEBUG]  MRC: 'RW_MRC_CACHE' does not need update.
+failed to converge: 0
+2D: 0 weighted centres, 0 per-bit centrings, 0 passes
+  C0.R0 RxPerBit 6a9a9677 9a76aa75 bb8b6565 8a45b967 566559b7 7655a99a 669caa76 86baa967
+  C0.R0 TxPerBit 6aba9788 9a75a966 aabb6767 9b54ba57 69455aaa 6576babb 67aa9b66 76aab966
+  C0.R1 RxPerBit 7bbba878 a966a865 997b5664 9b66b866 686469a7 6665baaa 659a8955 95cb9777
+  C0.R1 TxPerBit 5b996575 aa86bb95 9abc4665 9a55a966 584569b9 8555baba 659b9a56 74aaa956
+  C0.R2 RxPerBit 7a8a9777 89769876 778a7666 7a67a978 68677aa8 7756a98a 77aaab77 96b9a887
+  C0.R2 TxPerBit 7bab97aa 77779886 abab7987 7b68a989 6a776aba 6576a8ab 777a8a66 96a98777
+  C0.R3 RxPerBit 7a797677 8a779966 999a7757 89669767 676579a6 6666a799 779baa77 a6bab899
+  C0.R3 TxPerBit 7a899987 89879787 878a6767 8b77b997 67667ab8 6556999b 669a8977 95a99778
+  C1.R0 RxPerBit 99a99a97 8798998a 79797666 77677776 77779767 77667898 a9bbb9aa 7969999a
+  C1.R0 TxPerBit 77a967a7 97aaa7ba 996a9779 777a9777 8699b988 777989a7 8a8a777a 986754ab
+  C1.R1 RxPerBit a8ba79a9 8798988a 99798977 89799776 77769767 79779799 979aa79a 9787989b
+  C1.R1 TxPerBit 88997897 67977688 899a7869 79687765 7797aa79 67777998 99899689 9569657a
+  C1.R2 RxPerBit 79a87987 6786777a 87577689 b858a7a9 99969658 58796677 66aa759a 9578b9bb
+  C1.R2 TxPerBit 8aa96996 79a7a97a a86997ab a657a7aa 99b8977b 5a9a567b 77ba85b9 754678ba
+  C1.R3 RxPerBit 9bbb6b99 6786767a ca7ab9bb 96579697 98a9968a 6b9987ab 66997599 7656b9ab
+  C1.R3 TxPerBit 9aba7a97 7aa7797b a768959b 9757a6a9 a997877a 7aaa79ab 56ab869a 656989bc
+  tWRRD                         20/4/4    20/4/4
+   2:before RAM initialization                         477,049 (22,625)
+   3:after RAM initialization                          589,131 (112,082)
+Total Time: 1,537,452
+  VREF_ADJUST  vref_ca_ctrl=-6 vref_dq_ch1_ctrl=3 vref_dq_ch0_ctrl=3 en_dimm_vref_ca=1 en_dimm_vref_ch1=1 en_dimm_vref_ch0=1 hi_z_timer_ctrl=3 vccddq_hi_qnnn_h=0 ca_slow_bw=1 ch0_slow_bw=1 ch1_slow_bw=1

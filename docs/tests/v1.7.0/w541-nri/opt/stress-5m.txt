@@ -1,0 +1,12 @@
+stress-ng: info:  [1744] setting to a 5 mins run per stressor
+stress-ng: info:  [1744] dispatching hogs: 4 vm
+stress-ng: info:  [1745] vm: using 5.25GB per stressor instance (total 21.02GB of 28.03GB available memory)
+stress-ng: metrc: [1744] stressor       bogo ops real time  usr time  sys time   bogo ops/s     bogo ops/s
+stress-ng: metrc: [1744]                           (secs)    (secs)    (secs)   (real time) (usr+sys time)
+stress-ng: metrc: [1744] vm             98232913    299.73   1068.52    132.65    327734.87       81780.76
+stress-ng: info:  [1744] skipped: 0
+stress-ng: info:  [1744] passed: 4: vm (4)
+stress-ng: info:  [1744] failed: 0
+stress-ng: info:  [1744] metrics untrustworthy: 0
+stress-ng: info:  [1744] successful run completed in 5 mins 1.41 sec
+rc=0

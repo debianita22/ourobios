@@ -1,0 +1,79 @@
+?                          0x09 READONLY VOLATILE
+?                          0x09 READONLY VOLATILE
+?                          0x09 READONLY VOLATILE
+?                          0x0d READONLY SUPPRESS VOLATILE
+?                          0x09 READONLY VOLATILE
+?                          0x09 READONLY VOLATILE
+?                          0x09 READONLY VOLATILE
+?                          0x09 READONLY VOLATILE
+?                          0x09 READONLY VOLATILE
+?                          0x09 READONLY VOLATILE
+ipxe_boot                  0x20 LOCK_AT_BOOT
+csmwrap_boot               0x20 LOCK_AT_BOOT
+usb_boot                   0x20 LOCK_AT_BOOT
+boot_menu_prompt           0x20 LOCK_AT_BOOT
+firmware_watchdog          0x20 LOCK_AT_BOOT
+power_management_beeps     0x24 SUPPRESS LOCK_AT_BOOT
+low_battery_beep           0x24 SUPPRESS LOCK_AT_BOOT
+keyboard_beep              0x20 LOCK_AT_BOOT
+volume                     0x20 LOCK_AT_BOOT
+internal_mic               0x20 LOCK_AT_BOOT
+battery_charge_limit       0x20 LOCK_AT_BOOT
+first_battery              0x20 LOCK_AT_BOOT
+hyper_threading            0x20 LOCK_AT_BOOT
+eist                       0x20 LOCK_AT_BOOT
+turbo_mode                 0x20 LOCK_AT_BOOT
+c_states                   0x20 LOCK_AT_BOOT
+tdp_pl1_override           0x20 LOCK_AT_BOOT
+tdp_pl2_override           0x20 LOCK_AT_BOOT
+cpu_power_limit_lock       0x20 LOCK_AT_BOOT
+cooling_policy             0x20 LOCK_AT_BOOT
+tcc_offset                 0x20 LOCK_AT_BOOT
+usb_always_on              0x20 LOCK_AT_BOOT
+power_on_ac                0x20 LOCK_AT_BOOT
+power_on_after_fail        0x20 LOCK_AT_BOOT
+wake_on_lan                0x20 LOCK_AT_BOOT
+gfx_uma_size               0x20 LOCK_AT_BOOT
+gfx_aperture_size          0x20 LOCK_AT_BOOT
+gfx_fb_limit               0x20 LOCK_AT_BOOT
+enable_dual_graphics       0x20 LOCK_AT_BOOT
+peg_link_tuning            0x20 LOCK_AT_BOOT
+memory_profile             0x20 LOCK_AT_BOOT
+sata_port1                 0x20 LOCK_AT_BOOT
+sata_port4                 0x20 LOCK_AT_BOOT
+sata_port5                 0x20 LOCK_AT_BOOT
+expresscard                0x20 LOCK_AT_BOOT
+thunderbolt                0x20 LOCK_AT_BOOT
+onboard_ethernet           0x20 LOCK_AT_BOOT
+card_reader                0x20 LOCK_AT_BOOT
+camera                     0x20 LOCK_AT_BOOT
+fingerprint_reader         0x20 LOCK_AT_BOOT
+wlan                       0x20 LOCK_AT_BOOT
+bluetooth                  0x20 LOCK_AT_BOOT
+wwan                       0x20 LOCK_AT_BOOT
+uwb                        0x24 SUPPRESS LOCK_AT_BOOT
+fn_ctrl_swap               0x20 LOCK_AT_BOOT
+f1_to_f12_as_primary       0x20 LOCK_AT_BOOT
+sticky_fn                  0x20 LOCK_AT_BOOT
+backlight                  0x24 SUPPRESS LOCK_AT_BOOT
+trackpoint                 0x20 LOCK_AT_BOOT
+touchpad                   0x20 LOCK_AT_BOOT
+bootmedia_lock             0x20 LOCK_AT_BOOT
+bios_lock                  0x20 LOCK_AT_BOOT
+clear_dram_on_boot         0x20 LOCK_AT_BOOT
+vmx                        0x20 LOCK_AT_BOOT
+vtd                        0x20 LOCK_AT_BOOT
+dma_untrusted_ports        0x20 LOCK_AT_BOOT
+me_disable                 0x20 LOCK_AT_BOOT
+acpi_cpu_objects           0x20 LOCK_AT_BOOT
+cfg_lock                   0x20 LOCK_AT_BOOT
+dgpu_macos_off             0x20 LOCK_AT_BOOT
+gfx_resume_init            0x20 LOCK_AT_BOOT
+macos_panel                0x20 LOCK_AT_BOOT
+minihd_audio               0x20 LOCK_AT_BOOT
+macos_pme_wake             0x20 LOCK_AT_BOOT
+macos_device_properties    0x20 LOCK_AT_BOOT
+nmi                        0x20 LOCK_AT_BOOT
+debug_level                0x20 LOCK_AT_BOOT
+serial_console             0x24 SUPPRESS LOCK_AT_BOOT
+options 78: LOCK_AT_BOOT 68, READONLY 10, neither 0

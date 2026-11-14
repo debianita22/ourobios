@@ -1,0 +1,58 @@
+# d3-s5 2026-11-13T15:19:01+01:00 uptime=49.40 temp_now=51000 0x7d=0xb0
+before: 2026-11-13T15:14:46+01:00 condition=s5 temp_at_reboot=42000 0x7d was 0xa4, wrote 0xb0
+[DEBUG]  ME: Power Management Event  : Clean Moff->Mx wake
+[ERROR]  ***** Margin limit check failed! *****
+[INFO ]  Memory test passed
+[INFO ]  Memory profile: XMP profile 1 requested
+[WARN ]  Memory profile: CH0S0 has no XMP profile 1, using the SPD timings
+-rw-r--r-- 1 root root 24576 13 nov 15.19 /home/domenico/ourobios-test-v1.6.3/w541-nri/xmp/diag/d3-s5/mchbar-at-training.bin
+[INFO ]  NRI power-up diagnostic:
+[INFO ]    M1 first training C0 RdT/RdV/WrV: 20-20,27-29,30-26 20-20,28-29,31-25 20-21,36-38,44-33 20-20,37-37,41-38
+[INFO ]    M1 first training C1 RdT/RdV/WrV: 12-12,15-20,22-24 14-14,18-20,19-24 14-16,24-29,26-37 16-17,25-27,22-32
+[INFO ]    M2 after 3 s C0 RdT/RdV/WrV: 20-20,28-29,30-26 19-19,29-29,31-24 20-21,37-38,43-32 20-21,37-37,39-37
+[INFO ]    M2 after 3 s C1 RdT/RdV/WrV: 12-12,15-21,21-23 12-14,19-17,22-23 15-15,23-29,27-34 16-17,23-27,24-32
+[INFO ]    M3 after ZQCL C0 RdT/RdV/WrV: 20-21,26-29,30-25 19-19,29-29,31-23 20-21,37-38,43-31 20-21,37-36,38-36
+[INFO ]    M3 after ZQCL C1 RdT/RdV/WrV: 11-13,18-18,22-24 14-15,20-19,21-25 15-17,22-28,26-34 16-17,25-28,23-32
+[INFO ]    M5 periodic comp on C0 RdT/RdV/WrV: 19-21,28-28,30-24 19-19,28-28,31-24 20-21,37-37,41-31 20-20,38-35,38-34
+[INFO ]    M5 periodic comp on C1 RdT/RdV/WrV: 11-13,17-19,18-24 13-14,20-15,23-24 14-16,25-28,25-34 15-16,25-28,22-33
+[INFO ]    M4 second training C0 RdT/RdV/WrV: 20-20,27-29,29-27 19-19,29-29,30-25 20-21,38-36,44-35 20-20,38-36,43-38
+[INFO ]    M4 second training C1 RdT/RdV/WrV: 13-12,20-18,24-26 13-14,15-19,23-21 15-16,25-25,27-34 16-16,25-26,23-33
+[INFO ]  NRI summary:
+[INFO ]    OPT WrDS: C0 0 4 0 4 4 4 4 0 C1 0 0 0 4 0 0 2 0
+[INFO ]    OPT TxEq: C0 3 3 3 3 3 3 3 3 C1 3 3 5 3 3 5 3 5
+[INFO ]    OPT RdOdt: C0 0 0 -4 -4 -4 -4 -4 0 C1 -4 0 0 0 0 0 0 -2
+0
+[DEBUG]  Margin: RdT     WrT     RdV     WrV
+[DEBUG]          Lft Rgt Lft Rgt Low Hi  Low Hi
+[DEBUG]  C0R0:   20  20  19  20  27  29  29  27 
+[DEBUG]  C0R1:   19  19  19  21  29  29  30  25 
+[DEBUG]  C0R2:   20  21  20  23  38  36  44  35 
+[DEBUG]  C0R3:   20  20  21  23  38  36  43  38 
+
+[DEBUG]  C1R0:   13  12  15  16  20  18  24  26 
+[DEBUG]  C1R1:   13  14  15  16 -15  19  23  21 
+[DEBUG]  C1R2:   15  16  17  18  25  25  27  34 
+[DEBUG]  C1R3:   16  16  17  19  25  26  23  33 
+
+[INFO ]  NRI summary:
+[INFO ]    OPT WrDS: C0 0 4 0 4 4 4 4 0 C1 0 0 0 4 0 0 2 0
+[INFO ]    OPT TxEq: C0 3 3 3 3 3 3 3 3 C1 3 3 5 3 3 5 3 5
+[INFO ]    OPT RdOdt: C0 0 0 -4 -4 -4 -4 -4 0 C1 -4 0 0 0 0 0 0 -2
+[INFO ]    OPT RxBias: C0 5 3 3 3 3 3 3 3 C1 3 3 3 3 3 3 5 3
+[INFO ]    CMDV: scan -38 to 30, centre -4
+[INFO ]    CMDV: at -4 low 37.0 high 35.0
+[INFO ]    WRV C0: scan -19 to 27, centre 4
+[INFO ]    WRV C1: scan -22 to 23, centre 0
+[INFO ]    WRV C0: WrT -4 low 24.0 high 26.7
+[INFO ]    WRV C1: WrT -4 low 22.0 high 25.0
+[INFO ]    WRV C0: WrT +0 low 24.5 high 25.7
+[INFO ]    WRV C1: WrT +0 low 22.0 high 24.7
+[INFO ]    WRV C0: WrT +4 low 20.0 high 24.4
+[INFO ]    WRV C1: WrT +4 low 22.2 high 23.0
+[INFO ]    RDV C0: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    RDV C1: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    TAT C0: tWRRD_dr/dd 3 (was 4)
+[INFO ]    TAT C1: tWRRD_dr/dd 3 (was 4)
+[DEBUG]  Testing DIMM 0
+[DEBUG]  Testing DIMM 1
+   3:after RAM initialization                          11,865,419 (11,385,589)

@@ -1,0 +1,39 @@
+# p3-s5 2026-11-13T13:28:37+01:00 uptime=49.55 temp_now=46000 0x7d=0xa4
+before: 2026-11-13T13:24:25+01:00 condition=s5 temp_at_reboot=43000 0x7d was 0xb0, wrote 0xb2
+[DEBUG]  ME: Power Management Event  : Clean Moff->Mx wake
+[INFO ]  Memory test passed
+[ERROR]  Memory profile: 2 boots in a row with XMP profile 1 did not reach the payload, using the SPD timings from now on
+[DEBUG]  Margin: RdT     WrT     RdV     WrV
+[DEBUG]          Lft Rgt Lft Rgt Low Hi  Low Hi
+[DEBUG]  C0R0:   18  19  19  20  30  28  28  27 
+[DEBUG]  C0R1:   19  19  19  21  31  28  31  24 
+[DEBUG]  C0R2:   20  19  19  21  39  36  42  29 
+[DEBUG]  C0R3:   19  19  20  22  36  36  38  33 
+
+[DEBUG]  C1R0:   13  14  16  16  17  21  23  22 
+[DEBUG]  C1R1:   15  14  16  16  17  20  25  21 
+[DEBUG]  C1R2:   16  16  19  18  26  27  28  32 
+[DEBUG]  C1R3:   16  16  18  20  33  25  28  31 
+
+[INFO ]  NRI summary:
+[INFO ]    OPT WrDS: C0 0 0 0 0 0 0 0 0 C1 0 0 2 0 0 4 0 0
+[INFO ]    OPT TxEq: C0 5 3 3 11 3 3 11 3 C1 3 3 5 3 3 3 5 5
+[INFO ]    OPT RdOdt: C0 0 -4 -4 -4 -4 -4 -4 0 C1 0 0 0 0 0 0 0 0
+[INFO ]    OPT RxBias: C0 3 3 3 5 3 5 3 3 C1 3 3 3 3 3 3 3 5
+[INFO ]    CMDV: scan -40 to 30, centre -5
+[INFO ]    CMDV: at -5 low 36.0 high 36.0
+[INFO ]    WRV C0: scan -20 to 27, centre 3
+[INFO ]    WRV C1: scan -19 to 24, centre 2
+[INFO ]    WRV C0: WrT -4 low 23.0 high 28.1
+[INFO ]    WRV C1: WrT -4 low 22.0 high 23.0
+[INFO ]    WRV C0: WrT +0 low 23.7 high 27.4
+[INFO ]    WRV C1: WrT +0 low 22.0 high 23.0
+[INFO ]    WRV C0: WrT +4 low 20.6 high 26.5
+[INFO ]    WRV C1: WrT +4 low 24.6 high 22.5
+[INFO ]    RDV C0: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    RDV C1: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    TAT C0: tWRRD_dr/dd 3 (was 4)
+[INFO ]    TAT C1: tWRRD_dr/dd 3 (was 4)
+[DEBUG]  Testing DIMM 0
+[DEBUG]  Testing DIMM 1
+   3:after RAM initialization                          4,072,524 (3,597,075)

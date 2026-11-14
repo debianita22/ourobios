@@ -1,0 +1,71 @@
+# t0-first 2026-11-13T18:34:02+01:00 uptime=48.68 temp_now=52000 0x7d=0xa4
+[DEBUG]  ME: Power Management Event  : Pseudo-global reset
+[DEBUG]  Margin: RdT     WrT     RdV     WrV
+[DEBUG]          Lft Rgt Lft Rgt Low Hi  Low Hi
+[DEBUG]  C0R0:   21  21  20  20  33  34  40  43 
+[DEBUG]  C0R1:   21  21  20  20  36  35  40  37 
+[DEBUG]  C0R2:   22  21  22  21  42  41  50  40 
+[DEBUG]  C0R3:   22  21  21  21  42  39  48  43 
+
+[DEBUG]  C1R0:   18  17  17  17  31  27  29  28 
+[DEBUG]  C1R1:   18  19  17  18  30  27  32  27 
+[DEBUG]  C1R2:   19  19  18  19  42  38  31  36 
+[DEBUG]  C1R3:   19  19  20  21  43  37  28  36 
+
+ouroBIOS-ci-382
+0
+[DEBUG]  ME: Power Management Event  : Pseudo-global reset
+[INFO ]  Memory test passed
+[ERROR]  Memory profile: XMP profile 1 failed before, using the SPD timings. Select the SPD timings once to try it again
+[DEBUG]  Margin: RdT     WrT     RdV     WrV
+[DEBUG]          Lft Rgt Lft Rgt Low Hi  Low Hi
+[DEBUG]  C0R0:   21  21  20  20  33  34  40  43 
+[DEBUG]  C0R1:   21  21  20  20  36  35  40  37 
+[DEBUG]  C0R2:   22  21  22  21  42  41  50  40 
+[DEBUG]  C0R3:   22  21  21  21  42  39  48  43 
+
+[DEBUG]  C1R0:   18  17  17  17  31  27  29  28 
+[DEBUG]  C1R1:   18  19  17  18  30  27  32  27 
+[DEBUG]  C1R2:   19  19  18  19  42  38  31  36 
+[DEBUG]  C1R3:   19  19  20  21  43  37  28  36 
+
+[INFO ]  NRI summary:
+[INFO ]    DIMMODT C0: RttNom 40 ohm (was 60; 2735, as it was 2373)
+[INFO ]    DIMMODT C1: RttNom 40 ohm (was 60; 2537, as it was 2179)
+[INFO ]    DIMMODT C0: RttWr 120 ohm (was 60; 2822, as it was 2725)
+[INFO ]    DIMMODT C1: RttWr 60 ohm (was 60; 2575, as it was 2575)
+[INFO ]    OPT WrDS: C0 0 0 0 4 4 0 0 0 C1 0 0 0 0 0 4 0 0
+[INFO ]    OPT TxEq: C0 11 11 11 11 11 11 11 11 C1 11 5 11 11 11 3 11 11
+[INFO ]    OPT RdOdt: C0 -4 -4 -4 -4 -4 0 -4 0 C1 -4 0 0 0 0 -4 0 0
+[INFO ]    OPT RxBias: C0 3 3 3 3 3 3 3 3 C1 5 3 3 3 3 3 5 3
+[INFO ]    CMDV: scan -38 to 30, centre -4
+[INFO ]    CMDV: at -4 low 38.0 high 35.0
+[INFO ]    WRV C0: scan -34 to 44, centre 5
+[INFO ]    WRV C1: scan -26 to 27, centre 0
+[INFO ]    WRV C0: WrT -4 low 40.5 high 42.0
+[INFO ]    WRV C1: WrT -4 low 27.0 high 30.5
+[INFO ]    WRV C0: WrT +0 low 40.0 high 41.0
+[INFO ]    WRV C1: WrT +0 low 27.5 high 29.7
+[INFO ]    WRV C0: WrT +4 low 37.0 high 38.2
+[INFO ]    WRV C1: WrT +4 low 25.8 high 29.0
+[INFO ]    RDV C0: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    RDV C1: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    TAT C0: tWRRD_dr/dd 3 (was 4)
+[INFO ]    TAT C1: tWRRD_dr/dd 3 (was 4)
+[INFO ]    OPT OdtDelay: C0 2 3 3 2 2 3 3 2 C1 0 2 0 1 3 3 2 3
+[INFO ]    OPT OdtDuration: C0 3 3 3 3 3 3 3 3 C1 3 5 3 3 3 3 4 4
+[DEBUG]  Testing DIMM 0
+[DEBUG]  Testing DIMM 1
+[INFO ]  Testing the memory after training
+[INFO ]  Testing rank 0
+[INFO ]  Testing rank 1
+[INFO ]  Testing rank 2
+[INFO ]  Testing rank 3
+[INFO ]  Memory test passed
+[DEBUG]  Waiting for mc_init_done acknowledgement... DONE!
+[DEBUG]  memcfg DDR3 ref clock 133 MHz
+  C0 odt delay      2    3    3    2    2    3    3    2
+  C0 odt durata     3    3    3    3    3    3    3    3
+  C1 odt delay      0    2    0    1    3    3    2    3
+  C1 odt durata     3    5    3    3    3    3    4    4
+   3:after RAM initialization                          4,272,115 (3,790,306)

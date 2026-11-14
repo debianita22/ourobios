@@ -1,0 +1,29 @@
+# S3 resume with the touchpad hook off, 2026-11-14 (journalctl -k -o short-monotonic, i8042 debug; keyboard LED bytes left out)
+[ 2427.973239] Wurtz kernel: i8042 i8042: PM: calling platform_pm_resume @ 17226, parent: platform
+[ 2427.973362] Wurtz kernel: i8042: [2426905] fe <- i8042 (flush, aux)
+[ 2427.973372] Wurtz kernel: i8042: [2426905] aa -> i8042 (command)
+[ 2427.973386] Wurtz kernel: i8042: [2426905] 55 <- i8042 (return)
+[ 2427.973395] Wurtz kernel: i8042: [2426905] 60 -> i8042 (command)
+[ 2427.973404] Wurtz kernel: i8042: [2426905] 74 -> i8042 (parameter)
+[ 2427.973412] Wurtz kernel: i8042: [2426905] 60 -> i8042 (command)
+[ 2427.973421] Wurtz kernel: i8042: [2426905] 56 -> i8042 (parameter)
+[ 2427.973429] Wurtz kernel: i8042: [2426905] 60 -> i8042 (command)
+[ 2427.973437] Wurtz kernel: i8042: [2426906] 47 -> i8042 (parameter)
+[ 2427.973446] Wurtz kernel: i8042 i8042: PM: platform_pm_resume returned 0 after 533 usecs
+[ 2427.973823] Wurtz kernel: psmouse serio1: PM: calling serio_resume @ 17226, parent: i8042
+[ 2427.973947] Wurtz kernel: i8042: [2426906] d4 -> i8042 (command)
+[ 2427.974168] Wurtz kernel: i8042: [2426906] f5 -> i8042 (parameter)
+[ 2427.974178] Wurtz kernel: i8042: [2426909] fa <- i8042 (interrupt, 1, 12)
+[ 2427.974187] Wurtz kernel: psmouse serio1: PM: serio_resume returned 0 after 3351 usecs
+[ 2427.975224] Wurtz kernel: rmi4_smbus 7-002c: PM: calling rmi_smb_resume [rmi_smbus] @ 15803, parent: i2c-7
+[ 2427.980825] Wurtz kernel: rmi4_smbus 7-002c: failed to get SMBus version number!
+[ 2427.980946] Wurtz kernel: rmi4_smbus 7-002c: PM: rmi_smb_resume [rmi_smbus] returned 0 after 85276 usecs
+
+# SMBus trace of the touchpad (0x2c) around the failed read (ftrace events/smbus, local clock)
+kworker/u32:42-15803   [007] .....  2427.202375: smbus_read: i2c-7 a=02c f=0040 c=fd BYTE_DATA
+kworker/u32:42-15803   [000] .....  2427.227604: smbus_result: i2c-7 a=02c f=0000 c=fd BYTE_DATA rd res=-6
+kworker/u32:42-15803   [000] .....  2427.227616: smbus_write: i2c-7 a=02c f=0040 c=84 BLOCK_DATA l=5 [04-52-00-01-00]
+kworker/u32:42-15803   [007] .....  2427.242341: smbus_result: i2c-7 a=02c f=0000 c=84 BLOCK_DATA wr res=0
+kworker/u32:42-15803   [007] .....  2427.242344: smbus_read: i2c-7 a=02c f=0040 c=4 BLOCK_DATA
+kworker/u32:42-15803   [000] .....  2427.243027: smbus_reply: i2c-7 a=02c f=0000 c=4 BLOCK_DATA l=2 [01-00]
+kworker/u32:42-15803   [000] .....  2427.243028: smbus_result: i2c-7 a=02c f=0000 c=4 BLOCK_DATA rd res=0

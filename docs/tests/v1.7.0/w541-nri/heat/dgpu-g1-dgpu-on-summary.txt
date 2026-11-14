@@ -1,0 +1,50 @@
+# g1-dgpu-on 2026-11-13T16:46:41+01:00 uptime=50.09 temp_now=45000 0x7d=0xb0
+PMH7 0x50 = 0xf8
+before: 2026-11-13T16:45:16+01:00 condition=dgpu-on temp_at_reboot=42000 0x7d was 0xa4, wrote 0xb0
+[DEBUG]  ME: Power Management Event  : Pseudo-global reset
+[INFO ]  NRI power-up diagnostic:
+[INFO ]    M1 first training C0 RdT/RdV/WrV: 20-19,29-29,29-26 20-19,30-30,30-26 20-20,38-37,41-35 21-20,37-38,39-39
+[INFO ]    M1 first training C1 RdT/RdV/WrV: 11-12,19-19,22-25 12-13,18-18,25-22 16-16,23-29,29-35 15-16,24-32,25-34
+[INFO ]    M2 after 3 s C0 RdT/RdV/WrV: 20-19,29-29,29-26 20-20,30-29,30-26 20-20,36-36,41-34 21-20,37-38,39-38
+[INFO ]    M2 after 3 s C1 RdT/RdV/WrV: 11-12,17-17,22-24 12-13,17-18,24-24 15-15,22-31,29-35 15-16,24-32,24-34
+[INFO ]    M3 after ZQCL C0 RdT/RdV/WrV: 19-19,28-29,30-26 20-20,30-29,30-26 20-20,38-36,41-33 20-20,36-37,38-37
+[INFO ]    M3 after ZQCL C1 RdT/RdV/WrV: 12-13,18-19,21-24 13-13,15-19,21-26 15-16,24-29,28-35 15-16,22-33,25-35
+[DEBUG]  ME: Power Management Event  : Pseudo-global reset
+[INFO ]  Memory test passed
+[INFO ]  Memory profile: XMP profile 1 requested
+[WARN ]  Memory profile: CH0S0 has no XMP profile 1, using the SPD timings
+[DEBUG]  Margin: RdT     WrT     RdV     WrV
+[DEBUG]          Lft Rgt Lft Rgt Low Hi  Low Hi
+[DEBUG]  C0R0:   19  20  19  20  28  29  29  26 
+[DEBUG]  C0R1:   19  20  19  21  28  30  29  28 
+[DEBUG]  C0R2:   20  20  21  23  38  37  41  36 
+[DEBUG]  C0R3:   20  20  20  22  39  35  39  38 
+
+[DEBUG]  C1R0:   11  12  16  15  17  19  20  28 
+[DEBUG]  C1R1:   13  13  14  15  18  17  23  23 
+[DEBUG]  C1R2:   15  17  17  17  24  27  24  36 
+[DEBUG]  C1R3:   16  15  17  17  30  26  21  36 
+
+[INFO ]  NRI summary:
+[INFO ]    OPT WrDS: C0 2 4 0 0 4 0 2 0 C1 4 0 0 0 0 4 -2 0
+[INFO ]    OPT TxEq: C0 3 3 3 3 3 3 3 3 C1 3 5 5 5 3 3 5 5
+[INFO ]    OPT RdOdt: C0 0 -4 -4 -4 -4 -4 -4 0 C1 -2 0 0 0 0 0 0 0
+[INFO ]    OPT RxBias: C0 3 3 3 3 5 3 3 3 C1 3 3 3 3 3 3 5 3
+[INFO ]    CMDV: scan -38 to 30, centre -4
+[INFO ]    CMDV: at -4 low 37.0 high 35.0
+[INFO ]    WRV C0: scan -19 to 29, centre 5
+[INFO ]    WRV C1: scan -22 to 24, centre 1
+[INFO ]    WRV C0: WrT -4 low 25.6 high 26.0
+[INFO ]    WRV C1: WrT -4 low 24.8 high 19.0
+[INFO ]    WRV C0: WrT +0 low 25.5 high 25.3
+[INFO ]    WRV C1: WrT +0 low 25.8 high 18.0
+[INFO ]    WRV C0: WrT +4 low 22.6 high 23.4
+[INFO ]    WRV C1: WrT +4 low 23.7 high 19.0
+[INFO ]    RDV C0: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    RDV C1: Rx Vref moved +0 +0 +0 +0 +0 +0 +0 +0
+[INFO ]    TAT C0: tWRRD_dr/dd 3 (was 4)
+[INFO ]    TAT C1: tWRRD_dr/dd 3 (was 4)
+[DEBUG]  Testing DIMM 0
+[DEBUG]  Testing DIMM 1
+   3:after RAM initialization                          11,786,646 (11,305,980)
+PMH7 0x50 = 0x70
