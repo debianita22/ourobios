@@ -22,7 +22,6 @@ The recovery in ramstage still reads back through the writable device.
 The comment says what it costs. The unit tests (the power losses at
 each operation among them) pass.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Change-Id: I03c161a0f800c21739c0f0c4260ecdc69cdab52a
 ---
  src/drivers/smmstore/reclaim.c | 67 ++++++++++++++++++++++++++++------

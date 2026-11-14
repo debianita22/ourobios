@@ -22,7 +22,6 @@ is not weighed. The writes and the reads are centred again after their
 settings, and optimise_comp() moves the mean of the offsets into the
 global compensation codes, as it was written to.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Change-Id: Ieb14139e415270f599e36c98945d0ab931f804fb
 ---
  src/northbridge/intel/haswell/Kconfig         |  12 +

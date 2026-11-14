@@ -2,13 +2,16 @@
 
 What changes from one release to the next. The notes of each release on
 GitHub include its section; release candidates take the section of the
-version they lead to. For the releases before v1.3.0, see their notes on
+version they lead to. There is no v1.6.3: its candidates led to v1.7.0,
+whose section has its changes. For the releases before v1.3.0, see their notes on
 the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.7.0
 
-Not released. What ran on a machine: fourteen candidates, rc1 to rc14,
-by agents on the two machines (2026-11-10 to 14), installed as capsules
+Not released. It replaces v1.6.3, which never was: what that version
+had is at the end of this section. What ran on a machine: fourteen
+candidates, rc1 to rc14, by agents on the two machines (2026-11-10 to
+14), installed as capsules
 ([docs/tests/v1.7.0/w541-nri](docs/tests/v1.7.0/w541-nri/README.md),
 [docs/tests/v1.7.0/m920x-fsp](docs/tests/v1.7.0/m920x-fsp/README.md)).
 The last, rc14, on both, with the lock of every option armed: the
@@ -21,7 +24,9 @@ The steps of the native RAM init ran on the W541 as they came, MEM-10
 to MEM-12 and MEM-14 to MEM-23 of
 [docs/testing.md](docs/testing.md), with what each found in the record;
 the training in use there is the one of patches 0309 and 0310, made by
-a test build (ci-386) that rc14 keeps.
+a test build (ci-386) that rc14 keeps. rc15 has one change of code over
+rc14, in the reclaim (patch 0313: the commit block is read after a
+flush of the cache lines of its mapping), not run on a machine yet.
 
 Not run: an XMP profile that the modules have (MEM-13: those of the
 W541 have none); the retry of patch 0312 (MEM-24: it needs a training
@@ -39,8 +44,9 @@ macOS and Windows on any candidate.
   boots. The locks now refuse a write past the store while armed; the
   store is reclaimed before the lock is armed (EndOfDxe) so a runtime
   reclaim, which uses those blocks, is rare and fails safely. This closes
-  the bypass, which every release with the lock has (v1.6.1 to v1.6.3):
-  those are not corrected, the fix comes with v1.7.0.
+  the bypass, which every release with the lock has (v1.6.1 and v1.6.2,
+  and the candidates of v1.6.3): those are not corrected, the fix comes
+  with v1.7.0.
 - **The option lock is for every setup option** (patch 0282,
   `SMMSTORE_OPTION_LOCK_ALL`): once the payload has armed it, a program
   of the OS can no longer write the variable store with the raw SMMSTORE
@@ -270,14 +276,14 @@ macOS and Windows on any candidate.
   decoder** (patch 0276): a change of the code that reads the timings
   from the SPD trains once, as a change of the RAM init does.
 
-## v1.6.3
-
-Not released. What ran on a machine: rc1 on both boards, as a capsule
-from v1.6.2, and rc2 on the M920x, by an agent with nobody there (2026-11-09 and 10,
+**From v1.6.3**, which was not released: v1.7.0 replaces it and has
+all of it, patches 0266 to 0274. Its candidates, rc1 to rc6, are the
+only builds with that name; rc1 to rc4 ran on the two machines, by an
+agent with nobody there (2026-11-09 and 10,
 [docs/tests/v1.6.3/w541-nri](docs/tests/v1.6.3/w541-nri/README.md),
 [docs/tests/v1.6.3/m920x-fsp](docs/tests/v1.6.3/m920x-fsp/README.md)),
 from the lists of `docs/test-v1.6.3-w541.md` and
-`docs/test-v1.6.3-m920x.md`; patches 0271-0272 came after rc2.
+`docs/test-v1.6.3-m920x.md`.
 
 - **The firmware watchdog is stopped whatever happens to the command**
   (patch 0266): the SMI handler stopped it only once the payload's

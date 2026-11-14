@@ -15,7 +15,6 @@ locked.
 Set the bit in smm_lock(), just before D_LCK. Nothing writes the base
 after the SMM relocation.
 
-Co-Authored-By: Claude <noreply@anthropic.com>
 Change-Id: Id500722e70d6e32b156d536d33c821ef265be6fb
 ---
  src/cpu/intel/haswell/smmrelocate.c | 11 +++++++++++

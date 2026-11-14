@@ -15,7 +15,6 @@ Train again once with the optimisations; below the limits a second
 time, keep the training and log it. A step or the memory test that
 fails still trains again without them, now also after such a retry.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Change-Id: I399ecd7e9034b3043c87398700926a2c084f2864
 ---
  src/northbridge/intel/haswell/Kconfig         |  3 +-

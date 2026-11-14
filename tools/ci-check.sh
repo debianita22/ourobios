@@ -2038,12 +2038,16 @@ fi
 # serie ha cominciato a prepararle per Gerrit): l'ultimo paragrafo del
 # messaggio fatto solo di trailer, un Change-Id della forma di Gerrit e uno
 # solo, mai lo stesso in due patch della serie. checkpatch.pl non lo
-# controlla, e Gerrit rifiuta una patch senza Change-Id
+# controlla, e Gerrit rifiuta una patch senza Change-Id. E nessun co-autore
+# che sia un assistente AI nelle patch aggiunte dopo la v1.6.2 (coreboot dalla
+# 0266, patches/edk2 dalla 0061 con quelle che l'import ne ricava): la regola
+# del progetto, che lascia i trailer delle patch che c'erano gia'
 t="$(python3 -I - patches <<'PY'
 import collections, os, re, sys
 d = sys.argv[1]
 series = [l.split('#')[0].strip() for l in open(os.path.join(d, 'series'))]
 keys = r'(Signed-off-by|Change-Id|Co-Authored-By|Reviewed-by|Tested-by|Reported-by|Suggested-by)'
+ai = re.compile(r'^Co-Authored-By:.*(claude|anthropic|copilot|openai|chatgpt|gemini)', re.I | re.M)
 seen = collections.defaultdict(list)
 n = 0
 for p in filter(None, series):
@@ -2063,9 +2067,25 @@ for p in filter(None, series):
     for l in last:
         if not re.match('^' + keys + ': .+', l):
             print('NO %s: l\'ultimo paragrafo non e\' fatto di trailer: %s' % (p, l[:60]))
+    if int(p[:4]) >= 266 and ai.search(msg):
+        print('NO %s: un assistente AI come co-autore' % p)
 for c, ps in seen.items():
     if len(ps) > 1:
         print('NO %s: lo stesso Change-Id in %s' % (c, ', '.join(ps)))
+# le patch del payload aggiunte dopo la v1.6.2, e quelle che tools/edk2-import.py
+# ne ricava per TianoCore (la nota in testa dice da quale)
+for sub, first in (('edk2', 61), ('tianocore', 0)):
+    sd = os.path.join(d, sub)
+    for p in filter(None, [l.split('#')[0].strip() for l in open(os.path.join(sd, 'series'))]):
+        t = open(os.path.join(sd, p), errors='replace').read()
+        msg = t.partition('\n\n')[2].split('\n---\n')[0]
+        if sub == 'edk2':
+            new = p[:4].isdigit() and int(p[:4]) >= first
+        else:
+            m = re.search(r'^\[ouroBIOS: patches/edk2/(\d{4})', msg, re.M)
+            new = bool(m) and int(m.group(1)) >= 61
+        if new and ai.search(msg):
+            print('NO %s/%s: un assistente AI come co-autore' % (sub, p))
 print('OK %d' % n)
 PY
 )"

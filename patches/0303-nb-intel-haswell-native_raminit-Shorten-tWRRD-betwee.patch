@@ -22,7 +22,6 @@ Add HASWELL_NRI_TURNAROUND, which does that after the round trip step.
 A note of the result goes to the summary. Not run in the training that
 is done again after a failure.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Change-Id: I7cee625f9e04fd8cba2d3fd851f14e13d757e07e
 ---
  src/northbridge/intel/haswell/Kconfig         |  10 +

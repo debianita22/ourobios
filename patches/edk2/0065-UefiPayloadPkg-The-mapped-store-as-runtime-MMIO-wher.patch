@@ -27,8 +27,6 @@ And in the variable driver: when the store in the flash cannot be
 converted at SetVirtualAddressMap(), no reclaim at runtime, by the
 platform either. A full store then fails the write, as before the
 platform's reclaim, where the read would fault.
-
-Co-Authored-By: Claude <noreply@anthropic.com>
 ---
  .../Variable/RuntimeDxe/VariableDxe.c         | 10 +++++-
  UefiPayloadPkg/Library/SmmStoreLib/SmmStore.c | 34 ++++++++++++++++---

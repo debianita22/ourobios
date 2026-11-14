@@ -19,7 +19,6 @@ much weaker than trained, every read margin 2 to 4 ticks narrower
 Move the mean only when an offset is within 4 of the end of its field,
 which is what the move is for.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Change-Id: Ie67f8d54deb64433f349bdfc0a669f5add64344f
 ---
  .../haswell/native_raminit/io_comp_control.c   | 18 +++++++++++++++++-

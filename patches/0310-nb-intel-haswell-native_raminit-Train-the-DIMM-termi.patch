@@ -28,7 +28,6 @@ left fixed (the MRC of a ThinkPad W541, read in its code):
 Both under HASWELL_NRI_OPT_PARAMS. The saved training changes layout,
 so the boards train once more.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Change-Id: Ib6ad67504025a7b1062a7cf2b13c26f597829e86
 ---
  src/northbridge/intel/haswell/Kconfig         |  16 +-

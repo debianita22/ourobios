@@ -24,7 +24,6 @@ still hidden after it. The hook is declared in raminit.h, which the
 version of the saved native training follows, so the boards train once
 again in the new conditions.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Change-Id: Ie108f0b063f364eec3aa1b6091beb31e9d86e573
 ---
  src/mainboard/lenovo/haswell/romstage.c  | 21 ++++++++++++++++-----

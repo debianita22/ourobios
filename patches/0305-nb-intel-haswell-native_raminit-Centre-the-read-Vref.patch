@@ -19,7 +19,6 @@ channel tested at once. Add HASWELL_NRI_READ_VREF, which does the same.
 If the read test fails after it, the training is done again without
 the optimisations.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Change-Id: I47a97ab642a559669aaeae8ef982d611aa594063
 ---
  src/northbridge/intel/haswell/Kconfig         |  10 +

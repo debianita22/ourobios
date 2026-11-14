@@ -13,7 +13,6 @@ Give the training a small buffer that the steps write a line of their
 result to (nri_note()), and log it as a whole after the margin check,
 in the part of the log that is kept. Cleared at each attempt.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Change-Id: Ie8245e1531c2aebd1c29253bbb11f777d1ab1c96
 ---
  .../intel/haswell/native_raminit/Makefile.mk  |  1 +

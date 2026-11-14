@@ -526,7 +526,7 @@ the owner turned off could be on again at the next boot.
   - stage 0 found that the payload restarts a pending fault tolerant
     write at its start, before the lock is armed, from blocks past the
     variable store that the check did not read: a way around the lock
-    of v1.6.1 to v1.6.3. Patch 0281 refuses, while a lock is armed, any
+    of v1.6.1, v1.6.2 and the candidates of v1.6.3. Patch 0281 refuses, while a lock is armed, any
     write past the store (the MOR lock too); `edk2/0061` reclaims the
     store at EndOfDxe, before the arm, so a runtime reclaim, now
     refused, is rare and leaves the store intact. Not backported to
@@ -537,7 +537,7 @@ the owner turned off could be on again at the next boot.
     erase that changes it or leaves the store unreadable is refused.
     The check no longer reads the erased tail of the store: a write
     takes 0.03 s after a reclaim and about 0.1 s with some hundred dead
-    records, against 0.29 s with v1.6.3 (stage 1, without the store in
+    records, against 0.29 s with v1.6.3-rc4 (stage 1, without the store in
     SMRAM);
   - patch 0283: a variable header that the payload's driver splits at
     the end of a flash block is checked and written as one write, in

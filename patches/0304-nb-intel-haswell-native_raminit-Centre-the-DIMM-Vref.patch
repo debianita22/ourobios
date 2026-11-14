@@ -25,7 +25,6 @@ which confirms each edge and interpolates it on the error count:
 Do the same after the scans, which stay as the first estimate and the
 fallback, and note the margins in the summary.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Change-Id: I74bea76bd3612936f5fc860d65c94a2825f2d183
 ---
  .../native_raminit/train_late_command.c       | 46 +++++++++++

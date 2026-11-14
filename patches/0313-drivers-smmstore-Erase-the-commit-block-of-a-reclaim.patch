@@ -18,14 +18,19 @@ erase it only if something is there (a record of a cut reclaim is
 handled by ramstage before, a note of a refusal is not erased). One
 erase fewer a reclaim. The comment says where the time goes.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+The block is read through the mapping after its lines are flushed from
+the caches, as the copy is before its read back: at runtime the OS
+leaves the flash uncached, but with a cached mapping a block that only
+looked erased would take the record over a note, and a power loss in
+the copy would then find no record to finish it from.
+
 Change-Id: I3e7576c9f82f8d1a28fae9998a2eb30cb611e9d7
 ---
- src/drivers/smmstore/reclaim.c | 24 ++++++++++++++++++++++--
- 1 file changed, 22 insertions(+), 2 deletions(-)
+ src/drivers/smmstore/reclaim.c | 33 ++++++++++++++++++++++++++++-----
+ 1 file changed, 28 insertions(+), 5 deletions(-)
 
 diff --git a/src/drivers/smmstore/reclaim.c b/src/drivers/smmstore/reclaim.c
-index 6985fa403d7..13c91a5ddce 100644
+index 6985fa40..19c11eb4 100644
 --- a/src/drivers/smmstore/reclaim.c
 +++ b/src/drivers/smmstore/reclaim.c
 @@ -34,7 +34,10 @@
@@ -40,18 +45,42 @@ index 6985fa403d7..13c91a5ddce 100644
   * between them that an S3 resume (the latch of the option lock is taken from
   * the flash again) or another write would meet.
   */
-@@ -173,6 +176,23 @@ static bool erase_commit(const struct region_device *rdev, const struct smmstore
+@@ -114,9 +117,9 @@ static int store_is_image(const struct region_device *rdev, const struct smmstor
+  * The lines of the mapping of the store out of the caches, in case the
+  * mapping is cached: the read back through it must see the flash.
+  */
+-static void flush_mapping(const struct region_device *ro, size_t size)
++static void flush_mapping(const struct region_device *ro, size_t offset, size_t size)
+ {
+-	void *map = rdev_mmap(ro, 0, size);
++	void *map = rdev_mmap(ro, offset, size);
+ 
+ 	if (!map)
+ 		return;
+@@ -162,7 +165,7 @@ static bool copy_image(const struct region_device *src, const struct region_devi
+ 	}
+ #if ENV_SMM
+ 	if (verify != rw)
+-		flush_mapping(verify, l->staging + l->store_end);
++		flush_mapping(verify, 0, l->staging + l->store_end);
+ #endif
+ 	return store_is_image(verify, l) == 1;
+ }
+@@ -173,6 +176,26 @@ static bool erase_commit(const struct region_device *rdev, const struct smmstore
  }
  
  #if ENV_SMM
 +/*
 + * The commit block erased for a record, read through @ro: a reclaim that ended
 + * erased it already, and an erase of a block is the slow part of a reclaim (one
-+ * of 64 KiB takes about a second on the flash of a ThinkPad W541).
++ * of 64 KiB takes about a second on the flash of a ThinkPad W541). The lines of
++ * the mapping out of the caches first, as for the read back of the copy: a
++ * block that only looks erased would take the record over what it holds.
 + */
 +static bool erase_commit_for_record(const struct region_device *ro, const struct region_device *rw,
 +				    const struct smmstore_reclaim_layout *l)
 +{
++	flush_mapping(ro, l->commit, SMM_BLOCK_SIZE);
 +	for (size_t done = 0; done < SMM_BLOCK_SIZE; done += sizeof(chunk)) {
 +		if (rdev_readat(ro, chunk, l->commit + done, sizeof(chunk)) != sizeof(chunk))
 +			return erase_commit(rw, l);
@@ -64,7 +93,7 @@ index 6985fa403d7..13c91a5ddce 100644
  /* The coreboot options GUID: any GUID gives the walk of the whole store */
  static const EFI_GUID walk_guid = {
  	0xceae4c1d, 0x335b, 0x4685, { 0xa4, 0xa0, 0xfc, 0x4a, 0x94, 0xee, 0xa0, 0x85 } };
-@@ -421,7 +441,7 @@ uint32_t smmstore_reclaim(const struct smmstore_params_reclaim *params)
+@@ -421,7 +444,7 @@ uint32_t smmstore_reclaim(const struct smmstore_params_reclaim *params)
  	record.store_end = l.store_end;
  	record.staging = l.staging;
  	if (!hash_area(&ro, l.staging, l.store_end, record.digest) ||
