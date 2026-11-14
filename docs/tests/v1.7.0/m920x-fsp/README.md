@@ -530,3 +530,20 @@ run here. Files in [rc13](rc13).
 | LOCK-04 | PASS | three resumes, PR0 and PR1 back, the writes work |
 | CONF-08 | PASS | 9 of 13, the four known limits |
 | LOCK-06, LOCK-07, LOCK-08 | PASS | the 36 options at the end are those of the start; report 26 PASS and 2 INFO with a copy of the flash; fwts 43 passed, 0 failed; kernel log clean; FspMemoryInit 0.23 s |
+
+## rc14 on the machine
+
+v1.7.0-rc14 (`c4e594d`: rc13 with patch 0313, one erase fewer in a
+reclaim, made to build in ramstage, and `edk2/0066`, the HSTI regions
+under a locked Protected Range) as a capsule from rc13 with the lock
+armed, 2026-11-14: slot B over rc10, rc13 kept in slot A. Files in
+[rc14](rc14).
+
+| ID | Result | Notes |
+|---|---|---|
+| LOCK-05, UPD-02 | PASS | rc14 from slot B, *riuscito*, PR0 and PR1 on; coreboot log clean |
+| CONF-08 | PASS | **11 of 13**: the descriptor and the ME region now pass, under PR1 (0x0 to 0xbfffff, locked by `FLOCKDN`); left Secure Boot (off) and the pre-boot DMA protection |
+| LOCK-01, 0284, LOCK-02, LOCK-03 | PASS | 35 options with `CFR_OPTFLAG_LOCK_AT_BOOT`; 8.6 ms an SMI |
+| LOCK-11 | PASS | 604 writes of 1000 bytes; four reclaims, the first 2.4 s and the next three 2.2 s (patch 0313: the commit block that the previous reclaim left erased is not erased again); then the limit with the note; the 36 options unchanged; no firmware fault |
+| LOCK-04 | PASS | three resumes, PR0 and PR1 back, the writes work |
+| LOCK-06, LOCK-07, LOCK-08 | PASS | the 36 options at the end are those of the start; report 26 PASS and 2 INFO; fwts 43 passed, 0 failed; kernel log clean |

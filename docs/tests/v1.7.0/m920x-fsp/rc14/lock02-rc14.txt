@@ -1,0 +1,3 @@
+median 0.054 s, worst 0.056 s, best 0.053 s; SMI per write [6, 7, 8], total SMI 127
+ms per SMI: 8.6
+Timeout: 3 seconds
