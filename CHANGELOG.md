@@ -7,14 +7,27 @@ the [releases page](https://github.com/debianita22/ourobios/releases).
 
 ## v1.7.0
 
-Not released. What ran on a machine: rc1 on the W541 (`nri`), as a
-capsule from v1.6.3-rc4, with the modules of the port, which have no
-XMP profile: MEM-10 to MEM-12 and MEM-14 passed, MEM-13 needs XMP
-modules (2026-11-10,
-[docs/tests/v1.7.0/w541-nri](docs/tests/v1.7.0/w541-nri/README.md)); rc1
-on the M920x for the facts of the option lock work
-([docs/tests/v1.7.0/m920x-fsp](docs/tests/v1.7.0/m920x-fsp/README.md)),
-whose changes below are still to run on a machine.
+Not released. What ran on a machine: fourteen candidates, rc1 to rc14,
+by agents on the two machines (2026-11-10 to 14), installed as capsules
+([docs/tests/v1.7.0/w541-nri](docs/tests/v1.7.0/w541-nri/README.md),
+[docs/tests/v1.7.0/m920x-fsp](docs/tests/v1.7.0/m920x-fsp/README.md)).
+The last, rc14, on both, with the lock of every option armed: the
+capsule, the rows of the lock, four reclaims of the variable store in
+SMM in one boot (7.8 to 8.8 s each on the W541, 2.2 to 2.4 s on the
+M920x), three resumes from S3, the HSTI at 11 of 13; on the W541 also
+the TSEG lock bit, the store in the runtime memory map and 30 minutes
+of `stress-ng` without errors, on the M920x `fwts` with nothing failed.
+The steps of the native RAM init ran on the W541 as they came, MEM-10
+to MEM-12 and MEM-14 to MEM-23 of
+[docs/testing.md](docs/testing.md), with what each found in the record;
+the training in use there is the one of patches 0309 and 0310, made by
+a test build (ci-386) that rc14 keeps.
+
+Not run: an XMP profile that the modules have (MEM-13: those of the
+W541 have none); the retry of patch 0312 (MEM-24: it needs a training
+that comes out low); *Dual graphics* on with patch 0309; the `mrc`
+variant (the read-only part of the machines boots `nri` slots only);
+macOS and Windows on any candidate.
 
 - **The option lock and the MOR lock cannot be gone around through the
   fault tolerant write** (patch 0281, `edk2/0061`): the locks refused a
