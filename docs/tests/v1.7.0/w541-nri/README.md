@@ -584,8 +584,65 @@ same within 0.02 W, at rest the trained window not lower. The step stays
 patch no longer claims a saving. `RW_MRC_CACHE` was put back as it was
 before the run, byte for byte.
 
+## v1.7.0-rc14: the reclaim with one erase fewer, the HSTI flash regions
+
+rc14 (`c4e594d`: the RAM init of rc13 with patches 0309 and 0310, the
+reclaim of patches 0311 and 0313, `edk2/0066`) as a capsule from
+ci-386 (`556e179`), 2026-11-13: slot A, over ci-382; ci-386 stays in
+slot B ([files](rc14/)). *BIOS Lock* on and the lock of every option
+armed, the chain of rc12. The cold boot is a power-up by hand: the RTC
+alarm of `rtcwake -m off` did not power the laptop on while it ran on
+the battery, and the first run of the last step stopped when the battery
+was empty, the second when the owner turned the laptop off; the third,
+on the AC adapter, is the one here.
+
+| ID | Result | Notes |
+|---|---|---|
+| UPD-01, UPD-02, LOCK-05 | PASS | the capsule (`SHA256SUMS` OK, signature valid) written by the payload of ci-386 with the lock of every option armed; rc14 from slot A, *riuscito*; the training of ci-386 kept (`Using cached memory parameters`, 0.11 s) |
+| **LOCK-11** | **PASS** | 610 writes of 1000 bytes from a store with 140 KiB free: four reclaims through coreboot, at the 127th, 248th, 369th and 490th write, the first 8.80 s, the others 7.81 to 7.85 s (rc12: 8.9 to 9.2 s; ci-386 with 0311: 8.65 to 8.70 s); the 611th failed with `ENOSPC`, the limit of four a boot. The first reclaim of the boot erases the commit block, which holds the note of the limit left by the boot before; the others find it erased, one erase of 64 KiB fewer, about a second on this flash (patch 0313). No firmware fault, no warning in the kernel log ([log](rc14/lock11-fill.txt)) |
+| After the limit | PASS | until the reboot a write that does not fit fails with `ENOSPC` (`efibootmgr`, `efibootmgr -t`), the reads work; the reboot reclaims at the start of the payload (141 KiB free, 201 records), no record to finish; the test variable is still there after the reboot (written over by LOCK-03: `Operation not permitted` until `chattr -i`) |
+| LOCK-06 | PASS | the 68 options of the copy after the reboot are those of before the run |
+| LOCK-01, 0284, LOCK-02, LOCK-03 | PASS | the lock armed (`OptionLockStatus` `06`), 68 options with `CFR_OPTFLAG_LOCK_AT_BOOT`, 8 SMIs and 0.027 s a write |
+| Patch 0308 | PASS | `TSEGMB` reads `0x7f800001` at boot, after the reboot, the cold boot, three resumes and the stress run |
+| CONF-08, `edk2/0066` | PASS | HSTI 11 of 13 (rc12: 9): the descriptor and the ME region, writable by the host in the descriptor, are under the locked Protected Range PR1, and the HSTI now says so; the two known limits left, Secure Boot off and no pre-boot DMA protection |
+| `edk2/0065` | PASS | the runtime memory map has the store: `EfiMemoryMappedIO` 0xff910000, 128 pages |
+| LOCK-04 | PASS | three resumes: the lock armed, PR0 and PR1 back, LOCK-02 and LOCK-03 work |
+| MEM-04 | PASS | `stress-ng --vm 4 --vm-bytes 75% --verify`, 30 minutes after the resumes: 4 passed, 0 failed, no machine check ([log](rc14/stress-30m.txt)) |
+| report | PASS but the known ones | [the first boot](rc14/hw-w541-nri-boot1.md): 21 PASS; ME-01 and EC-01 WARN; BOOT-03 with the two known lines (`ME: MBP not ready`, no `fallback/slic`) |
+
+### The touchpad after a resume (Linux)
+
+After a resume the touchpad (Synaptics TM3053, RMI4 over SMBus) can stop
+working; the kernel logs *rmi4_smbus 7-002c: failed to get SMBus version
+number!* at every resume, and once *Failed to read irqs, code=-6*. The
+same line is in the records of v1.6.0, and it is reported with the
+stock BIOS on the T440p and the T460p. Traced with the i8042 debug and
+the SMBus events ([trace](rc14/touchpad-resume.txt)): at the resume of
+`serio1` psmouse sends the touchpad *disable* (0xF5), which it
+acknowledges, so it has power; half a millisecond later `rmi_smb_resume`
+reads the SMBus version, the touchpad does not answer (`-ENXIO`), and
+25 ms later every transfer works. Not the firmware, which does nothing
+to the touchpad at a resume (nor does the stock `_WAK`), but the order
+of the two drivers in the kernel. On the W541 of the port a service
+after the resume reloads `psmouse` and `rmi_smbus`, which brings the
+touchpad back in SMBus mode as at boot (a `rescan` of `serio1` keeps the
+old SMBus device and falls back to PS/2). With systemd 262 a hook in
+`/etc/systemd/system-sleep` does not run (only
+`/usr/lib/systemd/system-sleep`), so it is a unit with
+`WantedBy=suspend.target`; `rtcwake -m mem` does not go through systemd,
+`systemctl suspend` does.
+
+The TrackPoint of this unit does not answer on the pass-through port of
+the touchpad (no device in SMBus mode nor in PS/2 mode), so the three
+buttons, which Linux reports through the TrackPoint's device, do nothing
+either. The firmware writes PMH7 register 0x51 as the stock firmware
+does (`MiscGaIoDxe`, `SmmSleepEvent`: bit 0 TrackPoint off, bit 2
+touchpad off, bit 1 always set, 0x02 here); a pulse of bit 0 and EC
+register 0x0B at *auto* did not bring it. Likely the hardware; not
+looked at further.
+
 ## The machine after the run
 
-v1.7.0-rc12 in slot B, rc11 in slot A, with its third training;
-*Memory profile* on *SPD*, byte 0x7d
-`0xa0`; *BIOS Lock* and *Firmware protection* on; no helper left.
+v1.7.0-rc14 in slot A, ci-386 in slot B, with the training of ci-386;
+*Memory profile* on *SPD*, byte 0x7d `0xa0`; *BIOS Lock* and *Firmware
+protection* on; no helper left but the touchpad service of the OS.

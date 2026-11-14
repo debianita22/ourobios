@@ -1,0 +1,2 @@
+store 196536 bytes: used 52056, free 144452, next record at 0xcbbc; records 201 {'valida': 201}; options 68
+reclaim note: reclaims of the boot used (code 3, value 0), reclaims of that boot 4

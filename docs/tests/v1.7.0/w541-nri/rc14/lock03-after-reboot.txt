@@ -1,0 +1,6 @@
+entry created: Boot0004
+entries as before
+/home/domenico/ourobios-test-v1.6.3/w541-nri/xmp/rc14/scripts/lock03.sh: riga 14: /sys/firmware/efi/efivars/OuroBiosLockTest-5b6f0a3e-7c1d-4e2a-9f10-0d0a6f726f42: Operazione non permessa
+variable changed:  \a \0 \0 \0 t w o !
+variable deleted
+rc=0
