@@ -547,3 +547,20 @@ armed, 2026-11-14: slot B over rc10, rc13 kept in slot A. Files in
 | LOCK-11 | PASS | 604 writes of 1000 bytes; four reclaims, the first 2.4 s and the next three 2.2 s (patch 0313: the commit block that the previous reclaim left erased is not erased again); then the limit with the note; the 36 options unchanged; no firmware fault |
 | LOCK-04 | PASS | three resumes, PR0 and PR1 back, the writes work |
 | LOCK-06, LOCK-07, LOCK-08 | PASS | the 36 options at the end are those of the start; report 26 PASS and 2 INFO; fwts 43 passed, 0 failed; kernel log clean |
+
+## rc15 on the machine
+
+v1.7.0-rc15 (`27da4da`: rc14 with patch 0313 flushing the mapping
+before it reads the commit block, the trailers of the patches and the
+version of v1.7.0 in place of v1.6.3) as a capsule from rc14 with the
+lock armed, 2026-11-15: slot A over rc13, rc14 kept in slot B. Files in
+[rc15](rc15).
+
+| ID | Result | Notes |
+|---|---|---|
+| LOCK-05, UPD-02 | PASS | rc15 from slot A, *riuscito*, PR0 and PR1 on; coreboot log clean |
+| CONF-08 | PASS | 11 of 13, as rc14 (left Secure Boot and the pre-boot DMA protection) |
+| LOCK-01, 0284, LOCK-02, LOCK-03 | PASS | 35 options with `CFR_OPTFLAG_LOCK_AT_BOOT`; 8.7 ms an SMI |
+| LOCK-11 | PASS | 604 writes of 1000 bytes; four reclaims of 2.4, 2.2, 2.3 and 2.2 s; then the limit with the note; the 36 options unchanged; no firmware fault |
+| LOCK-04 | PASS | three resumes, PR0 and PR1 back, the writes work |
+| LOCK-06, LOCK-07, LOCK-08 | PASS | the 36 options at the end are those of the start; report 26 PASS and 2 INFO; fwts 43 passed, 0 failed; kernel log clean |
