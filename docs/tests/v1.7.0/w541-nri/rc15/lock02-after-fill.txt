@@ -1,0 +1,6 @@
+Could not set Timeout: No space left on device
+Traceback (most recent call last):
+  File "/home/domenico/ourobios-test-v1.6.3/w541-nri/xmp/rc15/scripts/var01.py", line 11, in <module>
+    assert r.returncode==0, "write %d failed" % i
+           ^^^^^^^^^^^^^^^
+AssertionError: write 3 failed
