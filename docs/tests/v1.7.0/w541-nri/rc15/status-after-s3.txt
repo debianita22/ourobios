@@ -1,0 +1,11 @@
+firmware:  ouroBIOS, variante nri (BIOS CBET4000 ouroBIOS-v1.7.0-rc15-nri)
+mappa:     vboot, due slot RW (una capsula scrive quello che non gira)
+versione:  v1.7.0-rc15, minima per una capsula v1.3.9
+ME:        ferma nel BUP (stato 0x4d), stato di lavoro 1, modo 2, codice di errore 0, fase 1 stato 0x4d; HECI (00:16.0) nascosta al sistema
+ultimo:    v1.7.0-rc15, riuscito
+su disco:  supportato
+WP_RO:     protetta fino al prossimo reset o ripresa da S3 (PR0)
+SI_ALL:    protetta fino al prossimo reset o ripresa da S3 (PR1)
+BIOS Lock: acceso: scrive solo il firmware in SMM
+slot RW:   scrivibili con la capsula; flashrom no (BIOS Lock)
+in attesa: niente

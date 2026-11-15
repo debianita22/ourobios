@@ -641,8 +641,33 @@ touchpad off, bit 1 always set, 0x02 here); a pulse of bit 0 and EC
 register 0x0B at *auto* did not bring it. Likely the hardware; not
 looked at further.
 
+## v1.7.0-rc15: the flush before the read of the commit block
+
+rc15 (`27da4da`) is rc14 with one change of code: patch 0313 flushes
+the cache lines of the commit block before it reads the block through
+the mapping of the flash to see if it is erased (the rest is the
+trailers of the patches and the CHANGELOG). As a capsule from rc14,
+2026-11-15: slot B, over ci-386; rc14 stays in slot A
+([files](rc15/)). *BIOS Lock* on and the lock of every option armed.
+The RAM init is rc14's, so the chain is the part that the change
+touches: the update and the lock at the first boot, LOCK-11, the reboot
+after the limit and three resumes; no cold boot and no stress run.
+
+| ID | Result | Notes |
+|---|---|---|
+| UPD-01, UPD-02, LOCK-05 | PASS | the capsule (`SHA256SUMS` OK, signature valid) written by the payload of rc14 with the lock of every option armed; rc15 from slot B, *riuscito*; the training kept (`Using cached memory parameters`, 0.11 s) |
+| **LOCK-11** | **PASS** | 599 writes of 1000 bytes from a store with 128 KiB free: four reclaims through coreboot, at the 116th, 237th, 358th and 479th write, the first 8.66 s, the others 7.70 to 7.73 s (rc14: 8.80 s, then 7.81 to 7.85 s), so the flush costs nothing that shows; the 600th failed with `ENOSPC`, the limit of four a boot. No firmware fault, no warning in the kernel log ([log](rc15/lock11-fill.txt)) |
+| After the limit | PASS | until the reboot a write that does not fit fails with `ENOSPC` (`efibootmgr`, `efibootmgr -t`); the reboot reclaims at the start of the payload (141 KiB free, 202 records), no record to finish; the test variable is there after the reboot |
+| LOCK-06 | PASS | the 68 options of the copy after the reboot are those of before the run |
+| LOCK-01, 0284, LOCK-02, LOCK-03 | PASS | the lock armed (`OptionLockStatus` `06`), 68 options with `CFR_OPTFLAG_LOCK_AT_BOOT`, 8 SMIs and 0.027 to 0.035 s a write; after the reboot one of the twenty writes needed no SMI: it wrote the value that the variable already had (the write after the limit had failed) |
+| Patch 0308 | PASS | `TSEGMB` reads `0x7f800001` at boot, after the reboot and after three resumes |
+| CONF-08 | PASS | HSTI 11 of 13, as rc14 (Secure Boot off, no pre-boot DMA protection); measured with the `hw-report.py` of the test branch, as the one of `next` has no CONF-08 yet |
+| `edk2/0065` | PASS | the runtime memory map has the store: `EfiMemoryMappedIO` 0xff910000, 128 pages |
+| LOCK-04 | PASS | three resumes: the lock armed, PR0 and PR1 back, LOCK-02 and LOCK-03 work |
+| report | PASS but the known ones | [the first boot](rc15/hw-w541-nri-boot1.md): 20 PASS; ME-01 and EC-01 WARN; BOOT-03 with the two known lines (`ME: MBP not ready`, no `fallback/slic`) |
+
 ## The machine after the run
 
-v1.7.0-rc14 in slot A, ci-386 in slot B, with the training of ci-386;
+v1.7.0-rc15 in slot B, rc14 in slot A, with the training of ci-386;
 *Memory profile* on *SPD*, byte 0x7d `0xa0`; *BIOS Lock* and *Firmware
 protection* on; no helper left but the touchpad service of the OS.

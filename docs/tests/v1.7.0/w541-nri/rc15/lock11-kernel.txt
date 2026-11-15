@@ -1,0 +1,9 @@
+nov 15 10:45:10 cachyos kernel: clocksource: refined-jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 1910969940391419 ns
+nov 15 10:45:10 cachyos kernel: clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 1911260446275000 ns
+nov 15 10:45:10 cachyos kernel: clocksource: hpet: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 133484882848 ns
+nov 15 10:45:10 cachyos kernel: clocksource: tsc-early: mask: 0xffffffffffffffff max_cycles: 0x2844a3d8859, max_idle_ns: 440795303169 ns
+nov 15 10:45:10 cachyos kernel: clocksource: Switched to clocksource tsc-early
+nov 15 10:45:10 cachyos kernel: clocksource: acpi_pm: mask: 0xffffff max_cycles: 0xffffff, max_idle_ns: 2085701024 ns
+nov 15 10:45:10 cachyos kernel: tsc: Refined TSC clocksource calibration: 2793.531 MHz
+nov 15 10:45:10 cachyos kernel: clocksource: tsc: mask: 0xffffffffffffffff max_cycles: 0x284461bc4f9, max_idle_ns: 440795228872 ns
+nov 15 10:45:10 cachyos kernel: clocksource: Switched to clocksource tsc

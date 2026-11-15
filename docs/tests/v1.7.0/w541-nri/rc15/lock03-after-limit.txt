@@ -1,0 +1,2 @@
+Could not prepare Boot variable: No space left on device
+rc=5
