@@ -18,8 +18,9 @@ name: Check
 on:
   push:
     # i rami di prova anche: il lint di coreboot e i trailer prima della
-    # candidata, non dopo, quando la serie arriva su main
-    branches: [main, 'ci-test/**']
+    # candidata, non dopo, quando la serie arriva su main; e next, dove
+    # arrivano i record delle prove
+    branches: [main, next, 'ci-test/**']
   pull_request:
   workflow_dispatch:
 
@@ -36,7 +37,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      # la storia intera: ci-check.sh guarda autore, committer e trailer di
+      # ogni commit del push, non solo dell'ultimo
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Strumenti
         run: |

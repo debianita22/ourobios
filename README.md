@@ -542,6 +542,7 @@ gh release edit v1.4.0-m920x-fsp --repo debianita22/ourobios --prerelease=false 
 | `legacy/coreboot-4.22/` | the coreboot 4.22 image and configuration this project started from, built from the same blobs |
 | `docs/` | [flashing and recovery](docs/flashing.md), [updates with capsules](docs/update.md), [verified boot and A/B](docs/vboot.md), [the native RAM init](docs/raminit.md), [macOS with OpenCore](docs/macos.md), [the ThinkCentre M920x](docs/m920x.md), [release testing](docs/testing.md), [Windows HLK](docs/hlk.md), [what was evaluated and left for later](docs/roadmap.md), [moving the payload to TianoCore](docs/edk2-migration.md) |
 | `.github/` | the workflows ([Continuous integration and releases](#continuous-integration-and-releases)) and the issue forms in `ISSUE_TEMPLATE/`: bug report, feature request and hardware report, which ask for the firmware version, how it was written, the `tools/hw-report.py` report and the coreboot log |
+| `.claude/` | `settings.json`: Claude Code adds no attribution of its own to a commit or a pull request made in this repository (the commits are the owner's; `tools/ci-check.sh` refuses an AI assistant as co-author of a new one) |
 
 ## Binary blobs
 

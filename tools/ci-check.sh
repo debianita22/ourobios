@@ -23,7 +23,8 @@
 #      patch elencata c'e', ogni .patch della cartella e' elencata, ognuna e'
 #      una mail di git format-patch, con un autore vero nel From:; e i
 #      commit dopo la v1.6.2 con autore e committer veri (non l'identita'
-#      segnaposto di git, "Il tuo nome <tu@esempio.com>")
+#      segnaposto di git, "Il tuo nome <tu@esempio.com>"), e quelli dopo
+#      c714b53 senza un assistente AI come co-autore
 #   6. la chiave Optimus NVIDIA solo in blobs/opvk.inc (lista di byte con la
 #      firma della chiave): non nelle patch ne' in altri file
 #   7. i due defconfig del W541: diversi solo nella RAM init e nel GUID
@@ -2015,7 +2016,7 @@ done
 ok "${n} patch opzionali"
 # I commit dopo la v1.6.2 (6962b27 e' l'ultimo con l'identita' segnaposto,
 # .mailmap li mostra con l'autore vero): autore e committer veri. Con un
-# clone senza storia (check.yml) solo quello in cima; senza git, niente.
+# clone senza storia solo quello in cima; senza git, niente.
 if git rev-parse --git-dir > /dev/null 2>&1; then
 	base=6962b27c33ff4d3d16d0f8e213f74ba433a1a309
 	if git merge-base --is-ancestor "${base}" HEAD 2> /dev/null; then
@@ -2033,6 +2034,27 @@ if git rev-parse --git-dir > /dev/null 2>&1; then
 		done
 	done < <(git log --no-mailmap --format='%h|%an <%ae>|%cn <%ce>' "${range[@]}" 2> /dev/null)
 	ok "${n} commit con autore e committer veri"
+	# Nessun assistente AI come co-autore, ne' il link a una sua sessione, nei
+	# commit dopo c714b53 (la regola del progetto). Fino a li' 397 commit lo
+	# hanno, 355 dei quali nelle release fino alla v1.6.2: restano, niente
+	# force push. .claude/settings.json toglie l'attribuzione a Claude Code
+	# quando parte dalla radice del repo; questo vale per ogni altro caso
+	base=c714b535d652ab67f0df1c7f400335ad0c318729
+	if git merge-base --is-ancestor "${base}" HEAD 2> /dev/null; then
+		range=("${base}..HEAD")
+	else
+		range=(-1 HEAD)
+	fi
+	n=0
+	while read -r h; do
+		[ -n "${h}" ] || continue
+		n=$((n + 1))
+		bad "commit ${h}: un assistente AI come co-autore (Co-Authored-By, Claude-Session)"
+	done < <(git log -i -E --format=%h \
+		--grep='^Co-Authored-By:.*(claude|anthropic|copilot|openai|chatgpt|gemini)' \
+		--grep='^Claude-Session:' --grep='Generated with \[?Claude Code' \
+		"${range[@]}" 2> /dev/null)
+	[ "${n}" -ne 0 ] || ok "nessun assistente AI come co-autore nei commit nuovi"
 fi
 # I trailer delle patch del progetto (autore Domenico, dalla 0246, quando la
 # serie ha cominciato a prepararle per Gerrit): l'ultimo paragrafo del

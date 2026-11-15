@@ -283,6 +283,13 @@ with a `slic` file (patch 0287); the releases have none, as before.
 - **The saved training of the `nri` variant also follows the SPD
   decoder** (patch 0276): a change of the code that reads the timings
   from the SPD trains once, as a change of the RAM init does.
+- **No AI assistant as co-author of a new commit**: `tools/ci-check.sh`
+  refuses a commit after `c714b53` with a `Co-Authored-By` of an
+  assistant or the link to its session, as it does for the patches from
+  0266. `.claude/settings.json` turns off the attribution that Claude
+  Code adds by itself, and `check.yml` runs on `next` too, on every
+  commit of a push. The commits up to there keep theirs (397, of which
+  355 in the releases up to v1.6.2): the history is not rewritten.
 
 **From v1.6.3**, which was not released: v1.7.0 replaces it and has
 all of it, patches 0266 to 0274. Its candidates, rc1 to rc6, are the
