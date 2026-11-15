@@ -34,6 +34,14 @@ that comes out low); *Dual graphics* on with patch 0309; the `mrc`
 variant (the read-only part of the machines boots `nri` slots only);
 macOS and Windows on any candidate.
 
+ACPI, on the W541 (nothing changes on the M920x): no device, path or
+method is renamed or removed. One method is new,
+`\_SB.PCI0.GFX0.BLOF`, which `_WAK` calls after S3 when the OS is not
+macOS (patch 0274). `_OSC` of the PCI host bridge no longer hands the
+control of LTR to the OS (patches 0271 and 0272): that one every OS
+sees, macOS and Windows too. A SLIC table is published only by a build
+with a `slic` file (patch 0287); the releases have none, as before.
+
 - **The option lock and the MOR lock cannot be gone around through the
   fault tolerant write** (patch 0281, `edk2/0061`): the locks refused a
   raw SMMSTORE write that turns a protected option, or the MOR request,
