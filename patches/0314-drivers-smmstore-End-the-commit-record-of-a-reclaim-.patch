@@ -1,0 +1,716 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 16 Nov 2026 13:57:11 +0100
+Subject: [PATCH] drivers/smmstore: End the commit record of a reclaim with a
+ write, not an erase
+
+A reclaim of the variable store in SMM erased the commit block when the
+copy was done, to clear the record that tells the next boot to finish
+the copy. An erase is the slow operation of a flash: one of 64 KiB takes
+about a second on the two chips of a ThinkPad W541, where the reclaim
+stops the OS for some eight seconds, seven of them in erases (three of
+the staging area by the payload, three of the store and this one).
+
+Programming a flash clears bits without an erase, so a record can be
+ended by a write of zeros over its magic. Give the record slots of 64
+bytes in the first 2 KiB of the commit block, used in order: a reclaim
+writes its record into the first slot after which the block is erased,
+and ends it there. A slot that is neither erased nor a record is one
+that ended. ramstage, which looked for a record at the start of the
+block, looks in every slot.
+
+The block is erased when its slots are used up. To keep that erase out
+of the reclaims too, ramstage erases the block at boot, where nothing
+waits for it, when fewer slots are free than the reclaims of a boot can
+use (four); a boot in 28 reclaims at most, and none while the store
+does not fill. It erases only a block that holds nothing but records
+that ended: the block is also the last one of the spare area of the
+payload's fault tolerant write, which leaves a copy of its working
+block there and needs it to finish a write that a power loss cut. A
+reclaim that still finds no slot, or finds a live record (a copy that
+failed in the same boot) or that copy of the payload's, erases the
+block itself, as it did.
+
+The notes of the refusals, after the slots of the records, become a log
+in the same way: one slot of 32 bytes each, the next free one found by
+bisection, the last one the latest. One note at a fixed place would stay
+until the next erase of the block, which now is rare, and hide the ones
+after it.
+
+An older build reads a record at the start of the block only. If a power
+loss cuts a copy whose record is in a later slot and vboot then falls
+back to a slot with an older build, that build does not finish the copy
+and the payload starts from a damaged store, which it formats; the
+record stays, and this code finishes the copy when it boots, if the
+staging area is still the image. A record ended by this code is nothing
+to the older one, which erases the block before it writes its own.
+
+TEST=tests/drivers/smmstore_reclaim-test: the record ended without an
+     erase, the slots over 96 boots with one to four reclaims each and
+     the erase by ramstage, the erase by the reclaim when no boot comes
+     in between, a block that the payload wrote, a power loss with the
+     record in the third slot, the log of the notes and its end.
+
+Change-Id: Iaf4c6d7723238e311fd3cb21e74c8bd559c53814
+---
+ src/drivers/smmstore/reclaim.c   | 209 ++++++++++++++++++++++-------
+ src/include/smmstore.h           |  12 +-
+ tests/drivers/smmstore_reclaim.c | 217 ++++++++++++++++++++++++++++---
+ 3 files changed, 373 insertions(+), 65 deletions(-)
+
+diff --git a/src/drivers/smmstore/reclaim.c b/src/drivers/smmstore/reclaim.c
+index 19c11eb4..66625a57 100644
+--- a/src/drivers/smmstore/reclaim.c
++++ b/src/drivers/smmstore/reclaim.c
+@@ -17,7 +17,7 @@
+  *
+  *   1. the commit record, with the SHA-256 of the image, into the commit block;
+  *   2. the store erased and the image copied over it, read back;
+- *   3. the commit block erased.
++ *   3. the record ended: zeros written over its magic.
+  *
+  * A power loss after 1 leaves a record that ramstage finds at the next boot,
+  * before the payload and before any lock: it checks the staging area against
+@@ -35,11 +35,13 @@
+  * store is nearly full. With every block written and read back through the
+  * writable device it took 2.3 s for 192 KiB on a ThinkCentre M920x and 9 s on
+  * a ThinkPad W541. Most of that is the erase of blocks of 64 KiB, about a
+- * second each on the W541: three of the store, here, and three of the staging
+- * area by the payload before it; the commit block is erased once, at the end,
+- * as the beginning finds it erased. A swap split over several SMIs would leave a half-written store
+- * between them that an S3 resume (the latch of the option lock is taken from
+- * the flash again) or another write would meet.
++ * second each on the W541: three of the store, here, and those of the staging
++ * area by the payload before it. The commit block is not one of them: a record
++ * takes the next free slot of the block and is ended by a write, and the block
++ * is erased when its slots are used up, by ramstage before the last few are.
++ * A swap split over several SMIs would leave a half-written store between them
++ * that an S3 resume (the latch of the option lock is taken from the flash
++ * again) or another write would meet.
+  */
+ 
+ #include <acpi/acpi.h>
+@@ -67,10 +69,81 @@ struct reclaim_record {
+ 	uint8_t digest[VB2_SHA256_DIGEST_SIZE];
+ } __packed;
+ 
++/*
++ * The commit block: slots of RECORD_SLOT bytes for the record up to
++ * RECLAIM_NOTE_OFFSET, then slots of NOTE_SLOT bytes for the notes of the
++ * refusals. Both are used in order, and programming a flash only clears bits:
++ * a record is live from the write of its slot to the write of zeros over its
++ * magic, and a slot that is neither erased nor a record is a record that
++ * ended. So a reclaim does not wait for an erase of the block, the slowest
++ * operation of the flash (about a second for 64 KiB on a ThinkPad W541), but
++ * once in RECORD_SLOTS reclaims.
++ *
++ * A build before the slots reads a record at the start of the block only: one
++ * in a later slot is found by this code alone, and a copy that a power loss
++ * cut is finished when a slot with this code boots.
++ */
++#define RECLAIM_NOTE_OFFSET	0x800
++#define RECORD_SLOT		64
++#define RECORD_SLOTS		(RECLAIM_NOTE_OFFSET / RECORD_SLOT)
++#define NOTE_SLOT		32
++#define NOTE_SLOTS		((SMM_BLOCK_SIZE - RECLAIM_NOTE_OFFSET) / NOTE_SLOT)
++
++_Static_assert(sizeof(struct reclaim_record) <= RECORD_SLOT, "The record does not fit its slot");
++
+ /* One SMI, or ramstage, at a time: static, not on the small stack of SMM */
+ static uint8_t chunk[4 * KiB];
+ static uint8_t chunk2[4 * KiB];
+ 
++_Static_assert(RECLAIM_NOTE_OFFSET <= sizeof(chunk), "The record slots do not fit the buffer");
++
++static bool all_erased(const uint8_t *buf, size_t size)
++{
++	for (size_t i = 0; i < size; i++)
++		if (buf[i] != 0xff)
++			return false;
++	return true;
++}
++
++/* The slots of the records into chunk */
++static bool read_record_slots(const struct region_device *rdev, size_t commit)
++{
++	return rdev_readat(rdev, chunk, commit, RECLAIM_NOTE_OFFSET) == RECLAIM_NOTE_OFFSET;
++}
++
++/* The slot in chunk of the record that is live, or -1 */
++static int live_record_slot(void)
++{
++	for (int slot = 0; slot < RECORD_SLOTS; slot++)
++		if (!memcmp(chunk + slot * RECORD_SLOT, RECLAIM_MAGIC, sizeof(RECLAIM_MAGIC) - 1))
++			return slot;
++	return -1;
++}
++
++/* The first slot in chunk with nothing but erased slots from it on, or -1 */
++static int free_record_slot(void)
++{
++	int slot = RECORD_SLOTS;
++
++	while (slot > 0 && all_erased(chunk + (slot - 1) * RECORD_SLOT, RECORD_SLOT))
++		slot--;
++	return slot < RECORD_SLOTS ? slot : -1;
++}
++
++/* Whether the slots in chunk hold nothing but records that ended */
++static bool only_ended_records(void)
++{
++	static const uint8_t ended[sizeof(((struct reclaim_record *)0)->magic)];
++
++	for (int slot = 0; slot < RECORD_SLOTS; slot++) {
++		const uint8_t *record = chunk + slot * RECORD_SLOT;
++
++		if (!all_erased(record, RECORD_SLOT) && memcmp(record, ended, sizeof(ended)))
++			return false;
++	}
++	return true;
++}
++
+ /* The SMMSTORE region, writable */
+ static bool region_rw(struct region_device *rdev)
+ {
+@@ -131,14 +204,6 @@ static void flush_mapping(const struct region_device *ro, size_t offset, size_t
+ 
+ #endif
+ 
+-static bool all_erased(const uint8_t *buf, size_t size)
+-{
+-	for (size_t i = 0; i < size; i++)
+-		if (buf[i] != 0xff)
+-			return false;
+-	return true;
+-}
+-
+ /*
+  * The image over the store, block by block, and read back through @verify:
+  * the staging area, which nothing writes meanwhile, is read through @src.
+@@ -177,23 +242,43 @@ static bool erase_commit(const struct region_device *rdev, const struct smmstore
+ 
+ #if ENV_SMM
+ /*
+- * The commit block erased for a record, read through @ro: a reclaim that ended
+- * erased it already, and an erase of a block is the slow part of a reclaim (one
+- * of 64 KiB takes about a second on the flash of a ThinkPad W541). The lines of
+- * the mapping out of the caches first, as for the read back of the copy: a
+- * block that only looks erased would take the record over what it holds.
++ * The slot for the record of this reclaim, from the block as @ro reads it. The
++ * lines of the mapping out of the caches first, as for the read back of the
++ * copy: a slot that only looks erased would take the record over what it
++ * holds. The block is erased when no slot is left, which ramstage sees to
++ * before a boot can get there; when it holds a live record, that of a copy
++ * that failed in this boot, which a new image replaces; and when it holds
++ * anything else than records that ended, which is what the payload's fault
++ * tolerant write leaves in the last block of its spare area: no record goes
++ * next to that.
+  */
+-static bool erase_commit_for_record(const struct region_device *ro, const struct region_device *rw,
+-				    const struct smmstore_reclaim_layout *l)
++static int record_slot(const struct region_device *ro, const struct region_device *rw,
++		       const struct smmstore_reclaim_layout *l)
+ {
+-	flush_mapping(ro, l->commit, SMM_BLOCK_SIZE);
+-	for (size_t done = 0; done < SMM_BLOCK_SIZE; done += sizeof(chunk)) {
+-		if (rdev_readat(ro, chunk, l->commit + done, sizeof(chunk)) != sizeof(chunk))
+-			return erase_commit(rw, l);
+-		if (!all_erased(chunk, sizeof(chunk)))
+-			return erase_commit(rw, l);
+-	}
+-	return true;
++	int slot = -1;
++
++	flush_mapping(ro, l->commit, RECLAIM_NOTE_OFFSET);
++	if (read_record_slots(ro, l->commit) && live_record_slot() < 0 && only_ended_records())
++		slot = free_record_slot();
++	if (slot >= 0)
++		return slot;
++	return erase_commit(rw, l) ? 0 : -1;
++}
++
++/*
++ * The record of a swap that is done ends: zeros over its magic, and the erase
++ * of the block only if that write fails. Until then the next boot takes the
++ * staging area for the store to finish, which it no longer is once the OS
++ * writes a variable.
++ */
++static void end_record(const struct region_device *rw, const struct smmstore_reclaim_layout *l,
++		       int slot)
++{
++	static const uint8_t ended[sizeof(((struct reclaim_record *)0)->magic)];
++
++	if (rdev_writeat(rw, ended, l->commit + slot * RECORD_SLOT, sizeof(ended)) !=
++	    sizeof(ended))
++		erase_commit(rw, l);
+ }
+ 
+ /* The coreboot options GUID: any GUID gives the walk of the whole store */
+@@ -228,11 +313,10 @@ static unsigned int reclaims;
+ 
+ /*
+  * Why the handler refused, for whoever reads the flash: SMM has no console in
+- * a release. Written into the commit block, after where a record goes, only
+- * when that place is erased: once until the next reclaim erases the block.
++ * a release. Written into the commit block, in the next free slot after those
++ * of the records: the last note is the latest, until the block is erased.
+  */
+ #define RECLAIM_NOTE_MAGIC "OBRCLMNT"
+-#define RECLAIM_NOTE_OFFSET 0x800
+ 
+ enum reclaim_note {
+ 	NOTE_WALK = 1,		/* the store cannot be walked */
+@@ -258,18 +342,31 @@ static void note(const struct region_device *ro, const struct region_device *rw,
+ 		 const struct smmstore_reclaim_layout *l, enum reclaim_note code, uint32_t a)
+ {
+ 	struct reclaim_note_rec rec;
+-	uint8_t old[sizeof(rec)];
++	uint8_t old[NOTE_SLOT];
++	size_t first = 0, end = NOTE_SLOTS;
+ 
+-	if (rdev_readat(ro, old, l->commit + RECLAIM_NOTE_OFFSET, sizeof(old)) != sizeof(old))
+-		return;
+-	for (size_t i = 0; i < sizeof(old); i++)
+-		if (old[i] != 0xff)
++	_Static_assert(sizeof(rec) <= NOTE_SLOT, "The note does not fit its slot");
++
++	/* The first erased slot: the notes fill them in order */
++	while (first < end) {
++		const size_t slot = first + (end - first) / 2;
++		const size_t at = l->commit + RECLAIM_NOTE_OFFSET + slot * NOTE_SLOT;
++
++		flush_mapping(ro, at, sizeof(old));
++		if (rdev_readat(ro, old, at, sizeof(old)) != sizeof(old))
+ 			return;
++		if (all_erased(old, sizeof(old)))
++			end = slot;
++		else
++			first = slot + 1;
++	}
++	if (first == NOTE_SLOTS)
++		return;
+ 	memcpy(rec.magic, RECLAIM_NOTE_MAGIC, sizeof(rec.magic));
+ 	rec.code = code;
+ 	rec.a = a;
+ 	rec.reclaims = reclaims;
+-	rdev_writeat(rw, &rec, l->commit + RECLAIM_NOTE_OFFSET, sizeof(rec));
++	rdev_writeat(rw, &rec, l->commit + RECLAIM_NOTE_OFFSET + first * NOTE_SLOT, sizeof(rec));
+ }
+ 
+ static bool locks_armed(void)
+@@ -410,6 +507,7 @@ uint32_t smmstore_reclaim(const struct smmstore_params_reclaim *params)
+ 	struct reclaim_record record;
+ 	enum reclaim_note why;
+ 	size_t tail;
++	int slot;
+ 
+ 	if (!locks_armed() || !reclaim_region(&ro, &l) || !region_rw(&rw))
+ 		return SMMSTORE_RET_UNSUPPORTED;
+@@ -444,8 +542,9 @@ uint32_t smmstore_reclaim(const struct smmstore_params_reclaim *params)
+ 	record.store_end = l.store_end;
+ 	record.staging = l.staging;
+ 	if (!hash_area(&ro, l.staging, l.store_end, record.digest) ||
+-	    !erase_commit_for_record(&ro, &rw, &l) ||
+-	    rdev_writeat(&rw, &record, l.commit, sizeof(record)) != sizeof(record)) {
++	    (slot = record_slot(&ro, &rw, &l)) < 0 ||
++	    rdev_writeat(&rw, &record, l.commit + slot * RECORD_SLOT, sizeof(record)) !=
++	    sizeof(record)) {
+ 		note(&ro, &rw, &l, NOTE_RECORD, 0);
+ 		return SMMSTORE_RET_FAILURE;
+ 	}
+@@ -458,7 +557,7 @@ uint32_t smmstore_reclaim(const struct smmstore_params_reclaim *params)
+ 		store_replaced();
+ 		return SMMSTORE_RET_FAILURE;
+ 	}
+-	erase_commit(&rw, &l);
++	end_record(&rw, &l, slot);
+ 	store_replaced();
+ 	return SMMSTORE_RET_SUCCESS;
+ }
+@@ -471,7 +570,7 @@ void smmstore_reclaim_recover(void)
+ 	struct smmstore_reclaim_layout l;
+ 	struct reclaim_record record;
+ 	uint8_t digest[VB2_SHA256_DIGEST_SIZE];
+-	int same;
++	int same, slot;
+ 
+ 	/*
+ 	 * Not from the store's header: a power loss in the copy can leave the
+@@ -479,11 +578,31 @@ void smmstore_reclaim_recover(void)
+ 	 * the region, and the record says where the store ends.
+ 	 */
+ 	if (!region_rw(&rdev) || region_device_sz(&rdev) < SMM_BLOCK_SIZE ||
+-	    rdev_readat(&rdev, &record, region_device_sz(&rdev) - SMM_BLOCK_SIZE,
+-			sizeof(record)) != sizeof(record) ||
+-	    memcmp(record.magic, RECLAIM_MAGIC, sizeof(record.magic)))
++	    !read_record_slots(&rdev, region_device_sz(&rdev) - SMM_BLOCK_SIZE))
+ 		return;
+ 
++	slot = live_record_slot();
++	if (slot < 0) {
++		/*
++		 * No reclaim was cut. Here, where nothing waits for it, the erase
++		 * that the reclaims of this boot would otherwise run into: of a
++		 * block with fewer free slots than a boot can use. Only of a block
++		 * that holds nothing but records that ended: it is also the last
++		 * block of the spare area of the payload's fault tolerant write,
++		 * and may hold the copy of the working block of a write that a
++		 * power loss cut, which the payload has yet to finish.
++		 */
++		slot = free_record_slot();
++		if ((slot < 0 || RECORD_SLOTS - slot < SMMSTORE_RECLAIM_PER_BOOT) &&
++		    only_ended_records()) {
++			printk(BIOS_INFO, "SMMSTORE: the commit block of the reclaims erased\n");
++			rdev_eraseat(&rdev, region_device_sz(&rdev) - SMM_BLOCK_SIZE,
++				     SMM_BLOCK_SIZE);
++		}
++		return;
++	}
++	memcpy(&record, chunk + slot * RECORD_SLOT, sizeof(record));
++
+ 	if (!smmstore_reclaim_layout(region_device_sz(&rdev), SMM_BLOCK_SIZE, record.store_end,
+ 				     &l) || record.staging != l.staging ||
+ 	    !hash_area(&rdev, l.staging, l.store_end, digest) ||
+diff --git a/src/include/smmstore.h b/src/include/smmstore.h
+index 7bcefb5a..df4a5db1 100644
+--- a/src/include/smmstore.h
++++ b/src/include/smmstore.h
+@@ -107,11 +107,13 @@
+  * the staging area with raw writes, then sends SMMSTORE_RECLAIM_COMMIT. The
+  * handler reads the image back from the flash, checks it whole with the rules
+  * of the locks, writes a commit record into the commit block, copies the image
+- * over the store and erases the record; ramstage finishes a copy cut by a
+- * power loss (smmstore_reclaim_recover()). The two areas are the last ones of
+- * the region (smmstore_reclaim_layout()), in the spare area of the payload's
+- * fault tolerant write; while a lock is armed, raw writes and erases inside
+- * the staging area are allowed and those of the commit block refused.
++ * over the store and ends the record with a write over it; ramstage finishes a
++ * copy cut by a power loss (smmstore_reclaim_recover()) and erases the commit
++ * block when its slots for the records are nearly used up. The two areas are
++ * the last ones of the region (smmstore_reclaim_layout()), in the spare area
++ * of the payload's fault tolerant write; while a lock is armed, raw writes and
++ * erases inside the staging area are allowed and those of the commit block
++ * refused.
+  *
+  * STATUS: SMMSTORE_RET_SUCCESS when a commit would be considered now;
+  * SMMSTORE_RET_UNSUPPORTED with no lock armed (the payload uses its fault
+diff --git a/tests/drivers/smmstore_reclaim.c b/tests/drivers/smmstore_reclaim.c
+index d2830d4a..6e668241 100644
+--- a/tests/drivers/smmstore_reclaim.c
++++ b/tests/drivers/smmstore_reclaim.c
+@@ -27,6 +27,8 @@ static struct smmstore_reclaim_layout layout;
+ 
+ /* The flash of the handler: writes and erases fail once ops_left is spent */
+ static int ops_left = -1;
++/* The erases of the commit block, the last block of the flash */
++static int commit_erases;
+ 
+ static bool op_allowed(void)
+ {
+@@ -60,6 +62,8 @@ static ssize_t flash_eraseat(const struct region_device *rd, size_t offset, size
+ {
+ 	if (!op_allowed())
+ 		return -1;
++	if (offset == (BLOCKS - 1) * BLOCK)
++		commit_erases++;
+ 	memset(flash + offset, 0xff, size);
+ 	return size;
+ }
+@@ -124,6 +128,8 @@ void smmstore_locked_write_reset(void)
+ {
+ }
+ 
++static uint32_t reclaim(uint32_t op);
++
+ static const EFI_GUID test_guid = {
+ 	0x8be4df61, 0x93ca, 0x11d2, { 0xaa, 0x0d, 0x00, 0xe0, 0x98, 0x03, 0x2b, 0x8c } };
+ 
+@@ -138,6 +144,7 @@ static void new_store(void)
+ 	image_ok = true;
+ 	replaced = 0;
+ 	reclaims = 0;
++	commit_erases = 0;
+ 	region_device_init(&flash_root, &flash_ops, 0, sizeof(flash));
+ 	rdev_chain_mem_rw(&build_rw, flash, sizeof(flash));
+ 	assert_int_equal(efi_fv_initialize(&build_rw, BLOCK), CB_SUCCESS);
+@@ -195,15 +202,30 @@ static bool store_is(const uint8_t *what)
+ 	return !memcmp(flash, what, layout.store_end);
+ }
+ 
+-/* No commit record (a note of a refusal may be there) */
++/* No live commit record in any slot (records that ended and notes may be there) */
+ static bool no_record(void)
+ {
+-	for (size_t i = 0; i < sizeof(struct reclaim_record); i++)
+-		if (flash[layout.commit + i] != 0xff)
++	for (size_t slot = 0; slot < RECORD_SLOTS; slot++)
++		if (!memcmp(flash + layout.commit + slot * RECORD_SLOT, RECLAIM_MAGIC,
++			    sizeof(RECLAIM_MAGIC) - 1))
+ 			return false;
+ 	return true;
+ }
+ 
++static bool slot_erased(size_t slot)
++{
++	return all_erased(flash + layout.commit + slot * RECORD_SLOT, RECORD_SLOT);
++}
++
++/* The slots of the records up to @used hold records that ended, the others nothing */
++static bool slots_used(size_t used)
++{
++	for (size_t slot = 0; slot < RECORD_SLOTS; slot++)
++		if (slot_erased(slot) != (slot >= used))
++			return false;
++	return no_record();
++}
++
+ static bool commit_erased(void)
+ {
+ 	for (size_t i = 0; i < BLOCK; i++)
+@@ -212,6 +234,33 @@ static bool commit_erased(void)
+ 	return true;
+ }
+ 
++/* The notes of the refusals: how many, and the last one */
++static size_t notes(struct reclaim_note_rec *last)
++{
++	size_t count = 0;
++
++	while (count < NOTE_SLOTS &&
++	       !all_erased(flash + layout.commit + RECLAIM_NOTE_OFFSET + count * NOTE_SLOT,
++			   NOTE_SLOT))
++		count++;
++	if (count && last) {
++		memcpy(last, flash + layout.commit + RECLAIM_NOTE_OFFSET + (count - 1) * NOTE_SLOT,
++		       sizeof(*last));
++		assert_memory_equal(last->magic, RECLAIM_NOTE_MAGIC, sizeof(last->magic));
++	}
++	return count;
++}
++
++/* A reclaim that goes through, from the store as it is */
++static void one_reclaim(void)
++{
++	rdev_chain_mem_rw(&build_rw, flash, sizeof(flash));
++	fill_store();
++	stage_image();
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_SUCCESS);
++	assert_true(store_is(image));
++}
++
+ static uint32_t reclaim(uint32_t op)
+ {
+ 	const struct smmstore_params_reclaim params = { .op = op };
+@@ -254,7 +303,9 @@ static void test_commit(void **state)
+ 	stage_image();
+ 	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_SUCCESS);
+ 	assert_true(store_is(image));
+-	assert_true(commit_erased());
++	/* The record ended in its slot, without an erase of the block */
++	assert_true(slots_used(1));
++	assert_int_equal(commit_erases, 0);
+ 	assert_int_equal(replaced, 1);
+ 	/* The store reclaimed has room again: no second reclaim now */
+ 	assert_int_equal(reclaim(SMMSTORE_RECLAIM_STATUS), SMMSTORE_RET_FAILURE);
+@@ -339,7 +390,7 @@ static void test_power_loss(void **state)
+ 		if (ops >= 2)
+ 			assert_true(store_is(image));
+ 	}
+-	/* Erase and record, three blocks erased and written, the record erased */
++	/* The record, three blocks erased and written, the record ended */
+ 	assert_true(ops > 3);
+ }
+ 
+@@ -361,39 +412,170 @@ static void test_bad_record(void **state)
+ 	assert_true(!memcmp(flash, before, layout.store_end));
+ }
+ 
+-/* A refusal leaves a note in the commit block, once until the next reclaim erases it */
++/* Each refusal leaves a note in the commit block, after the ones before it */
+ static void test_note(void **state)
+ {
+ 	struct reclaim_note_rec rec;
+ 
+ 	new_store();
++	assert_int_equal(notes(NULL), 0);
+ 	assert_int_equal(reclaim(SMMSTORE_RECLAIM_STATUS), SMMSTORE_RET_FAILURE);
+-	memcpy(&rec, flash + layout.commit + RECLAIM_NOTE_OFFSET, sizeof(rec));
+-	assert_memory_equal(rec.magic, RECLAIM_NOTE_MAGIC, sizeof(rec.magic));
++	assert_int_equal(notes(&rec), 1);
+ 	assert_int_equal(rec.code, NOTE_FREE);
+ 	assert_true(rec.a > layout.store_end / 4);
+ 
+-	/* Another refusal does not write over it */
++	/* Another refusal: the next slot */
+ 	fill_store();
+ 	stage_image();
+ 	image_ok = false;
+ 	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_FAILURE);
+-	memcpy(&rec, flash + layout.commit + RECLAIM_NOTE_OFFSET, sizeof(rec));
+-	assert_int_equal(rec.code, NOTE_FREE);
++	assert_int_equal(notes(&rec), 2);
++	assert_int_equal(rec.code, NOTE_OPTIONS);
++	assert_int_equal(rec.reclaims, 0);
+ 
+-	/* A reclaim erases it; the record goes elsewhere */
++	/* A reclaim leaves the notes where they are */
+ 	image_ok = true;
+ 	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_SUCCESS);
+-	assert_true(commit_erased());
++	assert_int_equal(notes(&rec), 2);
++	assert_int_equal(commit_erases, 0);
+ 
+-	/* Refused by the locks: the note says so */
++	/* The limit of a boot: the note counts the reclaims */
++	rdev_chain_mem_rw(&build_rw, flash, sizeof(flash));
+ 	fill_store();
+ 	stage_image();
+ 	image_ok = false;
+ 	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_FAILURE);
+-	memcpy(&rec, flash + layout.commit + RECLAIM_NOTE_OFFSET, sizeof(rec));
++	assert_int_equal(notes(&rec), 3);
+ 	assert_int_equal(rec.code, NOTE_OPTIONS);
+ 	assert_int_equal(rec.reclaims, 1);
++
++	/* The slots of the notes used up: nothing more is written, nothing breaks */
++	image_ok = true;
++	for (size_t i = 0; i < 2 * NOTE_SLOTS; i++)
++		assert_int_equal(reclaim(7), SMMSTORE_RET_FAILURE);
++	assert_int_equal(notes(&rec), NOTE_SLOTS);
++	assert_int_equal(rec.code, NOTE_OP);
++	assert_true(slots_used(1));
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_SUCCESS);
++	assert_true(slots_used(2));
++}
++
++/*
++ * The records take the slots of the commit block one after the other, over the
++ * boots, and the block is erased by the boot that finds fewer free slots than
++ * its reclaims can use: no reclaim waits for that erase.
++ */
++static void test_slots(void **state)
++{
++	size_t used = 0;
++
++	new_store();
++	for (int boot = 0; boot < 3 * RECORD_SLOTS; boot++) {
++		const int before = commit_erases;
++
++		reclaims = 0;
++		smmstore_reclaim_recover();
++		if (RECORD_SLOTS - used < SMMSTORE_RECLAIM_PER_BOOT) {
++			assert_int_equal(commit_erases, before + 1);
++			assert_true(commit_erased());
++			used = 0;
++		}
++		assert_int_equal(commit_erases, used ? before : commit_erases);
++		for (int i = 0; i < 1 + boot % SMMSTORE_RECLAIM_PER_BOOT; i++) {
++			const int erases = commit_erases;
++
++			one_reclaim();
++			used++;
++			assert_true(slots_used(used));
++			assert_int_equal(commit_erases, erases);
++		}
++	}
++}
++
++/* Without the boot in between, the reclaim that finds no slot erases the block itself */
++static void test_slots_full(void **state)
++{
++	new_store();
++	for (size_t used = 1; used <= RECORD_SLOTS; used++) {
++		reclaims = 0;
++		one_reclaim();
++		assert_true(slots_used(used));
++	}
++	assert_int_equal(commit_erases, 0);
++	reclaims = 0;
++	one_reclaim();
++	assert_int_equal(commit_erases, 1);
++	assert_true(slots_used(1));
++}
++
++/*
++ * The commit block is also the last block of the spare area of the payload's
++ * fault tolerant write, which leaves a copy of its working block there. A
++ * boot does not erase what is not a record that ended, which the payload may
++ * still need; a reclaim, with the payload long past that, erases it before
++ * its record goes in, and the reclaims after it need no erase.
++ */
++static void test_foreign_block(void **state)
++{
++	static const size_t sizes[] = { 100, RECLAIM_NOTE_OFFSET, BLOCK };
++
++	for (size_t i = 0; i < ARRAY_SIZE(sizes); i++) {
++		new_store();
++		memset(flash + layout.commit, 0xa5, sizes[i]);
++		smmstore_reclaim_recover();
++		assert_int_equal(commit_erases, 0);
++		assert_int_equal(flash[layout.commit + sizes[i] - 1], 0xa5);
++		one_reclaim();
++		assert_int_equal(commit_erases, 1);
++		assert_true(slots_used(1));
++		one_reclaim();
++		assert_int_equal(commit_erases, 1);
++		assert_true(slots_used(2));
++	}
++}
++
++/*
++ * A power loss in a reclaim whose record is not in the first slot: the next
++ * boot finds it there and finishes the copy.
++ */
++static void test_power_loss_slot(void **state)
++{
++	new_store();
++	one_reclaim();
++	one_reclaim();
++	rdev_chain_mem_rw(&build_rw, flash, sizeof(flash));
++	fill_store();
++	stage_image();
++	/* The record and the erase of the first block of the store */
++	ops_left = 2;
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_FAILURE);
++	ops_left = -1;
++	assert_false(no_record());
++	assert_false(slot_erased(2));
++	assert_false(store_is(image));
++	smmstore_reclaim_recover();
++	assert_true(store_is(image));
++	assert_true(commit_erased());
++}
++
++/*
++ * A record whose end could not be written, the flash failing: the erase of the
++ * block ends it. And a copy that failed leaves its record for the next boot;
++ * a reclaim after it in the same boot starts from an erased block.
++ */
++static void test_record_left(void **state)
++{
++	new_store();
++	fill_store();
++	stage_image();
++	/* The record, an erase and a write, then nothing: the copy fails */
++	ops_left = 3;
++	assert_int_equal(reclaim(SMMSTORE_RECLAIM_COMMIT), SMMSTORE_RET_FAILURE);
++	ops_left = -1;
++	assert_false(no_record());
++	smmstore_reclaim_recover();
++	assert_true(store_is(image));
++	assert_true(no_record());
+ }
+ 
+ /* A record with another layout: dropped too */
+@@ -427,6 +609,11 @@ int main(void)
+ 		cmocka_unit_test(test_bad_record),
+ 		cmocka_unit_test(test_record_layout),
+ 		cmocka_unit_test(test_note),
++		cmocka_unit_test(test_slots),
++		cmocka_unit_test(test_slots_full),
++		cmocka_unit_test(test_foreign_block),
++		cmocka_unit_test(test_power_loss_slot),
++		cmocka_unit_test(test_record_left),
+ 	};
+ 
+ 	return cb_run_group_tests(tests, NULL, NULL);

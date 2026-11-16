@@ -586,13 +586,20 @@
  [PcdsDynamicExDefault.IA32, PcdsDynamicExDefault.X64]
    gPcAtChipsetPkgTokenSpaceGuid.PcdRtcIndexRegister|$(RTC_INDEX_REGISTER)
    gPcAtChipsetPkgTokenSpaceGuid.PcdRtcTargetRegister|$(RTC_TARGET_REGISTER)
-@@ -965,27 +1253,49 @@
+@@ -965,27 +1253,56 @@
        <LibraryClasses>
  !if $(SECURE_BOOT_ENABLE) == TRUE
        NULL|SecurityPkg/Library/DxeImageVerificationLib/DxeImageVerificationLib.inf
 +!endif
 +!if $(CSMWRAP) == TRUE
 +      NULL|OuroBiosPkg/Library/CsmWrapSecureBootLib/CsmWrapSecureBootLib.inf
++!endif
++!if $(VARIABLE_SUPPORT) == "SMMSTORE" || ($(CAPSULE_SUPPORT) && $(BOOTLOADER) == "COREBOOT")
++      #
++      # After DxeImageVerificationLib: an image that Secure Boot refuses arms
++      # nothing
++      #
++      NULL|OuroBiosPkg/Library/ThirdPartyImageLockLib/ThirdPartyImageLockLib.inf
  !endif
    }
  !endif
@@ -638,7 +645,7 @@
    FmpDevicePkg/FmpDxe/FmpDxe.inf {
      <Defines>
        # FmpDxe interprets its FILE_GUID as firmware GUID.  This allows including
-@@ -998,16 +1308,21 @@
+@@ -998,16 +1315,21 @@
        #
        # See BaseTools/Source/Python/Pkcs7Sign/Readme.md for more details on such
        # PCDs and include files.
@@ -663,7 +670,7 @@
  !endif
  
  
-@@ -1042,11 +1357,27 @@
+@@ -1042,11 +1364,27 @@
  !endif
    MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
    MdeModulePkg/Universal/SetupBrowserDxe/SetupBrowserDxe.inf
@@ -691,7 +698,7 @@
  
    #
    # SMBIOS Support
-@@ -1085,6 +1416,11 @@
+@@ -1085,6 +1423,11 @@
    MdeModulePkg/Bus/Ata/AtaAtapiPassThru/AtaAtapiPassThru.inf
    MdeModulePkg/Bus/Scsi/ScsiBusDxe/ScsiBusDxe.inf
    MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf
@@ -703,7 +710,7 @@
  !if $(NVME_ENABLE) == TRUE
    MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf
  !endif
-@@ -1111,13 +1447,19 @@
+@@ -1111,13 +1454,19 @@
    #
    # Usb Support
    #
@@ -723,7 +730,7 @@
  
    #
    # ISA Support
-@@ -1144,7 +1486,15 @@
+@@ -1144,7 +1493,15 @@
  !if $(DISABLE_SERIAL_TERMINAL) == FALSE
    MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf
  !endif
@@ -739,7 +746,7 @@
  !if $(PERFORMANCE_MEASUREMENT_ENABLE)
    MdeModulePkg/Universal/Acpi/FirmwarePerformanceDataTableDxe/FirmwarePerformanceDxe.inf
  !endif
-@@ -1175,6 +1525,8 @@
+@@ -1175,6 +1532,8 @@
        NULL|MdeModulePkg/Library/VarCheckUefiLib/VarCheckUefiLib.inf
        NULL|EmbeddedPkg/Library/NvVarStoreFormattedLib/NvVarStoreFormattedLib.inf
    }
@@ -748,7 +755,7 @@
  !elseif $(VARIABLE_SUPPORT) == "SPI"
    MdeModulePkg/Universal/Variable/RuntimeDxe/VariableSmm.inf {
      <LibraryClasses>
-@@ -1200,6 +1552,46 @@
+@@ -1200,6 +1559,46 @@
        TlsLib|CryptoPkg/Library/TlsLib/TlsLib.inf
    }
  !endif
@@ -795,7 +802,7 @@
  !endif
  
  [Components.X64]
-@@ -1282,7 +1674,6 @@
+@@ -1282,7 +1681,6 @@
    DevicePathLib|MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib.inf
    FileHandleLib|MdePkg/Library/UefiFileHandleLib/UefiFileHandleLib.inf
    ShellLib|ShellPkg/Library/UefiShellLib/UefiShellLib.inf

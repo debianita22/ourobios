@@ -706,6 +706,13 @@ PlatformBootManagerBeforeConsole (
   PlatformRegisterOptionLockPolicy ();
 
   //
+  // The locks of the firmware slots and of the setup options, before the
+  // boot manager loads anything that is not part of the firmware: the
+  // deferred images just below, then the Driver#### options.
+  //
+  PlatformRegisterFirmwareLocks ();
+
+  //
   // Install ready to lock.
   // This needs to be done before option rom dispatched.
   //

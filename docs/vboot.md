@@ -84,9 +84,11 @@ patches 0179 and 0252, and the version of the cache tells the other slot
 whether to train). The payload
 locks that request before it
 starts a boot option and at `ExitBootServices()`, coreboot on S3 resume: an
-OS loader or an OS goes back only with a capsule. Before the lock, coreboot
-checks the request as the setup does, for the code that runs earlier
-(`Driver####`, `SysPrep####`, option ROMs): the release in the other slot
+OS loader or an OS goes back only with a capsule. From v1.8.0 the payload
+also locks it before it loads the first image that is not part of the
+firmware (`edk2/0068`): the code that runs earlier than a boot option
+(`Driver####`, `SysPrep####`, option ROMs). Before the lock, coreboot
+checks the request as the setup does: the release in the other slot
 (`COREBOOT_EXTRA_VERSION` of the `revision` file in its CBFS) must have the
 variant of the running one and a version not below its lowest supported
 version.
@@ -393,7 +395,12 @@ at every reset:
 - a boot option, a UEFI application in `\EFI\BOOT\BOOTX64.EFI`
   (`tools/efi/slot-lock-test.c`), asks coreboot for the other slot as a boot
   loader would, then after `ExitBootServices()` as an OS: refused both
-  times, `RW_NVRAM` stays on B. In the memory map it gets for
+  times, `RW_NVRAM` stays on B. Then a `Driver0000` option with a driver
+  from the disk (`tools/efi/slot-lock-driver.c`), code that the boot
+  manager starts before any boot option, asks at once: refused, the
+  payload having armed the locks before it loaded the driver; and in a
+  boot with the request of the setup in `OsIndications` the driver is not
+  loaded, the request is cleared and the menu starts. In the memory map it gets for
   `ExitBootServices()`, the one an OS sees, no reserved range has
   `EFI_MEMORY_RUNTIME`, all of the memory from 1 MiB to 1 GiB is free, and
   the com buffer of SMMSTORE, which it finds in the HOB of the payload, is

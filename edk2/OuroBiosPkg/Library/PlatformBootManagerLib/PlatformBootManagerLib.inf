@@ -64,12 +64,13 @@
   gEfiEndOfDxeEventGroupGuid
   gEfiEventExitBootServicesGuid   ## CONSUMES ## Event
   gEfiEventReadyToBootGuid        ## CONSUMES ## Event
+  gUefiPayloadThirdPartyImageEventGroupGuid ## CONSUMES ## Event
   gUefiShellFileGuid
   gUefiPayloadBootSplashGuid
   gEfiCapsuleReportGuid           ## CONSUMES ## Variable:L"CapsuleLast"
   gEfiFileInfoGuid                ## CONSUMES
   gEfiPartTypeSystemPartGuid      ## CONSUMES
-  gEficorebootNvDataGuid          ## CONSUMES ## Variable:L"ipxe_boot" L"csmwrap_boot" L"usb_boot" L"boot_menu_prompt"; PRODUCES ## Variable:L"OptionLockStatus"
+  gEficorebootNvDataGuid          ## CONSUMES ## Variable:L"ipxe_boot" L"csmwrap_boot" L"usb_boot" L"boot_menu_prompt"; PRODUCES ## Variable:L"OptionLockStatus" L"OptionLockEarly"
   gEfiGlobalVariableGuid          ## CONSUMES ## Variable:L"SecureBoot"
 
 [Protocols]

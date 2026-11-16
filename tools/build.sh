@@ -1780,6 +1780,14 @@ efi_app() {
 		-Wl,-subsystem:efi_application -Wl,-entry:efi_main -o "$2" "$1"
 }
 
+# Lo stesso per un driver UEFI: il boot manager avvia da una voce Driver####
+# solo un'immagine con questo sottosistema
+efi_driver() {
+	clang --target=x86_64-unknown-windows -std=c11 -O2 -Wall -Wextra -Werror -ffreestanding \
+		-fno-stack-protector -mno-red-zone -mgeneral-regs-only -nostdlib -fuse-ld=lld \
+		-Wl,-subsystem:efi_boot_service_driver -Wl,-entry:efi_main -o "$2" "$1"
+}
+
 # Il passo 10 della prova di fumo: tools/efi/secure-boot-test.c compilato
 # nella cartella $1 e firmato. Le chiavi nascono qui, a ogni giro: una CA di
 # prova, che l'applicazione mette in db, il suo certificato figlio che la
@@ -2030,6 +2038,7 @@ cmd_update_test() {
 	for rom in "${UPDATE_TEST_ROMS[@]}"; do caps+=("${ut}/${rom%% *}.cap"); done
 	local rc=0 last
 	python3 "${O}/tools/qemu-update.py" --out "${ut}/out" --lock-test "${ut}/slot-lock-test.efi" \
+		--lock-driver "${ut}/slot-lock-driver.efi" \
 		--keep-cache "${ut}/B-cache.cap" --refused-store "${ut}/B-smmstore.cap" --refused-slot "${ut}/B-slot.cap" \
 		"${caps[@]}" 2>&1 | tee "${ut}/qemu-update.log" || rc=$?
 	if [ "${rc}" != 0 ]; then
@@ -2156,6 +2165,10 @@ update_test_build() {
 	say "update-test: l'applicazione UEFI che prova il blocco dell'altro slot"
 	efi_app "${O}/tools/efi/slot-lock-test.c" "${ut}/slot-lock-test.efi" \
 		|| die "update-test: tools/efi/slot-lock-test.c non compila"
+	# la voce Driver0000 della prova: codice non del firmware prima di ogni
+	# voce di boot (edk2/0068)
+	efi_driver "${O}/tools/efi/slot-lock-driver.c" "${ut}/slot-lock-driver.efi" \
+		|| die "update-test: tools/efi/slot-lock-driver.c non compila"
 
 	say "update-test: capsule A, B, C e D, firmate con la chiave di prova"
 	(umask 077; cat "${ut}/key.pem" "${ut}/cert.pem" > "${ut}/signer.pem") || die "update-test: signer.pem"

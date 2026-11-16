@@ -458,6 +458,10 @@ def known(text, table, board, release=None):
 # --- i controlli ---------------------------------------------------------------
 
 OPTION_LOCK_VAR = "/sys/firmware/efi/efivars/OptionLockStatus-ceae4c1d-335b-4685-a4a0-fc4a94eea085"
+# dalla v1.8.0 (edk2/0068): c'e' solo se il payload ha armato i blocchi prima
+# di ogni voce di boot, per un'immagine che non e' del firmware (una option
+# ROM, una voce Driver#### o SysPrep####)
+OPTION_LOCK_EARLY_VAR = "/sys/firmware/efi/efivars/OptionLockEarly-ceae4c1d-335b-4685-a4a0-fc4a94eea085"
 
 
 def option_lock_status():
@@ -1956,6 +1960,15 @@ def check_flash(fw, rep):
     olk = option_lock_status()
     if olk is not None:
         details.append("option lock: %s (OptionLockStatus del payload)" % olk)
+    # un'immagine che non e' del firmware e' partita prima del setup: in
+    # quell'avvio il setup non salva, e se succede a ogni avvio le
+    # impostazioni si cambiano solo riavviando verso il setup
+    early = os.path.exists(OPTION_LOCK_EARLY_VAR)
+    if early:
+        details.append("option lock: armato prima di ogni voce di boot, per un'immagine che non e' del firmware "
+                       "(option ROM, Driver####, SysPrep####: OptionLockEarly). In questo avvio il setup non "
+                       "salva: \"efibootmgr --driver\" e \"--sysprep\" dicono le voci; per cambiare le "
+                       "impostazioni, il riavvio verso il setup (systemctl reboot --firmware-setup)")
     covered, locked, flockdn, err, from_log, si, si_by = None, None, None, None, None, None, ""
     p = spi_probe(fw)
     if p is not None:
@@ -2020,6 +2033,8 @@ def check_flash(fw, rep):
     if olk is not None and not olk.startswith("armato") and status == "PASS" and covered is not None:
         status = "WARN"
         summary += "; blocco delle opzioni non armato (OptionLockStatus): %s" % olk
+    if early:
+        summary += "; blocchi armati prima del setup per un'immagine non del firmware (OptionLockEarly)"
     rep.add("FLASH-01", "Protezione del flash", status, summary, details,
             {"wp_ro_protected": covered is not None and bool(locked), "wp_ro_from_log": from_log,
              "option_off": off, "si_all_protected": si == "ok"})

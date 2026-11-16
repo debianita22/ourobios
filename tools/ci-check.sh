@@ -342,6 +342,7 @@ hw = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hw)
 # non la variabile della macchina che fa girare il controllo (OptionLockStatus)
 hw.OPTION_LOCK_VAR = "/nonexistent/OptionLockStatus"
+hw.OPTION_LOCK_EARLY_VAR = "/nonexistent/OptionLockEarly"
 
 
 def firmware(board, log, ts):
@@ -620,6 +621,7 @@ hw = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hw)
 # non la variabile della macchina che fa girare il controllo (OptionLockStatus)
 hw.OPTION_LOCK_VAR = "/nonexistent/OptionLockStatus"
+hw.OPTION_LOCK_EARLY_VAR = "/nonexistent/OptionLockEarly"
 update = hw.update
 MRC, NRI = "ouroBIOS-ci-150-ecbf45d-mrc", "ouroBIOS-v1.4.0-rc4-nri"
 
@@ -1120,6 +1122,13 @@ row = ("| B195F75A-8F95-4282-950C-EE9DD1099EC9 | System FW    | 0x 1010000 | 0x 
        "| 0x 1020000 | 0x       0 |")
 assert qu.ESRT_ROW.findall(row) == [("B195F75A-8F95-4282-950C-EE9DD1099EC9", "System FW", "1010000", "1000000",
                                       "14000", "1020000", "0")]
+# la voce Driver0000 del passo 9 (edk2/0068): scritta, riletta, cancellata
+opt = qu.driver_option()
+assert opt[:6] == struct.pack("<IH", 1, len(opt) - 6 - 34) and opt[-4:] == b"\x7f\xff\x04\x00", opt
+f.set_var("Driver0000", qu.EFI_GLOBAL, 7, opt)
+assert f.var("Driver0000", qu.EFI_GLOBAL) == opt
+f.del_var("Driver0000", qu.EFI_GLOBAL)
+assert f.var("Driver0000", qu.EFI_GLOBAL) is None
 trace = os.path.join(tmp.name, "pflash.trace")
 open(trace, "w").write("pflash_data_write system.flash0: data offset:0x10010 size:1 value:0x0000\n"
                        "pflash_write_block_erase system.flash0: block erase offset:0x400000 bytes:0x1000\n"
@@ -1857,6 +1866,7 @@ hw = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hw)
 # non la variabile della macchina che fa girare il controllo (OptionLockStatus)
 hw.OPTION_LOCK_VAR = "/nonexistent/OptionLockStatus"
+hw.OPTION_LOCK_EARLY_VAR = "/nonexistent/OptionLockEarly"
 assert hw.update is update
 fixture()
 update.spi_protection = lambda devmem=None: spi_protection(dm)

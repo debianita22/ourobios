@@ -1,0 +1,1037 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 16 Nov 2026 14:07:08 +0100
+Subject: [PATCH] UefiPayloadPkg: Arm the locks before code that is not the
+ firmware's
+
+coreboot's locks of the setup options and of the switch to the other
+firmware slot are armed when a boot option is started, at ReadyToBoot,
+so that the setup, which runs before, can change what they protect. The
+boot manager runs other code before that: the option ROMs of the
+devices, and the Driver#### and SysPrep#### load options, which an OS
+creates with a write of a variable. With Secure Boot off, or signed,
+such an image ran with the locks open and could write the options as
+the setup does: BIOS Lock off for the next boot, from an OS that could
+not turn it off itself. The events of the locks were registered once
+the console was up, so an image started from a Driver#### option was
+not even locked out when it called ExitBootServices().
+
+ThirdPartyImageLockLib, a Security2 handler in SecurityStubDxe after
+DxeImageVerificationLib, sees every image that Secure Boot lets
+through. Before ReadyToBoot, the first one that does not come from a
+firmware volume makes it arm the two locks, by the SMIs of SmmStoreLib
+and before the image is loaded, and signal a new event group,
+gUefiPayloadThirdPartyImageEventGroupGuid. PlatformBootManagerLib
+publishes the answer of the option lock on that event, as at
+ReadyToBoot, with a second volatile variable, OptionLockEarly, that
+tells the OS that it happened before the setup, and registers its
+events before EndOfDxe, when no such image was loaded yet.
+CfrSetupMenuDxe sets the trigger of its CFR_OPTFLAG_LOCK_AT_BOOT
+options.
+
+The setup then cannot save in that boot, and a restart changes nothing
+where the image runs at every boot. So a boot that was asked to end in
+the firmware setup (EFI_OS_INDICATIONS_BOOT_TO_FW_UI, which an OS sets
+for "restart into the firmware settings") loads no image from outside
+the firmware volumes until a boot option is started: the handler
+refuses them, the locks stay open, and the setup saves. When a write of
+an option fails after such an image, the setup says why and offers that
+restart, which sets the request itself.
+
+A machine whose display or keyboard needs an option ROM cannot use the
+setup in such a boot. An image loaded from a capsule before EndOfDxe is
+deferred by SecurityStubDxe and does not get to the handler.
+
+On a coreboot without vboot the events of the locks were not
+registered at all, the option lock with them: they now are whenever
+SMMSTORE is there.
+---
+ .../CfrSetupMenuDxe/CfrSetupMenuDxe.inf       |   2 +
+ UefiPayloadPkg/CfrSetupMenuDxe/SetupMenu.h    |  14 +
+ UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuCfr.c |  61 ++++-
+ UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c | 130 ++++++++++
+ .../CfrSetupMenuDxe/SetupMenuStrings.uni      |   1 +
+ UefiPayloadPkg/Include/Guid/ThirdPartyImage.h |  26 ++
+ .../PlatformBootManager.c                     |   7 +
+ .../PlatformBootManager.h                     |  20 +-
+ .../PlatformBootManagerLib.inf                |   3 +-
+ .../PlatformBootManagerLib/PlatformCapsule.c  | 158 +++++++++---
+ .../ThirdPartyImageLockLib.c                  | 242 ++++++++++++++++++
+ .../ThirdPartyImageLockLib.inf                |  41 +++
+ UefiPayloadPkg/UefiPayloadPkg.dec             |   3 +
+ UefiPayloadPkg/UefiPayloadPkg.dsc             |   7 +
+ 14 files changed, 675 insertions(+), 40 deletions(-)
+ create mode 100644 UefiPayloadPkg/Include/Guid/ThirdPartyImage.h
+ create mode 100644 UefiPayloadPkg/Library/ThirdPartyImageLockLib/ThirdPartyImageLockLib.c
+ create mode 100644 UefiPayloadPkg/Library/ThirdPartyImageLockLib/ThirdPartyImageLockLib.inf
+
+diff --git a/UefiPayloadPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf b/UefiPayloadPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf
+index f2c2d8521..8b9077cce 100644
+--- a/UefiPayloadPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf
++++ b/UefiPayloadPkg/CfrSetupMenuDxe/CfrSetupMenuDxe.inf
+@@ -50,6 +50,8 @@
+   gEfiHiiPlatformSetupFormsetGuid               ## CONSUMES ## GUID (Indicate the formset class guid to be displayed)
+   gEfiIfrTianoGuid                              ## CONSUMES ## GUID (Extended IFR Guid Opcode)
+   gEfiEndOfDxeEventGroupGuid                    ## CONSUMES ## Event
++  gUefiPayloadThirdPartyImageEventGroupGuid     ## CONSUMES ## Event
++  gEfiGlobalVariableGuid                        ## SOMETIMES_PRODUCES ## Variable:L"OsIndications"
+ 
+ [Pcd]
+   gUefiPayloadPkgTokenSpaceGuid.PcdCfrSetupMenuPasswordCategory  ## CONSUMES
+diff --git a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenu.h b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenu.h
+index 87c8ad6f9..9a0816ac7 100644
+--- a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenu.h
++++ b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenu.h
+@@ -77,6 +77,20 @@ CfrCleanupLockAtBoot (
+   VOID
+   );
+ 
++/**
++  Whether an image that is not part of the firmware was loaded before a boot
++  was started (gUefiPayloadThirdPartyImageEventGroupGuid): the platform armed
++  its locks then, before the setup could be opened.
++
++  @retval TRUE   One was loaded: the options are locked for this boot.
++  @retval FALSE  None.
++**/
++BOOLEAN
++EFIAPI
++CfrThirdPartyImageLoaded (
++  VOID
++  );
++
+ /**
+   Register the EndOfDxe callback that links the pages of other drivers from
+   the categories, once their formsets are installed.
+diff --git a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuCfr.c b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuCfr.c
+index 5df4ceae2..586bbcff2 100644
+--- a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuCfr.c
++++ b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuCfr.c
+@@ -22,6 +22,7 @@
+ #include <Library/UefiRuntimeServicesTableLib.h>
+ #include <Guid/CfrSetupMenuGuid.h>
+ #include <Guid/VariableFormat.h>
++#include <Guid/ThirdPartyImage.h>
+ 
+ //
+ // CFR_OPTFLAG_LOCK_AT_BOOT: the setup may still write the option in this
+@@ -39,6 +40,8 @@
+ STATIC EFI_EVENT  mLockAtBootEvent      = NULL;
+ STATIC BOOLEAN    mLockAtBootRegistered = FALSE;
+ STATIC BOOLEAN    mLockAtBootApplied    = FALSE;
++STATIC EFI_EVENT  mThirdPartyImageEvent = NULL;
++STATIC BOOLEAN    mThirdPartyImage      = FALSE;
+ 
+ /**
+   Register, before EndOfDxe, the rule that write-locks a CFR option variable
+@@ -132,9 +135,45 @@ CfrApplyLockAtBoot (
+   }
+ }
+ 
++/**
++  An image that is not part of the firmware is about to be loaded before a
++  boot was started (an option ROM, a Driver#### or a SysPrep#### option): the
++  platform armed its locks, and the options with CFR_OPTFLAG_LOCK_AT_BOOT
++  lock now as at ReadyToBoot, for the same reason.
++
++**/
++STATIC
++VOID
++EFIAPI
++CfrThirdPartyImageNotify (
++  IN EFI_EVENT  Event,
++  IN VOID       *Context
++  )
++{
++  mThirdPartyImage = TRUE;
++  if (mLockAtBootRegistered) {
++    CfrApplyLockAtBoot (Event, Context);
++  }
++}
++
++/**
++  Whether an image that is not part of the firmware was loaded before a boot
++  was started.
++
++**/
++BOOLEAN
++EFIAPI
++CfrThirdPartyImageLoaded (
++  VOID
++  )
++{
++  return mThirdPartyImage;
++}
++
+ /**
+   Register a ReadyToBoot callback that write-locks CFR variables marked
+-  CFR_OPTFLAG_LOCK_AT_BOOT.
++  CFR_OPTFLAG_LOCK_AT_BOOT, and the same for an image that is not part of the
++  firmware loaded before that.
+ 
+ **/
+ EFI_STATUS
+@@ -145,6 +184,21 @@ CfrRegisterLockAtBootEvent (
+ {
+   EFI_STATUS  Status;
+ 
++  if (mThirdPartyImageEvent == NULL) {
++    Status = gBS->CreateEventEx (
++                    EVT_NOTIFY_SIGNAL,
++                    TPL_CALLBACK,
++                    CfrThirdPartyImageNotify,
++                    NULL,
++                    &gUefiPayloadThirdPartyImageEventGroupGuid,
++                    &mThirdPartyImageEvent
++                    );
++    if (EFI_ERROR (Status)) {
++      mThirdPartyImageEvent = NULL;
++      DEBUG ((DEBUG_WARN, "CFR: No event for the images loaded before a boot: %r\n", Status));
++    }
++  }
++
+   if (!mLockAtBootRegistered || (mLockAtBootEvent != NULL)) {
+     return EFI_SUCCESS;
+   }
+@@ -181,6 +235,11 @@ CfrCleanupLockAtBoot (
+     mLockAtBootEvent = NULL;
+   }
+ 
++  if (mThirdPartyImageEvent != NULL) {
++    gBS->CloseEvent (mThirdPartyImageEvent);
++    mThirdPartyImageEvent = NULL;
++  }
++
+   mLockAtBootApplied = FALSE;
+ }
+ 
+diff --git a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c
+index e5b6d0e6d..6123ccb04 100644
+--- a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c
++++ b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuHii.c
+@@ -17,6 +17,7 @@
+ #include <Library/UefiLib.h>
+ #include <Library/UefiBootServicesTableLib.h>
+ #include <Library/UefiRuntimeServicesTableLib.h>
++#include <Guid/GlobalVariable.h>
+ #include <Guid/VariableFormat.h>
+ #include <Protocol/HiiPopup.h>
+ 
+@@ -230,6 +231,130 @@ OptionLockArmed (
+   return ((EFI_STATUS)LockStatus != EFI_UNSUPPORTED) && ((EFI_STATUS)LockStatus != EFI_NO_MEDIA);
+ }
+ 
++/**
++  Restart into the setup: the request that an OS makes of the firmware
++  (EFI_OS_INDICATIONS_BOOT_TO_FW_UI), which the next boot answers by opening
++  the setup before any image that is not part of the firmware is loaded
++  (ThirdPartyImageLockLib), with the locks open. Returns only if the request
++  could not be written.
++**/
++STATIC
++VOID
++RestartIntoSetup (
++  VOID
++  )
++{
++  EFI_STATUS  Status;
++  UINT64      OsIndications;
++  UINTN       Size;
++
++  OsIndications = 0;
++  Size          = sizeof (OsIndications);
++  Status        = gRT->GetVariable (
++                         EFI_OS_INDICATIONS_VARIABLE_NAME,
++                         &gEfiGlobalVariableGuid,
++                         NULL,
++                         &Size,
++                         &OsIndications
++                         );
++  if (EFI_ERROR (Status) || (Size != sizeof (OsIndications))) {
++    OsIndications = 0;
++  }
++
++  OsIndications |= EFI_OS_INDICATIONS_BOOT_TO_FW_UI;
++  Status         = gRT->SetVariable (
++                          EFI_OS_INDICATIONS_VARIABLE_NAME,
++                          &gEfiGlobalVariableGuid,
++                          EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
++                          sizeof (OsIndications),
++                          &OsIndications
++                          );
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_WARN, "CFR: the restart into the setup could not be asked for: %r\n", Status));
++    return;
++  }
++
++  gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
++}
++
++/**
++  The settings are locked because an image that is not part of the firmware
++  was loaded before the setup: a restart does not change that, the image
++  runs again. Offer the restart into the setup, which loads none.
++
++  The browser routes each option of a form on its own, and each one fails:
++  the question is asked once for the options of a form, and again when the
++  user tries to save later.
++**/
++STATIC
++VOID
++ShowThirdPartyLocked (
++  VOID
++  )
++{
++  STATIC BOOLEAN           Asked = FALSE;
++  STATIC UINT32            AskedAt;
++  EFI_HII_POPUP_PROTOCOL   *HiiPopup;
++  EFI_HII_POPUP_SELECTION  Selection;
++  EFI_INPUT_KEY            Key;
++  EFI_TIME                 Time;
++  UINT32                   Now;
++
++  //
++  // Seconds of the day: without a clock, once in a boot
++  //
++  Now = MAX_UINT32;
++  if (!EFI_ERROR (gRT->GetTime (&Time, NULL))) {
++    Now = (UINT32)Time.Hour * 3600 + (UINT32)Time.Minute * 60 + Time.Second;
++  }
++
++  if (Asked && ((Now == MAX_UINT32) || ((Now >= AskedAt) && (Now - AskedAt < 3)))) {
++    AskedAt = Now;
++    return;
++  }
++
++  Asked     = TRUE;
++  Selection = EfiHiiPopupSelectionNo;
++  if (EFI_ERROR (gBS->LocateProtocol (&gEfiHiiPopupProtocolGuid, NULL, (VOID **)&HiiPopup)) ||
++      EFI_ERROR (
++        HiiPopup->CreatePopup (
++                    HiiPopup,
++                    EfiHiiPopupStyleError,
++                    EfiHiiPopupTypeYesNo,
++                    mSetupMenuPrivate.HiiHandle,
++                    STRING_TOKEN (STR_OPTIONS_LOCKED_THIRD_PARTY),
++                    &Selection
++                    )
++        ))
++  {
++    CreatePopUp (
++      EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE,
++      &Key,
++      L"The settings are locked in this boot: a driver that is not part of the",
++      L"firmware (an option ROM, a Driver or SysPrep option) started before the setup.",
++      L"",
++      L"Press Y to restart into the setup without it, any other key to go on.",
++      L"What was changed here is not saved.",
++      NULL
++      );
++    if ((Key.UnicodeChar == L'Y') || (Key.UnicodeChar == L'y')) {
++      Selection = EfiHiiPopupSelectionYes;
++    }
++  }
++
++  if (Selection == EfiHiiPopupSelectionYes) {
++    RestartIntoSetup ();
++  }
++
++  //
++  // After the answer: the time the user took is not time between two options
++  //
++  AskedAt = Now;
++  if (!EFI_ERROR (gRT->GetTime (&Time, NULL))) {
++    AskedAt = (UINT32)Time.Hour * 3600 + (UINT32)Time.Minute * 60 + Time.Second;
++  }
++}
++
+ /**
+   Say, once, why the settings are not saved: the browser only reports that
+   the form could not be submitted.
+@@ -245,6 +370,11 @@ ShowOptionsLocked (
+   EFI_HII_POPUP_SELECTION  Selection;
+   EFI_INPUT_KEY            Key;
+ 
++  if (CfrThirdPartyImageLoaded ()) {
++    ShowThirdPartyLocked ();
++    return;
++  }
++
+   if (Shown) {
+     return;
+   }
+diff --git a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuStrings.uni b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuStrings.uni
+index a1cb5a7b0..1ccf20cf3 100644
+--- a/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuStrings.uni
++++ b/UefiPayloadPkg/CfrSetupMenuDxe/SetupMenuStrings.uni
+@@ -66,3 +66,4 @@
+                             #language fr-FR  "Disabled"
+ #string STR_OPTIONS_LOCKED  #language en-US  "The settings are locked until the next restart: a boot was started. Restart and open the setup again to change them."
+                             #language fr-FR  "The settings are locked until the next restart: a boot was started. Restart and open the setup again to change them."
++#string STR_OPTIONS_LOCKED_THIRD_PARTY  #language en-US  "The settings are locked in this boot: a driver that is not part of the firmware (an option ROM, a Driver or SysPrep option) started before the setup. Restart into the setup without it now? What was changed here is not saved."
+diff --git a/UefiPayloadPkg/Include/Guid/ThirdPartyImage.h b/UefiPayloadPkg/Include/Guid/ThirdPartyImage.h
+new file mode 100644
+index 000000000..63c7c0036
+--- /dev/null
++++ b/UefiPayloadPkg/Include/Guid/ThirdPartyImage.h
+@@ -0,0 +1,26 @@
++/** @file
++  The event group that says that an image that is not part of the firmware is
++  about to be loaded before a boot was started.
++
++  Until a boot option is started (ReadyToBoot) the setup may change the
++  settings of the firmware, and the locks that keep an OS from changing them
++  are not armed yet. An option ROM, a Driver#### option and a SysPrep####
++  option run in that window. ThirdPartyImageLockLib arms the locks before the
++  first such image is loaded and then signals this group once, for the
++  modules that keep their own state of the locks.
++
++  Copyright (c) 2026, ouroBIOS contributors
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++
++#ifndef THIRD_PARTY_IMAGE_H_
++#define THIRD_PARTY_IMAGE_H_
++
++#define THIRD_PARTY_IMAGE_EVENT_GROUP_GUID \
++  { \
++    0xa44c4d4f, 0x13c8, 0x4857, { 0xbf, 0x6d, 0xb0, 0x0d, 0x51, 0xbc, 0x12, 0x36 } \
++  }
++
++extern EFI_GUID  gUefiPayloadThirdPartyImageEventGroupGuid;
++
++#endif
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+index 13a43b586..e2462dbad 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+@@ -705,6 +705,13 @@ PlatformBootManagerBeforeConsole (
+   //
+   PlatformRegisterOptionLockPolicy ();
+ 
++  //
++  // The locks of the firmware slots and of the setup options, before the
++  // boot manager loads anything that is not part of the firmware: the
++  // deferred images just below, then the Driver#### options.
++  //
++  PlatformRegisterFirmwareLocks ();
++
+   //
+   // Install ready to lock.
+   // This needs to be done before option rom dispatched.
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
+index d91e98478..a027c33bc 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.h
+@@ -166,11 +166,6 @@ PlatformProcessCapsules (
+   VOID
+   );
+ 
+-/**
+-  Tell coreboot that the firmware booted, so that vboot keeps a new RW slot
+-  that it is trying; lock the switch to the other slot before a boot option
+-  starts and at ExitBootServices().
+-**/
+ /**
+   Make OptionLockStatus read-only once it exists; before EndOfDxe.
+ **/
+@@ -179,6 +174,21 @@ PlatformRegisterOptionLockPolicy (
+   VOID
+   );
+ 
++/**
++  Register the locks of the firmware slots and of the setup options: armed
++  before a boot option starts, at ExitBootServices() and before an image that
++  is not part of the firmware is loaded ahead of those. After the capsules,
++  before EndOfDxe.
++**/
++VOID
++PlatformRegisterFirmwareLocks (
++  VOID
++  );
++
++/**
++  Tell coreboot that the firmware booted, so that vboot keeps a new RW slot
++  that it is trying.
++**/
+ VOID
+ PlatformMarkFirmwareGood (
+   VOID
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+index b4cd16166..4434dde40 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+@@ -63,12 +63,13 @@
+   gEfiEndOfDxeEventGroupGuid
+   gEfiEventExitBootServicesGuid   ## CONSUMES ## Event
+   gEfiEventReadyToBootGuid        ## CONSUMES ## Event
++  gUefiPayloadThirdPartyImageEventGroupGuid ## CONSUMES ## Event
+   gUefiShellFileGuid
+   gUefiPayloadBootSplashGuid
+   gEfiCapsuleReportGuid           ## CONSUMES ## Variable:L"CapsuleLast"
+   gEfiFileInfoGuid                ## CONSUMES
+   gEfiPartTypeSystemPartGuid      ## CONSUMES
+-  gEficorebootNvDataGuid          ## CONSUMES ## Variable:L"ipxe_boot" L"csmwrap_boot" L"usb_boot" L"boot_menu_prompt"; PRODUCES ## Variable:L"OptionLockStatus"
++  gEficorebootNvDataGuid          ## CONSUMES ## Variable:L"ipxe_boot" L"csmwrap_boot" L"usb_boot" L"boot_menu_prompt"; PRODUCES ## Variable:L"OptionLockStatus" L"OptionLockEarly"
+   gEfiGlobalVariableGuid          ## CONSUMES ## Variable:L"SecureBoot"
+ 
+ [Protocols]
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
+index 2afe01069..4bff23671 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformCapsule.c
+@@ -26,6 +26,7 @@
+ #include <Guid/CapsuleReport.h>
+ #include <Guid/FileInfo.h>
+ #include <Guid/Gpt.h>
++#include <Guid/ThirdPartyImage.h>
+ #include <Library/SmmStoreLib.h>
+ #include <Library/VariablePolicyHelperLib.h>
+ #include <Protocol/VariablePolicy.h>
+@@ -487,6 +488,10 @@ CapsuleApply (
+ 
+ STATIC BOOLEAN  mFirmwareSlotsLocked;
+ STATIC BOOLEAN  mOptionLockReported;
++//
++// SmmStoreLib is initialized, and stays so, for the locks
++//
++STATIC BOOLEAN  mLocksRegistered;
+ 
+ /**
+   Before EndOfDxe, which closes Variable Policy to new rules: OptionLockStatus
+@@ -517,6 +522,24 @@ PlatformRegisterOptionLockPolicy (
+ 
+   if (EFI_ERROR (Status)) {
+     DEBUG ((DEBUG_WARN, "Capsules: no Variable Policy for OptionLockStatus: %r\n", Status));
++    return;
++  }
++
++  //
++  // The same for OptionLockEarly (PlatformReportEarlyLock())
++  //
++  Status = RegisterBasicVariablePolicy (
++             VariablePolicy,
++             &gEficorebootNvDataGuid,
++             L"OptionLockEarly",
++             VARIABLE_POLICY_NO_MIN_SIZE,
++             VARIABLE_POLICY_NO_MAX_SIZE,
++             VARIABLE_POLICY_NO_MUST_ATTR,
++             EFI_VARIABLE_NON_VOLATILE,
++             VARIABLE_POLICY_TYPE_LOCK_ON_CREATE
++             );
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_WARN, "Capsules: no Variable Policy for OptionLockEarly: %r\n", Status));
+   }
+ }
+ 
+@@ -560,9 +583,44 @@ PlatformReportOptionLock (
+ }
+ 
+ /**
+-  A boot option or an OS is about to start: from now on, only an update
+-  capsule, with its checks, may change the RW slot that vboot boots.
+-  Allocates nothing.
++  Tell the OS that the locks were armed before the setup could be opened,
++  for an image that is not part of the firmware loaded before any boot
++  option: the volatile variable OptionLockEarly of the coreboot options
++  GUID, one byte, 1. In such a boot the setup cannot save, and where it
++  happens at every boot, for the option ROM of a device, the settings change
++  only after a restart into the setup: tools/hw-report.py says so (FLASH-01).
++  Lock on create, as OptionLockStatus.
++**/
++STATIC
++VOID
++PlatformReportEarlyLock (
++  VOID
++  )
++{
++  EFI_STATUS  Status;
++  UINT8       Early;
++
++  Early  = 1;
++  Status = gRT->SetVariable (
++                  L"OptionLockEarly",
++                  &gEficorebootNvDataGuid,
++                  EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
++                  sizeof (Early),
++                  &Early
++                  );
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_WARN, "Capsules: OptionLockEarly not written: %r\n", Status));
++  }
++}
++
++/**
++  A boot option, an OS or an image that is not part of the firmware is about
++  to start: from now on, only an update capsule, with its checks, may change
++  the RW slot that vboot boots. Allocates nothing.
++
++  @param[in] Event    The event.
++  @param[in] Context  Not NULL for the event of an image that is not part of
++                      the firmware (PlatformRegisterFirmwareLocks()).
+ **/
+ STATIC
+ VOID
+@@ -578,14 +636,18 @@ PlatformLockFirmwareSlots (
+     return;
+   }
+ 
++  if (Context != NULL) {
++    PlatformReportEarlyLock ();
++  }
++
+   Status               = SmmStoreLibVbootLockSlots ();
+   mFirmwareSlotsLocked = !EFI_ERROR (Status);
+   DEBUG ((DEBUG_INFO, "Capsules: switch to the other firmware slot locked: %r\n", Status));
+ 
+   //
+-  // The setup could have changed the security options (bios_lock,
+-  // bootmedia_lock) in this boot; from here, before a boot option or an OS
+-  // runs, coreboot keeps the OS from turning them off.
++  // The setup could have changed its options in this boot; from here, before
++  // a boot option, an OS or an image that is not part of the firmware runs,
++  // coreboot keeps them as they are.
+   //
+   Status = SmmStoreLibOptionLock ();
+   DEBUG ((DEBUG_INFO, "Capsules: security options write-locked: %r\n", Status));
+@@ -593,42 +655,36 @@ PlatformLockFirmwareSlots (
+ }
+ 
+ /**
+-  Tell coreboot that the firmware booted: with vboot, a new RW slot that it is
+-  trying (after an update) is then kept, instead of being given up for the
+-  other one when its tries run out.  Called once the console is up.
+-
+-  With two RW slots, the setup can also switch to the other slot (the
+-  Firmware Update page); coreboot refuses that once a boot option starts
+-  (ReadyToBoot, which booting the setup does not signal) or anything calls
+-  ExitBootServices().
++  Register the locks of the firmware slots and of the setup options. They are
++  armed when a boot option is started (ReadyToBoot, which booting the setup
++  does not signal), when anything calls ExitBootServices(), and when an image
++  that is not part of the firmware is loaded before either: an option ROM, a
++  Driver#### or a SysPrep#### option. ThirdPartyImageLockLib arms them in
++  SMM itself before such an image and signals the event; what is left to do
++  here is the report of the lock, for the setup and for the OS.
++
++  To be called after the capsules of the boot and before EndOfDxe, after
++  which the boot manager loads such images. The events were registered once
++  the console was up, after the option ROMs and the Driver#### options: an
++  image started from one of those ran with the locks open, even when it
++  called ExitBootServices().
++
++  The library stays initialized for the events: at ExitBootServices() it
++  cannot allocate.  Without every event, lock now: the setup then cannot
++  switch slots or save in this boot.
+ **/
+ VOID
+-PlatformMarkFirmwareGood (
++PlatformRegisterFirmwareLocks (
+   VOID
+   )
+ {
+-  EFI_STATUS  Status;
+-  EFI_EVENT   Event;
++  EFI_EVENT  Event;
+ 
+   if (EFI_ERROR (SmmStoreLibInitialize ())) {
+     return;
+   }
+ 
+-  Status = SmmStoreLibVbootSlotGood ();
+-  if (Status != EFI_UNSUPPORTED) {
+-    DEBUG ((DEBUG_INFO, "Capsules: firmware slot marked good: %r\n", Status));
+-  }
+-
+-  if (Status == EFI_UNSUPPORTED) {
+-    SmmStoreLibDeinitialize ();
+-    return;
+-  }
+-
+-  //
+-  // The library stays initialized for the lock: at ExitBootServices() it
+-  // cannot allocate.  Without both events, lock now: the setup then cannot
+-  // switch slots in this boot.
+-  //
++  mLocksRegistered = TRUE;
+   if (EFI_ERROR (EfiCreateEventReadyToBootEx (TPL_CALLBACK, PlatformLockFirmwareSlots, NULL, &Event)) ||
+       EFI_ERROR (
+         gBS->CreateEventEx (
+@@ -639,13 +695,49 @@ PlatformMarkFirmwareGood (
+                &gEfiEventExitBootServicesGuid,
+                &Event
+                )
++        ) ||
++      EFI_ERROR (
++        gBS->CreateEventEx (
++               EVT_NOTIFY_SIGNAL,
++               TPL_CALLBACK,
++               PlatformLockFirmwareSlots,
++               &mLocksRegistered,
++               &gUefiPayloadThirdPartyImageEventGroupGuid,
++               &Event
++               )
+         ))
+   {
+-    DEBUG ((DEBUG_ERROR, "Capsules: no event for the lock of the firmware slots\n"));
++    DEBUG ((DEBUG_ERROR, "Capsules: no event for the locks of the firmware\n"));
+     PlatformLockFirmwareSlots (NULL, NULL);
+   }
+ }
+ 
++/**
++  Tell coreboot that the firmware booted: with vboot, a new RW slot that it is
++  trying (after an update) is then kept, instead of being given up for the
++  other one when its tries run out.  Called once the console is up.
++
++  With two RW slots, the setup can also switch to the other slot (the
++  Firmware Update page); coreboot refuses that once the locks are armed
++  (PlatformRegisterFirmwareLocks()).
++**/
++VOID
++PlatformMarkFirmwareGood (
++  VOID
++  )
++{
++  EFI_STATUS  Status;
++
++  if (!mLocksRegistered) {
++    return;
++  }
++
++  Status = SmmStoreLibVbootSlotGood ();
++  if (Status != EFI_UNSUPPORTED) {
++    DEBUG ((DEBUG_INFO, "Capsules: firmware slot marked good: %r\n", Status));
++  }
++}
++
+ /**
+   Apply the update capsules of this boot, if it has any, and reset after
+   applying one.  Otherwise make sure that the whole flash is no longer
+diff --git a/UefiPayloadPkg/Library/ThirdPartyImageLockLib/ThirdPartyImageLockLib.c b/UefiPayloadPkg/Library/ThirdPartyImageLockLib/ThirdPartyImageLockLib.c
+new file mode 100644
+index 000000000..b990cfe8f
+--- /dev/null
++++ b/UefiPayloadPkg/Library/ThirdPartyImageLockLib/ThirdPartyImageLockLib.c
+@@ -0,0 +1,242 @@
++/** @file
++  Arm the locks of the platform before an image that is not part of the
++  firmware runs ahead of a boot.
++
++  The payload arms coreboot's locks (the setup options, the switch to the
++  other firmware slot) when a boot option is started, at ReadyToBoot, so that
++  the setup, which runs before, can change what they protect. The boot
++  manager also runs other code before that: the option ROMs of the devices,
++  and the Driver#### and SysPrep#### load options, which an OS can create.
++  Such an image ran with the locks open and could write the settings as the
++  setup does, for the next boot.
++
++  This Security2 handler sees every image before it is loaded. For the first
++  one that does not come from a firmware volume, before ReadyToBoot, it arms
++  the locks and signals gUefiPayloadThirdPartyImageEventGroupGuid. The setup
++  then cannot save in that boot, and says so. So that it can save at all on
++  a machine where such an image runs at every boot, a boot that the OS or the
++  setup asked to end in the firmware setup (EFI_OS_INDICATIONS_BOOT_TO_FW_UI)
++  refuses those images until a boot option is started: the locks stay open
++  for the setup, and nothing but the firmware ran before it.
++
++  It is linked after DxeImageVerificationLib: an image that Secure Boot
++  refuses does not get here, as the handlers run in the order in which they
++  are registered and stop at the first that fails.
++
++  Copyright (c) 2026, ouroBIOS contributors
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++
++#include <Uefi.h>
++#include <Guid/EventGroup.h>
++#include <Guid/GlobalVariable.h>
++#include <Guid/ThirdPartyImage.h>
++#include <Library/DebugLib.h>
++#include <Library/SecurityManagementLib.h>
++#include <Library/SmmStoreLib.h>
++#include <Library/UefiBootServicesTableLib.h>
++#include <Library/UefiLib.h>
++#include <Library/UefiRuntimeServicesTableLib.h>
++#include <Protocol/FirmwareVolume2.h>
++
++//
++// A boot option was started: the platform armed the locks itself.
++//
++STATIC BOOLEAN  mReadyToBoot;
++//
++// This boot was asked to end in the firmware setup.
++//
++STATIC BOOLEAN  mFirmwareUi;
++//
++// The locks were armed here.
++//
++STATIC BOOLEAN  mArmed;
++
++/**
++  Does the image come from a firmware volume? As DxeImageVerificationLib
++  decides it (IMAGE_FROM_FV).
++
++  @param[in] File  The device path of the image, or NULL.
++
++  @retval TRUE   The device path leads to a firmware volume.
++  @retval FALSE  It does not, or there is none.
++**/
++STATIC
++BOOLEAN
++ImageFromFirmwareVolume (
++  IN CONST EFI_DEVICE_PATH_PROTOCOL  *File
++  )
++{
++  EFI_STATUS                Status;
++  EFI_HANDLE                DeviceHandle;
++  EFI_DEVICE_PATH_PROTOCOL  *TempDevicePath;
++
++  if (File == NULL) {
++    return FALSE;
++  }
++
++  DeviceHandle   = NULL;
++  TempDevicePath = (EFI_DEVICE_PATH_PROTOCOL *)File;
++  Status         = gBS->LocateDevicePath (
++                          &gEfiFirmwareVolume2ProtocolGuid,
++                          &TempDevicePath,
++                          &DeviceHandle
++                          );
++  if (EFI_ERROR (Status)) {
++    return FALSE;
++  }
++
++  Status = gBS->OpenProtocol (
++                  DeviceHandle,
++                  &gEfiFirmwareVolume2ProtocolGuid,
++                  NULL,
++                  NULL,
++                  NULL,
++                  EFI_OPEN_PROTOCOL_TEST_PROTOCOL
++                  );
++  return (BOOLEAN)!EFI_ERROR (Status);
++}
++
++/**
++  The Security2 handler: before a boot option is started, the first image
++  that is not part of the firmware arms the locks, or is refused in a boot
++  that goes to the firmware setup.
++
++  The locks are armed here, with the SMIs of SmmStoreLib, and not by the
++  modules that take the event: their notifications wait for the TPL to drop,
++  and nothing says that it does before the image is started.
++
++  @retval EFI_SUCCESS        The image may be loaded.
++  @retval EFI_ACCESS_DENIED  Not part of the firmware, in a boot that goes to
++                             the firmware setup: not loaded.
++**/
++STATIC
++EFI_STATUS
++EFIAPI
++ThirdPartyImageLockHandler (
++  IN  UINT32                          AuthenticationStatus,
++  IN  CONST EFI_DEVICE_PATH_PROTOCOL  *File,
++  IN  VOID                            *FileBuffer,
++  IN  UINTN                           FileSize,
++  IN  BOOLEAN                         BootPolicy
++  )
++{
++  EFI_STATUS  Status;
++
++  if (mReadyToBoot || ImageFromFirmwareVolume (File)) {
++    return EFI_SUCCESS;
++  }
++
++  if (mFirmwareUi) {
++    DEBUG ((DEBUG_WARN, "ThirdPartyImageLockLib: image refused: this boot goes to the setup\n"));
++    return EFI_ACCESS_DENIED;
++  }
++
++  if (mArmed) {
++    return EFI_SUCCESS;
++  }
++
++  mArmed = TRUE;
++  Status = SmmStoreLibInitialize ();
++  if (!EFI_ERROR (Status)) {
++    Status = SmmStoreLibVbootLockSlots ();
++    DEBUG ((DEBUG_INFO, "ThirdPartyImageLockLib: switch to the other firmware slot locked: %r\n", Status));
++    Status = SmmStoreLibOptionLock ();
++    DEBUG ((DEBUG_INFO, "ThirdPartyImageLockLib: setup options write-locked: %r\n", Status));
++  }
++
++  EfiEventGroupSignal (&gUefiPayloadThirdPartyImageEventGroupGuid);
++  return EFI_SUCCESS;
++}
++
++/**
++  At EndOfDxe, before the boot manager loads anything that is not part of the
++  firmware and before it clears the request: was this boot asked to end in
++  the firmware setup?
++
++  @param[in] Event    The event.
++  @param[in] Context  Not used.
++**/
++STATIC
++VOID
++EFIAPI
++ThirdPartyImageLockEndOfDxe (
++  IN EFI_EVENT  Event,
++  IN VOID       *Context
++  )
++{
++  EFI_STATUS  Status;
++  UINT64      OsIndications;
++  UINTN       Size;
++
++  OsIndications = 0;
++  Size          = sizeof (OsIndications);
++  Status        = gRT->GetVariable (
++                         EFI_OS_INDICATIONS_VARIABLE_NAME,
++                         &gEfiGlobalVariableGuid,
++                         NULL,
++                         &Size,
++                         &OsIndications
++                         );
++  mFirmwareUi = (BOOLEAN)(!EFI_ERROR (Status) && (Size == sizeof (OsIndications)) &&
++                          ((OsIndications & EFI_OS_INDICATIONS_BOOT_TO_FW_UI) != 0));
++  gBS->CloseEvent (Event);
++}
++
++/**
++  A boot option is started: from here the platform keeps the locks.
++
++  @param[in] Event    The event.
++  @param[in] Context  Not used.
++**/
++STATIC
++VOID
++EFIAPI
++ThirdPartyImageLockReadyToBoot (
++  IN EFI_EVENT  Event,
++  IN VOID       *Context
++  )
++{
++  mReadyToBoot = TRUE;
++  gBS->CloseEvent (Event);
++}
++
++/**
++  Register the handler for the images that are loaded, and the two events.
++  Without the events no image is refused and the first one that is not part
++  of the firmware arms the locks, which is the safe side of both.
++
++  @param[in] ImageHandle  The image handle of the driver.
++  @param[in] SystemTable  The EFI system table.
++
++  @return The status of RegisterSecurity2Handler.
++**/
++EFI_STATUS
++EFIAPI
++ThirdPartyImageLockLibConstructor (
++  IN EFI_HANDLE        ImageHandle,
++  IN EFI_SYSTEM_TABLE  *SystemTable
++  )
++{
++  EFI_STATUS  Status;
++  EFI_EVENT   Event;
++
++  Status = gBS->CreateEventEx (
++                  EVT_NOTIFY_SIGNAL,
++                  TPL_CALLBACK,
++                  ThirdPartyImageLockEndOfDxe,
++                  NULL,
++                  &gEfiEndOfDxeEventGroupGuid,
++                  &Event
++                  );
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_WARN, "ThirdPartyImageLockLib: no EndOfDxe event: %r\n", Status));
++  }
++
++  Status = EfiCreateEventReadyToBootEx (TPL_CALLBACK, ThirdPartyImageLockReadyToBoot, NULL, &Event);
++  if (EFI_ERROR (Status)) {
++    DEBUG ((DEBUG_WARN, "ThirdPartyImageLockLib: no ReadyToBoot event: %r\n", Status));
++  }
++
++  return RegisterSecurity2Handler (ThirdPartyImageLockHandler, EFI_AUTH_OPERATION_VERIFY_IMAGE);
++}
+diff --git a/UefiPayloadPkg/Library/ThirdPartyImageLockLib/ThirdPartyImageLockLib.inf b/UefiPayloadPkg/Library/ThirdPartyImageLockLib/ThirdPartyImageLockLib.inf
+new file mode 100644
+index 000000000..012befc16
+--- /dev/null
++++ b/UefiPayloadPkg/Library/ThirdPartyImageLockLib/ThirdPartyImageLockLib.inf
+@@ -0,0 +1,41 @@
++## @file
++#  Arm the locks of the platform before an image that is not part of the
++#  firmware runs ahead of a boot: a Security2 handler for SecurityStubDxe.
++#
++#  Copyright (c) 2026, ouroBIOS contributors
++#  SPDX-License-Identifier: BSD-2-Clause-Patent
++##
++
++[Defines]
++  INF_VERSION                    = 0x00010005
++  BASE_NAME                      = ThirdPartyImageLockLib
++  FILE_GUID                      = 5E59667E-08B9-4EA5-A1E8-DF4D15AF85EB
++  MODULE_TYPE                    = DXE_DRIVER
++  VERSION_STRING                 = 1.0
++  LIBRARY_CLASS                  = NULL|DXE_DRIVER
++  CONSTRUCTOR                    = ThirdPartyImageLockLibConstructor
++
++[Sources]
++  ThirdPartyImageLockLib.c
++
++[Packages]
++  MdePkg/MdePkg.dec
++  MdeModulePkg/MdeModulePkg.dec
++  UefiPayloadPkg/UefiPayloadPkg.dec
++
++[LibraryClasses]
++  DebugLib
++  SecurityManagementLib
++  SmmStoreLib
++  UefiBootServicesTableLib
++  UefiLib
++  UefiRuntimeServicesTableLib
++
++[Guids]
++  gEfiEndOfDxeEventGroupGuid                  ## CONSUMES ## Event
++  gEfiEventReadyToBootGuid                    ## CONSUMES ## Event
++  gEfiGlobalVariableGuid                      ## SOMETIMES_CONSUMES ## Variable:L"OsIndications"
++  gUefiPayloadThirdPartyImageEventGroupGuid   ## PRODUCES ## Event
++
++[Protocols]
++  gEfiFirmwareVolume2ProtocolGuid             ## SOMETIMES_CONSUMES
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dec b/UefiPayloadPkg/UefiPayloadPkg.dec
+index 930c0df5a..c12a8a990 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dec
++++ b/UefiPayloadPkg/UefiPayloadPkg.dec
+@@ -38,6 +38,9 @@
+   ## Include/Guid/FirmwareUpdateConfig.h
+   gFirmwareUpdateFormSetGuid = { 0x04e8b12f, 0xc919, 0x4cd9, { 0x89, 0x3d, 0x64, 0x23, 0x40, 0x4d, 0xc0, 0x2d } }
+ 
++  ## Include/Guid/ThirdPartyImage.h
++  gUefiPayloadThirdPartyImageEventGroupGuid = { 0xa44c4d4f, 0x13c8, 0x4857, { 0xbf, 0x6d, 0xb0, 0x0d, 0x51, 0xbc, 0x12, 0x36 } }
++
+   #
+   ## Defines the token space for the UEFI Payload Package PCDs.
+   #
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
+index 7177c3f6a..b8ce230c0 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dsc
++++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
+@@ -1250,6 +1250,13 @@
+ !endif
+ !if $(CSMWRAP) == TRUE
+       NULL|UefiPayloadPkg/Library/CsmWrapSecureBootLib/CsmWrapSecureBootLib.inf
++!endif
++!if $(VARIABLE_SUPPORT) == "SMMSTORE" || ($(CAPSULE_SUPPORT) && $(BOOTLOADER) == "COREBOOT")
++      #
++      # After DxeImageVerificationLib: an image that Secure Boot refuses arms
++      # nothing
++      #
++      NULL|UefiPayloadPkg/Library/ThirdPartyImageLockLib/ThirdPartyImageLockLib.inf
+ !endif
+   }
+ !endif

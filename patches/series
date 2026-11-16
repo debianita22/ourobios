@@ -302,3 +302,5 @@
 0311-drivers-smmstore-Write-only-the-used-blocks-of-a-rec.patch
 0312-nb-intel-haswell-native_raminit-Train-again-with-the.patch
 0313-drivers-smmstore-Erase-the-commit-block-of-a-reclaim.patch
+0314-drivers-smmstore-End-the-commit-record-of-a-reclaim-.patch
+0315-mb-lenovo-haswell-Tell-the-native-RAM-init-the-DRAM-.patch

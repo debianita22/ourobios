@@ -22,6 +22,7 @@
 #include <Library/UefiRuntimeServicesTableLib.h>
 #include <Guid/CfrSetupMenuGuid.h>
 #include <Guid/VariableFormat.h>
+#include <Guid/ThirdPartyImage.h>
 
 //
 // CFR_OPTFLAG_LOCK_AT_BOOT: the setup may still write the option in this
@@ -39,6 +40,8 @@
 STATIC EFI_EVENT  mLockAtBootEvent      = NULL;
 STATIC BOOLEAN    mLockAtBootRegistered = FALSE;
 STATIC BOOLEAN    mLockAtBootApplied    = FALSE;
+STATIC EFI_EVENT  mThirdPartyImageEvent = NULL;
+STATIC BOOLEAN    mThirdPartyImage      = FALSE;
 
 /**
   Register, before EndOfDxe, the rule that write-locks a CFR option variable
@@ -133,8 +136,44 @@ CfrApplyLockAtBoot (
 }
 
 /**
+  An image that is not part of the firmware is about to be loaded before a
+  boot was started (an option ROM, a Driver#### or a SysPrep#### option): the
+  platform armed its locks, and the options with CFR_OPTFLAG_LOCK_AT_BOOT
+  lock now as at ReadyToBoot, for the same reason.
+
+**/
+STATIC
+VOID
+EFIAPI
+CfrThirdPartyImageNotify (
+  IN EFI_EVENT  Event,
+  IN VOID       *Context
+  )
+{
+  mThirdPartyImage = TRUE;
+  if (mLockAtBootRegistered) {
+    CfrApplyLockAtBoot (Event, Context);
+  }
+}
+
+/**
+  Whether an image that is not part of the firmware was loaded before a boot
+  was started.
+
+**/
+BOOLEAN
+EFIAPI
+CfrThirdPartyImageLoaded (
+  VOID
+  )
+{
+  return mThirdPartyImage;
+}
+
+/**
   Register a ReadyToBoot callback that write-locks CFR variables marked
-  CFR_OPTFLAG_LOCK_AT_BOOT.
+  CFR_OPTFLAG_LOCK_AT_BOOT, and the same for an image that is not part of the
+  firmware loaded before that.
 
 **/
 EFI_STATUS
@@ -144,6 +183,21 @@ CfrRegisterLockAtBootEvent (
   )
 {
   EFI_STATUS  Status;
+
+  if (mThirdPartyImageEvent == NULL) {
+    Status = gBS->CreateEventEx (
+                    EVT_NOTIFY_SIGNAL,
+                    TPL_CALLBACK,
+                    CfrThirdPartyImageNotify,
+                    NULL,
+                    &gUefiPayloadThirdPartyImageEventGroupGuid,
+                    &mThirdPartyImageEvent
+                    );
+    if (EFI_ERROR (Status)) {
+      mThirdPartyImageEvent = NULL;
+      DEBUG ((DEBUG_WARN, "CFR: No event for the images loaded before a boot: %r\n", Status));
+    }
+  }
 
   if (!mLockAtBootRegistered || (mLockAtBootEvent != NULL)) {
     return EFI_SUCCESS;
@@ -179,6 +233,11 @@ CfrCleanupLockAtBoot (
   if (mLockAtBootEvent != NULL) {
     gBS->CloseEvent (mLockAtBootEvent);
     mLockAtBootEvent = NULL;
+  }
+
+  if (mThirdPartyImageEvent != NULL) {
+    gBS->CloseEvent (mThirdPartyImageEvent);
+    mThirdPartyImageEvent = NULL;
   }
 
   mLockAtBootApplied = FALSE;

@@ -1,0 +1,42 @@
+## @file
+#  Arm the locks of the platform before an image that is not part of the
+#  firmware runs ahead of a boot: a Security2 handler for SecurityStubDxe.
+#
+#  Copyright (c) 2026, ouroBIOS contributors
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = ThirdPartyImageLockLib
+  FILE_GUID                      = 5E59667E-08B9-4EA5-A1E8-DF4D15AF85EB
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = NULL|DXE_DRIVER
+  CONSTRUCTOR                    = ThirdPartyImageLockLibConstructor
+
+[Sources]
+  ThirdPartyImageLockLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  UefiPayloadPkg/UefiPayloadPkg.dec
+  OuroBiosPkg/OuroBiosPkg.dec
+
+[LibraryClasses]
+  DebugLib
+  SecurityManagementLib
+  SmmStoreLib
+  UefiBootServicesTableLib
+  UefiLib
+  UefiRuntimeServicesTableLib
+
+[Guids]
+  gEfiEndOfDxeEventGroupGuid                  ## CONSUMES ## Event
+  gEfiEventReadyToBootGuid                    ## CONSUMES ## Event
+  gEfiGlobalVariableGuid                      ## SOMETIMES_CONSUMES ## Variable:L"OsIndications"
+  gUefiPayloadThirdPartyImageEventGroupGuid   ## PRODUCES ## Event
+
+[Protocols]
+  gEfiFirmwareVolume2ProtocolGuid             ## SOMETIMES_CONSUMES

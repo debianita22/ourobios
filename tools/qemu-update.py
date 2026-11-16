@@ -47,7 +47,14 @@
 #      della memoria che vede il sistema operativo nessuna area riservata con
 #      EFI_MEMORY_RUNTIME, libera tutta la memoria da 1 MiB a 1 GiB, il com
 #      buffer di SMMSTORE, con la pagina degli argomenti, MMIO runtime e la
-#      finestra ECAM della tabella MCFG memoria riservata (edk2/0052)
+#      finestra ECAM della tabella MCFG memoria riservata (edk2/0052).
+#      Con --lock-driver, poi, codice che non e' del firmware prima di ogni
+#      voce di boot: la voce Driver0000, un driver dell'ESP
+#      (slot-lock-driver.efi) che chiede l'altro slot appena parte. Il
+#      payload arma i blocchi prima di caricarlo (edk2/0068), coreboot
+#      rifiuta, l'altro slot resta quello di prima; e in un avvio chiesto
+#      verso il setup (OsIndications, BOOT_TO_FW_UI) il payload non lo
+#      carica, spegne la richiesta e apre il menu
 #  10. RW_NVRAM pieno prima di una capsula: cancellato e riscritto
 #      dall'inizio, la richiesta di provare il nuovo slot c'e'
 #  11. corrente tolta a meta' della scrittura di uno slot (riempito prima
@@ -130,6 +137,21 @@ EFI_GLOBAL = uuid.UUID("8be4df61-93ca-11d2-aa0d-00e098032b8c").bytes_le
 FMP_DXE_GUID = uuid.UUID("c9405485-0c3d-40b8-88bf-d2a07e5c3edd").bytes_le
 # Una variabile di prova, mai usata dal firmware: scritta prima del primo
 # aggiornamento, deve esserci ancora alla fine (le capsule non toccano SMMSTORE)
+# La voce Driver0000 della prova: un driver dell'ESP, con un percorso di solo
+# file (il boot manager collega i dischi e lo cerca in ogni file system).
+# EFI_LOAD_OPTION (UEFI 2.10, 3.1.3): attributi (LOAD_OPTION_ACTIVE),
+# lunghezza del percorso, descrizione, il percorso (un nodo file, 4.4, e la fine)
+DRIVER_FILE = "DRIVER.EFI"
+DRIVER_LINE = "ouroBIOS slot lock test: TRY_OTHER as a Driver option: "
+EFI_OS_INDICATIONS_BOOT_TO_FW_UI = 1
+
+
+def driver_option():
+    path = ("\\EFI\\BOOT\\%s\0" % DRIVER_FILE).encode("utf-16-le")
+    nodes = struct.pack("<BBH", 4, 4, 4 + len(path)) + path + struct.pack("<BBH", 0x7F, 0xFF, 4)
+    return struct.pack("<IH", 1, len(nodes)) + "slot lock driver\0".encode("utf-16-le") + nodes
+
+
 MARK_NAME = "OuroUpdateTest"
 MARK_GUID = uuid.UUID("5e7c0a3d-41b2-4f6a-9c8e-2d1f0b7a6e94").bytes_le
 MARK_DATA = b"ouroBIOS"
@@ -195,6 +217,13 @@ class Esp:
 
     def del_os(self):
         run(["mdel", "-i", self.image(), "::/EFI/BOOT/BOOTX64.EFI"])
+
+    def put_driver(self, src):
+        """src come \\EFI\\BOOT\\DRIVER.EFI: il file della voce Driver0000."""
+        run(["mcopy", "-o", "-i", self.image(), src, "::/EFI/BOOT/" + DRIVER_FILE])
+
+    def del_driver(self):
+        run(["mdel", "-i", self.image(), "::/EFI/BOOT/" + DRIVER_FILE])
 
     def files(self):
         out = run(["mdir", "-b", "-i", self.image(), "::/EFI/UpdateCapsule"])
@@ -269,6 +298,15 @@ class Flash:
             if v["name"] == name and v["guid"] == guid and v["state"] in VAR_VALID:
                 self.write(soff + v["off"] + 2, bytes([v["state"] & VAR_DELETED]))
 
+    def del_var(self, name, guid):
+        """Cancella una variabile come il driver delle variabili: lo stato
+        delle sue copie valide."""
+        soff = self.areas["SMMSTORE"][0]
+        _, found, _ = self.store()
+        for v in found:
+            if v["name"] == name and v["guid"] == guid and v["state"] in VAR_VALID:
+                self.write(soff + v["off"] + 2, bytes([v["state"] & VAR_DELETED]))
+
     def os_indications(self):
         raw = self.var("OsIndications", EFI_GLOBAL)
         return struct.unpack("<Q", raw)[0] if raw and len(raw) == 8 else 0
@@ -335,8 +373,10 @@ class UpdateTest:
     def idle(self, text):
         return any(m in text for m in self.IDLE)
 
-    def __init__(self, caps, lock_test, out, timeout, keep_cache=None, refused_store=None, refused_slot=None):
+    def __init__(self, caps, lock_test, out, timeout, keep_cache=None, refused_store=None, refused_slot=None,
+                 lock_driver=None):
         self.paths, self.lock_test, self.out, self.timeout = caps, lock_test, out, timeout
+        self.lock_driver = lock_driver
         self.keep_path, self.keep = keep_cache, None
         self.refused_paths = {"store": refused_store, "slot": refused_slot}
         self.refused = {}
@@ -883,6 +923,69 @@ class UpdateTest:
         if not st["valid"] or SLOTS[st["try_next"]] != running or SLOTS[st["tried"]] != running:
             raise Fail("%s: RW_NVRAM %s, atteso lo slot %s, quello che gira" % (tag, nv_str(st), running))
 
+    def driver_boots(self, tag, running):
+        """Codice che non e' del firmware prima di ogni voce di boot: la voce
+        Driver0000, slot-lock-driver.efi dell'ESP, che appena parte chiede a
+        coreboot l'altro slot. Il payload deve aver armato i blocchi prima di
+        caricarlo (ThirdPartyImageLockLib, edk2/0068): coreboot rifiuta
+        (SMMSTORE_RET_FAILURE, 1) e RW_NVRAM non cambia slot. Poi lo stesso
+        con la richiesta del setup in OsIndications (BOOT_TO_FW_UI), come la
+        scrive un sistema operativo: il payload non carica il driver, spegne
+        la richiesta e avvia il menu, con i blocchi aperti per il setup."""
+        m, f = self.m, self.flash
+        armed = "ThirdPartyImageLockLib: switch to the other firmware slot locked: Success"
+        refused = "ThirdPartyImageLockLib: image refused: this boot goes to the setup"
+        f.set_var("Driver0000", EFI_GLOBAL, update.VAR_ATTRS, driver_option())
+        f.set_var("DriverOrder", EFI_GLOBAL, update.VAR_ATTRS, struct.pack("<H", 0))
+        self.esp.put_driver(self.lock_driver)
+        try:
+            # 1. un avvio qualsiasi: il driver parte, con i blocchi armati
+            how, text = self.boot(tag + "-driver")
+            self.expect(tag + "-driver", how, text, "booted")
+            got = re.findall(re.escape(DRIVER_LINE) + r"(\d)", text)
+            if len(got) != 1:
+                raise Fail("%s: il driver della voce Driver0000 e' partito %d volte, non una (serial-%s-driver.log)"
+                           % (tag, len(got), tag))
+            if armed not in text or text.index(armed) > text.index(DRIVER_LINE):
+                raise Fail("%s: il payload non ha bloccato l'altro slot prima di caricare il driver" % tag)
+            if got[0] != "1":
+                raise Fail("%s: al driver della voce Driver0000 coreboot ha risposto %s, non 1 "
+                           "(SMMSTORE_RET_FAILURE)" % (tag, got[0]))
+            if "SMMSTORE: the other vboot slot is locked until reboot" not in text:
+                raise Fail("%s: coreboot non dice che l'altro slot e' bloccato" % tag)
+            st = f.nv()
+            if not st["valid"] or SLOTS[st["try_next"]] != running or SLOTS[st["tried"]] != running:
+                raise Fail("%s: RW_NVRAM %s dopo il driver, atteso lo slot %s, quello che gira"
+                           % (tag, nv_str(st), running))
+
+            # 2. l'avvio chiesto verso il setup: il driver non parte
+            f.set_var("OsIndications", EFI_GLOBAL, update.VAR_ATTRS,
+                      struct.pack("<Q", f.os_indications() | EFI_OS_INDICATIONS_BOOT_TO_FW_UI))
+
+            def menu():
+                m.alive()
+                t = m.serial_text()
+                return refused in t and "[Bds] Booting Boot Manager Menu." in t[t.index(refused):]
+            try:
+                m.boot(tag + "-setup", self.esp.qemu_args() + self.tpm_on())
+                m.wait("%s: il payload non ha rifiutato il driver e avviato il menu (serial-%s-setup.log)"
+                       % (tag, tag), menu, self.timeout)
+                m.halt()
+            finally:
+                self.tpm_off()
+            text = m.serial_text()
+            self.tpm_check(tag + "-setup", text)
+            if DRIVER_LINE in text:
+                raise Fail("%s: il driver e' partito anche nell'avvio chiesto verso il setup" % tag)
+            if armed in text:
+                raise Fail("%s: nell'avvio chiesto verso il setup i blocchi sono stati armati prima del menu" % tag)
+            if f.os_indications() & EFI_OS_INDICATIONS_BOOT_TO_FW_UI:
+                raise Fail("%s: la richiesta del setup e' ancora in OsIndications" % tag)
+        finally:
+            f.del_var("Driver0000", EFI_GLOBAL)
+            f.del_var("DriverOrder", EFI_GLOBAL)
+            self.esp.del_driver()
+
     # --- la prova -------------------------------------------------------------
 
     def run(self):
@@ -993,6 +1096,11 @@ class UpdateTest:
                 "di slot, coreboot lo rifiuta, RW_NVRAM resta su B; nella mappa della memoria nessuna "
                 "area riservata runtime, libera da 1 MiB a 1 GiB, il com buffer di SMMSTORE MMIO runtime, "
                 "la finestra ECAM di MCFG riservata")
+        if self.lock_driver:
+            self.driver_boots("9", "B")
+            self.ok("una voce Driver0000, codice non del firmware prima di ogni voce di boot: il payload "
+                    "arma i blocchi prima di caricarlo, coreboot rifiuta il cambio di slot; in un avvio "
+                    "chiesto verso il setup (OsIndications) non lo carica, e apre il menu con i blocchi aperti")
 
         # 10. RW_NVRAM pieno: chi scrive dopo (verstage o il payload con la
         # richiesta) lo cancella e riparte dall'inizio
@@ -1132,6 +1240,9 @@ def main():
                     help="le capsule %s (tools/build.sh update-test)" % ", ".join(ROMS))
     ap.add_argument("--lock-test", required=True, metavar="EFI",
                     help="tools/efi/slot-lock-test.c compilato (tools/build.sh update-test)")
+    ap.add_argument("--lock-driver", metavar="EFI",
+                    help="tools/efi/slot-lock-driver.c compilato (tools/build.sh update-test): la voce "
+                    "Driver0000 del passo 9")
     ap.add_argument("--keep-cache", metavar="CAP",
                     help="la capsula di B con i soli due slot nel manifest (tools/build.sh update-test, "
                     "B-cache.cap): il passo 15")
@@ -1149,7 +1260,7 @@ def main():
             sys.exit("serve %s (Debian/Ubuntu: apt install qemu-system-x86 mtools swtpm swtpm-tools)" % tool)
     os.makedirs(args.out, exist_ok=True)
     test = UpdateTest(args.caps, args.lock_test, args.out, args.timeout, args.keep_cache,
-                      args.refused_store, args.refused_slot)
+                      args.refused_store, args.refused_slot, args.lock_driver)
     passed = False
     try:
         test.run()

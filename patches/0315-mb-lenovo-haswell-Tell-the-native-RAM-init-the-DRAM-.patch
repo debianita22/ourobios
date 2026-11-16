@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 16 Nov 2026 13:57:43 +0100
+Subject: [PATCH] mb/lenovo/haswell: Tell the native RAM init the DRAM voltage
+ of the W541
+
+The native RAM init takes the DRAM voltage from the SPDs, as the MRC
+does: 1.35 V when every module operates at it, 1.5 V otherwise. The
+ThinkPad W541 feeds its four SO-DIMM slots 1.35 V and has nothing that
+raises it, so with one module that is not DDR3L the memory controller
+and the PCU were set for a voltage that the modules do not get (VccDDQ
+high, the DIMM Vref and VSSHI targets), and an XMP profile at 1.5 V was
+taken for one that the board can run.
+
+Set ddr_voltage_mv to 1350 for the W541. With DDR3L modules the settings
+are the ones the SPDs gave: what changes is the key of the saved
+training, which has the voltage of the devicetree in it, so the memory
+trains once more after the update. A module that is not DDR3L runs
+under its voltage as before, now with the controller set for what is
+there. The MRC blob does not read this setting.
+
+TEST=Build of the ThinkPad W541 with the native RAM init.
+
+Change-Id: If845a6e62bcae7676aaa12b99090655f53fd4b77
+---
+ src/mainboard/lenovo/haswell/variants/w541/devicetree.cb | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb b/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb
+index 2c7e2656..76c71889 100644
+--- a/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb
++++ b/src/mainboard/lenovo/haswell/variants/w541/devicetree.cb
+@@ -14,6 +14,8 @@ chip northbridge/intel/haswell
+ 	}"
+ 	register "ec_present" = "true"
+ 	register "spd_addresses" = "{0x50, 0x52, 0x51, 0x53}"
++	# The board feeds the SO-DIMMs 1.35 V and nothing else
++	register "ddr_voltage_mv" = "1350"
+ 	# The 8 GT/s presets of the OEM firmware (GNET94WW) for the NVIDIA GPU
+ 	register "peg_cfg[0]" = "{
+ 		.gen3_presets	= true,

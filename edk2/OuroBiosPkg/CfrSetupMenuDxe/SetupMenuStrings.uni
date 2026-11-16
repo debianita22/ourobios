@@ -66,3 +66,4 @@
                             #language fr-FR  "Disabled"
 #string STR_OPTIONS_LOCKED  #language en-US  "The settings are locked until the next restart: a boot was started. Restart and open the setup again to change them."
                             #language fr-FR  "The settings are locked until the next restart: a boot was started. Restart and open the setup again to change them."
+#string STR_OPTIONS_LOCKED_THIRD_PARTY  #language en-US  "The settings are locked in this boot: a driver that is not part of the firmware (an option ROM, a Driver or SysPrep option) started before the setup. Restart into the setup without it now? What was changed here is not saved."

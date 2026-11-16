@@ -78,6 +78,20 @@ CfrCleanupLockAtBoot (
   );
 
 /**
+  Whether an image that is not part of the firmware was loaded before a boot
+  was started (gUefiPayloadThirdPartyImageEventGroupGuid): the platform armed
+  its locks then, before the setup could be opened.
+
+  @retval TRUE   One was loaded: the options are locked for this boot.
+  @retval FALSE  None.
+**/
+BOOLEAN
+EFIAPI
+CfrThirdPartyImageLoaded (
+  VOID
+  );
+
+/**
   Register the EndOfDxe callback that links the pages of other drivers from
   the categories, once their formsets are installed.
 

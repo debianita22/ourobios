@@ -133,13 +133,17 @@ PACKAGE_DECLS = {
         "PcdSerialTerminalPrintEnabled",
         # il setup CFR e le regioni delle capsule
         "PcdCfrSetupMenuPasswordCategory", "PcdCfrSetupMenuGeneralCategory",
-        "PcdFmpDeviceSmmAllowedRegions"),
+        "PcdFmpDeviceSmmAllowedRegions",
+        # i lock armati prima di un'immagine che non e' del firmware
+        # (ThirdPartyImageLockLib, edk2/0068)
+        "gUefiPayloadThirdPartyImageEventGroupGuid"),
     "MdeModulePkg/MdeModulePkg.dec": (
         "gTimeDateSettingsFormSetGuid",),
 }
 # Gli header di quelle dichiarazioni, nuovi in R: in Include del package
 PACKAGE_HEADERS = ("UefiPayloadPkg/Include/Guid/BootSplashConfig.h",
                    "UefiPayloadPkg/Include/Guid/FirmwareUpdateConfig.h",
+                   "UefiPayloadPkg/Include/Guid/ThirdPartyImage.h",
                    "UefiPayloadPkg/Include/Library/BootSplashLib.h",
                    "UefiPayloadPkg/Include/Library/CbfsLib.h",
                    "UefiPayloadPkg/Include/Library/CfrHelpersLib.h",

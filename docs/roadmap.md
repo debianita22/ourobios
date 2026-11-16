@@ -20,13 +20,14 @@ is here. None of it is a promise of a date.
 | [Memory training across updates on the W541](#memory-training-across-updates-on-the-w541) | W541 | built for v1.6.1 (patches 0250-0252): the version of the cache is a tag and a key from the code (`nri`) or from the inputs of `mrc.bin`; the capsules and *Go back to* keep the cache; MEM-03 passed on a W541 (2026-11-08) | a capsule update and a fallback to an older slot on a W541; `mrc` |
 | [Native RAM init: XMP, and the steps still missing](#native-ram-init-xmp-and-the-steps-still-missing) | W541 | built for v1.7.0 (patches 0275-0280, 0290-0297, 0299, 0301-0307, 0309, 0310): an XMP profile of the modules as an option, off by default, given up by itself when it does not train or does not reach the payload; the decoder of XMP 1.3 corrected, with a unit test; the write Vref of the modules centred, and their command Vref. On the W541 with rc1 (2026-11-10): the default, the refusal of a profile that is not there, the giving up and the write Vref passed; its modules have no XMP profile | MEM-15 (the command Vref) and MEM-11, MEM-12 again for their lines, on a W541 with rc2; MEM-13 with DDR3L SO-DIMMs that have a profile at 1.35 V; MEM-19 to MEM-21 with rc6 (the turnaround, the Vrefs and the per-byte settings of the MRC) |
 | [The option lock for every setup option](#the-option-lock-for-every-setup-option) | both | built for v1.7.0 on both boards (patches 0281-0284, 0288, `edk2/0061`, `edk2/0062`, `edk2/0064`; the W541 from rc11): the lock of every setup option, the fault tolerant write blocks, the reclaim of the store in SMM; passed on the M920x with rc2 to rc10 | LOCK-01 to LOCK-11 on a W541, with macOS too |
-| [A reclaim of the store in SMM](dev-v1.7.0-m920x.md#stage-3-a-reclaim-of-the-store-in-smm) | both | built for v1.7.0 (patch 0288, `edk2/0064`), on both boards from rc11: with the lock armed, the reclaimed store is checked whole in SMM and put in place behind a commit record, with a recovery in ramstage | LOCK-11 passed on the M920x with rc10; LOCK-11 on a W541 |
+| [A reclaim of the store in SMM](dev-v1.7.0-m920x.md#stage-3-a-reclaim-of-the-store-in-smm) | both | built for v1.7.0 (patch 0288, `edk2/0064`), on both boards from rc11: with the lock armed, the reclaimed store is checked whole in SMM and put in place behind a commit record, with a recovery in ramstage | LOCK-11 passed on the M920x with rc10 and on the W541 with rc11 to rc15: 7.7 s a reclaim there, nearly all of it erases. For v1.8.0 fewer of them (patch 0314, `edk2/0067`: four in place of seven or eight); LOCK-11 for the time, then [the erase itself](#the-erase-time-of-the-w541s-flash) |
+| [Code before a boot option](#code-before-a-boot-option) | both | built for v1.8.0 (`edk2/0068`): the locks armed before the first image that is not the firmware's (an option ROM, a `Driver####` or `SysPrep####` option), and a boot asked to end in the setup that loads none; in the update test in QEMU | LOCK-12 on both machines, LOCK-13 by the owner |
 | [Cache version for coreboot's memory settings](#cache-version-for-coreboots-memory-settings) | M920x | done in v1.6.0 (patch 0222): a Kconfig for the version, and `tools/fspm-settings.sh` stops CI when the files of those settings change | the first bump, with the release that changes them |
 | [Setup switches not added](#setup-switches-not-added) | M920x | they could lock the owner out, or change nothing | none planned |
 | [Hyper-Threading on the W541](#hyper-threading-on-the-w541) | W541 | built for v1.6.1 (patches 0247-0249, 0258); CPU-06 passed on a W541 (2026-11-08): off, locked, kept across S3, the training cache kept | `mrc` (this machine boots only `nri` slots) |
 | [Device switches on the W541](#device-switches-on-the-w541) | W541 | the microphone, the camera, the card reader and the Ethernet built and passed in v1.6.1; the fingerprint switch built after it (patch 0265), from the port table of the Lenovo firmware | the fingerprint switch on a unit that has the reader |
 | [Wake on LAN after a shutdown on the W541](#wake-on-lan-after-a-shutdown-on-the-w541) | W541 | built for v1.6.1 (patch 0259), as the Lenovo firmware does it; not run on a machine | NET-02 from power-off on AC and on battery, with each setting |
-| [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot (no PEI, no LockBox, no boot script); the stock design read and a coreboot design written (2026-11-08), unbuilt: new secret-handling code in both, untestable without a locked drive | a decision whether to build it, with the caveats |
+| [Power-on and hard disk passwords](#power-on-and-hard-disk-passwords) | W541 | a drive locked by EDK2 cannot be unlocked after S3 on coreboot (no PEI, no LockBox, no boot script); the stock design read and a coreboot design written (2026-11-08), unbuilt: new secret-handling code in both, untestable without a locked drive | the owner wants the hard disk password (2026-11-16): [the decisions it needs](#power-on-and-hard-disk-passwords) first, then the build, behind an option that is off |
 | [NVIDIA power steering and the EC's CPU limits](#nvidia-power-steering-and-the-ecs-cpu-limits) | W541 | little use under Linux; under 16 minutes of full load, on AC and on battery, the EC raised no CPU-limit event at all (2026-11-09) | none planned: a `_PPC` policy only if a unit shows the events |
 | [EC events left out](#ec-events-left-out) | W541 | the HKEY queue built in v1.6.1 (patch 0260); the beep mask is the Lenovo one; 0x48, 0x49 and 0x5B out, and none came under load on AC or battery (2026-11-09) | none planned |
 | [Card reader of the W541](#card-reader-of-the-w541) | W541 | the premise was wrong: the reader is an O2 Micro OZ777, which the payload drives already | none planned |
@@ -552,6 +553,76 @@ the owner turned off could be on again at the next boot.
   same Kconfigs (decision 4), after FLASH-06 and the regressions there,
   with macOS, whose NVRAM goes through the same store.
 
+## Code before a boot option
+
+The locks that coreboot keeps for the payload (the setup options, the
+switch to the other firmware slot) were armed at ReadyToBoot, so that
+the setup can change what they protect. The boot manager of EDK II
+runs, before that, the option ROMs of the devices, the `Driver####`
+options (before the consoles) and the `SysPrep####` options (after
+them, before the hotkey of the setup): each a way for an OS that can
+write a UEFI variable to have code of its own run with the locks open,
+at the next boot. It was the open point C4 of the option lock.
+
+**Built for v1.8.0** (`edk2/0068`): a Security2 handler, the standard
+place where Secure Boot itself refuses an image, arms the locks before
+the first image that does not come from a firmware volume is loaded,
+and the setup, which then cannot save, says so and offers a restart
+into the setup. That restart is the request an OS makes with
+`EFI_OS_INDICATIONS_BOOT_TO_FW_UI`: a boot with it loads no such image
+until a boot option is started. No option was added: there is nothing
+to choose that is safe to leave open.
+
+- **Not covered**: an image loaded from a capsule before EndOfDxe
+  (`SecurityStubDxe` defers it, and the capsules of the project have
+  none); a module of the firmware volume named by a `Driver####`
+  option, which is the firmware's own code (CSMWrap is refused under
+  Secure Boot by its own handler, and what it or iPXE then start goes
+  through the handler or through `ExitBootServices()`, both of which
+  arm the locks).
+- **To watch**: a machine with a device whose option ROM the payload
+  loads at every boot. The setup then saves only in a boot asked to end
+  in the setup. With coreboot's PCI enumeration the payload does not
+  read the ROM of a device by itself, so on the two boards none is
+  expected; LOCK-12 without the probe says (the first two numbers of
+  `OptionLockStatus` are written at ReadyToBoot, and the setup saves
+  with no question).
+- **Next step**: LOCK-12 and LOCK-13 ([docs/testing.md](testing.md)).
+
+## The erase time of the W541's flash
+
+A reclaim of the store takes 2.2 to 2.4 s on the M920x and 7.7 s on the
+W541, for the same erases: about 0.3 s against about a second for 64
+KiB. The drivers differ, read in the code of the pin:
+
+- Cannon Lake (`soc/intel/common/block/fast_spi`): an erase aligned to
+  64 KiB uses the 64 KiB erase cycle of the controller, one command to
+  the chip;
+- Lynx Point with two chips (`southbridge/intel/common/spi.c`, hardware
+  sequencing): one erase cycle, of the size the controller reports in
+  `HSFS` (`BERASE`), and the driver loops over it. If that size is 4
+  KiB, as the time suggests, a block of 64 KiB is sixteen erases.
+
+v1.8.0 takes erases out of the reclaim (patch 0314, `edk2/0067`); what
+is left, four, is still most of its time. Making each one shorter means
+a 64 KiB erase on the Lynx Point, and that is not a change to make
+blind:
+
+- the erase size of hardware sequencing is one for the whole flash, and
+  the map of the W541 has regions of 16 KiB that share a block
+  (`RO_VPD`, `RW_ELOG`): 64 KiB for everything would refuse their
+  erases;
+- a 64 KiB erase for the aligned ranges only would go through software
+  sequencing, with the block erase opcode in the opcode menu before the
+  configuration is locked, on a flash of two chips where coreboot uses
+  hardware sequencing for everything else. Nothing in the tree does it.
+
+**Next step**, read-only, on the W541: `sudo inteltool -s` (the `HSFS`
+register and its `BERASE` field, the opcode menu, `FLOCKDN`) and the
+time of LOCK-11 with v1.8.0. If the reclaim is still too long with four
+erases, a test build with the block erase for the store alone, on a
+machine with the external programmer at hand.
+
 ## Cache version for coreboot's memory settings
 
 On the M920x the cache version is the revision of FSP-M with its build
@@ -837,6 +908,27 @@ boot menu (`edk2/0003`).
   read, not from the SATA link. The simpler honest option stays what the
   docs say now: do not offer a hard disk password, so no drive is left
   locked after a suspend.
+- **Wanted by the owner (2026-11-16).** Before any code, what only he
+  can decide, each with a default that the build would take:
+  1. *A drive to test with.* A SATA drive whose contents may be lost: a
+     bug in the unlock, or in how the password becomes the 32 bytes of
+     the command, leaves a drive that nothing opens but its master
+     password or a security erase. Not the two system drives of the
+     W541. Without such a drive the feature is not built.
+  2. *Which boards.* The W541 and the T440p, whose drives are SATA. The
+     NVMe drive of the M920x has no ATA password (its lock is TCG Opal,
+     another feature).
+  3. *The 32 bytes.* The password as typed, padded with zeros, which
+     `hdparm --security-unlock` on another machine also opens (default),
+     or a hash of it, which only this firmware opens. Neither opens a
+     drive that the Lenovo firmware locked, whose scheme is its own:
+     such a drive is unlocked and its password removed there first.
+  4. *The master password and the level.* The user password at the
+     *High* level, the master password left as the drive has it
+     (default), or *Maximum*, where the master password can only erase.
+  5. *The suspend.* The password in SMRAM for the whole uptime and on
+     the SATA link at every resume, as on the stock firmware (above): to
+     accept, or the feature stays out.
 
 ## NVIDIA power steering and the EC's CPU limits
 

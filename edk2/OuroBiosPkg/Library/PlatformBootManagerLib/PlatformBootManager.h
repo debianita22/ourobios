@@ -167,11 +167,6 @@ PlatformProcessCapsules (
   );
 
 /**
-  Tell coreboot that the firmware booted, so that vboot keeps a new RW slot
-  that it is trying; lock the switch to the other slot before a boot option
-  starts and at ExitBootServices().
-**/
-/**
   Make OptionLockStatus read-only once it exists; before EndOfDxe.
 **/
 VOID
@@ -179,6 +174,21 @@ PlatformRegisterOptionLockPolicy (
   VOID
   );
 
+/**
+  Register the locks of the firmware slots and of the setup options: armed
+  before a boot option starts, at ExitBootServices() and before an image that
+  is not part of the firmware is loaded ahead of those. After the capsules,
+  before EndOfDxe.
+**/
+VOID
+PlatformRegisterFirmwareLocks (
+  VOID
+  );
+
+/**
+  Tell coreboot that the firmware booted, so that vboot keeps a new RW slot
+  that it is trying.
+**/
 VOID
 PlatformMarkFirmwareGood (
   VOID

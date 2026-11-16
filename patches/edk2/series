@@ -64,3 +64,5 @@
 0064-UefiPayloadPkg-Reclaim-the-variable-store-through-co.patch
 0065-UefiPayloadPkg-The-mapped-store-as-runtime-MMIO-wher.patch
 0066-UefiPayloadPkg-PlatformHstiDxe-A-region-under-a-lock.patch
+0067-UefiPayloadPkg-SmmStoreFvb-Erase-and-write-only-what.patch
+0068-UefiPayloadPkg-Arm-the-locks-before-code-that-is-not.patch

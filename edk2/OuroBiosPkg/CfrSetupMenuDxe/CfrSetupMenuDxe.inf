@@ -51,6 +51,8 @@
   gEfiHiiPlatformSetupFormsetGuid               ## CONSUMES ## GUID (Indicate the formset class guid to be displayed)
   gEfiIfrTianoGuid                              ## CONSUMES ## GUID (Extended IFR Guid Opcode)
   gEfiEndOfDxeEventGroupGuid                    ## CONSUMES ## Event
+  gUefiPayloadThirdPartyImageEventGroupGuid     ## CONSUMES ## Event
+  gEfiGlobalVariableGuid                        ## SOMETIMES_PRODUCES ## Variable:L"OsIndications"
 
 [Pcd]
   gOuroBiosPkgTokenSpaceGuid.PcdCfrSetupMenuPasswordCategory  ## CONSUMES

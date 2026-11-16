@@ -6,6 +6,66 @@ version they lead to. There is no v1.6.3: its candidates led to v1.7.0,
 whose section has its changes. For the releases before v1.3.0, see their notes on
 the [releases page](https://github.com/debianita22/ourobios/releases).
 
+## v1.8.0
+
+Not released: in development on the branch `ci-test/v1.8.0`, on top of
+v1.7.0, which is not released yet either. None of it ran on a machine.
+What was run: the unit tests of coreboot, the update test in QEMU and
+the builds of the CI. The rows for the machines are LOCK-11 to LOCK-13
+and MEM-25 of [docs/testing.md](docs/testing.md), in the order of
+[docs/test-v1.8.0.md](docs/test-v1.8.0.md). No ACPI table changes.
+
+- **The locks armed before code that is not the firmware's**
+  (`edk2/0068`): coreboot's locks of the setup options and of the switch
+  to the other firmware slot were armed when a boot option was started.
+  The boot manager runs other code before that: the option ROMs of the
+  devices, and the `Driver####` and `SysPrep####` options, which an OS
+  creates with a write of a variable (`efibootmgr --driver`,
+  `--sysprep`). With Secure Boot off, or signed, such an image ran with
+  the locks open and could write the options as the setup does: *BIOS
+  Lock* off for the next boot, from an OS that could not turn it off
+  itself. The payload now arms the locks before it loads the first image
+  that does not come from the firmware itself, and registers them before
+  any such image can be loaded, so that one that calls
+  `ExitBootServices()` is locked out too. **What changes for the user**:
+  in a boot where such an image ran, the setup cannot save; it says why
+  and offers to restart into the setup, where none is loaded and the
+  settings save. The OS sees such a boot in a volatile variable,
+  `OptionLockEarly`, and `tools/hw-report.py` says so (FLASH-01). The same boot is what an OS asks for with *restart into
+  the firmware settings* (`systemctl reboot --firmware-setup`,
+  *Advanced startup* of Windows): in it the firmware loads no option
+  ROM, no `Driver####` and no `SysPrep####` option until a boot option
+  is started. A machine whose display or keyboard needs an option ROM
+  cannot use the setup in such a boot; neither board is one.
+- **A reclaim of the variable store with fewer erases** (patch 0314,
+  `edk2/0067`): with the lock of the options armed, a store that fills
+  under the OS is reclaimed in SMM, with the OS stopped; on a W541 that
+  took 7.7 s, and 8.7 s for the first of a boot (v1.7.0-rc15), nearly
+  all of it in seven or eight erases of 64 KiB, about a second each on
+  its flash. Three of them were of the staging area, erased whole by
+  the payload: it now erases a block only if it holds something, one
+  block for a store that fits one, and writes only the bytes that are
+  not free space. One or two were of the block of the commit record,
+  which is now ended by a write of zeros over it, in a slot of its own;
+  the block is erased once its 32 slots are used, by coreboot at boot
+  before a reclaim can run into it. Four erases are left, three of them
+  of the store itself, and five for the first reclaim after a boot in
+  which the payload reclaimed the store by itself: the time of a
+  reclaim on the two machines is to be measured (LOCK-11). The notes that the handler leaves when it
+  refuses a reclaim are a log in the same block, the last one the
+  latest (`docs/tests/v1.8.0/scripts/storeinfo.py`).
+- **W541 (`nri`): the DRAM voltage is the board's** (patch 0315): the
+  native RAM init took 1.5 V for a set of modules of which one is not
+  DDR3L, as the MRC does, on a board that feeds 1.35 V and nothing
+  else. With DDR3L modules nothing changes but the key of the saved
+  training: **the W541 `nri` trains once more after the update**
+  (MEM-25).
+- **The update test in QEMU starts code before a boot option**: a
+  `Driver0000` option with a driver from the disk
+  (`tools/efi/slot-lock-driver.c`) that asks coreboot for the other
+  slot at once. coreboot must refuse, and in a boot asked to end in the
+  setup the driver must not be loaded at all.
+
 ## v1.7.0
 
 Not released. It replaces v1.6.3, which never was: what that version

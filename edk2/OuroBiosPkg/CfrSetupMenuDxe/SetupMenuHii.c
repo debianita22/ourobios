@@ -17,6 +17,7 @@
 #include <Library/UefiLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiRuntimeServicesTableLib.h>
+#include <Guid/GlobalVariable.h>
 #include <Guid/VariableFormat.h>
 #include <Protocol/HiiPopup.h>
 
@@ -231,6 +232,130 @@ OptionLockArmed (
 }
 
 /**
+  Restart into the setup: the request that an OS makes of the firmware
+  (EFI_OS_INDICATIONS_BOOT_TO_FW_UI), which the next boot answers by opening
+  the setup before any image that is not part of the firmware is loaded
+  (ThirdPartyImageLockLib), with the locks open. Returns only if the request
+  could not be written.
+**/
+STATIC
+VOID
+RestartIntoSetup (
+  VOID
+  )
+{
+  EFI_STATUS  Status;
+  UINT64      OsIndications;
+  UINTN       Size;
+
+  OsIndications = 0;
+  Size          = sizeof (OsIndications);
+  Status        = gRT->GetVariable (
+                         EFI_OS_INDICATIONS_VARIABLE_NAME,
+                         &gEfiGlobalVariableGuid,
+                         NULL,
+                         &Size,
+                         &OsIndications
+                         );
+  if (EFI_ERROR (Status) || (Size != sizeof (OsIndications))) {
+    OsIndications = 0;
+  }
+
+  OsIndications |= EFI_OS_INDICATIONS_BOOT_TO_FW_UI;
+  Status         = gRT->SetVariable (
+                          EFI_OS_INDICATIONS_VARIABLE_NAME,
+                          &gEfiGlobalVariableGuid,
+                          EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
+                          sizeof (OsIndications),
+                          &OsIndications
+                          );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "CFR: the restart into the setup could not be asked for: %r\n", Status));
+    return;
+  }
+
+  gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
+}
+
+/**
+  The settings are locked because an image that is not part of the firmware
+  was loaded before the setup: a restart does not change that, the image
+  runs again. Offer the restart into the setup, which loads none.
+
+  The browser routes each option of a form on its own, and each one fails:
+  the question is asked once for the options of a form, and again when the
+  user tries to save later.
+**/
+STATIC
+VOID
+ShowThirdPartyLocked (
+  VOID
+  )
+{
+  STATIC BOOLEAN           Asked = FALSE;
+  STATIC UINT32            AskedAt;
+  EFI_HII_POPUP_PROTOCOL   *HiiPopup;
+  EFI_HII_POPUP_SELECTION  Selection;
+  EFI_INPUT_KEY            Key;
+  EFI_TIME                 Time;
+  UINT32                   Now;
+
+  //
+  // Seconds of the day: without a clock, once in a boot
+  //
+  Now = MAX_UINT32;
+  if (!EFI_ERROR (gRT->GetTime (&Time, NULL))) {
+    Now = (UINT32)Time.Hour * 3600 + (UINT32)Time.Minute * 60 + Time.Second;
+  }
+
+  if (Asked && ((Now == MAX_UINT32) || ((Now >= AskedAt) && (Now - AskedAt < 3)))) {
+    AskedAt = Now;
+    return;
+  }
+
+  Asked     = TRUE;
+  Selection = EfiHiiPopupSelectionNo;
+  if (EFI_ERROR (gBS->LocateProtocol (&gEfiHiiPopupProtocolGuid, NULL, (VOID **)&HiiPopup)) ||
+      EFI_ERROR (
+        HiiPopup->CreatePopup (
+                    HiiPopup,
+                    EfiHiiPopupStyleError,
+                    EfiHiiPopupTypeYesNo,
+                    mSetupMenuPrivate.HiiHandle,
+                    STRING_TOKEN (STR_OPTIONS_LOCKED_THIRD_PARTY),
+                    &Selection
+                    )
+        ))
+  {
+    CreatePopUp (
+      EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE,
+      &Key,
+      L"The settings are locked in this boot: a driver that is not part of the",
+      L"firmware (an option ROM, a Driver or SysPrep option) started before the setup.",
+      L"",
+      L"Press Y to restart into the setup without it, any other key to go on.",
+      L"What was changed here is not saved.",
+      NULL
+      );
+    if ((Key.UnicodeChar == L'Y') || (Key.UnicodeChar == L'y')) {
+      Selection = EfiHiiPopupSelectionYes;
+    }
+  }
+
+  if (Selection == EfiHiiPopupSelectionYes) {
+    RestartIntoSetup ();
+  }
+
+  //
+  // After the answer: the time the user took is not time between two options
+  //
+  AskedAt = Now;
+  if (!EFI_ERROR (gRT->GetTime (&Time, NULL))) {
+    AskedAt = (UINT32)Time.Hour * 3600 + (UINT32)Time.Minute * 60 + Time.Second;
+  }
+}
+
+/**
   Say, once, why the settings are not saved: the browser only reports that
   the form could not be submitted.
 **/
@@ -244,6 +369,11 @@ ShowOptionsLocked (
   EFI_HII_POPUP_PROTOCOL   *HiiPopup;
   EFI_HII_POPUP_SELECTION  Selection;
   EFI_INPUT_KEY            Key;
+
+  if (CfrThirdPartyImageLoaded ()) {
+    ShowThirdPartyLocked ();
+    return;
+  }
 
   if (Shown) {
     return;

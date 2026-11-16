@@ -1,0 +1,149 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Domenico D'Arrigo <d.darrigo@outlook.it>
+Date: Mon, 16 Nov 2026 13:59:45 +0100
+Subject: [PATCH] UefiPayloadPkg/SmmStoreFvb: Erase and write only what a
+ reclaim needs
+
+For the reclaim of the variable store through coreboot the driver
+erased the three blocks of the staging area and wrote them whole. An
+erase is the slow operation of a flash: about a second for a block of
+64 KiB on a ThinkPad W541, each in an SMI that stops the OS, where the
+reclaim takes some eight seconds in all.
+
+A reclaimed store is mostly free space, so the image of the reclaim
+before this one, or of the fault tolerant write of a boot, left its
+last blocks of the staging area erased. Read each block of the staging
+area and erase it only if it holds something, and write of each block
+of the image only the bytes up to the last one that is not 0xFF. With
+a store that fits one block, one erase in place of three, and a third
+of the bytes written.
+---
+ .../SmmStoreFvb/SmmStoreFvbRuntime.c          | 69 +++++++++++++++++--
+ 1 file changed, 64 insertions(+), 5 deletions(-)
+
+diff --git a/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c b/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c
+index dc61e81ed..65d1e653f 100644
+--- a/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c
++++ b/UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntime.c
+@@ -21,9 +21,11 @@
+ STATIC EFI_EVENT  mSmmStoreVirtualAddrChangeEvent;
+ 
+ //
+-// One block, to build each block of the staging area of a reclaim
++// One block, to build each block of the staging area of a reclaim, and one
++// to read what the staging area holds there
+ //
+ STATIC UINT8  *mReclaimBlock;
++STATIC UINT8  *mStagingBlock;
+ 
+ //
+ // Global variable declarations
+@@ -127,6 +129,29 @@ SmmStoreInitInstance (
+   return Status;
+ }
+ 
++/**
++  The length of a buffer up to its last byte that is not erased flash.
++
++  @param[in] Buffer  The buffer.
++  @param[in] Size    Its size in bytes.
++
++  @return The number of bytes to write for the flash, erased before, to hold
++          the buffer: 0 when all of it is 0xFF.
++**/
++STATIC
++UINTN
++UsedSize (
++  IN CONST UINT8  *Buffer,
++  IN UINTN        Size
++  )
++{
++  while ((Size > 0) && (Buffer[Size - 1] == 0xFF)) {
++    Size--;
++  }
++
++  return Size;
++}
++
+ /**
+   The reclaim of the variable store while coreboot keeps a lock armed
+   (SMMSTORE_CMD_RECLAIM): the reclaimed store, with the firmware volume header
+@@ -135,6 +160,12 @@ SmmStoreInitInstance (
+   it has checked it whole. The fault tolerant write cannot do it then: the
+   locks refuse its writes past the store.
+ 
++  An erase is the slow operation of a flash (about a second for a block of
++  64 KiB on a ThinkPad W541, with the OS stopped in SMM), and a reclaimed
++  store is mostly free space: a block of the staging area that is erased
++  already is not erased again, and of each block only the bytes up to the
++  last one that is not 0xFF are written.
++
+   Each step that fails gives its own status, which the OS sees as the error of
+   the write that needed the reclaim (efivarfs: EIO, EINTR, EROFS, EACCES).
+ 
+@@ -164,6 +195,8 @@ SmmStoreFvbReclaim (
+   UINTN       Block;
+   UINTN       Header;
+   UINTN       Size;
++  UINTN       Used;
++  BOOLEAN     Erased;
+   EFI_STATUS  Status;
+ 
+   if ((mSmmStoreInstance == NULL) || (mReclaimBlock == NULL)) {
+@@ -205,12 +238,33 @@ SmmStoreFvbReclaim (
+       BlockSize - Header
+       );
+ 
+-    Status = SmmStoreLibEraseBlock ((Staging / BlockSize) + Block);
+-    if (EFI_ERROR (Status)) {
+-      return EFI_WRITE_PROTECTED;
++    //
++    // What the staging area holds there: the image of the reclaim before
++    // this one, or of the fault tolerant write of a boot, in its first
++    // blocks, and nothing in the others. A block that cannot be read is
++    // erased, as every block was.
++    //
++    Erased = FALSE;
++    if (mStagingBlock != NULL) {
++      Size   = BlockSize;
++      Status = SmmStoreLibRead ((Staging / BlockSize) + Block, 0, &Size, mStagingBlock);
++      Erased = (BOOLEAN)(!EFI_ERROR (Status) && (Size == BlockSize) &&
++                         (UsedSize (mStagingBlock, BlockSize) == 0));
+     }
+ 
+-    Size   = BlockSize;
++    if (!Erased) {
++      Status = SmmStoreLibEraseBlock ((Staging / BlockSize) + Block);
++      if (EFI_ERROR (Status)) {
++        return EFI_WRITE_PROTECTED;
++      }
++    }
++
++    Used = UsedSize (mReclaimBlock, BlockSize);
++    if (Used == 0) {
++      continue;
++    }
++
++    Size   = Used;
+     Status = SmmStoreLibWrite ((Staging / BlockSize) + Block, 0, &Size, mReclaimBlock);
+     if (EFI_ERROR (Status)) {
+       return EFI_WRITE_PROTECTED;
+@@ -258,6 +312,10 @@ SmmStoreVirtualNotifyEvent (
+     EfiConvertPointer (0x0, (VOID **)&mReclaimBlock);
+   }
+ 
++  if (mStagingBlock != NULL) {
++    EfiConvertPointer (0x0, (VOID **)&mStagingBlock);
++  }
++
+   return;
+ }
+ 
+@@ -367,6 +425,7 @@ SmmStoreInitialize (
+   // coreboot, when it keeps a lock of the store armed
+   //
+   mReclaimBlock = AllocateRuntimePool (BlockSize);
++  mStagingBlock = AllocateRuntimePool (BlockSize);
+   if (mReclaimBlock != NULL) {
+     Status = gBS->InstallMultipleProtocolInterfaces (
+                     &ImageHandle,

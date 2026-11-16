@@ -26,6 +26,7 @@
 #include <Guid/CapsuleReport.h>
 #include <Guid/FileInfo.h>
 #include <Guid/Gpt.h>
+#include <Guid/ThirdPartyImage.h>
 #include <Library/SmmStoreLib.h>
 #include <Library/VariablePolicyHelperLib.h>
 #include <Protocol/VariablePolicy.h>
@@ -487,6 +488,10 @@ CapsuleApply (
 
 STATIC BOOLEAN  mFirmwareSlotsLocked;
 STATIC BOOLEAN  mOptionLockReported;
+//
+// SmmStoreLib is initialized, and stays so, for the locks
+//
+STATIC BOOLEAN  mLocksRegistered;
 
 /**
   Before EndOfDxe, which closes Variable Policy to new rules: OptionLockStatus
@@ -517,6 +522,24 @@ PlatformRegisterOptionLockPolicy (
 
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_WARN, "Capsules: no Variable Policy for OptionLockStatus: %r\n", Status));
+    return;
+  }
+
+  //
+  // The same for OptionLockEarly (PlatformReportEarlyLock())
+  //
+  Status = RegisterBasicVariablePolicy (
+             VariablePolicy,
+             &gEficorebootNvDataGuid,
+             L"OptionLockEarly",
+             VARIABLE_POLICY_NO_MIN_SIZE,
+             VARIABLE_POLICY_NO_MAX_SIZE,
+             VARIABLE_POLICY_NO_MUST_ATTR,
+             EFI_VARIABLE_NON_VOLATILE,
+             VARIABLE_POLICY_TYPE_LOCK_ON_CREATE
+             );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "Capsules: no Variable Policy for OptionLockEarly: %r\n", Status));
   }
 }
 
@@ -560,9 +583,44 @@ PlatformReportOptionLock (
 }
 
 /**
-  A boot option or an OS is about to start: from now on, only an update
-  capsule, with its checks, may change the RW slot that vboot boots.
-  Allocates nothing.
+  Tell the OS that the locks were armed before the setup could be opened,
+  for an image that is not part of the firmware loaded before any boot
+  option: the volatile variable OptionLockEarly of the coreboot options
+  GUID, one byte, 1. In such a boot the setup cannot save, and where it
+  happens at every boot, for the option ROM of a device, the settings change
+  only after a restart into the setup: tools/hw-report.py says so (FLASH-01).
+  Lock on create, as OptionLockStatus.
+**/
+STATIC
+VOID
+PlatformReportEarlyLock (
+  VOID
+  )
+{
+  EFI_STATUS  Status;
+  UINT8       Early;
+
+  Early  = 1;
+  Status = gRT->SetVariable (
+                  L"OptionLockEarly",
+                  &gEficorebootNvDataGuid,
+                  EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
+                  sizeof (Early),
+                  &Early
+                  );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "Capsules: OptionLockEarly not written: %r\n", Status));
+  }
+}
+
+/**
+  A boot option, an OS or an image that is not part of the firmware is about
+  to start: from now on, only an update capsule, with its checks, may change
+  the RW slot that vboot boots. Allocates nothing.
+
+  @param[in] Event    The event.
+  @param[in] Context  Not NULL for the event of an image that is not part of
+                      the firmware (PlatformRegisterFirmwareLocks()).
 **/
 STATIC
 VOID
@@ -578,14 +636,18 @@ PlatformLockFirmwareSlots (
     return;
   }
 
+  if (Context != NULL) {
+    PlatformReportEarlyLock ();
+  }
+
   Status               = SmmStoreLibVbootLockSlots ();
   mFirmwareSlotsLocked = !EFI_ERROR (Status);
   DEBUG ((DEBUG_INFO, "Capsules: switch to the other firmware slot locked: %r\n", Status));
 
   //
-  // The setup could have changed the security options (bios_lock,
-  // bootmedia_lock) in this boot; from here, before a boot option or an OS
-  // runs, coreboot keeps the OS from turning them off.
+  // The setup could have changed its options in this boot; from here, before
+  // a boot option, an OS or an image that is not part of the firmware runs,
+  // coreboot keeps them as they are.
   //
   Status = SmmStoreLibOptionLock ();
   DEBUG ((DEBUG_INFO, "Capsules: security options write-locked: %r\n", Status));
@@ -593,42 +655,36 @@ PlatformLockFirmwareSlots (
 }
 
 /**
-  Tell coreboot that the firmware booted: with vboot, a new RW slot that it is
-  trying (after an update) is then kept, instead of being given up for the
-  other one when its tries run out.  Called once the console is up.
+  Register the locks of the firmware slots and of the setup options. They are
+  armed when a boot option is started (ReadyToBoot, which booting the setup
+  does not signal), when anything calls ExitBootServices(), and when an image
+  that is not part of the firmware is loaded before either: an option ROM, a
+  Driver#### or a SysPrep#### option. ThirdPartyImageLockLib arms them in
+  SMM itself before such an image and signals the event; what is left to do
+  here is the report of the lock, for the setup and for the OS.
 
-  With two RW slots, the setup can also switch to the other slot (the
-  Firmware Update page); coreboot refuses that once a boot option starts
-  (ReadyToBoot, which booting the setup does not signal) or anything calls
-  ExitBootServices().
+  To be called after the capsules of the boot and before EndOfDxe, after
+  which the boot manager loads such images. The events were registered once
+  the console was up, after the option ROMs and the Driver#### options: an
+  image started from one of those ran with the locks open, even when it
+  called ExitBootServices().
+
+  The library stays initialized for the events: at ExitBootServices() it
+  cannot allocate.  Without every event, lock now: the setup then cannot
+  switch slots or save in this boot.
 **/
 VOID
-PlatformMarkFirmwareGood (
+PlatformRegisterFirmwareLocks (
   VOID
   )
 {
-  EFI_STATUS  Status;
-  EFI_EVENT   Event;
+  EFI_EVENT  Event;
 
   if (EFI_ERROR (SmmStoreLibInitialize ())) {
     return;
   }
 
-  Status = SmmStoreLibVbootSlotGood ();
-  if (Status != EFI_UNSUPPORTED) {
-    DEBUG ((DEBUG_INFO, "Capsules: firmware slot marked good: %r\n", Status));
-  }
-
-  if (Status == EFI_UNSUPPORTED) {
-    SmmStoreLibDeinitialize ();
-    return;
-  }
-
-  //
-  // The library stays initialized for the lock: at ExitBootServices() it
-  // cannot allocate.  Without both events, lock now: the setup then cannot
-  // switch slots in this boot.
-  //
+  mLocksRegistered = TRUE;
   if (EFI_ERROR (EfiCreateEventReadyToBootEx (TPL_CALLBACK, PlatformLockFirmwareSlots, NULL, &Event)) ||
       EFI_ERROR (
         gBS->CreateEventEx (
@@ -639,10 +695,46 @@ PlatformMarkFirmwareGood (
                &gEfiEventExitBootServicesGuid,
                &Event
                )
+        ) ||
+      EFI_ERROR (
+        gBS->CreateEventEx (
+               EVT_NOTIFY_SIGNAL,
+               TPL_CALLBACK,
+               PlatformLockFirmwareSlots,
+               &mLocksRegistered,
+               &gUefiPayloadThirdPartyImageEventGroupGuid,
+               &Event
+               )
         ))
   {
-    DEBUG ((DEBUG_ERROR, "Capsules: no event for the lock of the firmware slots\n"));
+    DEBUG ((DEBUG_ERROR, "Capsules: no event for the locks of the firmware\n"));
     PlatformLockFirmwareSlots (NULL, NULL);
+  }
+}
+
+/**
+  Tell coreboot that the firmware booted: with vboot, a new RW slot that it is
+  trying (after an update) is then kept, instead of being given up for the
+  other one when its tries run out.  Called once the console is up.
+
+  With two RW slots, the setup can also switch to the other slot (the
+  Firmware Update page); coreboot refuses that once the locks are armed
+  (PlatformRegisterFirmwareLocks()).
+**/
+VOID
+PlatformMarkFirmwareGood (
+  VOID
+  )
+{
+  EFI_STATUS  Status;
+
+  if (!mLocksRegistered) {
+    return;
+  }
+
+  Status = SmmStoreLibVbootSlotGood ();
+  if (Status != EFI_UNSUPPORTED) {
+    DEBUG ((DEBUG_INFO, "Capsules: firmware slot marked good: %r\n", Status));
   }
 }
 
