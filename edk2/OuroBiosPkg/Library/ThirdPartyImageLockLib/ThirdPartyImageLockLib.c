@@ -17,7 +17,12 @@
   a machine where such an image runs at every boot, a boot that the OS or the
   setup asked to end in the firmware setup (EFI_OS_INDICATIONS_BOOT_TO_FW_UI)
   refuses those images until a boot option is started: the locks stay open
-  for the setup, and nothing but the firmware ran before it.
+  for the setup, and nothing but the firmware ran before it. But for one
+  kind: the option ROM of a display controller is loaded in such a boot too,
+  without arming anything, since on a machine without integrated graphics
+  its driver is the screen of the setup. It comes from the flash of a card
+  in the machine, not from a variable that an OS writes, and Secure Boot
+  checks it when it is on.
 
   It is linked after DxeImageVerificationLib: an image that Secure Boot
   refuses does not get here, as the handlers run in the order in which they
@@ -27,17 +32,20 @@
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#include <Uefi.h>
+#include <PiDxe.h>
 #include <Guid/EventGroup.h>
 #include <Guid/GlobalVariable.h>
 #include <Guid/ThirdPartyImage.h>
+#include <IndustryStandard/Pci22.h>
 #include <Library/DebugLib.h>
+#include <Library/DevicePathLib.h>
 #include <Library/SecurityManagementLib.h>
 #include <Library/SmmStoreLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
 #include <Library/UefiRuntimeServicesTableLib.h>
 #include <Protocol/FirmwareVolume2.h>
+#include <Protocol/PciIo.h>
 
 //
 // A boot option was started: the platform armed the locks itself.
@@ -98,6 +106,53 @@ ImageFromFirmwareVolume (
 }
 
 /**
+  Is the image the driver in the option ROM of a display controller? PciBusDxe
+  loads the images of an option ROM with the device path of the PCI device
+  and one node after it, the range of the image in the ROM.
+
+  @param[in] File  The device path of the image, or NULL.
+
+  @retval TRUE   The device path is that of a PCI device of the display
+                 class, then a relative offset range node.
+  @retval FALSE  It is not.
+**/
+STATIC
+BOOLEAN
+ImageFromDisplayOptionRom (
+  IN CONST EFI_DEVICE_PATH_PROTOCOL  *File
+  )
+{
+  EFI_STATUS                Status;
+  EFI_HANDLE                DeviceHandle;
+  EFI_DEVICE_PATH_PROTOCOL  *Node;
+  EFI_PCI_IO_PROTOCOL       *PciIo;
+  UINT8                     BaseClass;
+
+  if (File == NULL) {
+    return FALSE;
+  }
+
+  DeviceHandle = NULL;
+  Node         = (EFI_DEVICE_PATH_PROTOCOL *)File;
+  Status       = gBS->LocateDevicePath (&gEfiPciIoProtocolGuid, &Node, &DeviceHandle);
+  if (EFI_ERROR (Status) ||
+      (DevicePathType (Node) != MEDIA_DEVICE_PATH) ||
+      (DevicePathSubType (Node) != MEDIA_RELATIVE_OFFSET_RANGE_DP) ||
+      !IsDevicePathEnd (NextDevicePathNode (Node)))
+  {
+    return FALSE;
+  }
+
+  Status = gBS->HandleProtocol (DeviceHandle, &gEfiPciIoProtocolGuid, (VOID **)&PciIo);
+  if (EFI_ERROR (Status)) {
+    return FALSE;
+  }
+
+  Status = PciIo->Pci.Read (PciIo, EfiPciIoWidthUint8, PCI_CLASSCODE_OFFSET + 2, 1, &BaseClass);
+  return (BOOLEAN)(!EFI_ERROR (Status) && (BaseClass == PCI_CLASS_DISPLAY));
+}
+
+/**
   The Security2 handler: before a boot option is started, the first image
   that is not part of the firmware arms the locks, or is refused in a boot
   that goes to the firmware setup.
@@ -107,8 +162,9 @@ ImageFromFirmwareVolume (
   and nothing says that it does before the image is started.
 
   @retval EFI_SUCCESS        The image may be loaded.
-  @retval EFI_ACCESS_DENIED  Not part of the firmware, in a boot that goes to
-                             the firmware setup: not loaded.
+  @retval EFI_ACCESS_DENIED  Not part of the firmware, nor the option ROM of
+                             a display controller, in a boot that goes to the
+                             firmware setup: not loaded.
 **/
 STATIC
 EFI_STATUS
@@ -128,6 +184,11 @@ ThirdPartyImageLockHandler (
   }
 
   if (mFirmwareUi) {
+    if (ImageFromDisplayOptionRom (File)) {
+      DEBUG ((DEBUG_INFO, "ThirdPartyImageLockLib: the option ROM of a display controller, for the setup\n"));
+      return EFI_SUCCESS;
+    }
+
     DEBUG ((DEBUG_WARN, "ThirdPartyImageLockLib: image refused: this boot goes to the setup\n"));
     return EFI_ACCESS_DENIED;
   }

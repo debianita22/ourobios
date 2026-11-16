@@ -26,6 +26,7 @@
 
 [LibraryClasses]
   DebugLib
+  DevicePathLib
   SecurityManagementLib
   SmmStoreLib
   UefiBootServicesTableLib
@@ -40,3 +41,4 @@
 
 [Protocols]
   gEfiFirmwareVolume2ProtocolGuid             ## SOMETIMES_CONSUMES
+  gEfiPciIoProtocolGuid                       ## SOMETIMES_CONSUMES

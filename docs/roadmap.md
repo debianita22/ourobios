@@ -580,13 +580,20 @@ to choose that is safe to leave open.
   Secure Boot by its own handler, and what it or iPXE then start goes
   through the handler or through `ExitBootServices()`, both of which
   arm the locks).
-- **To watch**: a machine with a device whose option ROM the payload
-  loads at every boot. The setup then saves only in a boot asked to end
-  in the setup. With coreboot's PCI enumeration the payload does not
-  read the ROM of a device by itself, so on the two boards none is
-  expected; LOCK-12 without the probe says (the first two numbers of
-  `OptionLockStatus` are written at ReadyToBoot, and the setup saves
-  with no question).
+- **The option ROMs**: the W541 payload loads none
+  (`EDK2_LOAD_OPTION_ROMS` off). The M920x loads those of its cards
+  (*Option ROMs of the cards*, *All* by default), each at every boot: a
+  machine with such a card has its locks armed before the setup at every
+  boot, and saves only in a boot asked to end in the setup, which the
+  setup itself offers. In that boot one option ROM is still loaded, the
+  one of a display controller: with an F processor, without integrated
+  graphics, the card's driver is the screen of the setup
+  ([docs/m920x.md](m920x.md)). It runs with the locks open, as the
+  setup needs them; it comes from the card's own flash, and Secure Boot
+  checks it when it is on. `OptionLockEarly`, a volatile variable, tells
+  the OS that the locks were armed before the setup (`hw-report.py`,
+  FLASH-01): on the M920x of the port, LOCK-12 says whether anything
+  does that today.
 - **Next step**: LOCK-12 and LOCK-13 ([docs/testing.md](testing.md)).
 
 ## The erase time of the W541's flash

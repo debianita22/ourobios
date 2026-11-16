@@ -33,10 +33,14 @@ and MEM-25 of [docs/testing.md](docs/testing.md), in the order of
   settings save. The OS sees such a boot in a volatile variable,
   `OptionLockEarly`, and `tools/hw-report.py` says so (FLASH-01). The same boot is what an OS asks for with *restart into
   the firmware settings* (`systemctl reboot --firmware-setup`,
-  *Advanced startup* of Windows): in it the firmware loads no option
-  ROM, no `Driver####` and no `SysPrep####` option until a boot option
-  is started. A machine whose display or keyboard needs an option ROM
-  cannot use the setup in such a boot; neither board is one.
+  *Advanced startup* of Windows): in it the firmware loads no
+  `Driver####` and no `SysPrep####` option, and of the option ROMs only
+  that of a graphics card, until a boot option is started. **M920x with
+  a card on the riser that has an option ROM** (*Option ROMs of the
+  cards*, on by default; the W541 loads none): its driver runs at every
+  boot, so the setup saves only after that restart, one more than
+  before for each change; with *Graphics cards only* that holds for a
+  graphics card alone. A machine without a card is as before.
 - **A reclaim of the variable store with fewer erases** (patch 0314,
   `edk2/0067`): with the lock of the options armed, a store that fills
   under the OS is reclaimed in SMM, with the OS stopped; on a W541 that
