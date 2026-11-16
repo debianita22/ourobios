@@ -2522,6 +2522,12 @@ cmd_coreboot_unit_test() {
 			grep -E "ERROR|LINE|FAILED|error" "${log}" | head -20 >&2
 			die "coreboot-unit-test: ${t} non passa (${log})"
 		}
+		# make esce con 0 anche quando una prova fallisce: conta l'esito di
+		# cmocka, non quello di make
+		if grep -qE '^\[  (FAILED|ERROR) ' "${log}" || ! grep -q '^\[  PASSED  \]' "${log}"; then
+			grep -E "ERROR|LINE|FAILED|error" "${log}" | head -20 >&2
+			die "coreboot-unit-test: ${t} non passa (${log})"
+		fi
 		echo "  ok  ${t}: $(grep -c '^\[       OK \]' "${log}") prove passate"
 	done
 }

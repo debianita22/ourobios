@@ -283,6 +283,10 @@ with a `slic` file (patch 0287); the releases have none, as before.
 - **The saved training of the `nri` variant also follows the SPD
   decoder** (patch 0276): a change of the code that reads the timings
   from the SPD trains once, as a change of the RAM init does.
+- **`tools/build.sh coreboot-unit-test` fails when a test fails**: it
+  took the exit status of `make`, which is 0 also when cmocka reports a
+  failed test, and counted the tests that passed. Found with a test
+  that was made to fail; the tests in the repository pass.
 - **No AI assistant as co-author of a new commit**: `tools/ci-check.sh`
   refuses a commit after `c714b53` with a `Co-Authored-By` of an
   assistant or the link to its session, as it does for the patches from
