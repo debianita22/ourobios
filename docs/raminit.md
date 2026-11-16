@@ -31,7 +31,9 @@ This project adds:
 - **patch 0086**, the DRAM voltage from the SPDs: 1.35 V when every DIMM
   runs at it (DDR3L), as `mrc.bin` sets it on the W541
   (`PCU_DDR_VOLTAGE` = 1); the code assumed 1.5 V on non-ULT Haswell, and
-  the voltage selects the settings of the memory I/O;
+  the voltage selects the settings of the memory I/O. From v1.8.0 the
+  devicetree of the W541 gives it (patch 0315, `ddr_voltage_mv` 1350):
+  the board feeds its slots 1.35 V only, whatever the modules say;
 - **patch 0087**, a memory test after training: every bank of every rank
   written and read back with the controller's test engine (REUT), and the
   training redone once when a step or the test fails. Upstream saves
